@@ -36,6 +36,7 @@ export const app = defineApp({
   adminHref: "/admin/pulse",
   settings: {
     "pulse.max_bases": {
+      adminWrite: "application",
       kind: "number",
       default: 200,
       min: 1,
@@ -48,6 +49,7 @@ export const app = defineApp({
       },
     },
     "pulse.max_raw_retention_days": {
+      adminWrite: "application",
       kind: "number",
       default: 730,
       min: 1,
@@ -62,6 +64,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_values_per_minute": {
+      adminWrite: "application",
       kind: "number",
       default: 2000,
       min: 1,
@@ -74,6 +77,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_bytes_per_minute": {
+      adminWrite: "application",
       kind: "number",
       default: 5242880,
       min: 1,
@@ -86,6 +90,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_storage_bytes": {
+      adminWrite: "application",
       kind: "number",
       default: 5000000000,
       min: 1,
@@ -98,6 +103,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_max_series": {
+      adminWrite: "application",
       kind: "number",
       default: 50000,
       min: 1,
@@ -110,6 +116,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_max_event_kinds": {
+      adminWrite: "application",
       kind: "number",
       default: 2000,
       min: 1,
@@ -122,6 +129,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_queries_per_hour": {
+      adminWrite: "application",
       kind: "number",
       default: 600,
       min: 1,
@@ -134,6 +142,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_max_state_keys": {
+      adminWrite: "application",
       kind: "number",
       default: 2000,
       min: 1,
@@ -148,6 +157,7 @@ export const app = defineApp({
       },
     },
     "pulse.base_creation": {
+      adminWrite: "application",
       kind: "enum",
       default: "everyone",
       options: [
@@ -168,6 +178,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_profile": {
+      adminWrite: "application",
       kind: "enum",
       default: "normal",
       options: [
@@ -190,6 +201,7 @@ export const app = defineApp({
     // Address, service user and password are one encrypted value, written and read as a whole: three
     // separate settings would let a reader combine a new address with the old password.
     "pulse.clickhouse_connection": {
+      adminWrite: "application",
       kind: "secret",
       default: "",
       label: "ClickHouse connection",

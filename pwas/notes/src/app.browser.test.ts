@@ -5,6 +5,7 @@ import { join, resolve, sep } from "node:path";
 import type { Browser, BrowserContext, Locator, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../packages/ui/test/browser";
 import { build, packageRoot } from "../scripts/build";
+import { contentSecurityPolicy } from "../server/app";
 
 const NOW = Date.parse("2026-10-30T12:00:00.000Z");
 const READ_ID = "Read0123456789ABCDEFGH";
@@ -42,7 +43,7 @@ beforeAll(async () => {
         const file = Bun.file(path === outdir ? join(outdir, "index.html") : path);
         return new Response((await file.exists()) ? file : Bun.file(join(outdir, "index.html")), {
           // An offline reload must use the worker, never the browser's HTTP cache.
-          headers: { "Cache-Control": "no-store" },
+          headers: { "Cache-Control": "no-store", "Content-Security-Policy": contentSecurityPolicy() },
         });
       },
     });
@@ -87,11 +88,39 @@ const skipWelcome = () => {
     localStorage.setItem("k2b-notes.preferences", JSON.stringify({ welcomeCreated: true }));
 };
 
+/** The page's content-policy refusals, which leave no page error behind. */
+const recordPolicyViolations = () => {
+  const violations: string[] = [];
+  Object.assign(window, { policyViolations: violations });
+  document.addEventListener("securitypolicyviolation", (event) => {
+    violations.push(`${event.violatedDirective} ${event.blockedURI}`);
+  });
+};
+const policyViolations = () => page.evaluate(() => (window as unknown as { policyViolations: string[] }).policyViolations);
+
+/** Light pixels in the middle of a filled box: its check, which the rounded corners cannot fake. */
+const checkPixels = async (box: Locator) => {
+  const png = (await box.screenshot()).toString("base64");
+  return page.evaluate(async (png) => {
+    const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d")!;
+    context.drawImage(bitmap, 0, 0);
+    const { data } = context.getImageData(bitmap.width / 4, bitmap.height / 4, bitmap.width / 2, bitmap.height / 2);
+    let light = 0;
+    for (let index = 0; index < data.length; index += 4)
+      if (data[index]! > 200 && data[index + 1]! > 200 && data[index + 2]! > 200) light++;
+    return light;
+  }, png);
+};
+
 const openContext = async (serviceWorkers: "allow" | "block", firstVisit = false) => {
   context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce", serviceWorkers });
   context.setDefaultTimeout(5_000);
   context.setDefaultNavigationTimeout(10_000);
   await context.addInitScript(pinPageClock, NOW);
+  await context.addInitScript(recordPolicyViolations);
   if (!firstVisit) await context.addInitScript(skipWelcome);
   page = await context.newPage();
   errors = pageErrors(page);
@@ -167,6 +196,10 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
     expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
+    // The checked box shows its check under the policy the site ships with, and nothing else was refused.
+    expect(await checkPixels(page.locator(".custom-list-task-marker:checked").first())).toBeGreaterThan(3);
+    // Zod probes for eval once inside a try/catch; a real eval would also fail as a page error.
+    expect((await policyViolations()).filter((violation) => !violation.startsWith("script-src eval"))).toEqual([]);
     // The sum row is computed and stays out of the chart built from the same table.
     await page.locator(".md-formula-ok", { hasText: "183" }).waitFor();
     // The table's `@kaffee` anchor shows as a quiet label, not as raw Markdown.
