@@ -151,6 +151,28 @@ export const resolveInvocationAuthority = async (
   if (!row) return null;
 
   const serviceAccount = mapServiceAccount(row);
+  if (serviceAccount.kind === "code") {
+    if (
+      claims.credential_kind !== "mandate" ||
+      !claims.mandate_id ||
+      !claims.mandate_revision ||
+      claims.workload_type !== "code.version" ||
+      !claims.workload_id ||
+      claims.scopes.length !== 0
+    )
+      return null;
+    const [mandate] = await query<{ id: string }[]>`
+      SELECT id FROM auth.mandates
+      WHERE id = ${claims.mandate_id}::uuid AND revision = ${claims.mandate_revision}
+        AND state = 'active' AND confirmed_at IS NOT NULL
+        AND (expires_at IS NULL OR expires_at > now())
+        AND owner_app_id = 'core' AND workload_type = 'code.version'
+        AND workload_id = ${claims.workload_id}
+        AND subject_kind = 'service_account' AND subject_service_account_id = ${claims.sub}::uuid
+    `;
+    if (!mandate) return null;
+  }
+
   const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
   if (serviceAccount.kind === "user_delegated" && (!delegatedUser || isAccountExpired(delegatedUser.accountExpires))) return null;
   if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
@@ -165,7 +187,10 @@ export const resolveInvocationAuthority = async (
     kind: "service_account",
     serviceAccount,
     delegatedUser,
-    scopes: [...claims.scopes],
+    // Legacy app resolvers intersect their live grants with actor.scopes. The mandate
+    // replaces credential scopes for Code; project only a non-admin compatibility ceiling.
+    // Signed claims and RequestAuthority.scopes stay empty. This grants no resource access.
+    scopes: serviceAccount.kind === "code" ? ["read", "write"] : [...claims.scopes],
     credentialId: claims.credential_id ?? null,
     oauthClientId: claims.oauth_client_id ?? null,
     credentialExpiresAt: new Date(

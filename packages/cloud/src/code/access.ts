@@ -13,7 +13,7 @@ import {
   type CodeAccessTarget,
 } from "../contracts/code-access";
 import { sql } from "../runtime/clients";
-import { hasInstallationAdminInTransaction } from "../services/accounts/users";
+import { hasInstallationAdminInTransaction } from "../services/accounts/installation-admin";
 import { audit } from "../services/audit";
 import { codeAccessMessages } from "../shared/code-access-messages";
 import { verifyCodeAccessProof } from "./access-proof";

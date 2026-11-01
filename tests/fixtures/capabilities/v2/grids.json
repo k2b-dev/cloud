@@ -1,11 +1,11 @@
 {
   "protocolVersion": 2,
   "appId": "grids",
-  "manifestHash": "95498cfb317ef655a680502f1857a8f42bf9d3be3e596b4592873b64dcf47e8c",
+  "manifestHash": "73521e0492db2430126731ee370889223d643b728dd2109409d72d87adec08e3",
   "types": [
     {
       "localId": "base",
-      "title": "Grids Base",
+      "title": "Grids base",
       "description": "A permission-scoped Grids workspace.",
       "icon": "ti ti-table",
       "reader": "base.read"
@@ -26,7 +26,7 @@
     {
       "localId": "table",
       "title": "Grids Table",
-      "description": "A readable stored or Combined table in a Base.",
+      "description": "A readable stored or Combined table in a base.",
       "icon": "ti ti-table-column",
       "reader": "table.read"
     },
@@ -47,14 +47,14 @@
   "queries": [
     {
       "localId": "base.list",
-      "title": "List Grids Bases",
-      "description": "Normal entry for Base-scoped Grids work. List accessible Bases and use returned grids.base refs or IDs with base.read, gql.context, gql.preview, gql.execute, or gql.view.execute.",
+      "title": "List Grids bases",
+      "description": "Normal entry for base-scoped Grids work. List accessible bases and use returned grids.base refs or IDs with base.read, gql.context, gql.preview, gql.execute, or gql.view.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "query": {
-            "description": "Optional Base name, description, or short-ID search.",
+            "description": "Optional base name, description, or short-ID search.",
             "type": "string",
             "maxLength": 500
           },
@@ -146,12 +146,12 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "1184df30d7c5c419871c5eff2a9b085ac8a5dd1ee5954b9fb93251767104742b",
+      "schemaHash": "817cba2a4712b3cf95be6e722b6fc362b9a2d0611f4a58458664e024fca0c201",
       "openWorld": false
     },
     {
       "localId": "base.read",
-      "title": "Read Grids Base",
+      "title": "Read Grids base",
       "description": "Read one grids.base ref returned by base.list or base.search.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -160,7 +160,7 @@
           "id": {
             "type": "string",
             "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Stable public Base ID."
+            "description": "Stable public base ID."
           }
         },
         "required": ["id"],
@@ -234,13 +234,13 @@
         "required": ["id", "name", "description", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "747a5422e868f6903a82bb3293205d1e31b4fad226e1ba7513b3107cde0a7e68",
+      "schemaHash": "8efb3d4d59a9aa85013243926dd922a404f193b4b580d23207a8bdeae3b679e4",
       "openWorld": false
     },
     {
       "localId": "base.search",
-      "title": "Search Grids Bases",
-      "description": "Find an accessible Grids Base by name, description, or short ID when its ID is unknown. Use returned grids.base refs with base.read or their IDs with gql.context and GQL queries.",
+      "title": "Search Grids bases",
+      "description": "Find an accessible Grids base by name, description, or short ID when its ID is unknown. Use returned grids.base refs with base.read or their IDs with gql.context and GQL queries.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -336,6 +336,18 @@
               "minLength": 1,
               "maxLength": 120
             },
+            "context": {
+              "description": "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "status": {
+              "description": "The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            },
             "priority": {
               "description": "App-local relevance hint from zero to nine.",
               "type": "integer",
@@ -399,18 +411,83 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "5b78e710d3729f50c18b549cedce82e88fbd22757c37d87a0e245682c8d1608e",
+      "schemaHash": "a0379935f9177fa4fbe1e077141b0581a9280332fd04352946651ebf641594b3",
       "openWorld": false,
       "universalSearch": {
         "tags": [
           {
             "tag": "grid",
             "title": "Grids",
-            "description": "Show Grids Bases only.",
+            "description": "Show Grids bases only.",
             "aliases": ["grids"]
           }
         ]
       }
+    },
+    {
+      "localId": "document.content.read",
+      "title": "Read document content",
+      "description": "Read one stored immutable artifact as an authenticated binary stream. Use a document ID from document.list/read/create and optionally an artifact key from document.read. Does not render, issue, extract text or send a document.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public ID from the corresponding discovery result or resource reference."
+          },
+          "artifactKey": {
+            "description": "Artifact key from document.read; defaults to the primary artifact.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "mimeType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "downloadUrl": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Authenticated same-origin download path. Not a public share; access is checked on every download."
+          }
+        },
+        "required": ["key", "filename", "mimeType", "sizeBytes", "sha256", "downloadUrl"],
+        "additionalProperties": false
+      },
+      "stream": {
+        "direction": "read",
+        "maxBytes": 104857600
+      },
+      "schemaHash": "1fadbbc0449f9c69df35fe0175627b394ae12332b84101c464e2b608ca3981c4",
+      "openWorld": false
     },
     {
       "localId": "document.list",
@@ -578,15 +655,25 @@
                   "sha256": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "downloadUrl": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Authenticated same-origin download path. Not a public share; access is checked on every download."
                   }
                 },
-                "required": ["key", "filename", "mimeType", "sizeBytes", "sha256"],
+                "required": ["key", "filename", "mimeType", "sizeBytes", "sha256", "downloadUrl"],
                 "additionalProperties": false
               }
             },
             "primaryArtifactKey": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+            },
+            "downloadUrl": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Authenticated same-origin download path. Not a public share; access is checked on every download. Returns the stored primary artifact."
             },
             "sourceRecordCount": {
               "anyOf": [
@@ -638,19 +725,20 @@
             "validationStatus",
             "artifacts",
             "primaryArtifactKey",
+            "downloadUrl",
             "sourceRecordCount",
             "dataSnapshot"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "119e803e554465256276c571430999ed44ddccbcaa32ae97e4d92b427f30d2d0",
+      "schemaHash": "21c5177353685fa7f95013b629ea36d0aa316bb4e99c582eab990046fe81824b",
       "openWorld": false
     },
     {
       "localId": "document.read",
       "title": "Read stored document",
-      "description": "Read metadata and artifact hashes for a grids.document ref from document.list or document.create. The authenticated download link returns stored PDF bytes, not a new rendering.",
+      "description": "Read metadata and artifact hashes for a grids.document ref from document.list or document.create. Every document and artifact carries an authenticated downloadUrl that returns stored bytes, not a new rendering.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -799,15 +887,25 @@
                 "sha256": {
                   "type": "string",
                   "pattern": "^[a-f0-9]{64}$"
+                },
+                "downloadUrl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Authenticated same-origin download path. Not a public share; access is checked on every download."
                 }
               },
-              "required": ["key", "filename", "mimeType", "sizeBytes", "sha256"],
+              "required": ["key", "filename", "mimeType", "sizeBytes", "sha256", "downloadUrl"],
               "additionalProperties": false
             }
           },
           "primaryArtifactKey": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          },
+          "downloadUrl": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Authenticated same-origin download path. Not a public share; access is checked on every download. Returns the stored primary artifact."
           },
           "sourceRecordCount": {
             "anyOf": [
@@ -859,12 +957,13 @@
           "validationStatus",
           "artifacts",
           "primaryArtifactKey",
+          "downloadUrl",
           "sourceRecordCount",
           "dataSnapshot"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "72e9205be0b89008515635c617e298cb2f296d1e7000e10306d0950d9f3e281e",
+      "schemaHash": "d8354caeda66010dc14a9a8bba8aaf5451ae771c7d63b62a47ad39e0247ae7b6",
       "openWorld": false
     },
     {
@@ -940,15 +1039,11 @@
       "localId": "gql.context",
       "title": "Load Grids GQL context",
       "description": "Load compact schema for a known task. If the source is unknown, request tables first; otherwise request fields with tableId. Options and list-columns need tableId and fieldId. List columns include typed constraints and calculations; follow pagination. Omit unused IDs, never send empty strings. Use includeWriteContext only before record writes. Views can feed gql.view.execute.",
+      "target": "base",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public Base ID whose permission-shaped GQL context should be loaded."
-          },
           "kind": {
             "default": "tables",
             "description": "Catalog section: tables, views, fields, select options, or typed object-list columns.",
@@ -984,7 +1079,6 @@
             "maximum": 100
           }
         },
-        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1567,22 +1661,18 @@
         "required": ["base", "kind", "items"],
         "additionalProperties": false
       },
-      "schemaHash": "0d79278254537553d6701113bebf158c0ea5f5e04536db32566a17ef2d774530",
+      "schemaHash": "07daf2d9de179fd5535a21a3e4e452325a359bffe9abefe468595bef2be75fa3",
       "openWorld": false
     },
     {
       "localId": "gql.execute",
       "title": "Execute Grids GQL",
       "description": "Execute permission-safe GQL after gql.context and normally gql.preview. Select only needed fields; returned grids.record refs can be opened with record.read, and nextCursor continues byte-bounded pages.",
+      "target": "base",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public Base ID in which the GQL source is resolved."
-          },
           "query": {
             "type": "string",
             "minLength": 1,
@@ -1732,7 +1822,7 @@
             "maximum": 1000
           }
         },
-        "required": ["baseId", "query"],
+        "required": ["query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1909,22 +1999,18 @@
           }
         ]
       },
-      "schemaHash": "89a8d31a42a4b77e22dff7117d6c7e0c9495682a1984c4cfce6153757098e936",
+      "schemaHash": "71540bbd0820ef88435427f76c6b0ee98ea3d45f81c763fa448054ca86c82eb4",
       "openWorld": false
     },
     {
       "localId": "gql.preview",
       "title": "Preview Grids GQL",
       "description": "Validate permission-safe GQL after loading IDs with gql.context. Returns a small sample or actionable diagnostics without mutation; pass valid GQL unchanged to gql.execute.",
+      "target": "base",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public Base ID in which the GQL source is resolved."
-          },
           "query": {
             "type": "string",
             "minLength": 1,
@@ -2068,7 +2154,7 @@
             "maximum": 25
           }
         },
-        "required": ["baseId", "query"],
+        "required": ["query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2245,22 +2331,18 @@
           }
         ]
       },
-      "schemaHash": "62ce38c5490e60acc148a7e5ddfbf8df730fff802ec0464cf3e14cd450eb1f46",
+      "schemaHash": "5c788dcab5ff2ab89890c84ddf9d72edabd8322644917ccc95c357d2cb6a80ae",
       "openWorld": false
     },
     {
       "localId": "gql.view.execute",
       "title": "Execute saved Grids View",
-      "description": "Execute the exact saved query for a baseId and viewId returned by gql.context kind views. This is the direct saved-view path; use gql.execute for ad-hoc GQL and nextCursor for further pages.",
+      "description": "Execute the exact saved query in the target base for a viewId returned by gql.context kind views. This is the direct saved-view path; use gql.execute for ad-hoc GQL and nextCursor for further pages.",
+      "target": "base",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public Base ID containing the saved View."
-          },
           "viewId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9]{6}$",
@@ -2285,7 +2367,7 @@
             "maxLength": 16384
           }
         },
-        "required": ["baseId", "viewId"],
+        "required": ["viewId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2462,7 +2544,7 @@
           }
         ]
       },
-      "schemaHash": "b42f66c929db058916dcf4e4e822d4a04dc4307c4da727ba1ee0fdb3209e1480",
+      "schemaHash": "d7fa30a7c1e68d6b3b673df31b9d3b9594c6e9f56a43525156c3db8e2e73c45b",
       "openWorld": false
     },
     {
@@ -2579,7 +2661,7 @@
     {
       "localId": "table.read",
       "title": "Read Grids Table",
-      "description": "Read one grids.table ref returned by gql.context kind tables, including its Base context and effective permission.",
+      "description": "Read one grids.table ref returned by gql.context kind tables, including its base context and effective permission.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2701,7 +2783,7 @@
     {
       "localId": "view.read",
       "title": "Read Grids View",
-      "description": "Read one grids.view ref returned by gql.context kind views; execute it with gql.view.execute using the same baseId.",
+      "description": "Read one grids.view ref returned by gql.context kind views; execute it with gql.view.execute using the same base target.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2798,7 +2880,7 @@
     {
       "localId": "workflow.record-actions",
       "title": "Find record workflow actions",
-      "description": "Discover configured correction/cancellation Draft actions in a Base from base.list. Pages may be empty after permission/revision filtering; follow nextOffset. Use the returned table with GQL to find a finalized original, then workflow.record-action.",
+      "description": "Discover configured correction/cancellation Draft actions in a base from base.list. Pages may be empty after permission/revision filtering; follow nextOffset. Use the returned table with GQL to find a finalized original, then workflow.record-action.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2873,7 +2955,7 @@
     {
       "localId": "workflow.run.read",
       "title": "Read workflow run status",
-      "description": "Read the current status of a grids.workflow-run ref returned by workflow.record-action. Requires Base read access; no raw inputs, results or internal event payloads are returned.",
+      "description": "Read the current status of a grids.workflow-run ref returned by workflow.record-action. Requires base read access; no raw inputs, results or internal event payloads are returned.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2914,6 +2996,7 @@
       "localId": "document.create",
       "title": "Issue an immutable document",
       "description": "Issue one document from document.templates and a Record. This may assign an irreversible invoice/document number. Review every issuance; reuse the capability idempotency key only for retries of the same request. No compliance guarantee or external delivery.",
+      "target": "table",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3067,15 +3150,25 @@
                 "sha256": {
                   "type": "string",
                   "pattern": "^[a-f0-9]{64}$"
+                },
+                "downloadUrl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Authenticated same-origin download path. Not a public share; access is checked on every download."
                 }
               },
-              "required": ["key", "filename", "mimeType", "sizeBytes", "sha256"],
+              "required": ["key", "filename", "mimeType", "sizeBytes", "sha256", "downloadUrl"],
               "additionalProperties": false
             }
           },
           "primaryArtifactKey": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          },
+          "downloadUrl": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Authenticated same-origin download path. Not a public share; access is checked on every download. Returns the stored primary artifact."
           },
           "sourceRecordCount": {
             "anyOf": [
@@ -3127,12 +3220,13 @@
           "validationStatus",
           "artifacts",
           "primaryArtifactKey",
+          "downloadUrl",
           "sourceRecordCount",
           "dataSnapshot"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "d1b7f491aed24d16cafa98f3807cc9ca0b2ec1c5152e5078fd9bc26475485238",
+      "schemaHash": "1f1300dccbc45aa0035aaaf4b58924330d571d485616f2a67886f73ee71e710e",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
@@ -3142,15 +3236,11 @@
       "localId": "record.create",
       "title": "Create Grids Record",
       "description": "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
+      "target": "table",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "tableId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public ID of the writable stored Table that should receive the record."
-          },
           "values": {
             "type": "object",
             "propertyNames": {
@@ -3161,7 +3251,7 @@
             "description": "Public Field IDs mapped to explicitly supplied values."
           }
         },
-        "required": ["tableId", "values"],
+        "required": ["values"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3255,25 +3345,22 @@
         "required": ["id", "tableId", "version", "deletedAt", "createdBy", "updatedBy", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "3808213f82807d21f9a74edfcbed03f49f2a39a8a9f18ef43d2bf6f3b7389ed2",
+      "schemaHash": "fe223bb00de102657cba8e12b411aa576bc90423a31b64acf2ee75f1b7db2402",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
+      "approval": "rememberable",
       "review": true
     },
     {
       "localId": "record.update",
       "title": "Update Grids Record",
       "description": "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
+      "target": "table",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "tableId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public ID of the writable stored Table containing the record."
-          },
           "recordId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9]{6}$",
@@ -3316,7 +3403,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["tableId", "recordId", "values", "ifVersion"],
+        "required": ["recordId", "values", "ifVersion"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3410,7 +3497,7 @@
         "required": ["id", "tableId", "version", "deletedAt", "createdBy", "updatedBy", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "7e62c9415db67c19efe32537f8d6c234397842dbb918b2e252723e1bcd5e02b3",
+      "schemaHash": "bb22a7d88fbe698c1e87805b97f29ca37e0692a1c22cc6540a1e2f227d6b5a74",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
@@ -3421,15 +3508,11 @@
       "localId": "record.upsert-external",
       "title": "Upsert external Grids Record",
       "description": "Load gql.context kind fields with includeWriteContext true. Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
+      "target": "table",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "tableId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public ID of the writable stored Table that owns the Record."
-          },
           "externalRef": {
             "type": "object",
             "properties": {
@@ -3499,7 +3582,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["tableId", "externalRef", "values"],
+        "required": ["externalRef", "values"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3532,7 +3615,7 @@
         "required": ["recordId", "tableId", "version", "created", "changed", "replayed"],
         "additionalProperties": false
       },
-      "schemaHash": "05ae5319997d24a8030110a3068b79f65e8c78f11ee11d94e622b67e54f67d66",
+      "schemaHash": "1a16e73e97517fd9e1b960ca7a2bd4bbb8de5d918c6c4ca4ff408cf1c6546144",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
@@ -3542,16 +3625,12 @@
     {
       "localId": "view.create",
       "title": "Save Grids query as View",
-      "description": "Save a reviewed GQL query as a new personal or shared View. Requires Base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
+      "description": "Save a reviewed GQL query as a new personal or shared View. Requires base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
+      "target": "base",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9]{6}$",
-            "description": "Public Base ID in which the GQL source is resolved."
-          },
           "query": {
             "type": "string",
             "minLength": 1,
@@ -3605,11 +3684,11 @@
           },
           "shared": {
             "default": false,
-            "description": "Share the View with Base readers; otherwise create a personal View. Both require Base admin access.",
+            "description": "Share the View with base readers; otherwise create a personal View. Both require base admin access.",
             "type": "boolean"
           }
         },
-        "required": ["baseId", "query", "name"],
+        "required": ["query", "name"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3689,16 +3768,18 @@
         "required": ["kind", "id", "tableId", "name", "description", "icon"],
         "additionalProperties": false
       },
-      "schemaHash": "8d0bb19c0c0c2231f9a300a7db39ceec5df825c0e646aeb6dfb4c6615ccb2295",
+      "schemaHash": "8508deb985f34d7e46249728e36fa619076bcf0691ce504a536d4aeca4045eff",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
+      "approval": "rememberable",
       "review": true
     },
     {
       "localId": "workflow.record-action",
       "title": "Run a record workflow action",
       "description": "Create one linked correction/cancellation Draft through an action from workflow.record-actions at its exact revision. The original must be finalized and remains unchanged. No issuance or external delivery. Obtain explicit approval; no arbitrary workflow source or extra inputs. Follow the run ref for status.",
+      "target": "base",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3758,12 +3839,44 @@
         "required": ["runId", "workflowId", "revision", "mode", "channel", "created", "status"],
         "additionalProperties": false
       },
-      "schemaHash": "b9e804208b50d2e5d75d6077447566623a52edfe5a31e0b6f484f31aea3d4b37",
+      "schemaHash": "7f7b68023388ec97b4ae1fea17efa885a60023a2963b2d6ba3054a026f3b6301",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
       "review": true
     }
   ],
-  "commands": []
+  "commands": [],
+  "resourceTypes": [
+    {
+      "type": "record",
+      "container": "table"
+    },
+    {
+      "type": "table",
+      "container": "base"
+    },
+    {
+      "type": "view",
+      "container": "table"
+    }
+  ],
+  "resourcePages": [
+    {
+      "type": "base",
+      "path": "/app/grids/:id"
+    },
+    {
+      "type": "record",
+      "path": "/app/grids/:base/table/:table?record=:id"
+    },
+    {
+      "type": "table",
+      "path": "/app/grids/:base/table/:id"
+    },
+    {
+      "type": "view",
+      "path": "/app/grids/:base/table/:table/view/:id"
+    }
+  ]
 }

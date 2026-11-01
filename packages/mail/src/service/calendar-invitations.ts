@@ -376,7 +376,7 @@ export const attachEventInvitation = async (params: {
     updated = uploaded.data;
   }
 
-  const committed = await commitEventInvitation({ deliveryId: prepared.data.deliveryId }, params.request);
+  const committed = await commitEventInvitation({ deliveryId: prepared.data.deliveryId, itemId: params.itemId }, params.request);
   if (!committed.ok) {
     return fail(err.internal(`The invitation was attached, but Spaces could not record it: ${committed.message}`));
   }

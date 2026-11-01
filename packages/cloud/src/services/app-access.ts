@@ -10,6 +10,21 @@ import { buildAccessPrincipalCondition } from "../server/services/access";
 import { logger } from "./logging";
 import { toPgTextArray } from "./postgres";
 
+const confirmedCodeInvocation = (authority: RequestAuthority | null): boolean => {
+  const actor = authority?.actor;
+  return (
+    authority?.credentialKind === "invocation" &&
+    actor?.kind === "service_account" &&
+    actor.serviceAccount.kind === "code" &&
+    actor.serviceAccount.status === "active" &&
+    actor.delegation?.credentialKind === "mandate" &&
+    !!actor.delegation.mandateId &&
+    !!actor.delegation.mandateRevision &&
+    actor.delegation.workloadType === "code.version" &&
+    !!actor.delegation.workloadId
+  );
+};
+
 type AccessApp = Pick<AppMeta, "id" | "access">;
 type GrantState = { app_id: string; configured: boolean; permission: "read" | "admin" | null };
 
@@ -62,7 +77,8 @@ const fixedAllows = (authority: RequestAuthority, rule: FixedAppAccessRule): boo
 
 /** Pure decision shared by single-app and batched reads. Missing grant state means unconfigured, not an implicit grant. */
 export const evaluateAppAccess = (authority: RequestAuthority | null, app: AccessApp, state?: GrantState): boolean => {
-  if (authority?.actor.kind === "service_account" && authority.actor.serviceAccount.kind === "code") return false;
+  if (authority?.actor.kind === "service_account" && authority.actor.serviceAccount.kind === "code")
+    return confirmedCodeInvocation(authority);
   if (app.access === undefined) return true; // Step 1 compatibility; no inferred entry rule.
   if (!authority || !credentialAllows(authority, app.id)) return false;
   const parsed = AppAccessRuleSchema.safeParse(app.access);
@@ -93,6 +109,9 @@ export const usableAppIds = async (
   options: { db?: SQL; signal?: AbortSignal } = {},
 ): Promise<Set<string>> => {
   const db = options.db ?? sql;
+  // Code enters only through a verified, current version mandate. Human app-entry
+  // rules do not grant it authority; the capability's live resource grant remains required.
+  if (confirmedCodeInvocation(authority)) return new Set(apps.map((app) => app.id));
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
   let resourceSignal = options.signal;

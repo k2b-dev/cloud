@@ -5,6 +5,8 @@ import { hasRole, type User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import { buildAccessPrincipalCondition, createAccess } from "../server/services/access";
 
+import { audit } from "./audit";
+
 export class RailAdminError extends Error {
   constructor(
     public status: 400 | 403 | 409,
@@ -43,7 +45,10 @@ export const createRailShortcutsService = (injectedDb?: SQL) => {
       requireAdmin(actor);
       // One generation switch invalidates every user, including concurrent old refills.
       // Keep the configuration revision unchanged so open editors remain valid.
-      await db()`UPDATE auth.rail_state SET cache_version = gen_random_uuid() WHERE singleton`;
+      await db().begin(async (tx) => {
+        await tx`UPDATE auth.rail_state SET cache_version = gen_random_uuid() WHERE singleton`;
+        await audit.record({ action: "rail.cache.invalidate", outcome: "allowed", actor: { userId: actor?.id } }, tx);
+      });
     },
     async list(actor: User | undefined) {
       requireAdmin(actor);
@@ -71,6 +76,15 @@ export const createRailShortcutsService = (injectedDb?: SQL) => {
           }
         }
         await tx`UPDATE auth.rail_state SET revision = revision + 1 WHERE singleton`;
+        await audit.record(
+          {
+            action: "rail.configure",
+            outcome: "allowed",
+            actor: { userId: actor?.id },
+            metadata: { revision: value.revision, entries: value.entries.length },
+          },
+          tx,
+        );
         return list(tx);
       });
     },

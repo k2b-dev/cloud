@@ -23,6 +23,63 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.list": {
+          title: "Code auflisten",
+          description:
+            "Listet eigenen und explizit geteilten Code; Cloud-Admins sehen allen. Für Zugriff als Besitzer-Admin den genauen Besitzer angeben. Dem Cursor auch bei leeren Seiten folgen.",
+          input: {
+            owner: "Nach einem genauen Code-Besitzer filtern.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+            cursor: "Letzte Code-ID aus nextCursor der vorherigen Seite.",
+            limit: "Maximale Anzahl der auf dieser Seite geprüften Code-Kandidaten; höchstens 20.",
+          },
+        },
+        "code.read": {
+          title: "Code lesen",
+          description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung.",
+          input: { codeId: "Stabile Code-ID aus core.code.list oder core.code.read." },
+        },
+        "code.version.read": {
+          title: "Code-Version lesen",
+          description: "Liest unveränderliche Versionen und Quelltext, Bundle oder Manifest in Teilen.",
+          input: {
+            codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
+            versionId: "UUID der unveränderlichen Version dieses Codes.",
+            content: "Zu lesenden Versionstext auswählen; ohne Angabe werden nur Metadaten geliefert.",
+            "content.kind": "Art des Versionstexts: source, bundle oder manifest.",
+            "content.path": "Relativer Quelltextpfad aus den Versionsmetadaten.",
+            offset: "Position in UTF-16-Codeeinheiten: nullbasiert oder nextOffset des vorherigen Abschnitts.",
+            length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
+          },
+        },
+        "code.run.list": {
+          title: "Code-Läufe auflisten",
+          description: "Listet Lauf-Metadaten ohne Eingaben, Ausgaben oder Inhalte von Capability-Aufrufen.",
+          input: {
+            codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
+            cursor: "Undurchsichtiger Laufverlauf-Cursor aus der vorherigen Seite.",
+            limit: "Maximale Anzahl der Lauf-Metadaten auf dieser Seite; höchstens 50.",
+          },
+        },
+        "code.run.read": {
+          title: "Code-Lauf lesen",
+          description: "Liest einen Versuch. Bearbeiter sehen Eingaben, Ausgaben und Aufrufe in Reihenfolge, Leser nur Metadaten.",
+          input: {
+            codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
+            runId: "UUID eines Laufs dieses Codes.",
+            cursor: "Letzte Aufrufnummer aus nextCursor oder 0 für den ersten Aufruf.",
+            content: "Optional vollständige JSON-Inhalte einer großen Eingabe, Ausgabe, eines Aufrufs oder Ergebnisses auswählen.",
+            "content.kind": "Art des JSON-Inhalts: input, output, call oder result.",
+            "content.ordinal": "Aufrufnummer aus der Aufrufseite.",
+            offset: "Position in UTF-16-Codeeinheiten: nullbasiert oder nextOffset des vorherigen Abschnitts.",
+            length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
+          },
+        },
         ...geoCapabilityPresentation,
         "ai.task.run.read": {
           title: "Lauf einer Assistant-Routine lesen",
@@ -159,7 +216,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Erteilt, ändert oder entzieht eine Skill-Berechtigung nach erneuter Benutzerbestätigung. Lesen Sie zuerst ai.skill.access.read. Gewährt keinen Zugriff auf Apps, die der Skill referenziert.",
           input: {
-            skillId: "ID des zu verwaltenden Skills.",
             expectedAccessRevision: "Exakte Revision aus ai.skill.access.read; nach einem Konflikt erneut lesen und prüfen.",
             principal: "Neuer Empfänger aus entities.search; entweder principal oder accessId angeben.",
             accessId: "Vorhandene Berechtigungs-ID aus ai.skill.access.read; entweder accessId oder principal angeben.",
@@ -171,7 +227,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Stellen Sie eine zuordenbare Nachricht für eine andere AI-Konversation in die Warteschlange, nachdem Sie das genaue Ziel und den Text überprüft haben.",
           input: {
-            chatId: "Lesbares ID des eigenen Zielchats.",
             text: "Genaue Nachricht, die an den Zielchat gesendet werden soll.",
           },
         },
@@ -187,16 +242,13 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.skill.delete": {
           title: "Skill löschen",
           description: "Löschen Sie einen verwalteten Skill, alle references und alle Zugriffsgewährungen nach der Überprüfung dauerhaft.",
-          input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
-          },
+          input: {},
         },
         "ai.skill.enabled.set": {
           title: "Skill für dich aktivieren oder deaktivieren",
           description:
             "Aktivieren oder deaktivieren Sie nach der Überprüfung einen lesbaren Skill nur für den aktuellen Benutzer. Der Cloud-Zugriff bleibt unverändert.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             enabled: "Ob dieser Skill für den aktuellen Benutzer aktiv sein soll.",
           },
         },
@@ -204,7 +256,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Skill-Referenz entfernen",
           description: "Entfernen Sie nach der Überprüfung genau eine Markdown reference aus einem beschreibbaren Skill.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             path: "Exakter Markdown reference-Pfad, der von Read Skill zurückgegeben wurde und mit references/<Name>.md übereinstimmt.",
           },
@@ -214,7 +265,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Fügen Sie genau eine Markdown reference zu einem beschreibbaren Skill hinzu oder ersetzen Sie sie. Verwenden Sie Set Assistant Skill references für zwei oder mehr Dateien.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             path: "Exakter Markdown reference-Pfad, der von Read Skill zurückgegeben wurde und mit references/<Name>.md übereinstimmt.",
             content: "Vollständiger Markdown-Inhalt für diesen reference.",
@@ -225,7 +275,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Fügen Sie mehrere Markdown references atomar zu einem beschreibbaren Skill hinzu oder ersetzen Sie sie, nachdem Sie jede vollständige begrenzte Datei überprüft haben.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             references: "Referenzen zum atomaren Validieren und Schreiben in einer Skill-Revision.",
             "references[].path":
@@ -238,7 +287,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Aktualisieren Sie ein oder mehrere Hauptfelder eines beschreibbaren Skill, nachdem Sie den genauen geänderten Inhalt überprüft haben.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             name: "Kleingeschriebener Skill-Name mit Wörtern, die durch einzelne Bindestriche getrennt sind.",
             description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistent ihn laden soll.",
@@ -256,7 +304,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
             "grants[].fixedInput":
               "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
-            chatId: "Lesbare KI-Chat-ID mit sechs Zeichen.",
             prompt: "Genauer Auftrag für diesen Chat, wenn die Routine läuft.",
             schedule: "Wann diese Routine laufen soll.",
             timezone: "Genaue IANA-Zeitzone aus dem aktuellen Laufzeitkontext.",

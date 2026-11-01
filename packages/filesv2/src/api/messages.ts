@@ -120,6 +120,10 @@ const messages: Record<string, [string, string]> = {
   ],
   freeipa_disabled: ["Enable FreeIPA before enabling FreeIPA files.", "Aktiviere FreeIPA, bevor du FreeIPA-Dateien aktivierst."],
   invalid_configuration: ["Check the Filegate URL and storage configuration.", "Prüfe Filegate-URL und Ablagenkonfiguration."],
+  root_target_required: [
+    "Use the storage-root entry ref from bases.list as the target and put the folder in path.",
+    "Verwende den Wurzelverweis aus bases.list als Ziel und gib den Ordner in path an.",
+  ],
   invalid_path: [
     "Use a relative path without empty, parent or private segments.",
     "Verwende einen relativen Pfad ohne leere, übergeordnete oder private Abschnitte.",

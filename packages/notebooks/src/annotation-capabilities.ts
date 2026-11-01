@@ -154,6 +154,7 @@ const AcceptInputSchema = AnnotationAcceptSchema.extend(TargetSchema.shape);
 const RejectInputSchema = AnnotationRejectSchema.extend(TargetSchema.shape);
 export const annotationActions = {
   "annotation.create": {
+    target: "notebook",
     title: "Comment on a passage",
     description:
       "Add a comment or replacement suggestion to a known writable note. Quote up to 2,000 UTF-16 characters and provide occurrence (1-based), surrounding context or an offsetHint. Missing quotes return ANNOTATION_PASSAGE_NOT_FOUND; ambiguous quotes return ANNOTATION_PASSAGE_AMBIGUOUS with details.matches. Requires an Idempotency-Key; retry the same payload with the same key.",
@@ -173,6 +174,7 @@ export const annotationActions = {
     },
   },
   "annotation.reply": {
+    target: "notebook",
     title: "Reply to a comment",
     description:
       "Reply to any writer's thread as the authenticated user, agent or service account, with body and/or replacement suggestion. Requires write access and an Idempotency-Key. Agents: never accept your own suggestion unless the person explicitly asked you to; propose it as a reply suggestion and let the person accept or reject it.",
@@ -195,6 +197,7 @@ export const annotationActions = {
     },
   },
   "annotation.edit": {
+    target: "notebook",
     title: "Edit your recent comment",
     description:
       "Edit the root comment or a reply by replyId. Only its author within ten minutes, with current write access. Omit suggestion to preserve it; null removes it.",
@@ -211,6 +214,7 @@ export const annotationActions = {
     },
   },
   "annotation.delete": {
+    target: "notebook",
     title: "Delete your recent comment",
     description:
       "Soft-delete an author-owned comment or reply within ten minutes. A root with live replies cannot be deleted. Requires write access.",
@@ -226,6 +230,7 @@ export const annotationActions = {
     },
   },
   "annotation.restore": {
+    target: "notebook",
     title: "Restore your recent deleted comment",
     description:
       "Undo a soft deletion before the author's original ten-minute window expires. Use replyId for a reply. Requires write access.",
@@ -241,6 +246,7 @@ export const annotationActions = {
     },
   },
   "annotation.resolve": {
+    target: "notebook",
     title: "Resolve or reopen a comment",
     description: "Any writer can resolve or reopen a comment, including on a locked note. Accepted suggestions must be undone instead.",
     input: ResolveInputSchema,
@@ -255,6 +261,7 @@ export const annotationActions = {
     },
   },
   "annotation.reject": {
+    target: "notebook",
     title: "Reject or reopen a passage suggestion",
     description:
       "Any writer may reject a root or reply suggestion, or clear its rejection with rejected false. Idempotent; changes neither thread state nor note text. Accepted suggestions require undo-accept.",
@@ -271,6 +278,7 @@ export const annotationActions = {
     },
   },
   "annotation.accept": {
+    target: "notebook",
     title: "Accept a passage suggestion",
     description:
       "Choose the root suggestion or replyId; both thread and suggestion must be open. Replace only the anchored passage on an unlocked note. operationId is a caller-stable UUID: retry it after an uncertain result. expectedText defaults to the quoted text. Conflicts include details.currentText and operationId.",
@@ -287,6 +295,7 @@ export const annotationActions = {
     },
   },
   "annotation.undo-accept": {
+    target: "notebook",
     title: "Undo an accepted passage suggestion",
     description:
       "Restore only the accepted range if its inserted text is unchanged. Requires an unlocked note and write access. Retry uncertain outcomes with the same operationId UUID.",
