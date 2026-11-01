@@ -40,6 +40,7 @@ const messages = i18n.define({
         if (code === "time_limit")
           return limitMinutes ? `The run time limit of ${limitMinutes} minutes was reached.` : "The run time limit was reached.";
         if (code === "step_limit") return "The model reached its step limit for one answer.";
+        if (code === "capability_changed") return "The action now needs an explicit target. Please ask again.";
         if (code === "wait_expired") return "The approval or answer did not arrive in time.";
         if (code === "interrupted") return "The work was interrupted several times and could not be resumed.";
         if (code === "not_allowed")
@@ -350,6 +351,7 @@ const messages = i18n.define({
         if (code === "time_limit")
           return limitMinutes ? `Das Laufzeitlimit von ${limitMinutes} Minuten ist erreicht.` : "Das Laufzeitlimit ist erreicht.";
         if (code === "step_limit") return "Das Modell hat sein Schrittlimit für eine Antwort erreicht.";
+        if (code === "capability_changed") return "Die Aktion braucht jetzt ein festes Ziel. Bitte neu anfragen";
         if (code === "wait_expired") return "Die Freigabe oder Antwort kam nicht rechtzeitig.";
         if (code === "interrupted") return "Die Arbeit wurde mehrmals unterbrochen und konnte nicht fortgesetzt werden.";
         if (code === "not_allowed")

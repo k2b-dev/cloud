@@ -1082,6 +1082,12 @@ export const aiChatTasks = {
         if (!mandate.confirmed_at || !mandate.unexpired || !policy || !isChatTaskMandatePolicy(policy)) {
           throw new AiChatTaskAuthorityError("Scheduled task mandate cannot be resumed");
         }
+        // Resuming cannot confirm a legacy policy whose coordinates still need an explicit new grant.
+        try {
+          await validateTaskGrants(policy.grants);
+        } catch (error) {
+          throw new AiChatTaskAuthorityError(error instanceof Error ? error.message : "Scheduled task grants need confirmation");
+        }
       }
       const revision = await mandateRevision({ mandate_id: mandate.id, mandate_revision: mandate.revision }, input.state, input.userId, tx);
       const updated = await tx<TaskRow[]>`
