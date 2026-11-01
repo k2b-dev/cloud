@@ -8,6 +8,23 @@ export type {
   CodeUser,
   CodeWebhookContext,
 } from "./authoring-types";
+export type { CodeCheckHost } from "./checker";
+export { checkCode } from "./checker";
+export type {
+  CodeCheckDiagnostic,
+  CodeCheckLimits,
+  CodeCheckRequest,
+  CodeCheckResult,
+  CodePermission,
+  CodeVersionManifest,
+} from "./checker-contract";
+export {
+  CODE_CHECK_LIMITS,
+  CODE_CHECK_TYPE_INSTANTIATION_DEPTH,
+  CodeCheckLimitsSchema,
+  CodePermissionSchema,
+  CodeVersionManifestSchema,
+} from "./checker-contract";
 export { generateCodeSdk } from "./generator";
 export type {
   CodeSdkApp,
