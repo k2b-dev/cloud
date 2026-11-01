@@ -17,7 +17,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
 import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
 import * as authoringChecks from "./authoring-check";
@@ -277,6 +277,67 @@ databaseSuite()("durable Code activation", () => {
     expect(sets.every((set) => set.dryRun)).toBe(true);
     expect((await findCode(code.id))!.activeVersionId).toBeNull();
     expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
+  });
+  test("the preview says what switching on would do before anyone clicks, and changes nothing", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    const ready = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    expect(ready).toMatchObject({ number: submitted.version.number, running: null, activated: null, allowed: { allowed: true } });
+    expect(ready.rows.map((row) => [row.target.id, row.own, row.check, row.isNew, row.title])).toEqual([
+      [code.owner.kind === "resource" ? code.owner.ref.id : "", true, "manages", false, "Fixture target"],
+      ["A", false, "manages", true, "Fixture target"],
+      ["B", false, "manages", true, "Fixture target"],
+    ]);
+    expect(sets.every((set) => set.dryRun)).toBe(true);
+    expect(live.size).toBe(0);
+    expect((await findCode(code.id))!.activeVersionId).toBeNull();
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${code.id}`).toHaveLength(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id}`).toHaveLength(0);
+  });
+  test("the preview names who manages a refusing target only for a person who may read it", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,display_name,given_name,sn)
+      VALUES(${nextOwnerId}::uuid,'ben','local','user','Ben Schulz','Ben','Schulz') ON CONFLICT (id) DO UPDATE SET display_name='Ben Schulz', given_name='Ben'`;
+    denyDry = "B";
+    const row = (rows: { target: { id: string } }[], id: string) => rows.find((item) => item.target.id === id);
+    const readable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    expect(row(readable.rows, "B")).toMatchObject({
+      check: "blocked",
+      title: "Fixture target",
+      managers: [{ name: "Ben Schulz", firstName: "Ben" }],
+    });
+    targetReadable = false;
+    try {
+      const unreadable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+      expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, managers: [] });
+    } finally {
+      targetReadable = true;
+    }
+  });
+  test("the preview of a running or replaced version asks no target; a credential that cannot switch on is told and asks none", async () => {
+    const code = await newCode(),
+      first = await version(code);
+    const activation = await start(code, first.version.id);
+    await run(activation.id);
+    sets.length = 0;
+    const on = await previewCodeActivation({ codeId: code.id, versionId: first.version.id }, owner, deps);
+    expect(on).toMatchObject({ running: first.version.number, rows: [], activated: { byYou: true, byName: null } });
+    const second = await version(code, ["A", "B"], first.version.id);
+    const third = await version(code, ["A", "B"], second.version.id);
+    const replaced = await previewCodeActivation({ codeId: code.id, versionId: second.version.id }, owner, deps);
+    expect(replaced).toMatchObject({ latest: third.version.number, rows: [] });
+    expect(sets).toHaveLength(0);
+    const apiKey: CodeContext = { ...owner, authority: { ...owner.authority, credentialKind: "api_key", credentialProof: undefined } };
+    const blocked = await previewCodeActivation({ codeId: code.id, versionId: third.version.id }, apiKey, deps);
+    expect(blocked.allowed).toEqual({ allowed: false, reason: "credential" });
+    expect(blocked.rows.every((item) => item.check === "has" || item.check === "unknown")).toBe(true);
+    expect(sets).toHaveLength(0);
+  });
+  test("the preview refuses someone who may not edit the Code", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    await expect(previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, context(nextOwnerId), deps)).rejects.toThrow();
   });
   test("an unregistered target fails visibly before target effects", async () => {
     const code = await newCode(),

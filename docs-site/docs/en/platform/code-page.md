@@ -18,7 +18,7 @@ third-party application get the same page. It never names an application.
 ## What people see
 
 - **Overview:** who the Code acts as, the running version and who switched it
-  on, its automations (schedules and manual starts) with status and last run,
+  on, its automations (schedules and manual starts) with status, next run and last run,
   and its access as operation at target. A newer version that is ready but off
   says which access it newly needs and offers **Switch on**. A version that
   waits for a Cloud administrator says so and cannot be switched on yet.
@@ -49,6 +49,8 @@ cannot load shows an error with a way to try again.
 
 ## Mount it
 
+Mount the page at `<resource's open link>/code`. The chat's version card and its
+**Copy link** build the address this way from the link your reader returns.
 Check that the person may read the resource, then load the page on the server
 and render it in an island:
 

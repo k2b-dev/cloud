@@ -32,7 +32,7 @@ import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
-import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
+import { type AiTurnAction, type AiTurnLayout, type AiTurnPhase, type AiTurnResult, submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -458,6 +458,13 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
               }
             </Show>
           </Match>
+          <Match when={submittedCodeVersion(current())}>
+            {(version) => (
+              <Show keyed when={version().versionId}>
+                {(_versionId: string) => untrack(() => actions.renderCodeVersion?.(version()))}
+              </Show>
+            )}
+          </Match>
           <Match when={isCardToolName(current().name)}>
             <CloudCardBlock args={current().args} />
           </Match>
@@ -659,6 +666,8 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
   const isMapFollowup = (id: string) => {
     const block = results().get(id)?.block;
+    // A submitted version is what the person acts on after reading the answer.
+    if (block?.name === "code_submit") return true;
     return (
       block?.name === "map" &&
       typeof block.result === "object" &&

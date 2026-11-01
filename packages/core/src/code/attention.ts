@@ -100,7 +100,7 @@ const computeReasons = async (code: Code, context: CodeContext): Promise<CodeAtt
   ];
 };
 
-const cachedReasons = (code: Code, context: CodeContext, now = Date.now()) => {
+export const cachedCodeAttentionReasons = (code: Code, context: CodeContext, now = Date.now()) => {
   const hit = cache.get(code.id);
   // One computation per Code at a time: an unfinished one is shared, however old.
   if (hit && (!hit.settled || now - hit.at < CODE_ATTENTION_CACHE_MS)) return hit.reasons;
@@ -128,7 +128,7 @@ export async function readCodeAttention(input: z.infer<typeof codeAttentionContr
   const items = await Promise.all(
     listed.items
       .filter((code) => code.state !== "deleting")
-      .map(async (code) => ({ codeId: code.id, reasons: await cachedReasons(code, context) })),
+      .map(async (code) => ({ codeId: code.id, reasons: await cachedCodeAttentionReasons(code, context) })),
   );
   return { items };
 }
@@ -170,7 +170,7 @@ export async function listCodeAttention(input: z.infer<typeof codeAttentionContr
     editable.map(async ({ code, lastRunAt }) => ({
       code,
       lastRunAt,
-      reasons: [...(code.state === "paused" ? (["paused"] as const) : []), ...(await cachedReasons(code, context))],
+      reasons: [...(code.state === "paused" ? (["paused"] as const) : []), ...(await cachedCodeAttentionReasons(code, context))],
     })),
   );
   return {

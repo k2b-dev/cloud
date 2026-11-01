@@ -64,6 +64,7 @@ describe("Core Code data contracts", () => {
     ).toEqual([
       "code.attention",
       "code.attention.list",
+      "code.automation.list",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",

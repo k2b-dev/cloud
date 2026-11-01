@@ -100,6 +100,7 @@ describe("Code page states", () => {
     expect(page).toContain("eingeschaltet von Ben Schulz am");
     expect(page).toContain("alle 15 Minuten");
     expect(page).toContain("montags 07:00");
+    expect(page).toContain("nächster Lauf");
     expect(page).toContain("spaces.task.create");
     expect(page).toContain("an Space Logistik (sp_2lg8)");
     expect(page).toContain("an info@moebel-beispiel.de selbst");

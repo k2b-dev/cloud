@@ -123,7 +123,7 @@ export function createCodeAuthoringChatTools() {
       "submit",
       codeAuthoringContracts.submit,
       codeAuthoringServices.submit,
-      "Check and submit the complete Code files against baseVersionId from pull/init. Returns an immutable version for human review. Does not activate; the person activates in the UI or CLI. On unknown outcome pull before retrying.",
+      "Check and submit the complete Code files against baseVersionId from pull/init. Returns an immutable version for human review. Does not activate: the chat shows the person a card with the rights and who can switch it on, also possible in the UI or CLI. On unknown outcome pull before retrying.",
     ),
     tool(
       "diff",

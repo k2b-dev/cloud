@@ -122,6 +122,7 @@ export const ActivationSchema = z.object({
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+export const AutomationListSchema = z.object({ items: z.array(z.object({ entrypoint: z.string(), nextRunAt: z.string().nullable() })) });
 
 /** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
 export type CodeAttention = { visible: boolean; attention: boolean };
@@ -211,6 +212,8 @@ export type CodePageAutomation = {
   /** Access was removed, but whether this automation needs it could not be told. */
   accessUnknown: boolean;
   lastRun: CodePageRun | null;
+  /** When the scheduler runs it next; absent when it does not or Core cannot say. */
+  nextRunAt?: string | null;
 };
 export type CodePageVersion = {
   id: string;

@@ -96,6 +96,7 @@
     "./ssr/islands": "./src/ssr/islands/index.ts",
     "./ssr/code-page": "./src/ssr/code-page/CodePage.tsx",
     "./ssr/code-nav-status": "./src/ssr/code-page/CodeNavStatus.tsx",
+    "./ssr/code-schedule": "./src/ssr/code-page/schedule.ts",
     "./ssr/WorkspaceNavigation.island": "./src/ssr/WorkspaceNavigation.island.tsx",
     "./ssr/layout-runtime": "./src/ssr/layout-runtime.ts",
     "./ssr/*": "./src/ssr/*",

@@ -4,11 +4,13 @@ import {
   type CodeQueryInvoke,
   type CodeRunSummary,
   type CodeSummary,
+  automationStatus,
   codeStatus,
   countOwnRunsSince,
   hasPersonalCode,
   loadCodeAttention,
   loadCodeSummaries,
+  nextCodeRun,
   startOfDayIn,
 } from "./code-summary";
 
@@ -79,10 +81,55 @@ test("lists one owner's Code with its newest run; a missing run history keeps th
     capabilityId: "code.list",
     input: { owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, limit: 20 },
   });
-  expect(core.calls.slice(1).map((call) => call.input)).toEqual([
-    { codeId: "c_info01", limit: 1 },
-    { codeId: "c_info02", limit: 1 },
+  expect(core.calls.slice(1).map((call) => [call.capabilityId, call.input])).toEqual([
+    ["code.run.list", { codeId: "c_info01", limit: 1 }],
+    ["code.automation.list", { codeId: "c_info01" }],
+    ["code.run.list", { codeId: "c_info02", limit: 1 }],
+    ["code.automation.list", { codeId: "c_info02" }],
   ]);
+  // Core could not list the automations: the Code stays one row, the list itself is unaffected.
+  expect(page.items[0]!.automations).toBeUndefined();
+});
+
+test("a Code carries its automations, removed access and earliest next run", async () => {
+  const automation = (entrypoint: string, nextRunAt: string | null, missing = false) => ({
+    entrypoint,
+    kind: "schedule",
+    cron: "0 7 * * 1",
+    nextRunAt,
+    lastRun: null,
+    missingTargets: missing ? [{ type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" }] : [],
+  });
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_info01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": () => ({
+      codeId: "c_info01",
+      items: [automation("sort", "2026-11-03T06:00:00.000Z"), automation("deliveries", "2026-11-02T06:00:00.000Z", true)],
+      removedTargets: [{ type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" }],
+    }),
+  });
+  const [item] = (await loadCodeSummaries(core.invoke, { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } })).items;
+  expect(item!.automations!.map((entry) => entry.entrypoint)).toEqual(["sort", "deliveries"]);
+  expect(nextCodeRun(item!)).toBe("2026-11-02T06:00:00.000Z");
+  expect(codeStatus(item!)).toEqual({ key: "access_missing", tone: "warning" });
+  // Only the automation that needs the access lacks it; the other keeps running.
+  expect(automationStatus(item!, item!.automations![0]!)).toEqual({ key: "on", tone: "success" });
+  expect(automationStatus(item!, item!.automations![1]!)).toEqual({ key: "access_missing", tone: "warning" });
+  // Only the whole Code pauses.
+  expect(automationStatus({ ...item!, state: "paused" }, item!.automations![1]!)).toEqual({ key: "paused", tone: "warning" });
+});
+
+test("a transport that throws for the automations does not fail the list", async () => {
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_info01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": () => {
+      throw new Error("Core is unavailable");
+    },
+  });
+  const { items } = await loadCodeSummaries(core.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" });
+  expect(items.map((item) => item.automations)).toEqual([undefined]);
 });
 
 test("a failed list is an error, not an empty list", async () => {

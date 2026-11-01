@@ -24,6 +24,7 @@ import {
   formatWorkedDuration,
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
+import type { AiSubmittedCodeVersion } from "./turn-layout";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
@@ -41,6 +42,11 @@ export type AiChatActions = {
    * the host reserves the frame early and keeps its state when the turn ends.
    */
   renderCodePresentation?: (result: () => unknown) => JSX.Element;
+  /**
+   * Host-owned view of a version `code_submit` saved, placed after the turn's text because it is what the person acts
+   * on next. Without it, the call is a step like any other.
+   */
+  renderCodeVersion?: (version: AiSubmittedCodeVersion) => JSX.Element;
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;

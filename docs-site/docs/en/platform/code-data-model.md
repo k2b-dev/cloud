@@ -94,6 +94,7 @@ check current permissions in Core's Code service.
 | `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
+| `core.code.automation.list` | `codeId` | The running version's automations with `kind`, `cron`, `nextRunAt`, newest `lastRun` and `missingTargets`, plus every `removedTargets` entry |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
 | `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
 | `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
@@ -157,15 +158,21 @@ and chats, settings, files, Projects, memories, Skills and saved "always
 allow" answers are untouched.
 
 - **My apps & automations** (`/app/assistant?code=1`) lists the person's own
-  Code with its state, newest run and today's run count. The sidebar shows
+  Code with its state, schedule, next run, newest run and today's run count. A
+  Code with several automations names their number and the earliest next run. The sidebar shows
   the entry only when `core.code.list` with the person as owner returns an
   item; when Core cannot answer, the entry stays so the list can show its
   error with a retry. Each Code opens on the shared Code page at
   `/app/assistant/code/<codeId>`.
 - **Code of …** sits at the top of the Gustav panel when the page's place
-  owns Code the person may read. It lists that Code with its newest run and
-  status, folds to one line while a chat is open, and shows an error with a
-  retry when Core cannot list it. A place whose type is a declared Code owner
+  owns Code the person may read. It has one row per automation with its status,
+  including **Access missing** and which target removed it. Only the automation
+  that needs the access shows this; the others keep running, and a whole paused
+  Code shows **Paused** on each row. Removed access that cannot be tied to one
+  automation appears once below the rows. If Core cannot list the automations,
+  the Code is one row. The block folds to one line while a chat is open, naming
+  the number of automations and any status that needs attention, and shows an
+  error with a retry when Core cannot list it. A place whose type is a declared Code owner
   (`code.owners`) but has no Code says so and offers to start with Gustav; any
   other place shows nothing.
 - **Waiting for you** lists, below the questions from chats, Code of a place

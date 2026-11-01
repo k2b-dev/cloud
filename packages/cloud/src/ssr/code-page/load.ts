@@ -12,6 +12,7 @@ import { getDisplayRuntimeContext } from "../runtime";
 import { AttentionSchema } from "./attention-schema";
 import { loadCodeRunCalls, loadCodeRunCallsForDetail } from "./calls";
 import {
+  AutomationListSchema,
   CodeListSchema,
   type CodePageAccessRow,
   type CodePageAutomation,
@@ -286,12 +287,14 @@ const loadReady = async (
 ): Promise<CodePageReady> => {
   const catalog = catalogCache(getLocale(c));
   const code = listed;
-  const [versionsResult, runsResult, accessResult, attentionResult] = await Promise.all([
+  const [versionsResult, runsResult, accessResult, attentionResult, automationResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), wrapped(VersionListSchema)),
     invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), wrapped(RunListSchema)),
     coreRoute(caller, "/api/code/access", { codeId: code.id }, TargetAccessSchema).catch(() => null),
     // The same answer the owner's navigation gets, so its dot and this page agree.
     invoke(coreQuery("code.attention", { owner: codeOwner }), wrapped(AttentionSchema)).catch(() => null),
+    // Only the next run comes from here; without it the row simply does not name one.
+    invoke(coreQuery("code.automation.list", { codeId: code.id }), wrapped(AutomationListSchema)).catch(() => null),
   ]);
   const receipts = versionsResult.ok ? versionsResult.data.data.data.items : [];
   const latest = receipts[0];
@@ -432,6 +435,9 @@ const loadReady = async (
         ]
       : null;
   // A skipped tick or a cancelled start is not a run's result.
+  const nextRuns = new Map(
+    automationResult?.ok ? automationResult.data.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : [],
+  );
   const lastRunOf = (entrypoint: string) =>
     runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
@@ -441,6 +447,7 @@ const loadReady = async (
       cron: entry.cron,
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
+      nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),
       missingTargets: [],
       missingProven: false,
       accessUnknown: false,

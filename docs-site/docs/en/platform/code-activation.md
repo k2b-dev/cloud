@@ -40,10 +40,23 @@ capability invocation.
 | Route | JSON body | Result |
 | --- | --- | --- |
 | `POST /api/code/activate` | `{ codeId, versionId, activationId }` | Durable activation status |
+| `POST /api/code/activation/preview` | `{ codeId, versionId }` | What switching on would do for this person, before anything starts |
 | `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
 | `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after scheduling cancellation |
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
 | `POST /api/code/access/target` | `{ appId, grants: [{ grantId, principal }] }` | Details for grants at targets the person manages |
+
+The preview requires the same rights as activating, but also answers phones and
+non-interactive credentials, with `allowed: { allowed: false, reason }`. For the
+newest waiting version it returns one row per target with `check`: `manages`,
+`blocked`, `has` (the running version's grant stays) or `unknown` (the target did
+not answer or was not asked). Each check is that target's own dry run: nothing is
+granted, no activation exists and no grant identity is kept. A row carries
+`title` and `managers` only when the target's reader allows the person to see
+them; otherwise it shows only the ID. `readiness` says whether the version is
+`ready`, `approval_pending` or `refused` with Core's reason. A running version
+returns `activated`, a replaced one only its numbers; neither asks any target.
+At most 50 targets are checked per request, 8 at a time.
 
 Each access observation names its grant, target, operations and state
 (`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and

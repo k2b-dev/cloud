@@ -2,7 +2,7 @@
 
 export { CodeCheckResultSchema, CodeTestResultSchema } from "@k2b/cloud/code";
 export * from "./access";
-export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+export { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 export * from "./activation-contracts";
 export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
 export {
@@ -13,6 +13,7 @@ export {
   readCodeAttention,
 } from "./attention";
 export { codeAuthoringServices } from "./authoring";
+export { type CodeAutomation, CodeAutomationSchema, codeAutomationContracts, listCodeAutomations } from "./automations";
 export { createCodeCheckRequest } from "./authoring-check";
 export * from "./authoring-contracts";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
