@@ -24,7 +24,14 @@ export type MailComposerEditorHarnessOptions = {
   format?: "plain" | "markdown";
   editorActive?: boolean;
 };
-export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null; seed?: boolean };
+export type MailComposerHarnessOptions = {
+  locale: "en" | "de";
+  intent: DraftIntent;
+  signatureTemplateId: string | null;
+  seed?: boolean;
+  serverTransport?: boolean;
+  serverDraft?: MailDraft;
+};
 
 declare global {
   interface Window {
@@ -204,7 +211,7 @@ window.mountComposer = (options) => {
     view.dispatch({ selection: { anchor: position } });
     view.focus();
   };
-  const draft = { ...initialDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
+  const draft = { ...initialDraft, ...options.serverDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
   Object.defineProperty(window, "WebSocket", { configurable: true, value: OfflineWebSocket });
   let expired = false;
   window.expireComposerSession = () => {
@@ -215,6 +222,7 @@ window.mountComposer = (options) => {
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(new URL(String(input), location.href), init);
       const path = new URL(request.url).pathname;
+      if (options.serverTransport) return originalFetch.call(window, request);
       if (expired) return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
       if (path.endsWith("/draft-seeds/materialize")) {
         const json = materializeDraftSeedInputSchema.parse(await request.json());
@@ -285,7 +293,11 @@ window.mountComposer = (options) => {
           }}
           initialDraft={options.seed ? undefined : draft}
           initialSeed={restoredSeed}
-          initialPanes={options.seed ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } } : layout}
+          initialPanes={
+            options.seed || options.serverTransport
+              ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }
+              : layout
+          }
           returnHref="/app/mail/Box001"
           dateConfig={{ locale: options.locale, timeZone: "UTC" }}
         />
