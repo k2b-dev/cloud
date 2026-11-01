@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.39.0...npm-ui-v0.40.0) (2026-11-01)
+
+
+### Features
+
+* **notebooks:** drop the head above notes; navigation and Details move to the note toolbar ([#2261](https://github.com/k2b-dev/cloud/issues/2261)) ([328ffb8](https://github.com/k2b-dev/cloud/commit/328ffb88daef3bc53ab8cd1595ab37aad53d68c3))
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+
 ## [0.39.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.1...npm-ui-v0.39.0) (2026-10-31)
 
 
