@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { appColorStyle } from "@k2b/cloud/ssr/app-color";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 
 // Verify the migration warning and recovery action in the real settings layout, including phone overflow.
 const buildHarness = async (): Promise<string> => {
@@ -94,8 +94,7 @@ for (const [width, context] of [
 ] as const) {
   test(`shows target confirmation and opens recovery at ${width}px`, async () => {
     const page = await (await browser.newContext(context)).newPage();
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     try {
       await page.goto(server.url.href);
       await page.getByText("Needs attention", { exact: true }).waitFor();

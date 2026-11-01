@@ -271,4 +271,4 @@ Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Wor
 
 ## Spaces-Ziel nach einem Upgrade bestätigen {icon="shield-check"}
 
-Zeigt eine eingehende Automatisierung **Prüfung erforderlich**, ist sie pausiert. Ihre gespeicherten Schritte bleiben erhalten. Wähle **Automatisierung bearbeiten**, wähle das Spaces-Element oder Terminziel erneut aus und speichere. Schalte sie danach ein. Bestätigen muss die Person, die den Spaces-Zugriff ursprünglich eingerichtet hat. Der konfigurierte Space bleibt das einzige Ziel des Schritts; das Upgrade erweitert keine Rechte.
+Zeigt eine eingehende Automatisierung **Prüfung erforderlich**, ist sie pausiert. Ihre gespeicherten Schritte bleiben erhalten. Wähle **Automatisierung bearbeiten**, wähle das Spaces-Element oder Terminziel erneut aus und speichere. Schalte sie danach ein. Bestätigen muss die Person, die den Spaces-Zugriff ursprünglich eingerichtet hat. Der konfigurierte Space bleibt das einzige Ziel des Schritts; das Upgrade erweitert den Zugriff nicht.
