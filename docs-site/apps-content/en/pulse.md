@@ -359,7 +359,7 @@ for retained hourly evidence, the diagnostic names the affected hour.
 
 `GET /api/pulse/bases/:baseId/sql/limits` returns the profile, memory and time
 budget, result limits, hourly usage and reset time, and queue limits.
-Three queries can run per Cloud, with one per base. Up to 20 runs can wait
+Three queries can run per Cloud, with one per base; dashboard panels of a signed-in viewer can use two per base. Up to 20 runs can wait
 for five seconds. Input errors and admission refusals do not consume hourly
 quota. Quota is charged only when a query gets a slot and resets at the next
 clock hour. Overview executions and alert checks do not consume the questions quota.
@@ -432,8 +432,10 @@ charts also choose `x` and optionally `series`. Aggregate to at most eight
 series and 480 points per series, with 36 panels and 3,840 marks per panel.
 Excessive or truncated results show an error instead of silently losing rows.
 
-Panels retain the base's SQL profile and concurrency limits, separately from
-the questions quota. Refreshes run at most once per revision, range, and
+Panels retain the base's SQL profile and the Cloud's limit of three queries,
+separately from the questions quota. For a signed-in viewer, a dashboard reads
+two panels at a time, so each panel appears when it is ready and a slow panel
+does not hold the others. A published link reads one panel at a time. Refreshes run at most once per revision, range, and
 60-second interval. On failure, the panel keeps its last successful result
 and timestamp when available. Retries back off from one to five minutes.
 

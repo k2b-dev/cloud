@@ -3,7 +3,7 @@ import type { RequestActor } from "@k2b/cloud/contracts";
 import { type AccessSubject, ok } from "@k2b/cloud/server";
 import { z } from "zod";
 import { ALERT_CHECKS_PER_HOUR, ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
-import { DashboardDefinitionSchema, type DashboardWindow, dashboardParameters } from "../dashboard-contracts";
+import { DASHBOARD_PANEL_READS, DashboardDefinitionSchema, type DashboardWindow, dashboardParameters } from "../dashboard-contracts";
 import { prepareSql, SqlInputError } from "../sql-params";
 import type { ReadProfileName } from "../store/admin-contracts";
 import { READ_LIMITS, READ_PROFILES } from "../store/setup-sql";
@@ -91,6 +91,7 @@ export const runBaseSql = async (input: RunBaseSqlInput): Promise<SqlServiceResu
       ...input,
       ownerKey: actorKey(input.actor),
       countQuota: input.via === "api" || input.via === "capability",
+      baseSlots: input.via === "dashboard" ? DASHBOARD_PANEL_READS : undefined,
     });
   } catch (error) {
     return sqlFailure(error);
@@ -172,6 +173,7 @@ const executeBaseSql = async (
     countQuota: boolean;
     quotaKind?: "alerts";
     freeOnly?: boolean;
+    baseSlots?: number;
     executionDeadline?: number;
   },
 ): Promise<SqlServiceResult<SqlResult>> => {
@@ -196,6 +198,7 @@ const executeBaseSql = async (
         countQuota: input.countQuota,
         quotaKind: input.quotaKind,
         freeOnly: input.freeOnly,
+        baseSlots: input.baseSlots,
         signal,
       });
       if (await sqlAdmission.cancelled(base.id, runId)) throw new SqlError("CANCELLED", "Query cancelled");
