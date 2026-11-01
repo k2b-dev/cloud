@@ -164,6 +164,14 @@ beforeAll(async () => {
       const url = new URL(request.url);
       if (url.pathname === "/editor.js") return new Response(bundle, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
+      if (url.pathname === "/api/notebooks/book01/notes/note01/document")
+        return Response.json({
+          generation: "0",
+          mode: "current",
+          historyIncomplete: false,
+          locked: false,
+          durable: { state: servedSnapshot, cursor: null },
+        });
       if (url.pathname.endsWith("/block-preview")) {
         // Book's rendering of the posted draft, as the API returns it; the saved note in read-only mode.
         const body: unknown = await request.json();
@@ -199,7 +207,8 @@ beforeAll(async () => {
         initialPanelOpen: false,
         initialRichMode: mode,
         readOnly,
-        canWrite: false,
+        canWrite: !readOnly,
+        initialAnnotations: { text: note, contentHash: "fixture-hash", cursor: null, restoreRevision: "0", items: [], nextCursor: null },
         initialHref: "/app/notebooks/book01/notes/note01",
         initialDetail: {
           noteAuthors: { createdBy: null, lastEditedBy: null },
@@ -350,6 +359,7 @@ for (const fixture of [
       release?.();
       await page.waitForSelector(".cm-content");
       await preview.waitFor({ state: "detached" });
+      if (!fixture.readOnly) await page.locator('.cm-content[contenteditable="true"]').waitFor();
       await settle(page);
       const after = await measure(page, ".cm-line", count);
       expect(errors).toEqual([]);
@@ -478,6 +488,7 @@ for (const fixture of [
       release?.();
       await page.waitForSelector(".cm-content");
       await preview.waitFor({ state: "detached" });
+      if (!fixture.readOnly) await page.locator('.cm-content[contenteditable="true"]').waitFor();
       await settle(page);
       const after = await topLine(page, ".cm-line");
       expect(errors).toEqual([]);
@@ -546,6 +557,7 @@ for (const [note, width] of [
       releaseEditor?.();
       await page.waitForSelector(".cm-content .cm-query-block-widget .notebook-book-chart");
       await preview.waitFor({ state: "detached" });
+      await page.locator('.cm-content[contenteditable="true"]').waitFor();
       await settle(page);
       same(await box(".cm-content .cm-query-block-widget"), reserved, "Loading widget");
       same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Loading frame");
@@ -577,6 +589,7 @@ for (const readOnly of [false, true])
       await copy.waitFor({ state: "attached" });
       expect(await copy.boundingBox()).toBeNull();
       if (!readOnly) {
+        await page.locator('.cm-content[contenteditable="true"]').waitFor();
         await page.locator(".cm-content").focus();
         await page.keyboard.press("Control+End");
         await page.keyboard.type(" Zuletzt getippt.");

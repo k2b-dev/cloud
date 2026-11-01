@@ -29,9 +29,11 @@ import { type AiSkillContent, appSkillStatus, contentHash } from "./skill-conten
 import {
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
+  aiSkillLoadTools,
   isAiSkillManualOnly,
   mountAiSkillInstructionLinks,
   serializeAiSkillMarkdown,
+  splitAiSkillMarkdown,
   validateAiSkillDescription,
   validateAiSkillExtraFrontmatter,
   validateAiSkillInstructions,
@@ -111,6 +113,8 @@ export type AiLoadedSkillSnapshot = {
   revision: number;
   instructions: string;
   files: { path: string; content: string }[];
+  /** Tools the pinned SKILL.md lists in `load-tools`; load_skill makes them callable with it. */
+  loadTools: string[];
   loadedAt: string;
 };
 
@@ -1206,16 +1210,18 @@ export const aiSkills = {
         FROM ai.turn_skill_snapshots
         WHERE turn_id = ${turnId}::uuid AND skill_id = ${skill.id}::uuid
       `;
-      return snapshot
-        ? {
-            name: snapshot.skill_name,
-            description: snapshot.description,
-            revision: Number(snapshot.revision),
-            instructions: mountAiSkillInstructionLinks(snapshot.skill_name, snapshot.instructions),
-            files: snapshotFiles(snapshot.files).map((file) => ({ ...file, path: mountAiSkillFilePath(file.path) })),
-            loadedAt: iso(snapshot.loaded_at),
-          }
-        : null;
+      if (!snapshot) return null;
+      const pinnedFiles = snapshotFiles(snapshot.files);
+      const skillFile = pinnedFiles.find((file) => file.path === `${snapshot.skill_name}/SKILL.md`);
+      return {
+        name: snapshot.skill_name,
+        description: snapshot.description,
+        revision: Number(snapshot.revision),
+        instructions: mountAiSkillInstructionLinks(snapshot.skill_name, snapshot.instructions),
+        files: pinnedFiles.map((file) => ({ ...file, path: mountAiSkillFilePath(file.path) })),
+        loadTools: skillFile ? aiSkillLoadTools(splitAiSkillMarkdown(skillFile.content).fields) : [],
+        loadedAt: iso(snapshot.loaded_at),
+      };
     });
   },
 

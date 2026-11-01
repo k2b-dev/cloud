@@ -63,37 +63,40 @@ test("domain commands forward exact routes, redirects and structured responses",
     requests: [{ path: "/api/admin/apps/site/domains", method: "GET", body: null }],
     output: [{ domains: [domain] }],
   });
-  expect((await invoke(["add", "site", "alias.example.test"], { "redirect-to": "site.example.test" })).requests[0]).toEqual({
+  expect((await invoke(["add", "site", "alias.example.test"], { "redirect-to": "site.example.test", yes: true })).requests[0]).toEqual({
     path: "/api/admin/apps/site/domains",
     method: "POST",
     body: { host: "alias.example.test", redirectTo: "site.example.test" },
   });
-  expect((await invoke(["set", "site", "alias.example.test"], { "redirect-to": "site.example.test" })).requests[0]).toEqual({
+  expect((await invoke(["set", "site", "alias.example.test"], { "redirect-to": "site.example.test", yes: true })).requests[0]).toEqual({
     path: "/api/admin/apps/site/domains/alias.example.test",
     method: "PATCH",
     body: { redirectTo: "site.example.test" },
   });
-  expect((await invoke(["set", "site", "alias.example.test"], { "no-redirect": true })).requests[0]?.body).toEqual({ redirectTo: null });
+  expect((await invoke(["set", "site", "alias.example.test"], { "no-redirect": true, yes: true })).requests[0]?.body).toEqual({
+    redirectTo: null,
+  });
   expect((await invoke(["rm", "site", "site.example.test"], { yes: true }, { deleted: true })).requests[0]?.method).toBe("DELETE");
   for (const mode of ["json", "jsonl"] as const)
-    expect((await invoke(["check", "site", "site.example.test"], {}, { status: domain.status }, mode)).output).toEqual([
+    expect((await invoke(["check", "site", "site.example.test"], { yes: true }, { status: domain.status }, mode)).output).toEqual([
       { status: domain.status },
     ]);
 });
 test("table output includes redirect, active state and all three check stages", async () => {
   const result = await invoke(["ls", "site"], {}, { domains: [domain] }, "text");
   expect(result.output).toEqual([[{ host: domain.host, redirect: "-", active: true, dns: "ok", certificate: "failed", reachable: "-" }]]);
-  expect((await invoke(["check", "site", domain.host], {}, { status: domain.status }, "text")).output[0]).toEqual([
+  expect((await invoke(["check", "site", domain.host], { yes: true }, { status: domain.status }, "text")).output[0]).toEqual([
     { step: "dns", ok: true, detail: "203.0.113.8" },
     { step: "certificate", ok: false, detail: "Expired" },
     { step: "reachable", ok: "-", detail: "-" },
   ]);
 });
 test("removal requires confirmation and redirect set requires exactly one choice", async () => {
-  await expect(invoke(["rm", "site", domain.host])).rejects.toThrow("--yes");
+  for (const action of ["rm", "add", "check"]) await expect(invoke([action, "site", domain.host])).rejects.toThrow("--yes");
+  await expect(invoke(["set", "site", domain.host], { "no-redirect": true })).rejects.toThrow("--yes");
   await expect(invoke(["set", "site", domain.host])).rejects.toThrow("exactly one");
   await expect(invoke(["set", "site", domain.host], { "redirect-to": domain.host, "no-redirect": true })).rejects.toThrow("exactly one");
-  const check = await invoke(["check", "site", domain.host], {}, { status: null }, "text", "de");
+  const check = await invoke(["check", "site", domain.host], { yes: true }, { status: null }, "text", "de");
   expect(check.output[0]).toContain("Prüfung läuft");
   expect(admin.help?.("de")).toContain("App-Domains");
 });

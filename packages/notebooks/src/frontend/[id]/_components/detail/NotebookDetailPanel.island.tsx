@@ -60,6 +60,7 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
+  NOTEBOOK_DETAIL_ID,
   PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
   type PresenceLocationsEventDetail,
@@ -161,7 +162,7 @@ const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
  * Event flow (all through window CustomEvents, see `events.ts`):
  *  - editor toolbar / readonly footer → DETAIL_PANEL_TOGGLE_EVENT → toggles open
  *  - editor → TOC_UPDATE_EVENT / ACTIVE_HEADING_EVENT → outline and its current section
- *  - editor → PRESENCE_EVENT / PRESENCE_LOCATIONS_EVENT → people here and where they are
+ *  - workspace socket → PRESENCE_EVENT → people here; editor → PRESENCE_LOCATIONS_EVENT → where they are
  *  - editor → SYNC_STATE_EVENT → offline state; panel → RECONNECT_EVENT retries
  *  - panel → TOC_SCROLL_EVENT / JUMP_TO_PARTICIPANT_EVENT → editor scrolls
  *  - panel → TOGGLE_RICH_MODE_EVENT → editor flips its `richMode` signal
@@ -501,6 +502,11 @@ export default function NotebookDetailPanel(props: Props) {
     const onSoftNavigated = (event: Event) => {
       const detail = (event as CustomEvent<SoftNavigatedDetail>).detail;
       if (!detail?.noteId) return;
+      // The people of the previous note are not here; the new note's connection reports its own.
+      if (detail.noteId !== noteId()) {
+        setParticipants([]);
+        setLocations({});
+      }
       setNoteId(detail.noteId);
       setNoteTitle(detail.noteTitle);
       setContentMd(detail.contentMd);
@@ -766,7 +772,9 @@ export default function NotebookDetailPanel(props: Props) {
 
   return (
     <AppWorkspace.Detail
-      id="notebook-detail"
+      id={NOTEBOOK_DETAIL_ID}
+      // In Write the editor toolbar holds the Details button; Read keeps the workspace's own.
+      toggle={props.mode === "edit" ? false : undefined}
       open={open()}
       onOpen={() => {
         setOpen(true);

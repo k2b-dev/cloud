@@ -1,6 +1,10 @@
 ---
 name: cloud-weather
 description: Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.
+load-tools:
+  - weather.location.search
+  - weather.forecast.current
+  - weather.forecast.get
 ---
 
 # Work with Cloud Weather
