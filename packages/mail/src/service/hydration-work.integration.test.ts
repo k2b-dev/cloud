@@ -23,7 +23,7 @@ suite("mail durable hydration wake", () => {
   test("requests merge while running, completion allocates one successor, and stale redelivery cannot retire it", async () => {
     const mailboxId = await mailbox();
     const first = await requestMailboxHydration(sql, mailboxId);
-    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: false });
+    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: false, foregroundBodies: false });
     for (let index = 0; index < 16; index += 1) {
       expect(await requestMailboxHydration(sql, mailboxId)).toEqual(first);
     }
@@ -35,7 +35,7 @@ suite("mail durable hydration wake", () => {
     expect(successor?.job_id).not.toBe(first.job_id);
     expect(await beginMailboxHydration(first, "fixture")).toBeNull();
     await finishMailboxHydration(first, false, "fixture");
-    expect(await beginMailboxHydration(successor!, "fixture")).toEqual({ retryBodies: false });
+    expect(await beginMailboxHydration(successor!, "fixture")).toEqual({ retryBodies: false, foregroundBodies: false });
     await finishMailboxHydration(successor!, false, "fixture");
     const [idle] = await sql<{ job_id: string | null; requested_again_at: Date | null }[]>`
       SELECT job_id, requested_again_at FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid
@@ -50,18 +50,37 @@ suite("mail durable hydration wake", () => {
   test("trailing fresh work does not retry a failed body; a due request keeps its retry intent across contention", async () => {
     const mailboxId = await mailbox();
     const first = await requestMailboxHydration(sql, mailboxId);
-    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: false });
-    await requestMailboxHydration(sql, mailboxId, true);
+    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: false, foregroundBodies: false });
+    await requestMailboxHydration(sql, mailboxId, { retry: true });
     // The generation resubmits after a busy provider lease, consuming the new retry request.
-    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: true });
-    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: true });
+    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: true, foregroundBodies: false });
+    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: true, foregroundBodies: false });
     await requestMailboxHydration(sql, mailboxId);
     await finishMailboxHydration(first, false, "fixture");
     const [next] = await sql<{ mailbox_id: string; job_id: string }[]>`
       SELECT mailbox_id, job_id FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid
     `;
-    expect(await beginMailboxHydration(next!, "fixture")).toEqual({ retryBodies: false });
+    expect(await beginMailboxHydration(next!, "fixture")).toEqual({ retryBodies: false, foregroundBodies: false });
     await finishMailboxHydration(next!, false, "fixture");
+  });
+
+  test("an arrival promotes one batch, keeps that intent across contention, and a new arrival can promote the successor", async () => {
+    const mailboxId = await mailbox();
+    const first = await requestMailboxHydration(sql, mailboxId, { foreground: true });
+    expect(await beginMailboxHydration(first, "fixture")).toEqual({ retryBodies: false, foregroundBodies: true });
+    expect(await beginMailboxHydration(first, "busy-retry")).toEqual({ retryBodies: false, foregroundBodies: true });
+    await finishMailboxHydration(first, true, "busy-retry");
+    const [background] = await sql<{ mailbox_id: string; job_id: string }[]>`
+      SELECT mailbox_id, job_id FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid
+    `;
+    expect(await beginMailboxHydration(background!, "next")).toEqual({ retryBodies: false, foregroundBodies: false });
+    await requestMailboxHydration(sql, mailboxId, { foreground: true });
+    await finishMailboxHydration(background!, true, "next");
+    const [arrival] = await sql<{ mailbox_id: string; job_id: string }[]>`
+      SELECT mailbox_id, job_id FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid
+    `;
+    expect(await beginMailboxHydration(arrival!, "arrival")).toEqual({ retryBodies: false, foregroundBodies: true });
+    await finishMailboxHydration(arrival!, false, "arrival");
   });
 
   test("an expired delivery cannot retire the generation now owned by its redelivery", async () => {

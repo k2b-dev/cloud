@@ -7,15 +7,20 @@ const log = logger("mail:hydration");
 /** One current generation and one merged trailing request per mailbox, including across restarts. */
 export type MailboxHydrationWork = { mailbox_id: string; job_id: string };
 
-export const requestMailboxHydration = async (db: typeof sql, mailboxId: string, retry = false): Promise<MailboxHydrationWork> => {
+export const requestMailboxHydration = async (
+  db: typeof sql,
+  mailboxId: string,
+  options: { retry?: boolean; foreground?: boolean } = {},
+): Promise<MailboxHydrationWork> => {
   const [work] = await db<MailboxHydrationWork[]>`
-    INSERT INTO mail.hydration_work (mailbox_id, job_id, queued_at, retry_requested)
-    VALUES (${mailboxId}::uuid, ${randomUUID()}::uuid, clock_timestamp(), ${retry})
+    INSERT INTO mail.hydration_work (mailbox_id, job_id, queued_at, retry_requested, foreground_requested)
+    VALUES (${mailboxId}::uuid, ${randomUUID()}::uuid, clock_timestamp(), ${options.retry === true}, ${options.foreground === true})
     ON CONFLICT (mailbox_id) DO UPDATE SET
       job_id = COALESCE(hydration_work.job_id, EXCLUDED.job_id),
       queued_at = COALESCE(hydration_work.queued_at, EXCLUDED.queued_at),
       published_at = NULL,
       retry_requested = hydration_work.retry_requested OR EXCLUDED.retry_requested,
+      foreground_requested = hydration_work.foreground_requested OR EXCLUDED.foreground_requested,
       requested_again_at = CASE WHEN hydration_work.job_id IS NULL THEN NULL
         ELSE COALESCE(hydration_work.requested_again_at, EXCLUDED.queued_at) END
     RETURNING mailbox_id, job_id
@@ -25,18 +30,23 @@ export const requestMailboxHydration = async (db: typeof sql, mailboxId: string,
 };
 
 /** Clear covered requests before reading bodies, never after the final pending-body query. */
-export const beginMailboxHydration = async (work: MailboxHydrationWork, deliveryId: string): Promise<{ retryBodies: boolean } | null> => {
-  const [row] = await sql<{ retry_bodies: boolean }[]>`
+export const beginMailboxHydration = async (
+  work: MailboxHydrationWork,
+  deliveryId: string,
+): Promise<{ retryBodies: boolean; foregroundBodies: boolean } | null> => {
+  const [row] = await sql<{ retry_bodies: boolean; foreground_bodies: boolean }[]>`
     UPDATE mail.hydration_work SET
       delivery_id = ${deliveryId},
       started_at = COALESCE(started_at, clock_timestamp()),
       retry_bodies = retry_bodies OR retry_requested,
+      foreground_bodies = foreground_bodies OR foreground_requested,
       retry_requested = false,
+      foreground_requested = false,
       requested_again_at = NULL
     WHERE mailbox_id = ${work.mailbox_id}::uuid AND job_id = ${work.job_id}::uuid
-    RETURNING retry_bodies
+    RETURNING retry_bodies, foreground_bodies
   `;
-  return row ? { retryBodies: row.retry_bodies } : null;
+  return row ? { retryBodies: row.retry_bodies, foregroundBodies: row.foreground_bodies } : null;
 };
 
 /**
@@ -50,6 +60,7 @@ export const finishMailboxHydration = async (work: MailboxHydrationWork, more: b
       queued_at = CASE WHEN requested_again_at IS NOT NULL OR ${more} THEN COALESCE(requested_again_at, clock_timestamp()) ELSE NULL END,
       requested_again_at = NULL,
       retry_bodies = false,
+      foreground_bodies = false,
       delivery_id = NULL,
       started_at = NULL,
       published_at = NULL

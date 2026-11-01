@@ -15,6 +15,8 @@ mailbox with `cld mail operator status --mailbox <mailbox> --json`. The mailbox 
 API, `GET /api/mail/mailboxes/:mailboxId/operations`, returns the same
 `coverage.hydration.timing` values. Both require mailbox administration access
 or platform administration access. The text operator status prints them too.
+The platform-wide mailbox summary retains coverage counts; inspect an
+individual mailbox for its timing samples.
 
 - `queueWaitMs`: time from the durable mailbox request to its first worker
   delivery. A large value points to occupied hydration workers or broker delay.
@@ -28,13 +30,18 @@ or platform administration access. The text operator status prints them too.
   `null` before a sample exists; they are latest samples, not percentiles.
 
 Each Mail process runs up to four hydration jobs. One mailbox takes one batch
-of at most 20 sources per turn. First attempts share the priority of envelope
-syncs; retries remain background work. A waiting envelope sync or command can end a body
-batch after its current source. Each new body generation joins the lease line
-again so commands still alternate with other provider work. Provider pacing, timeout breakers, and throttling remain in force;
-provider failures and large messages can take longer than a few seconds.
-Opening a reader does not create a separate job. Fresh bodies already receive
-this priority; a job per reader would add competing provider work.
+of at most 20 sources per turn. The first body batch after an incremental
+arrival shares envelope sync priority once that import has no new-mail or
+flag continuation left. Initial history, backfill, later body batches and
+retries remain background work. A new incremental arrival can promote another
+batch. A waiting envelope sync or command can end a body batch after its
+current source. Each new body generation joins the lease line again so
+commands still alternate with other provider work. Provider pacing, timeout
+breakers, and throttling remain in force; provider failures and large messages
+can take longer than a few seconds.
+Opening a reader does not create a separate job. The arrival already requests
+its first batch at this priority; a job per reader would add competing provider
+work.
 
 A body that has already failed or returned no source waits for a subsequent
 scheduled pass instead of retrying continuously. A message has at most five

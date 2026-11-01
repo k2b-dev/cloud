@@ -15,7 +15,8 @@ import { createMailbox } from "./mailboxes";
 import { getMailboxOperations } from "./operations";
 import { getOperatorActionEligibility } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
-import { mailProviderOperationMutex } from "./provider-operation-lock";
+import * as providerLeases from "./provider-operation-lock";
+import { mailProviderOperationMutex, type ProviderLeasePriority } from "./provider-operation-lock";
 import {
   enqueueMailboxHydration,
   enqueueMessageHydration,
@@ -426,30 +427,44 @@ suite("mail body hydration scheduling", () => {
         return timing?.batch_finished_at != null;
       });
       const operations = await getMailboxOperations(ownerContext, next.mailboxId);
-      expect(operations).toMatchObject({
-        ok: true,
-        data: {
-          coverage: {
-            hydration: {
-              timing: {
-                queueWaitMs: expect.any(Number),
-                leaseWaitMs: expect.any(Number),
-                batchMs: expect.any(Number),
-                batchFinishedAt: expect.any(String),
-              },
-            },
-          },
-        },
-      });
-      if (operations.ok) {
-        expect(operations.data.coverage.hydration.timing?.queueWaitMs).toBeGreaterThanOrEqual(3_000);
-        expect(operations.data.coverage.hydration.timing?.batchMs).toBeGreaterThan(0);
-      }
+      expect(operations.ok).toBe(true);
+      if (!operations.ok) throw new Error(operations.error.message);
+      const timing = operations.data.coverage.hydration.timing;
+      expect(timing).toBeDefined();
+      if (!timing) throw new Error("Hydration operator timing was omitted");
+      // Check the measured primitives directly, without an asymmetric nested matcher.
+      expect(typeof timing.queueWaitMs).toBe("number");
+      expect(timing.queueWaitMs).toBeGreaterThanOrEqual(3_000);
+      expect(typeof timing.leaseWaitMs).toBe("number");
+      expect(timing.leaseWaitMs).toBeGreaterThanOrEqual(0);
+      expect(timing.batchMs).toBeGreaterThan(0);
+      expect(typeof timing.batchFinishedAt).toBe("string");
     } finally {
       for (const release of releases) release();
       for (const fixture of occupied) hanging.delete(fixture.account);
     }
     await waitFor(async () => (await unhydrated(occupied)) === 0);
+  });
+
+  test("only the first batch of incremental arrivals gets sync priority; body backlog stays background", async () => {
+    const fixture = await createSyncedMailbox("bounded-arrival-priority");
+    const acquire = providerLeases.acquireProviderLease;
+    const priorities: ProviderLeasePriority[] = [];
+    const leases = spyOn(providerLeases, "acquireProviderLease").mockImplementation(async (request) => {
+      const turn = await acquire(request);
+      if (turn.lock && request.resource === fixture.resourceId && request.waiter.startsWith("hydrate:")) priorities.push(request.priority);
+      return turn;
+    });
+    try {
+      await deliver(fixture, 41);
+      await waitFor(async () => (await unhydrated([fixture])) === 0);
+      expect(priorities).toEqual(["sync", "background", "background"]);
+      await deliver(fixture, 1);
+      await waitFor(async () => (await unhydrated([fixture])) === 0);
+      expect(priorities).toEqual(["sync", "background", "background", "sync"]);
+    } finally {
+      leases.mockRestore();
+    }
   });
 
   test("an envelope commit persists a hydration wake even when the publishing process stops", async () => {

@@ -84,6 +84,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       requested_again_at timestamptz,
       retry_requested boolean NOT NULL DEFAULT false,
       retry_bodies boolean NOT NULL DEFAULT false,
+      foreground_requested boolean NOT NULL DEFAULT false,
+      foreground_bodies boolean NOT NULL DEFAULT false,
       started_at timestamptz,
       published_at timestamptz,
       queue_wait_ms bigint,

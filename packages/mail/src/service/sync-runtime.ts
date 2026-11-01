@@ -2189,7 +2189,13 @@ export const commitSyncBatch = async (params: {
     `;
     // Persist the wake with the envelopes. A crash after commit cannot leave new mail waiting
     // for the minute scheduler; the hydration publisher reconciles outstanding generations.
-    if (hydratedIds.length > 0) await requestMailboxHydration(tx, params.folder.mailbox_id);
+    if (hydratedIds.length > 0) {
+      await requestMailboxHydration(tx, params.folder.mailbox_id, {
+        // Finish the envelope/flag continuation before promoting its bodies. Historical
+        // imports and later body batches must not acquire an arrival sync's priority.
+        foreground: params.envelopeKind === "incremental" && params.cursor.incrementalNextHigh == null && params.cursor.flagNextLow == null,
+      });
+    }
     const liveInvalidated = hydratedIds.length > 0 || flagsUpdated > 0 || removed > 0;
     if (liveInvalidated) {
       await enqueueMailInvalidation(tx, { mailboxId: params.folder.mailbox_id });
@@ -2548,7 +2554,7 @@ const invalidateSettledConversations = async (mailboxId: string, messageIds: Rea
  * behind every other mailbox's job, so the worker's places take turns between mailboxes
  * instead of draining one mailbox's backlog first.
  */
-type HydrationInput = { mailboxId: string; generation?: string; retryBodies?: boolean } | { messageId: string };
+type HydrationInput = { mailboxId: string; generation?: string; retryBodies?: boolean; foregroundBodies?: boolean } | { messageId: string };
 
 type HydrationTarget = {
   id: string;
@@ -2663,13 +2669,15 @@ export const hydrateMessageBatch = async (
           ? await nextMailboxHydrationTarget(ctx.input.mailboxId, ctx.input.retryBodies !== false)
           : await requestedHydrationTarget(ctx.input.messageId);
       if (!message) return { hydrated: false };
-      // First attempts bring in content just like envelope syncs; they must not repeatedly
-      // lose a minute's head start to a stream of syncs. Retries remain background work.
+      // Only the first batch of a completed incremental arrival shares sync priority.
+      // Backfill, later body batches and retries retain background rank, so importing old
+      // mail cannot repeatedly displace envelope continuations and commands.
       // An explicitly requested body (for example by a workflow) ranks with commands.
       const turn = await acquireProviderLease({
         resource: message.remote_resource_id,
         waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
-        priority: "messageId" in ctx.input ? "command" : message.hydration_attempt === 0 ? "sync" : "background",
+        priority:
+          "messageId" in ctx.input ? "command" : ctx.input.foregroundBodies && message.hydration_attempt === 0 ? "sync" : "background",
         ttlMs: SYNC_LEASE_MS,
       });
       if (!turn.lock)
@@ -2871,7 +2879,7 @@ const startHydrationJob = async (): Promise<void> => {
     try {
       await hydrateMessageBatch({
         ...ctx,
-        input: "mailboxId" in ctx.input && begun ? { ...ctx.input, retryBodies: begun.retryBodies } : ctx.input,
+        input: "mailboxId" in ctx.input && begun ? { ...ctx.input, ...begun } : ctx.input,
         resubmit: (options) => {
           if (work) more = true;
           else ctx.resubmit(options);
@@ -3076,7 +3084,7 @@ const submitSyncFolderJob = async (folderId: string): Promise<void> => {
 const submitHydrationJob = async (input: HydrationInput): Promise<void> => {
   await (syncTasks.run(async () => {
     if ("mailboxId" in input) {
-      await requestMailboxHydration(sql, input.mailboxId, true);
+      await requestMailboxHydration(sql, input.mailboxId, { retry: true });
       await publishMailboxHydration(input.mailboxId);
     } else await hydrationJob().submit({ coalesce: true, key: hydrationJobKey(input), input });
   }) ?? Promise.resolve());

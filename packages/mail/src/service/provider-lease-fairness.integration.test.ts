@@ -1713,7 +1713,7 @@ suite("mail provider lease fairness", () => {
     const heartbeat = async (): Promise<void> => undefined;
     try {
       await expect(
-        hydrateMessageBatch({ input: { mailboxId: mailbox.mailboxId }, heartbeat, resubmit: () => undefined }),
+        hydrateMessageBatch({ input: { mailboxId: mailbox.mailboxId, foregroundBodies: true }, heartbeat, resubmit: () => undefined }),
       ).rejects.toMatchObject({ code: "SYNC_BUSY" });
       // Redis owns lease time. Move just this fixture's place back exactly one second rather
       // than sleeping: a later sync previously overtook it for the full 60-second head start.
@@ -1731,7 +1731,7 @@ suite("mail provider lease fairness", () => {
       const before = consumedPerBatch.length;
       let continued = false;
       await hydrateMessageBatch({
-        input: { mailboxId: mailbox.mailboxId },
+        input: { mailboxId: mailbox.mailboxId, foregroundBodies: true },
         heartbeat,
         resubmit: () => {
           continued = true;
@@ -1774,11 +1774,11 @@ suite("mail provider lease fairness", () => {
         if ((await consume({ ...request, expectedSize: Buffer.byteLength(source), stream: Readable.from([source]) })) === "stop") break;
       }
     });
-    const nextInput = { mailboxId: mailbox.mailboxId, generation: randomUUID() };
+    const nextInput = { mailboxId: mailbox.mailboxId, generation: randomUUID(), foregroundBodies: true };
     const heartbeat = async (): Promise<void> => undefined;
     try {
       await hydrateMessageBatch({
-        input: { mailboxId: mailbox.mailboxId, generation: randomUUID() },
+        input: { mailboxId: mailbox.mailboxId, generation: randomUUID(), foregroundBodies: true },
         heartbeat,
         resubmit: () => {
           more = true;
