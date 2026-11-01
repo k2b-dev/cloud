@@ -7,7 +7,7 @@ import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 const natsApiRoutes = new Hono<AuthContext>()
   .use(rateLimit())
   .use(auth.requireRole("admin"))
-  .use(auth.requireOAuthScope("admin"))
+  .use((c, next) => auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next))
   .get(
     "/",
     describeRoute({
