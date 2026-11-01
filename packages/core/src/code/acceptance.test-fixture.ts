@@ -3,7 +3,7 @@ import { expect } from "bun:test";
 import { mkdtemp, rmdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { sql } from "@k2b/cloud";
+import { getApp, sql } from "@k2b/cloud";
 import type { CapabilityDispatchDependencies } from "@k2b/cloud/api";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { signAppProof } from "@k2b/cloud/app-proof";
@@ -16,12 +16,13 @@ import {
   type CloudResourceRef,
   NormalizedCapabilityCallSchema,
 } from "@k2b/cloud/contracts";
-import { userFromActor } from "@k2b/cloud/server";
+import { type AuthContext, auth, requireInvocation, userFromActor } from "@k2b/cloud/server";
 import type { requestPublicHttps } from "@k2b/cloud/services";
 import { resolveInvocationAuthority } from "@k2b/cloud/services/identity/invocation-actor";
 import { verifyInvocationToken } from "@k2b/cloud/services/identity/invocation-token";
 import { issueInvocationToken } from "@k2b/cloud/services/identity/issue-invocation";
 import type { Queue } from "@k2b/sync";
+import { Hono } from "hono";
 import type { JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import type { AcceptanceProvider } from "../../../../scripts/fixtures/code-acceptance-provider";
@@ -116,29 +117,36 @@ export function acceptanceDispatch(providers: Map<string, AcceptanceProvider>, i
     const appId = new URL(String(url)).hostname.split(".")[0]!;
     const compiled = providers.get(appId);
     if (!compiled) throw new Error("Unknown acceptance provider");
-    const headers = new Headers(init?.headers);
-    const schemaHash = headers.get("x-cloud-capability-schema-hash");
+    const definition = (kind === "query" ? compiled.manifest.queries : compiled.manifest.actions).find((op) => op.localId === localId);
+    if (!definition) return Response.json({ code: "NOT_FOUND" }, { status: 404 });
     const operation = `capability.${kind === "query" ? "query" : review ? "action.review" : "action.run"}:${localId}`;
-    const verified = await verifyInvocationToken(
-      headers.get("authorization")!.slice(7),
-      { targetAppId: appId, operation, schemaHash: schemaHash! },
-      { issuer, key },
+    const provider = new Hono<AuthContext>();
+    provider.use(
+      "*",
+      requireInvocation(() => ({ targetAppId: appId, operation, schemaHash: definition.schemaHash }), {
+        getApp: (id) => getApp(id),
+        verify: (token, expected, options) => verifyInvocationToken(token, expected, { ...options, issuer, key }),
+        resolve: (claims) => resolveInvocationAuthority(claims, sql, []),
+      }),
     );
-    const authority = verified && (await resolveInvocationAuthority(verified, sql, []));
-    if (!authority) return Response.json({ code: "FORBIDDEN", message: "Invocation refused" }, { status: 403 });
-    const context: CapabilityExecutionContext = {
-      authority,
-      actor: authority.actor,
-      accessSubject: authority.accessSubject,
-      user: userFromActor(authority.actor),
-      origin: "app",
-      locale: "de",
-      requestId: headers.get("x-request-id")!,
-      signal: init?.signal ?? new AbortController().signal,
-      ...(!review && headers.has("idempotency-key") ? { idempotencyKey: headers.get("idempotency-key")! } : {}),
-    };
-    const body = CapabilityInvocationBodySchema.parse(JSON.parse(String(init?.body)));
-    return compiled.invoke({ localId, ...body, expectedSchemaHash: schemaHash, context, kind, review });
+    provider.all("*", async (c) => {
+      const authority = auth.getAuthority(c);
+      const headers = c.req.raw.headers;
+      const context: CapabilityExecutionContext = {
+        authority,
+        actor: authority.actor,
+        accessSubject: authority.accessSubject,
+        user: userFromActor(authority.actor),
+        origin: "app",
+        locale: "de",
+        requestId: headers.get("x-request-id")!,
+        signal: c.req.raw.signal,
+        ...(!review && headers.has("idempotency-key") ? { idempotencyKey: headers.get("idempotency-key")! } : {}),
+      };
+      const body = CapabilityInvocationBodySchema.parse(await c.req.json());
+      return compiled.invoke({ localId, ...body, expectedSchemaHash: definition.schemaHash, context, kind, review });
+    });
+    return provider.fetch(new Request(String(url), init));
   };
   return {
     fetch,

@@ -4,7 +4,7 @@ import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { type CapabilityExecutionContext, capabilityResultSchema, type User } from "@k2b/cloud/contracts";
-import { accounts, coreSettings, serviceAccounts } from "@k2b/cloud/services";
+import { accounts, coreSettings } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
 import { createSync, type Sync, type Worker } from "@k2b/sync";
@@ -16,7 +16,12 @@ import {
   AcceptanceProviderSchema,
   acceptanceProvider,
 } from "../../../../scripts/fixtures/code-acceptance-provider";
-import { signCodeAccessProof, verifyCodeAccessProof } from "../../../../scripts/fixtures/code-platform";
+import {
+  codeAccessProofs,
+  signCodeAccessList,
+  signCodeAccessProof,
+  verifyCodeAccessProof,
+} from "../../../../scripts/fixtures/code-platform";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
 import { acceptanceChecker, acceptanceDispatch, acceptanceRunners } from "./acceptance.test-fixture";
@@ -133,7 +138,14 @@ suiteFor(
       restores.push(() => log.mockRestore());
     }
     const settings = spyOn(codeSettings, "get").mockImplementation(async (key) =>
-      key === "core.code.runner_slots" ? 1 : key === "core.code.runner_poll_ms" ? 1000 : CODE_SETTINGS[key].default,
+      key === "core.code.runner_slots"
+        ? 1
+        : key === "core.code.runner_poll_ms"
+          ? 1000
+          : // The full frozen-clock suite budget (30s + 120s + 60s) fits below the token's remaining 240s margin.
+            key === "core.code.wall_clock_ms"
+            ? 60_000
+            : CODE_SETTINGS[key].default,
     );
     restores.push(() => settings.mockRestore());
     await coreSettings.set("app.timezone", "UTC");
@@ -247,6 +259,11 @@ suiteFor(
     const kid = "25252525-2525-4525-8525-252525252525";
     const signer = { kid, key: pair.privateKey, signUntil: new Date(clock!.now.getTime() + 3_600_000) };
     const key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid, alg: "RS256", use: "sig" }] });
+    const verifyInspection = codeAccessProofs.verifyCodeAccessList;
+    const inspectionKeys = spyOn(codeAccessProofs, "verifyCodeAccessList").mockImplementation((token, appId) =>
+      verifyInspection(token, appId, { issuer, key }),
+    );
+    restores.push(() => inspectionKeys.mockRestore());
     transport = {
       set: async ({ item, dryRun, ...proof }) => {
         const appId = item.target.type.split(".")[0]!;
@@ -279,26 +296,17 @@ suiteFor(
     const listingTransport = spyOn(activationTransport.codeActivationTransport, "list").mockImplementation(transport.list);
     restores.push(() => listingTransport.mockRestore());
     const ownerTitle = spyOn(activationTransport, "readCodeResourceOwnerTitle").mockImplementation(async (ref, principal) => {
-      const account = await serviceAccounts.get({ id: principal });
-      if (!account) return null;
-      const response = await providers.get("mail")!.invoke({
-        kind: "query",
-        localId: "mailbox.read",
-        input: { id: ref.id },
-        expectedSchemaHash: providers.get("mail")!.manifest.queries.find((op) => op.localId === "mailbox.read")!.schemaHash,
-        context: {
-          actor: { kind: "service_account", serviceAccount: account, delegatedUser: null, scopes: [] },
-          accessSubject: { type: "service_account", serviceAccountId: principal },
-          user: null,
-          origin: "app",
-          locale: "de",
-          requestId: "c25-owner",
-          signal: new AbortController().signal,
-        },
-      });
-      return response.ok
-        ? z.object({ data: z.object({ view: z.object({ title: z.string() }) }) }).parse(await response.json()).data.view.title
-        : null;
+      const appId = ref.type.split(".")[0]!;
+      const token = await signCodeAccessList(appId, principal, { issuer, signer });
+      const response = await providers.get(appId)!.authority(
+        new Request(`http://${appId}.test/queries/code.owner.title`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify(ref),
+        }),
+      );
+      if (!response.ok) throw new Error("Owner title transport failed");
+      return z.object({ data: z.object({ title: z.string().nullable() }) }).parse(await response.json()).data.title;
     });
     restores.push(() => ownerTitle.mockRestore());
     connection = await connectTestNats();
@@ -437,7 +445,8 @@ suiteFor(
     const phone: CodeContext = { ...manager, authority: { ...manager.authority, actor: { kind: "user", user: ben, sessionKind: "app" } } };
     await expect(
       activateCodeVersion({ codeId, versionId: submitted.submission.version.id, activationId: crypto.randomUUID() }, phone),
-    ).rejects.toThrow("phone");
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
     await approve(submitted.submission);
     await approve(personalVersion.submission);
     await activate(codeId, submitted.submission.version.id, proof(manager));
@@ -519,7 +528,7 @@ suiteFor(
     const revoked = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-revoked" }, author);
     const failed = await completed(codeId, revoked.run.runId);
     expect(failed.run.state).toBe("failed");
-    expect(failed.calls[0]).toMatchObject({ state: "failed", result: { ok: false } });
+    expect(failed.calls[0]).toMatchObject({ state: "failed", result: { ok: false, error: { code: "not_found" } } });
     expect(codePageMessages.resolve(["de"]).t.removed).toBe("Zugriff entfernt");
     expect(await sql<{ generation: number }[]>`SELECT generation FROM code.runs WHERE id=${revoked.run.runId}::uuid`).toEqual([
       { generation: 1 },
@@ -608,7 +617,17 @@ try { await http.fetch("https://bank.example/v1/error", { headers: { authorizati
     expect(result.calls.map((call) => call.state)).toEqual(["succeeded", "failed"]);
     expect(result.calls[1]?.result).toEqual({ ok: false, error: { code: "code_http_failed" } });
     const body = z.object({ ok: z.literal(true), data: z.object({ body: z.string() }) }).parse(result.calls[0]?.result).data.body;
-    expect(Buffer.from(body, "base64").toString()).toContain("[secret:BANK]");
+    const decoded = Buffer.from(body, "base64").toString();
+    expect(decoded).toContain("[secret:BANK]");
+    expect(decoded).not.toContain(secretValue);
+    const tables = await sql<{ table_name: string }[]>`SELECT table_name FROM information_schema.tables
+      WHERE table_schema='code' AND table_type='BASE TABLE' ORDER BY table_name`;
+    const storedRows: unknown[] = [];
+    for (const table of tables) {
+      // Names come only from this disposable database's catalog; exclude the intentionally stored ciphertext.
+      const identifier = '"' + table.table_name.replaceAll('"', '""') + '"';
+      storedRows.push(await sql.unsafe(`SELECT to_jsonb(t) - 'encrypted' AS value FROM code.${identifier} t`));
+    }
     for (const observed of [
       stored,
       checked,
@@ -618,7 +637,8 @@ try { await http.fetch("https://bank.example/v1/error", { headers: { authorizati
       fleet.logs,
       messages,
       await code.secretList({ codeId, limit: 20 }, author),
-      await sql`SELECT * FROM code.calls`,
+      storedRows,
+      await sql`SELECT * FROM auth.mandates`,
       await sql`SELECT * FROM audit.events`,
     ]) {
       for (const spelling of [secretValue, Buffer.from(secretValue).toString("base64"), encodeURIComponent(secretValue)])
