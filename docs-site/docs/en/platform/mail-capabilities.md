@@ -88,6 +88,17 @@ calendar access and does not authorize a send.
 
 ## Code access at a mailbox
 
+`mailboxCodeAccess.manages(tx, context, id)` checks current mailbox-wide
+administration using the supplied transaction. Target, manager-share and group
+membership locks remain held through the grant or removal. Assigned-only grants
+never make someone a mailbox manager. Grant and removal also lock and check the
+target when a live Cloud administrator bypasses the manager check.
+
+Successful dry-run `mail.code.access.set` results contain `managerUserIds`: current
+people with mailbox-wide administration, including nested manager-group members.
+Core uses these IDs for activation notifications. Ordinary Mail permissions,
+assigned-only access and sending behavior are unchanged.
+
 Mail declares `mailbox` as both a Code target and a type that may own Code.
 Core manages access through `mail.code.access.set`, `mail.code.access.list`
 and `mail.code.access.rm`. Use the public mailbox ID in

@@ -313,4 +313,6 @@ Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Stan
 
 **Gefahrenbereich → In „Kürzlich gelöscht“ verschieben** setzt das Postfach in einen gelöschten Zustand, den du wiederherstellen kannst. Mail löscht E-Mails beim Anbieter und aufbewahrte Cloud-Daten nicht endgültig.
 
+Die Bestätigung nennt, was dauerhaft gelöscht wird: der Code des Postfachs, seine Versionen und Läufe, sein Code-Konto und alle diesem Konto erteilten Zugriffe. Ist eine Ziel-App nicht erreichbar, versucht Cloud die Entfernung weiter. Beim Wiederherstellen des Postfachs kommt sein Code nicht zurück.
+
 Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **… → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.

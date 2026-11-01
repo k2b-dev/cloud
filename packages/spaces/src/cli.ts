@@ -18,10 +18,11 @@ import {
   printStructured,
   withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
-import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import type { PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, type Paginated } from "@k2b/stdlib";
 import type {
+  AccessEntry,
   CalendarItem,
   ItemListResult,
   ItemTemplateDraft,

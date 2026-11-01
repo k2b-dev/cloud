@@ -13,7 +13,9 @@ import {
   type CodeAccessTarget,
 } from "../contracts/code-access";
 import { sql } from "../runtime/clients";
+import { hasInstallationAdminInTransaction } from "../services/accounts/users";
 import { audit } from "../services/audit";
+import { codeAccessMessages } from "../shared/code-access-messages";
 import { verifyCodeAccessProof } from "./access-proof";
 
 /** Core-mediated person calls only. In particular, personal Code's mandate is still Code origin. */
@@ -79,11 +81,15 @@ const accountIsCode = async (tx: SQL, principal: string, activeOnly = true) =>
   );
 const targetAdapter = (bindings: CodeAccessBindings, appId: string, target: CodeAccessTarget) =>
   target.type === "app" && target.id !== appId ? undefined : bindings.get(target.type);
-const manages = async (adapter: CodeAccessAdapter, context: CapabilityExecutionContext, id: string) =>
-  context.actor.kind === "user" &&
-  ((context.actor.user.roles.includes("admin") &&
-    (context.actor.delegation?.credentialKind === "session" || context.authority?.scopes.includes("admin"))) ||
-    (await adapter.manages(context, id)));
+const cloudAdminAuthority = async (tx: SQL, context: CapabilityExecutionContext): Promise<boolean> =>
+  Boolean(
+    context.actor.kind === "user" &&
+      context.actor.user.roles.includes("admin") &&
+      (context.actor.delegation?.credentialKind === "session" || context.authority?.scopes.includes("admin")) &&
+      (await hasInstallationAdminInTransaction(context.actor, tx)),
+  );
+const manages = async (tx: SQL, adapter: CodeAccessAdapter, context: CapabilityExecutionContext, id: string, admin: boolean) =>
+  context.actor.kind === "user" && (admin || (await adapter.manages(tx, context, id)));
 const writeAudit = (
   tx: SQL,
   appId: string,
@@ -114,6 +120,16 @@ class RollbackDecision extends Error {
   }
 }
 
+/** Check the exact generated set envelope before committing any target writes. */
+const boundSetResult = (data: CodeAccessSetData, context: CapabilityExecutionContext, dryRun: boolean): CodeAccessSetData => {
+  if (!data.granted) return data;
+  const copy = codeAccessMessages(context.locale);
+  const body = { data, receipt: { text: dryRun ? copy.setAvailable : copy.setDone } };
+  return new TextEncoder().encode(JSON.stringify(body)).byteLength <= CAPABILITY_MAX_RESULT_BYTES
+    ? data
+    : decisionNo("capacity_exceeded", "Target manager list exceeds the Code access response budget");
+};
+
 /** Target-side set: proof validation precedes authority, all adapter writes and audit are atomic. */
 export const setCodeAccess = async (
   appId: string,
@@ -143,7 +159,6 @@ export const setCodeAccess = async (
   if (!operationsAllowed()) return deny("operations_invalid", "Operations do not belong to this target");
   const adapter = targetAdapter(bindings, appId, input.target);
   if (!adapter) return deny("unsupported_target", "Target does not support Code access");
-  if (!(await manages(adapter, context, input.target.id))) return deny("not_manager", "Target manager authority required");
   // Issuance times change on retries; the durable identity and its complete binding do not.
   const bindingHash = capabilityValueDigest({
     codeId: claims.codeId,
@@ -157,10 +172,14 @@ export const setCodeAccess = async (
   });
   try {
     const result = await dependencies.db.begin(async (tx) => {
+      // Installation authority locks precede grant/account locks, matching user deletion.
+      const admin = await cloudAdminAuthority(tx, context);
       // The same transaction lock serializes set/rm for this proof across all app instances.
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:${claims.grantId}`}, 0))`;
       // Serialize account budget admission as well as individual proof retries.
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:account:${claims.principal}`}, 0))`;
+      if (!(await manages(tx, adapter, context, input.target.id, admin)))
+        throw new RollbackDecision(decisionNo("not_manager", "Target manager authority required"));
       if (!(await accountIsCode(tx, claims.principal))) return decisionNo("account_inactive", "An active Code account is required");
       const existing = await find(tx, appId, claims.grantId);
       if (existing && (existing.binding_hash !== bindingHash || existing.revoked))
@@ -177,7 +196,26 @@ export const setCodeAccess = async (
         const result = live
           ? { granted: true as const, grantId: claims.grantId, level: live.level }
           : decisionNo("removed", "Code access was removed; activate again to restore it");
-        if (input.dryRun) throw new RollbackDecision(result);
+        if (input.dryRun) {
+          if (!live) throw new RollbackDecision(result);
+          // A retry still needs the target's current managers for Core notifications.
+          const decision = CodeAccessDecisionSchema.parse(
+            await adapter.grant(tx, {
+              id: input.target.id,
+              principal: claims.principal,
+              operations: input.operations,
+              grantId: claims.grantId,
+              dryRun: true,
+            }),
+          );
+          throw new RollbackDecision(
+            boundSetResult(
+              decision.granted ? { ...decision, grantId: claims.grantId } : { ...decision, reasonCode: "adapter_refused" },
+              context,
+              true,
+            ),
+          );
+        }
         return result;
       }
       const decision = CodeAccessDecisionSchema.parse(
@@ -189,10 +227,12 @@ export const setCodeAccess = async (
           dryRun: input.dryRun === true,
         }),
       );
-      const result: CodeAccessSetData = decision.granted
-        ? { ...decision, grantId: claims.grantId }
-        : { ...decision, reasonCode: "adapter_refused" };
-      if (!decision.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
+      const result = boundSetResult(
+        decision.granted ? { ...decision, grantId: claims.grantId } : { ...decision, reasonCode: "adapter_refused" },
+        context,
+        input.dryRun === true,
+      );
+      if (!decision.granted || !result.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
       const previous = await tx<
         GrantRow[]
       >`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND principal = ${claims.principal}::uuid AND NOT revoked LIMIT ${maxListGrants + 1}`;
@@ -233,7 +273,8 @@ export const listCodeAccess = async (
 ): Promise<CodeAccessGrant[]> => {
   const coreInspection = "listPrincipal" in authority;
   if (coreInspection ? authority.listPrincipal !== principal : !codeAccessPersonAllowed(authority, "list")) return [];
-  const candidates = await db.begin(async (tx): Promise<CodeAccessGrant[]> => {
+  return db.begin(async (tx): Promise<CodeAccessGrant[]> => {
+    const admin = !coreInspection && (await cloudAdminAuthority(tx, authority));
     if (!(await accountIsCode(tx, principal, false))) return [];
     const indexed = await tx<
       GrantRow[]
@@ -253,7 +294,7 @@ export const listCodeAccess = async (
         const row = indexedById.get(entry.grantId);
         if (!row || row.target_type !== type || row.target_id !== entry.id) continue;
         const target = { type, id: entry.id };
-        if (targetAdapter(bindings, appId, target)) {
+        if (targetAdapter(bindings, appId, target) && (coreInspection || (await manages(tx, adapter, authority, target.id, admin)))) {
           const grant = CodeAccessGrantSchema.parse({ grantId: entry.grantId, level: entry.level, target, principal });
           bytes += new TextEncoder().encode(JSON.stringify(grant)).byteLength + (result.length ? 1 : 0);
           if (bytes > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Code access list exceeds the capability result budget");
@@ -263,14 +304,6 @@ export const listCodeAccess = async (
     }
     return result;
   });
-  if (coreInspection) return candidates;
-  const visible: CodeAccessGrant[] = [];
-  // Domain manager checks may acquire their own connection; never hold a transaction while waiting.
-  for (const grant of candidates) {
-    const adapter = targetAdapter(bindings, appId, grant.target);
-    if (adapter && (await manages(adapter, authority, grant.target.id))) visible.push(grant);
-  }
-  return visible;
 };
 
 /**
@@ -285,15 +318,9 @@ export const removeCodeAccess = async (
   authority: { context: CapabilityExecutionContext } | { cleanupPrincipal: string; requestId: string },
   db = sql,
 ): Promise<boolean> => {
-  if ("context" in authority) {
-    if (!codeAccessPersonAllowed(authority.context, "rm")) return false;
-    const existing = await find(db, appId, grantId);
-    if (!existing) return false;
-    const target = { type: existing.target_type, id: existing.target_id };
-    const adapter = targetAdapter(bindings, appId, target);
-    if (!adapter || !(await manages(adapter, authority.context, target.id))) return false;
-  }
+  if ("context" in authority && !codeAccessPersonAllowed(authority.context, "rm")) return false;
   return db.begin(async (tx) => {
+    const admin = "context" in authority && (await cloudAdminAuthority(tx, authority.context));
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:${grantId}`}, 0))`;
     const existing = await find(tx, appId, grantId);
     if (!existing) {
@@ -308,6 +335,7 @@ export const removeCodeAccess = async (
     if (existing.revoked) return true;
     const target = { type: existing.target_type, id: existing.target_id };
     const adapter = targetAdapter(bindings, appId, target);
+    if ("context" in authority && (!adapter || !(await manages(tx, adapter, authority.context, target.id, admin)))) return false;
     if (!adapter) throw new Error(`Code access cleanup requires the declared adapter for ${target.type}`);
     const removed = await adapter.revoke(tx, { id: target.id, grantId });
     if (!removed && (await adapter.list(tx, { principal: existing.principal })).some((entry) => entry.grantId === grantId))

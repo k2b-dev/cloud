@@ -26,6 +26,7 @@ import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
@@ -155,6 +156,7 @@ import {
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
 import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
+import { spaceCodeAccess } from "./service/code-access";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -2354,7 +2356,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "A permission-scoped collaboration space.",
       icon: "ti ti-layout-kanban",
       reader: "space.read",
-      access: { readable: readableSpace },
+      access: { readable: readableSpace, ...spaceCodeAccess },
       pages: ["/app/spaces/:id"],
     },
     item: {
@@ -2576,6 +2578,10 @@ export const spacesCapabilities = defineCapabilities({
       run: runSpaceList,
     },
     "space.read": {
+      codeResourceTitle: async (tx: SQL, id: string) => {
+        const [space] = await tx<{ name: string }[]>`SELECT name FROM spaces.spaces WHERE short_id=${id}`;
+        return space?.name ?? null;
+      },
       title: "Read space",
       description:
         "Read one spaces.space ref returned by space.list or space.search, including column and tag IDs required by filtered lists and item Actions.",

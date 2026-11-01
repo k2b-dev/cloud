@@ -115,10 +115,33 @@ suite("Mail adapter through platform Code access", () => {
       granted: true,
       grantId,
       level: "read",
+      managerUserIds: [owner.id],
     });
     expect(await getMailboxPermission(code, mailboxId)).toBe("none");
+    // A successful preflight does not preserve authority after the manager loses the share.
+    await sql`UPDATE auth.access SET permission = 'read' WHERE user_id = ${owner.id}::uuid AND id IN (
+      SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid
+    )`;
+    expect(await setCodeAccess("mail", bindings, input, context("set"), dependencies)).toMatchObject({
+      granted: false,
+      reasonCode: "not_manager",
+    });
+    expect(await getMailboxPermission(code, mailboxId)).toBe("none");
+    await sql`UPDATE auth.access SET permission = 'admin' WHERE user_id = ${owner.id}::uuid AND id IN (
+      SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid
+    )`;
     for (let attempt = 0; attempt < 2; attempt++)
-      expect(await setCodeAccess("mail", bindings, input, context("set"), dependencies)).toEqual({ granted: true, grantId, level: "read" });
+      expect(await setCodeAccess("mail", bindings, input, context("set"), dependencies)).toMatchObject({
+        granted: true,
+        grantId,
+        level: "read",
+      });
+    expect(await setCodeAccess("mail", bindings, { ...input, dryRun: true }, context("set"), dependencies)).toEqual({
+      granted: true,
+      grantId,
+      level: "read",
+      managerUserIds: [owner.id],
+    });
     expect(await getMailboxPermission(code, mailboxId)).toBe("read");
     expect(await listCodeAccess("mail", bindings, principal, context("list"))).toEqual([{ grantId, principal, target, level: "read" }]);
     expect(await removeCodeAccess("mail", bindings, grantId, { context: context("rm") })).toBe(true);
