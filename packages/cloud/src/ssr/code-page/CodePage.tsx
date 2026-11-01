@@ -126,6 +126,12 @@ function usePageText(data: () => CodePageData) {
   const context = () => ({ ...data().dates, locale: locale() });
   const date = (iso: string) => dates.formatDate(iso, context());
   const when = (iso: string) => dates.formatDateTimeRelative(iso, { ...context(), base: data().dates.now });
+  /** The parts of "today at 11:20" or "on 28.10.2026 at 11:20", in the page's time zone. */
+  const moment = (iso: string) => ({
+    today: dates.formatDate(iso, context()) === dates.formatDate(data().dates.now, context()),
+    date: date(iso),
+    time: dates.formatTime(iso, context()),
+  });
   const targetName = (target: CodePageTarget): string => {
     if (target.own) return data().owner.title;
     if (target.ref.type === "app") return target.title ?? target.ref.id;
@@ -139,7 +145,7 @@ function usePageText(data: () => CodePageData) {
     if (target.title) return `${current.atTarget({ name: targetName(target) })} (${target.ref.id})`;
     return current.unknownTarget({ id: target.ref.id });
   };
-  return { t, locale, date, when, targetName, targetLabel };
+  return { t, locale, date, when, moment, targetName, targetLabel };
 }
 type PageText = ReturnType<typeof usePageText>;
 
@@ -623,6 +629,9 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
                     : t().accessRemovedTitle({ name: props.text.targetName(row.target) })
                 }
                 detail={[
+                  ...(!row.target.deleted && row.removedAt
+                    ? [t().removedSentence({ name: row.removedBy?.name ?? null, ...props.text.moment(row.removedAt) })]
+                    : []),
                   row.target.deleted
                     ? t().targetDeletedDescription({ name: props.text.targetName(row.target) })
                     : t().accessRemovedDescription({ name: props.text.targetName(row.target) }),
@@ -723,18 +732,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             <Show when={props.state.active && props.state.internet.active?.length}>
               <p class="cloud-code__label">{t().internetVersion({ version: props.state.active!.number })}</p>
               <ul class="cloud-code__list">
-                <For each={props.state.internet.active ?? []}>
-                  {(origin) => (
-                    <li class="cloud-code__row cloud-code__row--access">
-                      <span class="cloud-code__kind" aria-hidden="true">
-                        <i class="ti ti-world" />
-                      </span>
-                      <span class="cloud-code__cell">
-                        <Op>{origin}</Op>
-                      </span>
-                    </li>
-                  )}
-                </For>
+                <For each={props.state.internet.active ?? []}>{(origin) => <OriginRow origin={origin} />}</For>
               </ul>
             </Show>
             <Show when={props.state.waiting && props.state.internet.waiting?.length}>
@@ -742,19 +740,11 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
               <ul class="cloud-code__list">
                 <For each={props.state.internet.waiting ?? []}>
                   {(origin) => (
-                    <li class="cloud-code__row cloud-code__row--access">
-                      <span class="cloud-code__kind" aria-hidden="true">
-                        <i class="ti ti-world" />
-                      </span>
-                      <span class="cloud-code__cell">
-                        <Op>{origin}</Op>
-                      </span>
-                      <span class="cloud-code__right">
-                        <Show when={props.state.internet.waiting?.includes(origin) && !props.state.internet.active?.includes(origin)}>
-                          <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
-                        </Show>
-                      </span>
-                    </li>
+                    <OriginRow origin={origin}>
+                      <Show when={!props.state.internet.active?.includes(origin)}>
+                        <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
+                      </Show>
+                    </OriginRow>
                   )}
                 </For>
               </ul>
@@ -766,6 +756,21 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
         <p class="cloud-code__quiet">{t().pagesNone}</p>
       </Section>
     </div>
+  );
+}
+
+/** One declared internet origin, laid out like an access row; the children mark it, for example as new. */
+function OriginRow(props: { origin: string; children?: JSX.Element }) {
+  return (
+    <li class="cloud-code__row cloud-code__row--access">
+      <span class="cloud-code__kind" aria-hidden="true">
+        <i class="ti ti-world" />
+      </span>
+      <span class="cloud-code__cell break-all">
+        <Op>{props.origin}</Op>
+      </span>
+      <span class="cloud-code__right">{props.children}</span>
+    </li>
   );
 }
 
@@ -879,7 +884,11 @@ function AccessRow(props: { row: CodePageAccessRow; state: CodePageReady; text: 
       return (
         <span class="cloud-code__bad">
           <i class={row.target.deleted ? "ti ti-trash" : "ti ti-circle-x"} aria-hidden="true" />{" "}
-          {row.target.deleted ? t().targetDeleted : t().removed}
+          {row.target.deleted
+            ? t().targetDeleted
+            : row.removedAt
+              ? t().removedRow({ name: row.removedBy?.name ?? null, ...props.text.moment(row.removedAt) })
+              : t().removed}
         </span>
       );
     if (row.state === "unavailable")
@@ -1290,7 +1299,7 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
               <Show when={diff().internet} fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}>
                 {(origins) => (
                   <ul class="cloud-code__list">
-                    <For each={origins()}>{(origin) => <li class="cloud-code__row break-all font-mono text-sm">{origin}</li>}</For>
+                    <For each={origins()}>{(origin) => <OriginRow origin={origin} />}</For>
                   </ul>
                 )}
               </Show>

@@ -31,7 +31,7 @@ background tasks cannot use these tools to edit lasting Code.
 | `code_check` | Checks `{codeId,files,entry}` and lists permissions with source file and line. |
 | `code_test` | Checks source and runs the supplied `test/NAME.json` fixtures against fake data. |
 | `code_simulate` | Checks source and simulates one fixture with exactly one invocation. |
-| `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. |
+| `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. Pass the fixtures as `tests`: Core runs them and shows the result to reviewers. |
 | `code_diff` | Returns complete file differences and permissions for a submitted version. |
 
 ## The version card

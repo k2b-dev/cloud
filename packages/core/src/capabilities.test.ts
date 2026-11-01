@@ -318,6 +318,7 @@ describe("Core AI capabilities", () => {
       "code.run.list",
       "code.run.read",
       "code.secret.list",
+      "code.summary",
       "code.version.diff",
       "code.version.diff.read",
       "code.version.list",

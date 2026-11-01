@@ -103,6 +103,8 @@ export const TargetAccessSchema = z.array(
     activatedBy: z.string().nullable().optional(),
     activatedAt: z.string().nullable().optional(),
     activatedVersionId: z.string().nullable().optional(),
+    removedBy: z.string().nullable().optional(),
+    removedAt: z.string().nullable().optional(),
   }),
 );
 export const ActivationSchema = z.object({
@@ -184,6 +186,9 @@ export type CodePageAccessRow = {
   activatedAt: string | null;
   /** The version whose activation created this grant; a later version may reuse it unchanged. */
   activatedVersionId: string | null;
+  /** For removed access: who removed it at the target, when the viewer may see that name, and when. */
+  removedBy: CodePagePerson | null;
+  removedAt: string | null;
 };
 /** One target the waiting version needs, for the switch-on dialog. The owner is always checked. */
 export type CodePageActivationRow = { target: CodePageTarget; operations: string[]; isNew: boolean };

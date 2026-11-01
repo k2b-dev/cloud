@@ -57,6 +57,29 @@ const managedGrantIds = async (
   return visible;
 };
 
+const ManifestUsesSchema = z.object({
+  permissions: z.array(
+    z.object({
+      operation: z.string(),
+      target: z.object({ type: z.string(), id: z.string().nullable() }).nullable(),
+      entrypoints: z.array(z.string()).optional(),
+    }),
+  ),
+});
+/** Entrypoints of the version whose calls use one of these operations at exactly this target, from the checker. */
+export const automationsAt = (manifest: unknown, target: { type: string; id: string }, operations: string[]) => {
+  const parsed = ManifestUsesSchema.safeParse(manifest);
+  if (!parsed.success) return [];
+  const names = new Set<string>();
+  for (const permission of parsed.data.permissions) {
+    // Activation grants an app-wide operation at { type: "app", id: <app> }; the checker writes it without a target.
+    const at = permission.target ?? { type: "app", id: permission.operation.split(".")[0]! };
+    if (operations.includes(permission.operation) && at.type === target.type && at.id === target.id)
+      for (const name of permission.entrypoints ?? []) names.add(name);
+  }
+  return [...names].sort();
+};
+
 /**
  * Details for the "Code with access" rows of a target's share dialog. Each grant appears only when the target's
  * own `code.access.list` returns it for the viewer, which happens only at targets the viewer manages. Names follow
@@ -88,10 +111,12 @@ export const readCodeGrantDetails = async (
       operations: string[];
       activating_person: string | null;
       activated_at: Date | null;
+      manifest: unknown;
     }[]
   >`SELECT g.grant_id, c.service_account_id AS principal, g.target, g.operations, a.activating_person,
-      CASE WHEN a.state='active' THEN a.updated_at END AS activated_at
+      CASE WHEN a.state='active' THEN a.updated_at END AS activated_at, v.manifest
     FROM code.target_grants g JOIN code.activations a ON a.id=g.activation_id JOIN code.codes c ON c.id=g.code_id
+      LEFT JOIN code.versions v ON v.id=COALESCE(c.active_version_id, a.version_id) AND v.code_id=c.id
     WHERE g.grant_id = ANY(${toPgUuidArray(ids)}::uuid[]) AND g.state='granted'`;
   // An application vouches only for its own targets: Core's record must name the same Code account and the same
   // target, and that target must belong to the answering application, or another app could reveal foreign grants.
@@ -129,6 +154,7 @@ export const readCodeGrantDetails = async (
     return {
       grantId: row.grant_id,
       operations: [...row.operations].sort(),
+      automations: automationsAt(row.manifest, row.target, row.operations),
       activatedBy: row.activating_person && name ? { id: row.activating_person, name } : null,
       activatedAt: row.activated_at ? row.activated_at.toISOString() : null,
     };

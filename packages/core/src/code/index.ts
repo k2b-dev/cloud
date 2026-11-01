@@ -11,6 +11,7 @@ export {
   CodeAttentionReasonSchema,
   codeAttentionContracts,
   readCodeAttention,
+  readCodeSummary,
 } from "./attention";
 export { codeAuthoringServices } from "./authoring";
 export { createCodeCheckRequest } from "./authoring-check";

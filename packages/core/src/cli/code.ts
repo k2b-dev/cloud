@@ -255,6 +255,7 @@ export function buildCodeCli(locale?: string) {
               codeId: project.config.codeId,
               entry: project.config.entry,
               files: await readCodeFiles(project.directory),
+              tests: await readCodeFiles(project.directory, true),
               baseVersionId,
             });
             try {

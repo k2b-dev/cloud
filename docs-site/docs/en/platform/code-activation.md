@@ -60,8 +60,12 @@ At most 50 targets are checked per request, 8 at a time.
 
 Each access observation names its grant, target, operations and state
 (`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
-`activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
-shows them.
+`activatedVersionId` of the activation that created it. A removed grant also
+carries `removedBy` and `removedAt`: the person and time of the newest allowed
+`code.access.rm` audit event for that grant, Code account and target. The
+platform writes that event in the same transaction as the target's removal.
+Both are `null` when no such event exists, for example after audit retention.
+The [Code page](/en/docs/platform/code-page) shows them.
 
 `/api/code/access/target` serves the share dialog's
 [Code with access](/en/docs/identity/authorization#code-with-access) section and
@@ -71,7 +75,9 @@ appears only when that list returns it, which happens only at targets the person
 manages, and only when Core's record names the same Code account and the same
 target of that application. A refused list shows nothing; an unavailable or
 malformed list fails the request so the dialog can retry. Each detail has
-`grantId`, sorted `operations`, `activatedBy`
+`grantId`, sorted `operations`, sorted `automations` (the running version's
+entrypoints whose calls use these operations at this target, from the checker's
+`permissions[].entrypoints`; empty when none could be placed), `activatedBy`
 (`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
 finishes). Names follow directory visibility: members see other people's names;
 guests see only their own.

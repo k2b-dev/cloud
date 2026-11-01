@@ -15,6 +15,7 @@ import {
   readCodeAdminPolicyHistory,
   readCodeAdminRunners,
   readCodeAdminSummary,
+  readCodeAdminVersionSource,
 } from "../../../code/admin";
 import { CODE_SETTINGS } from "../../../code/settings";
 import { ssr } from "../../../config";
@@ -70,6 +71,10 @@ export default ssr<AuthContext>(async (c) => {
             ? await attempt(() => listCodeAdminCodes({ status: query.status, app: query.app, q: query.q, cursor: query.after }, context))
             : null,
         code: sec === "code" && query.id ? await attempt(() => readCodeAdminCode(query.id ?? "", context)) : null,
+        source:
+          sec === "code" && query.id && query.version
+            ? await attempt(() => readCodeAdminVersionSource(query.id ?? "", query.version ?? "", context))
+            : null,
         policy: sec === "policy" || sec === "groups" || sec === "effective" ? await attempt(() => readCodeAdminPolicy(context)) : null,
         effective: sec === "effective" && query.id ? await attempt(() => readCodeAdminEffective(query.id ?? "", context)) : null,
         history: sec === "history" ? await attempt(() => readCodeAdminPolicyHistory(context)) : null,
