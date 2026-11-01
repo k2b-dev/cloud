@@ -358,6 +358,14 @@ must produce this module boundary. `RunnerEngine` (`load`, `run`, `kill`,
 `close`) and `SandboxCall` are exported from `packages/runner/src/engine.ts`
 for the attack tests and simulation kit; no application imports that package.
 
+## Run tests without effects
+
+The same runner image includes a separate `code-test.js` stdin/stdout role.
+It uses the production workerd engine with a fake-only bridge and no app key
+or Core connection. Core checks the source first and sends the immutable
+bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
+for the request, result schema, and isolation requirements.
+
 When a running attempt ends, Core commits a dispatch wakeup for waiting work
 of the same owner. A backlog held by the per-Code or per-owner concurrency
 limit can continue as soon as capacity frees up; lease recovery is not needed
