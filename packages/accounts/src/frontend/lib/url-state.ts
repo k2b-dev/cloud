@@ -87,6 +87,14 @@ export const parseUsersListState = (input: {
   profile: input.profile === "user" || input.profile === "guest" ? input.profile : "",
 });
 
+const parseUsersListStateFromParams = (params: URLSearchParams, keys: QueryKeys = USERS_QUERY_KEYS): UsersListState =>
+  parseUsersListState({
+    search: params.get(keys.search),
+    page: params.get(keys.page),
+    provider: keys.provider ? params.get(keys.provider) : null,
+    profile: keys.profile ? params.get(keys.profile) : null,
+  });
+
 const writeUsersListState = (params: URLSearchParams, state: UsersListState, keys: QueryKeys = USERS_QUERY_KEYS): void => {
   writeIfNonDefault(params, keys.search, state.search, "");
   writeIfNonDefault(params, keys.page, String(state.page), "1");
@@ -155,6 +163,20 @@ export const parseGroupsListState = (
     provider: input.provider === "local" || input.provider === "ipa" ? input.provider : "",
     scope: normalizedScope,
   };
+};
+
+const parseGroupsListStateFromParams = (params: URLSearchParams, options: GroupsStateOptions = {}): GroupsListState => {
+  const keys = options.keys ?? GROUPS_QUERY_KEYS;
+
+  return parseGroupsListState(
+    {
+      search: params.get(keys.search),
+      page: params.get(keys.page),
+      provider: keys.provider ? params.get(keys.provider) : null,
+      scope: params.get(keys.scope),
+    },
+    options,
+  );
 };
 
 const writeGroupsListState = (params: URLSearchParams, state: GroupsListState, options: GroupsStateOptions = {}): void => {
