@@ -631,7 +631,27 @@ describe("Filesv2 progressive navigation", () => {
     expect(selectedNode()).toBe(JSON.stringify([group.id, null, ""]));
     expectNoTrashInTree();
     await openTrash(group.id);
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash"]);
+    // Its own way back is only for layouts without the sidebar (CSS hides it from 64 rem); the highlighted storage in
+    // the tree leads back as well.
+    expect(dom.root.querySelector<HTMLAnchorElement>("a.filesv2-compact-back")?.getAttribute("href")).toBe("/app/filesv2?base=accounting");
+    tree().querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=accounting"]')!.click();
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json(bases));
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json({ base: group, path: "", items: [], next: null }));
+    await flush();
+    expect(dom.window.location.search).toBe("?base=accounting");
+    expect(dom.root.querySelector(".filesv2-list__row--trash")).not.toBeNull();
+    expect(apiRequests.map((request) => request.kind)).toEqual([
+      "bases",
+      "trash",
+      "bases",
+      "entries",
+      "bases",
+      "trash",
+      "bases",
+      "entries",
+    ]);
   });
   test("a listing row stops spinning when a navigation back to the same folder replaces its pending open", async () => {
     const dom = createDomTestHarness();
@@ -1006,6 +1026,114 @@ describe("Filesv2 progressive navigation", () => {
     expect(up("/app/filesv2?base=home&path=Documents").defaultPrevented).toBe(true);
     await serve();
     expect(dom.window.location.search).toBe("?base=home&path=Documents");
+  });
+
+  const officeEditor = async (options: { openedFrom?: string }) => {
+    const dom = createDomTestHarness();
+    const submit = dom.window.HTMLFormElement.prototype.submit;
+    dom.window.HTMLFormElement.prototype.submit = () => {};
+    const base = {
+      id: "team",
+      name: "Nordlicht",
+      area: "cloud" as const,
+      kind: "groups" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const bases = { items: [base], issues: [], editor: { documentFormat: "odf" as const } };
+    const entry = (path: string) => ({
+      name: path.split("/").at(-1)!,
+      path,
+      directory: false,
+      size: 2048,
+      modified: "2026-10-20T08:00:00Z",
+    });
+    const folder = (path: string) => ({
+      base,
+      path,
+      items: [entry("Einkauf/lieferanten.ods"), entry("Einkauf/bestellung.odt")],
+      next: null,
+    });
+    const launch = {
+      base,
+      entry: entry("Einkauf/lieferanten.ods"),
+      action: "https://office.example.test/browser/x/cool.html?WOPISrc=x",
+      token: "fictional.token",
+      tokenTtl: 1_900_000_000_000,
+      canWrite: true,
+      managed: true,
+    };
+    const editorSource = "/app/filesv2?base=team&path=Einkauf&file=Einkauf%2Flieferanten.ods&view=edit";
+    if (options.openedFrom) {
+      dom.window.history.replaceState(null, "", options.openedFrom);
+      dom.window.history.pushState({ "filesv2:openedFrom": options.openedFrom }, "", editorSource);
+    } else dom.window.history.replaceState(null, "", editorSource);
+    const { Workspace, ui, derivePageTrail, snapshotTitle } = modules!;
+    const snapshot = { ...initial, source: editorSource, bases, selectedId: base.id, directory: null, editor: launch };
+    dom.root.classList.add("cloud-app-canvas");
+    dom.root.setAttribute("data-app-base", "/app/filesv2");
+    ui.setPageTrail(
+      derivePageTrail(snapshotTitle(snapshot, "Files", { personal: "Personal", allStorage: "All storage" }, "en"), "/app/filesv2", "Files"),
+    );
+    const dispose = render(() => createComponent(Workspace, { initial: snapshot }), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.window.HTMLFormElement.prototype.submit = submit;
+      dom.cleanup();
+    };
+    const serve = async () => {
+      for (let round = 0; round < 6; round++) {
+        await flush();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        for (const request of apiRequests.splice(0)) {
+          const path = (request.input as { query?: { path?: string } } | undefined)?.query?.path ?? "";
+          request.resolve(Response.json(request.kind === "bases" ? bases : folder(path)));
+        }
+      }
+    };
+    await flush();
+    const frame = dom.root.querySelector("iframe")!;
+    const close = () =>
+      dom.window.dispatchEvent(
+        new dom.window.MessageEvent("message", {
+          data: JSON.stringify({ MessageId: "UI_Close", Values: { EverModified: false } }),
+          source: frame.contentWindow,
+          origin: "https://office.example.test",
+        }),
+      );
+    return { dom, ui, frame, close, serve };
+  };
+
+  test("the office editor shows no way up or title above Collabora, and its close goes back to the folder it came from", async () => {
+    const from = "/app/filesv2?base=team&path=Einkauf&file=Einkauf%2Flieferanten.ods&sort=size";
+    const { dom, ui, frame, close, serve } = await officeEditor({ openedFrom: from });
+    expect(ui.readPageTrail()).toEqual({ title: "lieferanten.ods", ancestors: [] });
+    for (const selector of ["[data-k2b-page-trail-up]", "[data-k2b-page-trail-link]", ".k2b-page-title__back", ".k2b-page-title__trail"])
+      expect(dom.document.querySelector(selector)).toBeNull();
+    expect(dom.document.querySelector('.k2b-app-workspace__head[data-trail="up"]')).toBeNull();
+    expect(frame.title).toBe("lieferanten.ods");
+    const length = dom.window.history.length;
+    close();
+    await serve();
+    // Back, not a new entry: the listing's own address with its sort and selected row, and Forward reopens the editor.
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(from);
+    expect(dom.window.history.length).toBe(length);
+    expect(dom.root.querySelector("iframe")).toBeNull();
+    expect(ui.readPageTrail()).toEqual({ title: "Einkauf", ancestors: [] });
+  });
+
+  test("an editor opened by address closes in its place to its folder with the document's row selected", async () => {
+    const { dom, close, serve } = await officeEditor({});
+    const length = dom.window.history.length;
+    close();
+    await serve();
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(
+      "/app/filesv2?base=team&path=Einkauf&file=Einkauf%2Flieferanten.ods",
+    );
+    expect(dom.window.history.length).toBe(length);
+    expect(dom.root.querySelector("iframe")).toBeNull();
   });
 
   test("expired listing cursors restart once with the exact global query and visible feedback", async () => {

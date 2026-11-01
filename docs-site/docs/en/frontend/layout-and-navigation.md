@@ -343,7 +343,11 @@ leads up to. Keep buttons that do something else, such as leaving an editor.
 
 An app whose content already holds the way up, as the Files listing does with
 its parent row, passes only its root and the current page for those pages.
-The shell then draws no back link there at any depth. The app registers its
+The same applies to a page that embeds a tool with its own name and close,
+such as the Files office editor: the shell repeats neither the name nor a way
+up above it, and the close returns to the page the person came from, with its
+selection and scroll position. The shell then draws no back link there at any
+depth. The app registers its
 own context command for `Alt+↑` with `registerContextAwareCommand` from
 `@k2b/cloud/browser/commands`, because **One level up** is offered only on a
 page with a level above.

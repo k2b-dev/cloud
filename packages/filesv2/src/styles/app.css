@@ -1200,3 +1200,10 @@ dialog[open]:has(.filesv2-export-dialog) {
 .k2b-file-grid__preview > .filesv2-thumbnail img {
   border-radius: 0;
 }
+
+/* Shares and Trash name their way back only while the sidebar is not beside them. */
+@container k2b-app-area (min-width: 64rem) {
+  .k2b-ui .k2b-button.filesv2-compact-back {
+    display: none;
+  }
+}
