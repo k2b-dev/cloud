@@ -57,15 +57,43 @@ const op = {
   openWorld: false,
   run: () => ({ ok: true as const, data: { data: { value: "done" } } }),
 };
+const actionOp = {
+  ...op,
+  review: async () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      sentence: {
+        action: "Change folder",
+        running: "Changing folder",
+        done: "Changed folder",
+        confirm: "Change",
+        decline: "Cancel",
+      },
+      slots: {},
+      scope: "folder:a",
+    },
+  }),
+};
 const manifest = compileCapabilityManifest("example", {
   protocolVersion: 2,
   types: { folder: { title: "Folder", description: "Fixture folder." } },
   queries: { read: { ...op, target: "folder" } },
   actions: {
-    write: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    other: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    person: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" }, code: false },
-    asks: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { ask: "app_asks" } },
+    write: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    other: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    person: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" }, code: false },
+    removes: { ...actionOp, target: "folder", destructive: true, idempotency: "required", policy: { ask: "deletes" } },
+    sends: { ...actionOp, target: "folder", destructive: false, openWorld: true, idempotency: "required", policy: { ask: "sends" } },
+    interactive: {
+      ...actionOp,
+      target: "folder",
+      destructive: false,
+      idempotency: "none",
+      policy: { silent: "shared" },
+      unattended: false,
+    },
+    asks: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { ask: "app_asks" } },
   },
 });
 const baseEntry: CapabilityRegistryEntry = {
@@ -572,6 +600,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await error({}, "code_rate_limited", 200);
   });
   test("asking Actions remain forbidden unattended", async () => error({ operation: "example.asks" }, "code_unattended_forbidden", 200));
+  for (const operation of ["removes", "sends", "interactive"]) {
+    test(`${operation} remains forbidden under an approved Code version`, async () => {
+      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+        SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+      await error({ operation: `example.${operation}` }, "code_unattended_forbidden");
+    });
+  }
   test("every actual call is classified even if the checked manifest omits it", async () => {
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='read' AND group_id IS NULL`;
     await error({ operation: "example.read" }, "code_policy_never", 200);

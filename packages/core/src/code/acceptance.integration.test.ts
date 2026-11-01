@@ -417,6 +417,9 @@ suiteFor(
     );
     expect(JSON.stringify(secret)).not.toContain(secretValue);
     expect(JSON.stringify(await code.secretList({ codeId, limit: 20 }, author))).not.toContain(secretValue);
+    // The owning app classifies the reversible task changes; version consent does not override ask.
+    expect(spaces.manifest.policies?.["task.create"]).toEqual({ silent: "shared" });
+    expect(spaces.manifest.policies?.["task.update"]).toEqual({ silent: "shared" });
     const checked = await code.check({ codeId, files: creation, entry: "code.ts" }, author);
     expect(checked.result.ok).toBe(true);
     expect(checked.permissions).toContainEqual(
@@ -501,9 +504,29 @@ suiteFor(
     expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "mandate_forbidden" } });
     expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
 
+    // Version consent and a valid operation/target mandate never override a per-call confirmation.
+    const notifyingVersion = await code.submit(
+      {
+        codeId,
+        entry: "code.ts",
+        baseVersionId: submitted.submission.version.id,
+        files: source(
+          `await spaces.space("${spaceId}").task.create({ columnId: "${columnId}", title: "Needs confirmation", assigneeIds: ["${lea.id}"], idempotencyKey: "c2b-notify" });`,
+        ),
+      },
+      author,
+    );
+    await approve(notifyingVersion.submission);
+    await activate(codeId, notifyingVersion.submission.version.id, proof(manager));
+    const notifying = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c2b-notify" }, author);
+    const refused = await completed(codeId, notifying.run.runId);
+    expect(refused.run.state).toBe("failed");
+    expect(refused.calls[0]?.result).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden" } });
+    expect(await sql`SELECT id FROM spaces.items WHERE space_id=${internalSpaceId}::uuid AND title='Needs confirmation'`).toHaveLength(0);
+
     // A new immutable version has update authority only: successful updates cannot depend on task.create.
     const updateVersion = await code.submit(
-      { codeId, entry: "code.ts", files: update, baseVersionId: submitted.submission.version.id },
+      { codeId, entry: "code.ts", files: update, baseVersionId: notifyingVersion.submission.version.id },
       author,
     );
     await approve(updateVersion.submission);
@@ -564,6 +587,7 @@ suiteFor(
       ...runs.filter((run) => run.code_id === codeId).map((run) => run.id),
       repeat.run.runId,
       foreign.run.runId,
+      notifying.run.runId,
       amended.run.runId,
       revoked.run.runId,
     ];

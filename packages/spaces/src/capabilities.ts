@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
+import { actionReview } from "@k2b/cloud/capabilities";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CalendarEventsDataSchema,
   CalendarEventsInputSchema,
   CalendarListDataSchema,
   CalendarListInputSchema,
+  type CapabilityActionCallReview,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
+  type CapabilitySlot,
   type CloudResourceView,
   capabilityPage,
   cloudResourceHref,
@@ -423,6 +426,59 @@ export const runSpaceActivity = async (input: z.output<typeof ActivityInputSchem
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
 
+/** Task policies keep the same chat scope and complete field preview as the legacy reviews. */
+const taskActionReview = (
+  context: CapabilityExecutionContext,
+  sentence: CapabilityActionCallReview["sentence"],
+  slots: Record<string, CapabilitySlot>,
+  details: ReviewDetails,
+  options: Pick<CapabilityActionCallReview, "scope" | "ask" | "links">,
+): CapabilityActionCallReview => {
+  const locale = context.locale.toLowerCase().startsWith("de") ? "de" : "en";
+  const rows = details.map(({ label, value, format }) => ({
+    label,
+    value: String(value)
+      .toWellFormed()
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (char) => (char === "\n" || char === "\t" ? char : "")),
+    ...(format === "date" || format === "date-time" ? { format } : {}),
+  }));
+  // Keep date fields typed even when long text needs a page preview.
+  const completeBody = details.map(({ label, value }) => `${label}: ${value}`).join("\n\n");
+  const normalizedBody = rows.map(({ label, value }) => `${label}: ${value}`).join("\n\n");
+  const body = rows
+    .filter(({ format }) => format === undefined)
+    .map(({ label, value }) => `${label}: ${value}`)
+    .join("\n\n");
+  const fieldsFit = normalizedBody === completeBody && rows.length <= 12 && rows.every(({ value }) => value.length <= 2000);
+  return actionReview({ locale, sentence }, slots, {
+    ...options,
+    ...(fieldsFit
+      ? { preview: { kind: "fields", rows } }
+      : {
+          preview: {
+            kind: "page",
+            title: spacesMessages(locale).task,
+            body: body.slice(0, 10_000).toWellFormed(),
+            format: "plain",
+            truncated: body.length > 10_000 || normalizedBody !== completeBody,
+          },
+          content: { kind: "page", title: spacesMessages(locale).task, body: completeBody, format: "plain" },
+          consequences: rows.flatMap(({ label, value, format }) =>
+            format
+              ? [
+                  {
+                    text: `${label}: {at}`,
+                    slots: { at: { kind: "time", start: value, format } },
+                  },
+                ]
+              : [],
+          ),
+        }),
+  });
+};
+const taskReviewTitle = (value: string) => value.toWellFormed().replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, " ");
+
 /**
  * Review of a new task or event. A chat may remember it for the Space only when the card shows everything it does:
  * without a template, which can add more, and without assignees, whom it would notify.
@@ -437,7 +493,7 @@ const reviewItemCreate = async (
   if (!access.ok) return access;
   const title = input.title ?? t.template;
   const rememberable = input.templateId === undefined && !input.assigneeIds?.length;
-  return ok({
+  const review = {
     message:
       kind === "task"
         ? t.reviewCreateTask({ title, space: access.data.space.name })
@@ -461,7 +517,26 @@ const reviewItemCreate = async (
       ...(input.assigneeIds?.length ? [{ label: t.assignees, value: String(input.assigneeIds.length) }] : []),
     ],
     ...(rememberable ? { approvalScope: spaceApprovalScope(context.target?.id ?? "") } : {}),
-  });
+  };
+  if (kind === "event") return ok(review);
+  return ok(
+    taskActionReview(
+      context,
+      {
+        action: t.reviewCreateTask({ title: "{title}", space: "{space}" }),
+        running: t.taskCreating,
+        done: t.taskCreated,
+        confirm: t.taskCreateConfirm,
+        decline: t.taskDecline,
+      },
+      {
+        title: { kind: "object", title: taskReviewTitle(title) },
+        space: { kind: "place", title: taskReviewTitle(access.data.space.name), ref: context.target },
+      },
+      review.details,
+      rememberable ? { scope: review.approvalScope } : { ask: input.templateId === undefined ? "involves_people" : "app_asks" },
+    ),
+  );
 };
 
 /** Review of claiming, releasing, or noting progress on a task; a chat may remember it for the task's Space. */
@@ -3058,7 +3133,7 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: (input, context) => reviewItemCreate("task", input, context),
       run: runTaskCreate,
     },
@@ -3071,50 +3146,63 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
         const relations = await relationReviewDetails(input, resolved.data.internalSpaceId, context);
-        return ok({
-          message: t.reviewUpdateTask({ title: resolved.data.item.title }),
-          details: [
-            { label: t.task, value: resolved.data.item.title },
-            ...(input.title !== undefined ? [{ label: t.title, value: input.title }] : []),
-            ...(input.description !== undefined
-              ? [
-                  input.description === null
-                    ? { label: t.description, value: t.clearDescription }
-                    : { label: t.description, value: input.description, display: "block" as const },
-                ]
-              : []),
-            ...(input.deadline !== undefined
-              ? [
-                  input.deadline === null
-                    ? { label: t.deadline, value: t.clearDeadline }
-                    : {
-                        label: t.deadline,
-                        value: input.deadline,
-                        format: isDateOnlyDeadline(input.deadline) ? ("date" as const) : ("date-time" as const),
-                      },
-                ]
-              : []),
-            ...(input.estimatedDurationMinutes !== undefined
-              ? [
-                  {
-                    label: t.estimatedDuration,
-                    value: input.estimatedDurationMinutes === null ? t.clearEstimate : t.minutes({ count: input.estimatedDurationMinutes }),
-                  },
-                ]
-              : []),
-            ...(input.priority !== undefined ? [{ label: t.priority, value: input.priority ?? t.noPriority }] : []),
-            ...relations,
-          ],
-          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
-          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
-        });
+        return ok(
+          taskActionReview(
+            context,
+            {
+              action: t.reviewUpdateTask({ title: "{title}" }),
+              running: t.taskUpdating,
+              done: t.taskUpdated,
+              confirm: t.taskUpdateConfirm,
+              decline: t.taskDecline,
+            },
+            { title: { kind: "object", title: taskReviewTitle(resolved.data.item.title) } },
+            [
+              { label: t.task, value: resolved.data.item.title },
+              ...(input.title !== undefined ? [{ label: t.title, value: input.title }] : []),
+              ...(input.description !== undefined
+                ? [
+                    input.description === null
+                      ? { label: t.description, value: t.clearDescription }
+                      : { label: t.description, value: input.description, display: "block" as const },
+                  ]
+                : []),
+              ...(input.deadline !== undefined
+                ? [
+                    input.deadline === null
+                      ? { label: t.deadline, value: t.clearDeadline }
+                      : {
+                          label: t.deadline,
+                          value: input.deadline,
+                          format: isDateOnlyDeadline(input.deadline) ? ("date" as const) : ("date-time" as const),
+                        },
+                  ]
+                : []),
+              ...(input.estimatedDurationMinutes !== undefined
+                ? [
+                    {
+                      label: t.estimatedDuration,
+                      value:
+                        input.estimatedDurationMinutes === null ? t.clearEstimate : t.minutes({ count: input.estimatedDurationMinutes }),
+                    },
+                  ]
+                : []),
+              ...(input.priority !== undefined ? [{ label: t.priority, value: input.priority ?? t.noPriority }] : []),
+              ...relations,
+            ],
+            {
+              links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+              scope: spaceApprovalScope(resolved.data.item.spaceId),
+            },
+          ),
+        );
       },
       run: runTaskUpdate,
     },
