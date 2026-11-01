@@ -18,6 +18,7 @@ import { codeActivationTransport } from "./activation-transport";
 import { clearCodeAttentionCache, listCodeAttention } from "./attention";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { countOwnCodeRuns, createCode, createCodeVersion, insertCodeRun } from "./store";
+import { readCodeWorkload } from "./workload-reader";
 
 const ids = {
   manager: "11111111-1111-4111-8111-111111111111",
@@ -202,5 +203,21 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     expect(await countOwnCodeRuns({ since: "2026-10-30T00:00:00.000Z" }, ctx(ids.manager))).toEqual({ runs: 3, failed: 1 });
     expect(await countOwnCodeRuns({ since: "2026-10-31T00:00:00.000Z" }, ctx(ids.other))).toEqual({ runs: 0, failed: 0 });
     await expect(countOwnCodeRuns({ since: "2026-10-20T00:00:00.000Z" }, ctx(ids.manager))).rejects.toThrow("7 days");
+  });
+
+  test("the Code behind a change links its page and run only for those who may read its owner", async () => {
+    const reader = spyOn(access, "codeAccountDisplayName");
+    spies.push(reader);
+    managed.add("box-origin");
+    const { code, versionId } = await mailboxCode("box-origin");
+    const runId = await insertCodeRun({ codeId: code.id, versionId, trigger: "schedule", entrypoint: "sort", input: null });
+    reader.mockResolvedValue("Code of box-origin");
+    const allowed = await readCodeWorkload(`${versionId}~${runId}`, ctx(ids.manager));
+    expect(allowed.view).toMatchObject({ title: "Code of box-origin", context: "sort" });
+    expect(allowed.links.map((link) => link.rel)).toEqual(["open", "status"]);
+    expect(allowed.links[1]?.href).toContain(`tab=runs&run=${runId}`);
+    reader.mockResolvedValue(null);
+    expect((await readCodeWorkload(`${versionId}~${runId}`, ctx(ids.manager))).links).toEqual([]);
+    managed.delete("box-origin");
   });
 });

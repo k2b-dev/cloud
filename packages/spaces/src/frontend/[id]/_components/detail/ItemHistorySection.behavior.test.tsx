@@ -61,7 +61,7 @@ describe.skipIf(isServer)("A card's history", () => {
           entry("2", "Angelegt von Code (gelöscht)", { name: "Code (gelöscht)", href: null, runHref: null }),
         ],
         nextCursor: null,
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     const dom = mount();
     await settle();
     const links = Array.from(dom.document.querySelectorAll("a")).map((link) => [link.textContent, link.getAttribute("href")]);
@@ -77,7 +77,7 @@ describe.skipIf(isServer)("A card's history", () => {
     globalThis.fetch = (async () => {
       calls++;
       return calls === 1 ? json({ message: "down" }, 503) : json({ data: [entry("1", "Ben hat die Aufgabe erstellt")], nextCursor: null });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     const dom = mount();
     await settle();
     expect(dom.document.querySelector('[role="alert"]')?.textContent).toContain("Der Verlauf konnte nicht geladen werden.");
