@@ -4,14 +4,14 @@ import { command, flag, printStructured } from "../index";
 import { apiJson } from "./shared";
 
 export const appStatusCommands = [
-  command("apps observation begin", {
+  command("apps migration observe", {
     summary: "Start legacy-use observation after upgrading every Core replica",
     async run({ ctx }) {
       const result = await apiJson(ctx, "POST", "/api/admin/apps/observation", {});
       if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result));
     },
   }),
-  command("apps status", {
+  command("apps migration status", {
     summary: "Check every expected app and replica before removing infrastructure environment values",
     flags: {
       observationSeconds: flag.int({

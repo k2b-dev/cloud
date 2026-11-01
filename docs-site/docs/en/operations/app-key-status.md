@@ -10,7 +10,7 @@ updated: 2026-10-31
 
 # Check application migration evidence
 
-Use `cld admin apps status` before retiring shared application environment
+Use `cld admin apps migration status` before retiring shared application environment
 values or legacy broker credentials. It checks bootstrap metadata from every
 live replica, sends fresh signed broker/OAuth probes, and reads a durable
 legacy-use observation shared by every Core replica. Missing evidence returns
@@ -30,7 +30,7 @@ capability marker. Status also reports `core_legacy_evidence_missing` for
 those instances, even if a previous window was complete:
 
 ```bash
-cld --profile migration admin apps observation begin --json
+cld --profile migration admin apps migration observe --json
 ```
 
 This administrator write requires OAuth `write` or `admin` scope when using
@@ -59,7 +59,7 @@ Write one intended app ID per line in `apps.txt`, including stopped and
 third-party apps; exclude `core` and `gateway`. Then run:
 
 ```bash
-cld --profile migration admin apps status --strict --json --observation-seconds "$OBSERVATION_SECONDS" --expect "$(paste -sd, apps.txt)"
+cld --profile migration admin apps migration status --strict --json --observation-seconds "$OBSERVATION_SECONDS" --expect "$(paste -sd, apps.txt)"
 ```
 
 The inventory combines active app keys on enabled accounts, live registry

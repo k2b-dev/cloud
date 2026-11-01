@@ -8,7 +8,7 @@ import { loadMailAutomationLog } from "../../../../service/automation-workspace"
 import { requestContactDirectory } from "../../../../service/contact-directory";
 import MailAutomationLogPage from "../../../MailAutomationLogPage.island";
 import { mailPageMessages } from "../../../pages-messages";
-import { projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
+import { pageReadStatus, projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
 
 const FILTERS = ["all", "assignments", "uncertain", "skipped", "manual"] as const;
 const readFilter = (value: string | undefined) => FILTERS.find((filter) => filter === value) ?? "all";
@@ -37,7 +37,7 @@ export default ssr<AuthContext>(async (c) => {
     loadMailAutomationLog(context, mailboxId, { filter, q }),
     entry ? getAutomationLogItem(context, mailboxId, entry) : null,
   ]);
-  if (!result.ok) return ssr.error(c, result.error.status);
+  if (!result.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, result.error.status));
   const data = await projectAutomationWorkspace(result.data);
   const directory = await requestContactDirectory(c);
   return () => (

@@ -17,6 +17,7 @@ import { GEO_SNAPSHOT_MAX_BYTES, GEO_SNAPSHOT_MAX_METADATA_BYTES } from "@k2b/cl
 import {
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getDateConfig,
   getLocale,
   hasPermission,
@@ -42,11 +43,13 @@ import {
   MarkdownPdfError,
 } from "@k2b/cloud/services/pdf";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { noteDocumentSessionSchema, noteGenerationSchema } from "@/lib/document-session";
 import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "@/lib/note-delete-permission";
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
@@ -2004,6 +2007,48 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  .get(
+    "/:id/notes/:noteId/document",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Authorize device input and read the committed note snapshot",
+      description:
+        "Checks the rendered account, current write access and document generation. Older device generations may only be opened for explicit recovery.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(noteDocumentSessionSchema, "Committed Yjs snapshot and current generation"),
+        403: jsonResponse(ErrorResponseSchema, "Account or access changed"),
+        404: jsonResponse(ErrorResponseSchema, "Note not found"),
+      },
+    }),
+    v("query", z.object({ expectedUserId: z.uuid(), generation: noteGenerationSchema.optional() })),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      const actor = c.get("actor");
+      if (actor?.kind !== "user" || actor.user.id !== c.req.valid("query").expectedUserId)
+        return respond(c, fail(err.forbidden(messages(c).accessDenied)));
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!note.ok) return respond(c, note);
+      const stored = await notebooksService.note.getAnchoredYjsState({ noteId: note.data.id, signal: c.req.raw.signal });
+      if (!stored?.yjsState) return respond(c, fail(err.notFound(messages(c).noteNotFound)));
+      return respond(
+        c,
+        ok({
+          generation: stored.restoreRevision,
+          mode:
+            c.req.valid("query").generation && c.req.valid("query").generation !== stored.restoreRevision
+              ? ("recovery" as const)
+              : ("current" as const),
+          historyIncomplete: stored.historyIncomplete,
+          locked: !!note.data.lockedAt,
+          durable: { state: toBase64(stored.yjsState), cursor: stored.streamCursor },
+        }),
+      );
+    },
+  )
+
   // Get Note
   .get(
     "/:id/notes/:noteId",
@@ -3868,8 +3913,18 @@ const appWithAdmin = appWithLimits
       const { value, replaceUnreadable } = c.req.valid("json");
       const result =
         key === "notebooks.snapshot_cron" && typeof value === "string"
-          ? await notebooksService.backup.updateCron(value, { replaceUnreadable })
-          : await settingsService.entry.update({ key, value, replaceUnreadable });
+          ? await notebooksService.backup.updateCron(value, { replaceUnreadable, actorId: expectUserBackedActor(c).id })
+          : await settingsService.entry.update({
+              key,
+              value,
+              replaceUnreadable,
+              audit: {
+                action: "settings.update",
+                outcome: "allowed",
+                actor: { userId: expectUserBackedActor(c).id },
+                target: { type: "setting", id: key },
+              },
+            });
       if (!result.ok) {
         // A refused value names its reason, which the settings dialog shows at the field.
         const message =

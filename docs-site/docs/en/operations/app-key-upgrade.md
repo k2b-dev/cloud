@@ -84,7 +84,7 @@ Never generate a new `APP_SECRET` for this migration.
    observation:
 
    ```bash
-   cld --profile migration admin apps observation begin --json
+   cld --profile migration admin apps migration observe --json
    ```
 
    Choose a clean interval that covers representative scheduled background work,
@@ -98,7 +98,7 @@ Never generate a new `APP_SECRET` for this migration.
 6. After that clean interval, check every expected app:
 
    ```bash
-   cld --profile migration admin apps status --strict --json --observation-seconds "$OBSERVATION_SECONDS" --expect "$(paste -sd, apps.txt)"
+   cld --profile migration admin apps migration status --strict --json --observation-seconds "$OBSERVATION_SECONDS" --expect "$(paste -sd, apps.txt)"
    ```
 
    Continue only with exit code zero. The inventory combines apps with active
