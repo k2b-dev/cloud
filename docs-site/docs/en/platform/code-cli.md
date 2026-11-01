@@ -155,8 +155,9 @@ example `mail/box_1234`; titles and owners remain in `code.json`. Pull never
 activates Code. It refuses existing project folders. If a later project fails,
 earlier folders remain: inspect them and retry into a new root.
 
-Status discovers every `code.json` below the selected root (the current
-directory by default), or finds the surrounding project from a source path. It compares local source with its saved base and reports the latest
+Status discovers every `code.json` below the selected root, or finds the
+surrounding project from a source path. Without a path, it uses the current
+project when present; otherwise it scans `./code`, matching pull's default. It compares local source with its saved base and reports the latest
 server version, approval receipt, active version, execution state, pause reason,
 and whether a newer server base exists. An empty root returns an empty list.
 Duplicate local Code IDs, linked paths, unavailable Code, and unreadable files

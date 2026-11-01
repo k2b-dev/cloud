@@ -153,12 +153,17 @@ export async function writeCodeSdk(directory: string, files: Record<string, stri
   }
 }
 /** Discover local projects without traversing links, dependencies or generated output. A project is a traversal boundary. */
-export async function listCodeProjects(root = ".") {
-  try {
-    return [await loadCodeProject(root)];
-  } catch (error) {
-    if (!(error instanceof CodeProjectNotFoundError)) throw error;
+export async function listCodeProjects(root?: string) {
+  if (root === undefined) {
+    try {
+      return [await loadCodeProject(".")];
+    } catch (error) {
+      if (!(error instanceof CodeProjectNotFoundError)) throw error;
+    }
+    root = "code";
   }
+  await assertCodePath(root);
+  if ((await lstat(root)).isFile()) return [await loadCodeProject(root)];
   const projects: Awaited<ReturnType<typeof loadCodeProject>>[] = [];
   async function visit(directory: string) {
     await assertCodePath(directory);
@@ -176,6 +181,13 @@ export async function listCodeProjects(root = ".") {
     }
   }
   await visit(resolve(root));
+  if (!projects.length) {
+    try {
+      return [await loadCodeProject(root)];
+    } catch (error) {
+      if (!(error instanceof CodeProjectNotFoundError)) throw error;
+    }
+  }
   projects.sort((a, b) => (a.config.codeId < b.config.codeId ? -1 : a.config.codeId > b.config.codeId ? 1 : 0));
   if (new Set(projects.map((project) => project.config.codeId)).size !== projects.length)
     throw new Error("Duplicate local Code IDs. Select one checkout root.");

@@ -75,7 +75,10 @@ export function codeOperationCommands(locale?: string) {
       ),
       args: {
         root: arg.optional({
-          description: t("Checkout root or one project (default: .)", "Checkout-Wurzel oder einzelnes Projekt (Standard: .)"),
+          description: t(
+            "Checkout root or source path (default: current project or ./code)",
+            "Checkout-Wurzel oder Quellpfad (Standard: aktuelles Projekt oder ./code)",
+          ),
         }),
       },
       async run({ ctx, args }) {

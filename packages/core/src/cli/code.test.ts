@@ -557,7 +557,7 @@ test("pull --all walks empty cursor pages, writes short-ID layouts and prints on
     return Response.json({ version: 1, items: [pulled], nextCursor: null });
   });
   expect(await code.run(invocation.ctx)).toBe(0);
-  expect(JSON.parse(invocation.printed.join(""))).toEqual({ version: 1, items: [pulled], nextCursor: null });
+  expect(invocation.printed.join("")).toBe(JSON.stringify({ version: 1, items: [pulled], nextCursor: null }, null, 2) + "\n");
   expect(await readFile(join(out, "example", "box_1234", "code.ts"), "utf8")).toBe(source);
   expect(await code.run(invocation.ctx)).toBe(1); // Existing source is never overwritten.
 });
@@ -741,4 +741,40 @@ test("pull --all stages one valid JSON value and discards it on a later failure"
   expect(await code.run(invocation.ctx)).toBe(1);
   expect(invocation.printed).toEqual([failure]);
   expect(await readFile(join(root, "partial", "example", "box_1234", "code.ts"), "utf8")).toBe("saved source");
+});
+
+test("explicit status checkout roots take precedence over an enclosing project", async () => {
+  const { directory } = await project();
+  const nestedRoot = join(directory, "instance-code");
+  const nestedConfig = { ...config, codeId: "c_5678", owner: { kind: "person" as const, userId: uuid } };
+  await writeCodeProject(nestedRoot, nestedConfig, { "code.ts": "nested source" });
+  expect((await listCodeProjects(nestedRoot)).map((project) => project.config.codeId)).toEqual(["c_5678"]);
+});
+test.each(["json", "jsonl"] as const)("empty pull --all preserves host %s formatting", async (output) => {
+  const { root } = await project();
+  const invocation = context(["pull"], { all: true, out: join(root, "empty") }, output, () =>
+    Response.json({ version: 1, items: [], nextCursor: null }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(invocation.printed.join("")).toBe(
+    output === "json" ? '{\n  "version": 1,\n  "items": [],\n  "nextCursor": null\n}\n' : '{"version":1,"items":[],"nextCursor":null}\n',
+  );
+});
+
+test("status defaults to the current project or ./code without scanning unrelated folders", async () => {
+  const { root } = await project();
+  const directory = await writeCodeProject(join(root, "code"), config, { "code.ts": source });
+  await symlink(join(root, "example"), join(root, "unrelated-link"));
+  const script = join(root, "status-default.ts");
+  await writeFile(
+    script,
+    `import { listCodeProjects } from ${JSON.stringify(import.meta.dir + "/code-files.ts")}; console.log(JSON.stringify((await listCodeProjects()).map(project => project.config.codeId)));`,
+  );
+  for (const cwd of [root, directory]) {
+    const child = Bun.spawn([process.execPath, script], { cwd, stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(exit).toBe(0);
+    expect(stderr).toBe("");
+    expect(JSON.parse(stdout)).toEqual([config.codeId]);
+  }
 });
