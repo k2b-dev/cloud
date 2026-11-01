@@ -43,11 +43,22 @@ capability invocation.
 | `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
 | `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after scheduling cancellation |
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
+| `POST /api/code/access/target` | `{ appId, grants: [{ grantId, principal }] }` | Details for grants at targets the person manages |
 
 Each access observation names its grant, target, operations and state
 (`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
 `activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
 shows them.
+
+`/api/code/access/target` serves the share dialog's
+[Code with access](/en/docs/identity/authorization#code-with-access) section and
+needs no rights on the Code itself. For each Code account, Core calls the target
+application's `code.access.list` with the person's own authority. A grant
+appears only when that list returns it, which happens only at targets the person
+manages. Each detail has `grantId`, sorted `operations`, `activatedBy`
+(`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
+finishes). Names follow directory visibility: members see other people's names;
+guests see only their own.
 
 Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;
 Core returns the existing process. Reusing it for another Code, version or

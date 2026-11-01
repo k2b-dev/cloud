@@ -68,7 +68,24 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Handlers = { accounts: (route: Route) => unknown; remove?: (route: Route) => unknown };
+// What Core returns for the grants the viewer manages, as in the mockup.
+const details = {
+  data: [
+    {
+      grantId: "44444444-4444-4444-8444-444444444444",
+      operations: ["spaces.task.create"],
+      activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
+      activatedAt: "2026-10-28T09:00:00.000Z",
+    },
+    {
+      grantId: "55555555-5555-4555-8555-555555555555",
+      operations: ["spaces.task.list"],
+      activatedBy: { id: "77777777-7777-4777-8777-777777777777", name: "Mia Koch" },
+      activatedAt: "2026-10-21T09:00:00.000Z",
+    },
+  ],
+};
+type Handlers = { accounts: (route: Route) => unknown; remove?: (route: Route) => unknown; details?: (route: Route) => unknown };
 const open = async (width: number, handlers: Handlers, query = "") => {
   const tab = await browser.newPage({ viewport: { width, height: width < 600 ? 844 : 900 }, reducedMotion: "reduce" });
   const origin = "https://code-access.test";
@@ -78,6 +95,7 @@ const open = async (width: number, handlers: Handlers, query = "") => {
     if (path === "/tabler.css") return route.fulfill({ contentType: "text/css; charset=utf-8", body: icons.css });
     if (path === "/api/resources/code-access/accounts") return handlers.accounts(route);
     if (path === "/api/resources/code-access/remove") return handlers.remove ? handlers.remove(route) : route.abort();
+    if (path === "/api/code/access/target") return handlers.details ? handlers.details(route) : route.fulfill({ json: details });
     if (path.startsWith("/api/")) return route.fulfill({ status: 404, body: "" });
     return route.fulfill({
       contentType: "text/html; charset=utf-8",
@@ -134,7 +152,15 @@ describe("Code with access in a share dialog", () => {
         await tab.waitForFunction(() => document.querySelector("section")?.getAttribute("aria-busy") === null);
         const loaded = await snapshot(tab);
         await shot(tab, `${width}-entries`);
-        expect(loaded).toEqual(loading);
+        if (width >= 1024) expect(loaded).toEqual(loading);
+        else {
+          // On a phone, who switched a Code on may wrap to a second line: rows grow below, nothing above moves.
+          expect({ dialog: loaded.dialog?.y, heading: loaded.heading, first: loaded.rows[0]?.y }).toEqual({
+            dialog: loading.dialog?.y,
+            heading: loading.heading,
+            first: loading.rows[0]?.y,
+          });
+        }
         expect(loaded.overflow).toBeLessThanOrEqual(0);
         await tab.getByRole("button", { name: "Zugriff von „Code von info@“ entfernen" }).click();
         await tab.getByRole("dialog", { name: "Zugriff von „Code von info@“ entfernen?" }).waitFor();

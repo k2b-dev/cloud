@@ -663,13 +663,18 @@ application that mounts the editor gets the section; it needs no props.
   authority, so a renamed owner shows its new title. Code owned by a whole
   application shows that application's name to people who may use it. An owner
   the viewer cannot read appears as "Code whose owner you can't see".
-- The row shows the entry's level in the editor's own vocabulary.
+- People who may change access also see each grant's operations, such as
+  `spaces.task.create`, and who switched it on and when. Core returns these
+  details only for grants the application's own `code.access.list` lists for
+  that person, so only at resources they manage. Other viewers see the entry's
+  level in the editor's own vocabulary.
 - "Remove" asks for confirmation, then Core calls the application's generated
   `code.access.rm` with the entry's `grantId`. The application checks that the
-  person manages the resource. Removal takes effect at once, and Cloud never
-  restores it automatically; only a new activation grants access again.
-- The section stays hidden when there is no Code entry. While owners load, it
-  holds one row per entry. A failed load leaves the people list usable and
+  person manages the resource. Removal takes effect at once: the Code's calls
+  here fail until someone switches it on again. Cloud never restores access
+  automatically; only a new activation grants it again.
+- The section stays hidden when there is no Code entry. While owners and
+  details load, it holds one row per entry. A failed load leaves the people list usable and
   offers a retry; a failed removal stays on its row with a retry.
 - Without `canEdit`, for an entry without `grantId`, or on a page that does not
   name its application, the row has no "Remove" button.
@@ -678,8 +683,10 @@ The application includes Code entries in the normal share list with
 `serviceAccountKind: "code"` and `grantId`, as the
 [Code access contract](/en/docs/platform/capabilities#code-access-at-the-target)
 requires. Its ordinary update and revoke endpoints refuse Code entries. The
-editor reads owner titles from Core at `POST /api/resources/code-access/accounts`
-and removes through `POST /api/resources/code-access/remove`. It sends the
+editor reads owner titles from Core at `POST /api/resources/code-access/accounts`,
+reads grant details from
+[`POST /api/code/access/target`](/en/docs/platform/code-activation), and removes
+through `POST /api/resources/code-access/remove`. It sends the
 current application's ID with each removal. Both routes accept only
 same-origin `application/json` requests. Apps do not call these routes
 themselves.
