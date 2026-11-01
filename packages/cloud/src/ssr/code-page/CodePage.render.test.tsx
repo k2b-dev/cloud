@@ -185,6 +185,32 @@ describe("Code page states", () => {
     expect(page).toContain("Zeitüberschreitung nach 10 s");
   });
 
+  test("a failed run offers a look with the panel, under the panel's own name and icon", () => {
+    expect(text("run-failed")).toContain("Mit Gustav ansehen");
+    expect(html("run-failed")).toContain("ti ti-moustache");
+    expect(text("run-failed", "en")).toContain("View with Gustav");
+    expect(text("run-unclassified")).toContain("Mit Gustav ansehen");
+    expect(text("reader")).not.toContain("Mit Gustav ansehen");
+  });
+
+  test("the Edit with panel buttons show the panel's icon, never a spark", () => {
+    for (const state of ["overview", "none", "removed"] as const) {
+      const page = html(state);
+      expect(page).toContain("ti ti-moustache");
+      expect(page).not.toContain("ti-sparkles");
+    }
+  });
+
+  test("a run started again says by whom and links the run it repeats", () => {
+    const page = text("run-rerun");
+    expect(page).toContain("erneut ausgeführt von Ben Schulz");
+    expect(page).toContain("Erneuter Lauf von #2284a1");
+    expect(html("run-rerun")).toContain("run=2284a1b2-0000-4000-8000-000000000004");
+    expect(text("run-rerun", "en")).toContain("run again by Ben Schulz");
+    expect(text("run-rerun", "en")).toContain("Run again from #2284a1");
+    expect(text("runs")).not.toContain("erneut ausgeführt");
+  });
+
   test("readers see runs without their contents and no actions", () => {
     const page = text("reader");
     expect(page).toContain("Was ein Lauf getan hat, sehen nur Bearbeiter dieses Codes.");

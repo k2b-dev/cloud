@@ -44,6 +44,26 @@ export const CodeActivationSchema = z
   })
   .strict();
 export type CodeActivation = z.infer<typeof CodeActivationSchema>;
+/**
+ * What each target would answer if the person switched this version on now, asked before they do. Nothing is written.
+ * `granted`: the target accepts this person. `refused`: it does not, with the same reader-checked failure an activation
+ * reports. `unknown`: the target did not answer, and only activating decides. A target left out needs no new answer,
+ * because the running version already holds its access. Activation checks everything again.
+ */
+export const CodeActivationCheckSchema = z
+  .object({
+    targets: z.array(
+      z
+        .object({
+          target: CodeAccessTargetSchema,
+          state: z.enum(["granted", "refused", "unknown"]),
+          failure: CodeActivationFailureSchema.nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type CodeActivationCheck = z.infer<typeof CodeActivationCheckSchema>;
 /** Live target access is an observation. Reading or reconciling it never restores a removed grant. */
 export const CodeTargetAccessSchema = z
   .object({
@@ -77,6 +97,10 @@ export const codeActivationContracts = {
       })
       .strict(),
     data: CodeActivationSchema,
+  },
+  check: {
+    input: z.object({ codeId: CodeIdSchema, versionId: z.uuid().describe("Submitted immutable version UUID.") }).strict(),
+    data: CodeActivationCheckSchema,
   },
   read: {
     input: z.object({ codeId: CodeIdSchema, activationId: z.uuid().describe("Durable activation UUID.") }).strict(),

@@ -163,6 +163,7 @@ export const codePageFixture = (
     | "paused"
     | "runs"
     | "run-failed"
+    | "run-rerun"
     | "run-unclassified"
     | "versions"
     | "versions-failed"
@@ -180,7 +181,7 @@ export const codePageFixture = (
     href: "/app/mail/Mb4kd2/code",
     canManageOwner: true,
     activation: { allowed: true },
-    editor: { provider: "assistant", label: "Gustav" },
+    editor: { provider: "assistant", label: "Gustav", icon: "ti ti-moustache" },
     dates: { locale, timeZone: "Europe/Berlin", now: "2026-11-01T10:30:00.000Z" },
     activatedNotice: null,
   };
@@ -304,6 +305,25 @@ export const codePageFixture = (
                 summary: "Karte „Lieferung KW 45 – Rampe 2“ angelegt",
               },
             ],
+            nextCallCursor: null,
+            input: null,
+            inputTooLarge: false,
+          },
+        }),
+      };
+    case "run-rerun":
+      // Ben Schulz ran the failed run again.
+      return {
+        ...base,
+        tab: "runs",
+        state: ready({
+          runs: {
+            items: [{ ...runs[2]!, state: "succeeded", outcome: null, rerunOf: runs[3]!.id, rerunByName: ben.name }, runs[3]!],
+            nextCursor: null,
+          },
+          run: {
+            run: { ...runs[2]!, state: "succeeded", outcome: null, rerunOf: runs[3]!.id, rerunByName: ben.name },
+            calls: [],
             nextCallCursor: null,
             input: null,
             inputTooLarge: false,

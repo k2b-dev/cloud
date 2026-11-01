@@ -584,7 +584,7 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     tab,
     canManageOwner: options.canManageOwner,
     activation,
-    editor: editorPanel ? { provider: editorPanel.id, label: editorPanel.label } : null,
+    editor: editorPanel ? { provider: editorPanel.id, label: editorPanel.label, icon: editorPanel.icon } : null,
     dates: { ...getDateConfig(c), now: new Date().toISOString() },
     activatedNotice: /^\d{1,6}$/.test(url.searchParams.get("activated") ?? "") ? Number(url.searchParams.get("activated")) : null,
   } satisfies Omit<CodePageData, "state">;

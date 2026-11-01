@@ -58,6 +58,9 @@ const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolv
 let refusedTarget = "sp_2lg8";
 let activationEnd: "active" | "not_manager" | "unavailable" | "lost-active" | "silent" = "not_manager";
 const activations: unknown[] = [];
+/** Core's answer before the click; without one the harness answers like an older Core, and switching on decides. */
+let checkAnswer: unknown = null;
+const checks: unknown[] = [];
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -66,6 +69,11 @@ const server = Bun.serve({
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css + icons.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (url.pathname === "/tabler.woff2") return new Response(Bun.file(icons.font), { headers: { "Content-Type": "font/woff2" } });
+    if (url.pathname === "/api/code/activation/check") {
+      checks.push(await request.json());
+      if (checkAnswer === null) return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
+      return Response.json({ data: checkAnswer });
+    }
     if (url.pathname === "/api/code/activate") {
       const body = (await request.json()) as { activationId: string; versionId: string };
       activations.push(body);
@@ -229,6 +237,85 @@ describe("Mailbox Code page in a browser", () => {
       await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
       expect(await page.getByRole("dialog").count()).toBe(0);
     } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the dialog blocks before the click and names who manages the target when the target refuses", async () => {
+    activations.length = 0;
+    checks.length = 0;
+    const own = { target: { type: "mail.mailbox", id: "Mb4kd2" }, state: "granted", failure: null };
+    checkAnswer = {
+      targets: [
+        own,
+        {
+          target: { type: "spaces.space", id: "sp_2lg8" },
+          state: "refused",
+          failure: {
+            target: { type: "spaces.space", id: "sp_2lg8" },
+            code: "not_manager",
+            reason: "Target manager authority required",
+            readable: true,
+            managerNames: ["Ben Schulz"],
+          },
+        },
+      ],
+    };
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("Du bist nicht Admin von Space Logistik.", { exact: false }).waitFor();
+      expect(checks).toHaveLength(1);
+      expect(activations).toHaveLength(0);
+      expect(await dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).toBe(true);
+      expect(await dialog.getByText("Das ist hier Ben Schulz.", { exact: false }).isVisible()).toBe(true);
+      expect(await dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).toBe(true);
+      expect(await dialog.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
+      await shoot(page, "blockiert-vorab-1440");
+    } finally {
+      checkAnswer = null;
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the dialog says up front that the person manages each new target, and switching on stays possible", async () => {
+    activations.length = 0;
+    checkAnswer = {
+      targets: [
+        { target: { type: "mail.mailbox", id: "Mb4kd2" }, state: "granted", failure: null },
+        { target: { type: "spaces.space", id: "sp_2lg8" }, state: "granted", failure: null },
+      ],
+    };
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("du verwaltest Space Logistik", { exact: false }).waitFor();
+      expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isEnabled()).toBe(true);
+      expect(activations).toHaveLength(0);
+      await shoot(page, "einschalten-vorab-1440");
+    } finally {
+      checkAnswer = null;
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a target that gives no answer before the click leaves the decision to switching on", async () => {
+    checkAnswer = {
+      targets: [
+        { target: { type: "mail.mailbox", id: "Mb4kd2" }, state: "granted", failure: null },
+        { target: { type: "spaces.space", id: "sp_2lg8" }, state: "unknown", failure: null },
+      ],
+    };
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("wird beim Einschalten geprüft", { exact: false }).waitFor();
+      expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isEnabled()).toBe(true);
+    } finally {
+      checkAnswer = null;
       await page.context().close();
     }
   }, 30_000);

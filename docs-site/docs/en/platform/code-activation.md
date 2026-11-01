@@ -122,6 +122,16 @@ remains available to copy. Status reads check the current reader again before
 returning a saved title or manager list; only then they add `managerNames`, the
 display names of the first five managers, which are never stored.
 
+`POST /api/code/activation/check` with `codeId` and `versionId` answers before
+anyone clicks. Core asks every target an activation would ask with the same
+`dryRun`, and returns one `{ target, state, failure }` per target: `granted`,
+`refused` with the failure an activation would report under the same reader
+check, or `unknown` when the target does not answer. A target the running version
+already reaches is left out. The route needs the same person and credential as
+activating, writes nothing, and decides nothing: activating checks everything
+again. The Code page's dialog shows the answers next to each target, keeps the
+button disabled for `not_manager`, and leaves `unknown` to activating.
+
 Cloud-admin notification audiences use a separate Core-only, target-bound
 `signCodeAccessNotifications` proof. Each successful adapter dry run identifies
 current human managers in `managerUserIds`, including administrator-group

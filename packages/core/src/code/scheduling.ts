@@ -37,7 +37,7 @@ export async function readCodeRunLimits(): Promise<CodeRunLimits> {
 type ScheduledTick = Omit<CodeScheduleTick, "versionId"> & { versionId?: string; cron?: string };
 
 async function enqueue(
-  input: { codeId: string; entrypoint: string; requestKey: string; input: unknown; tick?: ScheduledTick },
+  input: { codeId: string; entrypoint: string; requestKey: string; input: unknown; rerunOf?: string; tick?: ScheduledTick },
   db: SQL,
   context?: CodeContext,
 ): Promise<CodeStartResult | null> {
@@ -45,7 +45,11 @@ async function enqueue(
   if (!context) await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
   const code = context ? await lockCodeForEdit(input.codeId, context, db) : await findCode(input.codeId, db);
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
-  const requestDigest = approvalArgsDigest({ entrypoint: input.entrypoint, input: input.input });
+  const requestDigest = approvalArgsDigest({
+    entrypoint: input.entrypoint,
+    input: input.input,
+    ...(input.rerunOf ? { rerunOf: input.rerunOf } : {}),
+  });
   const [receipt] = await db<{ run_id: string; request_digest: string | null }[]>`SELECT run_id,request_digest FROM code.run_requests
     WHERE code_id=${code.id} AND request_key=${input.requestKey}`;
   if (receipt) {
@@ -63,6 +67,11 @@ async function enqueue(
     throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
   }
   if (input.tick?.cron !== undefined && input.tick.cron !== entry.cron) return null;
+  if (input.rerunOf) {
+    const [original] = await db<{ id: string }[]>`SELECT id FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
+      AND entrypoint=${input.entrypoint} AND state='failed'`;
+    if (!original) throw new CodeDataError("BAD_INPUT", "Only a failed run of this Code and entrypoint can run again.");
+  }
   let refused = false;
   try {
     await requireCodeVersionApproval(code, code.activeVersionId, db);
@@ -81,6 +90,8 @@ async function enqueue(
     db,
   );
   if (!input.tick && entry.kind === "schedule") await db`UPDATE code.runs SET schedule_key=${input.entrypoint} WHERE id=${runId}::uuid`;
+  if (input.rerunOf && context)
+    await db`UPDATE code.runs SET rerun_of=${input.rerunOf}::uuid,rerun_by=${codePerson(context, true).id}::uuid WHERE id=${runId}::uuid`;
   if (input.tick) {
     // Schedule identity deliberately excludes version: activating a new version cannot overlap the old tick.
     const scheduleKey = input.entrypoint;
@@ -104,7 +115,7 @@ async function enqueue(
         actor: { userId: codePerson(context, true).id },
         target: { type: "code", id: code.id },
         requestId: context.requestId,
-        metadata: { runId, versionId: code.activeVersionId },
+        metadata: { runId, versionId: code.activeVersionId, ...(input.rerunOf ? { rerunOf: input.rerunOf } : {}) },
       },
       db,
     );

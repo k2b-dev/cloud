@@ -70,6 +70,10 @@ const RunSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().nullable(),
   endedAt: z.string().nullable(),
+  /** The failed run this one starts again. */
+  rerunOf: z.string().nullable().optional(),
+  /** Who started it again, as the directory shows them to this viewer. */
+  rerunByName: z.string().nullable().optional(),
 });
 export const RunListSchema = z.object({ items: z.array(RunSchema), nextCursor: z.string().nullable() });
 const CallSchema = z.object({
@@ -122,6 +126,17 @@ export const ActivationSchema = z.object({
     .nullable(),
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
+/** Core's answer before the click: a target left out needs no new answer. */
+export const ActivationCheckSchema = z.object({
+  targets: z.array(
+    z.object({
+      target: z.object({ type: z.string(), id: z.string() }),
+      state: z.enum(["granted", "refused", "unknown"]),
+      failure: ActivationSchema.shape.failure,
+    }),
+  ),
+});
+export type CodeActivationCheck = z.infer<typeof ActivationCheckSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
 
 /** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
@@ -285,8 +300,8 @@ export type CodePageData = {
   canManageOwner: boolean;
   /** Activation needs an interactive browser session or a personal OAuth credential. */
   activation: { allowed: true } | { allowed: false; reason: "phone" | "credential" };
-  /** A panel that works on Code with the person, offered as "Edit with …". */
-  editor: { provider: string; label: string } | null;
+  /** A panel that works on Code with the person, offered as "Edit with …" under its own name and icon. */
+  editor: { provider: string; label: string; icon: string } | null;
   dates: DateContext & { now: string };
   /** The page reloaded right after this version was switched on. */
   activatedNotice: number | null;
