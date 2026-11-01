@@ -163,7 +163,9 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     if (path === "pause") {
       const paused = body && typeof body === "object" && "paused" in body ? body.paused === true : false;
       if (state === "savefail" && !paused)
-        return Response.json({ code: "code_version_unavailable", message: "Needs approval" }, { status: 409 });
+        return Response.json({ code: "code_approval_required", message: "Needs approval" }, { status: 409 });
+      if (state === "conflict" && !paused)
+        return Response.json({ code: "code_policy_never", message: "Forbidden by policy" }, { status: 409 });
       return Response.json({ data: { state: paused ? "paused" : "active" } });
     }
     if (path === "decide") {

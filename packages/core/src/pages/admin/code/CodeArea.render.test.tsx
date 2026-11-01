@@ -160,6 +160,9 @@ test("policy, groups and effective rows render with their sources", () => {
   expect(history).toContain("Sendet (Praktikum)");
   expect(history).toContain("wie Standard");
   expect(history).toContain("Voreinstellung Admin gibt frei → Eigene");
+  // A preset change lists every changed row, also beyond six.
+  for (const label of ["Löscht", "Nicht rückgängig", "Bezieht Personen ein", "Ändert Zugriff", "Läuft weiter", "Sensibel"])
+    expect(history).toContain(label);
   expect(render({ sec: "history" }, "empty")).toContain("Noch keine Änderung aufgezeichnet");
   expect(render({ sec: "history" }, "fail")).toContain("Konnte nicht geladen werden");
 });

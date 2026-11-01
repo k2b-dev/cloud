@@ -32,7 +32,11 @@ export default function CodePauseAction(props: { codeId: string; title: string; 
         !(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500
           ? `${t().unknownTitle} ${t().reload}`
           : error.status === 409 && !paused
-            ? t().resumeRefused
+            ? error.code === "code_policy_never" || error.code === "code_sends_not_yet"
+              ? t().resumeForbidden
+              : error.code === "code_approval_required" || error.code === "code_approval_revoked" || error.code === "code_hash_mismatch"
+                ? t().resumeRefused
+                : t().pauseFailed
             : t().pauseFailed,
       );
     }

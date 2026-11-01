@@ -61,6 +61,8 @@ export const codeAdminMessages = i18n.define({
       pauseBody: "The active version stops running. Events during the pause are not replayed. Its editors see who paused it.",
       resumeBody: "The active version runs again if the current policy still allows its approval.",
       resumeRefused: "Not resumed: the active version needs a new approval under the current policy.",
+      resumeForbidden:
+        "Not resumed: the current policy forbids a classification of the active version (“Never”). Change the policy or the Code.",
       pauseFailed: "Not changed. Reload and try again.",
       undoHint: "To take an approval back, pause the Code.",
       openCode: "Open Code",
@@ -75,7 +77,6 @@ export const codeAdminMessages = i18n.define({
       historyEmptySub: "Changes show here with who, when and which row.",
       historyPreset: ({ before, after }: { before: string; after: string }) => `Preset ${before} → ${after}`,
       historyRow: ({ row, group }: { row: string; group: string | null }) => (group ? `${row} (${group})` : row),
-      historyMore: ({ n }: N) => `and ${n} more`,
       unset: "as default",
       showHistory: "Show history",
       // Approvals
@@ -366,6 +367,8 @@ export const codeAdminMessages = i18n.define({
         "Die aktive Version läuft nicht mehr. Ereignisse in der Pause holt Cloud nicht nach. Die Bearbeitenden sehen, wer pausiert hat.",
       resumeBody: "Die aktive Version läuft wieder, wenn die aktuelle Richtlinie ihre Freigabe noch erlaubt.",
       resumeRefused: "Nicht fortgesetzt: Die aktive Version braucht unter der aktuellen Richtlinie eine neue Freigabe.",
+      resumeForbidden:
+        "Nicht fortgesetzt: Die aktuelle Richtlinie verbietet eine Einstufung der aktiven Version („Nie“). Ändere die Richtlinie oder den Code.",
       pauseFailed: "Nicht geändert. Lade neu und versuche es erneut.",
       undoHint: "Zurücknehmen geht über „Pausieren“ am Code.",
       openCode: "Code öffnen",
@@ -380,7 +383,6 @@ export const codeAdminMessages = i18n.define({
       historyEmptySub: "Änderungen stehen hier mit wer, wann und welche Zeile.",
       historyPreset: ({ before, after }: { before: string; after: string }) => `Voreinstellung ${before} → ${after}`,
       historyRow: ({ row, group }: { row: string; group: string | null }) => (group ? `${row} (${group})` : row),
-      historyMore: ({ n }: N) => `und ${n} weitere`,
       unset: "wie Standard",
       showHistory: "Verlauf ansehen",
       nWaiting: ({ n }: N) => (n === 1 ? "1 Version wartet" : `${n} Versionen warten`),

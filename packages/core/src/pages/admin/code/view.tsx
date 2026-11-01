@@ -770,7 +770,7 @@ export function CodeAreaView(props: Props) {
                     <Show when={entry.preset}>
                       {(preset) => <li>{t.historyPreset({ before: presetLabel(preset().before), after: presetLabel(preset().after) })}</li>}
                     </Show>
-                    <For each={entry.changes.slice(0, 6)}>
+                    <For each={entry.changes}>
                       {(change) => (
                         <li>
                           {t.historyRow({ row: t.rowLabel({ row: change.row }), group: change.group })}:{" "}
@@ -778,9 +778,6 @@ export function CodeAreaView(props: Props) {
                         </li>
                       )}
                     </For>
-                    <Show when={entry.changes.length > 6}>
-                      <li class="text-(--k2b-text-muted)">{t.historyMore({ n: entry.changes.length - 6 })}</li>
-                    </Show>
                   </ul>
                 </li>
               )}

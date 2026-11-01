@@ -152,6 +152,17 @@ databaseSuite()("C22 Administration › Code read model", () => {
     const codeVersions = () =>
       countPending({ approverUserId: reviewerId, roleContext: { kind: "request", authority: reviewer.authority }, kind: "code_version" });
     expect((await codeVersions()).total).toBe(1);
+    // The sidebar hint runs with a short lock and statement budget and still counts exactly.
+    expect(
+      (
+        await countPending({
+          approverUserId: reviewerId,
+          roleContext: { kind: "request", authority: reviewer.authority },
+          kind: "code_version",
+          timeoutMs: 250,
+        })
+      ).total,
+    ).toBe(1);
     const {
       items: [item],
       nextCursor,

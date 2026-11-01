@@ -179,7 +179,11 @@ test("a Cloud admin pauses any Code from its detail, and a refused resume says w
   await goto("sec=code&id=c_woche&state=savefail");
   await page.getByRole("button", { name: "Fortsetzen" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Fortsetzen" }).click();
-  await page.getByText("Nicht fortgesetzt", { exact: false }).waitFor();
+  await page.getByText("braucht unter der aktuellen Richtlinie eine neue Freigabe", { exact: false }).waitFor();
+  await goto("sec=code&id=c_woche&state=conflict");
+  await page.getByRole("button", { name: "Fortsetzen" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Fortsetzen" }).click();
+  await page.getByText("verbietet eine Einstufung der aktiven Version", { exact: false }).waitFor();
 }, 20_000);
 
 test("a phone shows one level with its decision bar in reach", async () => {

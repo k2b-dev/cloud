@@ -533,6 +533,23 @@ export const fixtureHistory = (): CodeAdminPolicyChange[] => [
     preset: { before: "admin", after: "custom" },
     changes: [{ group: null, row: "silent_shared", before: "automatic", after: "admin" }],
   },
+  {
+    at: "2026-10-20T08:00:00.000Z",
+    by: "Jana Probe",
+    revision: 5,
+    preset: { before: "open", after: "admin" },
+    changes: (
+      [
+        "silent_shared",
+        "ask_deletes",
+        "ask_cannot_undo",
+        "ask_involves_people",
+        "ask_changes_access",
+        "ask_keeps_working",
+        "ask_sensitive",
+      ] as const
+    ).map((row) => ({ group: null, row, before: "automatic" as const, after: "admin" as const })),
+  },
 ];
 
 /** Every part loaded; tests replace single parts to reach a state. */
