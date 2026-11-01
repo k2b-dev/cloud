@@ -3,7 +3,7 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
-import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
 import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";

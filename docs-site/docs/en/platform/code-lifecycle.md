@@ -2,7 +2,7 @@
 title: Code owner lifecycle
 navTitle: Code lifecycle
 section: Platform services
-order: 964
+order: 970
 description: Report owner deletion transactionally, follow durable grant cleanup, and pause Code whose owner is missing.
 tags: [code, identity, permissions]
 updated: 2026-11-01
