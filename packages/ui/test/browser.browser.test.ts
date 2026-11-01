@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, launchBrowser, pageErrors, recordTestServer, settled, viewTransitionEnded } from "../test/browser";
+import { browserName, killProcessGroup, launchBrowser, pageErrors, recordTestServer, settled, viewTransitionEnded } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
@@ -462,6 +462,23 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       await context.close();
     }
   }, 20_000);
+
+  test("a killed process group whose profile cleanup hangs leaves the hook budget at once", async () => {
+    // A real process group stands in for the browser; Playwright's kill() also removes the profile and can hang on it.
+    // Detached, it leads its own process group, as a launched browser does.
+    const group = Bun.spawn(["sleep", "30"], { stdout: "ignore", stderr: "ignore", detached: true });
+    const started = performance.now();
+    try {
+      const killMs = await killProcessGroup({ pid: group.pid, kill: () => new Promise(() => {}) }, 0);
+      await group.exited;
+      expect(() => process.kill(-group.pid, 0)).toThrow(/ESRCH/);
+      // It waits a moment for the cleanup, never the whole kill budget, so the rest of the hook keeps its time.
+      expect(killMs).toBeLessThan(1000);
+      expect(performance.now() - started).toBeLessThan(1000);
+    } finally {
+      group.kill("SIGKILL");
+    }
+  });
 
   test.skipIf(Boolean(process.env.TEST_BROWSER_ENDPOINT?.trim()))(
     "a browser that hangs on close is killed and gone within the hook budget, and the next launch starts at once",
