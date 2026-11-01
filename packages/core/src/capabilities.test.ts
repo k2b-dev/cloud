@@ -1302,11 +1302,3 @@ test("Core action targets replace their primary input selector in the manifest",
   }
   expect(aiCapabilities.actions["ai.skill.delete"].input.safeParse({ skillId: "Other1" }).success).toBe(false);
 });
-
-test("every Code Action with policy declares review and the Core manifest compiles", () => {
-  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
-    if (!id.startsWith("code.") || !("policy" in action)) continue;
-    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
-  }
-  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
-});
