@@ -1126,7 +1126,7 @@ their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
 Unit tests run in nine shards, WebKit tests in ten, and integration tests in
-four. Each mode uses its own measured seconds per suite in
+five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
@@ -1143,7 +1143,8 @@ returns the jobs to standard runners without a pull request.
 
 Each shard prints its predicted and actual time. Its runner stops an active
 suite and fails with an annotation at the 20-minute budget, before the
-30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
+30-minute job limit. A shard that finishes above the 15-minute target stays green
+and gets a warning annotation that asks for a weight refresh. The budget also includes NATS housekeeping and integration database bootstrap.
 To refresh the weights, run
 `bun scripts/test-weights.ts --run <id> <id> <id>` with recent completed runs,
 including slow or failed runs, using `gh-agent` authentication; add

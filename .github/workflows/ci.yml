@@ -273,10 +273,11 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Measured maxima from runs 40901942299, 40901379596 and 40901375367
-      # predict 13.9 min for the slowest of 4 integration shards (3 need 17.0 min).
+      # Measured maxima from runs 41334867354, 41335243553, 41332285147, 41332198602
+      # and 41330725890 predict 13.6 min for the slowest of 5 integration shards
+      # (4 need 15.3 min).
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     services:
       clickhouse:
         image: ghcr.io/k2b-dev/mirror/clickhouse/clickhouse-server:26.9.19.9@sha256:bdb5c911a23d92fd364e246ab20b5a0a485f00112f3663fa626b083fb46c146b
@@ -384,7 +385,7 @@ jobs:
               wait "$storage_sleep"
             done
           '
-      - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/4 --max-minutes 20
+      - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/${{ strategy.job-total }} --max-minutes 20
       - name: Stop Postgres storage sampler and print samples
         if: always()
         env:
