@@ -22,6 +22,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
+import { z } from "zod";
 import { apiClient } from "../../api/client";
 import { spaceDetailSchema, spacesItemSearchDataSchema, spacesMailDestinationsSchema } from "../../app-integration-contracts";
 import {
@@ -628,7 +629,7 @@ function AutomationStepsEditor(props: {
       return next;
     });
   const stepLabel = (step: MailAutomationStep): string => messages().incomingStepKind({ kind: step.kind });
-  const chooseSpaceItem = async (): Promise<string | null> => {
+  const chooseSpaceItem = async (): Promise<{ itemId: string; spaceId: string } | null> => {
     const selected = await prompts.search<{ id: string; title: string }>(
       async ({ query, abortSignal }) => {
         if (!query.trim()) return [];
@@ -654,11 +655,17 @@ function AutomationStepsEditor(props: {
         size: "small",
       },
     );
-    return selected?.value?.id ?? null;
+    if (!selected?.value) return null;
+    const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces.items[":itemId"].$get({
+      param: { mailboxId: props.mailboxId, itemId: selected.value.id },
+    });
+    if (!response.ok) throw new Error(await readApiError(response, messages().couldNotSearchSpaces));
+    const target = z.object({ spaceId: z.string().regex(/^[0-9A-Za-z]{6}$/) }).parse(await response.json());
+    return { itemId: selected.value.id, spaceId: target.spaceId };
   };
   const appendSpaceItem = async () => {
     const itemId = await chooseSpaceItem();
-    if (itemId) append({ id: stepId(), kind: "link_space_item", itemId });
+    if (itemId) append({ id: stepId(), kind: "link_space_item", ...itemId });
   };
   const chooseEventDestination = async (): Promise<{ spaceId: string; columnId: string } | null> => {
     const destinationsResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces.destinations.$get({
@@ -769,7 +776,16 @@ function AutomationStepsEditor(props: {
           };
         }),
       ...(canInsertShape({ localSteps: 1 })
-        ? [{ label: messages().linkSpaceItem, icon: "ti ti-link", action: () => void appendSpaceItem() }]
+        ? [
+            {
+              label: messages().linkSpaceItem,
+              icon: "ti ti-link",
+              action: () =>
+                void appendSpaceItem().catch((error: unknown) =>
+                  prompts.error(error instanceof Error ? error.message : messages().couldNotSearchSpaces),
+                ),
+            },
+          ]
         : []),
       ...(canInsertShape({ localSteps: 2, aiCalls: 1 })
         ? [{ label: messages().aiEventFlow, icon: "ti ti-calendar-plus", action: () => void appendAiEventFlow() }]
@@ -1121,7 +1137,11 @@ function AutomationStepsEditor(props: {
                         variant="input"
                         onClick={() => {
                           if (step.kind !== "link_space_item") return;
-                          void chooseSpaceItem().then((itemId) => itemId && replace(index(), { ...step, itemId }));
+                          void chooseSpaceItem()
+                            .then((target) => target && replace(index(), { ...step, ...target }))
+                            .catch((error: unknown) =>
+                              prompts.error(error instanceof Error ? error.message : messages().couldNotSearchSpaces),
+                            );
                         }}
                       >
                         <i class="ti ti-search" aria-hidden="true" /> {messages().changeItem}
@@ -1559,6 +1579,11 @@ function IncomingAutomationEditor(props: {
         closeDisabled={save.loading()}
       />
       <PanelDialog.Body>
+        <Show when={props.automation?.authorizationState === "needs_attention"}>
+          <NoticeCard tone="warning" title={messages().automationNeedsAttention}>
+            {messages().automationTargetConfirmation}
+          </NoticeCard>
+        </Show>
         <PanelDialog.Section title={messages().basics} subtitle={messages().basicsDescription} icon="ti ti-adjustments">
           <TextInput
             label={messages().name}
@@ -1971,6 +1996,30 @@ export default function MailIncomingAutomationSettings(props: {
         hoverRows
         empty={messages().noIncomingAutomations}
         renderCell={({ row, col, render }) => {
+          if (col.id === "name" && row.authorizationState === "needs_attention") {
+            return (
+              <div class="space-y-1">
+                <span>{row.name}</span>
+                <StatusBadge tone="warning" label={messages().automationNeedsAttention} />
+                <p class="text-dimmed">{messages().automationTargetConfirmation}</p>
+                <Button
+                  size="sm"
+                  variant="input"
+                  onClick={() =>
+                    void openIncomingAutomationEditor({
+                      mailboxId: props.mailboxId,
+                      catalog: props.catalog,
+                      automation: row,
+                      onSaved: upsert,
+                      onBackfillStarted: rememberBackfill,
+                    })
+                  }
+                >
+                  {messages().editAutomation}
+                </Button>
+              </div>
+            );
+          }
           if (col.id === "enabled") {
             return (
               <Switch
@@ -1983,7 +2032,7 @@ export default function MailIncomingAutomationSettings(props: {
                   </>
                 }
                 value={() => row.enabled}
-                disabled={toggle.loading() || backfillLocksAutomation(row)}
+                disabled={toggle.loading() || backfillLocksAutomation(row) || row.authorizationState === "needs_attention"}
                 onValueChange={(enabled) => toggle.mutate({ automation: row, enabled })}
               />
             );

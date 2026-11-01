@@ -42,6 +42,37 @@ Chats, messages, tool-call history, files, projects, memories, Skills, and
 **Always approve** preferences remain unchanged. History displays stored
 arguments without validating them against the new capability schema.
 
+## Incoming Mail automations keep their Spaces targets
+
+Upgrade Mail together with the target-bound Spaces capabilities. Stop older Mail
+replicas and workers before starting the new image; do not mix writers from the
+two versions. Back up the database before this coordinated upgrade. Rollback
+requires restoring that backup together with the previous application images.
+
+Mail migrates existing incoming-automation mandates before starting workers.
+The Space configured on each event step becomes its grant target; the column
+remains fixed. The migration retains existing grant restrictions. Later definition edits remain explicit reauthorization by the original person. Definitions, Mail-only
+steps, the authorizing person, and enabled/paused choices remain in place when
+the target can be mapped. This migration and its audit commit in the same
+transaction and are applied once.
+
+An old **Link Spaces item** step stores only the item ID, so its Space cannot
+be inferred safely. Missing or conflicting coordinates or an unavailable mandate
+also require confirmation. Mail disables that automation and its workflow,
+pauses its active mandate, and shows **Needs attention** under
+**Automations → Incoming mail**. The saved definition is retained. If an old policy is unreadable, confirmation revokes its old binding without changing the stored policy, then creates the replacement in the same transaction. The original
+author chooses **Edit automation**, selects the intended Spaces destinations
+again, saves, and enables it. If the authorization is missing, an interactive
+mailbox administrator can create a new one by saving. A toggle alone cannot
+bypass confirmation. Pending runs cannot use an automation in this state.
+
+New and edited **Link Spaces item** steps include `spaceId` as well as `itemId`;
+the item picker obtains the Space through the authorized Spaces reader. Its
+mandate binds both coordinates. Background links need no additional reader
+authority. Event steps bind `spaceId` and `columnId`. Neither step grants access
+to another Space. These automations continue to act as their author; replacement
+by resource-owned Code is a later phase.
+
 ## Spaces and Contacts Actions name their container
 
 Move `spaceId` out of Spaces creation and calendar-import inputs into

@@ -269,3 +269,7 @@ With **Manage** access, you use **Automations → Activity** for the automatic r
 Choose **Cancel** when no further effects may start. Cancelling does not reverse mail moves, sends, or collaboration changes that already completed. A run that needs attention waits until a Cloud administrator records whether an uncertain external effect completed. Turning off a Mail workflow stops new trigger matches. It does not change completed history.
 
 For the complete YAML vocabulary and checked examples, see [Mail workflow YAML reference](/app/mail/help/mail-workflows).
+
+## Confirm a Spaces destination after an upgrade {icon="shield-check"}
+
+If an incoming automation shows **Needs attention**, it is paused and its saved steps remain available. Choose **Edit automation**, select its Spaces item or event destination again, and save. Then enable it. The person who originally authorized Spaces access must confirm it again. A configured Space remains the only destination for that step; Mail does not widen access when it upgrades an automation.
