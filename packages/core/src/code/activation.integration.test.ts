@@ -297,8 +297,7 @@ databaseSuite()("durable Code activation", () => {
   test("the preview names who manages a refusing target only for a person who may read it", async () => {
     const code = await newCode(),
       submitted = await version(code);
-    await sql`INSERT INTO auth.users(id,uid,provider,profile,display_name,given_name,sn)
-      VALUES(${nextOwnerId}::uuid,'ben','local','user','Ben Schulz','Ben','Schulz') ON CONFLICT (id) DO UPDATE SET display_name='Ben Schulz', given_name='Ben'`;
+    await sql`UPDATE auth.users SET display_name='Ben Schulz', given_name='Ben' WHERE id=${nextOwnerId}::uuid`;
     denyDry = "B";
     const row = (rows: { target: { id: string } }[], id: string) => rows.find((item) => item.target.id === id);
     const readable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
@@ -313,6 +312,7 @@ databaseSuite()("durable Code activation", () => {
       expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, managers: [] });
     } finally {
       targetReadable = true;
+      await sql`UPDATE auth.users SET display_name=NULL, given_name=NULL WHERE id=${nextOwnerId}::uuid`;
     }
   });
   test("the preview of a running or replaced version asks no target; a credential that cannot switch on is told and asks none", async () => {

@@ -92,6 +92,7 @@ export const CodeActivationPreviewSchema = z
   .object({
     codeId: CodeIdSchema,
     title: z.string(),
+    ownerKind: z.enum(["person", "resource", "app"]),
     versionId: z.uuid(),
     number: z.number().int().positive(),
     /** The running version's number; null when none runs. */
@@ -107,7 +108,7 @@ export const CodeActivationPreviewSchema = z
       z.object({ state: z.literal("approval_pending") }).strict(),
       z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }).strict(),
     ]),
-    /** The resource page that holds this Code, as far as this person may read it; null for personal Code. */
+    /** The resource that holds this Code, as far as this person may read it; null otherwise and for personal Code. */
     place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).strict().nullable(),
     rows: z.array(CodeActivationPreviewRowSchema),
   })

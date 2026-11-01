@@ -63,6 +63,9 @@ const MISSING_ACCESS_CALLS = 10;
 const TITLE_LIMIT = 10;
 /** Past this, a slow scheduler only leaves the next run out. */
 const NEXT_RUN_BUDGET_MS = 1_000;
+/** Next runs read in one answer and at once; a version's entrypoints have no fixed limit. */
+const NEXT_RUN_LIMIT = 50;
+const NEXT_RUN_CONCURRENCY = 8;
 
 type Attributed = { entrypoint: string; lastRunState: string | null; lastRunId: string | null; missing: string[] };
 
@@ -70,7 +73,8 @@ type Attributed = { entrypoint: string; lastRunState: string | null; lastRunId: 
 const callKeys = (raw: unknown): string[] => {
   const parsed = z
     .object({
-      target: z.object({ type: z.string(), id: z.string() }).optional(),
+      // An app-wide operation stores null: it reaches the app as a whole.
+      target: z.object({ type: z.string(), id: z.string() }).nullish(),
       refs: z.record(z.string(), z.object({ type: z.string(), id: z.string() })).optional(),
       capability: z.string().optional(),
     })
@@ -192,18 +196,26 @@ export async function listCodeAutomations(
       ),
     ),
   );
-  const items = await Promise.all(
-    manifest.data.entrypoints.map(async (entry, index): Promise<CodeAutomation> => {
-      const run = lastRun.get(entry.entrypoint);
-      return {
-        entrypoint: entry.entrypoint,
-        kind: entry.kind,
-        cron: entry.cron,
-        nextRunAt: code.state === "active" && entry.kind === "schedule" ? await nextRun(code.id, entry.entrypoint).catch(() => null) : null,
-        lastRun: run ? { state: run.state, createdAt: run.created_at.toISOString(), endedAt: run.ended_at?.toISOString() ?? null } : null,
-        missingTargets: attributed[index]!.missing.flatMap((key) => titled.get(key) ?? []),
-      };
-    }),
-  );
+  const nextRuns = new Map<string, string | null>();
+  if (code.state === "active") {
+    const scheduled = manifest.data.entrypoints.filter((entry) => entry.kind === "schedule").slice(0, NEXT_RUN_LIMIT);
+    for (let start = 0; start < scheduled.length; start += NEXT_RUN_CONCURRENCY)
+      await Promise.all(
+        scheduled.slice(start, start + NEXT_RUN_CONCURRENCY).map(async (entry) => {
+          nextRuns.set(entry.entrypoint, await nextRun(code.id, entry.entrypoint).catch(() => null));
+        }),
+      );
+  }
+  const items = manifest.data.entrypoints.map((entry, index): CodeAutomation => {
+    const run = lastRun.get(entry.entrypoint);
+    return {
+      entrypoint: entry.entrypoint,
+      kind: entry.kind,
+      cron: entry.cron,
+      nextRunAt: nextRuns.get(entry.entrypoint) ?? null,
+      lastRun: run ? { state: run.state, createdAt: run.created_at.toISOString(), endedAt: run.ended_at?.toISOString() ?? null } : null,
+      missingTargets: attributed[index]!.missing.flatMap((key) => titled.get(key) ?? []),
+    };
+  });
   return { codeId: code.id, items, removedTargets: [...titled.values()] };
 }

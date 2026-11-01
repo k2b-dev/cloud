@@ -121,17 +121,18 @@ const automation = (entrypoint: string, cron: string | null, patch: Record<strin
 });
 const logistik = { type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" };
 /** The running version's automations, as Core lists them; each owner's answer also names removed access. */
-const automationsOf = (codeId: string, accessMissing = false) =>
-  ({
-    c_woche1: { items: [automation("wochenbericht", "0 7 * * 1", { nextRunAt: "2026-11-02T06:00:00.000Z" })], removedTargets: [] },
-    c_info01: {
-      items: [
-        automation("Anfragen sortieren", null),
-        automation("Lieferungen eintragen", null, accessMissing ? { missingTargets: [logistik] } : {}),
-      ],
-      removedTargets: accessMissing ? [logistik] : [],
-    },
-  })[codeId] ?? { items: [], removedTargets: [] };
+const automationsOf = (codeId: string, accessMissing = false) => {
+  if (codeId === "c_woche1")
+    return { items: [automation("wochenbericht", "0 7 * * 1", { nextRunAt: "2026-11-02T06:00:00.000Z" })], removedTargets: [] };
+  if (codeId !== "c_info01") return { items: [], removedTargets: [] };
+  return {
+    items: [
+      automation("Anfragen sortieren", null),
+      automation("Lieferungen eintragen", null, accessMissing ? { missingTargets: [logistik] } : {}),
+    ],
+    removedTargets: accessMissing ? [logistik] : [],
+  };
+};
 const runOf = (codeId: string) => {
   const failed = codeId === "c_stoff1";
   const minutesAgo = { c_woche1: 7_000, c_rueck1: 60, c_stoff1: 210, c_angeb1: 2_900, c_info01: 25 }[codeId] ?? 60;

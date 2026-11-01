@@ -65,3 +65,12 @@ test("at most three failed automations are read, one after another", async () =>
   });
   expect(read).toEqual(["run-a", "run-b", "run-c"]);
 });
+
+test("an app-wide call stores no target and names its app", async () => {
+  const automations = [automation("a", "failed"), automation("b", "failed")];
+  const app = targetKey({ type: "app", id: "weather" });
+  await attributeMissingTargets(automations, new Set([app]), "editor", async (runId) =>
+    runId === "run-a" ? [{ capability: "weather.forecast.read", target: null }] : [],
+  );
+  expect(automations.map((item) => item.missing)).toEqual([[app], []]);
+});

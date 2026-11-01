@@ -14,6 +14,7 @@ const RowSchema = z.object({
 const PreviewSchema = z.object({
   codeId: z.string(),
   title: z.string(),
+  ownerKind: z.enum(["person", "resource", "app"]),
   versionId: z.string(),
   number: z.number().int(),
   running: z.number().int().nullable(),
@@ -32,6 +33,12 @@ const PreviewSchema = z.object({
 });
 export type CodeVersionPreview = z.infer<typeof PreviewSchema>;
 export type CodeVersionPreviewRow = z.infer<typeof RowSchema>;
+
+/** The Code page of this Code: a personal Code's page in Gustav, or its place's "/code" page when the person may read it. */
+export const codeVersionPageHref = (preview: CodeVersionPreview): string | null => {
+  if (preview.ownerKind === "person") return `/app/assistant/code/${preview.codeId}`;
+  return preview.place?.href ? `${preview.place.href.replace(/\/$/, "")}/code` : null;
+};
 
 const StatusSchema = z.object({
   state: z.enum(["pending", "preflight", "applying", "waiting", "rolling_back", "failed", "active", "cancelled"]),

@@ -1,8 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { codeVersionPageHref } from "./AssistantCodeVersionCard";
-import type { CodeVersionPreview, CodeVersionPreviewRow } from "./code-activation";
+import { type CodeVersionPreview, type CodeVersionPreviewRow, codeVersionPageHref } from "./code-activation";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const codeId = "c_info01";
@@ -29,6 +28,7 @@ const own = row({
 const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview => ({
   codeId,
   title: "Code of info@",
+  ownerKind: "resource",
   versionId,
   number: 5,
   running: 4,
@@ -191,6 +191,18 @@ test("an older version, no access and an outage each say so; the outage retries"
 
 test("the Code page is the place's own /code page, or a personal Code's page in Gustav", () => {
   expect(codeVersionPageHref(preview())).toBe("/app/mail/m_info/code");
-  expect(codeVersionPageHref(preview({ place: null }))).toBe(`/app/assistant/code/${codeId}`);
+  expect(codeVersionPageHref(preview({ ownerKind: "person", place: null }))).toBe(`/app/assistant/code/${codeId}`);
+  // A place the person may not read has no address; Code of a place is never sent to a personal page.
+  expect(codeVersionPageHref(preview({ place: null }))).toBeNull();
   expect(codeVersionPageHref(preview({ place: { title: "info@", typeTitle: null, href: null } }))).toBeNull();
+});
+
+test("an activation whose person is hidden or gone is credited to nobody", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({
+      json: { data: preview({ running: 5, rows: [], activated: { at: "2026-10-31T14:20:00.000Z", byYou: false, byName: null } }) },
+    }),
+  });
+  expect(dom.root.textContent).toContain("Version 5 switched on");
+  expect(dom.root.textContent).not.toContain("by you");
 });

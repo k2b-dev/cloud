@@ -2,8 +2,8 @@ import { Button, ButtonLink, Skeleton, Tag, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import {
   type CodeVersionActivation,
-  type CodeVersionPreview,
   type CodeVersionPreviewRow,
+  codeVersionPageHref,
   loadCodeVersionPreview,
   pendingCodeVersionActivation,
   readCodeVersionActivation,
@@ -15,19 +15,13 @@ import { assistantMessages } from "./messages";
 const POLLS = 90;
 const POLL_MS = 1_000;
 
-type Loaded = CodeVersionPreview | "denied" | "failed" | null;
+type Loaded = Awaited<ReturnType<typeof loadCodeVersionPreview>> | null;
 type Activation =
   | { kind: "idle" }
   | { kind: "progress"; state: CodeVersionActivation["state"] }
   /** Core's answer is missing or the wait ended: the activation may still run, so nothing claims it did not. */
   | { kind: "unknown" }
   | { kind: "failed"; reason: string | null };
-
-/** The Code page of this Code: its place's "/code" page, or a personal Code's page in Gustav. */
-export const codeVersionPageHref = (preview: CodeVersionPreview): string | null => {
-  if (preview.place) return preview.place.href ? `${preview.place.href.replace(/\/$/, "")}/code` : null;
-  return `/app/assistant/code/${preview.codeId}`;
-};
 
 /** A time today shows as the time alone, like the mockup's line; other days keep their date. */
 const switchedOnWhen = (at: string, locale: string, timeZone: string, now: Date): string => {
@@ -281,10 +275,12 @@ export default function AssistantCodeVersionCard(props: {
           <Show when={preview()?.activated} fallback={t().codeVersionOnPlain({ version: props.number })}>
             {(activated) => {
               const when = () => switchedOnWhen(activated().at, locale(), props.timeZone, new Date());
-              const name = activated().byYou ? null : activated().byName;
+              if (activated().byYou) return t().codeVersionOn({ version: props.number, when: when() });
+              const name = activated().byName;
+              // A name this person may not see, or an account that is gone, stays out of the line.
               return name
                 ? t().codeVersionOnBy({ version: props.number, when: when(), name })
-                : t().codeVersionOn({ version: props.number, when: when() });
+                : t().codeVersionOnNeutral({ version: props.number, when: when() });
             }}
           </Show>
         </p>

@@ -192,6 +192,7 @@ export const assistantMessages = i18n.define({
       codeVersionOn: ({ version, when }: { version: number; when: string }) => `Version ${version} switched on · ${when} · by you`,
       codeVersionOnBy: ({ version, when, name }: { version: number; when: string; name: string }) =>
         `Version ${version} switched on · ${when} · by ${name}`,
+      codeVersionOnNeutral: ({ version, when }: { version: number; when: string }) => `Version ${version} switched on · ${when}`,
       codeVersionOnPlain: ({ version }: { version: number }) => `Version ${version} is switched on.`,
       codeVersionSuperseded: ({ version, latest }: { version: number; latest: number }) =>
         `Version ${version} was replaced by version ${latest}.`,
@@ -436,6 +437,7 @@ export const assistantMessages = i18n.define({
       codeVersionCredential: "Einschalten braucht eine Browser-Sitzung oder eine persönliche Anmeldung.",
       codeVersionOn: ({ version, when }) => `Version ${version} eingeschaltet · ${when} · von dir`,
       codeVersionOnBy: ({ version, when, name }) => `Version ${version} eingeschaltet · ${when} · von ${name}`,
+      codeVersionOnNeutral: ({ version, when }) => `Version ${version} eingeschaltet · ${when}`,
       codeVersionOnPlain: ({ version }) => `Version ${version} ist eingeschaltet.`,
       codeVersionSuperseded: ({ version, latest }) => `Version ${version} wurde von Version ${latest} abgelöst.`,
       codeVersionChecking: "Prüft …",

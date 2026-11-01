@@ -207,6 +207,8 @@ async function authorizeActivation(
 /** Targets asked at once while previewing, and in one preview; a version has at most 200 operations. */
 const PREVIEW_CONCURRENCY = 8;
 const PREVIEW_TARGETS = 50;
+/** Past this, the remaining targets stay unchecked; switching on checks them anyway. */
+const PREVIEW_BUDGET_MS = 10_000;
 const previewAllowed = (context: CodeContext): CodeActivationPreview["allowed"] => {
   const { authority } = context;
   if (isAppSessionActor(authority.actor)) return { allowed: false, reason: "phone" };
@@ -284,6 +286,7 @@ export async function previewCodeActivation(
   const base = {
     codeId: code.id,
     title: code.title,
+    ownerKind: code.owner.kind,
     versionId: input.versionId,
     number: version.number,
     running: numbers?.running ?? null,
@@ -378,8 +381,17 @@ export async function previewCodeActivation(
       return { ...item, owner: isOwn };
     });
   const rows: CodeActivationPreviewRow[] = [];
-  for (let start = 0; start < merged.length; start += PREVIEW_CONCURRENCY)
-    rows.push(...(await Promise.all(merged.slice(start, start + PREVIEW_CONCURRENCY).map((item, index) => check(item, start + index)))));
+  const deadline = Date.now() + PREVIEW_BUDGET_MS;
+  for (let start = 0; start < merged.length; start += PREVIEW_CONCURRENCY) {
+    // Closing the chat stops further checks; a target's own answer cannot be cancelled.
+    context.signal?.throwIfAborted();
+    const expired = Date.now() > deadline;
+    rows.push(
+      ...(await Promise.all(
+        merged.slice(start, start + PREVIEW_CONCURRENCY).map((item, index) => check(item, expired ? PREVIEW_TARGETS : start + index)),
+      )),
+    );
+  }
   return { ...base, activated: null, readiness, place, rows };
 }
 /** Enqueue once without waiting on target effects. The unique process identity fences duplicate requests. */
