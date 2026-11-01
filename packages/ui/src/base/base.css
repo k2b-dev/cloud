@@ -447,6 +447,24 @@
     margin: 0;
   }
 
+  /* Not the native box: it ignores border-radius, so it could not match the
+     @k2b/ui checkbox. Radio buttons stay native; they are round anyway. */
+  input[type="checkbox"] {
+    box-sizing: border-box;
+    appearance: none;
+    border: 1px solid var(--k2b-border-strong);
+    border-radius: 0.25rem;
+    background: var(--k2b-surface);
+    cursor: pointer;
+  }
+
+  input[type="checkbox"]:checked {
+    border-color: var(--k2b-action-solid);
+    background: var(--k2b-action-solid) center / 100% 100% no-repeat
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E");
+    forced-color-adjust: none;
+  }
+
   input[type="range"] {
     width: 100%;
   }
