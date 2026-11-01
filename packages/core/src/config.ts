@@ -1,6 +1,7 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 import { CORE_SETTINGS } from "./_settings";
 import { AI_NOTIFICATIONS } from "./ai-notifications";
+import { CODE_ACTIVATION_NOTIFICATIONS } from "./code/activation-notifications";
 import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
@@ -9,6 +10,12 @@ export const app = defineApp({
   access: appAccess.signedIn({
     publicRoutes: [
       "/_internal/apps/bootstrap",
+      "/_internal/code/runner/call",
+      "/_internal/code/runner/config",
+      "/_internal/code/runner/fetch",
+      "/_internal/code/runner/bundle",
+      "/_internal/code/runner/heartbeat",
+      "/_internal/code/runner/complete",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",
@@ -125,7 +132,7 @@ export const app = defineApp({
   appearance: { accent: "#0284c7", background: { from: "#3b82f6", to: "#60a5fa", angle: 135 } },
   baseUrl: "http://app-core:3000",
   settings: CORE_SETTINGS,
-  notifications: { ...NOTIFICATIONS, ...AI_NOTIFICATIONS },
+  notifications: { ...NOTIFICATIONS, ...AI_NOTIFICATIONS, ...CODE_ACTIVATION_NOTIFICATIONS },
   legalLinks: [
     { label: "Imprint", href: "/impressum", icon: "ti ti-info-circle" },
     { label: "Privacy", href: "/legal/privacy", icon: "ti ti-shield-lock" },

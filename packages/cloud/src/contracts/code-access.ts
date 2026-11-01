@@ -73,6 +73,9 @@ export type CodeAccessGrant = z.infer<typeof CodeAccessGrantSchema>;
  * Normal target share lists must expose grantId on each Code share so the rights editor
  * can call code.access.rm directly; ordinary shares never carry it.
  * A grantId identifies an explicit Code-only grant; revoke never removes ordinary shares.
+ * Successful dry-run decisions identify current human managers in managerUserIds for
+ * Core Cloud-admin activation notices; real and replayed sets may omit this metadata. Include direct and group administrators;
+ * Core refuses Cloud-admin activation when this metadata is unavailable.
  * Keep grants with different IDs independent, including overlapping grants for the same
  * account and target. Activation rollback removes only its new IDs, preserving older grants.
  */

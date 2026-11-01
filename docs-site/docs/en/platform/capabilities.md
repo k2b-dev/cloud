@@ -560,9 +560,23 @@ are incomplete. The manifest advertises the supported targets and owners in
 | Function | Responsibility |
 | --- | --- |
 | `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
-| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
+| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`; successful dry runs also return `managerUserIds`. |
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
+
+Successful dry-run `code.access.set` results include `managerUserIds`: the current
+people managing the target, including members of manager groups. Core uses these
+IDs to notify managers when a Cloud administrator activates Code. Return an empty
+array when no person manages the target; service accounts are never notification
+recipients. The platform preserves this field in its set result, including dry-run
+retries of existing grants.
+
+`CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
+using the capability result byte budget. The complete set result and its receipt
+must fit that budget too. Refuse with a reason when all managers cannot fit;
+never truncate the notification recipients. Spaces and Mail return manager IDs
+only during dry runs. A Code manager check during a directory update can fail
+transiently; retry after the update finishes.
 
 Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
 dry runs and retries. Lock the target's authority before reading its current
@@ -587,9 +601,11 @@ that transaction first or acquire the platform locks first. Core account inspect
 uses its separate account-scoped authority.
 
 Use only the supplied transaction for adapter reads and writes. Never open a
-separate database connection from `manages`, `grant`, `revoke` or `list`. Do not publish
-events, send notifications, or perform other external effects there. A dry run
-must produce the same decision without effects; Cloud also rolls back its
+separate database connection from `manages`, `grant`, `revoke` or `list`. Transactional
+outbox writes, such as access invalidations, are allowed and roll back with the
+grant. Do not deliver events, send notifications, or perform other external
+effects there. A dry run must produce the same decision without effects;
+Cloud also rolls back its
 transaction. A refusal or exception rolls back the adapter's writes. Code
 receives neither `admin` nor a manager role. Keep different grant IDs
 independent, even for the same account and target: rolling back a new
@@ -618,6 +634,13 @@ Cloud generates these capabilities once per app:
 | `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level, readable }` or `{ granted: false, reasonCode, reason, readable }`; readable dry runs may include `title` and `managerUserIds` |
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
+
+Successful adapter `grant` decisions can include `managerUserIds`, the current
+human administrators of the target, including administrator group members.
+Return this field on dry runs; Core saves it before applying grants. Core requires it for Cloud-admin activation
+and sends one durable notification per affected target and manager after the
+version becomes active. See [Code activation](/en/docs/platform/code-activation).
+The four adapter functions and signed proof v1 remain unchanged.
 
 Generated titles, descriptions and all input-field descriptions include English
 and German presentation. Apps do not need to repeat these translations; any
@@ -1049,6 +1072,9 @@ state.
 
 Record security-sensitive mutations with [Audit events](/en/docs/platform/audit-events).
 
+The [Code SDK](/en/docs/platform/code-sdk) generates target-specific handles
+from these contracts, with typed refs and idempotency keys.
+
 ### Name the resource an operation acts on
 
 Declare `target` when an Action acts on a resource. It names a local Type of
@@ -1059,7 +1085,9 @@ at application level; existing declarations continue to work during migration.
 Canonical resource readers, Universal Search, Action outcome checks and shared
 file, calendar and discussion provider contracts supply only their existing
 domain input. They cannot declare `target` or `refs`; publish a separate Query
-when an explicit caller needs a container target.
+when an explicit caller needs a container target. Consumer contracts may name
+a fixed local `CapabilityContract.target`; the provider must match it exactly
+without additional refs. The contact directory's create Action uses `book`.
 
 ```ts
 actions: {

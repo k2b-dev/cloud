@@ -304,6 +304,18 @@ describe("Core AI capabilities", () => {
       "ai.task.read",
       "ai.task.run.read",
       "ai.tasks.list",
+      "code.attention",
+      "code.list",
+      "code.policy.effective",
+      "code.policy.preview",
+      "code.policy.read",
+      "code.read",
+      "code.run.list",
+      "code.run.read",
+      "code.version.diff",
+      "code.version.diff.read",
+      "code.version.list",
+      "code.version.read",
       "entities.search",
       "geo.availability",
       "map.style",
@@ -327,6 +339,13 @@ describe("Core AI capabilities", () => {
       "ai.task.resume",
       "ai.task.run",
       "ai.task.update",
+      "code.pause",
+      "code.policy.update",
+      "code.resume",
+      "code.run",
+      "code.version.approve",
+      "code.version.reject",
+      "code.version.submit",
     ];
     expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual([
       "core.ai.chat",
@@ -354,6 +373,13 @@ describe("Core AI capabilities", () => {
         manifest.actions.map((action) => [action.localId, { destructive: action.destructive, idempotency: action.idempotency }]),
       ),
     ).toEqual({
+      "code.policy.update": { destructive: true, idempotency: "required" },
+      "code.pause": { destructive: false, idempotency: "required" },
+      "code.resume": { destructive: false, idempotency: "required" },
+      "code.run": { destructive: false, idempotency: "required" },
+      "code.version.approve": { destructive: false, idempotency: "required" },
+      "code.version.reject": { destructive: false, idempotency: "required" },
+      "code.version.submit": { destructive: false, idempotency: "required" },
       "ai.chat.message": { destructive: false, idempotency: "required" },
       "ai.skill.access.change": { destructive: true, idempotency: "required" },
       "ai.skill.create": { destructive: false, idempotency: "required" },
@@ -1256,7 +1282,8 @@ test("routine actions reject a routine in another target chat before changing st
 
 test("Core action targets replace their primary input selector in the manifest", () => {
   const manifest = compileCapabilityManifest("core", aiCapabilities);
-  for (const action of manifest.actions) {
+  // Code actions name their Code in the input until a Code target type exists; this covers Core's AI actions.
+  for (const action of manifest.actions.filter((candidate) => candidate.localId.startsWith("ai."))) {
     if (action.localId === "ai.skill.create") {
       expect(action.target).toBeUndefined();
       continue;
@@ -1266,4 +1293,12 @@ test("Core action targets replace their primary input selector in the manifest",
     expect(action.inputSchema.properties).not.toHaveProperty("chatId");
   }
   expect(aiCapabilities.actions["ai.skill.delete"].input.safeParse({ skillId: "Other1" }).success).toBe(false);
+});
+
+test("every Code Action with policy declares review and the Core manifest compiles", () => {
+  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
+    if (!id.startsWith("code.") || !("policy" in action)) continue;
+    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
+  }
+  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
 });

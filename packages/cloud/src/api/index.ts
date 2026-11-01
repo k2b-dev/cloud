@@ -139,6 +139,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export { type CodeBridgeAuthority, type CodeBridgeCall, type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
 export { createAdminAppDomainRoutes } from "./admin-app-domains";
 export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
@@ -146,6 +147,7 @@ export { createAppAccessRoutes } from "./app-access";
 export { createAppBootstrapRoutes } from "./app-bootstrap";
 /** Core-owned app-key request authentication. */
 export { authenticateSignedAppRequest } from "./authenticate-app-request";
+export { type CodeRunnerDispatchDependencies, codeHttpOriginAllowed, createCodeRunnerCallRoutes } from "./capabilities";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,

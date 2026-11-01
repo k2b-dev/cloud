@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -56,8 +57,70 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { codePerson } from "./code/access";
+import { codeAttentionContracts, readCodeAttention } from "./code/attention";
+import { codeQueryContracts } from "./code/contracts";
+import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
+import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
+import { runCodeQuery } from "./code/queries";
+import { startCodeRun } from "./code/scheduling";
+import { codeSchedulingContracts } from "./code/scheduling-contracts";
+import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { codeVersionContracts } from "./code/version-contracts";
+import {
+  decideCodeVersion,
+  diffCodeVersion,
+  listCodeVersions,
+  readCodeVersionDiff,
+  reviewCodeExecutionChange,
+  reviewCodeVersionDecision,
+  reviewCodeVersionSubmission,
+  setCodePaused,
+  submitCodeVersion,
+} from "./code/versions";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
+
+// Shared lifecycle reviews keep the installed Core registry compilable while C8 and C13 are stacked.
+const reviewCodeOperation = async (
+  input: { codeId: string; entrypoint?: string },
+  context: CapabilityExecutionContext,
+  operation: "run" | "submit" | "pause" | "resume",
+) => {
+  const result = await runCodeQuery(context, async (ctx) => {
+    codePerson(ctx, true);
+    const code = await sql.begin((db) => lockCodeForEdit(input.codeId, ctx, db));
+    const { t, locale } = coreCapabilityMessages(context.locale);
+    return {
+      locale,
+      slots: { code: { kind: "text" as const, value: code.title } },
+      scope: code.id,
+      sentence: {
+        action: t.codeOperationAction({ operation }),
+        running: t.codeOperationRunning({ operation }),
+        done: t.codeOperationDone({ operation }),
+        confirm: t.codeOperationConfirm({ operation }),
+        decline: t.codeOperationDecline,
+      },
+      ...(operation === "run"
+        ? { ask: "app_asks" as const }
+        : operation === "resume"
+          ? { ask: "keeps_working" as const }
+          : { reach: "you" as const }),
+      ...(input.entrypoint
+        ? {
+            content: {
+              kind: "page" as const,
+              title: t.codeOperationConfirm({ operation }),
+              format: "plain" as const,
+              body: input.entrypoint,
+            },
+          }
+        : {}),
+    };
+  });
+  return result.ok ? ok(result.data.data) : result;
+};
 
 const chatTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
 
@@ -708,6 +771,95 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.version.diff.read": {
+      title: "Read complete Code comparison",
+      description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
+      ...codeVersionContracts.diffRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionDiff(input, ctx)),
+    },
+    "code.version.diff": {
+      title: "Compare Code version",
+      description: "Read full file rows against the last approved or activated version, with exact decision binding.",
+      ...codeVersionContracts.diff,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
+    },
+    "code.version.list": {
+      title: "List Code versions",
+      description: "Read version submission and approval receipts, including sole-admin decisions.",
+      ...codeVersionContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeVersions(input, ctx)),
+    },
+    "code.policy.read": {
+      title: "Read Code policy",
+      description: "Read default and applicable group rules; Cloud admins read the complete editable table.",
+      ...codePolicyContracts.read,
+      openWorld: false,
+      run: (_input, context) => runCodeQuery(context, readCodePolicy),
+    },
+    "code.policy.effective": {
+      title: "Resolve Code policy",
+      description:
+        "Resolve current classification rules for the personal owner, or a resource/app author. Other views require Cloud administration.",
+      ...codePolicyContracts.effective,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => effectiveCodePolicy(input, ctx)),
+    },
+    "code.policy.preview": {
+      title: "Preview Code policy",
+      description: "Preview an exact pause count and a page of affected active Code without writing. Cloud administrators only.",
+      ...codePolicyContracts.preview,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
+    },
+    "code.attention": {
+      title: "Check Code attention",
+      description:
+        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      ...codeAttentionContracts.attention,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
+    },
+    "code.list": {
+      title: "List Code",
+      description:
+        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to include its live administrators. Follow nextCursor even on empty pages.",
+      ...codeQueryContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
+    },
+    "code.read": {
+      title: "Read Code",
+      description: "Read one Code identity, owner and current permission using its stable codeId.",
+      ...codeQueryContracts.read,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCode(input.codeId, ctx)),
+    },
+    "code.version.read": {
+      title: "Read a Code version",
+      description:
+        "Read immutable version metadata or a source, bundle or manifest text chunk. Follow nextOffset to obtain the full content.",
+      ...codeQueryContracts.versionRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),
+    },
+    "code.run.list": {
+      title: "List Code runs",
+      description: "List attempt metadata without run inputs, outputs or capability call contents.",
+      ...codeQueryContracts.runList,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeRuns(input, ctx)),
+    },
+    "code.run.read": {
+      title: "Read a Code run",
+      description:
+        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks; readers receive contents:null.",
+      ...codeQueryContracts.runRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
     "map.style": {
       title: "Show a map",
       description:
@@ -1150,6 +1302,146 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.run": {
+      title: "Run Code",
+      description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
+      ...codeSchedulingContracts.start,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "app_asks" },
+      review: (input, context) => reviewCodeOperation(input, context, "run"),
+      run: (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+        const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+      },
+    },
+    "code.version.submit": {
+      title: "Submit Code version",
+      description:
+        "Save checked source and bundle against baseVersionId. Request version approval when policy requires it; leave the running version unchanged.",
+      ...codeVersionContracts.submit,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission(input, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion(input, ctx)),
+    },
+    "code.version.approve": {
+      title: "Approve Code version",
+      description: "Approve the exact source, bundle and comparison through the platform's Cloud-admin rule.",
+      ...codeVersionContracts.decide,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, true, ctx)),
+    },
+    "code.version.reject": {
+      title: "Reject Code version",
+      description: "Reject the exact version and comparison through the same platform request.",
+      ...codeVersionContracts.decide,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, false, ctx)),
+    },
+    "code.pause": {
+      title: "Pause Code",
+      description: "Pause future Code execution without replacing the running version or replaying missed events.",
+      ...codeVersionContracts.pause,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, true, ctx)),
+    },
+    "code.resume": {
+      title: "Resume Code",
+      description: "Resume the active version only after checking current policy and live approval evidence.",
+      ...codeVersionContracts.resume,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "keeps_working" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, false, ctx)),
+    },
+    "code.policy.update": {
+      title: "Update Code policy",
+      description:
+        "Replace the Code policy at the expected revision and enqueue visible pauses. Cloud administration required; stale changes fail.",
+      ...codePolicyContracts.update,
+      code: false,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codePolicyContracts.update.input>, context: CapabilityExecutionContext) {
+        const preview = await runCodeQuery(context, (ctx) => previewCodePolicy({ ...input, limit: 20 }, ctx));
+        if (!preview.ok) return preview;
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const groupIds = [...new Set(input.definition.rules.flatMap((rule) => (rule.groupId ? [rule.groupId] : [])))];
+        const names = await resolveDisplayNames(groupIds.map((groupId) => ({ principal: { type: "group", groupId } })));
+        const labels = new Map(groupIds.map((id, index) => [id, `${principalLabel(names[index]!, locale)} (${id})`]));
+        return ok({
+          locale,
+          ask: "changes_access" as const,
+          slots: {},
+          sentence: {
+            action: t.codePolicyReview({ revision: input.revision, count: preview.data.data.total }),
+            running: t.codePolicyRunning,
+            done: t.codePolicyDone,
+            confirm: t.codePolicyConfirm,
+            decline: t.codePolicyDecline,
+          },
+          content: {
+            kind: "page" as const,
+            baseRevision: input.revision,
+            title: t.codePolicyTitle,
+            format: "plain" as const,
+            body: CODE_POLICY_ROWS.map(
+              (row) =>
+                `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
+                  .filter((rule) => rule.row === row)
+                  .map(
+                    (rule) =>
+                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
+                  )
+                  .join("\n")}`,
+            ).join("\n\n"),
+          },
+        });
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => updateCodePolicy(input, ctx)),
+    },
     "ai.skill.access.change": {
       target: "ai.skill",
       title: "Change Skill access",

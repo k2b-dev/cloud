@@ -23,8 +23,19 @@ its contract and schema hash; coordinate that application's callers and stored
 work before deploying its converted declaration.
 
 Legacy mandates constrain domain input only. They are refused for operations
-that declare targets or refs. Upgrade target-aware grant support and migrate
-stored work before enabling these operations for background callers.
+that declare targets or refs unless an explicit target grant covers the call.
+Migrate stored work to the [target grant format](/en/docs/identity/background-mandates#bind-operations-to-targets)
+before enabling these operations for background callers. Never discard an old
+fixed target field when migrating a routine; unresolvable restrictions require
+`needs_attention`. Code version invocations use their mandate instead of
+credential scopes and human app-entry rules, while each target still checks
+the Code account's own resource access.
+
+Human app-entry rules, including admin-only roles, guest restrictions and app
+access lists, do not disable confirmed Code version invocations. To stop that
+Code, pause or revoke its mandate, disable its account, or remove its own access
+at the target. People's app-entry checks continue to apply to personal Code
+and person-owned routines.
 
 A resource-bound approval and idempotency claim include the target and every
 additional reference. Reusing a key with a different target returns
@@ -35,6 +46,18 @@ provider schema returns `SCHEMA_MISMATCH`; refresh the catalog.
 Older Core readers omit operations with target fields they cannot understand.
 They do not invoke those operations after stripping the fields. Other
 operations remain available.
+
+Spaces and Contacts Actions now use fixed `space` and `book` targets.
+Creation inputs omit `spaceId` and `bookId`; contact moves carry their
+destination in `refs.targetBookId`. Upgrade Mail with these providers so its
+calendar, linked-item and contact-creation calls send the new coordinates.
+Directory providers implementing `create` declare a local `book` Type and
+move the selected book out of `ContactDirectoryCreateInputSchema`.
+
+The Spaces invitation preparation and commit Actions declare `code: false`.
+Resource-owned Code must leave them out; person calls keep their service
+permission checks. Stored routine grants and approvals still need the
+coordinated migration before this branch is released.
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
@@ -64,6 +87,14 @@ the generated Code access routes. Dry-run answers reveal only what the person
 may read through the target Type's existing `access.readable`. Core obtains
 Cloud-admin notification recipients through its separate target-bound server
 authority; they are not required in an unreadable person's dry-run answer.
+Deploy Spaces and Mail with the `managerUserIds` set-result field before enabling
+Cloud-admin activation in Core. A successful dry-run identifies the current
+person managers, including nested manager-group members. Core refuses Cloud-admin
+activation when the target cannot identify its managers. No new configuration or
+migration is needed for this result field. A target with more managers than the
+capability response budget allows refuses preflight with a reason; reduce that
+target's manager audience before trying again. During a directory update, retry
+a transiently unavailable manager check after the update finishes.
 
 Keep the adapter available while its app has Code grants to remove. Core must
 finish target cleanup before deleting the Code account. Live grants prevent

@@ -55,7 +55,16 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
     .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
 };
 
-export type PanelProvider = { id: string; label: string; icon: string; href: string; appName: string; consent: boolean };
+export type PanelProvider = {
+  id: string;
+  label: string;
+  icon: string;
+  href: string;
+  appName: string;
+  consent: boolean;
+  /** The panel works on a resource's Code with the person; shared Code pages offer it as "Edit with …". */
+  code?: true;
+};
 
 /** Authorized presentation only: the panel route still authorizes every request. */
 export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): PanelProvider[] => {
@@ -74,6 +83,7 @@ export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: Use
               href: panel.href,
               appName: presentation.name,
               consent: panelProviderNeedsConsent(app.id),
+              ...(app.panel.code === true ? { code: true as const } : {}),
             },
           ]
         : [];

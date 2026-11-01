@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { capabilityCallFromTool } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -130,6 +131,7 @@ const userContext = {
   locale: "en",
   requestId: "spaces-capability-test-request",
   origin: "assistant",
+  target: { type: "spaces.space", id: spaceId },
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -156,6 +158,7 @@ const serviceAccountContext = {
   locale: "en",
   requestId: "spaces-capability-test-request",
   origin: "assistant",
+  target: { type: "spaces.space", id: spaceId },
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -577,8 +580,7 @@ test.each([
 test.each([
   [
     "task.create",
-    () =>
-      spacesCapabilities.actions["task.create"].run({ spaceId, columnId, title: task.title, description: "d".repeat(5000) }, userContext),
+    () => spacesCapabilities.actions["task.create"].run({ columnId, title: task.title, description: "d".repeat(5000) }, userContext),
   ],
   ["task.update", () => spacesCapabilities.actions["task.update"].run({ itemId, description: "d".repeat(5000) }, userContext)],
   ["task.set-completed", () => spacesCapabilities.actions["task.set-completed"].run({ itemId, completed: true }, userContext)],
@@ -586,7 +588,7 @@ test.each([
     "event.create",
     () =>
       spacesCapabilities.actions["event.create"].run(
-        { spaceId, columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt!, description: "d".repeat(5000) },
+        { columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt!, description: "d".repeat(5000) },
         userContext,
       ),
   ],
@@ -1143,12 +1145,11 @@ describe("spaces capabilities", () => {
   });
 
   test("keeps task, event, comment, and output schemas strict", () => {
-    expect(TaskCreateInputSchema.safeParse({ spaceId, columnId, title: "Task", startsAt: "2026-08-02T10:00:00.000Z" }).success).toBeFalse();
+    expect(TaskCreateInputSchema.safeParse({ columnId, title: "Task", startsAt: "2026-08-02T10:00:00.000Z" }).success).toBeFalse();
     expect(TaskUpdateInputSchema.safeParse({ itemId }).success).toBeFalse();
     expect(TaskUpdateInputSchema.safeParse({ itemId, columnId }).success).toBeFalse();
     expect(
       EventCreateInputSchema.safeParse({
-        spaceId,
         columnId,
         title: "Event",
         startsAt: "2026-08-02T11:00:00.000Z",
@@ -1407,7 +1408,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     const create = spacesCapabilities.actions["task.create"].review!;
-    const plain = await create({ spaceId, columnId: "Col001", title: "Prepare launch", deadline: "2026-10-20T09:00:00.000Z" }, userContext);
+    const plain = await create({ columnId: "Col001", title: "Prepare launch", deadline: "2026-10-20T09:00:00.000Z" }, userContext);
     expect(plain).toMatchObject({
       ok: true,
       data: {
@@ -1422,14 +1423,14 @@ describe("spaces capabilities", () => {
     });
     // Assignees are notified and a template can add more, so those ask every time.
     for (const input of [
-      { spaceId, columnId: "Col001", title: "Prepare launch", assigneeIds: [userId] },
-      { spaceId, columnId: "Col001", templateId: "Tpl001" },
+      { columnId: "Col001", title: "Prepare launch", assigneeIds: [userId] },
+      { columnId: "Col001", templateId: "Tpl001" },
     ]) {
       const reviewed = await create(input, userContext);
       expect(reviewed.ok && "approvalScope" in reviewed.data).toBe(false);
     }
     const event = await spacesCapabilities.actions["event.create"].review!(
-      { spaceId, columnId: "Col001", title: "Review", startsAt: "2026-10-20T09:00:00.000Z", endsAt: "2026-10-20T10:00:00.000Z" },
+      { columnId: "Col001", title: "Review", startsAt: "2026-10-20T09:00:00.000Z", endsAt: "2026-10-20T10:00:00.000Z" },
       { ...userContext, locale: "de" },
     );
     expect(event).toMatchObject({
@@ -1437,7 +1438,7 @@ describe("spaces capabilities", () => {
       data: { message: `Termin Review in ${space.name} anlegen.`, approvalScope: `space:${spaceId}` },
     });
     spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
-    expect((await create({ spaceId, columnId: "Col001", title: "Prepare launch" }, userContext)).ok).toBe(false);
+    expect((await create({ columnId: "Col001", title: "Prepare launch" }, userContext)).ok).toBe(false);
   });
 
   test("claiming, releasing, and noting task work can be remembered for the Space, a forced release cannot", async () => {
@@ -1544,7 +1545,7 @@ describe("spaces capabilities", () => {
       await spacesCapabilities.actions["task.update"].review!({ itemId, title: "Updated task" }, userContext),
       await spacesCapabilities.actions["task.set-completed"].review!({ itemId, completed: true }, userContext),
       await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Ready." }, userContext),
-      await spacesCapabilities.actions["task.create"].review!({ spaceId, columnId: "Col001", title: "New task" }, userContext),
+      await spacesCapabilities.actions["task.create"].review!({ columnId: "Col001", title: "New task" }, userContext),
       await spacesCapabilities.actions["task.claim"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
       await spacesCapabilities.actions["task.release"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
       await spacesCapabilities.actions["task.progress"].review!(
@@ -1565,7 +1566,7 @@ describe("spaces capabilities", () => {
         userContext,
       ),
       await spacesCapabilities.actions["event.create"].review!(
-        { spaceId, columnId: "Col001", title: "Review", startsAt: event.startsAt!, endsAt: event.endsAt! },
+        { columnId: "Col001", title: "Review", startsAt: event.startsAt!, endsAt: event.endsAt! },
         userContext,
       ),
     );
@@ -1602,7 +1603,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
     results.push(
       await spacesCapabilities.actions["template.create"].review!(
-        { spaceId, kind: "task", name: "Weekly", title: "", assignCreator: false, allDay: false, dateRule: { type: "none" } },
+        { kind: "task", name: "Weekly", title: "", assignCreator: false, allDay: false, dateRule: { type: "none" } },
         userContext,
       ),
       await spacesCapabilities.actions["template.update"].review!(
@@ -1664,7 +1665,6 @@ describe("spaces capabilities", () => {
         mailboxId: "mail01",
         messageId: "msg001",
         calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
-        spaceId,
       },
       userContext,
     );
@@ -1760,10 +1760,7 @@ describe("spaces capabilities", () => {
     const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
     const recordAllowed = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
-    const result = await spacesCapabilities.actions["task.create"].run(
-      { spaceId, columnId, title: task.title, priority: "high" },
-      userContext,
-    );
+    const result = await spacesCapabilities.actions["task.create"].run({ columnId, title: task.title, priority: "high" }, userContext);
 
     expect(create).toHaveBeenCalledWith({
       spaceId: spaceUuid,
@@ -1901,7 +1898,6 @@ describe("spaces capabilities", () => {
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     const input = TaskCreateInputSchema.parse({
-      spaceId,
       columnId,
       templateId,
       date: "2026-10-14",
@@ -1940,7 +1936,7 @@ describe("spaces capabilities", () => {
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     const result = await spacesCapabilities.actions["task.create"].run(
-      TaskCreateInputSchema.parse({ spaceId, columnId, templateId, deadline: "2026-10-23T10:00:00Z", timeZone: "Europe/Berlin" }),
+      TaskCreateInputSchema.parse({ columnId, templateId, deadline: "2026-10-23T10:00:00Z", timeZone: "Europe/Berlin" }),
       userContext,
     );
 
@@ -1984,7 +1980,7 @@ describe("spaces capabilities", () => {
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
     const run = (input: Record<string, unknown>) =>
       spacesCapabilities.actions["event.create"].run(
-        EventCreateInputSchema.parse({ spaceId, columnId, templateId, timeZone: "Europe/Berlin", ...input }),
+        EventCreateInputSchema.parse({ columnId, templateId, timeZone: "Europe/Berlin", ...input }),
         userContext,
       );
 
@@ -2054,7 +2050,7 @@ describe("spaces capabilities", () => {
       },
       accessSubject: { type: "service_account" as const, serviceAccountId: agentId },
     };
-    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", tagIds: [tagId] });
+    const createInput = TemplateCreateInputSchema.parse({ kind: "task", name: "Weekly", tagIds: [tagId] });
     const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report" });
     const attempt = async (context: CapabilityExecutionContext) => [
       (await spacesCapabilities.actions["template.create"].run(createInput, context)).ok,
@@ -2082,8 +2078,27 @@ describe("spaces capabilities", () => {
     expect(review).toMatchObject({ ok: true, data: { message: "Delete template “Weekly report”. Items created from it stay." } });
 
     // Fields of the other kind never reach the service.
-    expect(TemplateCreateInputSchema.safeParse({ spaceId, kind: "task", name: "Bad", location: "Room 2" }).success).toBeFalse();
-    expect(TemplateCreateInputSchema.safeParse({ spaceId, kind: "event", name: "Bad", checklist: ["x"] }).success).toBeFalse();
+    expect(TemplateCreateInputSchema.safeParse({ kind: "task", name: "Bad", location: "Room 2" }).success).toBeFalse();
+    expect(TemplateCreateInputSchema.safeParse({ kind: "event", name: "Bad", checklist: ["x"] }).success).toBeFalse();
+  });
+
+  test("template changes and reviews reject a template outside the target Space", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue({ ...space, id: otherSpaceUuid });
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("admin");
+    spyOn(spacesService.template, "get").mockResolvedValue({ ...weeklyTemplate, spaceId: otherSpaceUuid });
+    const update = spyOn(spacesService.template, "update");
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+    const input = TemplateUpdateInputSchema.parse({ templateId, name: "Status report" });
+
+    expect(await spacesCapabilities.actions["template.update"].run(input, userContext)).toMatchObject({
+      ok: false,
+      error: { code: "NOT_FOUND" },
+    });
+    expect(await spacesCapabilities.actions["template.update"].review!(input, userContext)).toMatchObject({
+      ok: false,
+      error: { code: "NOT_FOUND" },
+    });
+    expect(update).not.toHaveBeenCalled();
   });
 
   test("refuses templates of another kind or Space and ambiguous dates", async () => {
@@ -2094,27 +2109,26 @@ describe("spaces capabilities", () => {
     spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
 
     const asEvent = await spacesCapabilities.actions["event.create"].run(
-      EventCreateInputSchema.parse({ spaceId, columnId, templateId }),
+      EventCreateInputSchema.parse({ columnId, templateId }),
       userContext,
     );
     expect(asEvent).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
     getTemplate.mockResolvedValue({ ...weeklyTemplate, spaceId: otherSpaceUuid });
     const elsewhere = await spacesCapabilities.actions["task.create"].run(
-      TaskCreateInputSchema.parse({ spaceId, columnId, templateId }),
+      TaskCreateInputSchema.parse({ columnId, templateId }),
       userContext,
     );
     expect(elsewhere).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
     expect(create).not.toHaveBeenCalled();
 
-    expect(TaskCreateInputSchema.safeParse({ spaceId, columnId }).success).toBeFalse();
-    expect(TaskCreateInputSchema.safeParse({ spaceId, columnId, title: "x", date: "2026-10-14" }).success).toBeFalse();
+    expect(TaskCreateInputSchema.safeParse({ columnId }).success).toBeFalse();
+    expect(TaskCreateInputSchema.safeParse({ columnId, title: "x", date: "2026-10-14" }).success).toBeFalse();
     expect(
-      TaskCreateInputSchema.safeParse({ spaceId, columnId, templateId, date: "2026-10-14", deadline: "2026-10-14T10:00:00Z" }).success,
+      TaskCreateInputSchema.safeParse({ columnId, templateId, date: "2026-10-14", deadline: "2026-10-14T10:00:00Z" }).success,
     ).toBeFalse();
-    expect(EventCreateInputSchema.safeParse({ spaceId, columnId, title: "x" }).success).toBeFalse();
+    expect(EventCreateInputSchema.safeParse({ columnId, title: "x" }).success).toBeFalse();
     expect(
       EventCreateInputSchema.safeParse({
-        spaceId,
         columnId,
         templateId,
         date: "2026-10-14",
@@ -2130,7 +2144,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
     const recordAllowed = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
-    await spacesCapabilities.actions["task.create"].run({ spaceId, columnId, title: task.title }, userContext);
+    await spacesCapabilities.actions["task.create"].run({ columnId, title: task.title }, userContext);
 
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ requestId: userContext.requestId }));
   });
@@ -2142,7 +2156,7 @@ describe("spaces capabilities", () => {
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     const result = await spacesCapabilities.actions["event.create"].run(
-      { spaceId, columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt! },
+      { columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt! },
       { ...userContext, idempotencyKey: "mail-workflow-effect-1" },
     );
 
@@ -2211,7 +2225,6 @@ describe("spaces capabilities", () => {
         mailboxId: "mail01",
         messageId: "msg001",
         calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
-        spaceId,
         conversation: { ref: { type: "mail.conversation", id: "Conv01" }, label: "Planning" },
       },
       userContext,
@@ -2811,4 +2824,69 @@ test("discussion containers continue from the same offset when the limit changes
     expect.objectContaining({ query: "Product", requiredLevel: "read", pagination: { perPage: 2, offset: 1 } }),
   );
   expect((await operation.run(operation.input.parse({ cursor: "invalid" }), userContext)).ok).toBeFalse();
+});
+
+test("Space actions declare a fixed container and flat tools lift it out of domain input", () => {
+  const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
+  for (const action of manifest.actions.filter((entry) => !entry.localId.startsWith("code.access."))) {
+    expect(action.target).toBe(action.localId === "calendar-invitation.response.commit" ? undefined : "space");
+    expect(action.inputSchema.properties).not.toHaveProperty("spaceId");
+  }
+  for (const localId of ["event.invitation.prepare", "event.invitation.commit", "calendar-invitation.response.commit"]) {
+    expect(manifest.actions.find((action) => action.localId === localId)?.code).toBe(false);
+  }
+  const action = manifest.actions.find((action) => action.localId === "task.create")!;
+  expect(capabilityCallFromTool("spaces", action, { space: spaceId, columnId, title: "A task" })).toEqual({
+    capability: "spaces.task.create",
+    target: { type: "spaces.space", id: spaceId },
+    refs: {},
+    input: { columnId, title: "A task" },
+  });
+  expect(TaskCreateInputSchema.safeParse({ spaceId, columnId, title: "A task" }).success).toBe(false);
+});
+
+test("task run and review reject an item outside the declared Space despite write access", async () => {
+  spyOn(spacesService.item, "get").mockResolvedValue({ ...task, spaceId: otherSpaceUuid });
+  spyOn(spacesService.space, "get").mockResolvedValue({ ...space, id: otherSpaceUuid });
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const update = spyOn(spacesService.item, "update");
+  const input = { itemId, title: "Changed" };
+  expect(await spacesCapabilities.actions["task.update"].run(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(await spacesCapabilities.actions["task.update"].review!(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(update).not.toHaveBeenCalled();
+});
+
+test("a blocker must lie in the declared Space too", async () => {
+  spyOn(spacesService.item, "get").mockImplementation(async ({ id }) =>
+    id === itemUuid ? task : { ...task, id: blockerUuid, spaceId: otherSpaceUuid },
+  );
+  spyOn(spacesService.space, "get").mockImplementation(async ({ id }) => ({ ...space, id }));
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const add = spyOn(spacesService.item.dependencies, "add");
+  const input = { itemId, blockerItemId: blockerId };
+  expect((await spacesCapabilities.actions["task.blocker.add"].run(input, userContext)).ok).toBe(false);
+  expect((await spacesCapabilities.actions["task.blocker.add"].review!(input, userContext)).ok).toBe(false);
+  expect(add).not.toHaveBeenCalled();
+});
+
+test("invitation commit checks its Space before recording a draft", async () => {
+  spyOn(spacesService.calendarInvitations, "getEventInvitationCommitContext").mockResolvedValue({
+    ok: true,
+    data: { deliveryId: "delivery", itemId: itemUuid, spaceId: otherSpaceUuid, draftId: "draft", title: event.title },
+  });
+  spyOn(spacesService.item, "get").mockResolvedValue({ ...event, spaceId: otherSpaceUuid });
+  spyOn(spacesService.space, "get").mockResolvedValue({ ...space, id: otherSpaceUuid });
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const commit = spyOn(spacesService.calendarInvitations, "commitEventInvitationAttachment");
+  expect((await spacesCapabilities.actions["event.invitation.commit"].run({ deliveryId: "delivery" }, userContext)).ok).toBe(false);
+  expect(commit).not.toHaveBeenCalled();
 });
