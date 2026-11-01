@@ -8,7 +8,7 @@ import { drafts, mailboxes } from "../../../../service";
 import { loadSendReviewContent } from "../../../../service/capability-review-readers";
 import { mailConversationUiMessages } from "../../../_components/mail-conversation-ui-messages";
 import { mailPageMessages } from "../../../pages-messages";
-import { resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
+import { pageReadStatus, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
 
 const addressList = (addresses: MailAddress[]): string =>
   addresses.map((address) => (address.name ? `${address.name} <${address.address}>` : address.address)).join(", ");
@@ -27,8 +27,8 @@ export default ssr<AuthContext>(async (c) => {
   // The way back names the mailbox it leads to; both reads refuse a caller without access to it.
   const [mailbox, result] = await Promise.all([mailboxes.getMailbox(context, mailboxId), drafts.getDraft(context, mailboxId, draftId)]);
   // Without access the page answers as for an unknown address, so it never tells that the mailbox or draft exists.
-  if (!mailbox.ok) return ssr.error(c, mailbox.error.status === 403 ? 404 : mailbox.error.status);
-  if (!result.ok) return ssr.error(c, result.error.status === 403 ? 404 : result.error.status);
+  if (!mailbox.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, mailbox.error.status));
+  if (!result.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, result.error.status));
   const draft = result.data;
   const revision = c.req.query("revision");
   // Review overflow links must show the exact effective message or fail visibly;
