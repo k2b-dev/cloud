@@ -21,6 +21,7 @@ import {
   readCodeAdminRunners,
   readCodeAdminSummary,
 } from "./admin";
+import * as authoringChecks from "./authoring-check";
 import type { CodeSourceFiles } from "./contracts";
 import { readCodePolicySnapshot, updateCodePolicy } from "./policy";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -113,6 +114,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
   let dispose: (() => void) | undefined;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useMigratedDatabase("core_code_admin");
@@ -129,6 +131,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       if (!definition) throw new Error(`Unexpected setting ${key}`);
       return definition.default;
     });
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     catalogSpy = spyOn(provider, "getCapabilityCatalogApp").mockResolvedValue({
       ok: true,
       data: { appId: "example", appName: "Example", appIcon: "ti ti-code", appDescription: "Fixture", manifest: catalog },
@@ -139,6 +142,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     dispose?.();
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
+    serverCheck?.mockRestore();
     await database?.drop();
     setSystemTime();
   });
