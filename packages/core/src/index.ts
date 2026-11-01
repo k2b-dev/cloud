@@ -11,6 +11,7 @@ import {
   createAiOpenAiRoutes,
   createAppAccessRoutes,
   createAppBootstrapRoutes,
+  createAppMigrationProbeRoutes,
   createCoreApiRouter,
   createMcpProtectedResourceRoutes,
   createPwaPhoneRoutes,
@@ -63,6 +64,7 @@ const router = new Hono<AuthContext>()
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))
+  .route("/api/_internal/identity/v1/migration-probe", createAppMigrationProbeRoutes())
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)
   .route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes({ notifyNewAccess: notificationSender.sendOAuthNewAccess }))

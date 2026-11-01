@@ -1,3 +1,4 @@
+import { recordLegacyAppUse } from "../app-migration-evidence";
 import { type AuthenticatedServiceAccountCredential, serviceAccountCredentials } from "../service-account-credentials";
 
 export const WORKLOAD_SCOPES = ["identity:invoke"] as const;
@@ -30,6 +31,7 @@ export const authenticateWorkloadCredential = async (params: {
   appId: string;
   scope: WorkloadScope;
   credentials?: WorkloadCredentialAuthenticator;
+  recordLegacy?: typeof recordLegacyAppUse;
 }): Promise<AuthenticatedWorkload | null> => {
   const appId = params.appId;
   if (!appId || appId !== appId.trim() || !workloadScopes.has(params.scope)) return null;
@@ -57,6 +59,7 @@ export const authenticateWorkloadCredential = async (params: {
     return null;
   }
 
+  await (params.recordLegacy ?? recordLegacyAppUse)("bearer");
   return {
     appId,
     serviceAccountId: serviceAccount.id,
