@@ -217,7 +217,6 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
         await band.locator(".pulse-dashboard__status-dot").evaluate((element) => getComputedStyle(element).color),
       );
 
-      await tab.screenshot({ path: `/tmp/pulse-dashboard-actual-${width}-${dark ? "dark" : "light"}.png`, fullPage: true });
       const traefik = tab.getByRole("region", { name: "Traefik", exact: true });
       const server = tab.getByRole("region", { name: "Server", exact: true });
       expect(await traefik.locator(".ti-router").count()).toBe(1);
@@ -668,7 +667,6 @@ test("the actual SSR page and first client render preserve dashboard structure i
         ).toBeLessThanOrEqual(1);
       expect(await panels.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")))).toEqual(before);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-      await tab.screenshot({ path: `/tmp/pulse-dashboard-shell-${width}-light.png`, fullPage: true });
     } finally {
       await tab.close();
     }

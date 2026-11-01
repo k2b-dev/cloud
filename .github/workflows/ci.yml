@@ -228,8 +228,8 @@ jobs:
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
   # locally. Measured maxima include failed run 40533200164, the Mail shell
-  # split (40561248493), and kept-mail admin (40550225615). Ten shards need
-  # 13.8 min; nine need 15.3 min.
+  # split (40561248493), kept-mail admin (40550225615), and the Pulse dashboards
+  # (41332025047). Eleven shards need 14.0 min; ten need 15.4 min.
   # The runner tests enforce the 15-minute prediction for every heavy matrix.
   # The 20-min guard reserves the last third for setup and finalization;
   # strategy.job-total is the divisor.
@@ -241,7 +241,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
