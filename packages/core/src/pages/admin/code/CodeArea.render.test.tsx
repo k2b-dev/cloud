@@ -86,8 +86,8 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(detail).toContain("Version 2 (freigegeben");
   expect(detail).toContain("Gilt genau für Version 3");
   expect(detail).toContain("https://api.buchhaltung-beispiel.de");
-  expect(detail).toContain("Secrets BUCHHALTUNG_TOKEN");
-  expect(detail).toContain("Aufrufe ohne Secret dürfen jede öffentliche HTTPS-Adresse");
+  expect(detail).toContain("von dieser Version deklariert");
+  expect(detail).not.toContain("dürfen jede öffentliche HTTPS-Adresse");
   expect(detail).not.toContain("am Tag");
   expect(detail).toContain("Version 3 freigeben");
   expect(detail).toContain("Ablehnen …");
