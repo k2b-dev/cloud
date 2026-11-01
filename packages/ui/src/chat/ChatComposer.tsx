@@ -17,6 +17,18 @@ import {
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
+import { createDictation } from "../inputs/dictation/create-dictation";
+import { DictationBar, DictationButton, dictationBarShown } from "../inputs/dictation/Dictation";
+import {
+  beginTextDictation,
+  discardTextDictation,
+  insertTextDictation,
+  mapTextDictation,
+  mapTextOffset,
+  splitDictationSegments,
+  type TextDictationState,
+} from "../inputs/dictation/text-dictation";
+import type { DictationAlternative, DictationSource } from "../inputs/dictation/types";
 import { replaceTextareaRange } from "../inputs/editor-dom";
 import {
   completedEmojiShortcode,
@@ -291,6 +303,11 @@ export type ChatComposerProps = {
   emoji?: ChatComposerEmoji;
   /** A microphone at a fixed place: a tap dictates, holding it or its menu asks for a voice message. */
   microphone?: ChatComposerMicrophone;
+  /**
+   * Live dictation at the microphone's place, before Send. A press starts it; while it runs, the dictation bar stands in
+   * for the footer and the words land at the caret, also when the person types elsewhere. Sending waits until it ended.
+   */
+  dictation?: { source: DictationSource; alternative?: DictationAlternative };
   /** One line above the field. The conversation variant always keeps its height; the default shows it only with content. */
   hint?: JSX.Element;
   /**
@@ -949,13 +966,123 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       syncCaret();
     });
   };
+  /** Whether the person placed the caret in this field yet; before that, dictation starts at the end. */
+  let caretPlaced = false;
   const syncCaret = () => {
+    caretPlaced = true;
     // One update, so no effect sees a half-moved selection (it would read as "no `/` here" and reopen a closed list).
     batch(() => {
       setCaret(textareaRef?.selectionStart ?? props.value.length);
       setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
     });
   };
+  // Live dictation writes at its own mark. Edits elsewhere move the mark and the dictated ranges along, and the
+  // person's own caret stays where it was while words arrive.
+  let dictated: TextDictationState | undefined;
+  let dictatedValue = "";
+  const [dictationView, setDictationView] = createSignal<{ mark: number; fresh: readonly (readonly [number, number])[] }>();
+  let freshWords: { from: number; to: number; at: number }[] = [];
+  let freshTimer: ReturnType<typeof setTimeout> | undefined;
+  const freshMs = 1_500;
+  const showDictation = () => {
+    if (freshTimer) clearTimeout(freshTimer);
+    freshTimer = undefined;
+    if (!dictated) {
+      freshWords = [];
+      setDictationView(undefined);
+      return;
+    }
+    const now = performance.now();
+    freshWords = freshWords.filter((word) => now - word.at < freshMs && word.to > word.from);
+    setDictationView({ mark: dictated.mark, fresh: freshWords.map((word) => [word.from, word.to] as const) });
+    if (freshWords.length) freshTimer = setTimeout(showDictation, Math.max(50, freshMs - (now - freshWords[0]!.at)));
+  };
+  createEffect(
+    on(
+      () => props.value,
+      (value) => {
+        if (!dictated || value === dictatedValue) return;
+        const previous = dictatedValue;
+        dictated = mapTextDictation(dictated, previous, value);
+        freshWords = freshWords.map((word) => ({
+          ...word,
+          from: mapTextOffset(previous, value, word.from, true),
+          to: mapTextOffset(previous, value, word.to, false),
+        }));
+        dictatedValue = value;
+        showDictation();
+      },
+    ),
+  );
+  const writeDictated = (value: string, mapSelection: (offset: number) => number) => {
+    const field = textareaRef;
+    const focused = field && field.ownerDocument.activeElement === field;
+    const start = field ? mapSelection(field.selectionStart) : 0;
+    const end = field ? mapSelection(field.selectionEnd) : 0;
+    dictatedValue = value;
+    edit(value);
+    autoResize();
+    if (!field || !focused) return;
+    const restore = () => field.setSelectionRange(Math.min(start, field.value.length), Math.min(end, field.value.length));
+    restore();
+    queueMicrotask(restore);
+  };
+  const liveDictation = createDictation({
+    source: {
+      start: (options) => props.dictation!.source.start(options),
+      devices: () => props.dictation?.source.devices() ?? Promise.resolve([]),
+    },
+    get alternative() {
+      return props.dictation?.alternative;
+    },
+    disabled: () => !props.dictation || editBlocked(),
+    target: {
+      begin: () => {
+        if (dictated) {
+          dictated = { ...dictated, fresh: true };
+          return;
+        }
+        const field = textareaRef;
+        dictated = beginTextDictation(field && caretPlaced ? Math.min(field.selectionEnd, props.value.length) : props.value.length);
+        dictatedValue = props.value;
+        freshWords = [];
+        showDictation();
+      },
+      insert: (text) => {
+        if (!dictated) return;
+        const before = dictated.mark;
+        const next = insertTextDictation(dictated, props.value, text);
+        const added = next.value.length - props.value.length;
+        if (!added) return;
+        dictated = next.state;
+        freshWords.push({ from: next.state.mark - added, to: next.state.mark, at: performance.now() });
+        writeDictated(next.value, (offset) => (offset >= before ? offset + added : offset));
+        showDictation();
+      },
+      discard: () => {
+        if (!dictated) return;
+        const state = dictated;
+        const next = discardTextDictation(state, props.value);
+        dictated = undefined;
+        writeDictated(next.value, (offset) => {
+          let moved = offset;
+          for (const [from, to] of state.ranges)
+            if (offset >= to) moved -= to - from;
+            else if (offset > from) moved -= offset - from;
+          return moved;
+        });
+        showDictation();
+      },
+      end: () => {
+        dictated = undefined;
+        showDictation();
+      },
+    },
+  });
+  onCleanup(() => {
+    if (freshTimer) clearTimeout(freshTimer);
+  });
+  const dictating = () => Boolean(props.dictation) && dictationBarShown(liveDictation);
   /** Closes the list opened from "+"; `refocus` gives the field its focus and the selection it had when "+" was pressed. */
   const endAddSearch = (refocus: boolean) => {
     const search = addSearch();
@@ -1010,10 +1137,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const blocked = () => busy() || submitting();
   /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
   const editBlocked = () => (conversation() ? busy() : blocked());
+  // Dictation belongs to one draft in one editable field: another draft, a field that turns read-only or a host that
+  // drops the source ends it; the words so far stay.
+  // Memos compare values, so typing and arriving words never end it.
+  const dictationField = createMemo(() => `${Boolean(props.dictation)}:${editBlocked()}`);
+  const dictationDraft = createMemo(() => props.draftKey);
+  createEffect(on([dictationField, dictationDraft], () => liveDictation.end(), { defer: true }));
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
   const submittable = () =>
-    !busy() && !props.submitDisabled && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+    !busy() &&
+    !props.submitDisabled &&
+    hasDraft() &&
+    !(props.dictation && liveDictation.active()) &&
+    !(running() && runningSubmitIntent() === "steer" && mentions().length);
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
@@ -2035,10 +2172,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   const field = () => (
     <div class="k2b-chat-composer__input" role="group" aria-label={chatMessages().messageInput}>
-      <Show when={mentions().length > 0}>
+      <Show when={mentions().length > 0 || dictationView()}>
         <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
-          <For each={chatMentionSegments(props.value, mentions())}>
-            {(part) => <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention) }}>{part.text}</span>}
+          <For
+            each={splitDictationSegments(chatMentionSegments(props.value, mentions()), dictationView()?.fresh ?? [], dictationView()?.mark)}
+          >
+            {(part) =>
+              part.mark ? (
+                <span class="k2b-dictation-mark" />
+              ) : (
+                <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention), "k2b-dictation-fresh": Boolean(part.fresh) }}>
+                  {part.text}
+                </span>
+              )
+            }
           </For>
           {"\n"}
         </div>
@@ -2046,7 +2193,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
       <textarea
         ref={textareaRef}
-        classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
+        classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 || Boolean(dictationView()) }}
         rows={1}
         value={props.value}
         // An `open` row keeps the field focused, so the list stays, and only read-only while it runs.
@@ -2582,7 +2729,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
               <footer class="k2b-chat-composer__footer">
                 <Show
-                  when={footer()}
+                  when={dictating() || footer()}
                   fallback={
                     <>
                       <div class="k2b-chat-composer__tools">
@@ -2650,13 +2797,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                           {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
                         </Show>
                         {props.submitTools}
+                        <Show when={props.dictation}>
+                          <DictationButton dictation={liveDictation} class="k2b-chat-composer__icon-action" cardAnchor={() => shellRef} />
+                        </Show>
                         {microphoneControl()}
                         {sendControl()}
                       </div>
                     </>
                   }
                 >
-                  {footer()}
+                  <Show when={dictating()} fallback={footer()}>
+                    <DictationBar dictation={liveDictation} />
+                  </Show>
                 </Show>
               </footer>
             </>
@@ -2668,7 +2820,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               {props.error}
             </div>
           </Show>
-          {formatRow()}
+          {/* While dictating, the bar takes the row above the field, as formatting does; the field stays put. */}
+          <Show when={dictating()} fallback={formatRow()}>
+            <div class="k2b-chat-composer__dictation">
+              <DictationBar dictation={liveDictation} />
+            </div>
+          </Show>
           {/* One row: attach, the field with its tools, and Send. */}
           <div class="k2b-chat-composer__row">
             {attachControl()}
@@ -2678,6 +2835,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               <div class="k2b-chat-composer__field-tools">
                 {formatToggle()}
                 {emojiButton()}
+                <Show when={props.dictation}>
+                  <DictationButton dictation={liveDictation} class="k2b-chat-composer__icon-action" cardAnchor={() => shellRef} />
+                </Show>
                 {microphoneControl()}
               </div>
             </div>

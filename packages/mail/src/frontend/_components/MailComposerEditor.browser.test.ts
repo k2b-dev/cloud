@@ -257,6 +257,36 @@ describe("Mail composer preview", () => {
   }
 });
 
+describe("Mail composer layout", () => {
+  test("puts the formatting toolbar right under the subject and the pane tabs, aligned with the preview", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    const errors = pageErrors(page);
+    try {
+      await page.goto(server.url.href);
+      await page.evaluate(() => window.mountComposer({ locale: "de", intent: "new", signatureTemplateId: null, seed: true, split: true }));
+      const toolbar = page.getByRole("toolbar", { name: "Formatierung", exact: true });
+      await toolbar.waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const subject = await page.getByRole("textbox", { name: "Betreff", exact: true }).boundingBox();
+      const write = await page.getByRole("tab", { name: "Verfassen", exact: true }).boundingBox();
+      const preview = await page.getByRole("tab", { name: "Vorschau", exact: true }).boundingBox();
+      const bold = await toolbar.getByRole("button", { name: "Fett", exact: true }).boundingBox();
+      if (!subject || !write || !preview || !bold) throw new Error("The composer layout is not visible");
+      // No empty status row or doubled padding: subject → pane tabs → toolbar with the normal small gaps only.
+      expect(write.y - (subject.y + subject.height)).toBeLessThanOrEqual(20);
+      expect(bold.y - (write.y + write.height)).toBeLessThanOrEqual(20);
+      expect(bold.y - (subject.y + subject.height)).toBeLessThanOrEqual(64);
+      // Both panes start on the same line.
+      expect(Math.abs(preview.y - write.y)).toBeLessThanOrEqual(1);
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
+      expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
 describe("Mail composer action bar", () => {
   for (const [device, context] of [
     ["desktop", { viewport: { width: 1366, height: 900 } }],
@@ -652,7 +682,7 @@ describe("shared Mail text editor", () => {
       }
     });
 
-    test(`edits table cells and preserves the same text across source and plain views on ${label}`, async () => {
+    test(`edits table cells, offers no Markdown view, and keeps the same text in the plain view on ${label}`, async () => {
       const page = await (await browser.newContext(context)).newPage();
       const initial = "Before\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n\nAfter";
       const errors = pageErrors(page);
@@ -663,11 +693,11 @@ describe("shared Mail text editor", () => {
         await cell.fill("Ink");
         const expected = initial.replace("Paper", "Ink");
         expect(await page.evaluate(() => window.editorBody())).toBe(expected);
-        await page.getByRole("radio", { name: "Markdown", exact: true }).click();
         expect(await page.evaluate(() => window.editorSource())).toBe(expected);
-        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
-        // innerText adds layout-dependent separators around empty CodeMirror lines.
-        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
+        // The composer always edits formatted: no Formatted/Markdown switch.
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.getByRole("radio").count()).toBe(0);
+        expect(await page.locator(".k2b-text-editor").getAttribute("data-mode")).toBe("formatted");
         await page.evaluate(() => window.setEditorFormat("plain"));
         await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
         expect(await page.evaluate(() => window.editorSource())).toBe(expected);
@@ -679,6 +709,40 @@ describe("shared Mail text editor", () => {
         await page.waitForSelector('.cm-content[contenteditable="false"]');
         await page.evaluate(() => window.replaceEditorBody("Restored body"));
         expect(await page.locator(".cm-content").innerText()).toBe("Restored body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test(`opens a draft written in the former Markdown view formatted with identical text on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      // Drafts always stored Markdown; the removed switch only changed how the editor showed it.
+      const draft = [
+        "## Angebot",
+        "",
+        "Hallo **Jana**, hier ist *unser* Angebot mit [Link](https://example.test/angebot):",
+        "",
+        "- Visitenkarten",
+        "- Versand",
+        "",
+        "| Position | Preis |",
+        "| :--- | ---: |",
+        "| Druck | 89,00 € |",
+        "",
+        "> Gilt bis Freitag.",
+        "",
+        "`Code` und ~~alt~~",
+      ].join("\n");
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((body) => window.mountComposerEditor({ locale: "de", body, editorActive: true }), draft);
+        await page.locator(".k2b-ste-table").first().waitFor();
+        expect(await page.locator(".k2b-text-editor").getAttribute("data-mode")).toBe("formatted");
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.evaluate(() => window.editorSource())).toBe(draft);
+        expect(await page.evaluate(() => window.editorBody())).toBe(draft);
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();

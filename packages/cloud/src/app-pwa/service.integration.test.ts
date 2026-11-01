@@ -145,6 +145,37 @@ suite("App-PWA durable service", () => {
     await sql`DELETE FROM settings.entries WHERE key='user.category.login.enabled'`;
   });
 
+  test("an injected database owns table identifiers and query fragments", async () => {
+    const current = await visiting();
+    const statements = new Set<string>();
+    const db = new Proxy(new SQL(requireDatabaseUrl()), {
+      apply(target, receiver, args) {
+        const [input] = args;
+        if (typeof input === "string") statements.add(input);
+        else if (Array.isArray(input)) statements.add(input.join("?"));
+        return Reflect.apply(target, receiver, args);
+      },
+      get(target, property, receiver) {
+        if (property === "array") statements.add("array");
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    try {
+      const injected = createAppPwaService({ ...base, db });
+      await injected.setup();
+      await injected.status(current.boot.credential);
+      await injected.attempt(current.boot.credential, current.visit.id, id());
+      await injected.listDevices(signIn);
+      await injected.listDevices(signIn, current.device.id);
+      for (const table of ["browsers", "devices", "visits", "attempts"]) expect(statements.has(`${schema}._cloud_pwa_${table}`)).toBe(true);
+      expect(statements.has("FOR UPDATE")).toBe(true);
+      expect(statements.has("AND id > ?::uuid")).toBe(true);
+      expect(statements.has("array")).toBe(true);
+    } finally {
+      await db.close();
+    }
+  });
+
   suiteFor("database", "valkey")("allowlisted Core autocomplete", () => {
     const instant = new Date("2038-02-10T10:00:00.000Z");
     const allowed = createAppPwaService({ ...base, coreQueries: ["address.autocomplete"] });

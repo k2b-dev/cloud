@@ -188,7 +188,15 @@ function ProviderColumn(props: {
           icon="ti ti-cube"
           title={t.noModelsYet}
           description={t.noModelsYetSub}
-          action={<AiAreaActions kind="add-models" providerId={props.provider.id} providerLabel={props.provider.label} existing={[]} />}
+          action={
+            <AiAreaActions
+              kind="add-models"
+              providerType={props.provider.type}
+              providerId={props.provider.id}
+              providerLabel={props.provider.label}
+              existing={[]}
+            />
+          }
         />
       ) : (
         <AppWorkspace.SidebarSection title={t.nModels({ p: models.length })}>
@@ -279,6 +287,7 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
       <AppWorkspace.SidebarSection title={t.slots_cloud}>
         {row("vision")}
         {row("audio")}
+        {row("liveAudio")}
       </AppWorkspace.SidebarSection>
     </>
   );
@@ -544,6 +553,7 @@ export function AiAreaView(props: AiAreaViewProps) {
     query.sec === "providers" && provider ? (
       <AiAreaActions
         kind="add-models"
+        providerType={provider.type}
         providerId={provider.id}
         providerLabel={provider.label}
         existing={index?.models.filter((entry) => entry.providerId === provider.id).map((entry) => entry.providerModel) ?? []}
@@ -570,7 +580,13 @@ export function AiAreaView(props: AiAreaViewProps) {
     if (model) return `${model.providerModel} · ${provider?.label ?? ""}`;
     if (query.pane === "conn") return provider?.label;
     if (query.slot)
-      return isAiModelClass(query.slot) ? aiClassSubtitle(t, query.slot) : query.slot === "vision" ? t.slotd_vision : t.slotd_audio;
+      return isAiModelClass(query.slot)
+        ? aiClassSubtitle(t, query.slot)
+        : query.slot === "vision"
+          ? t.slotd_vision
+          : query.slot === "liveAudio"
+            ? t.slotd_liveAudio
+            : t.slotd_audio;
     return undefined;
   };
 

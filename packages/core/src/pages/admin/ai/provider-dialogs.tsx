@@ -24,7 +24,12 @@ import { proposeAiModelIds } from "./model-ids";
 import { AI_PROVIDER_TYPES, type AiAreaMessages, aiProviderTypeDescription, aiProviderTypeInfo, aiProviderTypeLabel } from "./presentation";
 
 type TestResult = { status: "ok" | "unreachable" | "key_rejected" | "error"; httpStatus?: number; message: string; latencyMs?: number };
-type AvailableModel = { providerModel: string; label?: string; kind?: "chat" | "transcription"; contextWindow?: number };
+type AvailableModel = {
+  providerModel: string;
+  label?: string;
+  kind?: "chat" | "transcription" | "live-transcription";
+  contextWindow?: number;
+};
 
 const useT = () => {
   const locale = useLocale();
@@ -401,6 +406,7 @@ export function HeaderRows(props: {
 /** B2: models from the provider's list, or a provider model id by hand. */
 function AddModelsDialog(props: {
   providerId: string;
+  providerType?: AiProviderType;
   providerLabel: string;
   existing: string[];
   close: () => void;
@@ -431,11 +437,13 @@ function AddModelsDialog(props: {
   };
   const showManual = () => manual() || (list.state === "ready" && (list() ?? []).length === 0);
   const facts = (model: AvailableModel) =>
-    model.kind === "transcription"
-      ? t().kindAudio
-      : model.contextWindow
-        ? `${Math.round(model.contextWindow / 1000)}k ${t().ctxShort}`
-        : "";
+    model.kind === "live-transcription"
+      ? t().kindLiveAudio
+      : model.kind === "transcription"
+        ? t().kindAudio
+        : model.contextWindow
+          ? `${Math.round(model.contextWindow / 1000)}k ${t().ctxShort}`
+          : "";
 
   const picks = () => {
     const available = list() ?? [];
@@ -469,8 +477,13 @@ function AddModelsDialog(props: {
         id: proposed()[model.providerModel]!,
         providerModel: model.providerModel,
         label: model.label ?? model.providerModel.split("/").at(-1) ?? model.providerModel,
-        kind: model.kind === "transcription" ? ("transcription" as const) : ("chat" as const),
-        capabilities: model.kind === "transcription" ? (["transcription"] as const).slice() : [],
+        kind: props.providerType === "vllm-realtime" ? ("live-transcription" as const) : (model.kind ?? ("chat" as const)),
+        capabilities:
+          props.providerType === "vllm-realtime" || model.kind === "live-transcription"
+            ? ["live-transcription" as const]
+            : model.kind === "transcription"
+              ? ["transcription" as const]
+              : [],
         contextWindow: model.contextWindow ?? null,
       }));
       const created = await readAiAdmin<{ models: { id: string }[] }>(
@@ -632,7 +645,7 @@ export const openAddProvider = () =>
     panelDialogOptions,
   );
 
-export const openAddModels = (provider: { providerId: string; providerLabel: string; existing: string[] }) =>
+export const openAddModels = (provider: { providerId: string; providerType?: AiProviderType; providerLabel: string; existing: string[] }) =>
   void dialogCore.open<void>(
     (close, context) => <AddModelsDialog {...provider} close={() => close()} setDismissHandler={context.setDismissHandler} />,
     panelDialogOptions,

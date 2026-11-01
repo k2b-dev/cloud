@@ -55,7 +55,7 @@ type Draft = {
   description: string;
   icon: AiModelIconSetting;
   providerModel: string;
-  kind: "chat" | "transcription";
+  kind: "chat" | "transcription" | "live-transcription";
   tools: boolean;
   vision: boolean;
   contextWindow: number | null;
@@ -193,7 +193,7 @@ export default function AiModelDetail(props: {
   let fileInput: HTMLInputElement | undefined;
 
   const providerState = () => aiProviderState(props.provider);
-  const audio = () => draft().kind === "transcription";
+  const audio = () => draft().kind !== "chat";
   const unit = () => props.accountingUnit ?? "EUR";
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
   const dirty = () => JSON.stringify(draft()) !== JSON.stringify(toDraft(base()));
@@ -213,8 +213,8 @@ export default function AiModelDetail(props: {
       providerModel: value.providerModel.trim(),
       kind: value.kind,
       capabilities:
-        value.kind === "transcription"
-          ? (["transcription"] as ("tools" | "vision" | "transcription")[])
+        value.kind !== "chat"
+          ? [value.kind]
           : ([...(value.tools ? ["tools"] : []), ...(value.vision ? ["vision"] : [])] as ("tools" | "vision" | "transcription")[]),
       contextWindow: value.contextWindow,
       maxOutputTokens: value.maxOutputTokens,
@@ -632,6 +632,7 @@ export default function AiModelDetail(props: {
                 options={[
                   { value: "chat", label: t().kindChat, icon: "ti ti-message-2" },
                   { value: "transcription", label: t().kindAudio, icon: "ti ti-microphone" },
+                  { value: "live-transcription", label: t().kindLiveAudio, icon: "ti ti-microphone" },
                 ]}
               />
             </span>

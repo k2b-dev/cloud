@@ -67,6 +67,7 @@ export const AI_PROVIDER_TYPES: {
     headers: true,
     effortField: "reasoning_effort",
   },
+  { id: "vllm-realtime", url: "required", key: "optional", boundary: "private", headers: false, effortField: "" },
 ];
 
 export const aiProviderTypeInfo = (type: AiProvider["type"]) => AI_PROVIDER_TYPES.find((entry) => entry.id === type)!;
@@ -80,6 +81,7 @@ export const aiProviderTypeLabel = (t: AiAreaMessages, type: AiProvider["type"])
     gemini: "Gemini",
     ollama: "Ollama",
     vllm: "vLLM",
+    "vllm-realtime": "vLLM Realtime",
     "openai-compatible": t.typeCompat,
   })[type];
 
@@ -92,6 +94,7 @@ export const aiProviderTypeDescription = (t: AiAreaMessages, type: AiProvider["t
     gemini: t.typeDesc_gemini,
     ollama: t.typeDesc_ollama,
     vllm: t.typeDesc_vllm,
+    "vllm-realtime": t.typeDesc_vllm_realtime,
     "openai-compatible": t.typeDesc_openai_compatible,
   })[type];
 
@@ -103,6 +106,7 @@ export const aiSlotLabel = (t: AiAreaMessages, slot: AiModelSlot): string =>
     maximum: t.slot_maximum,
     vision: t.slot_vision,
     audio: t.slot_audio,
+    liveAudio: t.slot_liveAudio,
   })[slot];
 
 export const aiClassSubtitle = (t: AiAreaMessages, modelClass: AiModelClass): string =>

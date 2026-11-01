@@ -1,5 +1,6 @@
 export { ariaShortcut, isApple, markdownActions, shortcutLabel } from "./actions";
 export { BubbleMenu, type BubbleMenuProps } from "./BubbleMenu";
+export { dictationTarget } from "./dictation";
 export { Editor, type EditorProps } from "./Editor";
 export { asUndoStep, createEditor, type EditorAction, type EditorHandle } from "./editor-state";
 export { editorMessages } from "./messages";

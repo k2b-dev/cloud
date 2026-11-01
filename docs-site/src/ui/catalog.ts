@@ -110,6 +110,12 @@ const portableSections = [
       ),
       page("emoji-picker", "EmojiPicker", "ti ti-mood-smile", "Emoji search in English and German, recently used emoji, and skin tones."),
       page("signature", "SignatureInput", "ti ti-signature", "Draw with finger, pen, or mouse, or type the name, as an SVG value."),
+      page(
+        "dictation",
+        "Dictation",
+        "ti ti-microphone",
+        "Live dictation with a bar in place of the controls, its notices, and a source contract.",
+      ),
       page("qr-scanner", "QrScanner", "ti ti-qrcode", "Camera QR scanning with host validation and explicit camera errors."),
       page("file-dropzone", "FileDropzone", "ti ti-cloud-upload", "Accessible click and drag file selection with validation state."),
       page(
@@ -431,7 +437,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 168;
+export const portableUiComponentCount = 170;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

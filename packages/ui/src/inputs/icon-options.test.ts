@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
+import { GERMAN_ICON_TEXTS } from "./icon-texts";
 
 const tablerPath = resolve(import.meta.dir, "../../dist/tabler.css");
 if (!existsSync(tablerPath)) throw new Error("dist/tabler.css is missing — run `bun run build` before this test");
@@ -70,5 +71,15 @@ describe("@k2b/ui default icon catalogue", () => {
     // A catalogue that silently shrinks to a handful of entries would make the
     // picker useless without failing any render test.
     expect(DEFAULT_ICON_OPTIONS.length).toBeGreaterThanOrEqual(120);
+  });
+
+  test("names every icon in German and nothing else", () => {
+    const names = DEFAULT_ICON_OPTIONS.map((option) => option.value.replace("ti ti-", "")).sort();
+    expect(Object.keys(GERMAN_ICON_TEXTS).sort()).toEqual(names);
+    for (const [label, description, keywords] of Object.values(GERMAN_ICON_TEXTS)) {
+      expect(label.length).toBeGreaterThan(0);
+      expect(description.length).toBeGreaterThan(0);
+      expect(keywords.split(" ").every(Boolean)).toBe(true);
+    }
   });
 });

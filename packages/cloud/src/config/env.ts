@@ -18,6 +18,12 @@ const registry = defineEnv({
     schema: z.string(),
     doc: "Release images set `production`; `development` enables development-only behavior such as insecure cookies and HTTP issuers.",
   },
+  CLOUD_DEV_APP_KEYS: {
+    schema: envBoolean,
+    default: false,
+    scope: "development",
+    doc: "Isolated Compose development installation only: enroll the public development fixture keys after Core migrations. Refused outside NODE_ENV=development.",
+  },
   HOSTNAME: {
     schema: z.string(),
     doc: "Container or host name; the default instance identity in worker leases and gateway registration.",
@@ -170,7 +176,7 @@ const registry = defineEnv({
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete.",
+    doc: "App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Built-in apps need only the key and direct Core origin; retain infrastructure env for Core and Gateway.",
   },
   CLOUD_CORE_INTERNAL_ORIGIN: {
     schema: z.string(),

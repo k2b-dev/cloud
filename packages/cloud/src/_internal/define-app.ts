@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../api/app-migration-trigger";
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
@@ -929,7 +930,9 @@ export const defineApp = <
             invocationApp,
           ),
         )
-        .use("/_internal/sync/*", auth.requireOAuthScope("admin"))
+        .use("/_internal/sync/*", (c, next) =>
+          auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+        )
         .use("/_internal/sync/*", async (c, next) => {
           if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
           return next();
@@ -1119,6 +1122,7 @@ export const defineApp = <
 
       cleanup.push(bindResourceAppAccess(meta.id, opts.access));
       server.route(RESOURCE_ACCESS_PATH, createResourceAppAccessRoutes(meta));
+      if (meta.id !== "core" && meta.id !== "gateway") server.route(APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes(meta.id));
       cleanup.push(() => stopAppAccessConnections());
       if (meta.access?.kind === "grants") {
         server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));

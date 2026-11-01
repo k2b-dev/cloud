@@ -8,6 +8,7 @@ import {
   type AiModelSlot,
   type AiModelVariant,
   aiModelClassFallbackChain,
+  aiModelSupportsSlot,
 } from "@k2b/cloud/shared";
 import { Button, NoticeCard, RichSelect, StatusBadge, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
@@ -68,7 +69,7 @@ export default function AiClassDetail(props: {
       const model = props.models.find((candidate) => candidate.id === variant.modelId);
       const provider = model ? props.providers.find((candidate) => candidate.id === model.providerId) : undefined;
       if (!model || !provider || !model.enabled) return [];
-      if (props.slot === "audio" ? model.kind !== "transcription" : model.kind !== "chat") return [];
+      if (!aiModelSupportsSlot(props.slot, model)) return [];
       if (props.slot === "vision" && !model.capabilities.includes("vision")) return [];
       const others = (Object.keys(props.assignments) as AiModelSlot[]).filter(
         (slot) => slot !== props.slot && props.assignments[slot]?.variantId === variant.id,
@@ -282,7 +283,15 @@ export default function AiClassDetail(props: {
 }
 
 const aiClassSubtitleForTool = (t: ReturnType<typeof aiAreaMessages.resolve>["t"], slot: AiModelSlot) =>
-  slot === "vision" ? t.slotd_vision : slot === "audio" ? t.slotd_audio : isAiModelClass(slot) ? aiClassSubtitle(t, slot) : "";
+  slot === "liveAudio"
+    ? t.slotd_liveAudio
+    : slot === "vision"
+      ? t.slotd_vision
+      : slot === "audio"
+        ? t.slotd_audio
+        : isAiModelClass(slot)
+          ? aiClassSubtitle(t, slot)
+          : "";
 
 const AiModelIconFor = (props: { model: AiModel; provider: Provider }) => (
   <AiModelIcon icon={aiModelDisplayIcon(props.model.icon, props.provider)} size="xs" />

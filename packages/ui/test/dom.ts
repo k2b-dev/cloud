@@ -61,7 +61,9 @@ export function createDomTestHarness(): DomTestHarness {
       if (cleaned) return;
       cleaned = true;
       root.remove();
-      window.close();
+      // window.close() only closes script-opened windows, not this detached window.
+      // Happy DOM cancels its timers synchronously before finishing async teardown.
+      void window.happyDOM.close();
 
       for (const [name, descriptor] of previous) {
         if (descriptor) Object.defineProperty(globalThis, name, descriptor);

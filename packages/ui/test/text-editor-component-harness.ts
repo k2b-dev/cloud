@@ -1,4 +1,4 @@
-import { LocaleProvider } from "@k2b/ui";
+import { type DictationEvent, type DictationSource, LocaleProvider } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
@@ -47,6 +47,36 @@ const source = new URLSearchParams(location.search).has("polish")
       ].join("\n")
     : defaultSource;
 
+// `?state=dictation`: a scripted source; the test pushes its events through `window.dictationEmit`.
+const dictationSource: DictationSource = {
+  devices: async () => [],
+  start: ({ signal }) => {
+    const queue: DictationEvent[] = [];
+    let wake: (() => void) | undefined;
+    let ended = false;
+    (window as unknown as { dictationEmit: (event: DictationEvent) => void }).dictationEmit = (event) => {
+      queue.push(event);
+      wake?.();
+    };
+    signal.addEventListener("abort", () => {
+      ended = true;
+      wake?.();
+    });
+    return {
+      events: {
+        async *[Symbol.asyncIterator]() {
+          while (!ended) {
+            const event = queue.shift();
+            if (event) yield event;
+            else await new Promise<void>((done) => (wake = done));
+          }
+        },
+      },
+      stop: async () => {},
+    };
+  },
+};
+
 render(
   () =>
     createComponent(LocaleProvider, {
@@ -66,6 +96,7 @@ render(
           placeholder: "Nachricht schreiben …",
           maxLength: scenario === "error" ? source.length : 2097152,
           status: "Gespeichert",
+          dictation: scenario === "dictation" ? { source: dictationSource } : undefined,
           onReady: (controller) => {
             window.sharedComponentHarness = controller;
             if (scenario === "formatted" && new URLSearchParams(location.search).has("mockup")) {
