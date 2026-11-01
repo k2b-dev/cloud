@@ -807,6 +807,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
     config: object({
       conversation: conversationReference,
       item: text("Spaces item ID.", false, 120),
+      space: text("Confirmed destination Space ID.", true, 120),
     }),
     authorize: authorized,
     cost: () => ({ maxCollaborationChanges: 1 }),
@@ -819,6 +820,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
         const result = await linkSpaceItemResource(
           {
             itemId: asText(values.item, "Spaces item"),
+            ...(values.space ? { spaceId: asText(values.space, "Space") } : {}),
             reference: {
               ref: { type: "mail.conversation", id: conversationId },
               label:

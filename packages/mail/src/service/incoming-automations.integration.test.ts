@@ -32,6 +32,7 @@ import {
   resolveIncomingAutomationMessageStateTurn,
   resolveIncomingAutomationPlacementTurn,
 } from "./incoming-automation-order";
+import { migrateIncomingAutomationTargets } from "./incoming-automation-targets-migrate";
 import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import {
   cancelIncomingAutomationBackfill,
@@ -931,6 +932,193 @@ suite("incoming automations", () => {
     });
   });
 
+  test("unmappable old item-only automation is visibly paused until its person confirms the target", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Fictional unmappable link",
+        enabled: true,
+        scope: { mode: "all" },
+        steps: [{ id: "00000000-0000-4000-8000-000000000082", kind: "link_space_item", itemId: "Item01", spaceId: "Space1" }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const [binding] = await sql<
+      { mandate_id: string }[]
+    >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+    const oldSteps = [{ id: created.data.steps[0]!.id, kind: "link_space_item", itemId: "Item01" }];
+    const oldPolicy = { version: 1, apps: ["spaces"], operations: ["capability.action.run:item.reference.add"], actions: "preapproved" };
+    await sql`UPDATE auth.mandates SET policy = ${JSON.stringify(oldPolicy)}::text::jsonb WHERE id = ${binding!.mandate_id}::uuid`;
+    await sql`UPDATE mail.incoming_automations SET steps = ${JSON.stringify(oldSteps)}::text::jsonb, capability_target_version = 0 WHERE id = ${created.data.id}::uuid`;
+    const queuedRun = await createWorkflowRun({
+      appId: "mail",
+      scopeId: mailboxId,
+      workflowId: created.data.workflowId,
+      workflowVersionId: created.data.workflowVersionId,
+      mode: "execute",
+      authorization: {},
+      idempotencyKey: "fictional-needs-attention-queued-run",
+      occurredAt: new Date("2026-09-03T10:00:00Z"),
+    });
+    await sql.begin(migrateIncomingAutomationTargets);
+    const listed = await listIncomingAutomations(ownerContext, mailboxId);
+    if (!listed.ok) throw new Error(listed.error.message);
+    const attention = listed.data.find((item) => item.id === created.data.id)!;
+    expect(attention).toMatchObject({ enabled: false, authorizationState: "needs_attention", steps: oldSteps });
+    expect(await mandates.get(binding!.mandate_id)).toMatchObject({ state: "paused", policy: oldPolicy });
+    expect((await sql`SELECT id FROM workflows.activation WHERE workflow_id = ${attention.workflowId}::uuid AND enabled`).length).toBe(0);
+    const pausedSnapshot = JSON.stringify({
+      automation: attention,
+      mandate: await mandates.get(binding!.mandate_id),
+      audit:
+        await sql`SELECT * FROM audit.events WHERE action = 'mail.incoming_automation.targets.migrate' AND target_id = ${attention.id} ORDER BY id`,
+    });
+    await sql.begin(migrateIncomingAutomationTargets);
+    const listedAgain = await listIncomingAutomations(ownerContext, mailboxId);
+    if (!listedAgain.ok) throw new Error(listedAgain.error.message);
+    expect(
+      JSON.stringify({
+        automation: listedAgain.data.find((item) => item.id === attention.id),
+        mandate: await mandates.get(binding!.mandate_id),
+        audit:
+          await sql`SELECT * FROM audit.events WHERE action = 'mail.incoming_automation.targets.migrate' AND target_id = ${attention.id} ORDER BY id`,
+      }),
+    ).toBe(pausedSnapshot);
+    await expect(resolveIncomingAutomationMandateCaller(queuedRun)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const toggle = await setIncomingAutomationEnabled({
+      context: ownerContext,
+      mailboxId,
+      automationId: attention.id,
+      input: { expectedRevision: attention.revision, enabled: true },
+    });
+    expect(toggle.ok).toBe(false);
+    if (!toggle.ok) expect(toggle.error.message).toContain("Edit automation");
+    const confirmed = await updateIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: attention.id,
+      input: {
+        name: attention.name,
+        expectedRevision: attention.revision,
+        enabled: true,
+        scope: attention.scope,
+        steps: created.data.steps,
+      },
+    });
+    expect(confirmed.ok).toBe(true);
+    if (confirmed.ok) expect(confirmed.data).toMatchObject({ authorizationState: "ready", enabled: true });
+    expect((await mandates.get(binding!.mandate_id))?.state).toBe("active");
+    expect(
+      (await sql`SELECT id FROM workflows.activation WHERE workflow_id = ${attention.workflowId}::uuid AND enabled`).length,
+    ).toBeGreaterThan(0);
+    expect((await mandates.get(binding!.mandate_id))?.policy.grants?.[0]).toMatchObject({
+      target: { type: "spaces.space", id: "Space1" },
+      fixedInput: { itemId: "Item01" },
+    });
+  });
+
+  test.each(["confirm", "remove_spaces", "delete"] as const)(
+    "an unreadable old policy retains its evidence through recovery (%s)",
+    async (recoveryAction) => {
+      const created = await createIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        input: {
+          name: `Fictional unreadable authorization ${recoveryAction}`,
+          enabled: true,
+          scope: { mode: "all" },
+          steps: [{ id: "00000000-0000-4000-8000-000000000083", kind: "link_space_item", itemId: "Item01", spaceId: "Space1" }],
+        },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const [old] = await sql<
+        { mandate_id: string }[]
+      >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+      const unreadable = { version: 1, legacy: "Fictional retained policy" };
+      await sql`UPDATE auth.mandates SET policy = ${JSON.stringify(unreadable)}::text::jsonb WHERE id = ${old!.mandate_id}::uuid`;
+      await sql`UPDATE mail.incoming_automations SET capability_target_version = 0 WHERE id = ${created.data.id}::uuid`;
+      await sql.begin(migrateIncomingAutomationTargets);
+      const listed = await listIncomingAutomations(ownerContext, mailboxId);
+      if (!listed.ok) throw new Error(listed.error.message);
+      const attention = listed.data.find((item) => item.id === created.data.id)!;
+      const input = {
+        name: attention.name,
+        expectedRevision: attention.revision,
+        enabled: true,
+        scope: attention.scope,
+        steps: attention.steps,
+      };
+      if (recoveryAction === "delete") {
+        const deleted = await deleteIncomingAutomation({
+          context: ownerContext,
+          mailboxId,
+          automationId: attention.id,
+          input: { expectedRevision: attention.revision },
+        });
+        expect(deleted.ok).toBe(true);
+        const [retained] = await sql<
+          { state: string; policy: unknown }[]
+        >`SELECT state, policy FROM auth.mandates WHERE id = ${old!.mandate_id}::uuid`;
+        expect(retained).toEqual({ state: "revoked", policy: unreadable });
+        return;
+      }
+      const other = await updateIncomingAutomation({ context: sharedAdminContext, mailboxId, automationId: attention.id, input });
+      expect(other.ok).toBe(false);
+      if (recoveryAction === "remove_spaces") {
+        const withoutSpaces = await updateIncomingAutomation({
+          context: ownerContext,
+          mailboxId,
+          automationId: attention.id,
+          input: { ...input, steps: [{ id: attention.steps[0]!.id, kind: "mail_action", action: { kind: "mark_read" } }] },
+        });
+        if (!withoutSpaces.ok) throw new Error(withoutSpaces.error.message);
+        input.expectedRevision = withoutSpaces.data.revision;
+      }
+      const confirmed = await updateIncomingAutomation({ context: ownerContext, mailboxId, automationId: attention.id, input });
+      expect(confirmed.ok).toBe(true);
+      const [replacement] = await sql<
+        { mandate_id: string }[]
+      >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${attention.id}::uuid`;
+      expect(replacement!.mandate_id).not.toBe(old!.mandate_id);
+      expect((await mandates.get(replacement!.mandate_id))?.policy.grants?.[0]).toMatchObject({
+        target: { type: "spaces.space", id: "Space1" },
+        fixedInput: { itemId: "Item01" },
+      });
+      const [retained] = await sql<
+        { state: string; policy: unknown }[]
+      >`SELECT state, policy FROM auth.mandates WHERE id = ${old!.mandate_id}::uuid`;
+      expect(retained).toEqual({ state: "revoked", policy: unreadable });
+    },
+  );
+
+  test("leaves old Mail-only definitions untouched even when they contain an unfamiliar stored field", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Fictional retained Mail-only definition",
+        enabled: true,
+        scope: { mode: "all" },
+        steps: [{ id: "00000000-0000-4000-8000-000000000084", kind: "mail_action", action: { kind: "mark_read" } }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const stored = [{ ...created.data.steps[0], legacyDisplayName: "Fictional old field" }];
+    await sql`UPDATE mail.incoming_automations SET steps = ${JSON.stringify(stored)}::text::jsonb,
+      capability_target_version = 0 WHERE id = ${created.data.id}::uuid`;
+    const snapshot = async () =>
+      (
+        await sql`SELECT steps, enabled, revision, authorization_state
+      FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`
+      )[0];
+    const before = await snapshot();
+    await sql.begin(migrateIncomingAutomationTargets);
+    expect(await snapshot()).toEqual(before);
+    await sql.begin(migrateIncomingAutomationTargets);
+    expect(await snapshot()).toEqual(before);
+  });
+
   test("creates a disabled automation with a paused bounded mandate and no user token", async () => {
     const credentialCount = async () => {
       const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.service_account_credentials`;
@@ -945,7 +1133,7 @@ suite("incoming automations", () => {
         enabled: false,
         scope: { mode: "all" },
         steps: [
-          { id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" },
+          { id: crypto.randomUUID(), kind: "link_space_item", spaceId: "Space1", itemId: "Item01" },
           {
             id: crypto.randomUUID(),
             kind: "create_space_event",
@@ -1022,7 +1210,7 @@ suite("incoming automations", () => {
         name: "Shared mailbox authority",
         enabled: true,
         scope: { mode: "all" },
-        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", spaceId: "Space1", itemId: "Item01" }],
       },
     });
     if (!created.ok) throw new Error(created.error.message);
@@ -1054,7 +1242,7 @@ suite("incoming automations", () => {
     expect(unchanged.ok && unchanged.data.revision).toBe(current.revision);
 
     const targetChange = await update(sharedAdminContext, {
-      steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
+      steps: [{ id: current.steps[0]!.id, kind: "link_space_item", spaceId: "Space1", itemId: "Item02" }],
     });
     expect(targetChange.ok ? null : targetChange.error.code).toBe("FORBIDDEN");
     expect(targetChange.ok ? null : targetChange.error.message).toContain("reauthorization");
@@ -1102,7 +1290,7 @@ suite("incoming automations", () => {
 
     const ownerUpdate = await update(ownerContext, {
       enabled: true,
-      steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
+      steps: [{ id: current.steps[0]!.id, kind: "link_space_item", spaceId: "Space1", itemId: "Item02" }],
     });
     if (!ownerUpdate.ok) throw new Error(ownerUpdate.error.message);
     current = ownerUpdate.data;
@@ -1139,7 +1327,7 @@ suite("incoming automations", () => {
       actor: ownerContext.actor.kind === "user" ? { ...ownerContext.actor, sessionKind: "app" } : ownerContext.actor,
     };
     const webOnly = { code: "FORBIDDEN", message: "Use Cloud on the web for this." };
-    const steps = [{ id: crypto.randomUUID(), kind: "link_space_item" as const, itemId: "Item01" }];
+    const steps = [{ id: crypto.randomUUID(), kind: "link_space_item" as const, spaceId: "Space1", itemId: "Item01" }];
     const input = { name: "Phone authority", enabled: false, scope: { mode: "all" as const }, steps };
     const fromPhone = await createIncomingAutomation({ context: appContext, mailboxId, input });
     expect(fromPhone.ok ? null : fromPhone.error).toMatchObject(webOnly);
@@ -1206,7 +1394,7 @@ suite("incoming automations", () => {
         name: `Mandate loss ${suffix}`,
         enabled: true,
         scope: { mode: "all" },
-        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", spaceId: "Space1", itemId: "Item01" }],
       },
     });
     if (!created.ok) throw new Error(created.error.message);
@@ -1251,7 +1439,7 @@ suite("incoming automations", () => {
           name: `Remove shared Spaces ${externallyRevoked}`,
           enabled: true,
           scope: { mode: "all" },
-          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", spaceId: "Space1", itemId: "Item01" }],
         },
       });
       if (!created.ok) throw new Error(created.error.message);
@@ -1309,7 +1497,7 @@ suite("incoming automations", () => {
         name: "Disable mandated automation",
         enabled: true,
         scope: { mode: "all" },
-        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", spaceId: "Space1", itemId: "Item01" }],
       },
     });
     if (!created.ok) throw new Error(created.error.message);
@@ -1343,7 +1531,7 @@ suite("incoming automations", () => {
         name: "Resume mandated automation",
         enabled: false,
         scope: { mode: "all" },
-        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", spaceId: "Space1", itemId: "Item01" }],
       },
     });
     if (!created.ok) throw new Error(created.error.message);

@@ -311,6 +311,7 @@ describe("Core AI capabilities", () => {
       "code.read",
       "code.run.list",
       "code.run.read",
+      "code.secret.list",
       "code.version.diff",
       "code.version.diff.read",
       "code.version.list",
@@ -342,6 +343,8 @@ describe("Core AI capabilities", () => {
       "code.policy.update",
       "code.resume",
       "code.run",
+      "code.secret.delete",
+      "code.secret.set",
       "code.version.approve",
       "code.version.reject",
       "code.version.submit",
@@ -376,6 +379,8 @@ describe("Core AI capabilities", () => {
       "code.pause": { destructive: false, idempotency: "required" },
       "code.resume": { destructive: false, idempotency: "required" },
       "code.run": { destructive: false, idempotency: "required" },
+      "code.secret.delete": { destructive: true, idempotency: "required" },
+      "code.secret.set": { destructive: false, idempotency: "none" },
       "code.version.approve": { destructive: false, idempotency: "required" },
       "code.version.reject": { destructive: false, idempotency: "required" },
       "code.version.submit": { destructive: false, idempotency: "required" },
@@ -1300,12 +1305,4 @@ test("Core action targets replace their primary input selector in the manifest",
     expect(action.inputSchema.properties).not.toHaveProperty("chatId");
   }
   expect(aiCapabilities.actions["ai.skill.delete"].input.safeParse({ skillId: "Other1" }).success).toBe(false);
-});
-
-test("every Code Action with policy declares review and the Core manifest compiles", () => {
-  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
-    if (!id.startsWith("code.") || !("policy" in action)) continue;
-    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
-  }
-  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
 });

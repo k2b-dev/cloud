@@ -256,7 +256,7 @@ These schemas describe evidence; they grant no execution or resource access.
 `CodeHttpRequestSchema`, `CodeHttpResultSchema` and their types describe
 [Code secrets](/en/docs/platform/code-secrets) and the HTTP bridge.
 `codeSecretPlaceholder`, `codeSecretHeaderAllowed` and `codeSecretPathAllowed`
-supply the shared placeholder and destination grammar. The services barrel
+supply the shared header-marker and destination grammar. The services barrel
 exports `PurposeSecretRoots` and `purposeSecretCipher` for purpose-separated
 encryption and root migration.
 
