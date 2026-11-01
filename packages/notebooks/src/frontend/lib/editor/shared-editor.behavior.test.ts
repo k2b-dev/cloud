@@ -9,7 +9,8 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 // The public browser entry defines Solid controls at import time; install the DOM first.
 const bootstrap = createDomTestHarness();
 const { tableGrid, tableHost } = await import("@k2b/ui/text-editor");
-const { caretIntoTableCell, cellAt, outsideTable, tableAround, tableCellPresence } = await import("./shared-editor");
+const { caretIntoTableCell, cellAt, tableAround } = await import("@k2b/editor");
+const { outsideTable, tableCellPresence } = await import("./shared-editor");
 bootstrap.cleanup();
 
 const doc = "Intro\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n| Ink | =SUM(Cost) |\n\nAfter";

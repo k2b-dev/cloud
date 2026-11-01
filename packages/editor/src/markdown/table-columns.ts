@@ -164,6 +164,9 @@ export const tableColumnCompletionSource = (context: CompletionContext): Complet
   const charBefore = partialFrom > 0 ? context.state.sliceDoc(partialFrom - 1, partialFrom) : "";
   const userTypedBacktick = charBefore === "`";
 
+  const columnWord = (typeof document === "undefined" ? "en" : document.documentElement.lang || "en").startsWith("de")
+    ? "Spalte"
+    : "column";
   const options: Completion[] = columns.map((col) => {
     const c: Completion = {
       // `label` is the raw column name — used both for the popup
@@ -172,7 +175,7 @@ export const tableColumnCompletionSource = (context: CompletionContext): Complet
       // text is the backtick-quoted form.
       label: col,
       type: "property",
-      detail: "column",
+      detail: columnWord,
       apply: buildColumnApply(col, userTypedBacktick),
     };
     withIcon(c, "ti-columns-3");

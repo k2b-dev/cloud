@@ -47,6 +47,9 @@
   font-family: inherit !important;
   font-size: 0.75rem !important;
   overflow: hidden;
+  /* CodeMirror shortens the popup when the screen has less room than the list; the list then scrolls inside it. */
+  display: flex;
+  flex-direction: column;
 }
 .dark .cm-tooltip.cm-tooltip-autocomplete {
   background-color: rgb(24 24 27) !important;
@@ -56,6 +59,9 @@
 .cm-tooltip-autocomplete > ul {
   font-family: inherit !important;
   max-height: 28rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
   padding: 0 !important;
   margin: 0;
   list-style: none;

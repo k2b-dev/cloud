@@ -106,6 +106,8 @@ export type MenuSheetOptions = {
   top?: (close: () => void) => JSX.Element;
   search?: DropdownSearch;
   icons?: "plain" | "tile";
+  /** A quiet sentence below the entries. */
+  note?: string;
   signal?: AbortSignal;
 };
 
@@ -185,6 +187,9 @@ export const openMenuSheet = (options: MenuSheetOptions): Promise<void> => {
                     icons={options.icons}
                   />
                 )}
+              </Show>
+              <Show when={options.note}>
+                <p class="k2b-dropdown__note">{options.note}</p>
               </Show>
             </BottomSheet.Body>
           </BottomSheet>

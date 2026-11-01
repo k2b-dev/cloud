@@ -118,6 +118,7 @@ and checked cards.
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
 | Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
 | Chosen row with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |

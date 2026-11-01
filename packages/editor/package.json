@@ -21,6 +21,7 @@
     "./formula": "./src/formula.ts",
     "./charts": "./src/charts.ts",
     "./markdown/pretty-table": "./src/markdown/pretty-table.ts",
+    "./markdown/shared-tables": "./src/markdown/shared-tables.ts",
     "./markdown/pretty-table-messages": "./src/markdown/pretty-table-messages.ts",
     "./markdown/chart-copy": "./src/markdown/chart-copy.ts",
     "./markdown/notebook-charts": "./src/markdown/notebook-charts.tsx"

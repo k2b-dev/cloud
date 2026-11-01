@@ -1,10 +1,11 @@
 import { type Extension, Prec } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
-import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, SlashMenu } from "@k2b/editor";
+import { tooltips } from "@codemirror/view";
+import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, SlashMenu } from "@k2b/editor";
 import { collab } from "@k2b/editor/collab";
 import type { MarkdownUrlOptions } from "@k2b/editor/markdown";
+import { createNotebookTablePresentation } from "@k2b/editor/markdown/shared-tables";
 import { files as browserFiles } from "@k2b/stdlib/browser";
-import type { TextEditorController, TextEditorControls } from "@k2b/ui/text-editor";
+import { renderInline, type TextEditorController, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -14,6 +15,7 @@ import { preferences } from "../prefs";
 import { navigate } from "../router";
 import { t } from "../state";
 import { blockDiagnostic, blockPreviewMessages } from "./block-messages";
+import { noteSlashActions } from "./slash-actions";
 import { tagPills } from "./tag-pills";
 
 type Presentation = { md: typeof import("@k2b/editor/markdown"); charts: typeof import("@k2b/editor/charts") };
@@ -27,19 +29,6 @@ const loadPresentation = () =>
       presentationModule = undefined;
       throw error;
     }));
-
-/** Puts a block on its own lines at the caret and leaves the caret at `caret` characters into it. */
-const insertBlock = (view: EditorView, block: string, caret: number) => {
-  const at = view.state.selection.main.head;
-  const line = view.state.doc.lineAt(at);
-  const lead = line.text.trim() ? "\n\n" : "";
-  const from = line.text.trim() ? line.to : line.from;
-  view.dispatch({ changes: { from, to: line.to, insert: `${lead}${block}` }, selection: { anchor: from + lead.length + caret } });
-  view.focus();
-};
-
-const chartBlock = (type: "line" | "bar", title: string) =>
-  `:::chart\ntype: ${type}\ntitle: ${title}\ncolumns: [A, B]\nrows:\n  - [1, 10]\n  - [2, 20]\nx: A\ny: B\n:::\n`;
 
 /**
  * The note editor: @k2b/editor on the note's Y.Text, with the compact bubble menu and the `/` menu of mockup v4.
@@ -75,57 +64,20 @@ export function NoteEditor(props: {
       view.dispatch({ changes: { from, to, insert: `#${word}` }, selection: { anchor: from + word.length + 1 } });
     },
   };
-  const slash = (): SlashAction[] => [
-    {
-      id: "chart",
-      name: "diagramm",
-      aliases: ["chart"],
-      icon: "ti-chart-area-line",
-      label: t().slashChart,
-      description: t().slashChartHint,
-      run: (view) => insertBlock(view, chartBlock("line", t().slashChart), 0),
-    },
-    {
-      id: "chart-bar",
-      name: "balken",
-      aliases: ["bar"],
-      icon: "ti-chart-bar",
-      label: t().slashBar,
-      run: (view) => insertBlock(view, chartBlock("bar", t().slashChart), 0),
-    },
-    { ...md().table, name: "tabelle", aliases: ["table"], label: t().slashTable },
-    {
-      id: "checklist",
-      name: "checkliste",
-      aliases: ["todo", "task"],
-      icon: "ti-list-check",
-      label: t().fmtTask,
-      run: (view) => insertBlock(view, "- [ ] ", 6),
-    },
-    {
-      id: "note",
-      name: "hinweis",
-      aliases: ["note", "callout"],
-      icon: "ti-info-circle",
-      label: t().slashNote,
-      description: t().slashNoteHint,
-      run: (view) => insertBlock(view, ":::note\n\n:::\n", 8),
-    },
-    {
-      id: "image",
-      name: "bild",
-      aliases: ["image", "img"],
-      icon: "ti-photo",
-      label: t().slashImage,
-      description: t().slashImageHint,
-      run: () =>
+  const slash = () =>
+    noteSlashActions({
+      t: t(),
+      md: md(),
+      tag,
+      inCell: () => !!editor.controls()?.tableActive(),
+      pickFiles: () =>
         void browserFiles
           .showFileDialog({ accept: "image/*,application/pdf", multiple: true })
           .then((list) => props.onFiles?.(list))
           .catch(() => {}),
-    },
-    { ...md().heading2, name: "ueberschrift", aliases: ["h2", "heading"], label: t().fmtHeading },
-  ];
+    });
+  // Formula results are part of the table's first paint, so this stays out of the lazy presentation chunk.
+  const tablePresentation = createNotebookTablePresentation({ locale: preferences.locale, renderInline });
   // The Notebooks presentation: rendered lists, notices, images, links, formulas and diagrams; editing a block shows its source.
   type Loaded = { md: Presentation["md"]; previews: { extension: Extension; listener: Extension } };
   const [presentation, setPresentation] = createSignal<Loaded>();
@@ -153,9 +105,28 @@ export function NoteEditor(props: {
       }),
     () => {},
   );
+  // The page clips what leaves the editor's column, so popups stay inside it, also from a cell at the right on a phone.
+  editor.use(() =>
+    tooltips({
+      tooltipSpace: (view) => {
+        const { left, right } = view.dom.getBoundingClientRect();
+        return { top: 0, left: Math.max(0, left), bottom: innerHeight, right: Math.min(innerWidth, right) };
+      },
+    }),
+  );
+  // In a table cell, `=` suggests functions and an open call suggests the table's columns, in the one popup.
+  const formulaSources = () => {
+    const loaded = presentation();
+    return loaded
+      ? [
+          { name: "table-formulas", source: loaded.md.tableFormulaCompletionSource },
+          { name: "table-columns", source: loaded.md.tableColumnCompletionSource },
+        ]
+      : [];
+  };
   editor.use(() => {
     const loaded = presentation();
-    if (!loaded) return [];
+    if (!loaded) return tablePresentation.extension;
     const md = loaded.md;
     const files = props.files ?? {};
     const readId = props.remoteReadId;
@@ -165,6 +136,7 @@ export function NoteEditor(props: {
       foreignImagesAsLinks: true,
     };
     return [
+      tablePresentation.extension,
       // Above the base editor's own list bullets, so checklists show their boxes as in Notebooks.
       Prec.high(md.listsExtension()),
       props.readOnly ? [] : md.listCommandsExtension(),
@@ -202,6 +174,7 @@ export function NoteEditor(props: {
           undo: () => undoManager.undo() !== null,
           redo: () => undoManager.redo() !== null,
           boundary: () => undoManager.stopCapturing(),
+          renderCell: tablePresentation.renderCell,
         }}
         extensions={collab({ text: props.text, undoManager, awareness: props.awareness })}
         onReady={(controller, controls) => {
@@ -227,7 +200,7 @@ export function NoteEditor(props: {
         }}
       />
       <BubbleMenu editor={editor} groups={[[md().bold, md().italic, md().strikethrough, md().code, md().link], [tag]]} />
-      <SlashMenu editor={editor} actions={slash()} />
+      <SlashMenu editor={editor} actions={slash()} sources={formulaSources()} />
     </>
   );
 }

@@ -6,9 +6,9 @@
  */
 
 import type { EditorView } from "@codemirror/view";
+import { tableAround } from "@k2b/editor";
 import { images } from "@k2b/stdlib/browser";
 import { apiClient } from "../../../../api/client";
-import { tableAround } from "../../../lib/editor/shared-editor";
 
 // =============================================================================
 // Auto-shrink oversize images

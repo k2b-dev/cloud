@@ -19,7 +19,7 @@ const clientState = z
     cursor: z.strictObject({ anchor: relative, head: relative }).nullable().optional(),
   })
   .nullable();
-const colors = ["#2563eb", "#c026d3", "#0f766e", "#b45309", "#be123c", "#6d28d9"];
+const colors = ["#2563eb", "#c026d3", "#0f766e", "#b45309", "#be123c", "#6d28d9"] as const;
 const encode = (id: number, clock: number, state: unknown) => {
   const encoder = encoding.createEncoder();
   encoding.writeVarUint(encoder, 1);
@@ -29,11 +29,14 @@ const encode = (id: number, clock: number, state: unknown) => {
   return encoding.toUint8Array(encoder);
 };
 
+export type PresencePerson = { name: string; color: string };
+
 /** Display names remain explicitly unverified; IDs, clocks and colors belong to the socket. */
 export class SocketAwareness {
   private clientId?: number;
   private clock = 0;
   current: Uint8Array | null = null;
+  person: PresencePerson | null = null;
   constructor(
     readonly id: number,
     private readonly readOnly: boolean,
@@ -67,13 +70,20 @@ export class SocketAwareness {
         state === null
           ? null
           : {
-              user: { userId: String(this.id), name, color: colors[this.id % colors.length], unverified: true, readOnly: this.readOnly },
+              user: {
+                userId: String(this.id),
+                name,
+                color: colors[this.id % colors.length] ?? colors[0],
+                unverified: true,
+                readOnly: this.readOnly,
+              },
               writerId: clientId,
               cursor: this.readOnly ? null : (state.cursor ?? null),
             };
       this.clientId = clientId;
       const result = encode(this.id, ++this.clock, trusted);
       this.current = state === null ? null : result;
+      this.person = trusted ? { name: trusted.user.name, color: trusted.user.color } : null;
       return result;
     } catch {
       throw new NotesError("invalid_awareness");
@@ -82,6 +92,7 @@ export class SocketAwareness {
   remove(): Uint8Array | null {
     if (!this.current) return null;
     this.current = null;
+    this.person = null;
     return encode(this.id, ++this.clock, null);
   }
 }

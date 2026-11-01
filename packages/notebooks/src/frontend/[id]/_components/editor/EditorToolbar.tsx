@@ -2,7 +2,7 @@ import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { asUndoStep, type EditorAction, type EditorHandle, Toolbar, type ToolbarCustom, type ToolbarMenu } from "@k2b/editor";
 import { indentListItems, outdentListItems, setListKind } from "@k2b/editor/markdown";
-import { Button, Dropdown, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
+import { Button, type DictationSource, Dropdown, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { type InlineFormat, TableSizePicker, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
@@ -41,6 +41,8 @@ type Props = {
   table?: TextEditorControls;
   /** The note's open comments: the button shows their number and opens them. */
   comments?: { open: number; onOpen: () => void };
+  /** Live dictation into the note; without a source there is no microphone. */
+  dictation?: DictationSource;
 };
 
 /** Formatting shortcuts; headings match the physical digit keys like the @k2b/ui MarkdownEditor and the list keys. */
@@ -327,6 +329,7 @@ export default function EditorToolbar(props: Props) {
           ],
         },
       ]}
+      dictation={props.dictation ? { source: props.dictation } : undefined}
       start={<NavigationButton />}
       end={
         <>

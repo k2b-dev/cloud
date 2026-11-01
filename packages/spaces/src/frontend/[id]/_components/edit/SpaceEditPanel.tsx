@@ -85,19 +85,18 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
                 onDirtyChange={setStatusesDirty}
               />
             </SettingsModal.Tab>
-            {isAdmin() && (
-              <SettingsModal.Tab id="templates" title={m.templates} icon="ti ti-template" description={m.settingsTemplatesDescription}>
-                <TemplatesSection
-                  spaceId={props.space.id}
-                  templates={props.space.templates}
-                  tags={props.space.tags}
-                  dateConfig={props.dateConfig}
-                  onWorkspaceChange={props.onWorkspaceChange}
-                  onSettingsChange={props.onSettingsChange}
-                  onDirtyChange={setTemplatesDirty}
-                />
-              </SettingsModal.Tab>
-            )}
+            {/* Everyone who writes manages templates, like tags and statuses. */}
+            <SettingsModal.Tab id="templates" title={m.templates} icon="ti ti-template" description={m.settingsTemplatesDescription}>
+              <TemplatesSection
+                spaceId={props.space.id}
+                templates={props.space.templates}
+                tags={props.space.tags}
+                dateConfig={props.dateConfig}
+                onWorkspaceChange={props.onWorkspaceChange}
+                onSettingsChange={props.onSettingsChange}
+                onDirtyChange={setTemplatesDirty}
+              />
+            </SettingsModal.Tab>
           </SettingsModal.Group>
         )}
 

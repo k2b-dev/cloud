@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
@@ -129,6 +130,8 @@ export default ssr<AuthContext>(async (c) => {
     dateConfig,
   } = data;
   const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
+  // The microphone shows only where dictation can start: a live model is set up and this person may use it.
+  const liveDictation = showsEditorToolbar && (await getLiveDictationStatus(c.get("accessSubject"))).available;
   return () => (
     <Layout
       context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
@@ -224,6 +227,7 @@ export default ssr<AuthContext>(async (c) => {
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
                   canWrite={canWrite}
+                  liveDictation={liveDictation}
                   initialAnnotations={initialAnnotations}
                   initialHref={currentHref}
                   initialDetail={{

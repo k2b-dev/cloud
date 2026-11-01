@@ -107,7 +107,11 @@ adds `name`, optional `aliases`, `description`, and `params`: with
 block action typed after text starts on a new line; set `inline: true` to
 insert at the caret instead. CodeMirror shows one completion popup per editor,
 so further completion sources, such as links or tags, go into `sources`. A
-source that throws drops only its own options.
+source that throws drops only its own options. Inside the cells of a table
+grid, the popup and its keys work the same way; pass `isEnabled` on actions
+that would break a table row. Formula and column suggestions come from
+`tableFormulaCompletionSource` and `tableColumnCompletionSource` in
+`@k2b/editor/markdown`.
 
 ## Dictate into the note
 

@@ -378,6 +378,10 @@ export const createAssistantDictation = (props: {
   });
   return {
     busy,
+    /** A recording result waits to be inserted or discarded. */
+    pendingResult: () => Boolean(pending()),
+    /** Records instead of live dictation, as the way out when live dictation is busy. */
+    startRecording: start,
     recording: () => phase() === "recording",
     RecordingFooter: () => (
       <div class="assistant-recording-footer">
