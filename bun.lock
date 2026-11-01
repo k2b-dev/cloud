@@ -702,6 +702,7 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "jose": "catalog:",
         "typescript": "catalog:",
         "yaml": "catalog:",
       },
