@@ -30,8 +30,8 @@ export const createSettingsOpsRoutes = (keys: readonly string[]) =>
     .put("/:key", v("json", z.object({ value: z.unknown(), replaceUnreadable: z.boolean().optional() })), async (c) => {
       const key = c.req.param("key") ?? "";
       const def = SETTINGS_MAP.get(key);
-      if (!keys.includes(key) || !def || def.adminWrite === "application" || !(def.envBootstrap || def.envFallback))
-        return c.json({ message: "Unknown application setting" }, 400);
+      if (!keys.includes(key) || !def) return c.json({ message: "Unknown application setting" }, 400);
+      if (def.adminWrite === "application") return c.json({ message: "This setting must be changed through its application API" }, 400);
       const body = c.req.valid("json");
       const result = await settingsService.entry.update({
         key,

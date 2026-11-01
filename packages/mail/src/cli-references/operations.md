@@ -441,3 +441,8 @@ Do not automatically delete provider mail after the run. The marker keeps test m
 | Message state | `message flags|read|unread|star|unstar`, `message keyword add|remove`, `message copy|move|delete` |
 | Conversation provider actions | `conversation read|unread|star|unstar|archive|trash|junk|move` |
 | Attachments | `attachment download`, `attachment link create|list|revoke` |
+
+For contact-directory changes, use `cld mail admin contact-directory set` to change
+a provider and its capability IDs together. A single-key
+`cld admin settings set --app mail` write validates the complete resulting mapping and rejects incomplete
+combinations.

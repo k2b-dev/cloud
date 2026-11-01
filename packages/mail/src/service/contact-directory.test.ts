@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import type { CapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import { getCapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityDefinitions,
@@ -15,8 +16,10 @@ import {
   defineCapabilities,
   type User,
 } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import { SQL } from "bun";
 import { z } from "zod";
+import { contactDirectoryCatalogFixture } from "../../test/fixtures/contact-directory-catalog";
 import { MAIL_CONTACT_DIRECTORY_SETTING_KEYS, type MailContactDirectoryConfig } from "../contact-directory-settings";
 import type { MailRequestContext } from "./auth";
 import {
@@ -136,11 +139,13 @@ const admin = {
   manages: [],
   managesGroupIds: [],
 } satisfies User;
-const context: MailRequestContext = {
+const authority: RequestAuthority = {
+  credentialKind: "oauth",
+  scopes: ["read", "write"],
   actor: { kind: "user", user: admin },
   accessSubject: { type: "user", userId: admin.id },
-  requestId: null,
 };
+const context: MailRequestContext & { authority: RequestAuthority } = { ...authority, authority, requestId: null };
 
 const client = new SQL("postgres://localhost/unused_test");
 let lockQueries = 0;
@@ -173,12 +178,47 @@ const dependencies = (overrides: Partial<ContactDirectoryDependencies> = {}) => 
     writeSetting: async (key, value) => {
       writes.push([key, value]);
     },
+    recordAudit: async () => {},
     ...overrides,
   };
   return { deps, writes };
 };
 
 describe("Mail contact directory administration", () => {
+  test("discovers and saves an access-declared provider through the acting administrator's catalog", async () => {
+    const spies = contactDirectoryCatalogFixture(catalogApp());
+    try {
+      const { deps, writes } = dependencies({
+        listCatalog: async (options) => {
+          expect(options?.authority).toBe(context.authority);
+          return listCapabilityCatalog(options);
+        },
+        getCatalogApp: async (...args) => {
+          expect(args[2]).toBe(context.authority);
+          return getCapabilityCatalogApp(...args);
+        },
+      });
+      const view = await loadContactDirectoryAdmin(context, crmConfig, "en", deps);
+      expect(view).toMatchObject({ ok: true, data: { apps: [{ appId: "crm" }], issues: [] } });
+      expect(await saveContactDirectory(context, crmConfig, "en", deps)).toEqual({ ok: true, config: crmConfig });
+      expect(writes).toHaveLength(6);
+      // Mail administration does not make an app usable through an insufficient credential.
+      const restricted = { ...context, authority: { ...authority, scopes: ["mail:admin"] } };
+      deps.listCatalog = listCapabilityCatalog;
+      deps.getCatalogApp = getCapabilityCatalogApp;
+      expect(await loadContactDirectoryAdmin(restricted, crmConfig, "en", deps)).toMatchObject({ ok: true, data: { apps: [] } });
+      writes.length = 0;
+      expect(await saveContactDirectory(restricted, crmConfig, "en", deps)).toMatchObject({
+        ok: false,
+        status: 400,
+        issues: [{ code: "app_missing" }],
+      });
+      expect(writes).toEqual([]);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
   test("offers only capabilities whose published schemas match each function", async () => {
     const { deps } = dependencies();
     const view = await loadContactDirectoryAdmin(context, crmConfig, "en", deps);
@@ -226,6 +266,18 @@ describe("Mail contact directory administration", () => {
       expect(currentTx).toBe(tx);
       return originalRead(key, currentTx);
     };
+    let audits = 0;
+    deps.recordAudit = async (event, currentTx) => {
+      expect(inTransaction).toBe(true);
+      expect(currentTx).toBe(tx);
+      expect(event).toMatchObject({
+        action: "settings.update",
+        actor: { userId: admin.id },
+        metadata: { keys: Object.values(MAIL_CONTACT_DIRECTORY_SETTING_KEYS) },
+      });
+      expect(event.metadata).not.toHaveProperty("values");
+      audits++;
+    };
     const originalCatalog = deps.getCatalogApp;
     deps.getCatalogApp = async (...args) => {
       expect(inTransaction).toBe(true);
@@ -241,6 +293,7 @@ describe("Mail contact directory administration", () => {
       ok: true,
       config: { ...crmConfig, read: "" },
     });
+    expect(audits).toBe(1);
     expect(writes).toEqual([
       ["mail.contact_directory.app", "crm"],
       ["mail.contact_directory.suggest", "customer.suggest"],
@@ -255,7 +308,13 @@ describe("Mail contact directory administration", () => {
     const incompatible = crmCapabilities({
       suggestData: z.array(ContactDirectorySuggestionSchema.extend({ ...customer, displayName: z.string().nullable() }).strict()).max(10),
     });
-    const { deps, writes } = dependencies({ getCatalogApp: async () => ({ ok: true, data: catalogApp(incompatible) }) });
+    let audits = 0;
+    const { deps, writes } = dependencies({
+      getCatalogApp: async () => ({ ok: true, data: catalogApp(incompatible) }),
+      recordAudit: async () => {
+        audits++;
+      },
+    });
     expect(await saveContactDirectory(context, crmConfig, "de", deps)).toEqual({
       ok: false,
       status: 400,
@@ -268,6 +327,7 @@ describe("Mail contact directory administration", () => {
       ],
     });
     expect(writes).toEqual([]);
+    expect(audits).toBe(0);
   });
 
   test("explains missing, wrong, and incomplete mappings per field", () => {
@@ -276,7 +336,7 @@ describe("Mail contact directory administration", () => {
       {
         field: "appId",
         code: "app_missing",
-        message: "gone is not installed or publishes no capabilities. Choose another app or start it first.",
+        message: "gone is unavailable in your capability catalog. Choose an available app.",
       },
     ]);
     expect(

@@ -12,6 +12,7 @@ import { createSettingsOpsRoutes, settingsInvocationOperation } from "./settings
 
 const key = "test.env_migration";
 registerSettings([
+  { key: "test.application_setting", kind: "string", default: "", group: "test", description: "Setting without environment migration" },
   { key, kind: "string", default: "", group: "test", description: "Test setting", envBootstrap: () => undefined },
   {
     key: "test.custom_hook",
@@ -84,7 +85,7 @@ const request = async (
         },
       ),
     )
-    .route("/_internal/settings", createSettingsOpsRoutes([key, "test.custom_hook"]));
+    .route("/_internal/settings", createSettingsOpsRoutes([key, "test.custom_hook", "test.application_setting"]));
   const token = await new SignJWT(claims(method, options.tokenRoute ?? route))
     .setProtectedHeader({ alg: "RS256", kid, typ: "cloud-invocation+jwt" })
     .sign(signingKey);
@@ -117,4 +118,14 @@ test("migration repair rejects settings with custom write paths and carries repl
 });
 test("malformed encoded paths fail authentication without throwing", () => {
   expect(settingsInvocationOperation("GET", "%")).toBe("settings.invalid");
+});
+
+test("ordinary application settings accept writes without environment migration metadata", async () => {
+  const update = spyOn(settingsService.entry, "update").mockResolvedValue({ ok: true, data: undefined });
+  const response = await request("PUT", "test.application_setting", { body: { value: "configured" } });
+  expect(response.status).toBe(200);
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ key: "test.application_setting", value: "configured" }));
+  expect((await request("PUT", "test.undeclared", { body: { value: "x" } })).status).toBe(400);
+  expect((await request("PUT", "test.application_setting", { scopes: ["read"], body: { value: "x" } })).status).toBe(403);
+  expect(update).toHaveBeenCalledTimes(1);
 });
