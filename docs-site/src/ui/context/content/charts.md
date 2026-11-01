@@ -951,6 +951,6 @@ import { CountryMap } from "@k2b/ui/country-map";
 `code` is an ISO 3166-1 alpha-2 code. Names follow the inherited locale. Pointing
 at or tapping a country shows its value and share below the map; the list keeps
 every number readable without a pointer. Countries too small for a shape appear
-as dots. Values that are not positive finite numbers and invalid codes are left
+as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.

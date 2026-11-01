@@ -111,20 +111,38 @@ const ringPath = (points: [number, number][]) => {
   return `${d}z`;
 };
 
+/** French Guiana shares France's geometry in the atlas, but a lookup reports it as GF. */
+const ringCountry = (country: string, points: [number, number][]) =>
+  country === "FR" && points.reduce((sum, point) => sum + point[0], 0) / points.length < -30 ? "GF" : country;
+
+// Territories in neither atlas: longitude and latitude. AQ stays undrawn; the list still names it.
+const territories: Record<string, [number, number]> = {
+  BQ: [-68.3, 12.2],
+  BV: [3.4, -54.4],
+  CC: [96.87, -12.2],
+  CX: [105.69, -10.45],
+  GI: [-5.35, 36.14],
+  GP: [-61.55, 16.25],
+  MQ: [-61.02, 14.64],
+  RE: [55.53, -21.11],
+  SJ: [15.6, 78.2],
+  TK: [-171.85, -9.2],
+  TV: [178.7, -7.5],
+  UM: [166.65, 19.28],
+  YT: [45.15, -12.83],
+};
+
 const shapesTopology = JSON.parse(await Bun.file(shapesPath).text()) as Topology;
 const shapeArcs = decodeArcs(shapesTopology);
 const shapes = new Map<string, string>();
 for (const geometry of shapesTopology.objects.countries.geometries) {
   const country = code(geometry);
   if (!country || country === "AQ") continue;
-  shapes.set(
-    country,
-    (shapes.get(country) ?? "") +
-      rings(geometry)
-        .flatMap((ring) => splitAtAntimeridian(ringPoints(shapeArcs, ring)))
-        .map(ringPath)
-        .join(""),
-  );
+  for (const ring of rings(geometry)) {
+    const points = ringPoints(shapeArcs, ring);
+    const owner = ringCountry(country, points);
+    shapes.set(owner, (shapes.get(owner) ?? "") + splitAtAntimeridian(points).map(ringPath).join(""));
+  }
 }
 
 const dotsTopology = JSON.parse(await Bun.file(dotsPath).text()) as Topology;
@@ -141,6 +159,12 @@ for (const geometry of dotsTopology.objects.countries.geometries) {
     ring.reduce((sum, point) => sum + point[0], 0) / ring.length,
     ring.reduce((sum, point) => sum + point[1], 0) / ring.length,
   ]);
+  dots.push([country, round(x), round(y)]);
+}
+
+for (const [country, point] of Object.entries(territories)) {
+  if (shapes.has(country) || dots.some(([code]) => code === country)) continue;
+  const [x, y] = project(point);
   dots.push([country, round(x), round(y)]);
 }
 
