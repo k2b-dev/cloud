@@ -608,7 +608,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     test(`${operation} remains forbidden under an approved Code version`, async () => {
       await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
         SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
-      await error({ operation: `example.${operation}` }, "code_unattended_forbidden");
+      const capability = `example.${operation}`;
+      const call = { capability, target: item, refs: {}, input: {} };
+      await error(
+        { operation: capability, input: { call, metadata: { idempotencyKey: `forbidden-${operation}` } } },
+        "code_unattended_forbidden",
+      );
     });
   }
   test("every actual call is classified even if the checked manifest omits it", async () => {
