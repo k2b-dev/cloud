@@ -63,3 +63,28 @@ test("runner has an application image and both Compose templates isolate its net
     ).toEqual(["app-core", "runner"]);
   }
 });
+
+test("hostile runner CI is path-filtered and required by the gate", async () => {
+  const workflow = z
+    .object({
+      jobs: z.record(
+        z.string(),
+        z.object({
+          needs: z.union([z.array(z.string()), z.string().transform((value) => [value])]).optional(),
+          if: z.string().optional(),
+          steps: z.array(z.object({ run: z.string().optional(), env: z.record(z.string(), z.string()).optional() })).optional(),
+        }),
+      ),
+    })
+    .parse(parse(await Bun.file(`${import.meta.dir}/../../../.github/workflows/ci.yml`).text()));
+  const job = workflow.jobs["runner-attacks"]!;
+  expect(job.if).toBe("needs.changes.outputs.runner == 'true'");
+  expect(job.needs).toContain("changes");
+  expect(workflow.jobs.gate!.needs).toContain("runner-attacks");
+  const commands = job.steps!.map((step) => step.run ?? "").join("\n");
+  for (const file of ["hostile.test.js", "isolation.test.js", "engine.test.js", "shutdown.test.js", "attacks/bridge.ts"])
+    expect(commands).toContain(file);
+  expect(commands).toContain("--network host");
+  expect(commands).toContain("--read-only --cap-drop ALL");
+  expect(commands).toContain("--security-opt no-new-privileges");
+});

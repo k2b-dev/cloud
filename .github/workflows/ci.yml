@@ -58,6 +58,7 @@ jobs:
       ui: ${{ steps.filter.outputs.ui }}
       docs: ${{ steps.filter.outputs.docs }}
       images: ${{ steps.filter.outputs.images }}
+      runner: ${{ steps.filter.outputs.runner }}
       packed: ${{ steps.filter.outputs.packed }}
       release: ${{ steps.filter.outputs.release }}
       releasebody: ${{ steps.filter.outputs.releasebody }}
@@ -81,7 +82,7 @@ jobs:
           # Without the base, a commit that changes the release manifest against its parent still
           # gets the release checks. Without a parent, it gets them too: they are only stricter.
           all() {
-            for key in cloud grids ui docs images packed webkit releasebody; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
+            for key in cloud grids ui docs images runner packed webkit releasebody; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
             echo "bundles=$apps" >> "$GITHUB_OUTPUT"
             echo "release=$(git diff --quiet HEAD^1 HEAD -- .release-please-manifest.json 2>/dev/null && echo false || echo true)" | tee -a "$GITHUB_OUTPUT"
           }
@@ -108,6 +109,7 @@ jobs:
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|packages/runner/|pwas/|compose[^/]*\.yml)')"
+            echo "runner=$(match '^(packages/runner/|packages/cloud/src/(code/|api/capabilities\.ts|services/(app-keys/|identity/)|server/ratelimit\.ts)|packages/core/src/(code/|migrate/core/(code[^/]*|app-keys|app-bootstrap)\.ts)|scripts/fixtures/(test-infra|app-key-fixtures)|package\.json|bun\.lock|\.github/workflows/ci\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
@@ -782,8 +784,79 @@ jobs:
       - if: always()
         run: docker rm --force app-core gateway postgres nats valkey || true
 
+  runner-attacks:
+    needs: [changes, setup, mirror]
+    if: needs.changes.outputs.runner == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: *postgres-17-image
+        env:
+          POSTGRES_USER: cloud
+          POSTGRES_PASSWORD: cloud
+          POSTGRES_DB: cloud_ci_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cloud -d cloud_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      valkey:
+        image: *valkey-image
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_ci_test
+      CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/install
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=ghcr.io/k2b-dev/mirror/moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: packages/runner/Dockerfile
+          platforms: linux/amd64
+          target: test
+          load: true
+          tags: cloud-runner:attacks
+          cache-from: type=gha,scope=ci-runner
+          cache-to: type=gha,mode=max,scope=ci-runner-attacks
+      - name: Attack the workerd shell and native process boundary
+        run: |
+          set -euo pipefail
+          bun build packages/runner/test/hostile.test.ts --target=bun --external=bun:test --outfile="$RUNNER_TEMP/hostile.test.js"
+          # Public RFC 8032 vector; 0444 deliberately tests protection of the mount's parent.
+          install -m 0444 packages/runner/test/runner-key.fixture "$RUNNER_TEMP/runner-attacks.key"
+          trap 'docker rm --force code-c14-native >/dev/null 2>&1 || true' EXIT
+          timeout --signal=TERM 90s docker run --rm --name code-c14-native --network host --read-only --cap-drop ALL \
+            --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE \
+            --security-opt no-new-privileges --memory 1g --pids-limit 256 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
+            --env CLOUD_APP_KEY_FILE=/run/runner-key/source \
+            --volume "$RUNNER_TEMP/runner-attacks.key:/run/runner-key/source:ro" \
+            --volume "$RUNNER_TEMP/hostile.test.js:/app/hostile.test.js:ro" \
+            cloud-runner:attacks bun --no-env-file test \
+            /app/hostile.test.js /app/isolation.test.js /app/engine.test.js /app/shutdown.test.js
+      - name: Attack the real signed bridge and bounded SIGTERM drain
+        run: timeout --signal=TERM 180s bun --no-env-file test ./packages/runner/attacks/bridge.ts
+      - name: Remove only C14 attack containers after cancellation
+        if: always()
+        run: |
+          docker ps -aq --filter 'name=^/code-c14-' | xargs -r docker rm --force
+
   gate:
-    needs: [changes, mirror, setup, check, unit, webkit, integration, grids, ui, docs, packed, release-body, bundles, images]
+    needs: [changes, mirror, setup, check, unit, webkit, integration, grids, ui, docs, packed, release-body, bundles, images, runner-attacks]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -792,7 +865,7 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           # The path-filtered jobs, whose `if:` reads the `changes` outputs.
           # Only they may be skipped; every other job must succeed (`ci-gate` check).
-          MAY_SKIP: webkit grids ui docs packed release-body bundles images
+          MAY_SKIP: webkit grids ui docs packed release-body bundles images runner-attacks
         run: |
           set -euo pipefail
           jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }
