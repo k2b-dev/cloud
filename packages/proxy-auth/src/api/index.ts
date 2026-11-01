@@ -102,6 +102,7 @@ const app = new Hono<AuthContext>()
         proxyAuthService.client.update({
           id,
           data: c.req.valid("json"),
+          actorId: getUserBackedActor(c)?.id,
         }),
         "Client updated",
       );
@@ -123,7 +124,7 @@ const app = new Hono<AuthContext>()
     v("param", ProxyAuthClientParamSchema),
     async (c) => {
       const { id } = c.req.valid("param");
-      return respondMessage(c, proxyAuthService.client.remove({ id }), "Client deleted");
+      return respondMessage(c, proxyAuthService.client.remove({ id, actorId: getUserBackedActor(c)?.id }), "Client deleted");
     },
   );
 

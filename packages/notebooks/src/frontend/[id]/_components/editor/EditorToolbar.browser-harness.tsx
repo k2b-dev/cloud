@@ -136,7 +136,6 @@ function Harness() {
                 editor={editorState}
                 notebookId="Book01"
                 noteId="Note01"
-                initialPanelOpen={false}
                 format={format()}
                 onUndo={() => {
                   const editor = view();

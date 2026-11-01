@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-10-22
+updated: 2026-10-31
 ---
 
 # Scaling and shutdown
@@ -157,6 +157,26 @@ Do not use process memory for:
 
 Use [Data](/en/docs/data) and
 [Automation](/en/docs/automation) for shared state.
+
+### Notebooks reader presence
+
+Opening a note joins its participant list through the existing notebook
+workspace socket, including in Read mode and for locked notes. Editing starts
+a separate collaboration connection only when needed. Both connections count
+as one browser tab for that person; another tab counts separately. The detail
+panel shows other readers as reading until cursor awareness reports writing.
+
+Each workspace socket watches one opened note. Switching replaces that note;
+leaving or closing the socket removes its presence. Connections renew their
+shared presence leases every 10 seconds, and an abandoned lease expires after
+30 seconds. Access is checked before joining and rechecked on permission
+invalidation and the existing 10-second backstop. A workspace socket cannot
+watch a note in another notebook, even when its user may read both. If the
+opened note is deleted or moved, its reader watch ends while workspace updates
+continue.
+
+Upgrade all Notebooks replicas for reader presence. This requires no database
+migration or new service; presence remains transient shared NATS state.
 
 ## Application registration
 

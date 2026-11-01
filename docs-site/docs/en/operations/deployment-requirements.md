@@ -320,6 +320,12 @@ While bootstrap waits, there is no HTTP listener or readiness response. A
 permanent credential/protocol failure exits immediately; an exhausted network
 budget exits so the container restart policy can retry.
 
+Cloud no longer rewrites an application's `DATABASE_URL` to add
+`application_name`. The platform clients (`sql` and `createSql()` from
+`@k2b/cloud`) still name their connections `cloud:<app-id>` unless the URL sets
+an operator name or startup options. An application that still uses Bun-global
+clients shows no Cloud application name in `pg_stat_activity`.
+
 **Key-only production operation is not yet supported.** Keep each app's
 infrastructure environment values until the platform-client import migration
 is complete; Bun-global SQL/Redis imports still depend on them. This release

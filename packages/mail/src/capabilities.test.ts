@@ -874,7 +874,7 @@ describe("mail capabilities", () => {
     expect(manifest.appId).toBe("mail");
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
-      [...Object.keys(mailCapabilities.queries), "code.access.list"].sort(),
+      [...Object.keys(mailCapabilities.queries), "code.access.list", "mailbox.readable"].sort(),
     );
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(
       [...Object.keys(mailCapabilities.actions), "code.access.set", "code.access.rm"].sort(),
