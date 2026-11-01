@@ -50,7 +50,9 @@ Choose another path or reduce the file size, then prepare a new review.
 
 Discover the installed contracts first. Call `filesv2.bases.list`, then
 `filesv2.entry.list` for a folder or `filesv2.entry.search-in-base` for names
-below a known path. Keep the filters unchanged and follow `data.next` as
+below a known path. Pass the storage root's `data.items[].ref.id` from `bases.list`
+as the flat `entry` target field and keep paths relative to it. Keep the filters
+unchanged and follow `data.next` as
 `after` until null, even after an empty page. Each `data.items` entry includes
 its own `{type:"filesv2.entry",id}` ref and file metadata. Keep that ref in the
 Studio list, alongside the `grids.document` refs from `grids.document.list`.

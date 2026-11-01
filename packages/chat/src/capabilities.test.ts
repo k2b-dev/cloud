@@ -172,7 +172,10 @@ test("message entry points check credential scopes before looking up a message",
   const deniedRead = await chatCapabilities.queries["message.read"].run({ id: "Missing001" }, c);
   expect(!deniedRead.ok && deniedRead.error.status).toBe(403);
   c.authority = { ...c.authority, scopes: ["read"] };
-  const deniedReview = await chatCapabilities.actions["message.edit"].review({ id: "Missing002", revision: 0, body: "Correction" }, c);
+  const deniedReview = await chatCapabilities.actions["message.edit"].review(
+    { revision: 0, body: "Correction" },
+    { ...c, target: { type: "chat.message", id: "Missing002" } },
+  );
   expect(!deniedReview.ok && deniedReview.error.status).toBe(403);
   const delegated = context();
   delegated.actor = {
@@ -252,4 +255,21 @@ test("container denial and cancellation never fall back to another authority", a
   };
   expect((await authorizeDiscussion(item, c, true)).ok).toBe(false);
   expect(queried).toBe(false);
+});
+
+test("Chat actions prohibit resource Code and Chat-owned targets stay explicit", () => {
+  const manifest = compileCapabilityManifest("chat", chatCapabilities);
+  for (const localId of ["discussion.post", "message.edit", "message.delete", "thread.follow", "notifications.set"]) {
+    expect(manifest.actions.find((action) => action.localId === localId)?.code).toBe(false);
+  }
+  for (const localId of ["message.edit", "message.delete"]) {
+    const action = manifest.actions.find((entry) => entry.localId === localId)!;
+    expect(action.target).toBe("message");
+    expect(action.inputSchema.properties).not.toHaveProperty("id");
+  }
+  for (const localId of ["notifications.set", "thread.follow"]) {
+    const action = manifest.actions.find((entry) => entry.localId === localId)!;
+    expect(action.target).toBe("conversation");
+    expect(action.inputSchema.properties).not.toHaveProperty("conversation");
+  }
 });

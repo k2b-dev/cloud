@@ -60,15 +60,18 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "entry.list": {
           title: "Ordnerinhalt auflisten",
-          description: "Eine Seite der Einträge direkt in einem bekannten Ordner lesen.",
+          description:
+            "Eine Seite der Einträge unter einem relativen Pfad lesen. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "entry.search-in-base": {
           title: "In einer Ablage suchen",
-          description: "Datei- und Ordnernamen in einer bekannten Ablage oder einem Ordner finden. Dateiinhalte werden nicht durchsucht.",
+          description:
+            "Datei- und Ordnernamen unter einem relativen Pfad finden. Als entry-Ziel den Wurzelverweis aus bases.list verwenden. Dateiinhalte werden nicht durchsucht.",
         },
         "trash.list": {
           title: "Papierkorb auflisten",
-          description: "Eine Seite wiederherstellbarer Einträge im Papierkorb auflisten.",
+          description:
+            "Eine Seite wiederherstellbarer Einträge im Papierkorb auflisten. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "content.read": {
           title: "Dateiinhalt lesen",
@@ -98,7 +101,7 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
         "content.create": {
           title: "Dateiinhalt schreiben",
           description:
-            "Eine Datei unter einem genauen Pfad hochladen. Standardmäßig wird nur neu angelegt; Ersetzen braucht die aktuelle Version.",
+            "Eine Datei unter einem relativen Pfad hochladen. Als entry-Ziel den Wurzelverweis aus bases.list verwenden. Standardmäßig wird nur neu angelegt; Ersetzen braucht die aktuelle Version.",
         },
         "provider.save": {
           title: "Neue Datei speichern",
@@ -112,11 +115,13 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
             rejected: "{input.path} nicht in den Papierkorb verschoben",
             notRun: "{input.path} nicht in den Papierkorb verschoben",
           },
-          description: "Eine Datei oder einen Ordner mit deinen aktuellen Rechten in den Papierkorb verschieben.",
+          description:
+            "Eine Datei oder einen Ordner mit deinen aktuellen Rechten in den Papierkorb verschieben. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "trash.restore": {
           title: "Aus dem Papierkorb wiederherstellen",
-          description: "Einen Eintrag aus dem Papierkorb zurückholen. Bestehende Einträge werden nicht überschrieben.",
+          description:
+            "Einen Eintrag aus dem Papierkorb zurückholen. Bestehende Einträge werden nicht überschrieben. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "folder.create": {
           title: "Ordner erstellen",
@@ -126,7 +131,8 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
             rejected: "Ordner {input.path} nicht erstellt",
             notRun: "Ordner {input.path} nicht erstellt",
           },
-          description: "Einen neuen Ordner anlegen. Bestehende Einträge werden nicht überschrieben.",
+          description:
+            "Einen neuen Ordner anlegen. Bestehende Einträge werden nicht überschrieben. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "entry.rename": {
           title: "Eintrag umbenennen",
@@ -136,7 +142,8 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
             rejected: "{input.path} nicht umbenannt",
             notRun: "{input.path} nicht umbenannt",
           },
-          description: "Eine Datei oder einen Ordner umbenennen. Bestehende Einträge werden nicht überschrieben.",
+          description:
+            "Eine Datei oder einen Ordner umbenennen. Bestehende Einträge werden nicht überschrieben. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "entry.move": {
           title: "Eintrag verschieben",
@@ -147,11 +154,12 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
             notRun: "{input.path} nicht verschoben",
           },
           description:
-            "Eine Datei oder einen Ordner innerhalb derselben Ablage verschieben. Bestehende Einträge werden nicht überschrieben.",
+            "Eine Datei oder einen Ordner innerhalb derselben Ablage verschieben. Bestehende Einträge werden nicht überschrieben. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
         "entry.copy": {
           title: "Eintrag kopieren",
-          description: "Eine Datei oder einen Ordner kopieren, auch in eine andere Ablage. Bestehende Einträge werden nicht überschrieben.",
+          description:
+            "Eine Datei oder einen Ordner kopieren, auch in eine andere Ablage. Bestehende Einträge werden nicht überschrieben. Als entry-Ziel den Wurzelverweis aus bases.list verwenden.",
         },
       },
     },
