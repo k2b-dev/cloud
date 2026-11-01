@@ -48,6 +48,8 @@ export const renderPreview = async (content: string): Promise<Uint8Array> => {
       meta.chart.kind === "line"
         ? charts.line({ ...options, series: [{ data: values.map((y, x) => ({ x, y })) }], smooth: false })
         : charts.bar({ ...options, data: values.map((value, index) => ({ label: String(index + 1), value })) });
+    // stdlib emits a viewBox only; a nested SVG otherwise inherits the full image viewport.
+    diagram = diagram.replace("<svg ", `<svg width="${options.width}" height="${options.height}" `);
     // SVG rasterizers do not all implement CSS custom properties. Only generated palette references are replaced.
     const palette = ["#6d28d9", "#047857", "#b45309", "#be123c", "#2563eb", "#a21caf", "#0f766e", "#c2410c"];
     diagram = diagram.replace(/var\(--stdlib-chart-c([1-8])\)/g, (_whole, index: string) => palette[Number(index) - 1]!);

@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { SQL } from "bun";
 import * as Y from "yjs";
 import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtures/test-infra";
@@ -65,6 +66,16 @@ test("metadata bounds work and XML rendering tolerates control characters and lo
     expect(previewMeta("# Title\n\n" + token.repeat(Math.ceil(2_097_152 / token.length))).title).toBe("Title");
   const png = await renderPreview("# A\u0000\ud800B\n\nText\uffff");
   expect(Buffer.from(png).subarray(1, 4).toString()).toBe("PNG");
+});
+
+test("chart previews render inside the image margins", async () => {
+  const png = await renderPreview("# Budget\n\n| Item | Euro |\n| --- | ---: |\n| Travel | 18 |\n| Food | 24 |\n");
+  const context = createCanvas(1200, 630).getContext("2d");
+  context.drawImage(await loadImage(png), 0, 0);
+  const margin = context.getImageData(1140, 0, 60, 630).data;
+  expect(margin.every((channel) => channel === 255)).toBe(true);
+  expect(context.getImageData(666, 500, 534, 130).data.every((channel) => channel === 255)).toBe(true);
+  expect(context.getImageData(666, 180, 470, 310).data.some((channel) => channel !== 255)).toBe(true);
 });
 
 databaseSuite()("Notes static website and previews", () => {
