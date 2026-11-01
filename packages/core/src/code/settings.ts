@@ -96,6 +96,25 @@ export const CODE_SETTINGS = {
       },
     },
   },
+  "core.code.calls_per_second": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1000,
+    default: 60,
+    label: "Bridge calls per second per Code",
+    description:
+      "Shared Valkey call rate per Code across all runners and Core instances; at most the full per-run call ceiling per second.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Brückenaufrufe je Sekunde und Code",
+          description:
+            "Gemeinsame Valkey-Aufrufrate je Code über alle Runner und Core-Instanzen; höchstens das vollständige Aufruflimit eines Laufs je Sekunde.",
+        },
+      },
+    },
+  },
   "core.code.wall_clock_ms": {
     kind: "number",
     integer: true,
@@ -159,6 +178,109 @@ export const CODE_SETTINGS = {
           label: "Gleichzeitige Läufe je Besitzer",
           description: "Maximale Anzahl gleichzeitiger Versuche aller Codes eines genauen Besitzers.",
         },
+      },
+    },
+  },
+  "core.code.automatic_attempts": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 10,
+    default: 3,
+    label: "Automatic attempts before an Action",
+    description: "Maximum lease generations before the first Action; the original deadline still applies.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Automatische Versuche vor einer Action",
+          description: "Maximale Lease-Generationen vor der ersten Action; die ursprüngliche Frist gilt weiter.",
+        },
+      },
+    },
+  },
+  "core.code.runner_slots": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 64,
+    default: 4,
+    label: "Slots per runner",
+    description: "Maximum concurrent runs advertised by one runner replica.",
+    presentation: {
+      translations: { de: { label: "Plätze je Runner", description: "Maximale gleichzeitige Läufe einer Runner-Instanz." } },
+    },
+  },
+  "core.code.runner_poll_ms": {
+    kind: "number",
+    integer: true,
+    min: 1000,
+    max: 60000,
+    default: 20000,
+    label: "Runner long poll (ms)",
+    description: "Maximum duration of a signed acquisition request.",
+    presentation: {
+      translations: { de: { label: "Runner-Long-Poll (ms)", description: "Maximale Dauer einer signierten Arbeitsabholung." } },
+    },
+  },
+  "core.code.runner_transport_ms": {
+    kind: "number",
+    integer: true,
+    min: 1000,
+    max: 60000,
+    default: 30000,
+    label: "Runner transport timeout (ms)",
+    description: "Timeout for Core requests from the runner.",
+    presentation: { translations: { de: { label: "Runner-Transportfrist (ms)", description: "Frist für Anfragen vom Runner an Core." } } },
+  },
+  "core.code.runner_retry_ms": {
+    kind: "number",
+    integer: true,
+    min: 100,
+    max: 30000,
+    default: 1000,
+    label: "Runner reconnect delay (ms)",
+    description: "Delay before retrying a failed transport request.",
+    presentation: {
+      translations: { de: { label: "Runner-Wiederverbindung (ms)", description: "Wartezeit vor erneutem Verbindungsversuch." } },
+    },
+  },
+  "core.code.runner_cache_bytes": {
+    kind: "number",
+    integer: true,
+    min: 16777216,
+    max: 268435456,
+    default: 33554432,
+    label: "Runner bundle cache (bytes)",
+    description: "Maximum completed bundles held in memory per runner.",
+    presentation: {
+      translations: { de: { label: "Runner-Bundle-Cache (Bytes)", description: "Maximaler Speicher für vollständige Bundles je Runner." } },
+    },
+  },
+  "core.code.runner_bridge_concurrency": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 32,
+    default: 4,
+    label: "Concurrent bridge calls per run",
+    description: "Maximum simultaneous bridge calls from one run.",
+    presentation: {
+      translations: {
+        de: { label: "Gleichzeitige Brückenaufrufe je Lauf", description: "Maximale gleichzeitige Brückenaufrufe eines Laufs." },
+      },
+    },
+  },
+  "core.code.runner_process_memory_bytes": {
+    kind: "number",
+    integer: true,
+    min: 16777216,
+    max: 536870912,
+    default: 134217728,
+    label: "Runner process memory (bytes)",
+    description: "Memory budget per organization and trust tier process.",
+    presentation: {
+      translations: {
+        de: { label: "Runner-Prozessspeicher (Bytes)", description: "Speicherbudget je Prozess einer Organisation und Vertrauensstufe." },
       },
     },
   },

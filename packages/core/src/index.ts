@@ -28,6 +28,8 @@ import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
 import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
+import { createCodeBridgeRoutes } from "./code/bridge";
+import { createCodeRunnerRoutes } from "./code/runner-routes";
 import { app } from "./config";
 import { coreHelp } from "./help";
 import { buildSearchIndexes as buildOutgoingMailSearchIndexes } from "./migrate/core/outgoing-mail";
@@ -59,6 +61,8 @@ const coreApi = new Hono()
 
 const router = new Hono<AuthContext>()
   .route("/", createAppBootstrapRoutes())
+  .route("/", createCodeBridgeRoutes())
+  .route("/", createCodeRunnerRoutes())
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/_cloud/app-access", createAppAccessRoutes())

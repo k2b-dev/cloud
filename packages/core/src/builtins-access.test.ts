@@ -98,6 +98,12 @@ const service = (
 const publicPaths: Record<string, string[]> = {
   core: [
     "/_internal/apps/bootstrap",
+    "/_internal/code/runner/call",
+    "/_internal/code/runner/config",
+    "/_internal/code/runner/fetch",
+    "/_internal/code/runner/bundle",
+    "/_internal/code/runner/heartbeat",
+    "/_internal/code/runner/complete",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",
@@ -263,6 +269,7 @@ const publicPaths: Record<string, string[]> = {
 const protectedPaths: Record<string, string[]> = {
   core: [
     "/_internal/apps/bootstrap/private",
+    "/_internal/code/runner/call/private",
     "/me",
     "/admin",
     "/api/auth/pwa/v1/pairings",
