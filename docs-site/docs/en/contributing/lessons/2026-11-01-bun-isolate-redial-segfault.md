@@ -1,0 +1,6 @@
+### Bun 1.4.2 segfaulted when a finished test file's client dialed again
+
+- **What happened:** Unit and integration shards ended with `panic(main thread): Segmentation fault` and no failing test: 34 crashes between 26.10. and 01.11.2026, 25 of them on 01.11. Each cost a full gate run. The address varied, and the test file printed last was only the one running when the timer fired.
+- **Root cause:** Every crash report remapped to `on_connection_timeout` closing a freed socket. Between files, `bun test --isolate` closes all sockets. When a close handler or a rejected query dialed again from a Redis or SQL client, Bun freed the new socket but left its connection timeout armed, which fired in a later file ([oven-sh/bun#44327](https://github.com/oven-sh/bun/pull/44327), fixed in Bun 1.4.3). A small reproduction crashed Bun 1.4.2 in 10 of 10 runs and neither 1.4.3 nor 1.4.4 in 10 runs each.
+- **Error class:** A known runtime crash stayed unnoticed because the pinned runtime was not compared with upstream fixes for the crash stack.
+- **Guard:** `scripts/bun-isolate-redial.test.ts` runs the reproduction in a child `bun test --isolate` and fails on any Bun version that crashes. For a Bun crash, remap the `bun.report` link through `https://bun.report/remap` and search upstream for the stack before changing the suite.
