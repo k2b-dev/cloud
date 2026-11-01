@@ -80,7 +80,7 @@ import {
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
-// Shared lifecycle reviews keep the installed Core registry compilable while C8 and C13 are stacked.
+// Manual starts review the current Code and named entrypoint through the same editor permission check.
 const reviewCodeOperation = async (
   input: { codeId: string; entrypoint?: string },
   context: CapabilityExecutionContext,
