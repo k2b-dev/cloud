@@ -1,4 +1,4 @@
-import { CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
+import { AccessEntrySchema as CloudAccessEntrySchema, CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
 
@@ -982,7 +982,6 @@ export const ItemFilterResponseSchema = ItemListResultSchema.extend({
 });
 
 export type {
-  AccessEntry,
   MessageResponse,
   MutationResult,
   PermissionLevel,
@@ -990,7 +989,6 @@ export type {
   User,
 } from "@k2b/cloud/contracts";
 export {
-  AccessEntrySchema,
   ErrorResponseSchema,
   GrantAccessSchema,
   hasRole,
@@ -999,3 +997,7 @@ export {
   PrincipalSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+
+/** A Code share is removed through Core with grantId; ordinary shares omit it. */
+export const AccessEntrySchema = CloudAccessEntrySchema.extend({ grantId: z.uuid().optional() });
+export type AccessEntry = z.infer<typeof AccessEntrySchema>;

@@ -22,6 +22,7 @@ import { websocket } from "hono/bun";
 import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
+import { createCodeActivationRoutes } from "./api/code-activation";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
@@ -49,6 +50,7 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // Dedicated brokers must precede Task auth on /api/ai/*: models-only OpenAI keys
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
+  .route("/code", createCodeActivationRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())

@@ -455,7 +455,7 @@ describe("Pulse data store administration", () => {
     const sql = buildSetupSql({ user: "pulse_fixture", passwordSha256Hex: hash.sha256Hex, saltHex: hash.saltHex });
     await Bun.write(path, fixturePassword + "\n");
     try {
-      const context = createContext(["admin", "store", "setup-sql"], { "password-file": path }, [jsonResponse({ sql })]);
+      const context = createContext(["admin", "store", "setup-sql"], { "password-file": path, yes: true }, [jsonResponse({ sql })]);
       await pulseCli.run(context.ctx);
       expect(context.lines.join("\n")).toBe(sql);
       expect(context.lines.join("\n")).not.toContain(fixturePassword);
@@ -468,11 +468,15 @@ describe("Pulse data store administration", () => {
   });
   test.each(["STORE_NOT_CONFIGURED", "PASSWORD_REQUIRED", "STORE_BUSY"])("a %s refusal names its code and fix", async (code) => {
     const { storeFixHint } = await import("./frontend/admin/messages");
-    const context = createContext(["admin", "store", "check"], {}, [jsonResponse({ code }, code === "PASSWORD_REQUIRED" ? 400 : 409)]);
+    const context = createContext(["admin", "store", "check"], { yes: true }, [
+      jsonResponse({ code }, code === "PASSWORD_REQUIRED" ? 400 : 409),
+    ]);
     await expect(pulseCli.run(context.ctx)).rejects.toThrow(`${code}: ${storeFixHint(code)}`);
   });
   test("an unknown refusal stays a generic request failure", async () => {
-    const context = createContext(["admin", "store", "check"], {}, [jsonResponse({ code: "SOMETHING_REMOTE", message: "leak" }, 500)]);
+    const context = createContext(["admin", "store", "check"], { yes: true }, [
+      jsonResponse({ code: "SOMETHING_REMOTE", message: "leak" }, 500),
+    ]);
     await expect(pulseCli.run(context.ctx)).rejects.toThrow("Pulse store request failed (500).");
   });
   for (const ok of [true, false])
@@ -488,7 +492,7 @@ describe("Pulse data store administration", () => {
       try {
         const context = createContext(
           ["admin", "store", "set"],
-          { url: "http://fixture.invalid:8123", user: "pulse_fixture", "password-file": path },
+          { url: "http://fixture.invalid:8123", user: "pulse_fixture", "password-file": path, yes: true },
           [
             jsonResponse(
               ok
@@ -514,7 +518,7 @@ describe("Pulse base administration CLI", () => {
     { args: ["admin", "policy", "get"], flags: {}, path: "/api/pulse/admin/policy", method: undefined },
     {
       args: ["admin", "policy", "set"],
-      flags: { "max-bases": "10", "default-values-per-minute": "100" },
+      flags: { yes: true, "max-bases": "10", "default-values-per-minute": "100" },
       path: "/api/pulse/admin/policy",
       method: "PUT",
     },
@@ -526,7 +530,7 @@ describe("Pulse base administration CLI", () => {
     },
     {
       args: ["admin", "bases", "limits", "Base01"],
-      flags: { profile: "small", "storage-bytes": "2000000000" },
+      flags: { yes: true, profile: "small", "storage-bytes": "2000000000" },
       path: "/api/pulse/admin/bases/Base01/limits",
       method: "PUT",
     },
@@ -550,8 +554,18 @@ describe("Pulse base administration CLI", () => {
       method: "DELETE",
     },
     { args: ["admin", "targets", "list"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets?baseId=Base01", method: undefined },
-    { args: ["admin", "targets", "add", "web-01:9100"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets", method: "POST" },
-    { args: ["admin", "targets", "remove", "target-id"], flags: {}, path: "/api/pulse/admin/targets/target-id", method: "DELETE" },
+    {
+      args: ["admin", "targets", "add", "web-01:9100"],
+      flags: { yes: true, base: "Base01" },
+      path: "/api/pulse/admin/targets",
+      method: "POST",
+    },
+    {
+      args: ["admin", "targets", "remove", "target-id"],
+      flags: { yes: true },
+      path: "/api/pulse/admin/targets/target-id",
+      method: "DELETE",
+    },
   ])("routes $args to the admin API", async ({ args, flags, path, method }) => {
     const cleanFlags: CloudCliFlags = {};
     for (const [key, value] of Object.entries(flags)) if (value !== undefined) cleanFlags[key] = value;
@@ -863,4 +877,20 @@ test("new overview pin and expectation help follows each request locale", async 
   context.ctx.options.locale = "de";
   await expect(pulseCli.run(context.ctx)).rejects.toThrow("entweder --pin oder --unpin");
   expect(context.calls).toHaveLength(0);
+});
+
+test("ordinary Pulse administrator changes stop before requests without --yes", async () => {
+  for (const [args, flags] of [
+    [["store", "set"], { url: "http://fixture.invalid:8123" }],
+    [["store", "check"], {}],
+    [["store", "setup-sql"], {}],
+    [["policy", "set"], { "max-bases": "10" }],
+    [["bases", "limits", "Base01"], { profile: "small" }],
+    [["targets", "add", "web-01:9100"], { base: "Base01" }],
+    [["targets", "remove", "target-id"], {}],
+  ] as const) {
+    const { ctx, calls } = createContext(["admin", ...args], flags);
+    await expect(pulseCli.run(ctx)).rejects.toThrow("--yes");
+    expect(calls).toHaveLength(0);
+  }
 });

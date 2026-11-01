@@ -12,6 +12,7 @@ import {
   type Principal,
   updateAccess,
 } from "../server/services/access";
+import { audit } from "../services/audit";
 import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
 import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
@@ -705,28 +706,63 @@ export const aiProjects = {
     async grantAccess(
       projectId: string,
       input: { principal: Principal; permission: AiProjectPermission },
+      actorId?: string,
     ): Promise<AiProjectAccess | null> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
-        return project ? createProjectAccess(projectId, input, tx) : null;
+        if (!project) return null;
+        const result = await createProjectAccess(projectId, input, tx);
+        if (result && actorId)
+          await audit.record(
+            {
+              action: "ai.project.access.grant",
+              outcome: "allowed",
+              actor: { userId: actorId },
+              target: { type: "ai_project", id: projectId },
+            },
+            tx,
+          );
+        return result;
       });
     },
 
-    async updateAccess(projectId: string, accessId: string, permission: AiProjectPermission): Promise<boolean> {
+    async updateAccess(projectId: string, accessId: string, permission: AiProjectPermission, actorId?: string): Promise<boolean> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
-        return project ? updateProjectAccess(projectId, accessId, permission, tx) : false;
+        const result = project ? await updateProjectAccess(projectId, accessId, permission, tx) : false;
+        if (result && actorId)
+          await audit.record(
+            {
+              action: "ai.project.access.update",
+              outcome: "allowed",
+              actor: { userId: actorId },
+              target: { type: "ai_project", id: projectId },
+            },
+            tx,
+          );
+        return result;
       });
     },
 
-    async revokeAccess(projectId: string, accessId: string): Promise<boolean> {
+    async revokeAccess(projectId: string, accessId: string, actorId?: string): Promise<boolean> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
-        return project ? revokeProjectAccess(projectId, accessId, tx) : false;
+        const result = project ? await revokeProjectAccess(projectId, accessId, tx) : false;
+        if (result && actorId)
+          await audit.record(
+            {
+              action: "ai.project.access.revoke",
+              outcome: "allowed",
+              actor: { userId: actorId },
+              target: { type: "ai_project", id: projectId },
+            },
+            tx,
+          );
+        return result;
       });
     },
 
-    async delete(projectId: string): Promise<boolean> {
+    async delete(projectId: string, actorId?: string): Promise<boolean> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
         if (!project) return false;
@@ -735,6 +771,11 @@ export const aiProjects = {
         ).map((row) => row.access_id);
         await tx`DELETE FROM ai.projects WHERE id = ${projectId}::uuid`;
         if (accessIds.length) await tx`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(accessIds)}::uuid[])`;
+        if (actorId)
+          await audit.record(
+            { action: "ai.project.delete", outcome: "allowed", actor: { userId: actorId }, target: { type: "ai_project", id: projectId } },
+            tx,
+          );
         return true;
       });
     },
