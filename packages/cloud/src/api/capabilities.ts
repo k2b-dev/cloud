@@ -30,7 +30,8 @@ import {
   releaseCapabilityClaim,
   resolveCapabilityClaim,
 } from "../capabilities/executions";
-import { type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
+import { type CodeBridgeAuthority, type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
+import type { CodeRunTokenClaims } from "../code/run-token";
 import { type CodeRunTokenVerifyOptions, verifyCodeRunToken } from "../code/run-token";
 import { RUNNER_PATHS, RunnerCallRequestSchema } from "../code/runner-protocol";
 import {
@@ -54,6 +55,7 @@ import {
   NormalizedCapabilityCallSchema,
 } from "../contracts/capabilities";
 import { CapabilityStreamSchema } from "../contracts/capability-streams";
+import { type CodeHttpRequest, CodeHttpRequestSchema } from "../contracts/code-secrets";
 import { CommandLinkSchema, CommandRequestSchema } from "../contracts/commands";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { getLocale, LOCALE_HEADER, preferredLocale } from "../server/locale";
@@ -1393,6 +1395,14 @@ export type CapabilityApiType = ReturnType<typeof createCapabilityRoutes>;
 /** Dependencies for the private runner bridge. Production uses the shared signed-app transport seam. */
 export type CodeRunnerDispatchDependencies = {
   host: CodeBridgeHost;
+  /** Core-only HTTP dispatcher; it must use the admitted mandate wrapper before any effect or secret insertion. */
+  http?: (input: {
+    claims: CodeRunTokenClaims;
+    request: CodeHttpRequest;
+    authority: CodeBridgeAuthority;
+    ownOrigins: readonly string[];
+    signal: AbortSignal;
+  }) => Promise<Response>;
   dispatch?: CapabilityDispatchDependencies;
   appProof?: Parameters<typeof authenticateSignedAppRequest>[2];
   token?: CodeRunTokenVerifyOptions;
@@ -1453,7 +1463,7 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
       const claims = await verifyCodeRunToken(request.token, dependencies.token);
       if (!claims) return codeBridgeError("code_invalid_token", 403);
       if (claims.runId !== request.runId || claims.generation !== request.generation) return codeBridgeError("runner_lease_lost", 409);
-      // C11 supplies HTTP execution; even unsupported HTTP calls retain fencing and observations.
+      // HTTP retains the same fencing and observations; only the admitted Core dispatcher may inject secrets.
       if (request.operation === "http.fetch") {
         return await dependencies.host.withCall(
           {
@@ -1466,11 +1476,14 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
               input: request.input,
             },
           },
-          async () => {
-            const http = z.object({ url: z.string() }).loose().safeParse(request.input);
-            if (!http.success || !codeHttpOriginAllowed(http.data.url, [new URL(c.req.url).origin, ...(await dependencies.ownOrigins())]))
-              return codeBridgeError("code_http_origin_forbidden");
-            return codeBridgeError("code_operation_not_found");
+          async (authority) => {
+            const http = CodeHttpRequestSchema.safeParse(request.input);
+            const ownOrigins = [new URL(c.req.url).origin, ...(await dependencies.ownOrigins())];
+            if (!http.success) return codeBridgeError("code_http_invalid_call");
+            if (!codeHttpOriginAllowed(http.data.url, ownOrigins)) return codeBridgeError("code_http_origin_forbidden");
+            return dependencies.http
+              ? dependencies.http({ claims, request: http.data, authority, ownOrigins, signal: c.req.raw.signal })
+              : codeBridgeError("code_operation_not_found");
           },
         );
       }

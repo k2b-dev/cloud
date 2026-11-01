@@ -53,6 +53,8 @@ export const CodeVersionManifestSchema = z.record(z.string(), z.json());
 export type CodeVersionManifest = z.infer<typeof CodeVersionManifestSchema>;
 /** Core-owned tables; other applications consume capabilities, never these tables. */
 export const CODE_TABLES = {
+  secrets: "code.secrets",
+  secretBindings: "code.secret_bindings",
   codes: "code.codes",
   shares: "code.shares",
   versions: "code.versions",

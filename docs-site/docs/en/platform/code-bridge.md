@@ -131,7 +131,7 @@ reserves and finishes the observation; every transport performing an effect
 must use the returned `withMandateIssueAuthority` wrapper inside its issuance
 transaction. C11 supplies `kind: "internet"`, which selects the `internet`
 policy row and actual-row approval coverage; its C2 operation is `runtime.http`.
-HTTP calls retain query observations in C6's capability-oriented storage.
+HTTP calls retain Action observations so recovery does not automatically repeat external effects.
 
 Core's `createCodeBridgeHost()` and `createCodeBridgeRoutes()` implement the
 storage and policy boundary in `packages/core/src/code/bridge.ts`.
@@ -143,7 +143,7 @@ from `CODE_SETTINGS` and `codeSettings`.
 `codeHttpOriginAllowed(url, ownOrigins)` rejects installation-owned origins,
 credentials in URLs and non-HTTPS URLs. Hostname comparison ignores final DNS dots. Core includes configured app domains
 and redirect hosts even while an application is offline. `http.fetch` already refuses own
-origins; HTTP execution and secret injection belong to the dedicated Code
-HTTP/secret transport. Other unknown operations return
+origins; its Core HTTP dispatcher injects only version-bound
+[Code secrets](/en/docs/platform/code-secrets) and uses `requestPublicHttps`. Other unknown operations return
 `code_operation_not_found`. Capability requests must use the structured
 capability envelope and cannot select an upstream URL.

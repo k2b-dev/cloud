@@ -54,6 +54,7 @@ const context: CapabilityExecutionContext = {
 describe("Core Code data contracts", () => {
   test("exports permission-aware data and policy capabilities", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
+    expect(manifest.actions.find((action) => action.localId === "code.secret.set")?.idempotency).toBe("none");
     expect(
       manifest.queries
         .filter((query) => query.localId.startsWith("code."))
@@ -70,6 +71,7 @@ describe("Core Code data contracts", () => {
       "code.run.count",
       "code.run.list",
       "code.run.read",
+      "code.secret.list",
       "code.version.diff",
       "code.version.diff.read",
       "code.version.list",
@@ -83,6 +85,8 @@ describe("Core Code data contracts", () => {
         "code.policy.update",
         "code.resume",
         "code.run",
+        "code.secret.delete",
+        "code.secret.set",
         "code.version.approve",
         "code.version.reject",
         "code.version.submit",
@@ -135,6 +139,34 @@ describe("Core Code data contracts", () => {
     expect(() => codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }, true)).toThrow("Credential");
     expect(codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }).id).toBe(user.id);
   });
+});
+
+test("secret values cannot enter through Assistant, MCP or app capability tools", async () => {
+  for (const origin of ["assistant", "mcp", "app"] as const) {
+    const result = await aiCapabilities.actions["code.secret.set"].run(
+      { codeId: "c_c11test", name: "API", binding_revision: null, value: "test-only-private-credential" },
+      { ...context, origin },
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(JSON.stringify(result)).not.toContain("test-only-private-credential");
+  }
+});
+
+test("secret capability declarations compile with private writes and exact delete reviews", () => {
+  const manifest = compileCapabilityManifest("core", {
+    protocolVersion: 2,
+    queries: { "code.secret.list": aiCapabilities.queries["code.secret.list"] },
+    actions: {
+      "code.secret.set": aiCapabilities.actions["code.secret.set"],
+      "code.secret.delete": aiCapabilities.actions["code.secret.delete"],
+    },
+  });
+  expect(manifest.actions.find((action) => action.localId === "code.secret.set")).toMatchObject({
+    idempotency: "none",
+    approval: "none",
+    unattended: false,
+  });
+  expect(manifest.policies?.["code.secret.delete"]).toEqual({ ask: "deletes" });
 });
 
 test("owner presentation and default editorship use the live authorized canonical reader", async () => {
