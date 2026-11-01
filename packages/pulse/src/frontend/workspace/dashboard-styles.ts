@@ -59,6 +59,7 @@ export const dashboardStyles = `
 .pulse-dashboard__custom{display:flex;flex-wrap:wrap;align-items:end;gap:12px;padding:12px 0}
 .pulse-dashboard__sql{margin-top:10px;font-weight:400}
 .pulse-dashboard__sql pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+.pulse-dashboard__map{min-width:0;margin-top:6px}
 .pulse-dashboard__table{min-width:0;margin-top:6px;max-height:360px;overflow:auto}
 .pulse-dashboard__public{width:100%;max-width:1600px;margin:0 auto;padding:24px}
 @container(max-width:1000px){.pulse-dashboard__panel{grid-column:span 3}.pulse-dashboard__panel[data-width=full]{grid-column:span 6}}

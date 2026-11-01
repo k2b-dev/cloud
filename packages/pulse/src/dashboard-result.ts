@@ -45,6 +45,16 @@ export const projectDashboardPanel = (panel: DashboardPanel, result: SqlRows): D
       if (groups * values.length > DASHBOARD_MAX_SERIES) throw new Error("A panel supports at most 8 series");
     }
   }
+  if (panel.kind === "map") {
+    const x = columns.findIndex((column) => column.name === panel.x);
+    const value = columns.findIndex((column) => column.name !== panel.x);
+    for (const row of rows) {
+      // Null or empty means no lookup result; those rows stay in SQL but off the map.
+      if (row[x] !== null && row[x] !== "" && !(typeof row[x] === "string" && /^[A-Za-z]{2}$/.test(row[x])))
+        throw new Error("A map panel needs ISO 3166-1 alpha-2 country codes");
+      if (row[value] === null || Number(row[value]) < 0) throw new Error("Map values must be nonnegative numbers");
+    }
+  }
   if (panel.kind === "number") {
     const x = columns.findIndex((column) => column.name === panel.x);
     if (panel.x && (x < 0 || !/^(?:Nullable\()?DateTime(?:64)?(?:\(|$)/.test(columns[x]!.type)))

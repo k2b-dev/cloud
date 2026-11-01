@@ -140,3 +140,10 @@ export const dashboardCategories = (panel: PublicDashboardPanel, data: Dashboard
     }),
   );
 };
+/** The projection already checked codes and values; rows without a country stay off the map. */
+export const dashboardCountries = (panel: PublicDashboardPanel, data: DashboardPanelData) => {
+  const x = data.columns.findIndex((column) => column.name === panel.x);
+  const value = data.columns.findIndex((column) => column.name !== panel.x);
+  if (x < 0 || value < 0) throw new Error("PANEL_RESULT_INVALID");
+  return data.rows.flatMap((row) => (row[x] ? [{ code: String(row[x]), value: Number(row[value]) }] : []));
+};

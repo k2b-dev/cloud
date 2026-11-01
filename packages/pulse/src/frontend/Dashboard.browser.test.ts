@@ -407,6 +407,31 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
   }
 }, 30_000);
 
+test("a map panel shades countries, names them, and answers a tap on a phone in both themes", async () => {
+  for (const options of [{ width: 1440 }, { width: 390, dark: true }]) {
+    const { tab } = await open({ dashboard: dashboardTestKinds, ...options });
+    try {
+      await ready(tab);
+      const panel = tab.locator('[data-panel="countries"]');
+      await panel.locator('.k2b-country-map path[data-country="DE"]').waitFor();
+      expect(await panel.locator(".k2b-country-map__row").first().textContent()).toContain("Deutschland");
+      expect(await panel.locator(".k2b-country-map__readout").textContent()).toContain("Gesamt");
+      expect(await panel.locator('path[data-country="DE"]').evaluate((path) => getComputedStyle(path).fill)).not.toBe(
+        await panel.locator('path[data-country="CA"]').evaluate((path) => getComputedStyle(path).fill),
+      );
+      expect(await panel.locator('circle[data-country="SG"]').count()).toBe(1);
+      const box = await panel.boundingBox();
+      expect(box!.x + box!.width).toBeLessThanOrEqual(options.width);
+      const before = await panel.locator(".k2b-country-map").boundingBox();
+      await panel.locator('path[data-country="DE"]').hover();
+      await panel.locator(".k2b-country-map__readout", { hasText: "Deutschland" }).waitFor();
+      expect((await panel.locator(".k2b-country-map").boundingBox())!.height).toBe(before!.height);
+    } finally {
+      await tab.close();
+    }
+  }
+}, 30_000);
+
 test("cleared data replaces the shown result, while a cache miss for the same data keeps it", async () => {
   const { tab, panels } = await open({});
   try {
