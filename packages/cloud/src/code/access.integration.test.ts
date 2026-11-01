@@ -293,3 +293,11 @@ suite("Code access at the target", () => {
     expect(new TextEncoder().encode(JSON.stringify({ data: live })).byteLength).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
   });
 });
+
+suite("cleanup before the first set fences a delayed activation proof", async () => {
+  expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
+  expect(await setCodeAccess("inventory", bindings, input, context, dependencies)).toMatchObject({ granted: false, reasonCode: "removed" });
+  expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(0);
+  expect(await listCodeAccess("inventory", bindings, principal, listContext)).toEqual([]);
+  expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
+});

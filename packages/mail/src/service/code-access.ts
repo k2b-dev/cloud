@@ -1,7 +1,6 @@
-import type { CodeAccessAdapter, CodeAccessDecision } from "@k2b/cloud";
-import { CODE_ACCESS_MAX_MANAGER_USER_IDS } from "@k2b/cloud/contracts";
-import { buildAccessPrincipalCondition, getEffectivePermission } from "@k2b/cloud/server";
-import type { SQL } from "bun";
+import { type CodeAccessAdapter, type CodeAccessDecision, sql } from "@k2b/cloud";
+import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
+import { listUsersWithAccess } from "@k2b/cloud/server";
 import { ResourceShortIdSchema } from "../contracts";
 
 /** Mail's minimum mailbox level per capability. null means no non-manager level can cover it. */
@@ -164,10 +163,37 @@ export const mailboxCodeAccess: CodeAccessAdapter = {
     if (!ResourceShortIdSchema.safeParse(input.id).success) return { granted: false, reason: "Mailbox not found." };
     const mailbox = await lockTarget(tx, input.id);
     if (!mailbox) return { granted: false, reason: "Mailbox not found." };
-    // Core needs recipients only in preflight; a large list must refuse before writes.
-    const managers = input.dryRun ? await managerUserIds(tx, mailbox.id) : undefined;
-    if (managers === null) return { granted: false, reason: "Too many target managers for the Code access response budget." };
-    const granted = managers ? { ...decision, managerUserIds: managers } : decision;
+    const access = await tx<{ access_id: string }[]>`SELECT ma.access_id FROM mail.mailbox_access ma
+      JOIN auth.access a ON a.id=ma.access_id WHERE ma.mailbox_id=${mailbox.id}::uuid AND a.permission='admin'`;
+    // UUID pages expand only the manager grants, not the entire user directory.
+    // The audience is needed at preflight; real/replayed sets reuse Core's saved audience.
+    const managerUserIds: string[] = [];
+    if (input.dryRun && access.length) {
+      let cursor: string | null = null;
+      const envelopeBytes = Buffer.byteLength(
+        JSON.stringify({ data: { granted: true, grantId: input.grantId, level: decision.level, managerUserIds: [] } }),
+      );
+      const maximum = Math.floor((CAPABILITY_MAX_RESULT_BYTES - envelopeBytes) / 39);
+      while (true) {
+        const managers = await listUsersWithAccess({
+          accessIds: access.map((entry) => entry.access_id),
+          minimumPermission: "admin",
+          limit: 500,
+          afterId: cursor,
+          db: tx,
+        });
+        if (!managers.length) break;
+        const active: { id: string }[] = await tx`SELECT id FROM auth.users WHERE id=ANY(${tx.array(
+          managers.map((p) => p.id),
+          "uuid",
+        )})
+          AND (account_expires IS NULL OR account_expires>statement_timestamp()) ORDER BY id`;
+        managerUserIds.push(...active.map((p) => p.id));
+        if (managerUserIds.length > maximum) return { granted: false, reason: "Manager audience exceeds the capability result budget." };
+        cursor = managers.at(-1)!.id;
+      }
+    }
+    const result = { ...decision, ...(input.dryRun ? { managerUserIds } : {}) };
     const [account] = await tx`
       SELECT id FROM auth.service_accounts WHERE id = ${input.principal}::uuid AND kind = 'code' AND status = 'active' FOR SHARE
     `;
@@ -181,14 +207,14 @@ export const mailboxCodeAccess: CodeAccessAdapter = {
     `;
     if (existing) {
       return existing.service_account_id === input.principal && existing.mailbox_id === mailbox.id && existing.permission === decision.level
-        ? granted
+        ? result
         : { granted: false, reason: "Grant identity already belongs to another share." };
     }
-    if (input.dryRun) return granted;
+    if (input.dryRun) return result;
     await tx`INSERT INTO auth.access (id, service_account_id, permission)
       VALUES (${input.grantId}::uuid, ${input.principal}::uuid, ${decision.level}::auth.permission_level)`;
     await tx`INSERT INTO mail.mailbox_access (mailbox_id, access_id) VALUES (${mailbox.id}::uuid, ${input.grantId}::uuid)`;
-    return granted;
+    return result;
   },
   revoke: async (tx, { id, grantId }) => {
     if (!ResourceShortIdSchema.safeParse(id).success) return false;
