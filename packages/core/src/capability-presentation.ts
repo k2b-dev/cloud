@@ -228,7 +228,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Erteilt, ändert oder entzieht eine Skill-Berechtigung nach erneuter Benutzerbestätigung. Lesen Sie zuerst ai.skill.access.read. Gewährt keinen Zugriff auf Apps, die der Skill referenziert.",
           input: {
-            skillId: "ID des zu verwaltenden Skills.",
             expectedAccessRevision: "Exakte Revision aus ai.skill.access.read; nach einem Konflikt erneut lesen und prüfen.",
             principal: "Neuer Empfänger aus entities.search; entweder principal oder accessId angeben.",
             accessId: "Vorhandene Berechtigungs-ID aus ai.skill.access.read; entweder accessId oder principal angeben.",
@@ -240,7 +239,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Stellen Sie eine zuordenbare Nachricht für eine andere AI-Konversation in die Warteschlange, nachdem Sie das genaue Ziel und den Text überprüft haben.",
           input: {
-            chatId: "Lesbares ID des eigenen Zielchats.",
             text: "Genaue Nachricht, die an den Zielchat gesendet werden soll.",
           },
         },
@@ -256,16 +254,13 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.skill.delete": {
           title: "Skill löschen",
           description: "Löschen Sie einen verwalteten Skill, alle references und alle Zugriffsgewährungen nach der Überprüfung dauerhaft.",
-          input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
-          },
+          input: {},
         },
         "ai.skill.enabled.set": {
           title: "Skill für dich aktivieren oder deaktivieren",
           description:
             "Aktivieren oder deaktivieren Sie nach der Überprüfung einen lesbaren Skill nur für den aktuellen Benutzer. Der Cloud-Zugriff bleibt unverändert.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             enabled: "Ob dieser Skill für den aktuellen Benutzer aktiv sein soll.",
           },
         },
@@ -273,7 +268,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Skill-Referenz entfernen",
           description: "Entfernen Sie nach der Überprüfung genau eine Markdown reference aus einem beschreibbaren Skill.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             path: "Exakter Markdown reference-Pfad, der von Read Skill zurückgegeben wurde und mit references/<Name>.md übereinstimmt.",
           },
@@ -283,7 +277,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Fügen Sie genau eine Markdown reference zu einem beschreibbaren Skill hinzu oder ersetzen Sie sie. Verwenden Sie Set Assistant Skill references für zwei oder mehr Dateien.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             path: "Exakter Markdown reference-Pfad, der von Read Skill zurückgegeben wurde und mit references/<Name>.md übereinstimmt.",
             content: "Vollständiger Markdown-Inhalt für diesen reference.",
@@ -294,7 +287,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Fügen Sie mehrere Markdown references atomar zu einem beschreibbaren Skill hinzu oder ersetzen Sie sie, nachdem Sie jede vollständige begrenzte Datei überprüft haben.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             references: "Referenzen zum atomaren Validieren und Schreiben in einer Skill-Revision.",
             "references[].path":
@@ -307,7 +299,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Aktualisieren Sie ein oder mehrere Hauptfelder eines beschreibbaren Skill, nachdem Sie den genauen geänderten Inhalt überprüft haben.",
           input: {
-            skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             name: "Kleingeschriebener Skill-Name mit Wörtern, die durch einzelne Bindestriche getrennt sind.",
             description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistent ihn laden soll.",
@@ -325,7 +316,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
             "grants[].fixedInput":
               "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
-            chatId: "Lesbare KI-Chat-ID mit sechs Zeichen.",
             prompt: "Genauer Auftrag für diesen Chat, wenn die Routine läuft.",
             schedule: "Wann diese Routine laufen soll.",
             timezone: "Genaue IANA-Zeitzone aus dem aktuellen Laufzeitkontext.",

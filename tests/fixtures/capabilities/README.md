@@ -53,3 +53,14 @@ also declare `code: false`. Only these input fields, target/ref declarations,
 Code availability, and their hashes change in these baselines; result contracts,
 query inputs, idempotency inventory, and future evolution checks remain active.
 See the [Spaces and Contacts migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#spaces-and-contacts-actions-name-their-container).
+
+The coordinated Code target migration moves Notebooks, Pulse, Venue, and
+Weather Actions from resource IDs in input to their declared resource target.
+These baselines update only the existing Actions' target declarations, removed
+container-ID fields, and corresponding hashes; result schemas and safety
+contracts remain frozen. Unrelated additive changes stay out of the baseline
+and are still checked as additive evolution. See the application target guides for
+[Notebooks](../../../docs-site/apps-content/en/notebooks.md#capability-action-targets),
+[Pulse](../../../docs-site/apps-content/en/pulse.md#capability-action-targets),
+[Venue](../../../docs-site/apps-content/en/venue.md#capability-action-targets), and
+[Weather](../../../docs-site/apps-content/en/weather.md#capability-action-targets).
