@@ -42,6 +42,24 @@ test("hostile fetch, DNS and connect cannot reach even a live supervisor listene
           const {connect} = await import('cloudflare:sockets');
           try { const socket = connect({hostname: '127.0.0.1', port: ${canary.port}}); await socket.opened; results.push('ESCAPE'); }
           catch (error) { results.push(error.message.includes('not permitted to access the internet') ? 'denied' : error.message); }
+          // workerd ships node:net and node:dns modules; using them must still fail.
+          const net = process.getBuiltinModule('node:net');
+          const dns = process.getBuiltinModule('node:dns');
+          const attempts = [
+            () => new Promise((resolve, reject) => {
+              const socket = net.connect(${canary.port}, '127.0.0.1');
+              socket.once('connect', () => { socket.write('GET / HTTP/1.1\\r\\nHost: canary\\r\\n\\r\\n'); resolve(); });
+              socket.once('error', reject);
+            }),
+            () => dns.promises.lookup('example.com'),
+            () => dns.promises.resolve4('example.com'),
+          ];
+          results.push(...await Promise.all(attempts.map(async attempt => {
+            try {
+              await Promise.race([attempt(), new Promise((_, reject) => setTimeout(() => reject(new Error('no answer')), 1000))]);
+              return 'ESCAPE';
+            } catch { return 'denied'; }
+          })));
           await cloud.call('report', results);
         }`,
         async (_, input) => {
@@ -51,29 +69,41 @@ test("hostile fetch, DNS and connect cannot reach even a live supervisor listene
         targets,
       ),
     ).toBe("succeeded");
-    expect(results).toEqual([["denied", "denied", "denied", "denied", "denied"]]);
+    expect(results).toEqual([Array.from({ length: 8 }, () => "denied")]);
     expect(hits).toBe(0);
   } finally {
     await canary.stop(true);
   }
 }, 10_000);
 
-test("filesystem, environment, child processes and loader authority are absent from Code", async () => {
+test("filesystem, environment, child processes and loader authority are unusable from Code", async () => {
   const results: RunnerJsonValue[] = [];
   expect(
     await attack(
       `export async function main(input, cloud) {
-        const modules = ['fs', 'node:fs', 'child_process', 'node:child_process', 'net', 'dns'];
+        const modules = ['fs', 'node:fs', 'fs/promises', 'node:fs/promises'];
         const available = modules.filter(name => { try { return !!process.getBuiltinModule(name); } catch { return false; } });
+        // workerd ships a node:child_process module whose calls must never start a process.
+        const child = process.getBuiltinModule('node:child_process');
         const attempts = [
+          () => child.execSync('id'),
+          () => child.execFileSync('/bin/sh', ['-c', 'id']),
+          () => { const result = child.spawnSync('/bin/sh', ['-c', 'id']); if (result.error) throw result.error; },
+          () => new Promise((resolve, reject) => {
+            const spawned = child.spawn('/bin/sh', ['-c', 'id']);
+            spawned.once('spawn', resolve);
+            spawned.once('error', reject);
+          }),
           () => cloud.fetch('http://127.0.0.1:1'),
           () => cloud.token(), () => cloud.key(), () => cloud.LOADER.load({}),
         ];
-        const authority = [];
-        for (const attempt of attempts) {
-          try { await attempt(); authority.push('ESCAPE'); }
-          catch { authority.push('denied'); }
-        }
+        // Concurrent attempts keep a silent hang within one second.
+        const authority = await Promise.all(attempts.map(async attempt => {
+          try {
+            await Promise.race([attempt(), new Promise((_, reject) => setTimeout(() => reject(new Error('no answer')), 1000))]);
+            return 'ESCAPE';
+          } catch { return 'denied'; }
+        }));
         await cloud.call('report', {available, env: Object.keys(process.env),
           bun: typeof Bun, require: typeof require, authority});
       }`,
@@ -89,7 +119,7 @@ test("filesystem, environment, child processes and loader authority are absent f
       env: [],
       bun: "undefined",
       require: "undefined",
-      authority: ["denied", "denied", "denied", "denied"],
+      authority: Array.from({ length: 8 }, () => "denied"),
     },
   ]);
 }, 10_000);

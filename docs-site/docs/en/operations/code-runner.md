@@ -259,9 +259,9 @@ The suite requires these results:
 | Read key, supervisor or sibling `/proc/environ`, `/proc/mem`, descriptors, or proc-root path | `EACCES` or `EPERM`; no bytes read |
 | Signal, SIGCONT, ptrace, or read sibling memory | `EPERM`; sibling finishes its real bundle |
 | Connect to either sibling IPC socket; replace a trusted path | `EACCES` or `EPERM`; supervisor paths remain intact |
-| Public, metadata, live loopback/Core, or named-host network requests | JavaScript network refusal; zero canary requests |
+| Public, metadata, live loopback/Core, or named-host requests through `fetch`, `connect`, `node:net`, or `node:dns` | Refused; zero canary requests |
 | Native IPv4/IPv6 TCP, DNS/UDP, alternate network families or IP socketpair | `EAFNOSUPPORT` before any connection or DNS query |
-| Access filesystem, environment, subprocess, or loader APIs from Code | Filesystem/subprocess APIs absent; environment empty; loader and credential RPC attempts reject |
+| Access filesystem, environment, subprocess, or loader APIs from Code | `node:fs` absent; environment empty; every `node:child_process` call, loader, and credential RPC attempt fails |
 | Write image files or traverse out of `/tmp` into the image | `EACCES` or `EROFS` |
 | Fork bomb, vfork, or clone3 bypass | Fork/vfork get `EPERM`; clone3 gets `ENOSYS` |
 | io_uring, namespace, mount, BPF, or pidfd bypass | `EPERM` |
