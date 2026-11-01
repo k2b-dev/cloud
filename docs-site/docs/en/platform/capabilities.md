@@ -612,11 +612,26 @@ independent, even for the same account and target: rolling back a new
 activation must leave older grants intact. Its permission resolver must use
 only its own explicit grants, ignoring public, group and signed-in access.
 
+Dry-run answers reveal only what the person may read. Cloud calls the target
+Type's existing `access.readable` for the activating person, independently of
+manager or Cloud-admin authority. Only a readable target can return `title`
+(from its canonical reader) and `managerUserIds`. A missing reader check means
+no presentation metadata. Refusals for an unreadable target use a generic manager
+message; keep the target ID and the option to copy the Code link.
+
+Successful adapter dry runs return current human managers in `managerUserIds`,
+including administrator-group members. This array shares the existing capability
+result budget (`CODE_ACCESS_MAX_MANAGER_USER_IDS`); refuse an oversized audience
+rather than truncate it. Core obtains Cloud-admin notification recipients through
+its separate target-bound `signCodeAccessNotifications` server authority. That
+lookup always rolls back, grants nothing, and never becomes person-visible
+presentation. The four adapter functions stay the same.
+
 Cloud generates these capabilities once per app:
 
 | Capability | Input | Data |
 | --- | --- | --- |
-| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level }` or `{ granted: false, reasonCode, reason }` |
+| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level, readable }` or `{ granted: false, reasonCode, reason, readable }`; readable dry runs may include `title` and `managerUserIds` |
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
 
