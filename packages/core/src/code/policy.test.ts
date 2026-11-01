@@ -179,3 +179,10 @@ test("policy review catalog supplies valid complete-review sentences and localiz
     expect(t.codePolicyValue({ value: "admin" })).toBe(locale === "de" ? "Admin gibt frei" : "Admin approval");
   }
 });
+
+test("the admin preset requires approval for internet versions of every owner", () => {
+  const definition = codePolicyPreset("admin");
+  const membership: CodePolicyGroups = { groups: [], ancestors: [] };
+  for (const candidate of [owner, { kind: "resource" as const, ref: { type: "example.item", id: "owner" } }])
+    expect(effective("internet", candidate, definition, membership).value).toBe("admin");
+});

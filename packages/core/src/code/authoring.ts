@@ -67,6 +67,7 @@ async function describeCheck(
   if (!result.ok) return { version: 1, result, manifest: null, permissions: [] };
   const policyRows = new Set<CodePolicyRow>();
   if (result.manifest.ai) policyRows.add("ai");
+  if (result.manifest.internet?.length) policyRows.add("internet");
   const permissions: CodeAuthoringPermission[] = [];
   const catalogs = new Map<string, Awaited<ReturnType<typeof getCapabilityCatalogApp>>>();
   const targets = new Map<string, { title: string | null; typeTitle: string | null }>();

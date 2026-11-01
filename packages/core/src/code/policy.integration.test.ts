@@ -156,7 +156,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     expect(review.locale).toBe("de");
     expect(review.content).toMatchObject({ kind: "page", baseRevision: current.revision });
     expect(review.content?.body).toContain("Lesen (read)\nStandard: Admin gibt frei (admin)");
-    expect(review.content?.body).toContain("Internet (internet)");
+    expect(review.content?.body).toContain("Ins Internet (internet)");
   });
   test("stale concurrent updates reject one writer and enqueue exactly one job", async () => {
     const previous = await readCodePolicySnapshot();

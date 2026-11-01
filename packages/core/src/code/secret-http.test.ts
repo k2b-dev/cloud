@@ -91,3 +91,20 @@ test("binary bytes remain unchanged without inserted credentials", () => {
   const bytes = new Uint8Array([0, 255, 128, 42]);
   expect(Buffer.from(redactCodeHttpResponse({ status: 200, headers: {}, body: bytes }, []).body, "base64")).toEqual(Buffer.from(bytes));
 });
+
+test("declared origins are exact for every HTTP call, including without secrets", async () => {
+  const { requireCodeHttpOrigin } = await import("./secret-http");
+  expect(requireCodeHttpOrigin("https://api.example:8443/items", [binding.origin], []).origin).toBe(binding.origin);
+  for (const url of ["https://other.example/items", "https://api.example/items", "https://api.example:9443/items"]) {
+    try {
+      requireCodeHttpOrigin(url, [binding.origin], []);
+      throw new Error("expected refusal");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "code_http_origin_undeclared", origin: new URL(url).origin });
+    }
+  }
+  expect(() => requireCodeHttpOrigin(binding.origin, [binding.origin], [binding.origin])).toThrow("code_http_origin_forbidden");
+  expect(() => requireCodeHttpOrigin(binding.origin, [], [])).toThrow("code_http_origin_undeclared");
+  for (const origin of ["https://evil.example.", "https://a*b.example"])
+    expect(() => requireCodeHttpOrigin(origin, [], [])).toThrow("code_http_origin_forbidden");
+});

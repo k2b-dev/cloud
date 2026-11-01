@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodeInternetOriginSchema } from "./code-internet";
 
 /** Names are identifiers, never secret values. SDK secrets.NAME produces [secret:NAME]. */
 export const CodeSecretNameSchema = z
@@ -17,18 +18,7 @@ export const codeSecretPathAllowed = (path: string): boolean =>
 /** Exact HTTPS origin (including effective port), path at a segment boundary, and permitted header names. */
 export const CodeSecretBindingSchema = z
   .object({
-    origin: z
-      .string()
-      .url()
-      .refine((value) => {
-        try {
-          const url = new URL(value);
-          return url.protocol === "https:" && url.origin === value && !url.username && !url.password && !url.hostname.endsWith(".");
-        } catch {
-          return false;
-        }
-      }, "Use an exact HTTPS origin without credentials, path or final DNS dot.")
-      .describe("Exact HTTPS origin, including non-default port, without a path or trailing slash."),
+    origin: CodeInternetOriginSchema.describe("Exact HTTPS origin, including non-default port, without a path or trailing slash."),
     pathPrefix: z
       .string()
       .refine(codeSecretPathAllowed, "Use an unencoded absolute path without traversal.")

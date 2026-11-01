@@ -1,5 +1,7 @@
 import { posix } from "node:path";
 import ts from "@typescript/typescript6";
+import { CodeInternetOriginSchema } from "../contracts/code-internet";
+import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeWorkflowSchedule } from "../workflows/runtime/schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
 import { codeSdkPhaseDiagnostic } from "./types";
@@ -9,7 +11,7 @@ export type CodeAnalysis = {
   permissions: CodePermission[];
   entrypoints: CodeVersionManifest["entrypoints"];
   ai: boolean;
-  internet?: boolean;
+  internet: string[];
   modules: string[];
 };
 const root = "/code/";
@@ -72,7 +74,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   include(request.entry);
   let collecting = false;
   const checker = program.getTypeChecker();
-  const result: CodeAnalysis = { diagnostics: [], permissions: [], entrypoints: [], ai: false, modules: [...reachable] };
+  const result: CodeAnalysis = { diagnostics: [], permissions: [], entrypoints: [], ai: false, internet: [], modules: [...reachable] };
   const report = (node: ts.Node, code: string, message: string) => {
     const sf = node.getSourceFile();
     const location = sf.getLineAndCharacterOfPosition(node.getStart(sf));
@@ -140,6 +142,61 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
     if (request.aiOperations.includes(operation)) result.ai = true;
   };
+  const origins = new Set<string>();
+  const allowedOrigins = new Set<string>();
+  const dynamicHttp: ts.CallExpression[] = [];
+  // A prefix must finish the complete authority before any dynamic expression begins.
+  function prefix(node: ts.Expression): string | null {
+    node = unparen(node);
+    if (ts.isStringLiteralLike(node)) return node.text;
+    if (ts.isTemplateExpression(node)) return node.head.text;
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) return prefix(node.left);
+    return null;
+  }
+  function origin(value: string): string | null {
+    try {
+      const url = new URL(value);
+      return !url.username &&
+        !url.password &&
+        !/[\\\s\u0000-\u001f\u007f]/.test(value) &&
+        CodeInternetOriginSchema.safeParse(url.origin).success
+        ? url.origin
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  function httpCall(node: ts.CallExpression, method: string | undefined) {
+    const arg = node.arguments[0];
+    if (method === "allow") {
+      if (!arg || !ts.isArrayLiteralExpression(arg) || arg.elements.some((item) => !ts.isStringLiteralLike(item))) {
+        report(node, "code_http_allow_literal", 'Deklariere Ursprünge mit http.allow(["https://api.example.com"]) als wörtliche Liste.');
+        return;
+      }
+      for (const item of arg.elements) {
+        if (!ts.isStringLiteralLike(item)) continue;
+        if (!CodeInternetOriginSchema.safeParse(item.text).success)
+          report(item, "code_http_origin_invalid", "Erlaubt sind genaue HTTPS-Ursprünge ohne Platzhalter, Zugangsdaten oder Pfad.");
+        else if (collecting) allowedOrigins.add(item.text);
+      }
+      return;
+    }
+    const values = arg && literals(arg);
+    if (values) {
+      for (const value of values) {
+        const parsed = origin(value);
+        if (!parsed)
+          report(node, "code_http_origin_invalid", "http.fetch benötigt einen genauen HTTPS-Ursprung ohne Platzhalter oder Zugangsdaten.");
+        else if (collecting) origins.add(parsed);
+      }
+      return;
+    }
+    const head = arg && prefix(arg);
+    const parsed = head && /^https:\/\/[^/?#]+[/?#]/i.test(head) ? origin(head) : null;
+    if (parsed) {
+      if (collecting) origins.add(parsed);
+    } else if (collecting) dynamicHttp.push(node);
+  }
   const events = new Set<string>();
   const entryNames = new Set<string>();
   function visit(node: ts.Node) {
@@ -224,9 +281,14 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         const declarationOwner = checker.getResolvedSignature(node)?.declaration?.parent.parent;
         // Follow the SDK signature, including destructured HTTP methods.
         const http = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeHttp";
+        if (http) {
+          const signature = checker.getResolvedSignature(node)?.declaration;
+          const name = signature && ts.isMethodSignature(signature) && ts.isIdentifier(signature.name) ? signature.name.text : method;
+          httpCall(node, name);
+        }
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
         if (http) {
-          if (collecting) result.internet = true;
+          // HTTP origin evidence is collected by httpCall above.
         } else if (app && method) {
           const phase = codeSdkPhaseDiagnostic(method);
           if (phase) report(node, phase.code, phase.message);
@@ -291,7 +353,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               });
             }
           }
-        } else {
+        } else if (!http) {
           // Recognized factory calls need no permission; detached methods lose their target and are rejected.
           const factory = request.sdk.manifest.handles.some((spec) => path.join(".") === spec.factoryPath.join("."));
           if (!factory) report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Handle oder app auf.");
@@ -322,6 +384,21 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       collecting = reachable.has(sf.fileName.slice(root.length));
       visit(sf);
     }
+  }
+  if (!allowedOrigins.size && request.sdk.manifest.mode !== "code_run")
+    for (const node of dynamicHttp)
+      report(node, "code_http_origin_dynamic", 'Der Ursprung ist dynamisch. Deklariere ihn mit http.allow(["https://api.example.com"]).');
+  result.internet = [...new Set([...origins, ...allowedOrigins])].sort();
+  if (request.sdk.manifest.mode !== "code_run" && result.internet.length) {
+    const grants =
+      result.internet.length +
+      (request.sdk.manifest.mode === "personal" ? new Set(result.permissions.map((item) => item.operation)).size : 0);
+    if (grants > MANDATE_POLICY_MAX_IDENTIFIERS / 2)
+      report(
+        program.getSourceFile(root + request.entry)!,
+        "code_http_grant_limit",
+        `Die Internet-Ursprünge und Operationsfreigaben überschreiten das Mandatsbudget von ${MANDATE_POLICY_MAX_IDENTIFIERS / 2} Freigaben. Teile den Code auf.`,
+      );
   }
   if (request.sdk.manifest.mode === "code_run") {
     const entry = program.getSourceFile(root + request.entry)!;

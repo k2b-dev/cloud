@@ -702,51 +702,65 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
           </Show>
         </Show>
       </Section>
-      <Show when={props.state.internet}>
-        {(internet) => <InternetOrigins internet={internet()} state={props.state} text={props.text} />}
+      <Show
+        when={
+          props.state.internet.active === null ||
+          props.state.internet.waiting === null ||
+          props.state.internet.active.length ||
+          props.state.internet.waiting.length
+        }
+      >
+        <Section id="cloud-code-internet" title={t().internetOrigins} description={t().internetDescription}>
+          <Show
+            when={props.state.internet.active !== null && props.state.internet.waiting !== null}
+            fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}
+          >
+            <Show when={props.state.active && props.state.internet.active?.length}>
+              <p class="cloud-code__label">{t().internetVersion({ version: props.state.active!.number })}</p>
+              <ul class="cloud-code__list">
+                <For each={props.state.internet.active ?? []}>
+                  {(origin) => (
+                    <li class="cloud-code__row cloud-code__row--access">
+                      <span class="cloud-code__kind" aria-hidden="true">
+                        <i class="ti ti-world" />
+                      </span>
+                      <span class="cloud-code__cell">
+                        <Op>{origin}</Op>
+                      </span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            <Show when={props.state.waiting && props.state.internet.waiting?.length}>
+              <p class="cloud-code__label">{t().internetVersion({ version: props.state.waiting!.number })}</p>
+              <ul class="cloud-code__list">
+                <For each={props.state.internet.waiting ?? []}>
+                  {(origin) => (
+                    <li class="cloud-code__row cloud-code__row--access">
+                      <span class="cloud-code__kind" aria-hidden="true">
+                        <i class="ti ti-world" />
+                      </span>
+                      <span class="cloud-code__cell">
+                        <Op>{origin}</Op>
+                      </span>
+                      <span class="cloud-code__right">
+                        <Show when={props.state.internet.waiting?.includes(origin) && !props.state.internet.active?.includes(origin)}>
+                          <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
+                        </Show>
+                      </span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </Show>
+        </Section>
       </Show>
       <Section id="cloud-code-pages" title={t().pagesAndRoutes} count={0}>
         <p class="cloud-code__quiet">{t().pagesNone}</p>
       </Section>
     </div>
-  );
-}
-
-/** Internet origins the Code may reach with its credentials, from the version's reviewed bindings. */
-function InternetOrigins(props: { internet: NonNullable<CodePageReady["internet"]>; state: CodePageReady; text: PageText }) {
-  const t = props.text.t;
-  return (
-    <Section
-      id="cloud-code-internet"
-      title={t().internet}
-      count={props.internet.origins.length || undefined}
-      description={t().internetDescription}
-    >
-      <Show when={props.internet.origins.length > 0} fallback={<p class="cloud-code__quiet">{t().internetUnbound}</p>}>
-        <ul class="cloud-code__list">
-          <For each={props.internet.origins}>
-            {(origin) => (
-              <li
-                class="cloud-code__row cloud-code__row--access"
-                data-state={props.internet.newOrigins.includes(origin) ? "new" : undefined}
-              >
-                <span class="cloud-code__kind" aria-hidden="true">
-                  <i class="ti ti-world" />
-                </span>
-                <span class="cloud-code__cell">
-                  <Op>{origin}</Op>
-                </span>
-                <span class="cloud-code__right">
-                  <Show when={props.internet.newOrigins.includes(origin)}>
-                    <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
-                  </Show>
-                </span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-    </Section>
   );
 }
 
@@ -1263,6 +1277,16 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
                 </For>
               </ul>
             </Show>
+            <Show when={diff().internet === null || diff().internet?.length}>
+              <p class="cloud-code__label">{t().internetOrigins}</p>
+              <Show when={diff().internet} fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}>
+                {(origins) => (
+                  <ul class="cloud-code__list">
+                    <For each={origins()}>{(origin) => <li class="cloud-code__row break-all font-mono text-sm">{origin}</li>}</For>
+                  </ul>
+                )}
+              </Show>
+            </Show>
             <p class="cloud-code__label">{t().codeDiff}</p>
             <CodeDiff files={diff().files} label={t().codeDiff} />
           </section>
@@ -1488,10 +1512,15 @@ function ActivationDialog(props: {
           )}
         </For>
       </ul>
-      <Show when={props.mode === "waiting" && (props.state.internet?.newOrigins.length ?? 0) > 0}>
+      <Show
+        when={
+          props.mode === "waiting" &&
+          (props.state.internet.waiting?.filter((origin) => !props.state.internet.active?.includes(origin)).length ?? 0) > 0
+        }
+      >
         <p class="cloud-code__label">{t().internet}</p>
         <ul class="cloud-code__list">
-          <For each={props.state.internet?.newOrigins ?? []}>
+          <For each={props.state.internet.waiting?.filter((origin) => !props.state.internet.active?.includes(origin)) ?? []}>
             {(origin) => (
               <li class="cloud-code__row cloud-code__row--access">
                 <span class="cloud-code__kind" aria-hidden="true">

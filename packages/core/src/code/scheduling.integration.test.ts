@@ -524,46 +524,67 @@ suiteFor(
       await settled;
     }
   });
-  test.each(["matching", "bundle", "evidence"] as const)("C13b binding server check refuses forged %s submissions", async (variant) => {
-    const code = await fixture();
-    const [stored] = await sql<
-      { source_files: Record<string, string>; bundle: string; manifest: CodeCheckedVersionManifest }[]
-    >`SELECT source_files,bundle,manifest FROM code.versions WHERE id=${code.versionId}::uuid`;
-    const cancel = new AbortController();
-    const catalog = spyOn(catalogProvider, "listCapabilityCatalog").mockResolvedValue({
-      ok: true,
-      data: { protocolVersion: 2, apps: [], page: { hasMore: false } },
-    });
-    const pending = verifyCodeSubmission(
-      { codeId: code.codeId, sourceFiles: stored!.source_files, bundle: stored!.bundle, manifest: stored!.manifest },
-      { ...context(), signal: cancel.signal },
-    );
-    const settled = pending.then(
-      () => null,
-      (error: unknown) => error,
-    );
-    try {
-      await pendingJob();
-      const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
-      const { entry: _entry, policyRows: _rows, ...evidence } = stored!.manifest;
-      await completeCodeJob(job, {
-        kind: "check",
-        result: {
-          ok: true,
-          diagnostics: [],
-          bundle: variant === "bundle" ? "forged bundle" : stored!.bundle,
-          manifest: { ...evidence, ai: variant === "evidence" ? !evidence.ai : evidence.ai },
-          permissions: [],
-        },
+  test.each(["matching", "bundle", "evidence", "internet"] as const)(
+    "C13b binding server check refuses forged %s submissions",
+    async (variant) => {
+      const code = await fixture();
+      const [stored] = await sql<
+        { source_files: Record<string, string>; bundle: string; manifest: CodeCheckedVersionManifest }[]
+      >`SELECT source_files,bundle,manifest FROM code.versions WHERE id=${code.versionId}::uuid`;
+      const cancel = new AbortController();
+      const catalog = spyOn(catalogProvider, "listCapabilityCatalog").mockResolvedValue({
+        ok: true,
+        data: { protocolVersion: 2, apps: [], page: { hasMore: false } },
       });
-      if (variant === "matching") expect(await settled).toBeNull();
-      else expect(await settled).toMatchObject({ code: "CONFLICT" });
-    } finally {
-      cancel.abort();
-      await settled;
-      catalog.mockRestore();
-    }
-  });
+      const manifest: CodeCheckedVersionManifest = {
+        ...stored!.manifest,
+        internet: ["https://api.example"],
+        policyRows: [...stored!.manifest.policyRows, "internet"],
+        secrets: [
+          {
+            name: "BANK",
+            origin: "https://api.example",
+            pathPrefix: "/v1",
+            headers: ["authorization"],
+            binding_revision: "a0000000-0000-4000-8000-000000000001",
+          },
+        ],
+      };
+      const pending = verifyCodeSubmission(
+        { codeId: code.codeId, sourceFiles: stored!.source_files, bundle: stored!.bundle, manifest },
+        { ...context(), signal: cancel.signal },
+      );
+      const settled = pending.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      try {
+        await pendingJob();
+        const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+        const { entry: _entry, policyRows: _rows, secrets: _secrets, ...evidence } = manifest;
+        await completeCodeJob(job, {
+          kind: "check",
+          result: {
+            ok: true,
+            diagnostics: [],
+            bundle: variant === "bundle" ? "forged bundle" : stored!.bundle,
+            manifest: {
+              ...evidence,
+              ai: variant === "evidence" ? !evidence.ai : evidence.ai,
+              internet: variant === "internet" ? [] : evidence.internet,
+            },
+            permissions: [],
+          },
+        });
+        if (variant === "matching") expect(await settled).toBeNull();
+        else expect(await settled).toMatchObject({ code: "CONFLICT" });
+      } finally {
+        cancel.abort();
+        await settled;
+        catalog.mockRestore();
+      }
+    },
+  );
   test.each(["oversized", "wrong-kind"] as const)("C13b rejected %s result is terminal and wakes pending jobs", async (variant) => {
     const cancel = new AbortController();
     const pending = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal }).check(checkRequest());
