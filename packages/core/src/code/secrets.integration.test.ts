@@ -32,6 +32,7 @@ import {
 } from "./secrets";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, readCodeRun } from "./store";
+import * as authoringChecks from "./authoring-check";
 import { decideCodeVersion, diffCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-11-01T12:00:00Z");
@@ -69,6 +70,7 @@ const destination = { origin: "https://api.example:8443", pathPrefix: "/v1", hea
 databaseSuite()("C11 version-bound write-only secrets", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let ownOrigins: ReturnType<typeof spyOn<typeof origins, "readCodeOwnOrigins">>;
   let app: ReturnType<typeof spyOn<typeof registry, "getApp">>;
   let stopApprovals: (() => void) | undefined;
@@ -93,6 +95,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     for (const id of [authorId, reviewerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     ownOrigins = spyOn(origins, "readCodeOwnOrigins").mockResolvedValue(["https://cloud.example"]);
     app = spyOn(registry, "getApp").mockImplementation(async (id) => ({
       id,
@@ -107,6 +110,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   });
   afterAll(async () => {
     stopApprovals?.();
+    serverCheck?.mockRestore();
     settings?.mockRestore();
     ownOrigins?.mockRestore();
     app?.mockRestore();
