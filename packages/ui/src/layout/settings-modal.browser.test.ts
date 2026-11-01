@@ -178,7 +178,8 @@ const groupedModal = () =>
   );
 
 describe("@k2b/ui SettingsModal category labels", () => {
-  for (const [name, viewport, lines] of [
+  // The rail may wrap a label to two lines; whether it needs to depends on the engine's font.
+  for (const [name, viewport, maxLines] of [
     ["desktop rail at 1440", { width: 1440, height: 900 }, 2],
     ["phone row", viewports.phone, 1],
   ] as const) {
@@ -198,7 +199,11 @@ describe("@k2b/ui SettingsModal category labels", () => {
             overflowsBlock: element.scrollHeight > element.clientHeight,
             lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)),
           }));
-        expect(label).toEqual({ overflowsInline: false, overflowsBlock: false, lines });
+        expect({ overflowsInline: label.overflowsInline, overflowsBlock: label.overflowsBlock }).toEqual({
+          overflowsInline: false,
+          overflowsBlock: false,
+        });
+        expect(label.lines).toBeLessThanOrEqual(maxLines);
       } finally {
         await page.close();
       }
