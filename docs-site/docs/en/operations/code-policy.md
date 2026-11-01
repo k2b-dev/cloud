@@ -67,3 +67,15 @@ A successful pause is visible through Code list/read as `state: "paused"`,
 `pauseReason`, `pauseRows` and `pausePolicyRevision`. Replacing the table with a
 looser preset does not resume Code automatically. Resume follows the current
 activation and approval checks.
+
+## Version approvals
+
+Core creates the additive version submission, decision and comparison-baseline
+tables during setup and installs the Code-version approval handler during
+service startup. Requests fail closed while that handler is unavailable.
+Deploy Core with the platform role-approval migration before submitting Code
+versions. Pending versions leave the current version running.
+
+[Code versions and approval](/en/docs/platform/code-versions) describes the
+checker manifest, hash-bound decisions, sole-admin confirmation and the
+pause/resume checks. Sending without a person remains blocked in Phase 1.

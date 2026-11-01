@@ -3,7 +3,13 @@ import { aiConversations } from "../ai/store";
 import { APP_ACTION_LIMITS, type AppActionSummary } from "../contracts/app-approval";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import type { AppDeviceActions } from "../services/app-approval";
-import { approvals, listPending, loadApprovalActionPolicies, pendingApprovalCard } from "../services/approvals";
+import {
+  ApprovalDecisionConflictError,
+  approvals,
+  listPending,
+  loadApprovalActionPolicies,
+  pendingApprovalCard,
+} from "../services/approvals";
 import { appActionOffered, appActionSummary, appActionView } from "../services/approvals/device";
 
 /** Pages of open requests one inbox poll reads at most while it skips browser-only questions. */
@@ -57,7 +63,10 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
       const record = await approvals.get(actionId, undefined, true);
       if (record?.kind === "code_version") {
         if (approved && current.truncated) return false;
-        const result = await approvals.decide(actionId, { approved }, { userId, via: "cloud_login", deviceId });
+        const result = await approvals.decide(actionId, { approved }, { userId, via: "cloud_login", deviceId }).catch((error: unknown) => {
+          if (error instanceof ApprovalDecisionConflictError) return { ok: false };
+          throw error;
+        });
         return result.ok;
       }
       const pending = await aiConversations.findPendingTurnActionByApproval({ approvalId: actionId, ownerUserId: userId });
