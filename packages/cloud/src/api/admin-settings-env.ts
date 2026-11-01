@@ -3,19 +3,40 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { getApp, listApps } from "../_internal/registry";
+import { AdminSettingsCatalogSchema } from "../contracts/admin-settings";
 import { EnvSettingStatusSchema, type EnvSettingsProcessSchema, EnvSettingsStatusSchema } from "../contracts/settings-env";
 import { type AuthContext, auth, jsonResponse, requiresAdmin, setRequestTimeout, v } from "../server";
 import { listGatewayRouteSnapshots } from "../services/gateway";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { readAdminSettingsCatalog } from "../services/settings/admin-catalog";
+import { CORE_SETTINGS } from "../services/settings/core-settings";
 import { readEnvSettingsStatus } from "../services/settings/env-status";
 import { settingsInvocationOperation } from "./settings-ops";
 
 const reply = z.object({ settings: z.array(EnvSettingStatusSchema) });
 export const adminSettingsEnvRoutes = new Hono<AuthContext>()
   .use("*", auth.requireRole("admin"))
-  .use("*", auth.requireOAuthScope("admin"))
+  .use("*", (c, next) =>
+    auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["write", "admin"]))(c, next),
+  )
+  .get("/catalog", v("query", z.object({ app: z.string().min(1).max(80).optional() })), async (c) => {
+    c.header("Cache-Control", "no-store");
+    const appId = c.req.valid("query").app;
+    if (!appId || appId === "core")
+      return c.json(AdminSettingsCatalogSchema.parse({ settings: await readAdminSettingsCatalog(Object.keys(CORE_SETTINGS)) }));
+    const app = await getApp(appId);
+    if (!app) return c.json({ message: "App is not registered" }, 404);
+    try {
+      const response = await requestSettings(app, "GET", "catalog", auth.getAuthority(c), undefined, c.req.raw.signal);
+      const body = await readBoundedJson(response, 4 * 1024 * 1024);
+      if (!response.ok || !body.ok) throw new Error("Unavailable");
+      return c.json(AdminSettingsCatalogSchema.parse(body.data));
+    } catch {
+      return c.json({ message: "Application settings unavailable" }, 502);
+    }
+  })
   .get(
     "/status",
     describeRoute({
