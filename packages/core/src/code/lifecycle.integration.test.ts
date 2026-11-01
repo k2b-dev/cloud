@@ -464,6 +464,16 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
           data: z.object({}),
           destructive: false,
           idempotency: "none",
+          policy: { silent: "shared" },
+          review: () => ({
+            ok: true as const,
+            data: {
+              locale: "en",
+              sentence: { action: "Change", running: "Changing", done: "Changed", confirm: "Change", decline: "Cancel" },
+              slots: {},
+              scope: "item:a",
+            },
+          }),
           run: () => {
             calls++;
             return { ok: false, error: { code: "FORBIDDEN", message: "Access removed", status: 403 } };
