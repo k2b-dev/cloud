@@ -1601,6 +1601,12 @@ execution with `NEEDS_APPROVAL`. A cancelled routine stops like any other
 cancelled routine step. Silent reviews need no scope in a routine.
 Legacy Actions retain their existing routine rules.
 
+Code versions require an explicit silent policy that permits routines; legacy
+`approval: "rememberable"` alone is insufficient. Their provider repeats the
+review before the Action runs and refuses per-call `ask` or failed reviews.
+Version approval never overrides `ask` or `unattended: false`. See
+[Code version mandates](/en/docs/identity/background-mandates#code-version-mandates).
+
 #### Migrate an application
 
 1. Upgrade Core and the applications that call Actions (at least Assistant and

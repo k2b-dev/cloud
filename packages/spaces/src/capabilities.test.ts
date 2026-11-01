@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { capabilityReviewRememberScope, capabilityReviewView } from "@k2b/cloud/capabilities";
 import { capabilityCallFromTool } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -43,6 +44,18 @@ import type { SpaceAssignableUser, SpaceComment, SpaceItem, SpaceItemTemplate, S
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
 
+// Exercise the same projection and remembered scope that chat uses, across both review formats.
+const chatReview = async (result: Promise<CapabilityActionReviewResult>): Promise<CapabilityActionReviewResult> => {
+  const reviewed = await result;
+  if (!reviewed.ok) return reviewed;
+  const approvalScope = capabilityReviewRememberScope(reviewed.data, "rememberable");
+  return { ok: true, data: { ...capabilityReviewView(reviewed.data, { timeZone: "UTC" }), ...(approvalScope ? { approvalScope } : {}) } };
+};
+const chatTaskCreate = (...args: Parameters<(typeof spacesCapabilities.actions)["task.create"]["review"]>) =>
+  chatReview(spacesCapabilities.actions["task.create"].review(...args));
+const chatTaskUpdate = (...args: Parameters<(typeof spacesCapabilities.actions)["task.update"]["review"]>) =>
+  chatReview(spacesCapabilities.actions["task.update"].review(...args));
+
 const userId = "11111111-1111-4111-8111-111111111111";
 const serviceAccountId = "22222222-2222-4222-8222-222222222222";
 const spaceUuid = "33333333-3333-4333-8333-333333333333";
@@ -74,7 +87,7 @@ test("task progress guards its stored note at the capability input", () => {
 
 test("declares remembered approval for bounded Space changes", () => {
   const rememberable = (Object.entries(spacesCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
-    .filter(([, action]) => action.approval === "rememberable")
+    .filter(([, action]) => action.approval === "rememberable" || (action.policy && "silent" in action.policy))
     .map(([localId]) => localId)
     .sort();
   expect(rememberable).toEqual([
@@ -1321,7 +1334,7 @@ describe("spaces capabilities", () => {
       const lookup = spyOn(spacesService.item, "listAssignableUsers").mockImplementation(async ({ ids, limit = 20 }) =>
         directory.filter((entry) => !ids || ids.includes(entry.id)).slice(0, limit),
       );
-      const result = await spacesCapabilities.actions["task.update"].review!({ itemId, assigneeIds: [serviceAccountId] }, userContext);
+      const result = await chatTaskUpdate({ itemId, assigneeIds: [serviceAccountId] }, userContext);
       expect(result).toMatchObject({
         ok: true,
         data: { details: expect.arrayContaining([{ label: "Assignees", value: "Zebra helper" }]) },
@@ -1336,7 +1349,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]);
-    const result = await spacesCapabilities.actions["task.update"].review!({ itemId, assigneeIds: [serviceAccountId] }, userContext);
+    const result = await chatTaskUpdate({ itemId, assigneeIds: [serviceAccountId] }, userContext);
     expect(result).toMatchObject({
       ok: true,
       data: { details: expect.arrayContaining([{ label: "Assignees", value: "Unavailable assignee" }]) },
@@ -1349,7 +1362,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
 
-    const result = await spacesCapabilities.actions["task.update"].review!(
+    const result = await chatTaskUpdate(
       {
         itemId,
         description: "First line\n\nSecond line",
@@ -1364,7 +1377,7 @@ describe("spaces capabilities", () => {
       data: {
         details: [
           { label: "Task", value: task.title },
-          { label: "Description", value: "First line\n\nSecond line", display: "block" },
+          { label: "Description", value: "First line\n\nSecond line" },
           { label: "Deadline", value: "2026-08-20T15:00:00.000Z", format: "date-time" },
           { label: "Estimated duration", value: "90 minutes" },
         ],
@@ -1372,7 +1385,7 @@ describe("spaces capabilities", () => {
       },
     });
 
-    const allDay = await spacesCapabilities.actions["task.update"].review!({ itemId, deadline: "2026-10-24" }, userContext);
+    const allDay = await chatTaskUpdate({ itemId, deadline: "2026-10-24" }, userContext);
     expect(allDay).toMatchObject({
       ok: true,
       data: {
@@ -1383,7 +1396,7 @@ describe("spaces capabilities", () => {
       },
     });
 
-    const german = await spacesCapabilities.actions["task.update"].review!(
+    const german = await chatTaskUpdate(
       {
         itemId,
         description: null,
@@ -1394,7 +1407,7 @@ describe("spaces capabilities", () => {
     expect(german).toMatchObject({
       ok: true,
       data: {
-        message: `Aufgabe ${task.title} aktualisieren.`,
+        message: `Aufgabe „${task.title}“ aktualisieren.`,
         details: [
           { label: "Aufgabe", value: task.title },
           { label: "Beschreibung", value: "Beschreibung entfernen" },
@@ -1404,15 +1417,78 @@ describe("spaces capabilities", () => {
     });
   });
 
+  test("task policies allow unattended shared changes and retain per-call confirmation", async () => {
+    const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
+    expect(manifest.policies?.["task.create"]).toEqual({ silent: "shared" });
+    expect(manifest.policies?.["task.update"]).toEqual({ silent: "shared" });
+    expect(manifest.actions.find((action) => action.localId === "task.create")?.approval).toBe("rememberable");
+    expect(manifest.actions.find((action) => action.localId === "task.update")?.approval).toBe("rememberable");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    for (const locale of ["en", "de-CH"]) {
+      const plain = await spacesCapabilities.actions["task.create"].review({ columnId, title: "Task {title}" }, { ...userContext, locale });
+      expect(plain).toMatchObject({ ok: true, data: { scope: `space:${spaceId}`, slots: { title: { title: "Task {title}" } } } });
+      if (plain.ok) expect(capabilityReviewRememberScope(plain.data, "rememberable")).toBe(`space:${spaceId}`);
+      for (const extra of [{ templateId }, { assigneeIds: [userId] }]) {
+        const reviewed = await spacesCapabilities.actions["task.create"].review(
+          { columnId, title: "Task", ...extra },
+          { ...userContext, locale },
+        );
+        expect(reviewed).toMatchObject({ ok: true, data: { ask: "templateId" in extra ? "app_asks" : "involves_people" } });
+        if (reviewed.ok) expect(capabilityReviewRememberScope(reviewed.data, "rememberable")).toBeUndefined();
+      }
+      const description = `First line\r\n${"a".repeat(4988)}`;
+      const long = await spacesCapabilities.actions["task.create"].review(
+        { columnId, title: "Task", description, deadline: "2026-08-20T15:00:00.000Z" },
+        { ...userContext, locale },
+      );
+      expect(long).toMatchObject({
+        ok: true,
+        data: {
+          content: { kind: "page", body: expect.stringContaining(description) },
+          consequences: [{ slots: { at: { kind: "time", start: "2026-08-20T15:00:00.000Z", format: "date-time" } } }],
+        },
+      });
+      if (long.ok) {
+        const view = capabilityReviewView(long.data, { timeZone: "Europe/Berlin" });
+        expect(JSON.stringify(view)).not.toContain("2026-08-20T15:00:00.000Z");
+        expect(view).not.toEqual(capabilityReviewView(long.data, { timeZone: "UTC" }));
+      }
+    }
+  });
+
+  test("task review accepts CRLF, family emoji, and formatting characters without hiding the full text", async () => {
+    const title = "👨‍👩‍👧 Fam\u00adily";
+    const description = "First line\r\nFamily 👨‍👩‍👧 and soft\u00adhyphen";
+    spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: title });
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.item, "get").mockResolvedValue({ ...task, title });
+    for (const reviewed of [
+      await spacesCapabilities.actions["task.create"].review({ columnId, title, description }, userContext),
+      await spacesCapabilities.actions["task.update"].review({ itemId, description }, userContext),
+    ]) {
+      expect(reviewed).toMatchObject({
+        ok: true,
+        data: { preview: { kind: "page" }, content: { body: expect.stringContaining(description) } },
+      });
+      if (reviewed.ok) {
+        expect(capabilityReviewRememberScope(reviewed.data, "rememberable")).toBe(`space:${spaceId}`);
+        expect(capabilityReviewView(reviewed.data, { timeZone: "UTC" }).details).toContainEqual(
+          expect.objectContaining({ display: "block" }),
+        );
+      }
+    }
+  });
+
   test("a new task or event can be remembered for its Space only when the card shows everything it does", async () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
-    const create = spacesCapabilities.actions["task.create"].review!;
+    const create = chatTaskCreate;
     const plain = await create({ columnId: "Col001", title: "Prepare launch", deadline: "2026-10-20T09:00:00.000Z" }, userContext);
     expect(plain).toMatchObject({
       ok: true,
       data: {
-        message: `Create task Prepare launch in ${space.name}.`,
+        message: `Create task “Prepare launch” in “${space.name}”.`,
         details: [
           { label: "Space", value: space.name },
           { label: "Title", value: "Prepare launch" },
@@ -1542,10 +1618,10 @@ describe("spaces capabilities", () => {
       await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, userContext),
       await spacesCapabilities.actions["task.blocker.add"].review!({ itemId, blockerItemId: itemId }, userContext),
       await spacesCapabilities.actions["task.blocker.remove"].review!({ itemId, blockerItemId: itemId }, userContext),
-      await spacesCapabilities.actions["task.update"].review!({ itemId, title: "Updated task" }, userContext),
+      await chatTaskUpdate({ itemId, title: "Updated task" }, userContext),
       await spacesCapabilities.actions["task.set-completed"].review!({ itemId, completed: true }, userContext),
       await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Ready." }, userContext),
-      await spacesCapabilities.actions["task.create"].review!({ columnId: "Col001", title: "New task" }, userContext),
+      await chatTaskCreate({ columnId: "Col001", title: "New task" }, userContext),
       await spacesCapabilities.actions["task.claim"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
       await spacesCapabilities.actions["task.release"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
       await spacesCapabilities.actions["task.progress"].review!(
@@ -1613,8 +1689,9 @@ describe("spaces capabilities", () => {
     );
 
     expect(results).toHaveLength(
-      (Object.values(spacesCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
-        .length,
+      (Object.values(spacesCapabilities.actions) as CapabilityActionDefinition[]).filter(
+        (action) => action.approval === "rememberable" || (action.policy && "silent" in action.policy),
+      ).length,
     );
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
@@ -2856,7 +2933,7 @@ test("task run and review reject an item outside the declared Space despite writ
     ok: false,
     error: { code: "NOT_FOUND" },
   });
-  expect(await spacesCapabilities.actions["task.update"].review!(input, userContext)).toMatchObject({
+  expect(await chatTaskUpdate(input, userContext)).toMatchObject({
     ok: false,
     error: { code: "NOT_FOUND" },
   });
