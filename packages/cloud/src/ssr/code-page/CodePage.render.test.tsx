@@ -194,7 +194,7 @@ describe("Code page states", () => {
   });
 
   test("the Edit with panel buttons show the panel's icon, never a spark", () => {
-    for (const state of ["overview", "none", "removed"] as const) {
+    for (const state of ["overview", "empty", "removed"] as const) {
       const page = html(state);
       expect(page).toContain("ti ti-moustache");
       expect(page).not.toContain("ti-sparkles");
