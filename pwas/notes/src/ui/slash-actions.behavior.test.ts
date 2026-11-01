@@ -80,6 +80,41 @@ describe("Notes slash menu names", () => {
     expect(complete("en", typed)?.[0]).toBe(english);
   });
 
+  test.each([
+    [
+      "Bild oder PDF",
+      ["upload", "file", "datei", "hochladen", "pdf", "image", "photo", "picture", "img", "pic", "attach", "attachment", "media"],
+    ],
+    ["Überschrift 1", ["h1", "heading1", "title"]],
+    ["Überschrift 2", ["h2", "heading2", "subtitle"]],
+    ["Überschrift 3", ["h3", "heading3"]],
+    ["Zitat", ["quote", "blockquote", "citation"]],
+    ["Trennlinie", ["divider", "hr", "separator", "rule"]],
+    ["Aufzählung", ["list", "bullet", "ul", "unordered"]],
+    ["Nummerierte Liste", ["numbered", "ol", "ordered", "enumerate"]],
+    ["Checkliste", ["todo", "checkbox", "task", "tasks"]],
+    [
+      "Codeblock",
+      ["code", "codeblock", "pre", "snippet", "js", "javascript", "node", "py", "python", "sql", "json", "bash", "sh", "shell"],
+    ],
+    ["Tabelle", ["table", "tabelle"]],
+    ["Link", ["link", "url", "href", "hyperlink"]],
+    ["Tag", ["tag", "tags", "label", "category", "hashtag"]],
+    ["Hinweis", ["callout", "notice", "box"]],
+    ["Info", ["info", "tip", "hint"]],
+    ["Erfolg", ["success", "ok", "done"]],
+    ["Warnung", ["warning", "warn", "caution", "alert"]],
+    ["Gefahr", ["danger", "error", "critical", "fail"]],
+  ] as const)("%s answers to its names from Notebooks", (label, names) => {
+    for (const name of names) expect(complete("de", `/${name}`)?.[0]).toBe(label);
+  });
+
+  test("no name leads to two blocks, and what Notes cannot show has none", () => {
+    const names = actions("de").flatMap((action) => [action.name, ...(action.aliases ?? [])]);
+    expect(new Set(names).size).toBe(names.length);
+    for (const missing of ["map", "karte", "mermaid", "math", "h4", "uuid"]) expect(names).not.toContain(missing);
+  });
+
   test("a label in the note's language matches while typing", () => {
     expect(complete("de", "/nummer")?.[0]).toBe("Nummerierte Liste");
     expect(complete("en", "/number")?.[0]).toBe("Numbered list");

@@ -24,7 +24,8 @@ const callout = (type: string) => `:::${type}\n\n:::\n`;
 /**
  * Every block the Notes presentation renders, text first, then lists, then blocks and media. Formulas in fences and
  * Mermaid stay out: Notes loads neither renderer, so they would show as raw code. Actions stay off inside a table
- * cell, where a block would split the row. Names are what a person types; both languages match.
+ * cell, where a block would split the row. Names are what a person types; both languages match, and so do the Notebooks
+ * names of every block Notes has, so habits from Cloud keep working.
  */
 export const noteSlashActions = (options: {
   t: ReturnType<typeof messages.resolve>["t"];
@@ -39,20 +40,27 @@ export const noteSlashActions = (options: {
     {
       ...md.heading2,
       name: "ueberschrift",
-      aliases: ["h2", "heading", "heading2", "überschrift", "ueberschrift2"],
+      aliases: ["h2", "heading", "heading2", "subtitle", "überschrift", "ueberschrift2"],
       label: t.slashHeading2,
     },
     { ...md.heading3, name: "h3", aliases: ["heading3", "ueberschrift3", "überschrift3"], label: t.slashHeading3 },
-    { ...md.quote, name: "quote", aliases: ["zitat", "blockquote"], label: t.slashQuote },
-    { ...md.link, name: "link", aliases: ["url", "verknuepfung", "verknüpfung"], label: t.fmtLink, inline: true },
-    { ...tag, name: "tag", aliases: ["schlagwort", "hashtag"], label: t.fmtTag, description: t.slashTagHint, inline: true },
+    { ...md.quote, name: "quote", aliases: ["zitat", "blockquote", "citation"], label: t.slashQuote },
+    { ...md.link, name: "link", aliases: ["url", "href", "hyperlink", "verknuepfung", "verknüpfung"], label: t.fmtLink, inline: true },
+    {
+      ...tag,
+      name: "tag",
+      aliases: ["schlagwort", "hashtag", "tags", "label", "category"],
+      label: t.fmtTag,
+      description: t.slashTagHint,
+      inline: true,
+    },
 
-    { ...md.bulletList, name: "list", aliases: ["bullet", "ul", "liste", "aufzaehlung", "aufzählung"], label: t.slashBullet },
-    { ...md.numberedList, name: "numbered", aliases: ["ol", "ordered", "nummeriert", "nummern"], label: t.slashNumbered },
+    { ...md.bulletList, name: "list", aliases: ["bullet", "ul", "unordered", "liste", "aufzaehlung", "aufzählung"], label: t.slashBullet },
+    { ...md.numberedList, name: "numbered", aliases: ["ol", "ordered", "enumerate", "nummeriert", "nummern"], label: t.slashNumbered },
     {
       id: "checklist",
       name: "checkliste",
-      aliases: ["checklist", "todo", "task", "aufgabe"],
+      aliases: ["checklist", "todo", "checkbox", "task", "tasks", "aufgabe"],
       icon: "ti-list-check",
       label: t.fmtTask,
       run: (view) => insertBlock(view, "- [ ] ", 6, false),
@@ -62,7 +70,7 @@ export const noteSlashActions = (options: {
     {
       id: "note",
       name: "hinweis",
-      aliases: ["note", "callout"],
+      aliases: ["note", "callout", "notice", "box"],
       icon: "ti-chevron-right",
       label: t.slashNote,
       description: t.slashNoteHint,
@@ -71,7 +79,7 @@ export const noteSlashActions = (options: {
     {
       id: "info",
       name: "info",
-      aliases: ["tipp", "tip"],
+      aliases: ["tipp", "tip", "hint"],
       icon: "ti-info-circle",
       label: t.slashInfo,
       run: (view) => insertBlock(view, callout("info"), 8),
@@ -79,7 +87,7 @@ export const noteSlashActions = (options: {
     {
       id: "success",
       name: "success",
-      aliases: ["erfolg", "ok"],
+      aliases: ["erfolg", "ok", "done"],
       icon: "ti-check",
       label: t.slashSuccess,
       run: (view) => insertBlock(view, callout("success"), 11),
@@ -87,7 +95,7 @@ export const noteSlashActions = (options: {
     {
       id: "warning",
       name: "warning",
-      aliases: ["warnung", "warn"],
+      aliases: ["warnung", "warn", "caution", "alert"],
       icon: "ti-alert-circle",
       label: t.slashWarning,
       run: (view) => insertBlock(view, callout("warning"), 11),
@@ -95,16 +103,21 @@ export const noteSlashActions = (options: {
     {
       id: "danger",
       name: "danger",
-      aliases: ["gefahr", "error"],
+      aliases: ["gefahr", "error", "critical", "fail"],
       icon: "ti-alert-hexagon",
       label: t.slashDanger,
       run: (view) => insertBlock(view, callout("danger"), 10),
     },
-    { ...md.codeBlock, name: "code", aliases: ["codeblock", "pre", "snippet"], label: t.slashCode },
+    {
+      ...md.codeBlock,
+      name: "code",
+      aliases: ["codeblock", "pre", "snippet", "js", "javascript", "node", "py", "python", "sql", "json", "bash", "sh", "shell"],
+      label: t.slashCode,
+    },
     {
       id: "divider",
       name: "divider",
-      aliases: ["hr", "trennlinie", "linie", "separator"],
+      aliases: ["hr", "trennlinie", "linie", "separator", "rule"],
       icon: "ti-minus",
       label: t.slashDivider,
       run: (view) => insertBlock(view, "---\n", 4),
@@ -113,7 +126,22 @@ export const noteSlashActions = (options: {
     {
       id: "image",
       name: "bild",
-      aliases: ["image", "img", "pdf", "foto", "photo"],
+      aliases: [
+        "image",
+        "img",
+        "pdf",
+        "foto",
+        "photo",
+        "picture",
+        "pic",
+        "file",
+        "datei",
+        "upload",
+        "hochladen",
+        "attach",
+        "attachment",
+        "media",
+      ],
       icon: "ti-photo",
       label: t.fmtImage,
       description: t.slashImageHint,
