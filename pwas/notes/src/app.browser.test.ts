@@ -161,6 +161,8 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
     expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
+    // The sum row is computed and stays out of the chart built from the same table.
+    await page.locator(".md-formula-ok", { hasText: "183" }).waitFor();
     // The table's `@kaffee` anchor shows as a quiet label, not as raw Markdown.
     await page.locator(".cm-named-block-handle", { hasText: /^kaffee$/ }).waitFor();
     expect(await editor().innerText()).not.toContain("@kaffee");

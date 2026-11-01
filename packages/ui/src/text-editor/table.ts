@@ -205,7 +205,7 @@ const resync = (view: EditorView, el: HTMLElement, cell: T.Cell) => {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (ch) => `&${{ "&": "amp", "<": "lt", ">": "gt", '"': "quot" }[ch]};`);
 /** Render the same Markdown tokens as prose, keeping code and escaped markers literal. */
-const renderInline = (raw: string) => {
+export const renderInline = (raw: string) => {
   const text = raw;
   const tree = markdownLanguage.parser.parse(text);
   const render = (node: typeof tree.topNode): string => {

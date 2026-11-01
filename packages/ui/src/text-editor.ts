@@ -11,6 +11,7 @@ export {
 export {
   editTableSource,
   type MenuAction,
+  renderInline,
   runMenuAction,
   runTableAction,
   type TableFocusTarget,

@@ -15,3 +15,4 @@ export {
   type ToolbarMenu,
   type ToolbarProps,
 } from "./Toolbar";
+export { caretIntoTableCell, cellAt, gridCell, tableAround, tableCellCompletions, tablesOf } from "./table-cells";

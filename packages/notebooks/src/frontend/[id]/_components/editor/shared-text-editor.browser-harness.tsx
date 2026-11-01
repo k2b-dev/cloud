@@ -1,4 +1,4 @@
-import { createEditor } from "@k2b/editor";
+import { caretIntoTableCell, createEditor, tableCellCompletions } from "@k2b/editor";
 /**
  * The Notebook editor composition from NoteEditor.client.tsx around the shared
  * @k2b/ui TextEditor, with an in-page server and a second person instead of
@@ -29,14 +29,7 @@ import { notebookTableOptions } from "../../../../lib/table-options";
 import { editor } from "../../../lib/editor";
 import { notebookListOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
-import {
-  caretIntoTableCell,
-  cellFormattingKeys,
-  outsideTable,
-  tableCellCompletions,
-  tableCellPresence,
-  tableCellSearch,
-} from "../../../lib/editor/shared-editor";
+import { cellFormattingKeys, outsideTable, tableCellPresence, tableCellSearch } from "../../../lib/editor/shared-editor";
 import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, insertTable, sameCaretFormat } from "./editor-actions";

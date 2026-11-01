@@ -6,7 +6,7 @@ import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { listSharedTextOfflineGenerations } from "@k2b/cloud/browser/shared-text";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { createEditor } from "@k2b/editor";
+import { caretIntoTableCell, createEditor, tableCellCompletions } from "@k2b/editor";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
 import {
   createNotebookTablePresentation,
@@ -39,13 +39,7 @@ import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
-import {
-  caretIntoTableCell,
-  cellFormattingKeys,
-  tableCellCompletions,
-  tableCellPresence,
-  tableCellSearch,
-} from "../../../lib/editor/shared-editor";
+import { cellFormattingKeys, tableCellPresence, tableCellSearch } from "../../../lib/editor/shared-editor";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import type { YjsProviderOptions } from "../../../lib/yjs";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
