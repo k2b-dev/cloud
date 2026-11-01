@@ -742,20 +742,9 @@ body.k2b-ui {
   margin-right: auto;
 }
 .n-check {
-  display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
   margin-top: 0.9rem;
   font-size: 0.9375rem;
   line-height: 1.45;
-  cursor: pointer;
-}
-.n-check input {
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
-  accent-color: var(--k2b-action-solid);
-  flex: none;
 }
 .n-check a,
 .n-lead a,
@@ -1548,7 +1537,10 @@ body.k2b-ui {
   cursor: pointer;
 }
 
-/* Checklist boxes take the site ink, as in mockup v4. */
+/* Checklist boxes take the site ink, as in mockup v4; the dark shade keeps the white check readable. */
 .n-editor .custom-list-task-marker {
-  accent-color: var(--ink);
+  --k2b-action-solid: #6d28d9;
+}
+[data-theme="dark"] .n-editor .custom-list-task-marker {
+  --k2b-action-solid: #7c3aed;
 }
