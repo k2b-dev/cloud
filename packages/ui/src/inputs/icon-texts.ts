@@ -1,14 +1,16 @@
-import { i18n } from "@k2b/stdlib";
 import { DEFAULT_ICON_OPTIONS } from "./icon-options";
+import type { IconOption } from "./SpecialInputs";
 
 type IconText = readonly [label: string, description: string, keywords: string];
 
 /**
  * German names for the default catalogue, keyed by the Tabler glyph name.
  * Keywords are extra German search words; the English label and keywords stay
- * searchable in every locale.
+ * searchable in every locale. This is catalogue data, not UI messages: the
+ * locale itself resolves through the icon message catalog, and
+ * `icon-options.test.ts` keeps the table complete.
  */
-const de: Record<string, IconText> = {
+export const GERMAN_ICON_TEXTS: Readonly<Record<string, IconText>> = {
   activity: ["Aktivität", "Live-Aktivität oder Zustandssignale", "puls überwachung"],
   adjustments: ["Regler", "Einstellungen oder Steuerung anpassen", "einstellungen steuerung"],
   "alert-circle": ["Warnung", "Wichtiger Hinweis oder ein Problem", "fehler achtung"],
@@ -169,26 +171,13 @@ const de: Record<string, IconText> = {
   plug: ["Stecker", "Strom oder eine Systemverbindung", "strom verbinden"],
 };
 
-const glyphName = (value: string) => value.replace("ti ti-", "");
-
-const flatten = (texts: Record<string, IconText>): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(texts).flatMap(([name, [label, description, keywords]]) => [
-      [`${name}.label`, label],
-      [`${name}.description`, description],
-      [`${name}.keywords`, keywords],
-    ]),
-  );
-
-// English is the catalogue itself; its texts stay the base locale.
-const en = flatten(
-  Object.fromEntries(
-    DEFAULT_ICON_OPTIONS.map((option) => [glyphName(option.value), [String(option.label), String(option.description ?? ""), ""] as const]),
-  ),
-);
-
-const iconTexts = i18n.define({ baseLocale: "en", messages: { en, de: flatten(de) } });
-
-export const resolveIconTexts = (locale: string) => iconTexts.resolve([locale]);
-
-export const checkIconTexts = () => iconTexts.check();
+/** The default catalogue in a resolved locale; English is the catalogue itself. */
+export const localizedIconOptions = (locale: string): readonly IconOption[] =>
+  locale !== "de"
+    ? DEFAULT_ICON_OPTIONS
+    : DEFAULT_ICON_OPTIONS.map((option) => {
+        const text = GERMAN_ICON_TEXTS[option.value.replace("ti ti-", "")];
+        if (!text) return option;
+        const [label, description, keywords] = text;
+        return { ...option, label, description, keywords: [...(option.keywords ?? []), String(option.label), ...keywords.split(" ")] };
+      });

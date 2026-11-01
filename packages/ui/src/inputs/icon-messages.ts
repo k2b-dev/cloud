@@ -42,6 +42,12 @@ export type IconMessages = ReturnType<(typeof iconMessages)["resolve"]>["t"];
 export type IconGroupMessage = keyof Omit<IconMessages, "filterIcons" | "pickIcon">;
 
 /** Resolved from the inherited render locale. */
+/** The catalog locale the render locale resolves to, such as "de" for "de-AT". */
+export const useIconLocale = (): (() => string) => {
+  const locale = useLocale();
+  return () => iconMessages.resolve([locale()]).locale;
+};
+
 export const useIconMessages = (): (() => IconMessages) => {
   const locale = useLocale();
   return () => iconMessages.resolve([locale()]).t;

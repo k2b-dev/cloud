@@ -46,7 +46,6 @@ const catalogs = {
   Tag: (await import("../inputs/tag-messages")).checkTagMessages,
   Input: (await import("../inputs/input-messages")).checkInputMessages,
   Icon: (await import("../inputs/icon-messages")).checkIconMessages,
-  IconTexts: (await import("../inputs/icon-texts")).checkIconTexts,
   Template: (await import("../inputs/template-messages")).checkTemplateMessages,
   Avatar: (await import("../surfaces/avatar-messages")).checkAvatarMessages,
   DetailPanel: (await import("../layout/detail-panel-messages")).checkDetailPanelMessages,

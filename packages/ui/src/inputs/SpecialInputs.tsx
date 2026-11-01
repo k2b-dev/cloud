@@ -3,9 +3,9 @@ import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
-import { type IconGroupMessage, useIconMessages } from "./icon-messages";
-import { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
-import { resolveIconTexts } from "./icon-texts";
+import { type IconGroupMessage, useIconLocale, useIconMessages } from "./icon-messages";
+import { DEFAULT_ICON_GROUPS } from "./icon-options";
+import { localizedIconOptions } from "./icon-texts";
 import { Select, type SelectGridSize, type SelectGroup, type SelectOption, type SelectView } from "./Select";
 
 export type IconOption = SelectOption & { keywords?: readonly string[] };
@@ -82,20 +82,8 @@ export function IconInput(props: IconInputProps): JSX.Element {
   const locale = useLocale();
   // The bundled catalogue speaks the render locale and stays searchable by
   // its English names, so a mixed team finds the same icon either way.
-  const defaultOptions = createMemo((): readonly IconOption[] => {
-    const { locale: resolved, t } = resolveIconTexts(locale());
-    if (resolved === "en") return DEFAULT_ICON_OPTIONS;
-    const texts = t as Record<string, string>;
-    return DEFAULT_ICON_OPTIONS.map((option) => {
-      const name = option.value.replace("ti ti-", "");
-      return {
-        ...option,
-        label: texts[`${name}.label`] ?? option.label,
-        description: texts[`${name}.description`] ?? option.description,
-        keywords: [...(option.keywords ?? []), String(option.label), ...(texts[`${name}.keywords`] ?? "").split(" ").filter(Boolean)],
-      };
-    });
-  });
+  const iconLocale = useIconLocale();
+  const defaultOptions = createMemo(() => localizedIconOptions(iconLocale()));
   const options = () => props.options ?? defaultOptions();
   const groups = () =>
     props.groups ??
