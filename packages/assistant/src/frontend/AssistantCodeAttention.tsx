@@ -61,7 +61,12 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
     if (props.initial === undefined) void load();
   });
   const reasonText = (reason: CodeAttentionReason) =>
-    ({ run_failed: t().codeAttentionRunFailed, access_missing: t().codeAttentionAccessMissing, approval_pending: t().codeAttentionApproval, paused: t().codeAttentionPaused })[reason];
+    ({
+      run_failed: t().codeAttentionRunFailed,
+      access_missing: t().codeAttentionAccessMissing,
+      approval_pending: t().codeAttentionApproval,
+      paused: t().codeAttentionPaused,
+    })[reason];
   const placeName = (item: CodeView) => item.place.name ?? item.place.type ?? item.title;
   type CodeView = CodeAttentionView["items"][number];
 

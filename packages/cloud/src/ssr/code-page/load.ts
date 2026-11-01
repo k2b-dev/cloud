@@ -281,6 +281,8 @@ const loadReady = async (
   tab: CodePageTab,
   url: URL,
   viewer: Viewer,
+  /** The Code's owner in Core's terms, for the attention query. */
+  codeOwner: { kind: "resource"; ref: CloudResourceRef } | { kind: "person"; userId: string },
 ): Promise<CodePageReady> => {
   const catalog = catalogCache(getLocale(c));
   const code = listed;
@@ -289,9 +291,7 @@ const loadReady = async (
     invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), wrapped(RunListSchema)),
     coreRoute(caller, "/api/code/access", { codeId: code.id }, TargetAccessSchema).catch(() => null),
     // The same answer the owner's navigation gets, so its dot and this page agree.
-    invoke(coreQuery("code.attention", { owner: { kind: "resource", ref: options.owner.ref } }), wrapped(AttentionSchema)).catch(
-      () => null,
-    ),
+    invoke(coreQuery("code.attention", { owner: codeOwner }), wrapped(AttentionSchema)).catch(() => null),
   ]);
   const receipts = versionsResult.ok ? versionsResult.data.data.data.items : [];
   const latest = receipts[0];
@@ -588,7 +588,9 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     activatedNotice: /^\d{1,6}$/.test(url.searchParams.get("activated") ?? "") ? Number(url.searchParams.get("activated")) : null,
   } satisfies Omit<CodePageData, "state">;
   let code: z.infer<typeof CodeListSchema>["items"][number] | undefined;
+  let attentionOwner: Parameters<typeof loadReady>[8];
   if ("ref" in options.owner) {
+    attentionOwner = { kind: "resource", ref: options.owner.ref };
     const ownerRefForList = options.owner.ref;
     const listed = await invoke(
       coreQuery("code.list", { owner: { kind: "resource", ref: ownerRefForList }, limit: 1 }),
@@ -604,6 +606,7 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     const codeOwner = read.data.data.data.code.owner;
     // Only personal Code belongs here; Code of a place is shown at that place.
     if (codeOwner.kind !== "person") return { ...base, state: { kind: "no-access" } };
+    attentionOwner = { kind: "person", userId: codeOwner.userId };
     code = { ...read.data.data.data.code, permission: read.data.data.data.permission };
     base.owner.title = code.title;
     if (codeOwner.userId !== user?.id) {
@@ -615,7 +618,7 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
   try {
     // Like directory search: members see other people's names, guests only their own.
     const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
-    return { ...base, state: await loadReady(c, options, invoke, caller, code, tab, url, viewer) };
+    return { ...base, state: await loadReady(c, options, invoke, caller, code, tab, url, viewer, attentionOwner) };
   } catch {
     return { ...base, state: { kind: "error" } };
   }

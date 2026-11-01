@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
-import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
+import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
@@ -129,8 +129,8 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await sql`INSERT INTO code.activations(id,code_id,version_id,locale,cloud_admin,state)
       VALUES(${activationId}::uuid,${removed.code.id},${removed.versionId}::uuid,'en',false,'active')`;
     await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-      VALUES(${removedGrant}::uuid,${removed.code.id},${activationId}::uuid,${{ type: "spaces.space", id: "sp_2lg8" }}::jsonb,
-        ${["spaces.task.create"]},'granted')`;
+      VALUES(${removedGrant}::uuid,${removed.code.id},${activationId}::uuid,${JSON.stringify({ type: "spaces.space", id: "sp_2lg8" })}::text::jsonb,
+        ${sql.array(["spaces.task.create"], "text")},'granted')`;
     await sql`INSERT INTO code.version_grants(version_id,grant_id) VALUES(${removed.versionId}::uuid,${removedGrant}::uuid)`;
     await sql`UPDATE code.codes SET state='active',active_version_id=${removed.versionId}::uuid WHERE id=${removed.code.id}`;
     await finishedRun(removed.code.id, removed.versionId, "failed", new Date("2026-10-31T09:50:00.000Z"));
