@@ -540,8 +540,6 @@ export const listUsersWithAccess = async (params: {
   userIds?: string[];
   excludeUserIds?: string[];
   minimumPermission?: Exclude<PermissionLevel, "none">;
-  /** Pass null for the first UUID-ordered page, then its last ID. Omit to retain relevance/name ordering. */
-  afterId?: string | null;
   limit?: number;
   db?: AccessDb;
 }): Promise<AccessUser[]> => {
@@ -670,8 +668,7 @@ export const listUsersWithAccess = async (params: {
       )
     SELECT id, uid, display_name, avatar_hash, permission, direct, source_group_id, source_group_name
     FROM access_users
-    WHERE (${params.afterId ?? null}::uuid IS NULL OR id > ${params.afterId ?? null}::uuid)
-      AND id <> ALL(${toPgUuidArray(excludeUserIds)}::uuid[])
+    WHERE id <> ALL(${toPgUuidArray(excludeUserIds)}::uuid[])
       AND (direct OR (source_group_id IS NOT NULL AND source_group_name IS NOT NULL))
       ${userFilter}
       AND (
@@ -680,9 +677,8 @@ export const listUsersWithAccess = async (params: {
         OR LOWER(uid) LIKE ${pattern} ESCAPE '\\'
         OR LOWER(group_names) LIKE ${pattern} ESCAPE '\\'
       )
-    -- Explicit cursor pages sort by UUID; ordinary searches still prioritize exact matches.
+    -- A limit must never hide an exact login-name match.
     ORDER BY
-      CASE WHEN ${params.afterId !== undefined} THEN id END,
       CASE WHEN LOWER(uid) = ${query || null}::text THEN 0 ELSE 1 END,
       CASE WHEN LOWER(display_name) = ${query || null}::text THEN 0 ELSE 1 END,
       LOWER(display_name), id

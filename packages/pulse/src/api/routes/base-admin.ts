@@ -68,8 +68,10 @@ const routes = new Hono<AuthContext>()
     setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
     if (c.res.status === 403) c.res = c.json({ code: "ACCESS_DENIED" }, 403);
   })
-  .use("*", auth.requireOAuthScope("admin"))
   .use("*", auth.requireRole("admin"))
+  .use("*", (c, next) =>
+    auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["write", "admin"]))(c, next),
+  )
   .onError((error, c) => {
     if (error instanceof BaseAdminError || error instanceof StoreAdminError) return c.json({ code: error.code }, error.status);
     if (error instanceof BaseStoreError || error instanceof StoreQueryError)
@@ -107,14 +109,22 @@ const routes = new Hono<AuthContext>()
       await updateBaseLimits({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("baseId"), await c.req.json()),
     ),
   )
-  .post("/bases/:baseId/retry", metadata("Retry Pulse base operation", AdminBaseRowSchema), async (c) =>
+  .post("/bases/:baseId/retry", auth.requireOAuthScope("admin"), metadata("Retry Pulse base operation", AdminBaseRowSchema), async (c) =>
     c.json(await adminBaseAction({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("baseId"), "retry")),
   )
-  .post("/bases/:baseId/recheck", metadata("Recheck Pulse base after restore", AdminBaseRowSchema), async (c) =>
-    c.json(await adminBaseAction({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("baseId"), "recheck")),
+  .post(
+    "/bases/:baseId/recheck",
+    auth.requireOAuthScope("admin"),
+    metadata("Recheck Pulse base after restore", AdminBaseRowSchema),
+    async (c) =>
+      c.json(await adminBaseAction({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("baseId"), "recheck")),
   )
-  .post("/bases/:baseId/recreate", metadata("Recreate an empty Pulse base store", AdminBaseRowSchema), async (c) =>
-    c.json(await adminBaseAction({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("baseId"), "recreate")),
+  .post(
+    "/bases/:baseId/recreate",
+    auth.requireOAuthScope("admin"),
+    metadata("Recreate an empty Pulse base store", AdminBaseRowSchema),
+    async (c) =>
+      c.json(await adminBaseAction({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("baseId"), "recreate")),
   )
   .get(
     "/orphans",
@@ -131,8 +141,11 @@ const routes = new Hono<AuthContext>()
     async (c) =>
       c.json(await listOrphans({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, orphanPage.parse(c.req.query()))),
   )
-  .delete("/orphans/:database", metadata("Delete an orphan Pulse database", z.object({ ok: z.literal(true) })), async (c) =>
-    c.json(await deleteOrphan({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("database"))),
+  .delete(
+    "/orphans/:database",
+    auth.requireOAuthScope("admin"),
+    metadata("Delete an orphan Pulse database", z.object({ ok: z.literal(true) })),
+    async (c) => c.json(await deleteOrphan({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("database"))),
   )
   .get(
     "/targets",

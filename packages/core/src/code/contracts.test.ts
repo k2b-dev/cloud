@@ -76,13 +76,13 @@ describe("Core Code data contracts", () => {
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
+        "code.pause",
+        "code.policy.update",
+        "code.resume",
         "code.run",
-        "code.version.submit",
         "code.version.approve",
         "code.version.reject",
-        "code.pause",
-        "code.resume",
-        "code.policy.update",
+        "code.version.submit",
       ].map((id) => ({ id, code: false })),
     );
   });

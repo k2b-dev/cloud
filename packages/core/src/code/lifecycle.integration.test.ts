@@ -4,12 +4,17 @@ import { codeOwnerDeleted, sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { accounts } from "@k2b/cloud/services";
 import { z } from "zod";
+import type { CodeAccessProofClaims } from "../../../../scripts/fixtures/code-platform";
+import {
+  codeAccessBindings,
+  compileCapabilities,
+  createCodeAccessAuthorityRoutes,
+  invokeCompiledCapability,
+  codeAccessProofs as proofs,
+  removeCodeAccess,
+  setCodeAccess,
+} from "../../../../scripts/fixtures/code-platform";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { compileCapabilities, invokeCompiledCapability } from "../../../cloud/src/_internal/capabilities";
-import { createCodeAccessAuthorityRoutes } from "../../../cloud/src/_internal/code-access-authority";
-import { codeAccessBindings, removeCodeAccess, setCodeAccess } from "../../../cloud/src/code/access";
-import type { CodeAccessProofClaims } from "../../../cloud/src/code/access-proof";
-import * as proofs from "../../../cloud/src/code/access-proof";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
 import { spaceCodeAccess } from "../../../spaces/src/service/code-access";
 import { migrate as migrateLifecycle } from "../migrate/core/code-lifecycle";
@@ -126,7 +131,7 @@ async function grant(f: Fixture, user: User, planned = false) {
   const target = { type: "spaces.space", id: shortId },
     operations = ["spaces.task.create"];
   await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::text::jsonb,${operations},${planned ? "planned" : "granted"})`;
+    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::text::jsonb,${sql.array(operations, "text")},${planned ? "planned" : "granted"})`;
   const claims: CodeAccessProofClaims = {
     ver: 1,
     iss: "https://cloud.example",
@@ -150,7 +155,7 @@ async function grant(f: Fixture, user: User, planned = false) {
       verifyProof: async () => claims,
     });
   if (!planned) expect(await set()).toMatchObject({ granted: true, grantId });
-  return { grantId, spaceId: space!.id, set };
+  return { grantId, spaceId: space!.id, target, set };
 }
 async function deliver() {
   const rows = await codeOwnerDeletedOutbox.claim();
@@ -213,6 +218,27 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     expect(await findCode(f.id)).toBeNull();
   });
 
+  test("owner-deletion cleanup reads persisted target objects and removes their explicit grants before deleting Code", async () => {
+    const user = await person(),
+      f = await fixture(user),
+      g = await grant(f, user);
+    const [saved] = await sql<
+      { target: unknown; kind: string }[]
+    >`SELECT target,jsonb_typeof(target) AS kind FROM code.target_grants WHERE grant_id=${g.grantId}::uuid`;
+    expect(saved).toEqual({ target: g.target, kind: "object" });
+    await sql.begin((tx) => codeOwnerDeleted(tx, f.ref));
+    await deliver();
+    const [job] = await sql<{ target: unknown }[]>`SELECT target FROM code.cleanup_jobs WHERE grant_id=${g.grantId}::uuid`;
+    expect(job!.target).toEqual(saved!.target);
+    expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(1);
+    await drainGrants();
+    expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE grant_id=${g.grantId}::uuid AND state='released'`).toHaveLength(1);
+    expect(await sql`SELECT grant_id FROM capabilities.code_access_grants WHERE grant_id=${g.grantId}::uuid AND revoked`).toHaveLength(1);
+    expect(await findCode(f.id)).toMatchObject({ state: "deleting" });
+    await drainDeletion();
+    expect(await findCode(f.id)).toBeNull();
+  });
   test("unreachable targets wait visibly, preserve cleanup authority and recover after an ambiguous reply", async () => {
     const user = await person(),
       f = await fixture(user);
@@ -366,8 +392,10 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     expect(await findCode(personal.id)).toBeNull();
     expect(await findCode(resource.id)).toMatchObject({ state: "active", createdBy: null });
     expect(await sql`SELECT id FROM auth.mandates WHERE id=${resource.mandateId}::uuid AND state='active'`).toHaveLength(1);
-    await expect(sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title)
-      VALUES('c_orphan','person',${user.id}::uuid,'Orphan')`).rejects.toThrow("owner not found");
+    await expect(
+      sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title)
+      VALUES('c_orphan','person',${user.id}::uuid,'Orphan')`.execute(),
+    ).rejects.toMatchObject({ errno: "23503" });
   });
 
   test("owner title projection is account-bound, read-only and contains no reader contents", async () => {

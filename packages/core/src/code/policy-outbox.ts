@@ -23,7 +23,7 @@ export async function processCodePolicyPauseBatch(row: PauseRow): Promise<void> 
       const impact = await codePolicyImpact(candidate, before, current.definition, tx);
       if (!impact) continue;
       pausedCount++;
-      await tx`UPDATE code.codes SET state='paused',pause_reason=${impact.reason},pause_rows=${impact.rows}::text[],
+      await tx`UPDATE code.codes SET state='paused',pause_reason=${impact.reason},pause_rows=${tx.array(impact.rows, "text")},
         pause_policy_revision=${current.revision} WHERE id=${candidate.id} AND state='active' AND active_version_id IS NOT DISTINCT FROM ${candidate.active_version_id}::uuid`;
     }
     if (pausedCount)

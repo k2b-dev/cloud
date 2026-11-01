@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { SQL } from "bun";
+import { z } from "zod";
+import { generatedCodeAccess } from "../_internal/code-access";
 import { createCodeAccessAuthorityRoutes } from "../_internal/code-access-authority";
-import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "../contracts/capabilities";
+import * as resourcePrincipals from "../_internal/resource-principals";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import { CODE_ACCESS_MAX_MANAGER_USER_IDS, type CodeAccessAdapter, CodeAccessDecisionSchema } from "../contracts/code-access";
 import type { User } from "../contracts/shared";
-import * as accountUsers from "../services/accounts/users";
+import * as installationAdmin from "../services/accounts/installation-admin";
 import { audit } from "../services/audit";
 import * as accessService from "./access";
 import { type CodeAccessDependencies, codeAccessPersonAllowed, listCodeAccess, removeCodeAccess, setCodeAccess } from "./access";
@@ -85,7 +88,7 @@ let writes: number;
 let canManage: boolean;
 let activeCode: boolean;
 let auditSpy: ReturnType<typeof spyOn<typeof audit, "record">>;
-let adminSpy: ReturnType<typeof spyOn<typeof accountUsers, "hasInstallationAdminInTransaction">>;
+let adminSpy: ReturnType<typeof spyOn<typeof installationAdmin, "hasInstallationAdminInTransaction">>;
 let beforeTransaction: (() => void) | undefined;
 let adapter: CodeAccessAdapter;
 let deps: CodeAccessDependencies;
@@ -99,7 +102,7 @@ beforeEach(() => {
   activeCode = true;
   beforeTransaction = undefined;
   auditSpy = spyOn(audit, "record").mockResolvedValue(undefined);
-  adminSpy = spyOn(accountUsers, "hasInstallationAdminInTransaction").mockResolvedValue(true);
+  adminSpy = spyOn(installationAdmin, "hasInstallationAdminInTransaction").mockResolvedValue(true);
   const query = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const statement = strings.join("?");
     if (statement.includes("auth.service_accounts")) return activeCode || values[1] === false ? [{ id: principal }] : [];
@@ -502,5 +505,213 @@ test("oversized manager metadata refuses before committing writes, including the
     });
     expect(grants).toHaveLength(0);
     expect(rows).toHaveLength(0);
+  }
+});
+
+test("generated set answers disclose title and managers only to the activating target reader, including Cloud admins and refusals", async () => {
+  const set = spyOn(accessService, "setCodeAccess");
+  const proof = spyOn(accessProof, "verifyCodeAccessProof").mockResolvedValue(claims);
+  const managers = spyOn(accessService, "readCodeAccessManagers").mockResolvedValue([person.id]);
+  const active = spyOn(resourcePrincipals, "activeResourcePrincipals").mockImplementation(async (values) => values);
+  try {
+    for (const admin of [false, true])
+      for (const readable of [false, true])
+        for (const granted of [false, true]) {
+          const read = { calls: 0 };
+          const generated = generatedCodeAccess("inventory", {
+            protocolVersion: 2,
+            types: {
+              item: {
+                title: "Item",
+                description: "Item.",
+                reader: "item.read",
+                access: {
+                  ...adapter,
+                  readable: ({ id, principals }, authority) => {
+                    expect(id).toBe(target.id);
+                    expect(principals).toEqual([{ type: "user", userId: person.id }]);
+                    expect(authority.actor).toEqual({ kind: "app", appId: "core" });
+                    return readable ? principals : [];
+                  },
+                },
+              },
+            },
+            queries: {
+              "item.read": {
+                title: "Read item",
+                description: "Item.",
+                openWorld: false,
+                input: z.object({ id: z.string() }),
+                data: z.object({ view: CloudResourceReaderViewSchema }),
+                codeResourceTitle: () => "Fixture target",
+                run: () => {
+                  read.calls++;
+                  return { ok: true, data: { data: { view: { title: "Fixture target", permission: "read" } } } };
+                },
+              },
+            },
+          });
+          set.mockResolvedValue(
+            granted
+              ? { granted: true, grantId, level: "write", managerUserIds: [person.id] }
+              : { granted: false, reasonCode: "not_manager", reason: "Fixture target managers require authority" },
+          );
+          const result = await generated.actions["code.access.set"]!.run(
+            { ...input, dryRun: true },
+            {
+              ...context,
+              locale: "de",
+              actor: { ...actor, user: { ...person, roles: admin ? ["admin"] : ["user"] } },
+            },
+          );
+          expect(result.ok).toBe(true);
+          if (!result.ok) throw new Error("Expected answer");
+          const answer = result.data.data;
+          expect(answer).toMatchObject({ granted, readable });
+          if (readable) {
+            expect(answer).toMatchObject({ title: "Fixture target", managerUserIds: [person.id] });
+            expect(read.calls).toBe(1);
+          } else {
+            expect(answer).not.toHaveProperty("title");
+            expect(answer).not.toHaveProperty("managerUserIds");
+            expect(JSON.stringify(result)).not.toContain("Fixture target");
+            expect(JSON.stringify(result)).not.toContain(person.id);
+            if (!granted) expect(answer).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
+            expect(read.calls).toBe(0);
+          }
+        }
+  } finally {
+    set.mockRestore();
+    proof.mockRestore();
+    managers.mockRestore();
+    active.mockRestore();
+  }
+});
+
+test("Core notification manager lookup rolls back adapter writes and checks the bound Code account", async () => {
+  adapter.grant = async (_tx, value) => {
+    writes++;
+    expect(value).toMatchObject({ id: target.id, principal, grantId, dryRun: true });
+    return { granted: true, level: "write", managerUserIds: [person.id] };
+  };
+  expect(await accessService.readCodeAccessManagers("inventory", bindings(), claims, deps.db)).toEqual([person.id]);
+  expect(writes).toBe(0);
+  activeCode = false;
+  expect(await accessService.readCodeAccessManagers("inventory", bindings(), claims, deps.db)).toBeNull();
+  expect(writes).toBe(0);
+});
+
+test("notification audience endpoint requires its own target-bound Core authority", async () => {
+  const verify = spyOn(accessProof, "verifyCodeAccessNotifications").mockResolvedValue(null);
+  const managers = spyOn(accessService, "readCodeAccessManagers").mockResolvedValue([person.id]);
+  try {
+    const router = createCodeAccessAuthorityRoutes("inventory", {
+      protocolVersion: 2,
+      types: { item: { title: "Item", description: "Item.", access: adapter } },
+    });
+    const request = () =>
+      router.request("/queries/code.access.notifications", { method: "POST", headers: { authorization: "Bearer fixture" } });
+    expect((await request()).status).toBe(403);
+    expect(managers).not.toHaveBeenCalled();
+    verify.mockResolvedValue({ ...claims, operations: [], token_use: "code_access_notifications" });
+    const response = await request();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { managerUserIds: [person.id] } });
+    verify.mockResolvedValue({ ...claims, token_use: "code_access_notifications" });
+    expect((await request()).status).toBe(403); // Operations must exist in this application.
+    managers.mockResolvedValue(null);
+    verify.mockResolvedValue({ ...claims, operations: [], token_use: "code_access_notifications" });
+    expect((await request()).status).toBe(422);
+  } finally {
+    verify.mockRestore();
+    managers.mockRestore();
+  }
+});
+
+test("presentation failures fall back without failing grants, and actual successful sets skip presentation", async () => {
+  const set = spyOn(accessService, "setCodeAccess").mockResolvedValue({
+    granted: true,
+    grantId,
+    level: "write",
+    managerUserIds: [person.id],
+  });
+  const active = spyOn(resourcePrincipals, "activeResourcePrincipals").mockRejectedValue(new Error("Reader unavailable"));
+  try {
+    const generated = generatedCodeAccess("inventory", {
+      protocolVersion: 2,
+      types: {
+        item: {
+          title: "Item",
+          description: "Item.",
+          reader: "item.read",
+          access: {
+            ...adapter,
+            readable: () => {
+              throw new Error("Unavailable");
+            },
+          },
+        },
+      },
+    });
+    for (const dryRun of [false, true]) {
+      const result = await generated.actions["code.access.set"]!.run({ ...input, dryRun }, context);
+      expect(result).toMatchObject({ ok: true, data: { data: { granted: true, readable: false } } });
+      expect(JSON.stringify(result)).not.toContain("managerUserIds");
+    }
+    expect(active).toHaveBeenCalledTimes(1); // Actual successful set never starts a reader check.
+    active.mockImplementation(async (values) => values);
+    const result = await generated.actions["code.access.set"]!.run({ ...input, dryRun: true }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { granted: true, readable: false } } });
+  } finally {
+    set.mockRestore();
+    active.mockRestore();
+  }
+});
+test("a readable canonical reader may return the target title on its structured reference", async () => {
+  const set = spyOn(accessService, "setCodeAccess").mockResolvedValue({
+    granted: true,
+    grantId,
+    level: "write",
+    managerUserIds: [person.id],
+  });
+  const active = spyOn(resourcePrincipals, "activeResourcePrincipals").mockImplementation(async (values) => values);
+  try {
+    const generated = generatedCodeAccess("inventory", {
+      protocolVersion: 2,
+      types: {
+        item: {
+          title: "Item",
+          description: "Item.",
+          reader: "item.read",
+          access: { ...adapter, readable: ({ principals }) => principals },
+        },
+      },
+      queries: {
+        "item.read": {
+          title: "Read item",
+          description: "Item.",
+          openWorld: false,
+          input: z.object({ id: z.string() }),
+          data: z.object({ name: z.string() }),
+          codeResourceTitle: () => "Readable item",
+          run: () => ({
+            ok: true,
+            data: {
+              data: { name: "Readable item" },
+              refs: [
+                { type: "inventory.other", id: target.id, title: "Other ref" },
+                { ...target, title: "Readable item" },
+              ],
+            },
+          }),
+        },
+      },
+    });
+    const result = await generated.actions["code.access.set"]!.run({ ...input, dryRun: true }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { readable: true, title: "Readable item", managerUserIds: [person.id] } } });
+    expect(JSON.stringify(result)).not.toContain("Other ref");
+  } finally {
+    set.mockRestore();
+    active.mockRestore();
   }
 });

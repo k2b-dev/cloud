@@ -24,7 +24,8 @@ export const activationTargetSchema = z
     owner: z.boolean(),
     managerUserIds: z.array(z.uuid()).optional(),
   })
-  .strict();
+  .strict()
+  .transform(({ managerUserIds: _presentation, ...target }) => target);
 /** Persisted before issuing any proof. Reused grants are never rolled back by this process. */
 export type CodeActivationTarget = z.infer<typeof activationTargetSchema>;
 export const targetKey = (target: CodeAccessTarget): string => JSON.stringify([target.type, target.id]);

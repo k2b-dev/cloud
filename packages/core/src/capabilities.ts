@@ -71,14 +71,16 @@ import {
   diffCodeVersion,
   listCodeVersions,
   readCodeVersionDiff,
+  reviewCodeExecutionChange,
   reviewCodeVersionDecision,
+  reviewCodeVersionSubmission,
   setCodePaused,
   submitCodeVersion,
 } from "./code/versions";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
-// Shared lifecycle reviews keep the installed Core registry compilable while C8 and C13 are stacked.
+// Manual starts review the current Code and named entrypoint through the same editor permission check.
 const reviewCodeOperation = async (
   input: { codeId: string; entrypoint?: string },
   context: CapabilityExecutionContext,
@@ -1317,7 +1319,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
-      review: (input, context) => reviewCodeOperation(input, context, "submit"),
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission(input, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion(input, ctx)),
     },
     "code.version.approve": {
@@ -1359,7 +1364,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
-      review: (input, context) => reviewCodeOperation(input, context, "pause"),
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, true, ctx)),
     },
     "code.resume": {
@@ -1371,7 +1379,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { ask: "keeps_working" },
-      review: (input, context) => reviewCodeOperation(input, context, "resume"),
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, false, ctx)),
     },
     "code.policy.update": {
