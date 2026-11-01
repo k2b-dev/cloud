@@ -1,5 +1,14 @@
-import { Chat, type DictationEvent, type DictationSource, SegmentedControl } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import {
+  Chat,
+  createDictation,
+  DictationBar,
+  DictationButton,
+  type DictationEvent,
+  type DictationSource,
+  dictationBarShown,
+  SegmentedControl,
+} from "@k2b/ui";
+import { createSignal, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 type Outcome = "speak" | "blocked" | "interrupted" | "quota" | "busy" | "elsewhere" | "countdown";
@@ -121,6 +130,42 @@ export function DictationDemo() {
           alternative: { label: "Record instead", note: "Try again in a moment or record; the recording is kept.", run: () => undefined },
         }}
       />
+    </DemoCard>
+  );
+}
+
+/** A host with its own controls: the bar takes the row of its buttons, and the words land in a plain list. */
+export function DictationHostDemo() {
+  const [words, setWords] = createSignal("");
+  let before = "";
+  const dictation = createDictation({
+    source: scriptedSource(() => "speak"),
+    target: {
+      begin: () => {
+        before = words();
+      },
+      insert: (text) => setWords((current) => current + text),
+      discard: () => setWords(before),
+      end: () => undefined,
+    },
+  });
+  return (
+    <DemoCard
+      id="dictation-host"
+      chip={{ kind: "component", name: "DictationButton", from: "@k2b/ui" }}
+      description="A host that places the words itself: createDictation with its own target, DictationButton among its controls, and DictationBar in the same row while dictation runs."
+      code={`const dictation = createDictation({ source, target });
+
+<Show when={dictationBarShown(dictation)} fallback={<Controls end={<DictationButton dictation={dictation} />} />}>
+  <DictationBar dictation={dictation} />
+</Show>`}
+    >
+      <p class="m-0 min-h-12 text-sm">{words() || "Press the microphone."}</p>
+      <div class="flex h-10 items-center justify-end">
+        <Show when={dictationBarShown(dictation)} fallback={<DictationButton dictation={dictation} />}>
+          <DictationBar dictation={dictation} />
+        </Show>
+      </div>
     </DemoCard>
   );
 }

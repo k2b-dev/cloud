@@ -57,6 +57,12 @@ the end returns it to the microphone, or to "Continue dictating" after a bar
 notice. State changes are announced politely; the dictated words are not read
 aloud. Escape closes an open microphone list first, otherwise it stops.
 
+## Runtime
+
+The microphone, the bar and the cards need browser code. The server renders the
+microphone at its place; nothing else shows until a person presses it. The
+microphone list loads when it opens, and the choice is kept in `localStorage`.
+
 ## Import
 
 ```tsx
