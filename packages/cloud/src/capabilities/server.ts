@@ -176,7 +176,7 @@ export async function transferCapabilityStream(
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
 
-export { invokeCodeAccess } from "../code/access-core";
+export { invokeCodeAccess, readCodeActivationManifest } from "../code/access-core";
 export * from "../code/access-proof";
 export type { CapabilityInvocationBody, NormalizedCapabilityCall } from "../contracts/capabilities";
 export {

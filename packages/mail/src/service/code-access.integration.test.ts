@@ -111,13 +111,12 @@ suite("Mail mailbox Code access", () => {
   });
 
   afterAll(async () => {
-    for (const id of mailboxIds) {
-      const rows = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${id}::uuid`;
-      await sql`DELETE FROM mail.mailboxes WHERE id = ${id}::uuid`;
-      for (const row of rows) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
-    }
-    for (const id of ordinaryAccessIds) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
-    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    const rows = await sql<
+      { access_id: string }[]
+    >`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM mail.mailboxes WHERE id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM auth.access WHERE id=ANY(${sql.array([...ordinaryAccessIds, ...rows.map((row) => row.access_id)], "uuid")})`;
+    await sql`DELETE FROM auth.service_accounts WHERE id=ANY(${sql.array(accountIds, "uuid")})`;
     if (groupId) await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     if (owner) await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
   });
@@ -165,6 +164,31 @@ suite("Mail mailbox Code access", () => {
     expect(await getMailboxPermission(ownerContext, target.id)).toBe("admin");
   });
 
+  test("activation notices include concrete nested-group managers without expanding all-signed-in shares", async () => {
+    const target = await mailbox();
+    const [member] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.users(uid,provider,profile) VALUES(${`c9-manager-${suffix}`},'local','user') RETURNING id`;
+    const [child] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.groups(cn,provider,name) VALUES(${`c9-managers-${suffix}`},'local','Nested managers') RETURNING id`;
+    if (!member || !child) throw new Error("Missing manager fixture");
+    try {
+      await sql`INSERT INTO auth.group_groups_v2(parent_group_id,child_group_id) VALUES(${groupId}::uuid,${child.id}::uuid)`;
+      await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${member.id}::uuid,${child.id}::uuid)`;
+      const entries = await sql<{ id: string }[]>`INSERT INTO auth.access(group_id,authenticated_only,permission)
+        VALUES(${groupId}::uuid,false,'admin'),(NULL,true,'admin') RETURNING id`;
+      ordinaryAccessIds.push(...entries.map((row) => row.id));
+      for (const entry of entries)
+        await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${target.id}::uuid,${entry.id}::uuid)`;
+      const dry = (await grant(target.shortId, code, ["mail.mailbox.read"], crypto.randomUUID(), true)).decision;
+      expect(dry.granted && new Set(dry.managerUserIds)).toEqual(new Set([owner.id, member.id]));
+      expect((await list(code)).some((entry) => entry.id === target.shortId)).toBe(false);
+    } finally {
+      await sql`DELETE FROM auth.groups WHERE id=${child.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${member.id}::uuid`;
+    }
+  });
   test("dry runs and refusals write nothing; wrong targets and ordinary shares cannot be removed", async () => {
     const target = await mailbox();
     const elsewhere = await mailbox();

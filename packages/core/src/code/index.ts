@@ -1,6 +1,9 @@
 /** Core-owned Code data contracts and permission-aware services for subsequent Code slices. */
 
 export * from "./access";
+export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+export * from "./activation-contracts";
+export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
 export * from "./contracts";
 export * from "./policy";
 export * from "./policy-contracts";
