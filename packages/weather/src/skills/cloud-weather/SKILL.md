@@ -30,3 +30,5 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Keep the returned units: °C, km/h, mm, hPa, metres, and sunshine minutes where applicable.
 - Treat forecasts as time-sensitive estimates. State the relevant place and time horizon and avoid certainty beyond the returned data.
 - If weather affects a Space event or task, mention the implication but change the item only when requested.
+
+`location.delete` selects a weather.location target (`location` in flat tools) with empty input; do not pass `locationId` in input.

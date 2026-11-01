@@ -208,7 +208,7 @@ export const authenticateBootstrap = async (
         ? "expired"
         : key.accountStatus === "disabled"
           ? "disabled"
-          : !key.connectionsAllowed
+          : key.appId === "runner" || !key.connectionsAllowed
             ? "connections_not_permitted"
             : null;
   if (reason) throw new RejectedBootstrapStart(verified.identity, verified.jti, reason);

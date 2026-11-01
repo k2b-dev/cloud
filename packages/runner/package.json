@@ -1,0 +1,20 @@
+{
+  "name": "@k2b/cloud-app-runner",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@k2b/cloud": "workspace:*",
+    "workerd": "1.20261028.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:",
+    "yaml": "catalog:"
+  },
+  "license": "AGPL-3.0-or-later"
+}

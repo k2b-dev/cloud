@@ -116,7 +116,9 @@
     "./clients/core": "./src/clients/core.ts",
     "./styles/global.css": "./src/styles/global.css",
     "./app-pwa": "./src/app-pwa/index.ts",
-    "./app-pwa/browser": "./src/app-pwa/protocol.ts"
+    "./app-pwa/browser": "./src/app-pwa/protocol.ts",
+    "./app-proof": "./src/app-proof.ts",
+    "./code/runner": "./src/code/runner-protocol.ts"
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",

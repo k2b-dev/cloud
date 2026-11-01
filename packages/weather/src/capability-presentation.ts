@@ -86,9 +86,7 @@ export const weatherCapabilityPresentation: CapabilityPresentationCatalog = {
         "location.delete": {
           title: "Gespeicherten Wetterstandort löschen",
           description: "Löschen Sie einen gespeicherten Wetterstandort, der dem aktuellen Benutzer gehört, dauerhaft.",
-          input: {
-            locationId: "Gespeicherter Ort ID, zurückgegeben von der Suche/Liste des gespeicherten Orts oder einem weather.location ref.",
-          },
+          input: {},
         },
       },
     },
