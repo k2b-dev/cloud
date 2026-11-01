@@ -5,12 +5,13 @@
  * cross-app imports.
  */
 
-import { aiSkillsRoutes } from "@k2b/cloud/ai";
+import { aiDictationRoutes, aiSkillsRoutes, stopLiveDictationSessions } from "@k2b/cloud/ai";
 import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
 import {
   createAiOpenAiRoutes,
   createAppAccessRoutes,
   createAppBootstrapRoutes,
+  createAppMigrationProbeRoutes,
   createCoreApiRouter,
   createMcpProtectedResourceRoutes,
   createPwaPhoneRoutes,
@@ -60,6 +61,7 @@ const coreApi = new Hono()
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
+  .route("/ai/dictation", aiDictationRoutes)
   .route("/ai", aiChatTaskRoutes)
   .route("/", api);
 
@@ -73,6 +75,7 @@ const router = new Hono<AuthContext>()
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))
+  .route("/api/_internal/identity/v1/migration-probe", createAppMigrationProbeRoutes())
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)
   .route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes({ notifyNewAccess: notificationSender.sendOAuthNewAccess }))
@@ -97,6 +100,7 @@ const result = await app.start({
       await startCoreServices(notificationSender, aiNotifications);
     },
     stop: async () => {
+      await stopLiveDictationSessions();
       await stopCoreServices(aiNotifications);
     },
   },

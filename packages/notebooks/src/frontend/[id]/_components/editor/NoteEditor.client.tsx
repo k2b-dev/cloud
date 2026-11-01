@@ -2,10 +2,11 @@ import { autocompletion } from "@codemirror/autocomplete";
 import { history, historyKeymap, redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { listSharedTextOfflineGenerations } from "@k2b/cloud/browser/shared-text";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { createEditor } from "@k2b/editor";
+import { caretIntoTableCell, createEditor, tableCellCompletions } from "@k2b/editor";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
 import {
   createNotebookTablePresentation,
@@ -38,13 +39,7 @@ import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
-import {
-  caretIntoTableCell,
-  cellFormattingKeys,
-  tableCellCompletions,
-  tableCellPresence,
-  tableCellSearch,
-} from "../../../lib/editor/shared-editor";
+import { cellFormattingKeys, tableCellPresence, tableCellSearch } from "../../../lib/editor/shared-editor";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import type { YjsProviderOptions } from "../../../lib/yjs";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
@@ -140,11 +135,14 @@ type EditorInstanceProps = {
   readOnly?: boolean;
   /** Write access to the note: commenting needs it, also where the editor only shows the text. */
   canWrite: boolean;
+  /** Live dictation is set up and allowed for this person; the toolbar then shows Dictate. */
+  liveDictation?: boolean;
   /** The note's comments from the server response; a note opened in the page loads its own. */
   initialAnnotations?: AnnotationProjection | null;
 };
 
 const CURSOR_IDLE_TIMEOUT_MS = 8_000;
+const liveDictationSource = createLiveDictationSource({ app: "notebooks" });
 
 type SoftNavigatedDetail = {
   noteAuthors: NoteAuthors;
@@ -1620,6 +1618,7 @@ function EditorInstance(
                   openTablePicker = open;
                 }}
                 comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
+                dictation={props.liveDictation ? liveDictationSource : undefined}
               />
             </Show>
           }

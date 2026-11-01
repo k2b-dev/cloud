@@ -15,7 +15,7 @@ Die Einstellungen sind nach Zweck gruppiert:
 - **Lesen** steht allen zur Verfügung, die das Postfach lesen. Es legt fest, ob dieser Browser sicheres HTML oder reinen Text zeigt oder sich an das aktuelle Farbschema anpasst.
 - **Organisation** steht mit Zugriff **Ansehen** für private gespeicherte Ansichten zur Verfügung. Mit Zugriff **Bearbeiten** erstellst du auch geteilte Ansichten und Tags des Postfachs.
 - **Schreiben** steht mit Zugriff **Bearbeiten** oder **Verwalten** zur Verfügung. Es enthält persönliche Schreibeinstellungen, Vorlagen, Standardsignaturen und den Editor für das E-Mail-Design. Inhalte und Design für das ganze Postfach brauchen Zugriff **Verwalten**.
-- **Allgemein** ist der erste Bereich, der Zugriff **Verwalten** braucht. Er legt die gemeinsame Identität und die Schutzregeln für den Versand fest.
+- **Allgemein** ist der erste Bereich, der Zugriff **Verwalten** braucht. Er legt den Namen des Postfachs, seine Beschreibung und die Schutzregeln für den Versand fest. Ein neuer Name ändert keine Adresse, keine Absenderidentität und keine Zustellung.
 - **Allgemein**, **Konten und Identitäten**, **Kalendereinladungen**, **Ordner**, **Zugriff** und **Gefahrenbereich** brauchen Zugriff **Verwalten**.
 
 Wähle unter **… → Einstellungen → Kalendereinladungen** einen Space, in dem du Zugriff **Bearbeiten** hast, als vorgeschlagenes Ziel für importierte Einladungen. Mail speichert diese Einstellung für das ganze Postfach. Spaces bietet jeder Person nur Ziele an, in denen sie Zugriff **Bearbeiten** hat.

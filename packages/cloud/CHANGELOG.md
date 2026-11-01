@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.53.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.52.0...npm-cloud-v0.53.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** live dictation endpoint with per-person minute limits ([#2297](https://github.com/k2b-dev/cloud/issues/2297)) ([8ae7d18](https://github.com/k2b-dev/cloud/commit/8ae7d18489f2b00279c233ec68b044ac0e5c2408))
+
+
+### Bug Fixes
+
+* **cloud:** app PWAs can be created before platform start ([#2357](https://github.com/k2b-dev/cloud/issues/2357)) ([85bd224](https://github.com/k2b-dev/cloud/commit/85bd224470b35ebf61543f17d3a39b414d454160))
+* **core:** a key generation WebKit refuses no longer blocks creating an app key ([#2354](https://github.com/k2b-dev/cloud/issues/2354)) ([f4e0184](https://github.com/k2b-dev/cloud/commit/f4e018467efa7fcd7163a7b0960c4354301b88aa))
+* **mail:** the contact directory accepts every app the admin may use ([#2374](https://github.com/k2b-dev/cloud/issues/2374)) ([ae0225c](https://github.com/k2b-dev/cloud/commit/ae0225c6092a0c2fed9a9597f8616232f6c76d75))
+* **test:** no unit shard runs into its time limit ([#2381](https://github.com/k2b-dev/cloud/issues/2381)) ([3ec64b1](https://github.com/k2b-dev/cloud/commit/3ec64b120f330318e8239bd625a8172ae391e99e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.41.0 to 0.42.0
+    * @k2b/editor bumped from 0.4.0 to 0.5.0
+
+## [0.52.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.51.0...npm-cloud-v0.52.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** migrate deployments to app key files with checked upgrade steps ([#2268](https://github.com/k2b-dev/cloud/issues/2268)) ([52c1438](https://github.com/k2b-dev/cloud/commit/52c1438cc02a7746099d672631f513cf12b4ce42))
+* **cloud:** require migration evidence before retiring app credentials ([#2266](https://github.com/k2b-dev/cloud/issues/2266)) ([b1ba1da](https://github.com/k2b-dev/cloud/commit/b1ba1dad5319622cecb6b6308446543328f30bc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.40.0 to 0.41.0
+    * @k2b/editor bumped from 0.3.1 to 0.4.0
+
+## [0.51.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.50.0...npm-cloud-v0.51.0) (2026-11-01)
+
+
+### Features
+
+* **assistant:** skills load their core tools and simple requests finish in fewer rounds ([#2275](https://github.com/k2b-dev/cloud/issues/2275)) ([f290d51](https://github.com/k2b-dev/cloud/commit/f290d519ab7cc8c1ce605bb8ca41b299bd8ce6f7))
+* **cli:** administer Cloud with a normal admin login ([#2251](https://github.com/k2b-dev/cloud/issues/2251)) ([c79a019](https://github.com/k2b-dev/cloud/commit/c79a0197c606dabfdab4d12143a34b7d5a2d836b))
+* **cloud:** apps use only the platform database and cache clients ([#2260](https://github.com/k2b-dev/cloud/issues/2260)) ([ff7901d](https://github.com/k2b-dev/cloud/commit/ff7901d741ded39c87c413f5b4d63898baa031b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.39.0 to 0.40.0
+    * @k2b/editor bumped from 0.3.0 to 0.3.1
+
 ## [0.50.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.49.0...npm-cloud-v0.50.0) (2026-10-31)
 
 

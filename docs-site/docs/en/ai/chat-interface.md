@@ -154,6 +154,11 @@ Opening a chat that is gone shows the same reason. Reopening or refreshing the
 chat, or acting in it, subscribes again; the error clears once the new stream
 connects.
 
+For microphone input shared across applications, use the browser
+[Live dictation source](/en/docs/ai/live-dictation). It supplies append-only text
+events; the host owns insertion and draft persistence. Its server availability
+helper lets SSR decide whether to render a microphone.
+
 Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.

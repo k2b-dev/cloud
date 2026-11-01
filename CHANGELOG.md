@@ -3,6 +3,83 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.60.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.59.0...cloud-v0.60.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** live dictation endpoint with per-person minute limits ([#2297](https://github.com/k2b-dev/cloud/issues/2297)) ([8ae7d18](https://github.com/k2b-dev/cloud/commit/8ae7d18489f2b00279c233ec68b044ac0e5c2408))
+* live dictation in Assistant, Notebooks, Mail and Chat ([#2306](https://github.com/k2b-dev/cloud/issues/2306)) ([d917447](https://github.com/k2b-dev/cloud/commit/d917447eaf52b225c28975357a4e15e24a94a0f0))
+* **notes-site:** package the standalone Notes website and verify its image ([#2139](https://github.com/k2b-dev/cloud/issues/2139)) ([f29f24b](https://github.com/k2b-dev/cloud/commit/f29f24b9c8d317fd9c79a8921d57303388b4f851))
+* **notes-site:** serve shared-link metadata and local preview images ([#2135](https://github.com/k2b-dev/cloud/issues/2135)) ([3a95d6c](https://github.com/k2b-dev/cloud/commit/3a95d6c77c36a79aabddfdb3050a35126f9fdcdd))
+* **notes:** the slash menu and table formulas work as in Notebooks ([#2363](https://github.com/k2b-dev/cloud/issues/2363)) ([a9a277f](https://github.com/k2b-dev/cloud/commit/a9a277ff1136d972d00ae95ec930d18f436a036f))
+* **spaces:** every + opens one menu with the Space's templates ([#2329](https://github.com/k2b-dev/cloud/issues/2329)) ([967d59a](https://github.com/k2b-dev/cloud/commit/967d59a5284ee3814a3f8da27669db01801a94a0))
+* **spaces:** everyone who can write manages templates, and templates get an icon ([#2324](https://github.com/k2b-dev/cloud/issues/2324)) ([caa55e4](https://github.com/k2b-dev/cloud/commit/caa55e40a9e9c14f4378ff15850b293126075a13))
+* **ui:** menus can search their entries and open from a server-rendered link ([#2320](https://github.com/k2b-dev/cloud/issues/2320)) ([98c50d2](https://github.com/k2b-dev/cloud/commit/98c50d2767588c608b7db6b126f65968d4483965))
+
+
+### Bug Fixes
+
+* **cloud:** app PWAs can be created before platform start ([#2357](https://github.com/k2b-dev/cloud/issues/2357)) ([85bd224](https://github.com/k2b-dev/cloud/commit/85bd224470b35ebf61543f17d3a39b414d454160))
+* **core:** a key generation WebKit refuses no longer blocks creating an app key ([#2354](https://github.com/k2b-dev/cloud/issues/2354)) ([f4e0184](https://github.com/k2b-dev/cloud/commit/f4e018467efa7fcd7163a7b0960c4354301b88aa))
+* **editor:** a checked box shows its check under a strict content policy ([#2370](https://github.com/k2b-dev/cloud/issues/2370)) ([0c67781](https://github.com/k2b-dev/cloud/commit/0c67781d3268793a5d4f3027fa814d26acbf6dd9))
+* **mail:** stop disposed test windows from querying file providers ([#2356](https://github.com/k2b-dev/cloud/issues/2356)) ([40ce1af](https://github.com/k2b-dev/cloud/commit/40ce1af8af7a8323cf32b236da1e693a5eab1c20))
+* **mail:** the contact directory accepts every app the admin may use ([#2374](https://github.com/k2b-dev/cloud/issues/2374)) ([ae0225c](https://github.com/k2b-dev/cloud/commit/ae0225c6092a0c2fed9a9597f8616232f6c76d75))
+* **notes:** dialogs and block controls look finished ([#2362](https://github.com/k2b-dev/cloud/issues/2362)) ([10c328d](https://github.com/k2b-dev/cloud/commit/10c328daca5b801d75f0227b5441c1c7f3fe4673))
+* **notes:** the slash menu knows the familiar names and takes less room ([#2371](https://github.com/k2b-dev/cloud/issues/2371)) ([27c6f6b](https://github.com/k2b-dev/cloud/commit/27c6f6be45697471564af8fbb0e2cef009cf0583))
+* **test:** no unit shard runs into its time limit ([#2381](https://github.com/k2b-dev/cloud/issues/2381)) ([3ec64b1](https://github.com/k2b-dev/cloud/commit/3ec64b120f330318e8239bd625a8172ae391e99e))
+* **test:** the first browser test no longer pays the engine's warm-up ([#2365](https://github.com/k2b-dev/cloud/issues/2365)) ([0decf0e](https://github.com/k2b-dev/cloud/commit/0decf0e581af9f036c3d15937a97c3283102815c)), closes [#2149](https://github.com/k2b-dev/cloud/issues/2149) [#2073](https://github.com/k2b-dev/cloud/issues/2073)
+* **ui:** a long task no longer stops the dayHours week's reveal short of a drawer ([#2379](https://github.com/k2b-dev/cloud/issues/2379)) ([c217a52](https://github.com/k2b-dev/cloud/commit/c217a52696a7791a00497f89677938affcb0c057)), closes [#2199](https://github.com/k2b-dev/cloud/issues/2199)
+* **ui:** checked checkboxes keep their rounded corners ([#2360](https://github.com/k2b-dev/cloud/issues/2360)) ([781668c](https://github.com/k2b-dev/cloud/commit/781668c6622074a2b901ffcc42b6b62caa607070))
+* **ui:** settings categories and toolbars separate groups with space, not lines ([#2309](https://github.com/k2b-dev/cloud/issues/2309)) ([c2b1435](https://github.com/k2b-dev/cloud/commit/c2b14356c146df0b9139479f2f74b4c22d3b7c02))
+* **ui:** text no longer jumps when someone types below a table ([#2380](https://github.com/k2b-dev/cloud/issues/2380)) ([814c4fe](https://github.com/k2b-dev/cloud/commit/814c4fe85b66a994c1f14bec80dfa9695f51f476))
+
+## [0.59.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.58.0...cloud-v0.59.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** migrate deployments to app key files with checked upgrade steps ([#2268](https://github.com/k2b-dev/cloud/issues/2268)) ([52c1438](https://github.com/k2b-dev/cloud/commit/52c1438cc02a7746099d672631f513cf12b4ce42))
+* **cloud:** require migration evidence before retiring app credentials ([#2266](https://github.com/k2b-dev/cloud/issues/2266)) ([b1ba1da](https://github.com/k2b-dev/cloud/commit/b1ba1dad5319622cecb6b6308446543328f30bc0))
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Bug Fixes
+
+* **mail:** preserve compose input across retries and conflicts ([#2308](https://github.com/k2b-dev/cloud/issues/2308)) ([6a3c8f0](https://github.com/k2b-dev/cloud/commit/6a3c8f0ee53deed8fa2eccedd1a494d787f8988f))
+* **mail:** the composer always edits formatted, with the toolbar right under the subject ([#2294](https://github.com/k2b-dev/cloud/issues/2294)) ([196a753](https://github.com/k2b-dev/cloud/commit/196a75306c9a4f19b8b3a61498c87755cab60711))
+* **mail:** the draft echo test waits for the save request before answering it ([#2351](https://github.com/k2b-dev/cloud/issues/2351)) ([8346242](https://github.com/k2b-dev/cloud/commit/8346242f338145971725242fedf75d15e87dd276))
+* **mail:** the draft review answers refused reads through the shared page mapping ([#2285](https://github.com/k2b-dev/cloud/issues/2285)) ([873512d](https://github.com/k2b-dev/cloud/commit/873512d1cf3abffd5e406491a447b8e2965d3a76))
+* **mail:** typing never raises a false conflict when the Drafts sync sees Mail's own copy ([#2319](https://github.com/k2b-dev/cloud/issues/2319)) ([8ce5bf1](https://github.com/k2b-dev/cloud/commit/8ce5bf1d1aa71f2a1be309cbf9085e2b0e101a0f))
+* **ui:** settings dialogs show every allowed section, so mailbox admins can rename again ([#2299](https://github.com/k2b-dev/cloud/issues/2299)) ([2d0a790](https://github.com/k2b-dev/cloud/commit/2d0a790efd19cb8b7e1592798083ea1e190e38bc))
+* **ui:** the icon picker opens wide enough, searches every group strictly, and speaks German ([#2255](https://github.com/k2b-dev/cloud/issues/2255)) ([8f0d4c5](https://github.com/k2b-dev/cloud/commit/8f0d4c534b90cf73a84287a6a919de3a0f42ea84))
+* **ui:** the StatGrid header sets itself apart by its surface, not a line ([#2315](https://github.com/k2b-dev/cloud/issues/2315)) ([1196746](https://github.com/k2b-dev/cloud/commit/11967464506569bd6ba2199477ff7b42e2d61609))
+* **ui:** the workspace drawer marks its edge with one shade, not a line ([#2321](https://github.com/k2b-dev/cloud/issues/2321)) ([a9188da](https://github.com/k2b-dev/cloud/commit/a9188dad5780f0c678beed1d8c4a5ebee774ca8b))
+
+## [0.58.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.57.0...cloud-v0.58.0) (2026-11-01)
+
+
+### Features
+
+* **assistant:** skills load their core tools and simple requests finish in fewer rounds ([#2275](https://github.com/k2b-dev/cloud/issues/2275)) ([f290d51](https://github.com/k2b-dev/cloud/commit/f290d519ab7cc8c1ce605bb8ca41b299bd8ce6f7))
+* **cli:** administer Cloud with a normal admin login ([#2251](https://github.com/k2b-dev/cloud/issues/2251)) ([c79a019](https://github.com/k2b-dev/cloud/commit/c79a0197c606dabfdab4d12143a34b7d5a2d836b))
+* **cloud:** apps use only the platform database and cache clients ([#2260](https://github.com/k2b-dev/cloud/issues/2260)) ([ff7901d](https://github.com/k2b-dev/cloud/commit/ff7901d741ded39c87c413f5b4d63898baa031b8))
+* **notebooks:** drop the head above notes; navigation and Details move to the note toolbar ([#2261](https://github.com/k2b-dev/cloud/issues/2261)) ([328ffb8](https://github.com/k2b-dev/cloud/commit/328ffb88daef3bc53ab8cd1595ab37aad53d68c3))
+* **notebooks:** show readers in a note's presence ([#2258](https://github.com/k2b-dev/cloud/issues/2258)) ([7c083b6](https://github.com/k2b-dev/cloud/commit/7c083b6918842cd86870013422c0ead0c93c889a))
+* **spaces:** tasks without a column go to the first open column ([#2276](https://github.com/k2b-dev/cloud/issues/2276)) ([87439c8](https://github.com/k2b-dev/cloud/commit/87439c87d74400910031785c94b190708e85ebc6))
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+* **mail:** pages answer 404 when a mailbox or draft is not readable ([#2263](https://github.com/k2b-dev/cloud/issues/2263)) ([763d1a0](https://github.com/k2b-dev/cloud/commit/763d1a06df92c7af2c0510e92c78b914f8cb3088))
+* **mail:** the automation log page is routed, so its links from the reader and the workspace open it ([#2265](https://github.com/k2b-dev/cloud/issues/2265)) ([3504bec](https://github.com/k2b-dev/cloud/commit/3504bec895b149a1d46bf8406df37f1977f59b71))
+* **mail:** the draft review's way back names its mailbox ([#2257](https://github.com/k2b-dev/cloud/issues/2257)) ([ed2c71e](https://github.com/k2b-dev/cloud/commit/ed2c71e5ca981ff45edf3345424ed9a84243194c))
+* **notebooks:** keep unsent typing on the device until the server stored it ([#2264](https://github.com/k2b-dev/cloud/issues/2264)) ([434622b](https://github.com/k2b-dev/cloud/commit/434622b254146563daea634bb676f806adb0dc8b))
+* **notebooks:** never lose workspace updates when the broker fails ([#2262](https://github.com/k2b-dev/cloud/issues/2262)) ([a0b4211](https://github.com/k2b-dev/cloud/commit/a0b42117216db00124ffd0d457edf5e5f05e591a))
+* **notebooks:** reader presence test waits for the last note switch ([#2298](https://github.com/k2b-dev/cloud/issues/2298)) ([ca0bea5](https://github.com/k2b-dev/cloud/commit/ca0bea5d2cd9f7cc3f8da09c3343a8ae25dcd911))
+* **notebooks:** the CLI move test waits for the outbox to publish ([#2333](https://github.com/k2b-dev/cloud/issues/2333)) ([35498c6](https://github.com/k2b-dev/cloud/commit/35498c6f17218deff661b099223fa127b0053721))
+
 ## [0.57.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.56.0...cloud-v0.57.0) (2026-10-31)
 
 

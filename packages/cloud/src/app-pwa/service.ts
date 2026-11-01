@@ -134,18 +134,27 @@ export const createAppPwaService = (options: AppPwaOptions) => {
   const coreQueries = new Set(options.coreQueries ?? []);
   if (!Array.isArray(options.coreQueries ?? []) || [...coreQueries].some((query) => query !== "address.autocomplete"))
     throw new Error("Unsupported App-PWA Core query");
-  const db = options.db ?? sql;
+  const db = () => options.db ?? sql;
   const appId = options.app.id;
   const path = options.app.installable.path;
   const origin = new URL(options.publicOrigin);
   if (origin.protocol !== "https:" || origin.origin !== options.publicOrigin || !isInstallablePath(appId, path))
     throw new Error("App-PWA requires a canonical HTTPS public origin and the declared installable path");
   const schema = appPwaSchemaName(options.schema);
+  // Declarations precede platform startup; resolve clients and identifiers only on use.
   const tables = {
-    browsers: sql(`${schema}._cloud_pwa_browsers`),
-    devices: sql(`${schema}._cloud_pwa_devices`),
-    visits: sql(`${schema}._cloud_pwa_visits`),
-    attempts: sql(`${schema}._cloud_pwa_attempts`),
+    get browsers() {
+      return db()(`${schema}._cloud_pwa_browsers`);
+    },
+    get devices() {
+      return db()(`${schema}._cloud_pwa_devices`);
+    },
+    get visits() {
+      return db()(`${schema}._cloud_pwa_visits`);
+    },
+    get attempts() {
+      return db()(`${schema}._cloud_pwa_attempts`);
+    },
   };
   const requestedTtl = options.deviceTtlSeconds ?? limits.deviceSeconds;
   if (!Number.isSafeInteger(requestedTtl) || requestedTtl <= 0) throw new Error("Invalid App-PWA device TTL");
@@ -177,7 +186,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     const deadlines: ((time: Date) => Date)[] = [];
     try {
       return await withAppPwaTransaction(
-        db,
+        db(),
         signal,
         async (tx, requestSignal) => {
           const result = bounded(
@@ -230,7 +239,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
   const browser = async (tx: TransactionSQL, credential: string, lock = false): Promise<Browser> => {
     parse(AppPwaSecret, credential);
     const [row] = await tx<Browser[]>`SELECT * FROM ${tables.browsers}
-      WHERE app_id = ${appId} AND credential_hash = ${pairingSecret.hash(credential)} ${lock ? sql`FOR UPDATE` : sql``}`;
+      WHERE app_id = ${appId} AND credential_hash = ${pairingSecret.hash(credential)} ${lock ? db()`FOR UPDATE` : db()``}`;
     if (!row || row.expires_at <= (await databaseClock(tx))) return pwaFail("BROWSER_REQUIRED", 401);
     return row;
   };
@@ -287,7 +296,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       }[]
     >`SELECT f.sid,f.auth_epoch,f.expires_at,f.revoked_at,f.pwa_device_id,k.state AS key_state
       FROM auth.session_families f JOIN auth.signing_keys k ON k.kid=f.signing_kid
-      WHERE f.sid=ANY(${sql.array(
+      WHERE f.sid=ANY(${db().array(
         devices.map((device) => device.initiator_sid),
         "uuid",
       )})`;
@@ -397,7 +406,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     csrf,
     /** Lifecycle setup; a rejected migration prevents all service operations. */
     setup: async () => {
-      await setupAppPwa(db, schema);
+      await setupAppPwa(db(), schema);
       ready = true;
     },
     /** No caller-selected credential. An existing credential can only continue its existing browser. */
@@ -533,7 +542,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         async (tx, authority) => {
           if (after) parse(AppPwaId, after);
           const rows = await tx<Device[]>`SELECT * FROM ${tables.devices} WHERE app_id = ${appId} AND owner_user_id = ${signIn.userId}::uuid
-        ${after ? sql`AND id > ${after}::uuid` : sql``} ORDER BY id LIMIT ${options.budgets.listPageSize}`;
+        ${after ? db()`AND id > ${after}::uuid` : db()``} ORDER BY id LIMIT ${options.budgets.listPageSize}`;
           return {
             items: await staffDeviceViews(tx, rows, authority.user.auth_epoch),
             next: rows.length === options.budgets.listPageSize ? (rows.at(-1)?.id ?? null) : null,

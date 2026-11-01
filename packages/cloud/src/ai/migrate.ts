@@ -290,6 +290,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
+  await sql`ALTER TABLE ai.structured_runs ADD COLUMN IF NOT EXISTS audio_ms INTEGER`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_structured_runs_created
     ON ai.structured_runs(created_at DESC)
@@ -2748,7 +2749,7 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
     )`;
   await db`CREATE TABLE IF NOT EXISTS ai.models (
       id TEXT PRIMARY KEY, provider_id TEXT NOT NULL REFERENCES ai.providers(id) ON DELETE CASCADE, provider_model TEXT NOT NULL,
-      label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL CHECK(kind IN ('chat','transcription')),
+      label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL CHECK(kind IN ('chat','transcription','live-transcription')),
       capabilities JSONB NOT NULL DEFAULT '[]', context_window INTEGER, max_output_tokens INTEGER, temperature DOUBLE PRECISION, extra_body JSONB,
       max_loaded_tools INTEGER, max_tool_rounds INTEGER, pricing JSONB, icon JSONB NOT NULL DEFAULT '{"kind":"provider"}', enabled BOOLEAN NOT NULL DEFAULT true,
       revision INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -2763,11 +2764,15 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       CHECK(id = CASE WHEN slug = 'standard' THEN model_id ELSE model_id || ':' || slug END)
     )`;
   await db`CREATE TABLE IF NOT EXISTS ai.model_assignments (
-      slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio')),
+      slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio')),
       variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
     )`;
-  for (const slot of ["fast", "balanced", "thorough", "maximum", "vision", "audio"])
+  await db`ALTER TABLE ai.models DROP CONSTRAINT IF EXISTS models_kind_check`;
+  await db`ALTER TABLE ai.models ADD CONSTRAINT models_kind_check CHECK(kind IN ('chat','transcription','live-transcription'))`;
+  await db`ALTER TABLE ai.model_assignments DROP CONSTRAINT IF EXISTS model_assignments_slot_check`;
+  await db`ALTER TABLE ai.model_assignments ADD CONSTRAINT model_assignments_slot_check CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio'))`;
+  for (const slot of ["fast", "balanced", "thorough", "maximum", "vision", "audio", "liveAudio"])
     await db`INSERT INTO ai.model_assignments(slot) VALUES(${slot}) ON CONFLICT DO NOTHING`;
   await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS requested_class TEXT, ADD COLUMN IF NOT EXISTS resolved_class TEXT, ADD COLUMN IF NOT EXISTS model_id TEXT`;
 };

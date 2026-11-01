@@ -212,6 +212,25 @@ describe("@k2b/editor building blocks", () => {
   });
 });
 
+describe("line formats", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  test.each(["heading1", "heading2", "heading3", "bulletList", "numberedList", "quote"] as const)(
+    "%s on an empty line leaves the caret after its prefix",
+    (id) => {
+      using page = mount("");
+      const view = page.view();
+      markdownActions(createEditor(), "en")[id].run(view);
+      const { doc, selection } = view.state;
+      expect(doc.length).toBeGreaterThan(0);
+      expect(selection.main.head).toBe(doc.length);
+    },
+  );
+});
+
 describe("slash menu matching", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
@@ -238,6 +257,8 @@ describe("slash menu matching", () => {
     expect((await complete("/chrt"))?.options.map((option) => option.displayLabel)).toEqual(["Chart"]);
     expect(await complete("text/table")).toBeNull();
     expect((await complete("text /ta"))?.from).toBe(5);
+    // A German name with an umlaut keeps the menu open while typing.
+    expect((await complete("/ü"))?.options).toEqual([]);
   });
 
   test("picking an action removes the typed name and runs it on a fresh line mid-text", async () => {

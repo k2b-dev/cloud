@@ -6148,6 +6148,114 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.75rem;
 }
 
+/* A searchable menu: the field stays at the top while the entries below it
+   scroll. The marked entry looks hovered, since the focus stays in the field. */
+.k2b-ui .k2b-dropdown__menu[data-search] {
+  overflow: hidden;
+}
+
+.k2b-ui :is(.k2b-dropdown__menu, .k2b-gesture-menu__sheet-menu)[data-search] > .k2b-dropdown__list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.125rem;
+  overflow: auto;
+}
+
+.k2b-ui .k2b-dropdown__search {
+  display: flex;
+  min-height: 2.25rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.625rem;
+  margin-bottom: 0.25rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-dropdown__search:focus-within {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-width) * -1);
+}
+
+.k2b-ui .k2b-dropdown__search > input {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-dropdown__search > input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.k2b-ui .k2b-dropdown__item[data-active] {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-dropdown__empty {
+  padding: 0.4375rem 0.75rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search {
+  min-height: 2.75rem;
+}
+
+/* Phones zoom into fields below 16px. */
+.k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search > input {
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-dropdown__note {
+  max-inline-size: 18rem;
+  padding: 0.375rem 0.75rem 0.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+/* The entry most people want: its icon carries the action color. */
+.k2b-ui .k2b-dropdown__item[data-accent="true"] > i {
+  color: var(--k2b-action);
+}
+
+/* Icons on quiet squares tell entries apart at a glance, such as templates. */
+.k2b-ui [data-icons="tile"] .k2b-dropdown__item > i:first-child {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: calc(var(--k2b-radius-control) - 0.0625rem);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui [data-icons="tile"] .k2b-dropdown__item[data-accent="true"] > i:first-child {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu[data-icons="tile"] .k2b-dropdown__item > i:first-child {
+  width: 1.875rem;
+  height: 1.875rem;
+  font-size: 1rem;
+}
+
 /* Filter triggers are field controls: they use the same height, radius, and
    surface as the input they sit beside rather than a smaller button size. A
    chip is a soft surface without a border; the padding keeps its former box.
@@ -6533,6 +6641,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: min(23rem, calc(100dvh - 1rem));
 }
 
+/* Filter chips and a grid need room of their own: a popover with a toolbar is
+   at least 26rem wide, whatever the trigger's width, and never wider than the
+   viewport. On a phone that makes it a full-width sheet under the field. Its
+   height is fixed, five rows of the small grid, so filtering or switching a
+   group never resizes it, and a popover placed above its field never moves. */
+.k2b-ui .k2b-choice-popover[data-toolbar="true"] {
+  min-width: min(26rem, calc(100vw - 1rem));
+  height: min(27rem, calc(100dvh - 1rem));
+  max-height: none;
+}
+
 .k2b-ui .k2b-choice-search {
   display: flex;
   min-height: 2rem;
@@ -6584,6 +6703,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-groups::-webkit-scrollbar {
   display: none;
+}
+
+/* Chips that continue past an edge fade out there, so a cut chip reads as
+   "scroll for more" instead of a clipped control. */
+.k2b-ui .k2b-choice-groups-shell[data-overflow~="end"] > .k2b-choice-groups {
+  mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+}
+
+.k2b-ui .k2b-choice-groups-shell[data-overflow~="start"] > .k2b-choice-groups {
+  mask-image: linear-gradient(to left, #000 calc(100% - 2rem), transparent);
+}
+
+.k2b-ui .k2b-choice-groups-shell[data-overflow~="start"][data-overflow~="end"] > .k2b-choice-groups {
+  mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
 }
 
 .k2b-ui .k2b-choice-groups-scrollbar {
@@ -6911,6 +7044,53 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* IconChoices: a row of named icons; the chosen one takes the selection tint, so its size never changes. */
+.k2b-ui .k2b-icon-choices__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-icon-choices__option {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-icon-choices__option:hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-icon-choices__option[aria-checked="true"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-icon-choices__option:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-icon-choices__option:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-icon-choices__option {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
 /* ColorChoices: named round swatches; the chosen one carries a check and a ring that does not change its size. */
 .k2b-ui .k2b-color-choices__group {
   display: flex;
@@ -7073,6 +7253,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong {
   color: var(--k2b-text-muted);
   font-weight: 400;
+  /* A long word, such as a German compound, breaks at a syllable, not after any letter. */
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .k2b-ui .k2b-choice-options[data-view="grid"][data-grid-size="sm"] > .k2b-choice-option small {
@@ -13531,6 +13714,320 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-feedback-backdrop);
 }
 
+/* Dictation: the microphone, the bar that stands in for the host's controls, and its notice cards. */
+.k2b-ui .k2b-dictation-button[aria-pressed="true"] {
+  color: var(--k2b-danger-600);
+}
+
+.k2b-ui .k2b-dictation-button[aria-disabled="true"] {
+  color: var(--k2b-text-muted);
+  cursor: default;
+  background: none;
+}
+
+/* The bar's controls match the host row they replace; the composer's are 1.875rem. */
+.k2b-ui .k2b-dictation-bar {
+  --k2b-dictation-control: 2rem;
+  container: k2b-dictation-bar / inline-size;
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-dictation-bar__row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-dictation-bar__icon {
+  flex: none;
+  width: var(--k2b-dictation-control);
+  height: var(--k2b-dictation-control);
+}
+
+.k2b-ui .k2b-chat-composer__footer .k2b-dictation-bar,
+.k2b-ui .k2b-chat-composer__dictation .k2b-dictation-bar {
+  --k2b-dictation-control: 1.875rem;
+}
+
+/* In a conversation the bar takes the row above the field, where formatting opens; the field stays put. */
+.k2b-ui .k2b-chat-composer__dictation {
+  display: flex;
+  min-width: 0;
+  padding-bottom: 0.25rem;
+}
+
+.k2b-ui .k2b-dictation-bar__icon[aria-disabled="true"] {
+  color: var(--k2b-text-muted);
+  cursor: default;
+  background: none;
+}
+
+.k2b-ui .k2b-dictation-bar__dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: 0.25rem;
+  border-radius: 999px;
+  background: var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-dictation-bar__dot[data-live] {
+  background: var(--k2b-danger-600);
+  animation: k2b-dictation-blink 1.6s steps(2) infinite;
+}
+
+.k2b-ui .k2b-dictation-bar__wave {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: min(1.75rem, var(--k2b-dictation-control));
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 0.25rem;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-dictation-bar__wave > span {
+  flex: 0 0 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--k2b-text);
+  transform: scaleY(var(--k2b-dictation-level, 0.1));
+  transition: transform var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-dictation-bar__row[data-state="starting"] .k2b-dictation-bar__wave > span {
+  background: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-dictation-bar__time {
+  flex: none;
+  min-width: 4.25em;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-dictation-bar__time[data-warning] {
+  color: var(--k2b-warning-text);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-dictation-bar__device {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 14rem;
+  height: min(1.875rem, var(--k2b-dictation-control));
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-dictation-bar__device:hover {
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-dictation-bar__device-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-dictation-bar__stop {
+  display: inline-grid;
+  flex: none;
+  width: var(--k2b-dictation-control);
+  height: var(--k2b-dictation-control);
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--k2b-text);
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-dictation-bar__stop > span {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-dictation-bar__stop[data-disabled] {
+  background: var(--k2b-border);
+  cursor: default;
+}
+
+.k2b-ui .k2b-dictation-bar__status {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.84375rem;
+}
+
+.k2b-ui .k2b-dictation-bar__status > i {
+  flex: none;
+  font-size: 1.0625rem;
+}
+
+.k2b-ui .k2b-dictation-bar__status[data-tone="danger"] > i {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-dictation-bar__message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-dictation-bar__message--short {
+  display: none;
+}
+
+.k2b-ui .k2b-dictation-bar__continue {
+  flex: none;
+  color: var(--k2b-link-accent);
+  font-weight: 500;
+}
+
+@container k2b-dictation-bar (max-width: 26rem) {
+  .k2b-ui .k2b-dictation-bar__device {
+    width: var(--k2b-dictation-control);
+    height: var(--k2b-dictation-control);
+    justify-content: center;
+    padding: 0;
+    border-radius: var(--k2b-radius-control, 0.5rem);
+    font-size: 1.125rem;
+  }
+
+  .k2b-ui .k2b-dictation-bar__device-name,
+  .k2b-ui .k2b-dictation-bar__device-chevron {
+    display: none;
+  }
+
+  .k2b-ui .k2b-dictation-bar__message--long {
+    display: none;
+  }
+
+  .k2b-ui .k2b-dictation-bar__message--short {
+    display: inline;
+  }
+}
+
+.k2b-ui .k2b-dictation-card {
+  padding: 0.875rem 1rem 0.75rem;
+  border-radius: var(--k2b-radius-dialog);
+  font-size: 0.84375rem;
+  line-height: 1.5;
+}
+
+/* On a phone a card spans the screen with a small margin, above its control. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dictation-card {
+    width: calc(100vw - 1.25rem);
+  }
+}
+
+.k2b-ui .k2b-dictation-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-dictation-card__title > i {
+  flex: none;
+  font-size: 1.0625rem;
+}
+
+.k2b-ui .k2b-dictation-card__body :is(p, ol) {
+  margin: 0 0 0.5rem;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-dictation-card__body ol {
+  padding-left: 1.1rem;
+  list-style: decimal;
+}
+
+.k2b-ui .k2b-dictation-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.k2b-ui .k2b-dictation-card__actions > .k2b-button {
+  height: auto;
+  min-height: 2rem;
+  white-space: normal;
+  text-align: center;
+}
+
+.k2b-ui .k2b-dictation-card__primary {
+  color: var(--k2b-link-accent);
+}
+
+/* Dictated text in a plain field: the newest words tinted for a moment, and the mark where the next words land. */
+.k2b-ui .k2b-dictation-fresh {
+  border-radius: 3px;
+  color: var(--k2b-info-text);
+  background: var(--k2b-info-surface);
+}
+
+.k2b-ui .k2b-dictation-mark {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1.15em;
+  vertical-align: -0.2em;
+}
+
+.k2b-ui .k2b-dictation-mark::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--k2b-link-accent);
+  content: "";
+  animation: k2b-dictation-blink 1s steps(2) infinite;
+}
+
+@keyframes k2b-dictation-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-dictation-bar__dot[data-live],
+  .k2b-ui .k2b-dictation-mark::after {
+    animation: none;
+  }
+}
+
 .k2b-ui .k2b-emoji-picker-popover {
   position: fixed;
   z-index: 1000;
@@ -14482,16 +14979,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.25rem;
 }
+/* A separator groups actions with space, not a line; it keeps `role="separator"`
+   for assistive technology. */
 .k2b-ui .k2b-toolbar__separator {
-  width: 1px;
+  width: 0.25rem;
   height: 1.25rem;
   flex: 0 0 auto;
   margin: 0 0.125rem;
-  background: var(--k2b-border);
 }
 .k2b-ui .k2b-toolbar__separator[data-orientation="horizontal"] {
   width: 1.25rem;
-  height: 1px;
+  height: 0.25rem;
   margin: 0.125rem 0;
 }
 .k2b-ui .k2b-toolbar__spacer {

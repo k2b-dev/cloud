@@ -9,7 +9,7 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -170,6 +170,8 @@ type Status = AiPeopleModels & {
   enabled: boolean;
   visionModelConfigured: boolean;
   audioModelConfigured?: boolean;
+  /** Live dictation replaces recording when a live model is set up; recording stays the way out when it is busy. */
+  liveDictationAvailable?: boolean;
   error: AiSettingsError | null;
 };
 
@@ -1856,6 +1858,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const dictationKey = () => (activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey());
   const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
+  const liveDictationSource = createLiveDictationSource({ app: "assistant" });
   const dictation = createAssistantDictation({
     configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer(),
     key: dictationKey,
@@ -2351,8 +2354,20 @@ export default function AssistantWorkspace(props: Props) {
                 locked={!projectComposer() && chat.running()}
                 lockedReason={t().modelLockedWhileRunning}
               />
-              <dictation.Control />
+              <Show when={!props.status.liveDictationAvailable || dictation.busy() || dictation.pendingResult()}>
+                <dictation.Control />
+              </Show>
             </>
+          }
+          dictation={
+            props.status.liveDictationAvailable && canUseComposer() && !dictation.busy() && !dictation.pendingResult()
+              ? {
+                  source: liveDictationSource,
+                  alternative: props.status.audioModelConfigured
+                    ? { label: audioCopy().recordInstead, note: audioCopy().recordInsteadNote, run: () => void dictation.startRecording() }
+                    : undefined,
+                }
+              : undefined
           }
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}

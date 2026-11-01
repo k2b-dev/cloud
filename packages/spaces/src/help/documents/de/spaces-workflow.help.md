@@ -24,7 +24,12 @@ Eine ganztägige Fälligkeit wird erst am Folgetag in deiner Zeitzone überfäll
 
 ## Mit einer Vorlage beginnen {icon="template"}
 
-Hat ein Space Vorlagen, zeigt der Dialog für eine neue Aufgabe oder einen neuen Termin die Zeile **Vorlage**. Die Zeile bietet **Leer** und die Vorlagen für diese Art von Eintrag. Bei mehr als sechs Vorlagen wird die Zeile zu einer durchsuchbaren Liste.
+Jedes **+** öffnet dasselbe Menü: oben im Kopf, der runde Knopf auf dem Telefon, **+ Aufgabe** unter einer Spalte, **Neue Aufgabe** in einer leeren Liste und **Neuer Termin** im Kalender. Oben steht **Leere Aufgabe** oder **Leerer Termin**, darunter stehen die Vorlagen mit Symbol und einer kurzen Zeile, was sie vorschlagen. Am Ende steht **Vorlage erstellen …**.
+
+- Drücke Enter auf **+**, dann noch einmal Enter. So legst du einen leeren Eintrag an. Die Taste N legt eine leere Aufgabe direkt an, im Kalender einen leeren Termin.
+- Ab acht Vorlagen hat das Menü ein Suchfeld. Passt keine Vorlage, legt Enter einen leeren Eintrag mit dem eingegebenen Text als Titel an.
+- Eine Vorlage im Menü öffnet den Dialog mit dieser Vorlage. Die Zeile **Vorlage** im Dialog wechselt sie. Eine Aufgabe aus **+ Aufgabe** einer Spalte kommt in diese Spalte.
+- Im Kalender bietet das Schnellanlegen **Vorlage**. Die gewählte Zeit bleibt, die Vorlage füllt den Rest. Das Menü eines Tages zeigt die Vorlagen auch.
 
 Eine Vorlage füllt Titel, Beschreibung, Priorität, Tags und Zuständige aus. Bei Aufgaben füllt sie auch die Checkliste aus, bei Terminen Ort, Uhrzeit und Dauer. Eine Zeile unter der Beschreibung fasst zusammen, was die Vorlage ergänzt. Jedes Feld bleibt vor dem Speichern änderbar, und **Weitere Optionen** zeigt alle Felder. Hast du schon etwas eingegeben, fragt Spaces, bevor eine Vorlage es ersetzt.
 
@@ -36,7 +41,9 @@ Eine Vorlage kann Daten vorschlagen:
 - Die Vorschläge richten sich nach deiner Zeitzone. Bei einer Wochentagsregel bleibt heute für eine ganztägige Aufgabe den ganzen Tag verfügbar. Eine Vorlage mit Uhrzeit bietet heute nur an, solange diese Uhrzeit noch bevorsteht.
 - Die Platzhalter `{{date}}`, `{{weekday}}` und `{{week}}` in Titel und Beschreibung folgen dem gewählten Datum, bis du den Text änderst. Das gilt auch bei **Kein Datum** und bei einer Auswahl im Kalender.
 
-Mit Zugriff **Verwalten** richtest du Vorlagen in den Space-Einstellungen unter **Vorlagen** ein: Name, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen.
+**Vorlage erstellen …** öffnet das Formular für eine neue Vorlage. **Als Vorlage speichern** im Menü **…** eines Eintrags füllt das Formular aus dem Eintrag. Datum, Kommentare, Anhänge, Verknüpfungen und erledigte Haken übernimmt es nicht. Steht im Titel eine Woche wie „KW 44“ oder ein Datum, schlägt das Formular einen Platzhalter vor. Es ersetzt den Text erst, wenn du **Ersetzen** wählst.
+
+Mit Zugriff **Bearbeiten** erstellst, änderst und löschst du Vorlagen auch in den Space-Einstellungen unter **Vorlagen**: Name, optionales Symbol, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen. Ohne eigenes Symbol verwendet die Vorlage das Standardsymbol für Aufgaben oder Termine.
 
 ## Eintrag strukturieren {icon="point"}
 

@@ -100,7 +100,15 @@ Attach a voice memo like any other file and write your own request, for example:
 not start transcription. Gustav can save the transcript as a text file in
 the chat.
 
-Click the microphone next to Send to dictate. The neutral waveform responds to your
+When your administration set up live dictation, the microphone next to Send
+writes the text while you speak. The words appear at the caret; the newest
+words are tinted for a moment. You can type elsewhere at the same time. Stop
+shows **Finishing …** until the last words arrive. × removes only the dictated
+words; text that was there before stays. Cloud stores no audio for live
+dictation. If live dictation is busy, **Record instead** uses the recording
+below; the recording is then kept in the chat.
+
+Without live dictation, click the microphone next to Send to record. The neutral waveform responds to your
 microphone level while recording. Use × to discard or the square Stop button
 to finish and upload the complete recording. A loader
 then stays visible until processing finishes. Hover or focus the control to

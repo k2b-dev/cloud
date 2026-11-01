@@ -113,7 +113,7 @@ export const createSpaceCommands = (options: { current?: () => SpaceDetail | und
               const references = input.source ? [await sourceReference(input.source)] : undefined;
               if (!active) return;
               setSpace(context.space);
-              await controller.createItem({ type, references, returnTo: commandOptions.returnTo });
+              await controller.createItem({ type, references, templateId: input.templateId, returnTo: commandOptions.returnTo });
             } finally {
               pending = false;
             }

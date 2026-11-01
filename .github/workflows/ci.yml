@@ -705,6 +705,15 @@ jobs:
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          file: pwas/notes/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: cloud-notes:ci
+          cache-from: type=gha,scope=ci-notes
+          cache-to: type=gha,mode=max,scope=ci-notes
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
           file: packages/runner/Dockerfile
           platforms: linux/amd64
           load: true
@@ -753,6 +762,32 @@ jobs:
           docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
           timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
+          trap 'docker logs notes 2>&1 || true' ERR
+          docker exec postgres createdb -U ipa notes_test
+          docker run --detach --name notes --network cloud-smoke \
+            --env DATABASE_URL=postgresql://ipa:ipa@postgres:5432/notes_test \
+            --env NOTES_PUBLIC_ORIGIN=https://notes.example.test \
+            --env NOTES_STORAGE_BYTES=1073741824 --env NOTES_MAX_CONNECTIONS=50 \
+            --env NOTES_MAX_OPEN_PADS=10 cloud-notes:ci
+          timeout 60s docker exec notes bun -e 'for(;;){try{if((await fetch("http://127.0.0.1:3000/readyz")).ok)break}catch{}await Bun.sleep(1000)}'
+          docker exec notes bun -e 'for(const method of ["GET","HEAD"])for(const path of ["/admin","/admin/","/api/admin/session"]){if((await fetch("http://127.0.0.1:3000"+path,{method})).status!==404)throw new Error("admin_not_disabled")}'
+          docker exec notes bun -e 'if(process.getuid()===0)throw new Error("root");const r=await fetch("http://127.0.0.1:3000/");if(!r.ok||!(await r.text()).includes("id=\"root\""))throw new Error("missing_spa")'
+          docker exec notes bun -e '
+            const root="http://127.0.0.1:3000";
+            const html=await (await fetch(root)).text();
+            const path=html.match(/href="([^"]+\.css)"/)?.[1];
+            if(!path)throw new Error("missing_stylesheet");
+            const css=await (await fetch(new URL(path,root))).text();
+            if(!css.includes(".k2b-ui")||!css.includes(".notes-admin"))throw new Error("incomplete_stylesheet");'
+          docker exec notes bun -e '
+            const root="http://127.0.0.1:3000";
+            const created=await fetch(`${root}/api/pads`,{method:"POST",headers:{Origin:"https://notes.example.test","Content-Type":"application/json"},body:JSON.stringify({accepted:true,snapshot:"AQEBAAQBBHRleHQNIyBJbWFnZSBzbW9rZQA="})});
+            if(created.status!==201)throw new Error("create_failed");
+            const {readId}=await created.json();
+            const image=await fetch(`${root}/p/${readId}/preview.png`);
+            const png=Buffer.from(await image.arrayBuffer());
+            if(!image.ok||png.readUInt32BE(16)!==1200||png.readUInt32BE(20)!==630)throw new Error("preview_failed");'
+          trap - ERR
           # compose.dev.yml x-env with the service names of this throwaway network.
           common=(--network cloud-smoke
             --env NODE_ENV=production
@@ -789,7 +824,7 @@ jobs:
           docker logs app-core; docker logs gateway
           exit 1
       - if: always()
-        run: docker rm --force app-core gateway postgres nats valkey || true
+        run: docker rm --force notes app-core gateway postgres nats valkey || true
 
   runner-attacks:
     needs: [changes, setup, mirror]

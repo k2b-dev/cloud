@@ -40,3 +40,6 @@ compose*.yml
 .playwright-cli
 tests
 skills
+
+# Notes server bundle is rebuilt inside its image.
+pwas/notes/server-dist

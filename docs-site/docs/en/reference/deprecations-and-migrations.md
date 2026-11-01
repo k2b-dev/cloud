@@ -155,6 +155,20 @@ credentials. Keep administrator-managed account lists and normal directory,
 group, and sharing eligibility limited to their existing account kinds. See
 [Service accounts](/en/docs/identity/service-accounts#code-accounts).
 
+## Application deployment moves to key files
+
+This release replaces ordinary apps' shared infrastructure environment block
+with an app key file and Core address. Core and Gateway retain infrastructure
+values. Existing environment mode remains supported during the parallel
+release; environment overrides also remain supported afterward.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for settings checks, resumable enrollment, expected-app and replica checks,
+file permissions and the three rollback boundaries. Use the Compose template
+from that release. Do not remove legacy workload or OAuth credentials until
+the verification steps pass. Removing those authentication paths is a later
+breaking release, separate from this configuration migration.
+
 ## App keys authenticate background work and OAuth
 
 Applications with `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE` now sign each request

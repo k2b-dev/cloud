@@ -52,3 +52,25 @@ test("each instance publishes credential-free bootstrap metadata in its own fiel
   expect(serialized).not.toContain(values.database.url);
   expect(serialized).not.toContain(values.appSecret.current);
 });
+
+test("Core instance membership advertises legacy evidence capability", async () => {
+  let published: AppInstanceRecord | undefined;
+  const registry = {
+    upsert: async (input: { value: AppInstanceRecord }) => {
+      published = input.value;
+    },
+    touch: async () => false,
+    delete: async () => {},
+    snapshot: async () => ({ entries: [] }),
+  };
+  await createRegistryMembership("core", {
+    registry: () => registry,
+    lock: () => {
+      throw new Error("Unexpected lock");
+    },
+    instanceId: "core",
+    hostname: "test",
+    startedAt: NOW,
+  }).register();
+  expect(published?.legacyEvidence).toBe(1);
+});

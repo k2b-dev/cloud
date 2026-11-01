@@ -148,8 +148,12 @@ export type AppWorkspaceHeadProps = {
   count?: JSX.Element;
   /** Secondary actions at the end of the row. Never a filled button. */
   actions?: JSX.Element;
-  /** The one filled primary action. Below 48rem it becomes a round icon button beside the host's bottom bar. */
-  primary?: { label: string; icon: string; href?: string; onClick?: (event: MouseEvent) => void };
+  /**
+   * The one filled primary action. Below 48rem it becomes a round icon button beside the host's bottom bar. `popup`
+   * says it opens a menu, such as one a `Dropdown` with `attach` shows: server HTML then carries `aria-haspopup`, and a
+   * chevron follows the label.
+   */
+  primary?: { label: string; icon: string; href?: string; onClick?: (event: MouseEvent) => void; popup?: "menu" | "dialog" };
 };
 
 /** Head row slot. Must be a direct child of AppWorkspace; its parts may be islands. */
@@ -2405,7 +2409,12 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
   const primaryContent = () => (
     <>
       <i class={props.head?.primary?.icon} aria-hidden="true" />
-      <span class="k2b-app-workspace__head-primary-label">{props.head?.primary?.label}</span>
+      <span class="k2b-app-workspace__head-primary-label">
+        {props.head?.primary?.label}
+        <Show when={props.head?.primary?.popup}>
+          <i class="ti ti-chevron-down k2b-app-workspace__head-primary-chevron" aria-hidden="true" />
+        </Show>
+      </span>
     </>
   );
   return (
@@ -2496,6 +2505,8 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     size="sm"
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
+                    aria-haspopup={primary().popup}
+                    aria-expanded={primary().popup ? "false" : undefined}
                     onClick={primary().onClick}
                   >
                     {primaryContent()}
@@ -2508,6 +2519,8 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     size="sm"
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
+                    aria-haspopup={primary().popup}
+                    aria-expanded={primary().popup ? "false" : undefined}
                     href={href()}
                     onClick={primary().onClick}
                   >

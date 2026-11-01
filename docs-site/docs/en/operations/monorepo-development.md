@@ -395,16 +395,20 @@ into `DEV`, so the streams keep their data.
 
 ## Add a built-in application
 
-A new application touches exactly three files: the `workspaces.packages` list
-in the root `package.json`, its service in `compose.dev.yml`, and its service
-in `compose.prod.yml`. Image names, the release set, and the CI matrix derive
-from `scripts/workspace.ts`; the `app-set` check in `bun run check` fails when
-the three files disagree.
+A new application has three source inputs: the `workspaces.packages` list
+in the root `package.json`, its service in `scripts/templates/compose.dev.yml`,
+and its service in `scripts/templates/compose.prod.yml`. Run
+`bun scripts/generate-app-deployments.ts` and include the generated Compose
+files and development key fixtures in the change. The generator preserves
+existing development identities and creates fixtures for new workspace apps;
+no manual seed, public key or fingerprint is needed. Image names, the release
+set, and the CI matrix derive from `scripts/workspace.ts`; the `app-set`
+check in `bun run check` fails when the workspace and generated files disagree.
 
 The development service needs:
 
-- the shared environment;
-- `APP_ID`;
+- any application-owned image settings;
+- the generated bootstrap environment and secret mount;
 - the Cloud source and script mounts;
 - its own source mount;
 - the shared stylesheet;
@@ -414,7 +418,7 @@ An HTTP application registers itself at startup. The gateway discovers it from
 the shared registry.
 
 An application that is built on `main` before its release gets
-`profiles: ["unreleased"]` on its `compose.prod.yml` service. Its image is
+`profiles: ["unreleased"]` on its production template service. Its image is
 built and published, but a plain `docker compose up`, the release smoke, and
 the upgrade preflight leave it out. Compose starts it only with
 `--profile unreleased` or when the command names the service, and both are
@@ -664,3 +668,22 @@ including unscoped callers. This prevents one slow call from blocking other
 admitted work behind a serial worker. Changing
 that resource setting requires the same deliberate Sync migration as other
 durable consumer configuration changes.
+
+## Regenerate deployment templates
+
+Compose app environment and secret mounts are generated from the environment
+registry and workspace. Edit service configuration in
+`scripts/templates/compose.dev.yml` or `scripts/templates/compose.prod.yml`,
+then run:
+
+```bash
+bun scripts/generate-app-deployments.ts
+bun scripts/generate-config-docs.ts
+```
+
+The configuration check verifies both outputs. Full startup and the shared
+single-app startup helper prepare development key files before Compose
+recreates any app, including newly added workspace apps; Core enrolls them after its
+migration and before application readiness. See the
+[development installation](/en/docs/operations/app-key-upgrade#development-installation)
+for database identity and fixture restrictions.

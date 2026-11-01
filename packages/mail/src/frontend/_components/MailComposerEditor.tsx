@@ -31,6 +31,7 @@ export default function MailComposerEditor(props: {
   onAttachImages?: () => void;
   onDroppedImages?: (files: File[]) => void;
   history?: () => JSX.Element;
+  liveDictation?: boolean;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -78,6 +79,7 @@ export default function MailComposerEditor(props: {
                 onBodyInput={props.onBodyInput}
                 editable={props.editable}
                 completions={props.completions}
+                liveDictation={props.liveDictation}
                 onEditorReady={props.onEditorReady}
                 onAttachImages={props.onAttachImages}
                 onDroppedImages={props.onDroppedImages}
@@ -142,7 +144,7 @@ export default function MailComposerEditor(props: {
   ]);
 
   return (
-    <div class="min-h-72 flex-1 py-2">
+    <div class="min-h-72 flex-1 pb-2">
       <Show when={usesPanes()} fallback={<div class="h-full min-h-72 overflow-hidden">{writeSurface()}</div>}>
         <Panes
           layout={props.panes()}

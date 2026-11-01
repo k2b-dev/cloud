@@ -88,6 +88,55 @@ for (const viewport of [
       await page.waitForFunction(() => !!document.querySelector(".cm-query-block-widget svg"));
       await page.evaluate(() => window.noteHarness.settle());
       expect(await page.evaluate(() => window.noteHarness.blockDrift())).toEqual([]);
+      // A rebuild of the decorations replaces every table's widget; until the next measure the map holds what the widget
+      // estimates. Read in the same task, before that measure can run.
+      expect(
+        await page.evaluate(() => {
+          window.noteHarness.peerType("Ende der Notiz", " ");
+          return window.noteHarness.blockDrift();
+        }),
+      ).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+const tablesAbove = [
+  ...Array.from({ length: 8 }, (_, index) => `| Spalte ${index} | Wert |\n| --- | --- |\n| a | b |\n`),
+  ...Array.from({ length: 120 }, (_, index) => `Absatz ${index} mit etwas Text.\n`),
+].join("\n");
+
+for (const viewport of [
+  { width: 1280, height: 844 },
+  { width: 390, height: 844 },
+])
+  test(`someone typing further down does not move the text past scrolled-out tables (${viewport.width} px)`, async () => {
+    const context = await browser.newContext({ viewport });
+    const page = await context.newPage();
+    const errors = pageErrors(page);
+    try {
+      const url = new URL(server.url.href);
+      url.searchParams.set("doc", tablesAbove);
+      await page.goto(url.href);
+      await page.waitForFunction(() => window.noteHarness?.ready());
+      await page.evaluate(() => window.noteHarness.settle());
+      const line = page.locator(".cm-line", { hasText: "Absatz 90 mit" });
+      await page
+        .locator(".k2b-scroll-area")
+        .first()
+        .evaluate((port) => {
+          port.scrollTop = port.scrollHeight * 0.72;
+        });
+      await line.waitFor();
+      // CodeMirror draws the lines around the new place, and a table above them leaves the drawn range.
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-ste-table").length < 8);
+      await page.evaluate(() => window.noteHarness.settle());
+      const before = (await line.boundingBox())?.y;
+      expect(before).toBeNumber();
+      await page.evaluate(() => window.noteHarness.peerType("Absatz 118 mit", " "));
+      await page.evaluate(() => window.noteHarness.settle());
+      expect((await line.boundingBox())?.y).toBeCloseTo(before!, 0);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

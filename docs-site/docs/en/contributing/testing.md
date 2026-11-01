@@ -345,6 +345,13 @@ the kill fails the hook with those timings.
 `packages/ui/test/browser.browser.test.ts` guards a hung close and the next
 launch.
 
+`bun run test --browser` first runs `packages/ui/test/browser-warmup.ts`. It
+draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
+WebKit's shader compile in a new Playwright container
+([#2149](https://github.com/k2b-dev/cloud/issues/2149)), do not fall inside the
+first test's 5 s. It starts its own browser, shares only on-disk caches with the
+suites, and has its own bounded budget. When it fails, no suite runs.
+
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
 or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place

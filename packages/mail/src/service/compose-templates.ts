@@ -342,6 +342,13 @@ export const updateComposeTemplate = async (params: {
       if (!current || current.archived_at) return fail(err.notFound("Compose template"));
       const writable = templateWriteAccess(params.context, current, permission.data);
       if (!writable.ok) return writable;
+      if (
+        parsed.data.expectedRevision <= Number(current.revision) &&
+        (parsed.data.name === undefined || parsed.data.name === current.name) &&
+        (parsed.data.shortcut === undefined || parsed.data.shortcut === current.shortcut) &&
+        (parsed.data.body === undefined || parsed.data.body === current.body_template)
+      )
+        return ok(withFormattingWarnings(mapTemplate(current, params.mailboxId)));
       if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Compose template"));
       if (parsed.data.shortcut && parsed.data.shortcut !== current.shortcut) {
         const [duplicate] = await tx<{ exists: boolean }[]>`
@@ -529,6 +536,14 @@ export const setComposeSignatureDefault = async (params: {
         FOR UPDATE
       `;
       const currentRevision = current ? Number(current.revision) : null;
+      if (!current && !parsed.data.templateId) return ok(null);
+      if (
+        current &&
+        template &&
+        current.template_id === template.id &&
+        (parsed.data.expectedRevision === null || parsed.data.expectedRevision <= Number(current.revision))
+      )
+        return ok(mapDefault(current, { mailboxId: params.mailboxId, senderIdentityId: params.senderIdentityId, templateId: template.id }));
       if (currentRevision !== parsed.data.expectedRevision) return fail(err.conflict("Signature default"));
       if (!parsed.data.templateId) {
         if (current) {
@@ -646,6 +661,8 @@ export const updateMailboxComposeStyle = async (params: {
         FOR UPDATE
       `;
       if (!current) return fail(err.notFound("Mailbox email style"));
+      if (parsed.data.expectedRevision <= Number(current.revision) && current.custom_css === css.data)
+        return ok(mapStyle(current, params.mailboxId));
       if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Mailbox email style"));
       const [row] = await tx<DbStyle[]>`
         UPDATE mail.compose_styles

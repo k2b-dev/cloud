@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
@@ -33,7 +34,7 @@ export default ssr<AuthContext>(async (c) => {
     context.actor.kind === "user"
       ? { kind: "user" as const, id: context.actor.user.id }
       : { kind: "service_account" as const, id: context.actor.serviceAccount.id };
-  const [mailbox, access, identities, calendarIntegrationAvailable, signatures, signatureDefaults] = await Promise.all([
+  const [mailbox, access, identities, calendarIntegrationAvailable, signatures, signatureDefaults, liveDictation] = await Promise.all([
     mailboxes.getMailbox(context, mailboxId),
     // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
     mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
@@ -41,6 +42,7 @@ export default ssr<AuthContext>(async (c) => {
     calendarInvitations.composerIntegrationAvailable(appAccessAuthority(c)),
     composeTemplates.listComposeTemplates(context, mailboxId),
     composeTemplates.listComposeSignatureDefaults(context, mailboxId),
+    getLiveDictationStatus(c.get("accessSubject")),
   ]);
   if (!mailbox.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, mailbox.error.status));
   if (!access.ok) return ssr.error(c, 403);
@@ -84,6 +86,7 @@ export default ssr<AuthContext>(async (c) => {
         canManageMailbox={access.data.permission === "admin"}
         currentUserEmail={currentUserEmail}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
+        liveDictation={liveDictation.available}
         contactDirectory={directory}
       />
     </Layout>

@@ -340,7 +340,7 @@ inferring support from autocomplete.
 | --- | --- | --- |
 | `@k2b/cloud` | `defineApp`, `appAccess`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
-| `@k2b/cloud/ai` | Structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
+| `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/code` | Preview SDK generation, checking and hosting | Generated `@sdk` modules run in Code; the generator and host controls are platform-owned |
@@ -462,7 +462,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/browser/shared-text` | Supported, browser | Shared provider, offline storage, action history and anchored table transport | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/browser/session` | Supported, browser | Sign out with cross-tab offline-document cleanup | [Offline documents](/en/docs/data/shared-text-documents#keep-unconfirmed-input-on-the-device) |
-| `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@k2b/cloud/ai/browser` | Supported, client | Use `createLiveDictationSource` and its `DictationSource` / `DictationSession` / `DictationEvent` / `DictationDevice` / `DictationErrorCode` types for [live dictation](/en/docs/ai/live-dictation); launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
 | `@k2b/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` and `html_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |
 | `@k2b/cloud/ai/ui` | Supported, SolidJS | Shared AI chat components | [Chat interface](/en/docs/ai/chat-interface) |
@@ -557,7 +557,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Entry point | Status | Meaning |
 | --- | --- | --- |
-| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAppBootstrapRoutes` for [signed startup bootstrap](/en/docs/build/platform-start#bootstrap-v1-transport) and `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
+| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAppBootstrapRoutes` for [signed startup bootstrap](/en/docs/build/platform-start#bootstrap-v1-transport) `createAppMigrationProbeRoutes` and `authenticateSignedAppRequest` for [migration evidence](/en/docs/operations/app-key-status), and `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
 | `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |

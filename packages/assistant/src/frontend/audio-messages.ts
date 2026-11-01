@@ -23,6 +23,8 @@ export const audioMessages = i18n.define({
       noSpeech: "No speech recognized.",
       failed: "Transcription failed. You can retry or discard the recording.",
       recordFailed: "Could not record audio. Check microphone permission and browser support.",
+      recordInstead: "Record instead",
+      recordInsteadNote: "Try again in a moment or record. The text then appears after you stop, and the recording is kept in the chat.",
       uploadFailed: "Upload failed. The recording is still available here; retry before leaving this page.",
       conflict: "The saved draft changed. Your local text has been kept.",
       savedDraft: "Saved draft",
@@ -52,6 +54,9 @@ export const audioMessages = i18n.define({
       noSpeech: "Keine Sprache erkannt.",
       failed: "Die Transkription ist fehlgeschlagen. Du kannst sie erneut versuchen oder die Aufnahme verwerfen.",
       recordFailed: "Audioaufnahme nicht möglich. Prüfe die Mikrofonberechtigung und die Browserunterstützung.",
+      recordInstead: "Stattdessen aufnehmen",
+      recordInsteadNote:
+        "Versuch es gleich noch mal oder nimm auf. Dann erscheint der Text nach dem Stopp, und die Aufnahme wird im Gespräch gespeichert.",
       uploadFailed: "Upload fehlgeschlagen. Die Aufnahme ist hier noch verfügbar. Versuche es erneut, bevor du die Seite verlässt.",
       conflict: "Der gespeicherte Entwurf wurde geändert. Dein lokaler Text bleibt erhalten.",
       savedDraft: "Gespeicherter Entwurf",

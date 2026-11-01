@@ -226,8 +226,10 @@ isolated integration command and its CI coverage.
 
 ## Keep custom administration on its owning API
 
-A setting with `envBootstrap` or `envFallback` can be repaired through
-`cld admin settings set --app <id>`. Declare `adminWrite: "application"`
+Ordinary declared application settings can be changed through
+`cld admin settings set --app <id>`, including settings without an environment
+variable. Settings with a dedicated administration command use that command
+for their application-specific validation and effects. Declare `adminWrite: "application"`
 when writes must instead use an application API for connection checks,
 rescheduling or a stronger OAuth scope. The internal generic setter then
 rejects that key, including for an administrator. Supply a named CLI command

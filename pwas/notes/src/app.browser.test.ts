@@ -5,6 +5,7 @@ import { join, resolve, sep } from "node:path";
 import type { Browser, BrowserContext, Locator, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../packages/ui/test/browser";
 import { build, packageRoot } from "../scripts/build";
+import { contentSecurityPolicy } from "../server/app";
 
 const NOW = Date.parse("2026-10-30T12:00:00.000Z");
 const READ_ID = "Read0123456789ABCDEFGH";
@@ -42,7 +43,7 @@ beforeAll(async () => {
         const file = Bun.file(path === outdir ? join(outdir, "index.html") : path);
         return new Response((await file.exists()) ? file : Bun.file(join(outdir, "index.html")), {
           // An offline reload must use the worker, never the browser's HTTP cache.
-          headers: { "Cache-Control": "no-store" },
+          headers: { "Cache-Control": "no-store", "Content-Security-Policy": contentSecurityPolicy() },
         });
       },
     });
@@ -87,11 +88,39 @@ const skipWelcome = () => {
     localStorage.setItem("k2b-notes.preferences", JSON.stringify({ welcomeCreated: true }));
 };
 
+/** The page's content-policy refusals, which leave no page error behind. */
+const recordPolicyViolations = () => {
+  const violations: string[] = [];
+  Object.assign(window, { policyViolations: violations });
+  document.addEventListener("securitypolicyviolation", (event) => {
+    violations.push(`${event.violatedDirective} ${event.blockedURI}`);
+  });
+};
+const policyViolations = () => page.evaluate(() => (window as unknown as { policyViolations: string[] }).policyViolations);
+
+/** Light pixels in the middle of a filled box: its check, which the rounded corners cannot fake. */
+const checkPixels = async (box: Locator) => {
+  const png = (await box.screenshot()).toString("base64");
+  return page.evaluate(async (png) => {
+    const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d")!;
+    context.drawImage(bitmap, 0, 0);
+    const { data } = context.getImageData(bitmap.width / 4, bitmap.height / 4, bitmap.width / 2, bitmap.height / 2);
+    let light = 0;
+    for (let index = 0; index < data.length; index += 4)
+      if (data[index]! > 200 && data[index + 1]! > 200 && data[index + 2]! > 200) light++;
+    return light;
+  }, png);
+};
+
 const openContext = async (serviceWorkers: "allow" | "block", firstVisit = false) => {
   context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce", serviceWorkers });
   context.setDefaultTimeout(5_000);
   context.setDefaultNavigationTimeout(10_000);
   await context.addInitScript(pinPageClock, NOW);
+  await context.addInitScript(recordPolicyViolations);
   if (!firstVisit) await context.addInitScript(skipWelcome);
   page = await context.newPage();
   errors = pageErrors(page);
@@ -149,6 +178,12 @@ async function box(locator: Locator) {
   return result;
 }
 
+// Ticks a consent box where a person presses: the visible box. The real input is a hidden 1px element.
+const agree = async (dialog: Locator, name: RegExp) => {
+  await dialog.locator(".k2b-check", { hasText: name }).locator(".k2b-check__control").click();
+  expect(await dialog.getByRole("checkbox", { name }).isChecked()).toBe(true);
+};
+
 describe("k2b notes · Produktions-SPA", () => {
   test("erster Besuch: die Willkommensnotiz öffnet sich im Editor und kommt nach dem Löschen nicht wieder", async () => {
     await context.close();
@@ -161,6 +196,12 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
     expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
+    // The checked box shows its check under the policy the site ships with, and nothing else was refused.
+    expect(await checkPixels(page.locator(".custom-list-task-marker:checked").first())).toBeGreaterThan(3);
+    // Zod probes for eval once inside a try/catch; a real eval would also fail as a page error.
+    expect((await policyViolations()).filter((violation) => !violation.startsWith("script-src eval"))).toEqual([]);
+    // The sum row is computed and stays out of the chart built from the same table.
+    await page.locator(".md-formula-ok", { hasText: "183" }).waitFor();
     // The table's `@kaffee` anchor shows as a quiet label, not as raw Markdown.
     await page.locator(".cm-named-block-handle", { hasText: /^kaffee$/ }).waitFor();
     expect(await editor().innerText()).not.toContain("@kaffee");
@@ -258,9 +299,9 @@ describe("k2b notes · Produktions-SPA", () => {
     const dialog = page.getByRole("dialog");
     const submit = dialog.getByRole("button", { name: "Links erstellen", exact: true });
     expect(await submit.isDisabled()).toBe(true);
-    await dialog.getByRole("checkbox", { name: /Ich halte mich an die Nutzungsbedingungen/ }).check();
+    await agree(dialog, /Ich halte mich an die Nutzungsbedingungen/);
     expect(await submit.isDisabled()).toBe(true);
-    await dialog.getByRole("checkbox", { name: /Ich habe die Datenschutzhinweise gelesen/ }).check();
+    await agree(dialog, /Ich habe die Datenschutzhinweise gelesen/);
     expect(await submit.isEnabled()).toBe(true);
     const [response] = await Promise.all([
       page.waitForResponse((response) => new URL(response.url()).pathname === "/api/pads" && response.request().method() === "POST"),
@@ -306,8 +347,8 @@ describe("k2b notes · Produktions-SPA", () => {
     await createNote("Geteilt");
     await page.getByRole("button", { name: "Teilen", exact: true }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("checkbox", { name: /Ich halte mich an die Nutzungsbedingungen/ }).check();
-    await dialog.getByRole("checkbox", { name: /Ich habe die Datenschutzhinweise gelesen/ }).check();
+    await agree(dialog, /Ich halte mich an die Nutzungsbedingungen/);
+    await agree(dialog, /Ich habe die Datenschutzhinweise gelesen/);
     await dialog.getByRole("button", { name: "Links erstellen", exact: true }).click();
     await dialog.getByRole("button", { name: "Fertig", exact: true }).click();
     await dialog.waitFor({ state: "hidden" });
@@ -379,6 +420,100 @@ describe("k2b notes · Produktions-SPA", () => {
         expect(Math.abs(next.share[dimension] - first.share[dimension])).toBeLessThanOrEqual(1);
     }
   }, 20_000);
+
+  test("Fokusrahmen: jedes Textfeld zeigt eine einzige Form, das innere Feld zeichnet nichts", async () => {
+    await page.goto(origin);
+    const expectOneShape = async (field: Locator) => {
+      await field.focus();
+      await settled(page);
+      const look = await field.evaluate((input) => {
+        const inner = getComputedStyle(input);
+        const shell = getComputedStyle(input.closest(".k2b-input-shell")!);
+        return {
+          innerBorder: inner.borderTopWidth,
+          innerOutline: inner.outlineStyle,
+          innerRadius: inner.borderTopLeftRadius,
+          shellBorder: shell.borderTopColor,
+          shellRing: shell.boxShadow,
+        };
+      });
+      expect(look.innerBorder).toBe("0px");
+      expect(look.innerOutline).toBe("none");
+      expect(look.innerRadius).toBe("0px");
+      expect(look.shellBorder).toBe("rgba(0, 0, 0, 0)");
+      expect(look.shellRing).toContain("inset");
+    };
+
+    await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Einstellungen", exact: true }).click();
+    const settings = page.getByRole("dialog");
+    await expectOneShape(settings.getByRole("textbox").first());
+    await settings.getByRole("button", { name: "Fertig", exact: true }).click();
+    await settings.waitFor({ state: "hidden" });
+
+    // The report form opens from the footer of the overview, which needs a note.
+    await createNote("Eine Notiz");
+    await back().click();
+    await page.getByRole("button", { name: "Inhalt melden", exact: true }).click();
+    const report = page.getByRole("dialog");
+    const fields = report.getByRole("textbox");
+    expect(await fields.count()).toBe(3);
+    for (const field of await fields.all()) await expectOneShape(field);
+  }, 30_000);
+
+  for (const viewport of [
+    { width: 1280, height: 900 },
+    { width: 390, height: 844 },
+  ])
+    test(`Einstellungen ${viewport.width} px: „Alle Daten löschen“ steht links neben „Fertig“ und fragt weiter nach`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(origin);
+      await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Einstellungen", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      const clear = await box(dialog.getByRole("button", { name: "Alle Daten löschen", exact: true }));
+      const done = await box(dialog.getByRole("button", { name: "Fertig", exact: true }));
+      expect(Math.abs(clear.y + clear.height / 2 - (done.y + done.height / 2))).toBeLessThan(1);
+      expect(clear.x + clear.width).toBeLessThanOrEqual(done.x);
+      expect(done.x + done.width).toBeLessThanOrEqual(viewport.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await dialog.getByRole("button", { name: "Alle Daten löschen", exact: true }).click();
+      await page.getByRole("heading", { name: "Alle Daten in diesem Browser löschen", exact: true }).waitFor();
+    });
+
+  test("Diagramm: Quelltext ist ein Icon neben Kopieren und Tabelle, derselbe Knopf führt zurück", async () => {
+    await context.close();
+    await openContext("block", true);
+    await page.goto(origin);
+    await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
+    const group = page.locator(".cm-query-block-widget .notebook-book-chart__actions");
+    await group.getByRole("button", { name: "Daten kopieren", exact: true }).waitFor();
+    const buttons = group.getByRole("button");
+    expect(await buttons.evaluateAll((all) => all.map((button) => button.getAttribute("aria-label")))).toEqual([
+      "Daten kopieren",
+      "Als Tabelle",
+      "Quelltext anzeigen",
+    ]);
+    const sizes = await Promise.all((await buttons.all()).map(box));
+    expect(new Set(sizes.map((size) => `${size.width}×${size.height}×${size.y}`)).size).toBe(1);
+    // The widget's `estimatedHeight`: padding, title row, gap and frame. Anything unmeasured makes the note jump on scroll.
+    expect((await box(page.locator(".cm-query-block-widget").first())).height).toBe(34 + 28 + 8 + 288);
+    const show = page.getByRole("button", { name: "Quelltext anzeigen", exact: true });
+    // The icon font is a subset built from the bundle: the glyph has to be in it.
+    expect(await show.locator("i.ti-code").evaluate((icon) => getComputedStyle(icon, "::before").content)).not.toBe("none");
+    expect(await show.getAttribute("aria-pressed")).toBe("false");
+    expect((await show.innerText()).trim()).toBe("");
+
+    await show.click();
+    await page.locator(".cm-line", { hasText: ":::chart" }).waitFor();
+    expect(await page.locator(".cm-query-block-widget").count()).toBe(0);
+    expect(await show.getAttribute("aria-pressed")).toBe("true");
+
+    await show.click();
+    await group.getByRole("button", { name: "Daten kopieren", exact: true }).waitFor();
+    expect(await page.locator(".cm-line", { hasText: ":::chart" }).count()).toBe(0);
+    expect(await show.getAttribute("aria-pressed")).toBe("false");
+  });
 
   test("Offline-Reload: aktiver Service Worker lädt die App und ihre lokalen Notizen", async () => {
     await context.close();

@@ -8,9 +8,9 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { SpaceSettingsContextSchema } from "@/settings-context";
-import { browserName, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, settled, storedCookie } from "../../../../../../ui/test/browser";
 import { headOverlaps } from "../../../../../../ui/test/head-overlap";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { parseSpaceSettings } from "../settings/SpaceSettingsStore";
@@ -38,6 +38,60 @@ const columns: SpaceColumn[] = [
   { id: "Col002", spaceId: "Space1", name: "In progress", color: "#3b82f6", rank: "2", isDone: false },
   { id: "Col003", spaceId: "Space1", name: "Review", color: "#f59e0b", rank: "3", isDone: false },
   { id: "Col004", spaceId: "Space1", name: "Done", color: "#10b981", rank: "4", isDone: true },
+];
+// Invented templates of a logistics team; `?templates=3` or `?templates=12` puts them in the "+" menus.
+const template = (id: string, name: string, patch: Partial<SpaceItemTemplate> = {}): SpaceItemTemplate => ({
+  id,
+  spaceId: "Space1",
+  kind: "task",
+  name,
+  icon: null,
+  title: name,
+  description: null,
+  priority: null,
+  tags: [],
+  assignees: [],
+  assignCreator: false,
+  checklist: [],
+  estimatedDurationMinutes: null,
+  location: null,
+  url: null,
+  allDay: false,
+  durationMinutes: null,
+  timeOfDay: null,
+  dateRule: { type: "none" },
+  createdAt: "2026-10-01T00:00:00.000Z",
+  updatedAt: "2026-10-01T00:00:00.000Z",
+  ...patch,
+});
+const someTemplates: SpaceItemTemplate[] = [
+  template("Tpl001", "Wochenbericht", {
+    icon: "ti ti-report",
+    checklist: ["a", "b", "c"],
+    dateRule: { type: "weekdays", weekdays: ["FR"] },
+  }),
+  template("Tpl002", "Wareneingang prüfen", {
+    icon: "ti ti-package",
+    checklist: ["a", "b", "c", "d"],
+    dateRule: { type: "offset", days: 1 },
+  }),
+  template("Tpl003", "Reklamation", { icon: "ti ti-alert-triangle", priority: "high", dateRule: { type: "offset", days: 2 } }),
+];
+const manyTemplates: SpaceItemTemplate[] = [
+  ...someTemplates,
+  ...(
+    [
+      ["ti ti-clipboard-list", "Inventur"],
+      ["ti ti-route", "Tourenplan"],
+      ["ti ti-receipt", "Rechnung prüfen"],
+      ["ti ti-forklift", "Gabelstapler-Wartung"],
+      ["ti ti-tag", "Etiketten bestellen"],
+      ["ti ti-file-plus", "Angebot einholen"],
+      ["ti ti-user-plus", "Onboarding"],
+      ["ti ti-beach", "Urlaubsübergabe"],
+      ["ti ti-building-store", "Lieferantengespräch"],
+    ] as const
+  ).map(([icon, name], index) => template(`Tpl1${String(index).padStart(2, "0")}`, name, { icon })),
 ];
 const tags: SpaceTag[] = [
   { id: "Tag001", spaceId: "Space1", name: "Warehouse", color: "#f59e0b" },
@@ -304,6 +358,8 @@ const pageHtml = (url: URL, cookie: string | undefined) => {
             people,
             locale: url.searchParams.get("locale") === "de" ? "de" : "en",
             detail: url.searchParams.has("item"),
+            templates:
+              url.searchParams.get("templates") === "12" ? manyTemplates : url.searchParams.get("templates") === "3" ? someTemplates : [],
           }),
         );
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
@@ -742,6 +798,75 @@ describe(`Spaces shared head in ${browserName}`, () => {
         await page.context().close();
       }
     }, 30_000);
+  test("every + opens one menu with the templates, moves nothing, and keeps the head link", async () => {
+    const plusShots = join(tmpdir(), "spaces-plus-templates", browserName);
+    mkdirSync(plusShots, { recursive: true });
+    const shot = (page: Page, name: string) => page.screenshot({ path: join(plusShots, name) });
+    const page = await open("/app/spaces/Space1?view=kanban&locale=de&templates=3");
+    try {
+      const primary = page.locator("a[data-workspace-primary]");
+      // The head keeps its link for a new tab or a page before hydration, and says it opens a menu.
+      expect(await primary.getAttribute("href")).toContain("command=spaces.task.compose");
+      expect(await primary.getAttribute("aria-haspopup")).toBe("menu");
+      const before = await geometry(page);
+      await primary.click();
+      const menu = page.getByRole("menu", { name: "Neue Aufgabe" }).first();
+      await menu.waitFor();
+      await settled(page);
+      expect(await primary.getAttribute("aria-expanded")).toBe("true");
+      expect(await geometry(page)).toEqual(before);
+      expect(
+        await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.querySelector("span > span")?.textContent)),
+      ).toEqual(["Leere Aufgabe", "Wochenbericht", "Wareneingang prüfen", "Reklamation", "Vorlage erstellen …"]);
+      await shot(page, "kanban-head-3.png");
+      await page.keyboard.press("Escape");
+      await settled(page);
+      // A column's "+ Aufgabe" opens the same menu.
+      await page.getByRole("button", { name: "Aufgabe hinzufügen" }).nth(2).click();
+      await page.locator(".k2b-dropdown__menu:popover-open").waitFor();
+      await settled(page);
+      await shot(page, "kanban-col.png");
+    } finally {
+      await page.context().close();
+    }
+    for (const [query, name] of [
+      ["templates=0", "kanban-head-0"],
+      ["templates=12", "kanban-head-12"],
+    ] as const) {
+      const other = await open(`/app/spaces/Space1?view=kanban&locale=de&${query}`);
+      try {
+        await other.locator("a[data-workspace-primary]").click();
+        await other.locator(".k2b-dropdown__menu:popover-open").waitFor();
+        await settled(other);
+        await shot(other, `${name}.png`);
+        if (query === "templates=12") {
+          await other.keyboard.type("rek");
+          await settled(other);
+          await shot(other, "kanban-search.png");
+          await other.keyboard.press("Control+A");
+          await other.keyboard.type("Palette tauschen");
+          await settled(other);
+          await shot(other, "kanban-nomatch.png");
+        }
+      } finally {
+        await other.context().close();
+      }
+    }
+    const phonePage = await open("/app/spaces/Space1?view=kanban&locale=de&templates=12", 390);
+    try {
+      // The fixture pins the round button where the host's bottom bar would be, under the board's columns, so the
+      // click goes to the element itself.
+      await phonePage.locator("a[data-workspace-primary]").evaluate((element: HTMLElement) => element.click());
+      const sheet = phonePage.locator("dialog[open]");
+      await sheet.waitFor();
+      await settled(phonePage);
+      expect(await sheet.getByText("Neue Aufgabe", { exact: true }).first().isVisible()).toBe(true);
+      await shot(phonePage, "phone-kanban-head-12.png");
+    } finally {
+      await phonePage.context().close();
+    }
+  }, 120_000);
+
   test("review screenshots of the white surface", async () => {
     for (const theme of ["light", "dark"] as const)
       for (const width of [1920, 1440, 1194, 834, 390])

@@ -116,8 +116,10 @@ title, and children. Wrap related tabs in `SettingsModal.Group` to add a short
 rail label without changing tab selection or keyboard order. Below 48rem the
 categories become one horizontally scrolling tab row above the panel, with the
 close action beside the row instead of over the panel; group labels show only
-in the side rail. The categories stay visible instead of becoming a separate
-select. When the modal opens or the selection changes, the selected category
+in the side rail. Space separates groups, and the row or rail is set apart from
+the panel by space or its own surface; neither draws a divider line. The row
+fades out at an edge where more categories follow. The categories stay visible
+instead of becoming a separate select. When the modal opens or the selection changes, the selected category
 scrolls into view in the row or rail.
 
 `activeTab` and `onTabChange` make selection controlled; use `defaultTab` for

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/toolbar.browser-harness";
 
 let browser: Browser;
@@ -684,6 +684,31 @@ test("empty groups and redundant separators disappear, including beside a spacer
       const separators = children.map((child) => child.matches(".k2b-toolbar__separator"));
       return !separators[0] && !separators.at(-1) && separators.every((value, index) => !value || !separators[index + 1]);
     });
+  } finally {
+    await page.close();
+  }
+});
+
+test("a separator groups actions with space and draws no line", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => window.toolbarFixture.mount(575));
+    await settled(page);
+    const separators = await page.locator(".k2b-toolbar__separator").evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        return {
+          role: element.getAttribute("role"),
+          background: style.backgroundColor,
+          border: ["Top", "Right", "Bottom", "Left"].map((side) => style.getPropertyValue(`border-${side.toLowerCase()}-width`)),
+          space: Math.min(box.width, box.height) > 0,
+        };
+      }),
+    );
+    expect(separators.length).toBeGreaterThan(0);
+    for (const separator of separators)
+      expect(separator).toEqual({ role: "separator", background: "rgba(0, 0, 0, 0)", border: ["0px", "0px", "0px", "0px"], space: true });
   } finally {
     await page.close();
   }

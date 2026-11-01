@@ -71,7 +71,9 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><\/span><\/button>/);
+    expect(html).toMatch(
+      /data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><i class="ti ti-chevron-down[^>]*><\/i><\/span><\/button>/,
+    );
     // The filters and the count sit in the toolbar after the title; there is no second row.
     expect(html).toMatch(
       /<div class="k2b-calendar-header__content">.*aria-label="Scope".*aria-label="Priority".*aria-label="Status".*0 shown/,

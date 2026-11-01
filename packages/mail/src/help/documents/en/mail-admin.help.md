@@ -16,7 +16,7 @@ Settings are grouped by purpose:
 - **Reading** is available to every mailbox reader. It sets whether this browser shows safe HTML or plain text, or adapts to the current theme.
 - **Organization** is available with **View** access for private saved views. With **Edit** access, you can also create shared views and mailbox tags.
 - **Writing** is available with **Edit** or **Manage** access. It contains personal writing preferences, templates, signature defaults, and the email design editor. Content and design for the whole mailbox require **Manage** access.
-- **General** is the first category that requires **Manage** access. It sets the shared identity and the sending safeguards.
+- **General** is the first category that requires **Manage** access. It sets the mailbox name, its description, and the sending safeguards. A new name changes no address, sender identity, or routing.
 - **General**, **Accounts & identities**, **Calendar invitations**, **Folders**, **Access**, and **Danger zone** require **Manage** access.
 
 In **… → Settings → Calendar invitations**, choose one Space where you have **Edit** access as the suggested destination for imported invitations. Mail stores this preference for the whole mailbox. Spaces offers each person only destinations where they have **Edit** access.

@@ -48,7 +48,7 @@ export type AiRecentSentResourceRef = {
   conversationId: string;
 };
 
-export const AI_MODEL_CAPABILITIES = ["tools", "vision", "transcription"] as const;
+export const AI_MODEL_CAPABILITIES = ["tools", "vision", "transcription", "live-transcription"] as const;
 export type AiModelCapability = (typeof AI_MODEL_CAPABILITIES)[number];
 
 export const AI_IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"] as const;
@@ -56,7 +56,16 @@ export type AiImageMediaType = (typeof AI_IMAGE_MEDIA_TYPES)[number];
 export const isAiImageMediaType = (value: string): value is AiImageMediaType =>
   AI_IMAGE_MEDIA_TYPES.some((mediaType) => mediaType === value);
 
-export type AiProviderId = "openai" | "openrouter" | "anthropic" | "mistral" | "gemini" | "ollama" | "vllm" | "openai-compatible";
+export type AiProviderId =
+  | "openai"
+  | "openrouter"
+  | "anthropic"
+  | "mistral"
+  | "gemini"
+  | "ollama"
+  | "vllm"
+  | "vllm-realtime"
+  | "openai-compatible";
 
 export const AI_DATA_BOUNDARIES = ["hosted", "private"] as const;
 export type AiDataBoundary = (typeof AI_DATA_BOUNDARIES)[number];

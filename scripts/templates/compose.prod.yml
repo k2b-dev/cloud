@@ -1,0 +1,222 @@
+# Production deployment template — single host, behind an existing Traefik.
+# Before starting apps, enroll OAuth explicitly (repeat the grant on rotation):
+# cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
+#
+# This file does NOT define `postgres`, `valkey`, `nats-1..3`, or `filegate`.
+# Add them yourself (the apps reference `postgres:5432`, `valkey:6379`, and a
+# three-node NATS JetStream cluster at `nats-1..3:4222` with max_payload >= 16MB,
+# and depend on a `postgres` service with a healthcheck). See README and
+# compose.yml for an example.
+#
+# Configure via .env (see .env.prod.example). Set CLOUD_IMAGE_TAG to a release
+# tag (`vX.Y.Z`) or an immutable `sha-<commit>` tag listed in that release's
+# release.json. Never deploy `main` or `latest`: they move underneath a running
+# installation and break the rollback path.
+
+x-shared-env: &shared-env
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  REDIS_URL: redis://valkey:6379
+  NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+  SYNC_NAMESPACE: ${SYNC_NAMESPACE:-prod}
+  # Optional NATS auth/TLS: paths inside the app containers. Mount the files
+  # into Core and Gateway and set the paths in .env.
+  NATS_CREDS_FILE: ${NATS_CREDS_FILE:-}
+  NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
+  APP_SECRET: ${APP_SECRET}
+  APP_URL: https://${CLOUD_HOST}
+  CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
+  CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+
+x-app-defaults: &app-defaults
+  restart: unless-stopped
+  networks: [cloud-internal]
+  environment: *shared-env
+
+networks:
+  cloud-internal:
+    driver: bridge
+  traefik:
+    external: true
+  runner-core:
+    internal: true
+
+services:
+  # No shared environment or runtime: runner must never receive installation credentials.
+  runner:
+    init: true
+    image: ghcr.io/k2b-dev/cloud-app-runner:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    restart: unless-stopped
+    environment:
+      CLOUD_APP_KEY_FILE: /run/runner-key/source
+      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+    secrets:
+      - source: runner-app-key
+        target: /run/runner-key/source
+    networks: [runner-core]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
+    cap_drop: [ALL]
+    # DAC_OVERRIDE is entrypoint-only; the supervisor retains the other four.
+    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true", "seccomp=./packages/runner/seccomp.json", "apparmor=cloud-code-runner", "systempaths=unconfined"]
+    mem_limit: 1g
+    pids_limit: 256
+    # Keep this above the largest Code wall-clock budget plus completion transport time.
+    stop_grace_period: 6m
+
+  # Gateway — the only service exposed to Traefik.
+  gateway:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-gateway:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    networks:
+      cloud-internal: {}
+      traefik:
+        aliases: ["cloud-gateway-${CLOUD_HOST}"]
+    environment:
+      APP_URL: https://${CLOUD_HOST}
+      GATEWAY_INTERNAL_URL: http://cloud-gateway-${CLOUD_HOST}:3000
+      APP_SECRET: ${APP_SECRET}
+      REDIS_URL: redis://valkey:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+      SYNC_NAMESPACE: ${SYNC_NAMESPACE:-prod}
+      NATS_CREDS_FILE: ${NATS_CREDS_FILE:-}
+      NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
+      # Unset trusts loopback and private networks, which covers Traefik here.
+      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
+    # Private HTTP provider/Caddy ask listener; never publish a host port or route it through Traefik.
+    expose: ["3001"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cloud.rule=Host(`${CLOUD_HOST}`)"
+      - "traefik.http.routers.cloud.entrypoints=websecure"
+      - "traefik.http.routers.cloud.tls.certresolver=le"
+      - "traefik.http.services.cloud.loadbalancer.server.port=3000"
+      - "traefik.docker.network=traefik"
+
+  app-gateway-ops:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-gateway-ops:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    # Diagnostics credentials are stored in Gateway Ops administrator settings.
+
+  # Apps — internal only, reached through the gateway.
+  app-core:
+    networks: [cloud-internal, runner-core]
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)
+      interval: 2s
+      timeout: 2s
+      retries: 90
+      start_period: 2s
+    environment:
+      <<: *shared-env
+      OUTGOING_MAIL_ALLOWED_TARGETS: ${OUTGOING_MAIL_ALLOWED_TARGETS:-}
+      ADMIN_LOGIN_TOKEN: ${ADMIN_LOGIN_TOKEN:-}
+      CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:-}
+      CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: ${CLOUD_IDENTITY_KEY_ENCRYPTION_KEY:?CLOUD_IDENTITY_KEY_ENCRYPTION_KEY is required}
+      CLOUD_IDENTITY_NEXT_KEY: ${CLOUD_IDENTITY_NEXT_KEY:-}
+      CLOUD_IDENTITY_PREVIOUS_KEY: ${CLOUD_IDENTITY_PREVIOUS_KEY:-}
+
+  app-accounts:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-accounts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-api-docs:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-api-docs:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-assistant:
+    <<: *app-defaults
+    user: bun
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    image: ghcr.io/k2b-dev/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-capabilities:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-capabilities:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  # Chat is unreleased: its image is built and published, but a plain `up`
+  # leaves it out. `--profile unreleased` or naming the service starts it,
+  # which is for test installations only. Do not start it.
+  app-chat:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-chat:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    profiles: ["unreleased"]
+
+  app-contacts:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-contacts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-dashboard:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-dashboard:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-faq:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-faq:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-filesv2:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-filesv2:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-grids:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-grids:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-ipa-hosts:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-ipa-hosts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-mail:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-notebooks:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-notebooks:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-oauth:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-oauth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-pulse:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-pulse:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-proxy-auth:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-proxy-auth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  # The mobile app is unreleased: its image is built and published, but it
+  # starts only with `--profile unreleased`. Do not start it.
+  app-pwa:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-pwa:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    profiles: ["unreleased"]
+
+  app-quotes:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-quotes:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-spaces:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-spaces:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-tools:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-tools:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-venue:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-venue:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
+  app-weather:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-weather:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}

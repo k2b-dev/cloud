@@ -1,0 +1,376 @@
+# Dev containers — Core enrolls the isolated OAuth fixture with an explicit oauth:issue grant.
+# Run with:
+#   bun run dev          (core set)
+#   bun run dev:full     (core + extras; --profile extra)
+#   bun run dev:start FOO    (ad-hoc: start a single extra app in the running stack)
+#   bun run dev:restart FOO  (reload mounted source without rebuilding the image)
+#
+# `bun run dev` and `bun run dev:full` start the infrastructure automatically.
+#
+# Gateway replaces Traefik — routes are discovered dynamically from the NATS
+# app registry, so ad-hoc containers joining the same docker network (= same
+# compose project name = folder name "cloud") are picked up automatically.
+
+x-env: &env
+  NODE_ENV: development
+  DATABASE_URL: postgresql://ipa:ipa@ipa_postgres:5432/ipa
+  REDIS_URL: redis://ipa_valkey:6379
+  NATS_SERVERS: nats://ipa_nats_1:4222
+  SYNC_REPLICAS: 1
+  SYNC_NAMESPACE: dev
+  APP_URL: ${APP_URL:-localhost:3000}
+  APP_SECRET: dev-secret-change-me-in-production
+  CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
+  CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+  GOTENBERG_URL: http://gotenberg:3000
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  working_dir: /app
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - CMD
+      - bun
+      - -e
+      - const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)
+    interval: 2s
+    timeout: 2s
+    retries: 90
+    start_period: 2s
+
+services:
+  # No shared environment or runtime: runner must never receive installation credentials.
+  runner:
+    init: true
+    build:
+      context: .
+      dockerfile: packages/runner/Dockerfile
+    profiles: [runner]
+    restart: unless-stopped
+    environment:
+      CLOUD_APP_KEY_FILE: /run/runner-key/source
+      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+    secrets:
+      - source: runner-app-key
+        target: /run/runner-key/source
+    networks: [runner-core]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
+    cap_drop: [ALL]
+    # DAC_OVERRIDE is entrypoint-only; the supervisor retains the other four.
+    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true", "seccomp=./packages/runner/seccomp.json", "apparmor=cloud-code-runner", "systempaths=unconfined"]
+    mem_limit: 1g
+    pids_limit: 256
+    # Keep this above the largest Code wall-clock budget plus completion transport time.
+    stop_grace_period: 6m
+
+  # ══════════════════════════════════════════════════════════════════
+  # Core set — started by `bun run dev`
+  # ══════════════════════════════════════════════════════════════════
+
+  gateway:
+    <<: *app
+    container_name: gateway
+    environment: { <<: *env, APP_ID: gateway }
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/gateway/src:/app/packages/gateway/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/gateway/src/index.ts
+
+  app-gateway-ops:
+    environment:
+      NATS_ADMIN_SERVERS: nats://ipa_nats_1:4222
+      NATS_ADMIN_NKEY_SEED_FILE: /run/secrets/nats-admin.seed
+    <<: *app
+    container_name: app-gateway-ops
+    volumes:
+      - ./.local/nats/admin.seed:/run/secrets/nats-admin.seed:ro
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/gateway/src:/app/packages/gateway/src
+      - ./packages/gateway-ops/src:/app/packages/gateway-ops/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/gateway-ops/src/index.ts
+
+  app-core:
+    networks: [default, runner-core]
+    <<: *app
+    container_name: app-core
+    environment:
+      <<: *env
+      OUTGOING_MAIL_ALLOWED_TARGETS: ${OUTGOING_MAIL_ALLOWED_TARGETS:-}
+      APP_ID: core
+      ADMIN_LOGIN_TOKEN: dev-admin
+      CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:-abababababababababababababababababababababababababababababababab}
+      CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/cloud/public:/app/packages/cloud/public
+      - ./packages/core/src:/app/packages/core/src
+      - ./packages/core/scripts:/app/packages/core/scripts
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/core/src/index.ts
+
+  app-dashboard:
+    <<: *app
+    container_name: app-dashboard
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/dashboard/src:/app/packages/dashboard/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/dashboard/src/index.ts
+
+  app-pwa:
+    <<: *app
+    container_name: app-pwa
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/pwa/src:/app/packages/pwa/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/pwa/src/index.ts
+
+  app-accounts:
+    <<: *app
+    container_name: app-accounts
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/accounts/src:/app/packages/accounts/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/accounts/src/index.ts
+
+  app-assistant:
+    environment:
+      CLOUD_CLI_CHROMIUM: /usr/bin/chromium
+    <<: *app
+    user: bun
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args: { INSTALL_CHROMIUM: "true" }
+    container_name: app-assistant
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/assistant/src:/app/packages/assistant/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/assistant/src/index.ts
+
+  # ══════════════════════════════════════════════════════════════════
+  # Extras — only started with `--profile extra` or ad-hoc via dev:app
+  # ══════════════════════════════════════════════════════════════════
+
+  app-capabilities:
+    <<: *app
+    container_name: app-capabilities
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/capabilities/src:/app/packages/capabilities/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/capabilities/src/index.ts
+
+  app-notebooks:
+    <<: *app
+    container_name: app-notebooks
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/notebooks/src:/app/packages/notebooks/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/notebooks/src/index.ts
+
+  app-chat:
+    <<: *app
+    container_name: app-chat
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/chat/src:/app/packages/chat/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/chat/src/index.ts
+
+  app-contacts:
+    <<: *app
+    container_name: app-contacts
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/contacts/src:/app/packages/contacts/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/contacts/src/index.ts
+
+  app-faq:
+    <<: *app
+    container_name: app-faq
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/faq/src:/app/packages/faq/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/faq/src/index.ts
+
+  app-grids:
+    <<: *app
+    container_name: app-grids
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/grids/src:/app/packages/grids/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/grids/src/index.ts
+
+  app-filesv2:
+    <<: *app
+    container_name: app-filesv2
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/filesv2/src:/app/packages/filesv2/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/filesv2/src/index.ts
+
+  app-ipa-hosts:
+    <<: *app
+    container_name: app-ipa-hosts
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/ipa-hosts/src:/app/packages/ipa-hosts/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/ipa-hosts/src/index.ts
+
+  app-mail:
+    <<: *app
+    container_name: app-mail
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/mail/src:/app/packages/mail/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/mail/src/index.ts
+
+  app-oauth:
+    <<: *app
+    container_name: app-oauth
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/oauth/src:/app/packages/oauth/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/oauth/src/index.ts
+
+  app-proxy-auth:
+    <<: *app
+    container_name: app-proxy-auth
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/proxy-auth/src:/app/packages/proxy-auth/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/proxy-auth/src/index.ts
+
+  app-quotes:
+    <<: *app
+    container_name: app-quotes
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/quotes/src:/app/packages/quotes/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/quotes/src/index.ts
+
+  app-pulse:
+    <<: *app
+    container_name: app-pulse
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/pulse/src:/app/packages/pulse/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/pulse/src/index.ts
+
+  app-spaces:
+    <<: *app
+    container_name: app-spaces
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/spaces/src:/app/packages/spaces/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/spaces/src/index.ts
+
+  app-tools:
+    <<: *app
+    container_name: app-tools
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/tools/src:/app/packages/tools/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/tools/src/index.ts
+
+  app-venue:
+    <<: *app
+    container_name: app-venue
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/venue/src:/app/packages/venue/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/venue/src/index.ts
+
+  app-weather:
+    <<: *app
+    container_name: app-weather
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/weather/src:/app/packages/weather/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/weather/src/index.ts
+
+  app-api-docs:
+    <<: *app
+    container_name: app-api-docs
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/api-docs/src:/app/packages/api-docs/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/api-docs/src/index.ts
+
+networks:
+  runner-core:
+    internal: true

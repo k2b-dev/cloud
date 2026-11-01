@@ -35,6 +35,22 @@ host. Core and runner versions must be upgraded together. See
 [runner host prerequisites](/en/docs/operations/code-runner) for the required
 Linux features, file paths and verification probe.
 
+## Applications start with a key file and Core address
+
+This release supplies a Compose template that gives ordinary apps only
+`CLOUD_APP_KEY_FILE` and `CLOUD_CORE_INTERNAL_ORIGIN`. Core and Gateway keep
+their infrastructure environment. Core must migrate and become ready before
+applications bootstrap. An unavailable Core blocks startup for up to five
+minutes, after which the process exits and the deployment restart policy
+applies. Existing running processes retain their connections during a Core
+outage; new starts still need Core.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for the required settings check, enrollment, file permissions, strict inventory
+check, Kubernetes mount example and three rollback boundaries. Keep legacy
+configuration until the checks and background/OAuth verification pass.
+Environment overrides remain supported per value for third-party apps.
+
 ## App-domain routing and unknown hosts
 
 **After upgrading the gateway, unknown Host headers receive HTTP 421.**
@@ -334,10 +350,12 @@ Cloud no longer rewrites an application's `DATABASE_URL` to add
 an operator name or startup options. An application that still uses Bun-global
 clients shows no Cloud application name in `pg_stat_activity`.
 
-**Key-only production operation is not yet supported.** Keep each app's
-infrastructure environment values until the platform-client import migration
-is complete; Bun-global SQL/Redis imports still depend on them. This release
-adds the bootstrap protocol, not the operator migration. See
+**Key-only production operation is supported.** Built-in applications use the
+platform connection handles. Upgrade Core and Gateway with their existing
+infrastructure environment first, enroll application keys with explicit grants,
+then adopt the key-file templates and recreate applications. Complete the strict
+status, signed probes and legacy-use observation before retiring old credentials.
+Follow [the upgrade steps](/en/docs/operations/app-key-upgrade). See
 [Runtime configuration](/en/docs/operations/runtime-configuration#bootstrap-application-connections-from-core)
 and [App keys](/en/docs/operations/app-keys#use-the-key-at-start).
 
@@ -1035,6 +1053,16 @@ Space shared with all signed-in users. Normal person sharing keeps its behavior.
 ### Upgrade Spaces task deadlines
 
 Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
+
+### Upgrade Spaces item templates
+
+Spaces adds a nullable `spaces.item_templates.icon` column on startup. Its check
+accepts Tabler classes such as `ti ti-report`, up to 80 characters. Existing
+templates use the default icon for their kind. Template creation, updates, and
+deletion now require Space write access, including agent credentials with write
+scope. Readers can still list and read templates. No configuration is needed.
+After upgrading, verify that a writer can create, edit, and delete a template
+and that a reader cannot.
 
 ### Upgrade Spaces user claims and assignments
 
