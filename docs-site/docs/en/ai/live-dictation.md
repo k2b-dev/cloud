@@ -1,7 +1,8 @@
 ---
 title: Live dictation
+navTitle: Live dictation
 section: AI
-order: 1060
+order: 1075
 description: Stream speech into an application's draft with shared authorization, limits, and cancellation.
 tags: [ai, audio, dictation, browser]
 updated: 2026-11-01
