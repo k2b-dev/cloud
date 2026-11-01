@@ -92,7 +92,7 @@ export async function completeCodeJob(proof: RunnerJobProof, result: RunnerJobRe
     if (Buffer.byteLength(JSON.stringify(parsed)) > row.output_bytes) parsed = { kind: "error", code: "code_job_output_limit" };
     if (parsed.kind !== "error" && (parsed.kind !== row.kind || (parsed.kind !== "check" && parsed.result.mode !== row.kind)))
       parsed = { kind: "error", code: "code_job_failed" };
-    await db`UPDATE code.jobs SET state=${parsed.kind === "error" ? "failed" : "succeeded"},result=${JSON.stringify(parsed)}::jsonb,input=NULL,lease_expires_at=NULL,lease_key_hash=NULL WHERE id=${proof.jobId}::uuid`;
+    await db`UPDATE code.jobs SET state=${parsed.kind === "error" ? "failed" : "succeeded"},result=${JSON.stringify(parsed)}::text::jsonb,input=NULL,lease_expires_at=NULL,lease_key_hash=NULL WHERE id=${proof.jobId}::uuid`;
   });
 }
 /** Crash recovery never replays production effects: authoring roles have only a fake bridge. */

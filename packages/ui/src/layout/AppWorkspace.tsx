@@ -28,6 +28,7 @@ import {
   APP_WORKSPACE_DETAIL_OPEN_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
+  APP_WORKSPACE_SIDEBAR_SHOW_EVENT,
   type AppWorkspaceDetailStep,
   installAppWorkspaceController,
 } from "./app-workspace-controller";
@@ -245,6 +246,14 @@ export type AppWorkspaceProps = {
   /** Called with the full layout whenever a resize settles. Persist it here. */
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void;
   /**
+   * `false` draws no head row. The application then shows the page's title itself and gives people the sidebar and
+   * Detail buttons the head would hold: a control with `data-app-workspace-sidebar-toggle` (it opens the overlay
+   * sidebar, and shows or hides a sidebar with `onHiddenChange` where it is a column) and, for each Detail with
+   * `toggle={false}`, a control with `data-app-workspace-detail-toggle` and `aria-controls` set to
+   * `appWorkspaceDetailElementId(id)`. The controller runs both and keeps their `aria-expanded` current.
+   */
+  head?: false;
+  /**
    * Opt out of the built-in controller. Only needed when the application calls
    * `installAppWorkspaceController` itself — installing twice would double up
    * every listener.
@@ -313,6 +322,12 @@ export type AppWorkspaceDetailProps = {
   open: boolean;
   /** Keeps the shared head control reachable while closed; set the app's existing open state synchronously. */
   onOpen?: () => void;
+  /**
+   * `false` draws no Details button of the workspace's own: the application gives one with
+   * `data-app-workspace-detail-toggle` and `aria-controls` set to `appWorkspaceDetailElementId(id)`, as with
+   * `AppWorkspace head={false}`.
+   */
+  toggle?: false;
   /** Whether the current object may show details. False disables reopening and hides the panel. */
   available?: boolean;
   /**
@@ -539,6 +554,11 @@ export type AppWorkspaceSidebarItemStatusProps = {
    * to zero while the row is still shown; leave the prop out when nothing waits.
    */
   waiting?: { count: number; label: string };
+  /**
+   * Something here needs the person, such as failed work or missing access: a warning dot, never a number. The text is
+   * the phrase a screen reader hears, for example "needs attention".
+   */
+  attention?: string;
 };
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
@@ -997,19 +1017,21 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   return (
     <>
       <style innerHTML={workspaceRule()} />
-      <Button
-        type="button"
-        variant="ghost"
-        aria-controls={domId()}
-        aria-expanded="false"
-        data-app-workspace-detail-toggle=""
-        data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
-        disabled={props.available === false}
-        class="k2b-app-workspace__detail-toggle"
-      >
-        <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
-        {workspaceMessages().details}
-      </Button>
+      <Show when={props.toggle !== false}>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-controls={domId()}
+          aria-expanded="false"
+          data-app-workspace-detail-toggle=""
+          data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
+          disabled={props.available === false}
+          class="k2b-app-workspace__detail-toggle"
+        >
+          <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+          {workspaceMessages().details}
+        </Button>
+      </Show>
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"
@@ -1126,8 +1148,13 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   );
   onMount(() => {
     const requestHide = () => props.onHiddenChange?.(true);
+    const requestShow = () => props.onHiddenChange?.(false);
     aside?.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
-    onCleanup(() => aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide));
+    aside?.addEventListener(APP_WORKSPACE_SIDEBAR_SHOW_EVENT, requestShow);
+    onCleanup(() => {
+      aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
+      aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_SHOW_EVENT, requestShow);
+    });
     // A client-rendered row settles here; server markup settled in its inline script.
     if (stacked() && row) settleChipRow(row, scrollFadeEdges);
   });
@@ -1435,6 +1462,7 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
               : "",
       props.mention ? workspaceMessages().sidebarMentioned : "",
       props.muted ? workspaceMessages().sidebarMuted : "",
+      props.attention ?? "",
     ]
       .filter(Boolean)
       .join(", ");
@@ -1449,8 +1477,13 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
       data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
       data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
       data-muted={props.muted ? "true" : undefined}
+      data-attention={props.attention ? "true" : undefined}
     >
       <Show when={description()}>
+        {/* Outermost, with its own fixed width: it never moves a count or another mark. */}
+        <Show when={props.attention}>
+          <span class="k2b-app-workspace__sidebar-status-attention" aria-hidden="true" />
+        </Show>
         <Show when={props.mention}>
           <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
             @
@@ -1461,20 +1494,23 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
             <i class="ti ti-bell-off" />
           </span>
         </Show>
-        <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
-          <Show
-            when={count() || waiting() === 0}
-            fallback={
-              <Show when={dot()}>
-                <span class="k2b-app-workspace__sidebar-status-dot" />
-              </Show>
-            }
-          >
-            <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
-              {count() > 99 ? "99+" : count()}
-            </span>
-          </Show>
-        </span>
+        {/* Alone, the warning dot needs no reserved count slot beside it. */}
+        <Show when={!props.attention || count() || dot() || waiting() !== null || props.mention || props.muted}>
+          <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
+            <Show
+              when={count() || waiting() === 0}
+              fallback={
+                <Show when={dot()}>
+                  <span class="k2b-app-workspace__sidebar-status-dot" />
+                </Show>
+              }
+            >
+              <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
+                {count() > 99 ? "99+" : count()}
+              </span>
+            </Show>
+          </span>
+        </Show>
         <span class="k2b-sr-only">, {description()}</span>
       </Show>
     </span>
@@ -2520,6 +2556,8 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
     // before it must also precede its view controls in SSR and keyboard order.
     // Callers without a slot retain the automatic leading head.
     const renderedHead = <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />;
+    // Without a head row its slot draws nothing either.
+    if (props.head === false) return <>{slots().filter((value) => !headSlot(value)) as JSX.Element}</>;
     return (
       <>
         {

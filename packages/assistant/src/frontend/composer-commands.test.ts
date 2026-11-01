@@ -1110,7 +1110,7 @@ test("references in the text count toward the limit for inserting and attaching 
   const running = assistantInsertCommands({ ...input, partCount: () => 0, fileSelectionDisabled: true });
   expect(running.commands[0]!.reason).toBeUndefined();
   expect(running.commands[1]!.reason).toBe(input.copy.commandNeedsIdle);
-  expect(running.scopes.find((scope) => scope.words.includes("app"))?.title).toBe("Studio-Apps aus Assistent");
+  expect(running.scopes.find((scope) => scope.words.includes("app"))?.title).toBe("Studio-Apps aus Gustav");
 });
 
 for (const withTrack of [false, true]) {

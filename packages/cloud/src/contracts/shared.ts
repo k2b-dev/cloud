@@ -343,6 +343,12 @@ export const AccessEntrySchema = z.object({
    * `assigned` conversations. Absent for a grant on the whole resource.
    */
   scope: z.string().min(1).max(64).optional(),
+  /**
+   * Present only on a `code` service account's entry: the explicit Code grant behind it. The shared
+   * rights editor lists such entries under "Code with access" and removes them through Core and the
+   * application's generated `code.access.rm`; ordinary share update and removal never apply to them.
+   */
+  grantId: z.uuid().optional(),
 });
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;
 

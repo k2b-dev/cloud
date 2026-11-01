@@ -68,6 +68,7 @@ export const CODE_TABLES = {
   versionGrants: "code.version_grants",
   activationNotices: "code.activation_notices",
   activationOutbox: "code.activation_outbox",
+  cleanupJobs: "code.cleanup_jobs",
   policy: "code.policy",
   policyRules: "code.policy_rules",
   policyCoverage: "code.policy_coverage",
@@ -265,5 +266,14 @@ export const codeQueryContracts = {
           .nullable(),
       })
       .strict(),
+  },
+  /** Runs of the caller's own personal Code created since a moment in the last 7 days. */
+  runCount: {
+    input: z
+      .object({
+        since: z.iso.datetime().describe("Start of the counted window, at most 7 days ago, such as the start of the person's day."),
+      })
+      .strict(),
+    data: z.object({ runs: z.number().int().nonnegative(), failed: z.number().int().nonnegative() }).strict(),
   },
 } as const;

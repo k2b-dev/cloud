@@ -15,11 +15,11 @@ export function sdkFixture(appId = "work-shop") {
       queries: {
         "workshop.read": {
           title: "Read workshop",
-          description: "Read the canonical workshop view.",
+          description: "Read one workshop.",
           openWorld: false,
           input: z.object({ id: z.string().describe("Workshop ID.") }).strict(),
-          data: z.object({ view: CloudResourceReaderViewSchema.pick({ title: true, permission: true }) }).strict(),
-          run: () => ({ ok: true, data: { data: { view: { title: "Workshop", permission: "admin" } } } }),
+          data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
+          run: () => ({ ok: false as const, error: { code: "NOT_FOUND", message: "Missing", status: 404 as const } }),
         },
         "stock.list": {
           title: "Stock",

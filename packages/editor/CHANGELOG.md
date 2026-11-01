@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.2.0...npm-editor-v0.3.0) (2026-10-31)
+
+
+### Features
+
+* **editor:** polish table editing with outside grips, scoped menus and full-height cells ([#2226](https://github.com/k2b-dev/cloud/issues/2226)) ([10d326e](https://github.com/k2b-dev/cloud/commit/10d326e35fc4ca35b9c6909d79dc24ee09e1b3c3))
+
+
+### Bug Fixes
+
+* **editor:** give every toolbar icon the same size ([#2235](https://github.com/k2b-dev/cloud/issues/2235)) ([6f992b4](https://github.com/k2b-dev/cloud/commit/6f992b414ce01117b937aeb18c3e82eacb9829b4))
+* **editor:** keep the note still while its column is resized ([#2232](https://github.com/k2b-dev/cloud/issues/2232)) ([579a17b](https://github.com/k2b-dev/cloud/commit/579a17bfe0263e99166048cb8bff20e4003b0361))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.1 to 0.39.0
+
 ## [0.2.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.1.1...npm-editor-v0.2.0) (2026-10-31)
 
 

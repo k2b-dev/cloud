@@ -268,3 +268,7 @@ Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die
 Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob ein unklarer externer Effekt eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
 
 Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).
+
+## Spaces-Ziel nach einem Upgrade bestätigen {icon="shield-check"}
+
+Zeigt eine eingehende Automatisierung **Prüfung erforderlich**, ist sie pausiert. Ihre gespeicherten Schritte bleiben erhalten. Wähle **Automatisierung bearbeiten**, wähle das Spaces-Element oder Terminziel erneut aus und speichere. Schalte sie danach ein. Bestätigen muss die Person, die den Spaces-Zugriff ursprünglich eingerichtet hat. Der konfigurierte Space bleibt das einzige Ziel des Schritts; das Upgrade erweitert den Zugriff nicht.

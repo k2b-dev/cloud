@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -14,7 +15,9 @@ import {
   updateAccess,
 } from "@k2b/cloud/server";
 import { accounts, audit, type ServiceAccountKind } from "@k2b/cloud/services";
+import { resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
+import { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE } from "../app-identity";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
 
 type SqlClient = typeof sql;
@@ -271,6 +274,27 @@ export const getMailboxAccess = async (
   mailboxId: string,
   db: SqlClient = sql,
 ): Promise<MailboxAccess | null> => accessFromGrants(context, await resolveMailboxGrants(context, mailboxId, false, db));
+
+/** Current mailbox readers in either Mail scope, independent of credential scopes. */
+export const readableMailboxPrincipals = async (
+  mailboxId: string,
+  principals: readonly ResourcePrincipal[],
+): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getEffectivePermissions({
+    accessIds: sql`SELECT grants.access_id FROM (${accessRows(mailboxId)}) grants
+      JOIN mail.mailboxes mailbox ON mailbox.id=${mailboxId}::uuid AND mailbox.deleted_at IS NULL`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers
+    .filter(
+      ({ binding }, index) =>
+        permissions[index] !== undefined &&
+        permissions[index] !== "none" &&
+        (!binding || (binding.appId === MAIL_APP_ID && binding.resourceType === MAILBOX_RESOURCE_TYPE && binding.resourceId === mailboxId)),
+    )
+    .map((reader) => reader.principal);
+};
 
 /**
  * Requires `required` on the mailbox for a path that applies conversation visibility: it accepts an

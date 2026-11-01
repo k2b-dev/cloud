@@ -61,11 +61,14 @@ describe("Core Code data contracts", () => {
         .map((query) => query.localId)
         .sort(),
     ).toEqual([
+      "code.attention",
+      "code.attention.list",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",
       "code.policy.read",
       "code.read",
+      "code.run.count",
       "code.run.list",
       "code.run.read",
       "code.secret.list",
@@ -78,15 +81,15 @@ describe("Core Code data contracts", () => {
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
+        "code.pause",
+        "code.policy.update",
+        "code.resume",
         "code.run",
-        "code.secret.set",
         "code.secret.delete",
-        "code.version.submit",
+        "code.secret.set",
         "code.version.approve",
         "code.version.reject",
-        "code.pause",
-        "code.resume",
-        "code.policy.update",
+        "code.version.submit",
       ].map((id) => ({ id, code: false })),
     );
   });

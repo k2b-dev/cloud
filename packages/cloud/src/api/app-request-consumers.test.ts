@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Hono } from "hono";
+import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { runNotificationAttempt } from "../../../chat/src/service/notification-delivery";
 import { createSpaceEventOnce } from "../../../mail/src/service/app-integrations";
@@ -9,6 +10,7 @@ import { formatAppKey } from "../app-key";
 import { readResourcePrincipals } from "../capabilities/resource-readers";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { env } from "../config/env";
+import { CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import * as proofs from "../services/app-bootstrap";
 import { authenticateSignedAppRequest } from "./authenticate-app-request";
 
@@ -45,7 +47,17 @@ test("Core admission passes through the capability reader into Chat's bounded no
     endpoint: "http://provider.test",
     manifest: compileCapabilityManifest("inventory", {
       protocolVersion: 2,
-      types: { item: { title: "Item", description: "An item.", access: { readable: () => [] } } },
+      types: { item: { title: "Item", description: "An item.", reader: "item.read", access: { readable: () => [] } } },
+      queries: {
+        "item.read": {
+          title: "Read item",
+          description: "Read the authorized item.",
+          input: z.object({ id: z.string().min(1).max(512).describe("Resource ID.") }).strict(),
+          data: z.object({ view: CloudResourceReaderViewSchema }),
+          openWorld: false,
+          run: async () => ({ ok: true as const, data: { data: { view: { title: "Item", permission: "read" as const } } } }),
+        },
+      },
     }),
   });
   const routes = new Hono().post("/api/_internal/identity/v1/invoke", async (c) => {

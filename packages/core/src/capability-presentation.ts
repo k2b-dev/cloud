@@ -34,6 +34,13 @@ const codeVersionSubmissionInput = {
   "manifest.version": "Formatversion des Prüfmanifests, derzeit 1.",
   "manifest.entry": "Ursprünglicher Einstiegspfad der Prüfanfrage; Bestandteil des Quelltext-Hashes.",
   "manifest.policyRows": "Eindeutige Einstufungen aller deklarierten Aufrufe sowie der KI- und Internetnutzung.",
+  "manifest.secrets": "Secret-Bindungen dieser Version.",
+  "manifest.secrets[].origin": "Genauer HTTPS-Ursprung der Bindung.",
+  "manifest.secrets[].pathPrefix": "Erlaubter Pfadanfang der Bindung.",
+  "manifest.secrets[].headers": "Erlaubte Kopfzeilen der Bindung.",
+  "manifest.secrets[].name": "Name des gebundenen Secrets.",
+  "manifest.secrets[].binding_revision": "Unveränderliche Bindungsrevision.",
+  "manifest.internet": "Ob diese Version das Internet nutzt.",
   "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
   "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
   "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
@@ -80,6 +87,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Code-Secret-Bindungen auflisten",
           description:
             "Bearbeiter sehen Metadaten und unveränderliche Bindungsrevisionen. Werte und verschlüsselte Daten werden nie ausgegeben.",
+          input: {
+            codeId: "Öffentliche ID des Codes.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Größe der Seite.",
+          },
         },
         "code.version.diff.read": {
           title: "Vollständigen Code-Vergleich lesen",
@@ -134,6 +146,20 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
         },
+        "code.attention": {
+          title: "Aufmerksamkeit für Code prüfen",
+          description:
+            "Listet für einen genauen Besitzer den lesbaren Code, der jemanden braucht: letzter Lauf fehlgeschlagen, Zugriff an einem Ziel entfernt oder eine Version wartet auf Freigabe.",
+          input: {
+            owner: "Genauer Code-Besitzer, dessen Code die Seite zeigt.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+          },
+        },
         "code.list": {
           title: "Code auflisten",
           description:
@@ -176,6 +202,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             cursor: "Undurchsichtiger Laufverlauf-Cursor aus der vorherigen Seite.",
             limit: "Maximale Anzahl der Lauf-Metadaten auf dieser Seite; höchstens 50.",
           },
+        },
+        "code.attention.list": {
+          title: "Code auflisten, der dich braucht",
+          description:
+            "Listet über alle Besitzer Code einer Ressource oder App, die du verwaltest, wenn er dich braucht: pausiert, letzter Lauf fehlgeschlagen, Zugriff an einem Ziel fehlt oder eine Version wartet auf Freigabe. Dem Cursor auch bei leeren Seiten folgen.",
+          input: { cursor: "Letzte geprüfte Code-ID aus nextCursor." },
+        },
+        "code.run.count": {
+          title: "Eigene Code-Läufe zählen",
+          description: "Zählt Läufe und fehlgeschlagene Läufe deines persönlichen Codes seit einem Zeitpunkt der letzten 7 Tage.",
+          input: { since: "Beginn des gezählten Zeitraums, höchstens 7 Tage zurück, etwa der Beginn deines Tages." },
         },
         "code.run.read": {
           title: "Code-Lauf lesen",
@@ -326,16 +363,36 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Code ausführen",
           description:
             "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
+          input: {
+            codeId: "Code-ID aus code.list oder code.read.",
+            entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
+            input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
+          },
         },
         "code.secret.set": {
           title: "Code-Secret speichern",
           description:
             "Bearbeiter speichern einen privaten Zugangswert, ohne ihn zurückzulesen. Geänderte Ziele gelten erst mit einer neuen Version. Werte nur über CLI oder private Eingabefelder übergeben.",
+          input: {
+            codeId: "Öffentliche ID des Codes.",
+            name: "Name des Secrets.",
+            value: "Privater Wert; wird nie zurückgelesen.",
+            binding: "Ziel, an das der Wert gebunden ist.",
+            "binding.origin": "Genauer HTTPS-Ursprung.",
+            "binding.pathPrefix": "Erlaubter Pfadanfang.",
+            "binding.headers": "Erlaubte Kopfzeilen.",
+            binding_revision: "Erwartete Bindungsrevision.",
+          },
         },
         "code.secret.delete": {
           title: "Code-Secret-Wert löschen",
           description:
             "Bearbeiter entfernen den aktuellen Wert für alle Versionen. Unveränderliche Zielbindungen bleiben als Freigabe-Belege erhalten.",
+          input: {
+            codeId: "Öffentliche ID des Codes.",
+            name: "Name des Secrets.",
+            binding_revision: "Erwartete Bindungsrevision.",
+          },
         },
         "code.version.submit": {
           title: "Code-Version einreichen",

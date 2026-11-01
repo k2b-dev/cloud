@@ -2,7 +2,7 @@
 title: Code secrets
 navTitle: Code secrets
 section: Platform services
-order: 964
+order: 968
 description: Store write-only credentials per Code and approve their HTTP destinations with each version.
 tags: [code, secrets, runner, security]
 updated: 2026-11-01
@@ -146,6 +146,11 @@ A request already issued may finish after a value replacement, delete or pause. 
 `code.version` mandate needs `apps: ["core"]`, `runtime.http` and a `kind:
 "http"` grant; fixed origin, URL and method restrictions still apply.
 The version's secret binding narrows this grant further.
+
+Current activation does not yet issue HTTP grants. Activated versions therefore
+receive `code_http_forbidden` for HTTP calls until
+[declared-origin activation support](https://github.com/k2b-dev/cloud/pull/2349)
+is available. Storing values and approving bindings are available independently.
 
 Core sends one request through `requestPublicHttps`, with public-address
 validation, pinned DNS, bounded response bytes, the run's remaining deadline,

@@ -116,7 +116,6 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
-import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
@@ -481,6 +480,11 @@ const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "basePath" | 
   ) {
     throw new Error(`App "${opts.id}" declares panel.requiresRoles; it must be an array of strings`);
   }
+  if (panel.order !== undefined && !Number.isSafeInteger(panel.order)) {
+    throw new Error(`App "${opts.id}" declares panel.order; it must be a safe integer`);
+  }
+  if (panel.code !== undefined && typeof panel.code !== "boolean")
+    throw new Error(`App "${opts.id}" declares panel.code; it must be a boolean`);
   return { ...panel, requiresRoles: panel.requiresRoles ? [...panel.requiresRoles] : undefined };
 };
 
@@ -495,7 +499,6 @@ export const defineApp = <
   const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
-  configurePostgresApplicationName(opts.id);
   const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
@@ -933,7 +936,9 @@ export const defineApp = <
             invocationApp,
           ),
         )
-        .use("/_internal/sync/*", auth.requireOAuthScope("admin"))
+        .use("/_internal/sync/*", (c, next) =>
+          auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+        )
         .use("/_internal/sync/*", async (c, next) => {
           if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
           return next();

@@ -567,10 +567,7 @@ pickers. It supports search, included and excluded user IDs, a minimum
 permission, and a limit from `1` to `500`. It does not expand `public` or
 `authenticated` into every account.
 Search results list exact login-name matches first, then exact display-name
-matches, so a limit never hides them. For a complete recipient audience, pass
-`afterId: null` on the first page and the last returned user's ID on subsequent
-pages. Cursor pages sort by UUID; keep the same access IDs and filters until an
-empty page ends the traversal. Omitting `afterId` retains search/name ordering.
+matches, so a limit never hides them.
 
 For a bounded machine-recipient query, use
 `recursiveServiceAccountGroupIdsSubquery(serviceAccountId)` from
@@ -650,6 +647,54 @@ A `beforeChange` confirmation keeps its opener focusable so Cancel can return
 to it. The editor prevents another change while confirmation is pending and
 disables controls once saving begins. If editing stops or the editor closes
 before confirmation finishes, the pending change is not sent.
+
+### Code with access
+
+Entries of a `code` service account never appear as ordinary rows, and
+`PrincipalPicker` never offers Code accounts. `PermissionEditor` lists them in
+its own "Code with access" section below the people and groups. Every
+application that mounts the editor gets the section; it needs no props.
+
+- Each row names the Code after its owner, such as "Code of info@". Core reads
+  the owner's current title through the owner's reader under the viewer's own
+  authority, so a renamed owner shows its new title. Code owned by a whole
+  application shows that application's name to people who may use it. An owner
+  the viewer cannot read appears as "Code whose owner you can't see".
+- People who may change access also see each grant's operations, such as
+  `spaces.task.create`, and who switched it on and when. Core returns these
+  details only for grants the application's own `code.access.list` lists for
+  that person, so only at resources they manage. Other viewers see the entry's
+  level in the editor's own vocabulary.
+- "Remove" asks for confirmation, then Core calls the application's generated
+  `code.access.rm` with the entry's `grantId`. The application checks that the
+  person manages the resource. Removal takes effect at once: the Code's calls
+  here fail until someone switches it on again. Cloud never restores access
+  automatically; only a new activation grants it again.
+- The section stays hidden when there is no Code entry. While owners and
+  details load, it holds one row per entry. A failed load leaves the people list usable and
+  offers a retry; a failed removal stays on its row with a retry.
+- Without `canEdit`, for an entry without `grantId`, or on a page that does not
+  name its application, the row has no "Remove" button.
+
+The application includes Code entries in the normal share list with
+`serviceAccountKind: "code"` and `grantId`, as the
+[Code access contract](/en/docs/platform/capabilities#code-access-at-the-target)
+requires. Its ordinary update and revoke endpoints refuse Code entries. The
+editor reads owner titles from Core at `POST /api/resources/code-access/accounts`,
+reads grant details from
+[`POST /api/code/access/target`](/en/docs/platform/code-activation), and removes
+through `POST /api/resources/code-access/remove`. It sends the
+current application's ID with each removal. Both routes accept only
+same-origin `application/json` requests. Apps do not call these routes
+themselves.
+
+To share a Code itself with its editors and readers, spread
+`codeSharing(locale)` from `@k2b/cloud/access/ui` into the editor. It offers
+Reader (`read`) and Editor (`write`) and allows only people and groups:
+
+```tsx
+<PermissionEditor {...codeSharing(locale())} initialEntries={shares} grantAccess={grant} updateAccess={update} revokeAccess={revoke} />
+```
 
 ### Restrict editor levels by principal
 

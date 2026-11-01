@@ -5,6 +5,9 @@ import { type CodeContext, CodeDataError } from "../code/access";
 import { activateCodeVersion, cancelCodeActivation, readCodeActivation } from "../code/activation";
 import { codeActivationContracts } from "../code/activation-contracts";
 import { reconcileCodeAccess } from "../code/activation-maintenance";
+import { listCodeCleanupJobs } from "../code/lifecycle";
+import { codeLifecycleContracts } from "../code/lifecycle-contracts";
+import { codeGrantDetailsContracts, readCodeGrantDetails } from "../code/target-access";
 import { CodeVersionError } from "../code/versions";
 
 /** Interactive credentials enter only Core. Invocation, sandbox, API-key and phone identities cannot activate. */
@@ -33,6 +36,13 @@ export const createCodeActivationRoutes = () => {
   });
   return router
     .post(
+      "/cleanup",
+      auth.readOnly,
+      middleware.openapi({ tags: ["Code"], summary: "Read pending Code cleanup jobs as a Cloud administrator" }),
+      v("json", codeLifecycleContracts.cleanup.input),
+      (c) => run(context(c), (ctx) => listCodeCleanupJobs(c.req.valid("json"), ctx)),
+    )
+    .post(
       "/activate",
       auth.requireOAuthScope("write", "admin"),
       middleware.openapi({ tags: ["Code"], summary: "Start one durable Code activation" }),
@@ -59,5 +69,12 @@ export const createCodeActivationRoutes = () => {
       middleware.openapi({ tags: ["Code"], summary: "Reconcile explicit target access without restoring grants" }),
       v("json", codeActivationContracts.access.input),
       (c) => run(context(c), (ctx) => reconcileCodeAccess(c.req.valid("json"), ctx)),
+    )
+    .post(
+      "/access/target",
+      auth.readOnly,
+      middleware.openapi({ tags: ["Code"], summary: "Read Code grant details at a target the person manages" }),
+      v("json", codeGrantDetailsContracts.input),
+      (c) => run(context(c), (ctx) => readCodeGrantDetails(c.req.valid("json"), ctx, c.req.raw)),
     );
 };

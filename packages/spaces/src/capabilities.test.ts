@@ -1782,6 +1782,67 @@ describe("spaces capabilities", () => {
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
   });
 
+  test("creates a task without columnId in the Space's first open column", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const firstOpen = spyOn(spacesService.column, "firstOpen").mockResolvedValue({
+      id: columnUuid,
+      spaceId: spaceUuid,
+      name: "To do",
+      color: null,
+      rank: "1024",
+      isDone: false,
+    });
+    const resolve = spyOn(spacesPublicResources, "resolveSpacePublicIds");
+    const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const input = TaskCreateInputSchema.parse({ title: task.title });
+    const review = await spacesCapabilities.actions["task.create"].review!(input, userContext);
+    expect(review).toMatchObject({
+      ok: true,
+      data: {
+        details: [
+          { label: "Space", value: space.name },
+          { label: "Column", value: "To do" },
+          { label: "Title", value: task.title },
+        ],
+      },
+    });
+    const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
+
+    expect(result.ok).toBeTrue();
+    expect(firstOpen).toHaveBeenCalledWith({ spaceId: spaceUuid });
+    expect(resolve).not.toHaveBeenCalledWith("columns", expect.anything(), expect.anything());
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: { columnId: columnUuid, title: task.title, tagIds: [] } }));
+  });
+
+  test("refuses a task without columnId in a Space without an open column, before approval and before writing", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.column, "firstOpen").mockResolvedValue(null);
+    const create = spyOn(spacesService.item, "create");
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+    const input = TaskCreateInputSchema.parse({ title: task.title });
+
+    for (const result of [
+      await spacesCapabilities.actions["task.create"].review!(input, userContext),
+      await spacesCapabilities.actions["task.create"].run(input, userContext),
+    ])
+      expect(result).toMatchObject({
+        ok: false,
+        error: {
+          code: "BAD_INPUT",
+          message: "This Space has no open column for new tasks. Add a column that is not marked done, or name a column.",
+        },
+      });
+    expect(await spacesCapabilities.actions["task.create"].review!(input, { ...userContext, locale: "de" })).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("keine offene Spalte") },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   test("lists templates with proposals in the person's zone", async () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
@@ -2767,7 +2828,7 @@ test("discussion containers continue from the same offset when the limit changes
 
 test("Space actions declare a fixed container and flat tools lift it out of domain input", () => {
   const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
-  for (const action of manifest.actions) {
+  for (const action of manifest.actions.filter((entry) => !entry.localId.startsWith("code.access."))) {
     expect(action.target).toBe(action.localId === "calendar-invitation.response.commit" ? undefined : "space");
     expect(action.inputSchema.properties).not.toHaveProperty("spaceId");
   }

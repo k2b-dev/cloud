@@ -2,6 +2,7 @@
 /* Trusted native probe execs workerd in-place after attacks. It therefore has
  * exactly workerd's PID, session, UID/GID, seccomp policy, capabilities and fds. */
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/capability.h>
@@ -29,6 +30,8 @@ static void proc_unreadable(int pid) {
   snprintf(path, sizeof(path), "/proc/%d/environ", pid); unreadable(path);
   snprintf(path, sizeof(path), "/proc/%d/mem", pid); unreadable(path);
   snprintf(path, sizeof(path), "/proc/%d/fd/0", pid); unreadable(path);
+  snprintf(path, sizeof(path), "/proc/%d/fd", pid);
+  check(opendir(path) == NULL && (errno == EACCES || errno == EPERM), "proc fd enumeration");
   errno = 0;
   check(ptrace(PTRACE_ATTACH, pid, 0, 0) == -1 && errno == EPERM, "ptrace");
   char data;
@@ -66,6 +69,11 @@ int main(int argc, char **argv) {
     check(getgroups(0, NULL) == 0, "no supplementary groups");
     check(getsid(0) != getsid(supervisor) && getsid(0) != getsid(sibling), "separate sessions");
     unreadable(key); proc_unreadable(supervisor); proc_unreadable(sibling); unreadable(sibling_config);
+    unreadable("/run/runner-key/source");
+    // Traverse proc and dot segments as well as attacking the direct key path.
+    char escaped[PATH_MAX];
+    check(snprintf(escaped, sizeof(escaped), "/proc/%d/root%s", supervisor, key) < (int)sizeof(escaped), "proc root path");
+    unreadable(escaped);
     // Try to make the supervisor follow a cross-group socket path. It must be
     // impossible to mutate the containing directory, not merely fail connect().
     char own_directory[PATH_MAX], own_socket[PATH_MAX], moved[PATH_MAX];
@@ -75,6 +83,9 @@ int main(int argc, char **argv) {
     check(snprintf(moved, sizeof(moved), "%s-moved", own_directory) < (int)sizeof(moved), "rename path");
     check(unlink(own_socket) == -1 && errno == EACCES, "cannot replace own listener");
     check(unlink(argv[argc - 1]) == -1 && errno == EACCES, "cannot replace trusted config");
+    check(open(argv[argc - 1], O_WRONLY | O_TRUNC) == -1 && errno == EACCES, "cannot write trusted config");
+    check(open("/app/runner.js", O_WRONLY | O_TRUNC) == -1 && (errno == EACCES || errno == EROFS), "read-only image");
+    check(open("/tmp/../app/runner.js", O_WRONLY | O_TRUNC) == -1 && (errno == EACCES || errno == EROFS), "filesystem traversal write");
     check(rename(own_directory, moved) == -1 && (errno == EPERM || errno == EACCES), "cannot replace group directory");
     check(symlink(socket_path, moved) == 0, "probe temporary link");
     // Renaming a symlink over the root-owned directory must also fail.
@@ -86,13 +97,33 @@ int main(int argc, char **argv) {
     check(setuid(0) == -1 && errno == EPERM, "cannot regain root");
     check(socket(AF_INET, SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv4");
     check(socket(AF_INET6, SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv6");
-    check(fork() == -1 && errno == EPERM, "no subprocess escape");
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    check(fd != -1, "Unix socket");
-    struct sockaddr_un address = { .sun_family = AF_UNIX };
-    strcpy(address.sun_path, socket_path);
-    check(connect(fd, (struct sockaddr *)&address, sizeof(address)) == -1 && errno == EACCES, "sibling socket");
-    close(fd);
+    check(socket(AF_INET, SOCK_DGRAM, 0) == -1 && errno == EAFNOSUPPORT, "no DNS UDP");
+    check(socket(AF_INET6, SOCK_DGRAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv6 DNS UDP");
+    int domains[] = {AF_NETLINK, AF_PACKET, AF_VSOCK};
+    for (unsigned i = 0; i < sizeof(domains) / sizeof(domains[0]); ++i)
+      check(socket(domains[i], SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no alternate network family");
+    int pair[2];
+    check(socketpair(AF_INET, SOCK_STREAM, 0, pair) == -1 && errno == EAFNOSUPPORT, "no IP socketpair");
+    check(syscall(__NR_clone3, NULL, 0) == -1 && errno == ENOSYS, "clone3 cannot bypass clone flags");
+    pid_t child = vfork();
+    if (child == 0) _exit(124);
+    check(child == -1 && errno == EPERM, "no vfork");
+    check(syscall(__NR_io_uring_setup, 0, NULL) == -1 && errno == EPERM, "no io_uring bypass");
+    check(syscall(__NR_unshare, 0x10000000) == -1 && errno == EPERM, "no user namespace");
+    check(syscall(__NR_setns, -1, 0) == -1 && errno == EPERM, "no namespace entry");
+    check(syscall(__NR_mount, "none", "/tmp", "tmpfs", 0, NULL) == -1 && errno == EPERM, "no mounts");
+    check(syscall(__NR_pidfd_getfd, -1, -1, 0) == -1 && errno == EPERM, "no pidfd descriptor theft");
+    check(syscall(__NR_bpf, 0, NULL, 0) == -1 && errno == EPERM, "no bpf");
+    for (int i = 0; i < 32; ++i) check(fork() == -1 && errno == EPERM, "fork bomb refused");
+    for (int i = 0; i < 2; ++i) {
+      int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+      check(fd != -1, "Unix socket");
+      struct sockaddr_un address = { .sun_family = AF_UNIX };
+      strcpy(address.sun_path, socket_path);
+      if (i) strcpy(strrchr(address.sun_path, '/') + 1, "bridge.sock");
+      check(connect(fd, (struct sockaddr *)&address, sizeof(address)) == -1 && errno == EACCES, "sibling IPC socket");
+      close(fd);
+    }
   }
   fclose(file);
   snprintf(report, sizeof(report), "/tmp/runner-isolation-%d.%s", supervisor, sibling ? "passed" : "victim");

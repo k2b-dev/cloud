@@ -59,7 +59,7 @@ type Data1 = ({ "next": ((string | null)); "rows": (Array<({ "id": (string); "st
 
 type Input2 = ({ "id": (string) });
 
-type Data2 = ({ "view": ({ "permission": (("read" | "write" | "admin")) & (string); "title": (string) }) });
+type Data2 = ({ "view": ({ "container"?: ({ "ref": ({ "id": (string); "type": (string) }); "title": (string) }); "context"?: (string); "done"?: (boolean); "permission": (("read" | "write" | "admin")) & (string); "status"?: (string); "title": (string) }) });
 
 type Input3 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
 
@@ -151,7 +151,7 @@ function handle(appId, type, id) {
       if (!bridge) throw new Error("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("code_sdk_invalid_input");
       const input = { ...args };
-      const refs = node();
+      const refs = {};
       for (const [field, refType] of Object.entries(op.refs)) {
         refs[field] = coordinate(input[field], refType);
         delete input[field];
@@ -264,7 +264,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
     {
       "appId": "work-shop",
       "exportName": "work_shop",
-      "manifestHash": "4510bf0e2c83810f8cccbe2a3ed845c18ede4c1ecb2f636f89f9edeb8539e005",
+      "manifestHash": "97cf292ad856c6e86625040fb6cfd242bcf032c004242fca1482e7dd3c9c2402",
     },
   ],
   "events": [
@@ -432,12 +432,65 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
           "view": {
             "additionalProperties": false,
             "properties": {
+              "container": {
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "description": "Stable app-owned resource identifier.",
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "type": {
+                        "description": "Namespaced resource type declared by the owning app.",
+                        "maxLength": 180,
+                        "minLength": 3,
+                        "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                    ],
+                    "type": "object",
+                  },
+                  "title": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "ref",
+                  "title",
+                ],
+                "type": "object",
+              },
+              "context": {
+                "description": "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string",
+              },
+              "done": {
+                "type": "boolean",
+              },
               "permission": {
                 "enum": [
                   "read",
                   "write",
                   "admin",
                 ],
+                "type": "string",
+              },
+              "status": {
+                "description": "The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'.",
+                "maxLength": 60,
+                "minLength": 1,
                 "type": "string",
               },
               "title": {
@@ -480,7 +533,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
         "read",
       ],
       "refs": {},
-      "schemaHash": "8dec5022589421f2f1ce24ee68cbf0e7fff1cf9f71ee4b5c5968d45b3f5589e6",
+      "schemaHash": "1d03d78ea64e14fc900bef9e296a9d36917625d1fb428db438acd6c3c8bff729",
       "target": null,
     },
     {

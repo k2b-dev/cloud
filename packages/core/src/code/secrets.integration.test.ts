@@ -11,10 +11,14 @@ import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
+import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateSecrets } from "../migrate/core/code-secrets";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferences";
+import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
+import * as authoringChecks from "./authoring-check";
 import { createCodeBridgeHost } from "./bridge";
 import * as origins from "./origins";
 import { dispatchCodeSecretHttp } from "./secret-http";
@@ -66,6 +70,7 @@ const destination = { origin: "https://api.example:8443", pathPrefix: "/v1", hea
 databaseSuite()("C11 version-bound write-only secrets", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let ownOrigins: ReturnType<typeof spyOn<typeof origins, "readCodeOwnOrigins">>;
   let app: ReturnType<typeof spyOn<typeof registry, "getApp">>;
   let stopApprovals: (() => void) | undefined;
@@ -74,10 +79,15 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("code_secrets_c11");
     await migrateAuth();
+    await migrateRailPreferences();
+    await migrateRailShortcuts();
+  });
+  beforeAll(async () => {
     await migrateAppApproval();
     await migrateSettings();
     await migrateAudit();
     await migrateCode();
+    await migrateScheduling();
     await migratePolicy();
     await migrateApprovals();
     await migrateVersions();
@@ -85,6 +95,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     for (const id of [authorId, reviewerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     ownOrigins = spyOn(origins, "readCodeOwnOrigins").mockResolvedValue(["https://cloud.example"]);
     app = spyOn(registry, "getApp").mockImplementation(async (id) => ({
       id,
@@ -99,6 +110,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   });
   afterAll(async () => {
     stopApprovals?.();
+    serverCheck?.mockRestore();
     settings?.mockRestore();
     ownOrigins?.mockRestore();
     app?.mockRestore();
@@ -323,7 +335,9 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   test("historical binding evidence is immutable, submission refuses foreign evidence and root re-encryption preserves current decryptability", async () => {
     const { codeId, binding } = await fixture();
     await migrateSecrets();
-    await expect(sql`UPDATE code.secret_bindings SET binding='{}'::jsonb WHERE code_id=${codeId}`).rejects.toThrow("immutable");
+    await expect(Promise.resolve(sql`UPDATE code.secret_bindings SET binding='{}'::jsonb WHERE code_id=${codeId}`)).rejects.toThrow(
+      "immutable",
+    );
     const other = await fixture();
     await expect(submit(other.codeId, binding)).rejects.toBeInstanceOf(CodeDataError);
     const before = await sql<{ encrypted: string }[]>`SELECT encrypted FROM code.secrets WHERE code_id=${codeId}`;

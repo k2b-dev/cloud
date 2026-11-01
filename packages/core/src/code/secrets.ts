@@ -49,7 +49,7 @@ export async function setCodeSecret(raw: z.input<typeof codeSecretContracts.set.
     let revision = current?.binding_revision;
     if (!current || approvalArgsDigest(destination) !== approvalArgsDigest(current.binding)) {
       const [row] = await tx<{ binding_revision: string }[]>`INSERT INTO code.secret_bindings(code_id,name,binding)
-        VALUES(${input.codeId},${input.name},${JSON.stringify(destination)}::jsonb) RETURNING binding_revision`;
+        VALUES(${input.codeId},${input.name},${JSON.stringify(destination)}::text::jsonb) RETURNING binding_revision`;
       revision = row!.binding_revision;
     }
     if (!revision) return badInput();

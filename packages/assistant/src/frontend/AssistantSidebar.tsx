@@ -18,7 +18,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { artifactMessages } from "../artifacts/messages";
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
@@ -58,7 +58,7 @@ type AssistantSidebarProps = {
   renderedAt: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
-  activeView?: "chat" | "all" | "apps" | "approvals";
+  activeView?: "chat" | "all" | "apps" | "approvals" | "code";
   activeAppId?: string;
   projects?: AiProject[];
   activeProjectId?: string | null;
@@ -74,6 +74,10 @@ type AssistantSidebarProps = {
   pendingApprovals?: number;
   /** Opens the approvals view in place; without it, the row is a link to the view. */
   onOpenApprovals?: () => void;
+  /** Whether the person owns Code; only then the sidebar lists "My apps & automations". */
+  hasPersonalCode?: Accessor<boolean>;
+  /** Opens the person's Code list in place; without it, the row is a link to the view. */
+  onOpenCode?: () => void;
   live: AssistantLiveHub;
 };
 
@@ -334,38 +338,39 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     }
   };
   const openProjectSearch = () => openGlobalSearch(assistantProjectsSearchOptions(locale()));
-  // The Approvals row appears or leaves only when the person navigates, never while they point at the footer: a row
-  // that pushed Studio away under the pointer would make the next click land on something else.
+  // "Waiting for you" always keeps its place, so nothing in the footer moves under the pointer. "My apps &
+  // automations" exists only for a person with Code; the page renders it from the first paint.
   const approvalsActive = () => activeView() === "approvals";
-  const approvalsVisible = () => approvalNavCount("assistant", props.pendingApprovals ?? 0) > 0 || approvalsActive();
-  const [approvalsShown, setApprovalsShown] = createSignal(approvalsVisible());
-  createEffect(on([activeView, activeConversationId, activeProjectId], () => setApprovalsShown(approvalsVisible()), { defer: true }));
-  const openApprovals = (event: MouseEvent) => {
-    // Like a chat row: modified and middle clicks keep the link's own behavior, such as opening a new tab.
-    if (
-      !props.onOpenApprovals ||
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    )
-      return;
+  const codeActive = () => activeView() === "code";
+  const codeShown = () => Boolean(props.hasPersonalCode?.()) || codeActive();
+  // Like a chat row: modified and middle clicks keep the link's own behavior, such as opening a new tab.
+  const openInPlace = (open: (() => void) | undefined) => (event: MouseEvent) => {
+    if (!open || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    props.onOpenApprovals();
+    open();
   };
   const ApprovalsItem = () => (
-    <Show when={approvalsShown()}>
+    <AppWorkspace.SidebarItem
+      icon="ti ti-hand-stop"
+      title={t().waitingForYou}
+      href={`${props.basePath ?? "/app/assistant"}?approvals=1`}
+      active={approvalsActive()}
+      onClick={openInPlace(props.onOpenApprovals)}
+      meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
+    >
+      {t().waitingForYou}
+    </AppWorkspace.SidebarItem>
+  );
+  const CodeItem = () => (
+    <Show when={codeShown()}>
       <AppWorkspace.SidebarItem
-        icon="ti ti-shield-check"
-        title={text("Approvals")}
-        href={`${props.basePath ?? "/app/assistant"}?approvals=1`}
-        active={approvalsActive()}
-        onClick={openApprovals}
-        meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
+        icon="ti ti-stack-2"
+        title={t().myCode}
+        href={`${props.basePath ?? "/app/assistant"}?code=1`}
+        active={codeActive()}
+        onClick={openInPlace(props.onOpenCode)}
       >
-        {text("Approvals")}
+        {t().myCode}
       </AppWorkspace.SidebarItem>
     </Show>
   );
@@ -589,16 +594,24 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         badge: props.doneCount ?? doneConversations().length,
         children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats, icon: "ti ti-eye" }],
       },
-      ...(approvalsShown()
+      {
+        id: "approvals",
+        action: "approvals",
+        href: `${props.basePath ?? "/app/assistant"}?approvals=1`,
+        label: t().waitingForYou,
+        icon: "ti ti-hand-stop",
+        badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
+        active: approvalsActive(),
+      },
+      ...(codeShown()
         ? [
             {
-              id: "approvals",
-              action: "approvals",
-              href: `${props.basePath ?? "/app/assistant"}?approvals=1`,
-              label: text("Approvals"),
-              icon: "ti ti-shield-check",
-              badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
-              active: approvalsActive(),
+              id: "code",
+              action: "code",
+              href: `${props.basePath ?? "/app/assistant"}?code=1`,
+              label: t().myCode,
+              icon: "ti ti-stack-2",
+              active: codeActive(),
             },
           ]
         : []),
@@ -628,7 +641,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           })),
         ],
       },
-      { id: "activities", action: "activities", label: text("Background activity"), icon: "ti ti-inbox" },
+      { id: "activities", action: "activities", label: t().runs, icon: "ti ti-activity" },
       { id: "preferences", action: "preferences", label: t().personalize, icon: "ti ti-user-cog" },
     ],
     onAction: async (action) => {
@@ -647,6 +660,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       if (action === "approvals") {
         if (props.onOpenApprovals) props.onOpenApprovals();
         else navigateTo(`${props.basePath ?? "/app/assistant"}?approvals=1`);
+        return;
+      }
+      if (action === "code") {
+        if (props.onOpenCode) props.onOpenCode();
+        else navigateTo(`${props.basePath ?? "/app/assistant"}?code=1`);
         return;
       }
       if (action === "search-projects") {
@@ -785,14 +803,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <ApprovalsItem />
+            <CodeItem />
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem
-              icon="ti ti-inbox"
-              title={text("Background activity")}
-              onClick={() => void openAssistantActivities(props.live)}
-            >
-              {text("Background activity")}
+            <AppWorkspace.SidebarItem icon="ti ti-activity" title={t().runs} onClick={() => void openAssistantActivities(props.live)}>
+              {t().runs}
             </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
@@ -803,14 +818,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               {text("Done")}
             </AppWorkspace.SidebarItem>
             <ApprovalsItem />
+            <CodeItem />
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem
-              icon="ti ti-inbox"
-              title={text("Background activity")}
-              onClick={() => void openAssistantActivities(props.live)}
-            >
-              {text("Background activity")}
+            <AppWorkspace.SidebarItem icon="ti ti-activity" title={t().runs} onClick={() => void openAssistantActivities(props.live)}>
+              {t().runs}
             </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}

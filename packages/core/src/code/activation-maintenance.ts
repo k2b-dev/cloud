@@ -11,7 +11,14 @@ import { targetApp, targetKey } from "./activation-plan";
 import { type CodeActivationTransport, codeActivationTransport } from "./activation-transport";
 import { findCode } from "./store";
 
-type TargetRow = { grant_id: string; target: { type: string; id: string }; operations: string[] };
+type TargetRow = {
+  grant_id: string;
+  target: { type: string; id: string };
+  operations: string[];
+  activating_person: string | null;
+  activated_at: Date | null;
+  activation_version_id: string;
+};
 /** Reconciliation only lists. Missing grants remain removed until someone explicitly starts another activation. */
 export async function reconcileCodeAccess(
   input: z.infer<typeof codeActivationContracts.access.input>,
@@ -22,7 +29,12 @@ export async function reconcileCodeAccess(
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
   await requireCodePermission(code, context);
   if (!code.serviceAccountId) return [];
-  const rows = await sql<TargetRow[]>`SELECT g.* FROM code.target_grants g WHERE g.code_id=${code.id} AND g.state IN ('granted','removed')
+  // The activation that created a grant names who confirmed it at the target and when it became active.
+  const rows = await sql<
+    TargetRow[]
+  >`SELECT g.*,a.activating_person,a.version_id AS activation_version_id,CASE WHEN a.state='active' THEN a.updated_at END AS activated_at
+    FROM code.target_grants g JOIN code.activations a ON a.id=g.activation_id
+    WHERE g.code_id=${code.id} AND g.state IN ('granted','removed')
     AND EXISTS(SELECT 1 FROM code.version_grants vg WHERE vg.grant_id=g.grant_id AND vg.version_id=${code.activeVersionId}::uuid) ORDER BY g.grant_id`;
   const byApp = new Map<string, CodeAccessGrant[] | null>();
   for (const appId of new Set(rows.map((row) => targetApp(row.target)))) {
@@ -38,6 +50,9 @@ export async function reconcileCodeAccess(
       grantId: row.grant_id,
       target: row.target,
       operations: row.operations,
+      activatedBy: row.activating_person,
+      activatedAt: row.activated_at ? row.activated_at.toISOString() : null,
+      activatedVersionId: row.activation_version_id,
       state:
         live === null
           ? "unavailable"
@@ -73,7 +88,7 @@ export async function cleanupCodeActivation(
     if (!held?.acquired) throw new Error("Code activation is busy; cleanup will retry");
     acquired = true;
     const code = await findCode(codeId);
-    if (!code) return;
+    if (!code || code.state === "deleting") return;
     const notices = await sql<{ activation_id: string; target: { type: string; id: string }; user_id: string; locale: string }[]>`
       SELECT n.*,a.locale FROM code.activation_notices n JOIN code.activations a ON a.id=n.activation_id
       WHERE a.code_id=${codeId} AND NOT n.sent ORDER BY n.activation_id,n.target_key,n.user_id LIMIT 50`;

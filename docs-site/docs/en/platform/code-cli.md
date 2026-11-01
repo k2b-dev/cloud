@@ -2,7 +2,7 @@
 title: Develop Code with cld
 navTitle: Code CLI
 section: Platform services
-order: 967
+order: 969
 description: Pull, check, test and submit Code from local ID-based project folders.
 tags: [code, cli, sdk, versions]
 updated: 2026-11-01
