@@ -3,7 +3,6 @@ import {
   createEffect,
   createSignal,
   createUniqueId,
-  For,
   type JSX,
   mergeProps,
   onCleanup,
@@ -21,6 +20,7 @@ import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
+import { MenuSearch, type MenuSearchApi } from "./menu-search";
 import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
@@ -49,7 +49,8 @@ export type DropdownActionBase = {
   description?: string;
   /** Quiet trailing information, such as a count. */
   trailing?: JSX.Element;
-  variant?: "danger";
+  /** `danger` for destructive entries; `accent` for the entry most people want, such as creating a blank item. */
+  variant?: "danger" | "accent";
 };
 
 export type DropdownAction =
@@ -119,9 +120,24 @@ export type DropdownSection = {
 
 export type DropdownItem = DropdownAction | DropdownChoice | DropdownSection;
 
+/** A search field above the entries, for a menu long enough that finding an entry takes reading. */
+export type DropdownSearch = {
+  /** Names the field and is its placeholder unless `placeholder` is set, such as "Find template". */
+  label: string;
+  placeholder?: string;
+  /**
+   * The entries for a query that is not blank. Defaults to the actions and choices whose label or description contains
+   * the query, kept in their sections.
+   */
+  filter?: (query: string) => readonly DropdownItem[];
+  /** What a screen reader hears after the query changes; defaults to the number of matching entries. */
+  status?: (query: string, matches: number) => string;
+};
+
 export type DropdownProps = {
   items: readonly DropdownItem[];
-  children: JSX.Element;
+  /** The `Dropdown.Trigger`; leave it out for a menu opened through `attach` or `openAt`. */
+  children?: JSX.Element;
   position?: DropdownPosition | (() => DropdownPosition);
   /** Larger menu rows and typography for touch. Defaults to `default`. */
   variant?: "default" | "touch";
@@ -159,6 +175,19 @@ export type DropdownProps = {
   openAt?: (open: (anchor: DropdownAnchor, returnFocus?: DropdownReturnFocus) => void) => void;
   /** Receives `close`, which closes the menu or sheet and returns focus. */
   closeWith?: (close: () => void) => void;
+  /**
+   * Puts a search field above the entries. Focus starts in the field; Up and Down move through the matching entries,
+   * Enter chooses one, and the first stays marked while the query changes.
+   */
+  search?: DropdownSearch;
+  /**
+   * Adopts an element rendered elsewhere as the trigger, such as a server-rendered link: a plain click, Enter, Space,
+   * Up, or Down opens the menu, while a modified or middle click keeps the link. The element gets `aria-expanded` and
+   * `aria-controls`; render `aria-haspopup` with it, so the server HTML already says it opens a menu. Read once on mount.
+   */
+  attach?: () => HTMLElement | null | undefined;
+  /** `tile` sets every entry's icon on a quiet square, for menus whose icons tell entries apart, such as templates. */
+  icons?: "plain" | "tile";
 };
 
 export type DropdownTriggerProps = Omit<
@@ -189,7 +218,7 @@ export type DropdownItemProps = {
   trailing?: JSX.Element;
   disabled?: boolean;
   danger?: boolean;
-  variant?: "danger";
+  variant?: "danger" | "accent";
   href?: string;
   external?: boolean;
   /** Runs when the item is chosen. With `href`, a plain click runs it instead of following the link. */
@@ -199,13 +228,16 @@ export type DropdownItemProps = {
 
 type MenuContextValue = {
   close: (restoreFocus?: boolean) => void;
+  /** `option` inside a searchable menu's list box, whose field keeps the focus. */
+  role: "menuitem" | "option";
 };
 
 type DropdownContextValue = {
   disabled: () => boolean;
   menuId: string;
   open: () => boolean;
-  registerTrigger: (element: HTMLButtonElement) => void;
+  popup: () => "dialog" | "menu";
+  registerTrigger: (element: HTMLElement) => void;
   toggle: () => void;
   triggerKeyDown: JSX.EventHandlerUnion<HTMLButtonElement, KeyboardEvent>;
 };
@@ -221,6 +253,7 @@ const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
             "[role='menuitem']:not([aria-disabled='true'])",
             "[role='menuitemcheckbox']:not([aria-disabled='true'])",
             "[role='menuitemradio']:not([aria-disabled='true'])",
+            "[role='option']:not([aria-disabled='true'])",
           ].join(", "),
         ),
       )
@@ -277,6 +310,7 @@ const itemContent = (props: {
 export function DropdownItem(props: DropdownItemProps): JSX.Element {
   const menu = useContext(MenuContext);
   const danger = () => props.danger || props.variant === "danger";
+  const role = () => menu?.role ?? "menuitem";
   const content = itemContent(props);
 
   return (
@@ -285,11 +319,12 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
       fallback={
         <button
           type="button"
-          role="menuitem"
+          role={role()}
           aria-label={props.ariaLabel}
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
+          data-accent={props.variant === "accent" ? "true" : undefined}
           disabled={props.disabled}
           aria-disabled={props.disabled ? "true" : undefined}
           onClick={(event) => {
@@ -308,11 +343,12 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           href={href()}
           target={props.external ? "_blank" : undefined}
           rel={props.external ? "noopener noreferrer" : undefined}
-          role="menuitem"
+          role={role()}
           aria-label={props.ariaLabel}
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
+          data-accent={props.variant === "accent" ? "true" : undefined}
           onClick={(event) => {
             // With `onSelect`, a plain click runs it in place of the link; a modified click keeps its browser meaning.
             if (props.onSelect && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
@@ -375,7 +411,7 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
       component={!props.disabled && props.href ? "a" : "button"}
       href={!props.disabled ? props.href : undefined}
       type={!props.disabled && props.href ? undefined : "button"}
-      role={props.choice === "checkbox" ? "menuitemcheckbox" : "menuitemradio"}
+      role={menu?.role === "option" ? "option" : props.choice === "checkbox" ? "menuitemcheckbox" : "menuitemradio"}
       aria-label={props.ariaLabel}
       aria-checked={checked()}
       aria-disabled={props.disabled ? "true" : undefined}
@@ -426,7 +462,11 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
   );
 }
 
-export function DropdownItems(props: { items: readonly DropdownItem[]; close: (restoreFocus?: boolean) => void }): JSX.Element {
+export function DropdownItems(props: {
+  items: readonly DropdownItem[];
+  close: (restoreFocus?: boolean) => void;
+  role?: "menuitem" | "option";
+}): JSX.Element {
   const messages = useUiMessages();
   // Rows read their current item: a host that rebuilds equal items while the menu is open keeps each row element (#2140).
   const renderItem = (item: () => DropdownAction | DropdownChoice): JSX.Element => {
@@ -454,7 +494,7 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
   };
 
   return (
-    <MenuContext.Provider value={{ close: props.close }}>
+    <MenuContext.Provider value={{ close: props.close, role: props.role ?? "menuitem" }}>
       <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : `item:${item.label}`)}>
         {(current, index) => {
           const item = current();
@@ -549,7 +589,7 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
         ref={register}
         aria-controls={context.menuId}
         aria-expanded={context.open()}
-        aria-haspopup="menu"
+        aria-haspopup={context.popup()}
         aria-label={local.label}
         disabled={disabled()}
         tabIndex={disabled() ? -1 : local.tabIndex}
@@ -576,7 +616,7 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
         ref={register}
         aria-controls={context.menuId}
         aria-expanded={context.open()}
-        aria-haspopup="menu"
+        aria-haspopup={context.popup()}
         aria-label={local.label}
         disabled={disabled()}
         tabIndex={disabled() ? -1 : local.tabIndex}
@@ -611,7 +651,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
   const [entriesShown, setEntriesShown] = createSignal(!props.lazy);
-  let triggerRef: HTMLButtonElement | undefined;
+  let triggerRef: HTMLElement | undefined;
+  const [query, setQuery] = createSignal("");
+  let searchApi: MenuSearchApi | undefined;
   /** Set while the menu is open from `openAt`: it appears beside `anchor`, and focus returns to `origin`. */
   let anchor: DropdownAnchor | undefined;
   let origin: DropdownReturnFocus | undefined;
@@ -663,6 +705,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     // Before hiding, so the popover does not return focus on its own.
     if (restoreFocus) returnFocus(originElement() ?? triggerRef, triggerRing);
     if (menuRef?.matches(":popover-open")) menuRef.hidePopover();
+    setQuery("");
     // Like `open`, expose the closed state now: the toggle event can arrive after the next key press, and a trigger
     // that still reads as open would ignore Enter (Escape, then Enter at once, must reopen).
     setInternalOpen(false);
@@ -679,7 +722,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     attachViewportListeners();
     place();
     queueMicrotask(() => {
-      if (focus) focusMenuItem(menuRef, focus === "first" ? 0 : -1);
+      if (!focus) return;
+      if (searchApi) searchApi.focus(focus);
+      else focusMenuItem(menuRef, focus === "first" ? 0 : -1);
     });
   };
   const requestOpen = (next: boolean, focus: "first" | "last" | false = "first") => {
@@ -706,6 +751,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         label: props.label ?? messages().dropdownMenu,
         locale: locale(),
         top: props.sheetTop,
+        search: props.search,
+        icons: props.icons,
         signal: current.signal,
       }).finally(() => {
         sheet = undefined;
@@ -724,7 +771,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   };
   const handleMenuKeyDown = (event: KeyboardEvent) => {
     const items = actionableItems(menuRef);
-    if (focusMenuRow(items, event.key) || focusRowSegment(items, event.key)) {
+    // A searchable menu's field keeps the focus and moves the marked entry itself.
+    if (!props.search && (focusMenuRow(items, event.key) || focusRowSegment(items, event.key))) {
       event.preventDefault();
     } else if (event.key === "Escape") {
       event.preventDefault();
@@ -735,6 +783,25 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     }
   };
 
+  const triggerKey = (event: KeyboardEvent) => {
+    if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (isOpen()) {
+      if (searchApi) searchApi.focus(event.key === "ArrowUp" ? "last" : "first");
+      else focusMenuItem(menuRef, event.key === "ArrowUp" ? -1 : 0);
+      return;
+    }
+    anchor = origin = undefined;
+    keyFocus = event.key === "ArrowUp" ? "last" : "first";
+    requestOpen(true, keyFocus);
+    keyFocus = false;
+  };
+  const toggle = () => {
+    if (!isOpen()) anchor = origin = undefined;
+    requestOpen(!isOpen());
+  };
+
   const context: DropdownContextValue = {
     disabled: () => Boolean(props.disabled),
     menuId,
@@ -742,23 +809,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     registerTrigger: (element) => {
       triggerRef = element;
     },
-    toggle: () => {
-      if (!isOpen()) anchor = origin = undefined;
-      requestOpen(!isOpen());
-    },
-    triggerKeyDown: (event) => {
-      if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (isOpen()) {
-        focusMenuItem(menuRef, event.key === "ArrowUp" ? -1 : 0);
-        return;
-      }
-      anchor = origin = undefined;
-      keyFocus = event.key === "ArrowUp" ? "last" : "first";
-      requestOpen(true, keyFocus);
-      keyFocus = false;
-    },
+    toggle,
+    popup: () => (props.search ? "dialog" : "menu"),
+    triggerKeyDown: (event) => triggerKey(event),
   };
 
   createEffect(() => {
@@ -786,6 +839,23 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     mounted = true;
     if (props.open) open(false);
     onCleanup(detachViewportListeners);
+    const adopted = props.attach?.();
+    if (!adopted) return;
+    triggerRef = adopted;
+    adopted.setAttribute("aria-controls", menuId);
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggle();
+    };
+    adopted.addEventListener("click", onClick);
+    adopted.addEventListener("keydown", triggerKey);
+    createEffect(() => adopted.setAttribute("aria-expanded", String(isOpen())));
+    onCleanup(() => {
+      adopted.removeEventListener("click", onClick);
+      adopted.removeEventListener("keydown", triggerKey);
+    });
   });
   onCleanup(() => sheet?.abort());
 
@@ -793,16 +863,20 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     <DropdownContext.Provider value={context}>
       <span class={`k2b-dropdown ${props.class ?? ""}`}>
         {props.children}
+        {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is menu, or dialog with search; both take a name. */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a menu or dialog popup owns its keys. */}
         <div
           ref={menuRef}
           id={menuId}
           popover="auto"
-          role="menu"
+          role={props.search ? "dialog" : "menu"}
           aria-label={props.label ?? messages().dropdownMenu}
           class={`k2b-dropdown__menu ${props.menuClass ?? ""}`}
           style={props.width ? { "--k2b-dropdown-width": props.width } : undefined}
           data-width={props.width ? "fixed" : undefined}
           data-variant={props.variant ?? "default"}
+          data-icons={props.icons === "tile" ? "tile" : undefined}
+          data-search={props.search ? "" : undefined}
           data-position={position()}
           onKeyDown={handleMenuKeyDown}
           onToggle={(event) => {
@@ -818,12 +892,31 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
             const target = wasOpen && !nextOpen ? originElement() : undefined;
             if (target?.isConnected && (!focused || focused === document.body || menuRef?.contains(focused)))
               returnFocus(target, triggerRing);
+            if (wasOpen && !nextOpen) setQuery("");
             if (wasOpen && !nextOpen) props.onClose?.();
             if (!nextOpen && props.open === true) queueMicrotask(() => props.open === true && open(false));
           }}
         >
           <Show when={entriesShown()}>
-            <DropdownItems items={props.items} close={close} />
+            <Show when={props.search} fallback={<DropdownItems items={props.items} close={close} />}>
+              {(search) => (
+                <MenuSearch
+                  Items={DropdownItems}
+                  items={props.items}
+                  search={search()}
+                  label={props.label ?? messages().dropdownMenu}
+                  query={query}
+                  setQuery={setQuery}
+                  close={close}
+                  api={(api) => {
+                    searchApi = api;
+                    onCleanup(() => {
+                      if (searchApi === api) searchApi = undefined;
+                    });
+                  }}
+                />
+              )}
+            </Show>
           </Show>
         </div>
       </span>

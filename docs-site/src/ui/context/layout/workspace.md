@@ -139,7 +139,12 @@ and Reset appear only while `filtered` is true.
 
 A head rendered on the server outside an island runs no callbacks. Give
 `primary` an `href` there, such as a command link that the page's island runs
-on load, and let that island handle a plain click in place. Filter chips with
+on load, and let that island handle a plain click in place. When that click
+opens a menu, set `popup: "menu"` (or `"dialog"` for a menu with a search
+field): server HTML then carries `aria-haspopup` and `aria-expanded`, a chevron
+follows the label, and the island adopts the link with `Dropdown`'s `attach`.
+The link still opens its address before hydration, in a new tab, or with a
+modified click. Filter chips with
 state of their own belong in an island in `filters` with their own Reset.
 
 ```ts
@@ -157,6 +162,7 @@ type AppWorkspaceHeadProps = {
     icon: string;
     href?: string;
     onClick?: (event: MouseEvent) => void;
+    popup?: "menu" | "dialog";
   };
 };
 ```

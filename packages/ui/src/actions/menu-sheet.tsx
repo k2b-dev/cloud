@@ -1,9 +1,10 @@
-import { type JSX, onCleanup, onMount } from "solid-js";
+import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
-import type { DropdownAction, DropdownChoice, DropdownItem } from "./Dropdown";
+import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSearch } from "./Dropdown";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
+import { filterDropdownItems, MenuSearch } from "./menu-search";
 
 /** Phones, where a menu opens as a bottom sheet instead of beside its trigger. */
 export const PHONE_SHEET_QUERY = "(max-width: 47.999rem)";
@@ -63,6 +64,7 @@ function SheetMenu(props: {
   label: string;
   close: () => void;
   dialog: HTMLDialogElement;
+  icons?: "plain" | "tile";
 }): JSX.Element {
   let menu!: HTMLDivElement;
   const onKeyDown = (event: KeyboardEvent) => {
@@ -79,7 +81,14 @@ function SheetMenu(props: {
     onCleanup(() => props.dialog.removeEventListener("keydown", onSheetKeyDown));
   });
   return (
-    <div ref={menu} class="k2b-gesture-menu__sheet-menu" role="menu" aria-label={props.label} onKeyDown={onKeyDown}>
+    <div
+      ref={menu}
+      class="k2b-gesture-menu__sheet-menu"
+      role="menu"
+      aria-label={props.label}
+      data-icons={props.icons === "tile" ? "tile" : undefined}
+      onKeyDown={onKeyDown}
+    >
       <props.Items items={props.items} close={() => props.close()} />
     </div>
   );
@@ -95,8 +104,48 @@ export type MenuSheetOptions = {
   locale: string;
   /** Shown above the menu, for example a row of quick reactions. `close` closes the sheet. */
   top?: (close: () => void) => JSX.Element;
+  search?: DropdownSearch;
+  icons?: "plain" | "tile";
   signal?: AbortSignal;
 };
+
+/** A searchable menu in the sheet: the sheet's first field, so it takes the focus as the sheet opens, as in the menu. */
+function SheetSearch(props: {
+  Items: MenuSheetOptions["Items"];
+  items: readonly DropdownItem[];
+  search: DropdownSearch;
+  wrap: <T extends DropdownItem>(items: readonly T[]) => T[];
+  label: string;
+  locale: string;
+  close: () => void;
+  icons?: "plain" | "tile";
+}): JSX.Element {
+  const [query, setQuery] = createSignal("");
+  const filter = props.search.filter;
+  return (
+    <div
+      class="k2b-gesture-menu__sheet-menu"
+      role="dialog"
+      aria-label={props.label}
+      data-search=""
+      data-icons={props.icons === "tile" ? "tile" : undefined}
+    >
+      <MenuSearch
+        Items={props.Items}
+        items={props.items}
+        search={{
+          ...props.search,
+          // The sheet's own items are wrapped already; a host's filter returns its unwrapped entries.
+          filter: (value) => (filter ? props.wrap(filter(value)) : filterDropdownItems(props.items, value, props.locale)),
+        }}
+        label={props.label}
+        query={query}
+        setQuery={setQuery}
+        close={() => props.close()}
+      />
+    </div>
+  );
+}
 
 /** Opens menu items as a bottom sheet; resolves after the sheet closed and the chosen action ran. */
 export const openMenuSheet = (options: MenuSheetOptions): Promise<void> => {
@@ -111,13 +160,32 @@ export const openMenuSheet = (options: MenuSheetOptions): Promise<void> => {
           <BottomSheet onDismiss={context.requestDismiss}>
             <BottomSheet.Body>
               {options.top?.(() => close())}
-              <SheetMenu
-                Items={options.Items}
-                items={afterClose(options.items, choose)}
-                label={options.label}
-                close={() => close()}
-                dialog={context.dialog}
-              />
+              <Show
+                when={options.search}
+                fallback={
+                  <SheetMenu
+                    Items={options.Items}
+                    items={afterClose(options.items, choose)}
+                    label={options.label}
+                    close={() => close()}
+                    dialog={context.dialog}
+                    icons={options.icons}
+                  />
+                }
+              >
+                {(search) => (
+                  <SheetSearch
+                    Items={options.Items}
+                    items={afterClose(options.items, choose)}
+                    search={search()}
+                    wrap={(items) => afterClose(items, choose)}
+                    label={options.label}
+                    locale={options.locale}
+                    close={() => close()}
+                    icons={options.icons}
+                  />
+                )}
+              </Show>
             </BottomSheet.Body>
           </BottomSheet>
         </LocaleProvider>

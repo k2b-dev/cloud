@@ -84,6 +84,47 @@ or open a dialog. Set `immediate: true` on an action that needs the tap itself,
 such as a clipboard write or a download; it runs during the tap and must not
 navigate or open a dialog.
 
+## Search
+
+Set `search` on `Dropdown.Root` when a menu is long enough that finding an
+entry takes reading, such as a list of templates. A field sits above the
+entries and keeps the focus: Up and Down mark an entry, Enter chooses the
+marked one, Escape closes the menu, and the first entry is marked again after
+each change of the query. Opening with Enter marks the first entry, so Enter,
+Enter chooses it. The field is a combobox whose marked entry is its active
+descendant inside a list box, the popup is a dialog, and a polite status says
+how many entries match. The phone sheet shows the same field.
+
+```tsx
+<Dropdown.Root
+  items={items}
+  label="New task"
+  search={{ label: "Find template" }}
+>
+  <Dropdown.Trigger>New task</Dropdown.Trigger>
+</Dropdown.Root>
+```
+
+Without `filter`, a query keeps the actions and choices whose label or
+description contains it, in their sections, and shows "No results" when none
+does. Pass `filter(query)` to return other entries for a query, such as a
+"Blank task "query"" entry that takes the query as a title; `status(query,
+matches)` replaces the announced count. The query resets when the menu closes.
+
+## Adopt a trigger
+
+`attach` hands a menu an element rendered elsewhere as its trigger, such as a
+server-rendered link in a page head. A plain click, Enter, Space, Up, or Down
+opens the menu, and focus returns there when it closes; a modified or middle
+click keeps the link's own meaning. The element gets `aria-expanded` and
+`aria-controls`. Render `aria-haspopup` with it on the server, so the HTML says
+it opens a menu before any script runs. `AppWorkspace.Head`'s `primary.popup`
+does that for the head's primary action.
+
+```tsx
+<Dropdown.Root items={items} label="New task" phone="sheet" attach={() => document.querySelector("a[data-workspace-primary]")} />
+```
+
 ## Items and sections
 
 Both components accept `DropdownItem[]`. An item is one of:
@@ -115,14 +156,20 @@ row to it and Left back; Up and Down skip it and move from row to row. A
 labelled section can carry a `labelAction` of the same shape, such as **All**,
 at the end of its label. Both keep the menu open.
 
-Set `variant: "danger"` only on destructive items.
+Set `variant: "danger"` only on destructive items. `variant: "accent"` gives
+the icon of the entry most people want the action color, such as a blank item
+above a list of templates.
+
+Set `icons="tile"` on `Dropdown.Root` when the icons tell entries apart, such
+as templates: each icon then sits on a quiet square, and an `accent` entry's
+square takes the selection tint.
 
 Menus deliberately do not accept arbitrary interactive content. Use a dialog
 for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, `sheetTop`, `lazy`, `openAt`, `closeWith`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, `sheetTop`, `lazy`, `openAt`, `closeWith`, `search`, `attach`, `icons`, and `onClose`.
 `openAt` hands over `open(anchor, returnFocus?)`, which opens the menu without
 its trigger beside `anchor`: an element, or any object with
 `getBoundingClientRect()`, such as a point inside a cell. Use it when the menu
@@ -181,7 +228,7 @@ something else:
 ```ts
 type DropdownActionBase = {
   class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string; trailing?: JSX.Element;
-  variant?: "danger";
+  variant?: "danger" | "accent";
 };
 
 type DropdownAction =
@@ -221,12 +268,22 @@ type DropdownItem = DropdownAction | DropdownChoice | DropdownSection;
 type DropdownPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left" | "right-start";
 
 type DropdownProps = {
-  items: readonly DropdownItem[]; children: JSX.Element;
+  items: readonly DropdownItem[]; children?: JSX.Element;
   position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
   class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
   onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end"; phone?: "menu" | "sheet";
   sheetTop?: (close: () => void) => JSX.Element;
   lazy?: boolean;
+  search?: DropdownSearch;
+  attach?: () => HTMLElement | null | undefined;
+  icons?: "plain" | "tile";
+};
+
+type DropdownSearch = {
+  label: string;
+  placeholder?: string;
+  filter?: (query: string) => readonly DropdownItem[];
+  status?: (query: string, matches: number) => string;
 };
 
 type ContextMenuProps = {
@@ -244,8 +301,9 @@ Use `closeOnSelect: false` for an action that changes a value in place, such as 
 
 ## Accessibility
 
-`Dropdown.Trigger` renders `aria-haspopup`, `aria-expanded`, and
-`aria-controls` in server HTML. Enter, Space, and arrow keys open it. Arrow
+`Dropdown.Trigger` renders `aria-haspopup` (`dialog` for a menu with
+`search`, otherwise `menu`), `aria-expanded`, and `aria-controls` in server
+HTML. Enter, Space, and arrow keys open it. Arrow
 keys, Home, End, Escape, and Tab manage the open menu.
 
 Unless `closeOnSelect: false`, declarative actions close the visible menu
