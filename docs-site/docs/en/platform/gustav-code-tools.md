@@ -11,8 +11,9 @@ updated: 2026-11-01
 # Build Code in Gustav
 
 Ask Gustav to build a schedule or edit existing Code. Gustav can prepare and
-submit a checked version. Review and activate that version yourself in the UI
-or CLI; the chat tools do not activate Code or change its access.
+submit a checked version. Review and activate that version yourself on the
+version card in the chat, on the [Code page](/en/docs/platform/code-page) or in
+the CLI; the chat tools do not activate Code or change its access.
 
 You need Code editor rights for every authoring tool, including reads and
 comparison of resource-owned Code. Creating Code for a resource or application
@@ -32,6 +33,30 @@ background tasks cannot use these tools to edit lasting Code.
 | `code_simulate` | Checks source and simulates one fixture with exactly one invocation. |
 | `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. Pass the fixtures as `tests`: Core runs them and shows the result to reviewers. |
 | `code_diff` | Returns complete file differences and permissions for a submitted version. |
+
+## The version card
+
+After `code_submit`, the chat shows one card for the newest version, below
+Gustav's answer. It lists each operation at each target and what you can do:
+
+- If you manage the owner and every new target, the card offers **Switch on**
+  and **Difference**. Switching on is the same durable activation as on the Code
+  page. The card then becomes one line, such as "Version 5 switched on · 14:20 ·
+  by you", and stays that line after a reload.
+- If you do not, the card says who can and that the running version continues.
+  It offers **Copy link**, naming the person when one person manages the target.
+  It names a target and its managers only if you may read that target.
+- A version that waits for a Cloud administrator, or that the policy refuses,
+  says so. A phone or a non-interactive credential cannot switch on and sees why.
+- A version that a newer one replaced is one line. If you lost access to the
+  Code, the card says so. A failed check shows an error with **Retry**.
+
+The card asks Core's activation preview when it opens. That check runs each
+target's own dry run, so showing the card grants nothing. A host enables the card
+through `renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an
+ordinary step.
+
+## Draft and conflict rules
 
 Draft writes stay in the conversation. Pass the replacement project into the
 next write, and its files into check, test and submit. Pull retrieves submitted

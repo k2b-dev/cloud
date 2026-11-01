@@ -866,7 +866,10 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
             <Tag>{t().newTag}</Tag>
           </Show>
         </span>
-        <span class="cloud-code__sub">{schedule()}</span>
+        <span class="cloud-code__sub">
+          {schedule()}
+          <Show when={props.automation.nextRunAt}>{(at) => <> · {t().nextRun({ when: props.text.when(at()) })}</>}</Show>
+        </span>
         <span class="cloud-code__sub cloud-code__narrow">{status().label}</span>
       </span>
       <span class="cloud-code__wide" role="cell">

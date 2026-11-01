@@ -95,6 +95,7 @@ import {
 import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
+import AssistantCodeVersionCard from "./AssistantCodeVersionCard";
 import AssistantCodeView from "./AssistantCodeView";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
@@ -247,6 +248,8 @@ export default function AssistantWorkspace(props: Props) {
   const runKeys = createAssistantTaskRunKeys();
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
+  // Grows when a version card in this chat switched Code on, so the panel's block above it shows the new state.
+  const [codeRevision, setCodeRevision] = createSignal(0);
   const openContextView = (view: ContextView) =>
     artifactWorkspace.open(
       view.task
@@ -2727,6 +2730,7 @@ export default function AssistantWorkspace(props: Props) {
                   timeZone={props.timeZone}
                   chatOpen={Boolean(chat.activeConversationId() || activeProject())}
                   disabled={panelAttachDisabled()}
+                  revision={codeRevision()}
                   onEdit={async (ref) => {
                     // Gustav works on a place's Code with that place in the message; the chat's tools find its Code.
                     await attachPanelResource(ref, () => true);
@@ -2803,6 +2807,13 @@ export default function AssistantWorkspace(props: Props) {
                                         conversationId={chat.activeConversationId()!}
                                         httpHost={browserHttpHost}
                                         openApp={(id, title) => artifactWorkspace.open(appTab(id, title, true))}
+                                      />
+                                    ),
+                                    renderCodeVersion: (version) => (
+                                      <AssistantCodeVersionCard
+                                        {...version}
+                                        timeZone={props.timeZone}
+                                        onActivated={() => setCodeRevision((revision) => revision + 1)}
                                       />
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",

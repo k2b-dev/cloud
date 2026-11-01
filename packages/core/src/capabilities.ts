@@ -59,6 +59,7 @@ import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
 import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
+import { codeAutomationContracts, listCodeAutomations } from "./code/automations";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
@@ -910,6 +911,14 @@ export const aiCapabilities = defineCapabilities({
       ...codeAttentionContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
+    },
+    "code.automation.list": {
+      title: "List a Code's automations",
+      description:
+        "List the running version's automations with schedule, next run and newest run, and which removed target access each one needs.",
+      ...codeAutomationContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeAutomations(input, ctx)),
     },
     "code.run.count": {
       title: "Count own Code runs",

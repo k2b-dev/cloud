@@ -234,6 +234,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "Listet über alle Besitzer Code einer Ressource oder App, die du verwaltest, wenn er dich braucht: pausiert, letzter Lauf fehlgeschlagen, Zugriff an einem Ziel fehlt oder eine Version wartet auf Freigabe. Dem Cursor auch bei leeren Seiten folgen.",
           input: { cursor: "Letzte geprüfte Code-ID aus nextCursor." },
         },
+        "code.automation.list": {
+          title: "Automationen eines Codes auflisten",
+          description:
+            "Listet die Automationen der laufenden Version mit Zeitplan, nächstem und letztem Lauf und nennt, welchen entfernten Zugriff eine Automation braucht.",
+          input: { codeId: "Code-ID." },
+        },
         "code.run.count": {
           title: "Eigene Code-Läufe zählen",
           description: "Zählt Läufe und fehlgeschlagene Läufe deines persönlichen Codes seit einem Zeitpunkt der letzten 7 Tage.",

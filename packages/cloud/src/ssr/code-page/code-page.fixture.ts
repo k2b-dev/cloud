@@ -136,6 +136,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
       cron: "0 7 * * 1",
       isNew: false,
       lastRun: null,
+      nextRunAt: "2026-11-02T06:00:00.000Z",
       missingTargets: [],
       missingProven: false,
       accessUnknown: false,

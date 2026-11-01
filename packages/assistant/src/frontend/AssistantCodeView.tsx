@@ -1,28 +1,31 @@
+import { describeCodeSchedule } from "@k2b/cloud/ssr/code-schedule";
 import { Button, Placeholder, ScrollArea, Skeleton, StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import {
   type CodeRunCount,
+  type CodeStatusKey,
   type CodeStatusTone,
   type CodeSummary,
   type CodeSummaryPage,
   codeStatus,
   countOwnRunsSince,
   loadCodeSummaries,
+  nextCodeRun,
   startOfDayIn,
 } from "../code-summary";
-import { browserCodeInvoke, formatCodeTime } from "./code-client";
+import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 
 const badgeTone: Record<CodeStatusTone, StatusTone> = { success: "ok", warning: "warning", danger: "error", neutral: "neutral" };
 
-export function CodeStatusBadge(props: { code: CodeSummary }) {
+export function CodeStatusBadge(props: { code: CodeSummary; status?: { key: CodeStatusKey; tone: CodeStatusTone } }) {
   const locale = useLocale();
-  const status = () => codeStatus(props.code);
+  const status = () => props.status ?? codeStatus(props.code);
   return <StatusBadge tone={badgeTone[status().tone]} variant="dot" label={codeStateLabel(status().key, locale())} />;
 }
 
 /** The visible word for one Code status. */
-export const codeStateLabel = (key: ReturnType<typeof codeStatus>["key"], locale: string) => {
+export const codeStateLabel = (key: CodeStatusKey, locale: string) => {
   const t = assistantMessages.resolve([locale]).t;
   return {
     on: t.codeStateOn,
@@ -30,6 +33,7 @@ export const codeStateLabel = (key: ReturnType<typeof codeStatus>["key"], locale
     draft: t.codeStateDraft,
     deleting: t.codeStateDeleting,
     failed: t.codeStateFailed,
+    access_missing: t.codeStateAccessMissing,
   }[key];
 };
 
@@ -45,6 +49,22 @@ export const codeRunTime = (code: CodeSummary, locale: string, timeZone: string)
 export const codeRunLine = (code: CodeSummary, locale: string, timeZone: string) => {
   const t = assistantMessages.resolve([locale]).t;
   return code.lastRun ? t.codeLastRun({ when: codeRunTime(code, locale, timeZone) }) : codeRunTime(code, locale, timeZone);
+};
+
+/**
+ * The line under a Code's name in the list: what kind it is, its schedule, and when it runs next. A Code with several
+ * automations names their number; the next run is the earliest of them. Without automations it only says its kind.
+ */
+export const codeScheduleLine = (code: CodeSummary, locale: string, timeZone: string) => {
+  const t = assistantMessages.resolve([locale]).t;
+  const automations = code.automations ?? [];
+  const single = automations.length === 1 ? automations[0]! : null;
+  const next = nextCodeRun(code);
+  return [
+    automations.length > 1 ? t.codeAutomationCount({ count: automations.length }) : t.codeKind,
+    ...(single ? [single.cron ? describeCodeSchedule(single.cron, locale) : t.codeManualStart] : []),
+    ...(next ? [t.codeNextRun({ when: formatCodeNextRun(next, locale, timeZone) })] : []),
+  ].join(" · ");
 };
 
 /**
@@ -193,7 +213,7 @@ export default function AssistantCodeView(props: {
                             <a class="assistant-code__name truncate font-medium text-primary" href={`/app/assistant/code/${code.id}`}>
                               {code.title}
                             </a>
-                            <span class="truncate text-sm text-secondary">{t().codeKind}</span>
+                            <span class="text-sm text-secondary">{codeScheduleLine(code, locale(), props.timeZone)}</span>
                             <span class="assistant-code__narrow">
                               <CodeStatusBadge code={code} />
                             </span>

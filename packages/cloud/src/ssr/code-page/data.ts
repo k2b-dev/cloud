@@ -140,6 +140,7 @@ export const ActivationCheckSchema = z.object({
 });
 export type CodeActivationCheck = z.infer<typeof ActivationCheckSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+export const AutomationListSchema = z.object({ items: z.array(z.object({ entrypoint: z.string(), nextRunAt: z.string().nullable() })) });
 /** Metadata only: Core has no operation that returns a secret's value. */
 const SecretSchema = z.object({
   name: z.string(),
@@ -246,6 +247,8 @@ export type CodePageAutomation = {
   /** Access was removed, but whether this automation needs it could not be told. */
   accessUnknown: boolean;
   lastRun: CodePageRun | null;
+  /** When the scheduler runs it next; absent when it does not or Core cannot say. */
+  nextRunAt?: string | null;
 };
 export type CodePageVersion = {
   id: string;
