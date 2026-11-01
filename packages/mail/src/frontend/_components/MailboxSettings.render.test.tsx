@@ -77,7 +77,7 @@ describe("Mailbox settings composition", () => {
     const html = renderSettings("admin");
 
     for (const group of ["Personal", "Mailbox", "Delivery", "Sharing", "Lifecycle"]) expect(html).toContain(group);
-    expect(html).toContain("Shared identity and sending safeguards.");
+    expect(html).toContain("Mailbox name, description, and sending safeguards.");
     expect(html).toContain('class="k2b-settings-group"');
     expect(html).toContain('<footer class="k2b-settings__footer">');
     expect(html.match(/<footer class="k2b-settings__footer">/g)).toHaveLength(1);
@@ -92,7 +92,7 @@ describe("Mailbox settings composition", () => {
     expect(html).toContain("Signatures and snippets");
     expect(html).toContain('class="flex flex-col gap-8"');
     expect(html).toContain("Organization");
-    expect(html).not.toContain("Shared identity and sending safeguards.");
+    expect(html).not.toContain("Mailbox name, description, and sending safeguards.");
     expect(html).not.toContain("Accounts &amp; identities");
     expect(html).not.toContain("Danger zone");
   });
