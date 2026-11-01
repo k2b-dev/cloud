@@ -51,7 +51,7 @@ const open = (state: "secrets" | "secrets-empty") => {
   const type = (label: string, value: string) => {
     const input = field(label);
     input.value = value;
-    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   };
   return { dom, dispose, button, field, type };
 };
@@ -62,7 +62,7 @@ test.skipIf(isServer)("creating sends the value once, without an idempotency key
     ok: false,
     error: { code: "BAD_INPUT", message: "Fixture refusal", status: 400 },
   });
-  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ version: 1, allowed: true }));
+  const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ version: 1, allowed: true }));
   const page = open("secrets-empty");
   try {
     page.button("Create secret").click();
@@ -89,6 +89,9 @@ test.skipIf(isServer)("creating sends the value once, without an idempotency key
     expect(page.field("Value").value).toBe("");
     expect(page.dom.document.body.innerHTML).not.toContain(privateValue);
     expect(page.dom.window.location.href).not.toContain(privateValue);
+    // Prompts are one shared queue: an open dialog would hold back the next test's.
+    page.button("Cancel").click();
+    await tick();
   } finally {
     page.dispose();
     invoke.mockRestore();
@@ -100,7 +103,7 @@ test.skipIf(isServer)("creating sends the value once, without an idempotency key
 test.skipIf(isServer)("this Cloud's own address is refused before any value leaves the form", async () => {
   const { client } = modules!;
   const invoke = spyOn(client, "invokeCapabilityWithDataSchema");
-  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ version: 1, allowed: false }));
+  const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ version: 1, allowed: false }));
   const page = open("secrets-empty");
   try {
     page.button("Create secret").click();
@@ -119,6 +122,8 @@ test.skipIf(isServer)("this Cloud's own address is refused before any value leav
     expect(page.field("Value").value).toBe(privateValue);
     page.type("Only send to address", "https://api.lager-beispiel.de");
     expect((page.button("Create and submit") as HTMLButtonElement).disabled).toBe(false);
+    page.button("Cancel").click();
+    await tick();
   } finally {
     page.dispose();
     invoke.mockRestore();

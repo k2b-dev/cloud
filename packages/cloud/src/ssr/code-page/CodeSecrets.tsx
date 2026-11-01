@@ -1,6 +1,6 @@
 import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
-import { Button, NoticeCard, Placeholder, prompts, StatusBadge, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, IconButton, NoticeCard, Placeholder, prompts, StatusBadge, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
@@ -625,9 +625,9 @@ export function CodeSecretsTab(props: { data: CodePageData; state: CodePageReady
             <section class="cloud-code__run-list" aria-label={t().tabSecrets}>
               <div class="cloud-code__secrets-head">
                 <p class="cloud-code__sub">{t().secretsCount({ count: list().items.length })}</p>
-                <Button type="button" size="sm" variant="ghost" aria-label={t().secretNew} title={t().secretNew} onClick={create}>
+                <IconButton type="button" size="sm" variant="ghost" label={t().secretNew} onClick={create}>
                   <i class="ti ti-plus" aria-hidden="true" />
-                </Button>
+                </IconButton>
               </div>
               <ul class="cloud-code__list">
                 <For each={list().items}>
