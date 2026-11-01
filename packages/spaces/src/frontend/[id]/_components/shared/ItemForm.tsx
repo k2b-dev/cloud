@@ -209,7 +209,8 @@ export default function ItemForm(props: ItemFormProps) {
     const draft = draftFromTemplate(templateDraftSource(template), { date, timeZone: timeZone(), locale: locale() });
     fillText(date);
     setPriority(draft.priority ?? "");
-    setSelectedTags(draft.tagIds);
+    // Tags the opener gave, such as a calendar filter's, stay beside the template's, so the item shows where it was made.
+    setSelectedTags(opening ? [...new Set([...(props.defaults?.tagIds ?? []), ...draft.tagIds])] : draft.tagIds);
     setAssignees(template.assignees);
     setAssignCreator(draft.assignCreator);
     setChecklist(draft.checklist);

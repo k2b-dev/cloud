@@ -193,4 +193,73 @@ describe("Spaces item quick create", () => {
     dispose();
     dom.cleanup();
   });
+
+  test("a template the opener chose keeps the opener's title and tags beside the template's", async () => {
+    const dom = createDomTestHarness();
+    const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
+    const tag = (id: string, name: string) => ({ id, spaceId: SPACE_ID, name, color: "#16a34a" });
+    const filterTag = tag("Tag001", "Touren");
+    const templateTag = tag("Tag002", "Lager");
+    let submitted: ItemFormData | undefined;
+    const dispose = render(
+      () =>
+        createComponent(ItemForm, {
+          spaceId: SPACE_ID,
+          columns,
+          tags: [filterTag, templateTag],
+          templates: [
+            {
+              id: "Tpl001",
+              spaceId: SPACE_ID,
+              kind: "task",
+              name: "Wareneingang",
+              icon: null,
+              title: "Wareneingang prüfen",
+              description: null,
+              priority: null,
+              tags: [templateTag],
+              assignees: [],
+              assignCreator: false,
+              checklist: ["Lieferschein"],
+              estimatedDurationMinutes: null,
+              location: null,
+              url: null,
+              allDay: false,
+              durationMinutes: null,
+              timeOfDay: null,
+              dateRule: { type: "none" },
+              createdAt: "2026-10-01T00:00:00.000Z",
+              updatedAt: "2026-10-01T00:00:00.000Z",
+            },
+          ],
+          quickCreate: true,
+          // As the calendar's quick create hands over to the dialog: a typed title, a due day, and the filter's tag.
+          defaults: {
+            type: "task",
+            title: "Wareneingang Spedition Nord",
+            deadline: "2026-11-02",
+            tagIds: [filterTag.id],
+            templateId: "Tpl001",
+          },
+          onSubmit: (data) => {
+            submitted = data;
+          },
+          onCancel: () => undefined,
+        }),
+      dom.root,
+    );
+    for (let turn = 0; turn < 10; turn++) await Bun.sleep(0);
+    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    for (let turn = 0; turn < 10 && !submitted; turn++) await Bun.sleep(0);
+
+    expect(submitted).toMatchObject({
+      title: "Wareneingang Spedition Nord",
+      deadline: "2026-11-02",
+      tagIds: [filterTag.id, templateTag.id],
+      checklist: ["Lieferschein"],
+    });
+
+    dispose();
+    dom.cleanup();
+  });
 });

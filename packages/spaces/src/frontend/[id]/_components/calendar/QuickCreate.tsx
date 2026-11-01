@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Button, Dropdown, type DropdownItem, InlineGuidance, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
+import { Button, Dropdown, type DropdownItem, InlineGuidance, prompts, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ItemTemplateKind, SpaceItem, SpaceItemTemplate } from "@/contracts";
 import { draftFromTemplate, templateText } from "@/presentation/item-templates";
@@ -83,9 +83,18 @@ export default function QuickCreate(props: {
   const kindTemplates = createMemo(() => (props.templates ?? []).filter((candidate) => candidate.kind === templateKind()));
   /** The day a template's placeholders name: the due day of a task, the first day of an event. */
   const templateDay = () => (kind() === "task" ? props.days.last : props.days.first);
-  const chooseTemplate = (chosen: SpaceItemTemplate) => {
+  /** The title the last template filled in; anything else in the field is the person's own. */
+  let filled = "";
+  const chooseTemplate = async (chosen: SpaceItemTemplate) => {
+    const typed = title().trim() && title() !== filled;
+    if (
+      typed &&
+      !(await prompts.confirm(t.replaceInputQuestion, { title: t.replaceInputTitle, confirmText: t.replaceInput, icon: "ti ti-template" }))
+    )
+      return;
     setTemplate(chosen);
-    setTitle(templateText(chosen, { date: templateDay(), locale: locale() }).title);
+    filled = templateText(chosen, { date: templateDay(), locale: locale() }).title;
+    setTitle(filled);
     setError("");
   };
   /** A template belongs to one kind, so switching the kind leaves it; the typed title stays. */
@@ -109,7 +118,7 @@ export default function QuickCreate(props: {
     return parts.filter(Boolean).join(" · ");
   };
   const templateItems = (): DropdownItem[] => [
-    ...kindTemplates().map((candidate) => templateMenuRow(candidate, t, locale(), chooseTemplate)),
+    ...kindTemplates().map((candidate) => templateMenuRow(candidate, t, locale(), (chosen) => void chooseTemplate(chosen))),
     ...(props.onCreateTemplate
       ? [
           {
@@ -193,11 +202,12 @@ export default function QuickCreate(props: {
         date: null,
         timeZone: props.dateConfig?.timeZone ?? browserTimeZone(),
         locale: locale(),
-        now: new Date(`${templateDay()}T12:00:00Z`),
       });
+      // Placeholders name the selected day, in every time zone.
+      const text = templateText(chosen, { date: templateDay(), locale: locale() });
       const tagIds = [...new Set([...(data.tagIds ?? []), ...draft.tagIds])];
       Object.assign(data, {
-        description: draft.description,
+        description: text.description.trim() ? text.description : undefined,
         priority: draft.priority,
         tagIds: tagIds.length ? tagIds : undefined,
         assigneeIds: draft.assigneeIds.length ? draft.assigneeIds : undefined,

@@ -101,6 +101,9 @@ let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 const created: unknown[] = [];
 const createdTemplates: Record<string, unknown>[] = [];
+/** Templates the server keeps, so a retry can find one whose first save lost its answer. */
+let storedTemplates: Record<string, unknown>[] = [];
+const patchedTemplates: Record<string, unknown>[] = [];
 /** How the next template saves answer: a server error first proves the retry keeps the input. */
 let templateAnswers: number[] = [];
 
@@ -123,10 +126,17 @@ beforeAll(async () => {
         created.push(body);
         return Response.json({ id: "New001", spaceId: "Space1", startsAt: null, endsAt: null, ...body });
       }
-      if (url.pathname === "/api/spaces/Space1/templates" && request.method === "GET") return Response.json([]);
+      if (url.pathname === "/api/spaces/Space1/templates" && request.method === "GET") return Response.json(storedTemplates);
+      if (url.pathname === "/api/spaces/Space1/templates/Tpl900" && request.method === "PATCH") {
+        const body = (await request.json()) as Record<string, unknown>;
+        patchedTemplates.push(body);
+        return Response.json({ ...taskTemplate("Tpl900", String(body.name)), ...body, id: "Tpl900" });
+      }
       if (url.pathname === "/api/spaces/Space1/templates" && request.method === "POST") {
         const status = templateAnswers.shift() ?? 200;
-        if (status !== 200) return Response.json({ message: "Server error" }, { status });
+        // 599 stands for a save whose answer got lost: the server kept the template.
+        if (status === 599) storedTemplates.push({ ...taskTemplate("Tpl900", "x"), ...((await request.json()) as object), id: "Tpl900" });
+        if (status !== 200) return Response.json({ message: "Server error" }, { status: status === 599 ? 502 : status });
         const body = (await request.json()) as Record<string, unknown>;
         createdTemplates.push(body);
         return Response.json({ ...taskTemplate("Tpl900", String(body.name)), ...body, id: "Tpl900" });
@@ -514,6 +524,31 @@ describe(`Spaces templates in the + dialog in ${browserName}`, () => {
       await shoot(page, "desktop-09-save-as");
     } finally {
       await context.close();
+    }
+  }, 60_000);
+
+  test("a retry after a save whose answer got lost keeps the corrections and saves no second template", async () => {
+    const page = await openPage(desktop, "de");
+    templateAnswers = [599];
+    storedTemplates = [];
+    const before = createdTemplates.length;
+    try {
+      await plus(page, "de").click();
+      await page.getByRole("menuitem", { name: "Vorlage erstellen …" }).click();
+      const dialog = page.getByRole("dialog", { name: "Neue Aufgabenvorlage" });
+      await dialog.waitFor();
+      await dialog.getByRole("textbox", { name: /^Name/ }).fill("Inventur");
+      await dialog.getByRole("button", { name: "Vorlage speichern" }).click();
+      await dialog.getByRole("alert").waitFor();
+      await dialog.getByRole("textbox", { name: /^Titel/ }).fill("Inventur Regal {{week}}");
+      await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(createdTemplates.length).toBe(before);
+      expect(patchedTemplates.at(-1)).toMatchObject({ name: "Inventur", title: "Inventur Regal {{week}}" });
+    } finally {
+      templateAnswers = [];
+      storedTemplates = [];
+      await page.context().close();
     }
   }, 60_000);
 });

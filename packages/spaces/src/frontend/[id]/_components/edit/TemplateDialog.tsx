@@ -55,8 +55,17 @@ export const openTemplateDialog = (options: TemplateDialogOptions): Promise<Spac
           setLoading(true);
           try {
             if (unsure) {
+              // The first try saved after all: the retry keeps the person's later corrections by changing that one.
               const saved = (await list())?.find((template) => sameName(template, value.kind, value.name));
-              if (saved) return close(saved);
+              if (saved) {
+                const { kind: _kind, ...changes } = value;
+                const updated = await apiClient[":id"].templates[":templateId"]
+                  .$patch({ param: { id: options.spaceId, templateId: saved.id }, json: changes })
+                  .catch(() => null);
+                if (updated?.ok) return close(await updated.json());
+                setSaveError(t.templateSaveFailed);
+                return;
+              }
             }
             const response = await apiClient[":id"].templates.$post({ param: { id: options.spaceId }, json: value }).catch(() => null);
             if (response?.ok) return close(await response.json());

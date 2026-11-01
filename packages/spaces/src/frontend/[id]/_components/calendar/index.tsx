@@ -681,12 +681,13 @@ export default function Calendar(props: CalendarProps) {
       setCreateDialogPending(false);
     }
   };
-  const createEventFromSlot = (slot: CalendarEventTimeChange) =>
+  const createEventFromSlot = (slot: CalendarEventTimeChange, title?: string) =>
     openCreateDialog({
       type: "event",
       startsAt: slot.start.toISOString(),
       endsAt: slot.end.toISOString(),
       allDay: slot.allDay ?? false,
+      title,
     });
   /** The days of a range: an all-day range ends at the midnight after its last day, a time slot on its own end. */
   const daysOf = (range: CalendarEventTimeChange): CalendarDays => ({
@@ -699,8 +700,8 @@ export default function Calendar(props: CalendarProps) {
     ),
   });
   /** One selected day gets an event at nine; several get one all-day event over all of them. */
-  const createOnDays = (days: CalendarDays) =>
-    openCreateDialog(quickCreateDefaults(quickCreateKind(undefined, days), days, props.dateConfig));
+  const createOnDays = (days: CalendarDays, title?: string) =>
+    openCreateDialog({ ...quickCreateDefaults(quickCreateKind(undefined, days), days, props.dateConfig), title });
   /**
    * The day menu creates through the quick create at the days. Without write access it keeps the calendar's own
    * entries, Open day and Open week.
@@ -739,7 +740,7 @@ export default function Calendar(props: CalendarProps) {
     return openCreateDialog(quickCreateDefaults("task", target.days, props.dateConfig, target.time));
   };
   const chooseFromToolbar = (choice: CreateMenuChoice) => {
-    if (choice.type === "blank") void (choice.kind === "event" ? createNewEvent() : createTaskWithDeadline());
+    if (choice.type === "blank") void (choice.kind === "event" ? createNewEvent(choice.title) : createTaskWithDeadline());
     else if (choice.type === "template") {
       const target = toolbarTarget();
       void createFromTemplate(choice.template, target?.days, target?.time);
@@ -759,12 +760,13 @@ export default function Calendar(props: CalendarProps) {
    * month in view; in the day and week views at the selected slot or day, else today at the next full hour while today
    * shows, else at nine on the first shown day; otherwise at nine on the shown date.
    */
-  const createNewEvent = () => {
+  /** `title` comes from a menu search no template matched. */
+  const createNewEvent = (title?: string) => {
     const target = isScrollingCalendarView(props.view) || props.view === "month" ? controller()?.createTarget() : undefined;
-    if (target && !target.allDay) return createEventFromSlot(target);
+    if (target && !target.allDay) return createEventFromSlot(target, title);
     const days = target ? daysOf(target) : null;
     const date = calendar.formatDateKey(props.date, props.dateConfig);
-    return createOnDays(days ?? { first: date, last: date });
+    return createOnDays(days ?? { first: date, last: date }, title);
   };
 
   /**
