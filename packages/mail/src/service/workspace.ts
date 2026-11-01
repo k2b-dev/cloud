@@ -22,7 +22,7 @@ import {
   replaceMailSearchReferences,
   resolveMailSearchRoute,
 } from "../search-state";
-import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
+import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import * as automationLog from "./automation-log";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
@@ -461,19 +461,20 @@ export const loadMailboxConversationDetail = async (params: {
   preferredFolderId?: string | null;
   locale?: string | null;
 }): Promise<MailConversationDetailData | null> => {
-  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  const context = withOneAccessRead(params.context);
+  const permission = await requireMailboxAccess(context, params.mailboxId, "read");
   if (!permission.ok) return null;
   // Mailbox-wide visibility alone does not check conversation existence or mailbox ownership.
   const conversation = await messages.listConversationMessages({
-    context: params.context,
+    context,
     mailboxId: params.mailboxId,
     conversationId: params.conversationId,
     limit: 1,
   });
   if (!conversation.ok) return null;
   const [detail, availableTags] = await Promise.all([
-    loadConversationDetails(params, permission.data),
-    localTags.listLocalTags(params.context, params.mailboxId),
+    loadConversationDetails({ ...params, context }, permission.data),
+    localTags.listLocalTags(context, params.mailboxId),
   ]);
   const availableTagsError = availableTags.ok ? null : localizeMailError(availableTags.error, params.locale).message;
   return {
@@ -797,7 +798,8 @@ const buildMailboxListView = async (
   };
 };
 
-export const loadMailboxListView = async (params: MailboxListParams): Promise<Result<MailboxListView>> => {
+export const loadMailboxListView = async (listParams: MailboxListParams): Promise<Result<MailboxListView>> => {
+  const params = { ...listParams, context: withOneAccessRead(listParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
   const [mailboxResult, folderResult, savedViewResult] = await Promise.all([
@@ -815,7 +817,7 @@ export const loadMailboxListView = async (params: MailboxListParams): Promise<Re
   });
 };
 
-export const loadMailboxPageData = async (params: {
+export const loadMailboxPageData = async (pageParams: {
   context: MailRequestContext;
   mailboxId: string;
   requestUrl: URL;
@@ -824,6 +826,7 @@ export const loadMailboxPageData = async (params: {
   listMode?: MailListMode;
   locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
+  const params = { ...pageParams, context: withOneAccessRead(pageParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
 
