@@ -56,6 +56,7 @@ import {
 import { TextEditor } from "@k2b/ui/text-editor";
 import { createSignal, createUniqueId } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -1856,6 +1857,12 @@ const demos: DemoSection = {
   "emoji-picker": () => (
     <DemoGrid columns="one">
       <EmojiPickerDemo />
+    </DemoGrid>
+  ),
+  dictation: () => (
+    <DemoGrid columns="one">
+      <DictationDemo />
+      <DictationHostDemo />
     </DemoGrid>
   ),
   "qr-scanner": () => <QrScannerDemo />,

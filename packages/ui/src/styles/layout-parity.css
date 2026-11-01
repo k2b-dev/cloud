@@ -462,8 +462,10 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Cloud's icon is `shrink-0 text-sm`; the label is one line that fades out at
-   its end (`k2b-truncate-fade`), which needs a shrinkable box, not a flex column. */
+/* Cloud's icon is `shrink-0 text-sm`. In the scrolling row the label keeps one
+   line and the row scrolls; in the side rail it wraps to two balanced lines and
+   only a longer label fades out at the end of the second (`k2b-truncate-fade-lines`,
+   which needs a line height of at least 1.3 and a shrinkable box). */
 .k2b-ui .k2b-settings__tabs button > i {
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -471,6 +473,8 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
+  line-height: 1.3;
+  text-wrap: balance;
 }
 
 /* The close control comes first in the DOM but sits after the category row,
@@ -996,11 +1000,19 @@ html {
   background: var(--k2b-surface-muted);
 }
 
+/* The drawer's muted surface sets it apart from Main, without a line. The
+   border box keeps its height, so the edge stays where the handle sits. */
 .k2b-ui .k2b-app-workspace__drawer {
   grid-area: drawer;
   height: var(--k2b-workspace-panel-size);
-  border-top: 1px solid var(--k2b-border);
   background: var(--k2b-surface-muted);
+}
+
+/* Forced colours paint both surfaces as Canvas, so only a line keeps the edge. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-app-workspace__drawer {
+    border-top: 1px solid CanvasText;
+  }
 }
 
 .k2b-ui .k2b-app-workspace__drawer[hidden],
@@ -1122,11 +1134,11 @@ html {
    Cloud's panel. On hover, on keyboard focus, and while it drags, a handle
    shows a short grip. A column handle darkens the shadow its boundary
    already has (see the column boundaries below), so an edge keeps one shadow
-   with one geometry in every state. The drawer and a standalone separator,
-   which have no such shadow, show a soft shadow on the side of the region
-   that they resize. All of it is paint only, so nothing moves. Space, not a
-   line, separates columns; only the drawer, a row with its own top border,
-   also draws its edge. */
+   with one geometry in every state; the drawer's handle darkens the drawer's
+   edge shade the same way (see the drawer edge below). A standalone
+   separator, which has no such shadow, shows a soft shadow on the side of
+   the region that it resizes. All of it is paint only, so nothing moves. No
+   handle draws a line. */
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) {
   --k2b-resize-shadow-edge: rgb(24 24 27 / 0.035);
   --k2b-resize-shadow-mid: rgb(24 24 27 / 0.014);
@@ -1139,20 +1151,6 @@ html {
   --k2b-resize-shadow-mid: rgb(0 0 0 / 0.036);
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"]::before {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  height: 1px;
-  content: "";
-  opacity: 0;
-  background: var(--k2b-border-strong);
-  transform: translateY(-50%);
-  transition: opacity 120ms ease-out;
-}
-
-.k2b-ui .k2b-app-workspace__resize:where([data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"])::after,
 .k2b-ui .k2b-resize-separator::after {
   position: absolute;
   top: 0;
@@ -1187,11 +1185,7 @@ html {
   background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
 }
 
-.k2b-ui
-  :is(
-    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"],
-    .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]
-  )::after {
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]::after {
   top: 50%;
   right: 0;
   bottom: auto;
@@ -1801,6 +1795,50 @@ html {
   }
 }
 
+/* The drawer's edge: one quiet shade, as at a column boundary. The drawer
+   lies slightly higher than Main, so the shade lies on Main above the edge:
+   24 px tall, darkest at the edge, and lighter over the final 96 px. Main and
+   the drawer can share a surface (a navigation pane above it), so the
+   surface step alone does not always show the edge. The drawer is no
+   containing block: the workspace grid places the shade in the drawer's
+   area, so the scrolling drawer neither clips nor moves it, and the border
+   box, and with it the edge under the handle, keeps its place. The drawer's
+   resize handle only darkens this shade while it is hovered, focused, or
+   dragged. */
+@media screen {
+  .k2b-ui .k2b-app-workspace__drawer::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-mid);
+    position: absolute;
+    /* Above Main's content, below a floating Detail and the resize handles (20). */
+    z-index: 19;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1.5rem;
+    grid-area: drawer;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--k2b-workspace-shade-mid) 45%, var(--k2b-workspace-shade-edge));
+    mask-image: linear-gradient(to right, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+    transform: translateY(-100%);
+    transition:
+      --k2b-workspace-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+      --k2b-workspace-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"]:is(
+      :hover,
+      :focus-visible,
+      [data-workspace-resize-active="true"]
+    )
+    + .k2b-app-workspace__drawer::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-active-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-active-mid);
+  }
+}
+
 /* A horizontal scroller in `Main` marked `k2b-detail-trail`. It is the
    viewport that clips the surface where the panel's column begins, so it
    carries the surface's radius: a column or table cut beside the panel ends
@@ -2040,6 +2078,7 @@ html {
 
   .k2b-ui .k2b-settings__tabs button {
     width: 100%;
+    white-space: normal;
   }
 
   .k2b-ui .k2b-settings__section {

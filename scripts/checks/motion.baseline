@@ -314,7 +314,6 @@ packages/ui/src/styles/layout-parity.css | layout | height
 packages/ui/src/styles/layout-parity.css | literal | 0.4s
 packages/ui/src/styles/layout-parity.css | literal | 0.8s
 packages/ui/src/styles/layout-parity.css | literal | 120ms
-packages/ui/src/styles/layout-parity.css | literal | 120ms
 packages/ui/src/styles/layout-parity.css | literal | 140ms
 packages/ui/src/styles/layout-parity.css | literal | 140ms
 packages/ui/src/styles/layout-parity.css | literal | 140ms
@@ -337,7 +336,6 @@ packages/ui/src/styles/layout-parity.css | literal | cubic-bezier(0.2, 0.8, 0.2,
 packages/ui/src/styles/layout-parity.css | literal | ease-in
 packages/ui/src/styles/layout-parity.css | literal | ease-in
 packages/ui/src/styles/layout-parity.css | literal | ease-in-out
-packages/ui/src/styles/layout-parity.css | literal | ease-out
 packages/ui/src/styles/layout-parity.css | literal | ease-out
 packages/ui/src/styles/layout-parity.css | literal | ease-out
 packages/ui/src/styles/layout-parity.css | literal | ease-out

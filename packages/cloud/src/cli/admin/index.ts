@@ -20,6 +20,7 @@ import { appCredentialCommands } from "./app-credentials";
 import { appDomainCommands } from "./app-domains";
 import { appKeyCommands } from "./app-keys";
 import { appSignInCommands } from "./app-sign-in";
+import { appStatusCommands } from "./app-status";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
 import { gatewayCommands } from "./gateway";
@@ -100,6 +101,7 @@ const build = (locale?: string) =>
         de: "App-Domains zuordnen und DNS, TLS und Gateway-Erreichbarkeit prüfen.",
       }),
       "apps keys": "Create, list, and revoke Ed25519 app keys.",
+      "apps migration": "Check the app-key migration and start its legacy-use observation window.",
       documentation: "Manage the administration documentation website.",
       geoip: "Replace and inspect sign-in location databases.",
       jobs: "Inspect background jobs and their runs.",
@@ -140,6 +142,7 @@ const build = (locale?: string) =>
     commands: [
       ...appCredentialCommands,
       ...appKeyCommands,
+      ...appStatusCommands,
       ...appDomainCommands(locale),
       ...agentCommands,
       ...documentationCommands,

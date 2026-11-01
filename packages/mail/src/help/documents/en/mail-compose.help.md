@@ -270,3 +270,11 @@ Mail records received reports in the conversation activity. A delivery report sa
 ## Add an event from Cloud search {icon="calendar-event"}
 
 While you edit a draft, choose **Add a calendar invitation to this draft** in Cloud search. Mail saves the draft and opens the same event selector as the composer button. Your recipients, text, and attachments stay in this draft. If saving fails or someone else holds the editing lease, resolve that first. Sending stays a separate step.
+
+## Recover unsaved input {icon="history"}
+
+Mail saves while you type. If a save fails, keep the compose window open and choose **Retry**. Your current input stays visible.
+
+If the draft changed in another tab or on another device, your input stays visible. For a new message, choose **Save as new draft** to keep both versions. For a reply, choose **Recover changes** to restore a saved copy within the same conversation. The recovery dialog also lets you keep your current input. Mail retains the replaced texts as recovery copies; local copies are available only in this browser. **Copy text** lets you copy the visible message. Reloading restores this tab’s local input. **Recover changes** also lists different unsaved versions from this browser.
+
+If the browser cannot keep a local recovery copy, Mail continues saving to the server. Keep the compose window open until the draft is saved.

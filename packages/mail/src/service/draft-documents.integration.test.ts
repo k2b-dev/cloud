@@ -13,6 +13,7 @@ import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDoc
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
 import { removeDraftAttachment } from "./drafts";
 import { createMailbox } from "./mailboxes";
+import { loadSendContent } from "./send-content";
 
 const suite = suiteFor("database", "nats");
 const value = <T>(result: Result<T>): T => {
@@ -324,6 +325,62 @@ suite("Mail shared draft transaction store", () => {
     `;
     expect(counts?.revisions).toBe(2);
     expect(counts?.projections).toBe(1);
+  });
+
+  test("idle snapshots keep revisions while repeated updates remain sendable", async () => {
+    const created = await draft();
+    const base = await initial(created.id);
+    const next = { ...created.content, body: "Once" };
+    const bytes = await createDraftRevisionUpdate(base.fresh.state, next, { deadline: deadline() });
+    const changed = value(
+      await acceptDraftDocumentUpdate({
+        context: owner,
+        mailboxId,
+        draftId: created.id,
+        generation: base.generation,
+        baseCursor: base.fresh.cursor,
+        update: bytes,
+      }),
+    );
+    if (changed.status !== "accepted") throw new Error("Expected durable admission");
+    const other = await draft();
+    value(await update(other.id, { ...other.content, body: "Unrelated log activity" }, await initial(other.id)));
+    await sql.begin(async (db) => {
+      const locked = value(await lockDraftDocumentInTransaction({ db, context: owner, mailboxId, draftId: created.id }));
+      expect(value(await locked.project())).toMatchObject({ status: "covered", revision: changed.revision });
+    });
+    // The exact binary update is a retry, not a newly compiled edit with new identities.
+    const first = value(
+      await acceptDraftDocumentUpdate({
+        context: owner,
+        mailboxId,
+        draftId: created.id,
+        generation: base.generation,
+        baseCursor: changed.cursor,
+        update: bytes,
+      }),
+    );
+    if (first.status !== "accepted") throw new Error("Expected durable admission");
+    const repeated = value(
+      await acceptDraftDocumentUpdate({
+        context: owner,
+        mailboxId,
+        draftId: created.id,
+        generation: base.generation,
+        baseCursor: first.cursor,
+        update: bytes,
+      }),
+    );
+    expect(repeated).toMatchObject({ status: "accepted", revision: first.revision + 1 });
+    if (repeated.status !== "accepted") throw new Error("Expected durable admission");
+    const send = await loadSendContent({
+      db: sql,
+      mailboxId,
+      draftId: created.id,
+      expectedRevision: repeated.revision,
+      actor: { kind: "user", userId: users[0]! },
+    });
+    expect(send.ok).toBe(true);
   });
 
   test("assigned-only visibility is rechecked after the draft is locked", async () => {
@@ -926,6 +983,9 @@ suite("Mail shared draft transaction store", () => {
     const removed = value(await removeDraftAttachment({ ...target, attachmentId: attachment.id, expectedRevision: 2 }));
     expect(removed.revision).toBe(3);
     expect(removed.attachments).toEqual([]);
+    const repeatedRemoval = value(await removeDraftAttachment({ ...target, attachmentId: attachment.id, expectedRevision: 2 }));
+    expect(repeatedRemoval.revision).toBe(3);
+    expect(repeatedRemoval.attachments).toEqual([]);
     const current = await initial(created.id);
     expect(current.durable.state).toEqual(seeded.durable.state);
     expect(current.durable.cursor).toBe(seeded.durable.cursor);

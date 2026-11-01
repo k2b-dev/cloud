@@ -15,6 +15,8 @@ export const mailComposerMessages = i18n.define({
       draftRecovered: "Draft recovered",
       unsavedChangesRestored: "Unsaved changes from this browser were restored.",
       draftCouldNotBeSaved: "Draft could not be saved",
+      draftRevisionConflict:
+        "This draft changed elsewhere. Your input is still here. Recover a saved copy or save a new draft to continue.",
       saveAsNewFailed: "Could not save as a new draft",
       unsavedTextCopied: "Unsaved text copied",
       copyTextFailed: "Your browser could not copy the text. The read-only editor still contains it.",
@@ -29,6 +31,7 @@ export const mailComposerMessages = i18n.define({
       recoveryCopyOption: ({ index, date, actor, preview }: { index: number; date: string; actor: string; preview: string }) =>
         `${index}. ${date} · ${actor} · ${preview}`,
       restoreChanges: "Restore draft changes",
+      localRecoveryCopyOption: ({ index, preview }: { index: number; preview: string }) => `This device ${index} · ${preview}`,
       recoveryCopy: "Recovery copy",
       user: "user",
       serviceAccount: "service account",
@@ -134,6 +137,7 @@ export const mailComposerMessages = i18n.define({
       editorPanes: "Message editor panes",
       unsavedNotIncluded: "Your unsaved draft content is still shown below and was not included.",
       copyText: "Copy text",
+      keepCurrentInput: "Keep my current input (save over the loaded version)",
       saveAsNewDraft: "Save as new draft",
       openMessage: "Open message",
       lifecycleScheduledTitle: "Message scheduled",
@@ -200,6 +204,8 @@ export const mailComposerMessages = i18n.define({
       identitiesLoadFailed: "Could not load sending identities",
       draftCreateFailed: "Could not create draft",
       localMessageFailed: "The browser could not keep this message locally. Free some site storage and try again.",
+      localRecoveryUnavailable:
+        "Your browser could not keep a local recovery copy. Server saves continue. Keep this window open until the draft is saved.",
       startMessageFailed: "Could not start message",
       newMessage: "New message",
       chooseOwnerDescription: "Choose the mailbox and verified sender that should own this draft.",
@@ -292,6 +298,8 @@ export const mailComposerMessages = i18n.define({
       draftRecovered: "Entwurf wiederhergestellt",
       unsavedChangesRestored: "Nicht gespeicherte Änderungen aus diesem Browser wurden wiederhergestellt.",
       draftCouldNotBeSaved: "Der Entwurf konnte nicht gespeichert werden",
+      draftRevisionConflict:
+        "Dieser Entwurf wurde anderswo geändert. Deine Eingaben bleiben hier erhalten. Stelle eine gesicherte Kopie wieder her oder speichere einen neuen Entwurf.",
       saveAsNewFailed: "Der Inhalt konnte nicht als neuer Entwurf gespeichert werden",
       unsavedTextCopied: "Nicht gespeicherten Text kopiert",
       copyTextFailed: "Der Browser konnte den Text nicht kopieren. Er bleibt im schreibgeschützten Editor verfügbar.",
@@ -305,6 +313,7 @@ export const mailComposerMessages = i18n.define({
       emptyMessage: "(Leere Nachricht)",
       recoveryCopyOption: ({ index, date, actor, preview }) => `${index}. ${date} · ${actor} · ${preview}`,
       restoreChanges: "Änderungen wiederherstellen",
+      localRecoveryCopyOption: ({ index, preview }) => `Dieses Gerät ${index} · ${preview}`,
       recoveryCopy: "Wiederherstellungskopie",
       user: "Benutzer",
       serviceAccount: "Dienstkonto",
@@ -411,6 +420,7 @@ export const mailComposerMessages = i18n.define({
       editorPanes: "Bereiche des Nachrichteneditors",
       unsavedNotIncluded: "Der nicht gespeicherte Entwurf wird weiterhin unten angezeigt und war in diesem Vorgang nicht enthalten.",
       copyText: "Text kopieren",
+      keepCurrentInput: "Meine aktuellen Eingaben behalten (geladenen Stand ersetzen)",
       saveAsNewDraft: "Als neuen Entwurf speichern",
       openMessage: "Nachricht öffnen",
       lifecycleScheduledTitle: "Nachricht geplant",
@@ -479,6 +489,8 @@ export const mailComposerMessages = i18n.define({
       draftCreateFailed: "Der Entwurf konnte nicht erstellt werden",
       localMessageFailed:
         "Der Browser konnte die Nachricht nicht lokal speichern. Gib Speicherplatz für diese Website frei und versuche es erneut.",
+      localRecoveryUnavailable:
+        "Der Browser konnte keine lokale Wiederherstellungskopie speichern. Auf dem Server wird weiter gespeichert. Lass das Fenster offen, bis der Entwurf gespeichert ist.",
       startMessageFailed: "Die neue Nachricht konnte nicht vorbereitet werden",
       newMessage: "Neue Nachricht",
       chooseOwnerDescription: "Wähle das Postfach und die bestätigte Absenderidentität, denen der Entwurf zugeordnet wird.",
