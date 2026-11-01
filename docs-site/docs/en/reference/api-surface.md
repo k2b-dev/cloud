@@ -206,6 +206,12 @@ an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
 
+`canReadAppAdministration(authority)` from `@k2b/cloud/services` authorizes
+Core administration metadata with the current person's administrator role and
+OAuth `read` or `admin`. It grants no app use or repair. `canRepairAppAccess`
+retains explicit `admin` scope for OAuth repair operations. Both helpers expect
+request authority from Cloud authentication; do not cache role decisions.
+
 `appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
 provide Core's administrator-only batch summary for up to 500 input app IDs.
 Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
@@ -509,6 +515,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
 | `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
+| `@k2b/cloud/ssr/code-nav-status` | Supported, browser | `CodeNavStatus` and `codeNavAttentionLabel`: the warning dot of an owner's "Code" navigation entry | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |

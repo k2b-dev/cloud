@@ -5,6 +5,13 @@ export * from "./access";
 export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 export * from "./activation-contracts";
 export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
+export {
+  CODE_ATTENTION_CACHE_MS,
+  type CodeAttentionReason,
+  CodeAttentionReasonSchema,
+  codeAttentionContracts,
+  readCodeAttention,
+} from "./attention";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";
@@ -24,6 +31,7 @@ export { CODE_SETTINGS, codeSettings } from "./settings";
 export * from "./store";
 export type { CodeSimulateRequest, CodeTestingHost, CodeTestRequest } from "./testing";
 export { simulateCode, testCode } from "./testing";
+export * from "./target-access";
 export * from "./version-contracts";
 export * from "./version-diff";
 export * from "./versions";

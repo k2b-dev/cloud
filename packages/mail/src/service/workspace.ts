@@ -1,4 +1,5 @@
 import { logger } from "@k2b/cloud/services";
+import type { CodeAttention } from "@k2b/cloud/ssr/code-page";
 import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import type { AutomationLogItem } from "../contracts";
@@ -151,6 +152,8 @@ const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
 };
 
 export type MailboxPageData = {
+  /** Core's answer about the mailbox's Code, added by the SSR page and the workspace route; null when it did not answer in time. */
+  codeAttention?: CodeAttention | null;
   viewPreference: MailViewPreference;
   doneTodayCounts: MailDoneTodayCounts;
   receivingAddress: string | null;

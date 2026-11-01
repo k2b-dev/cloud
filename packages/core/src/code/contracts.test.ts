@@ -61,6 +61,7 @@ describe("Core Code data contracts", () => {
         .map((query) => query.localId)
         .sort(),
     ).toEqual([
+      "code.attention",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",

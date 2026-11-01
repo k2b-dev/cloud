@@ -1,6 +1,16 @@
 ---
 name: cloud-spaces
 description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
+load-tools:
+  - spaces.item.search
+  - spaces.space.browse
+  - spaces.task.list
+  - spaces.task.focus
+  - spaces.event.agenda
+  - spaces.item.read
+  - spaces.task.create
+  - spaces.task.update
+  - spaces.task.set-completed
 ---
 
 # Work with Cloud Spaces

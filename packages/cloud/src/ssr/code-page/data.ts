@@ -101,10 +101,21 @@ export const ActivationSchema = z.object({
   id: z.string(),
   versionId: z.string(),
   state: z.enum(["pending", "preflight", "applying", "waiting", "rolling_back", "failed", "active", "cancelled"]),
-  failure: z.object({ target: z.object({ type: z.string(), id: z.string() }).nullable(), code: z.string(), reason: z.string() }).nullable(),
+  failure: z
+    .object({
+      target: z.object({ type: z.string(), id: z.string() }).nullable(),
+      code: z.string(),
+      reason: z.string(),
+      /** Who manages the refusing target, for a person who may read it. The page shows them only then. */
+      managers: z.array(z.object({ name: z.string() }).passthrough()).optional(),
+    })
+    .nullable(),
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+
+/** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
+export type CodeAttention = { visible: boolean; attention: boolean };
 
 /** One caller-supplied transport: the server passes the request's credentials, the browser its session. */
 export type CodePageInvoke = <T extends z.ZodType>(
@@ -157,6 +168,10 @@ export type CodePageCall = {
   kind: "query" | "action";
   capability: string;
   target: { type: string; id: string } | null;
+  /** Additional resources the call named. */
+  refs: { type: string; id: string }[];
+  /** It failed because the target refused access, not for another reason. */
+  accessRefused: boolean;
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;
@@ -177,6 +192,15 @@ export type CodePageAutomation = {
   cron: string | null;
   /** Only the waiting version has it. */
   isNew: boolean;
+  /**
+   * Keys of targets whose access was removed and that this automation needs: proven by its failed last run, or
+   * because it is the only automation. Its runs fail there until someone switches the Code on again.
+   */
+  missingTargets: string[];
+  /** Its last run failed at one of those targets; otherwise it needs them but has not failed there yet. */
+  missingProven: boolean;
+  /** Access was removed, but whether this automation needs it could not be told. */
+  accessUnknown: boolean;
   lastRun: CodePageRun | null;
 };
 export type CodePageVersion = {
@@ -214,6 +238,8 @@ export type CodePageReady = {
   automations: CodePageAutomation[] | null;
   /** Full declared lists for the running and waiting versions; null means the manifest could not be read. */
   internet: { active: string[] | null; waiting: string[] | null };
+  /** Core's attention reasons for this Code, the same answer the owner's navigation uses; null when unavailable. */
+  attentionReasons: string[] | null;
   /** Null when Core could not reconcile target access. */
   access: CodePageAccessRow[] | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */

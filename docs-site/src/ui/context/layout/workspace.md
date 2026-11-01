@@ -167,6 +167,28 @@ title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
 
+### Without a head
+
+`AppWorkspace head={false}` draws no head row, for a page whose own toolbar
+already holds the head's buttons and whose title shows elsewhere, such as a
+note in its navigation. The application then gives both buttons itself, in
+any island:
+
+- a sidebar button with `data-app-workspace-sidebar-toggle` and
+  `aria-controls` set to the sidebar's ID. Below a 64 rem app host it opens the
+  overlay sidebar; where the sidebar is a column, it hides and shows a sidebar
+  with `onHiddenChange`, and a hidden sidebar comes back as the overlay where
+  it is one;
+- for each `AppWorkspace.Detail toggle={false}`, a Details button with
+  `data-app-workspace-detail-toggle` and
+  `aria-controls={appWorkspaceDetailElementId(detailId)}`. It opens and closes
+  the panel and, while the panel waits for room, slides it in as the drawer.
+
+Both stay one constant label ("Navigation", "Details"); the shared controller
+runs them and keeps their `aria-expanded` current, so the button needs no click
+handler of its own. Keep the head where a page has no such toolbar: removing it
+must not remove a way to the navigation or the details at any width.
+
 ## Compose the regions
 
 `AppWorkspace.Content` is required. Put `Main` first and each `Detail` after it
@@ -1015,11 +1037,15 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
   as requests to approve, in the same slot instead of `unread`. `label` is the
   phrase screen readers hear, for example "3 waiting". The label keeps its
   regular weight, and `0` stays as a muted count for a count that dropped to
-  zero while the row is still shown.
+  zero while the row is still shown;
+- `attention` shows a warning dot when something there needs the person, such
+  as failed work or missing access; never a number. The string is the phrase
+  screen readers hear, for example "needs attention". The dot takes its own
+  fixed-width mark before the others; alone, it reserves no unread slot.
 
 Each mark reserves a fixed-width slot and fits the label line, so the row keeps its
-height in every state. Whenever the status shows anything, it reserves the
-unread slot at the end of the row, which a count and a dot share; the bell and
+height in every state. Whenever the status shows anything besides `attention`
+alone, it reserves the unread slot at the end of the row, which a count and a dot share; the bell and
 then "@" sit before it. New activity, a mention, or reading therefore never
 moves another mark, and counts, dots, and bells stay aligned across rows.
 Counts grow toward the end of their reserved slot, keeping their start and text
@@ -1267,6 +1293,7 @@ type AppWorkspaceSidebarItemActionsProps = {
 
 type AppWorkspaceSidebarItemStatusProps = {
   unread?: number | boolean; mention?: boolean; muted?: boolean;
+  waiting?: { count: number; label: string }; attention?: string;
 };
 
 ```

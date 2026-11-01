@@ -17,6 +17,25 @@ export const summarizeCallResult = (result: unknown): string | null => {
   return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 };
 
+/**
+ * Whether a failed call was refused for missing access: a 403 or 404 answer, or a refusal code naming forbidden or
+ * removed access. Invalid input, an unavailable app or a timeout are other causes.
+ */
+export const isAccessRefusal = (result: unknown): boolean => {
+  const parsed = z
+    .object({ error: z.object({ code: z.string().optional(), status: z.number().optional() }).passthrough() })
+    .passthrough()
+    .safeParse(result);
+  if (!parsed.success) return false;
+  const { code, status } = parsed.data.error;
+  return status === 403 || status === 404 || /forbidden|access|removed|not_found|denied/i.test(code ?? "");
+};
+
+const callRefs = (call: unknown): { type: string; id: string }[] => {
+  const parsed = z.object({ refs: z.record(z.string(), z.object({ type: z.string(), id: z.string() })) }).safeParse(call);
+  return parsed.success ? Object.values(parsed.data.refs) : [];
+};
+
 const callTarget = (call: unknown): { type: string; id: string } | null => {
   const parsed = z.object({ target: z.object({ type: z.string(), id: z.string() }) }).safeParse(call);
   return parsed.success ? parsed.data.target : null;
@@ -28,6 +47,7 @@ export const loadCodeRunCalls = async (
   codeId: string,
   runId: string,
   after: number,
+  size = CODE_PAGE_CALL_BATCH,
 ): Promise<{
   run: z.infer<typeof RunReadSchema>["run"];
   calls: CodePageCall[];
@@ -37,7 +57,7 @@ export const loadCodeRunCalls = async (
   readable: boolean;
 } | null> => {
   const pages = await Promise.all(
-    Array.from({ length: CODE_PAGE_CALL_BATCH }, (_, index) =>
+    Array.from({ length: size }, (_, index) =>
       invoke(coreQuery("code.run.read", { codeId, runId, cursor: after + index }), wrapped(RunReadSchema)),
     ),
   );
@@ -57,6 +77,8 @@ export const loadCodeRunCalls = async (
       kind: call.kind,
       capability: call.capability,
       target: callTarget(call.call),
+      refs: callRefs(call.call),
+      accessRefused: call.state === "failed" && isAccessRefusal(call.result),
       state: call.state,
       summary: summarizeCallResult(call.result),
     });

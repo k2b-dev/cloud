@@ -73,6 +73,7 @@ import { mailAutomationLogMessages } from "./_components/mail-automation-log-mes
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
+import { mailCodeEntry } from "./_components/mail-code-entry";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -137,6 +138,7 @@ import {
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { createMailboxSearch } from "./_components/mailbox-search";
+import { automationLogHref } from "./automation-log-href";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { mailPageMessages } from "./pages-messages";
 import { assertCursorProgress } from "./pagination";
@@ -2749,8 +2751,13 @@ function createMailboxController(props: MailboxControllerProps) {
         return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
       },
       onNavigate: navigateWorkspace,
-      // Mailbox administrators reach its Code; others with access to the Code reach it by link or from the panel.
-      ...(canAdmin() && !assignedOnly() ? { code: { active: false } } : {}),
+      // Administrators always reach the mailbox's Code; others once Core said they may see it.
+      code: mailCodeEntry({
+        mailboxAdmin: canAdmin() && !assignedOnly(),
+        // Each loaded mailbox brings its own answer, also after switching mailboxes in place.
+        attention: data.codeAttention ?? null,
+        active: false,
+      }),
     }),
     onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
     preferences: () => ({
@@ -2964,7 +2971,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
               done: controller().data.doneTodayCounts.doneToday,
               automated: controller().data.doneTodayCounts.doneByAutomation,
               open: controller().data.viewCounts.needs_action,
-              logHref: `/app/mail/${controller().data.mailbox.id}/automations/log`,
+              logHref: automationLogHref(controller().data.mailbox.id),
             }
           : null
       }

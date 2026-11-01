@@ -1,12 +1,15 @@
 import { announce, Button, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
-import { createStore } from "solid-js/store";
+import { batch, createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
+import { z } from "zod";
 import { navigationApps } from "../browser/navigation-apps";
 import {
   CODE_ACCESS_ACCOUNTS_MAX,
   type CodeAccessAccount,
   CodeAccessAccountsDataSchema,
   CodeAccessRemoveDataSchema,
+  type CodeGrantDetail,
+  CodeGrantDetailSchema,
 } from "../contracts/code-access";
 import type { AccessEntry } from "../contracts/shared";
 import { accessMessages } from "./messages";
@@ -46,9 +49,14 @@ export default function CodeAccessSection(props: {
   // The share dialog belongs to the target application: the shell names it, and every Cloud layout marks its
   // canvas with it. Without either, the section stays read-only instead of offering a removal that cannot run.
   const [targetAppId, setTargetAppId] = createSignal<string>();
-  onMount(() => {
-    setTargetAppId(navigationApps().currentAppId ?? document.querySelector("[data-app-id]")?.getAttribute("data-app-id") ?? undefined);
-  });
+  // Loading starts once the target is known, so owners and grant details arrive in one pass.
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() =>
+    batch(() => {
+      setTargetAppId(navigationApps().currentAppId ?? document.querySelector("[data-app-id]")?.getAttribute("data-app-id") ?? undefined);
+      setMounted(true);
+    }),
+  );
   const canRemove = (entry: AccessEntry) => props.canEdit && Boolean(entry.grantId) && targetAppId() !== undefined;
   // A failed removal and its retry leave with editing, like the editor's own rows. A removal that fails after
   // editing stopped belongs to that ended session and never reappears when editing returns.
@@ -60,6 +68,8 @@ export default function CodeAccessSection(props: {
         if (editable) return;
         editingSession += 1;
         for (const id of Object.keys(failures)) setFailures(id, undefined);
+        // Grant details are for people who manage this resource; they leave with editing.
+        setDetails(reconcile({}));
       },
     ),
   );
@@ -70,13 +80,41 @@ export default function CodeAccessSection(props: {
     controller?.abort();
   });
 
+  // Managers also see what each grant was switched on for and by whom. Core answers only for grants the target's own
+  // code.access.list returns to this person, so a non-manager gets nothing and keeps the level line.
+  const [details, setDetails] = createStore<Record<string, CodeGrantDetail | null>>({});
+  const wantsDetails = () => props.canEdit && targetAppId() !== undefined;
   const missing = createMemo(() => [...new Set(props.entries.map(accountId))].filter((id) => id && !accounts[id]).sort());
-  const load = async (ids: string[]) => {
+  const missingDetails = createMemo(() =>
+    wantsDetails()
+      ? props.entries.flatMap((entry) =>
+          entry.grantId && details[entry.grantId] === undefined ? [{ grantId: entry.grantId, principal: accountId(entry) }] : [],
+        )
+      : [],
+  );
+  const loadDetails = async (grants: { grantId: string; principal: string }[], appId: string, signal: AbortSignal) => {
+    const found = new Map<string, CodeGrantDetail>();
+    for (let start = 0; start < grants.length; start += CODE_ACCESS_ACCOUNTS_MAX) {
+      const response = await fetch("/api/code/access/target", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ appId, grants: grants.slice(start, start + CODE_ACCESS_ACCOUNTS_MAX) }),
+        signal,
+      });
+      if (!response.ok) throw new Error(response.statusText);
+      for (const item of z.object({ data: z.array(CodeGrantDetailSchema) }).parse(await response.json()).data)
+        found.set(item.grantId, item);
+    }
+    return found;
+  };
+  const load = async (ids: string[], grants: { grantId: string; principal: string }[]) => {
     controller?.abort();
     const current = new AbortController();
     controller = current;
     setLoading(true);
     setLoadError(false);
+    const session = editingSession;
     try {
       const found = new Map<string, CodeAccessAccount>();
       // Within the route's public bound per request; a long share list takes several.
@@ -92,23 +130,34 @@ export default function CodeAccessSection(props: {
         for (const item of CodeAccessAccountsDataSchema.parse(await response.json()).items) found.set(item.id, item);
       }
       if (disposed || current.signal.aborted) return;
-      // One write for the whole answer, and every requested account settles, so nothing is requested twice.
-      setAccounts(
-        Object.fromEntries(
-          ids.map((id) => [id, found.get(id) ?? { id, ownerTitle: null, appId: null, icon: null, accent: null }] as const),
-        ),
-      );
+      // One write per answer, and everything requested settles, so nothing is requested twice, also after a retry.
+      if (ids.length)
+        setAccounts(
+          Object.fromEntries(
+            ids.map((id) => [id, found.get(id) ?? { id, ownerTitle: null, appId: null, icon: null, accent: null }] as const),
+          ),
+        );
+      const appId = targetAppId();
+      if (!grants.length || !appId) return;
+      const grantDetails = await loadDetails(grants, appId, current.signal);
+      // An answer for an editing session that has ended is not shown.
+      if (disposed || current.signal.aborted || session !== editingSession) return;
+      setDetails(Object.fromEntries(grants.map(({ grantId }) => [grantId, grantDetails.get(grantId) ?? null] as const)));
     } catch {
-      if (!disposed && !current.signal.aborted) setLoadError(true);
+      if (!disposed && !current.signal.aborted && session === editingSession) setLoadError(true);
     } finally {
       if (controller === current) setLoading(false);
     }
   };
   createEffect(() => {
     const ids = missing();
-    if (ids.length && !loadError()) void load(ids);
+    const grants = missingDetails();
+    // One load at a time; whatever is still missing when it ends starts the next one.
+    if (mounted() && !loading() && (ids.length || grants.length) && !loadError()) void load(ids, grants);
   });
-  const ready = () => missing().length === 0;
+  const ready = () => missing().length === 0 && missingDetails().length === 0;
+  const date = (iso: string) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date(iso));
+  const detailOf = (entry: AccessEntry) => (entry.grantId ? details[entry.grantId] : undefined) ?? undefined;
   // Heading and hint line up with the rows' content, which the expanded layout insets from the small breakpoint on.
   const inset = () => (props.expanded ? "sm:px-2" : "");
 
@@ -227,6 +276,11 @@ export default function CodeAccessSection(props: {
                           <span class={`block ${props.expanded ? "text-[13px]" : "text-xs"}`}>
                             <Skeleton class="inline-block h-3 w-1/4 rounded align-middle" />
                           </span>
+                          <Show when={wantsDetails() && entry.grantId}>
+                            <span class={`block ${props.expanded ? "text-[13px]" : "text-xs"}`}>
+                              <Skeleton class="inline-block h-3 w-1/3 rounded align-middle" />
+                            </span>
+                          </Show>
                         </span>
                       </>
                     }
@@ -234,9 +288,33 @@ export default function CodeAccessSection(props: {
                     {tile(entry)}
                     <span class="min-w-0 flex-1">
                       <span class={`block truncate font-medium ${props.expanded ? "text-[15px]" : "text-sm"}`}>{nameOf(entry)}</span>
-                      <span class={`block truncate text-dimmed ${props.expanded ? "text-[13px]" : "text-xs"}`}>
-                        {props.levelLabel(entry)}
-                      </span>
+                      <Show
+                        when={wantsDetails() && detailOf(entry)}
+                        fallback={
+                          <span class={`block truncate text-dimmed ${props.expanded ? "text-[13px]" : "text-xs"}`}>
+                            {props.levelLabel(entry)}
+                          </span>
+                        }
+                      >
+                        {(detail) => (
+                          <>
+                            {/* Operation at this target, as the checker read it from the Code. */}
+                            {/* These lines wrap on narrow screens instead of hiding who switched it on. */}
+                            <span class={`block break-words text-dimmed ${props.expanded ? "text-[13px]" : "text-xs"}`}>
+                              <code class="font-mono text-[0.95em] font-medium text-secondary">{detail().operations.join(", ")}</code>
+                            </span>
+                            <Show when={detail().activatedAt}>
+                              {(at) => (
+                                <span class={`block break-words text-dimmed ${props.expanded ? "text-[13px]" : "text-xs"}`}>
+                                  {detail().activatedBy
+                                    ? t().codeActivatedBy({ name: detail().activatedBy!.name, date: date(at()) })
+                                    : t().codeActivatedOn({ date: date(at()) })}
+                                </span>
+                              )}
+                            </Show>
+                          </>
+                        )}
+                      </Show>
                     </span>
                   </Show>
                   <Show when={canRemove(entry)}>

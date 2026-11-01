@@ -102,6 +102,11 @@ transaction and retain locks shared with the provider's manager-change paths.
 Update older two-argument adapters before deploying this contract; use the
 supplied connection for every adapter query.
 
+Deploy the updated Core activation transport together with providers that expose
+the generated Code access routes. Dry-run answers reveal only what the person
+may read through the target Type's existing `access.readable`. Core obtains
+Cloud-admin notification recipients through its separate target-bound server
+authority; they are not required in an unreadable person's dry-run answer.
 Deploy Spaces and Mail with the `managerUserIds` set-result field before enabling
 Cloud-admin activation in Core. A successful dry-run identifies the current
 person managers, including nested manager-group members. Core refuses Cloud-admin

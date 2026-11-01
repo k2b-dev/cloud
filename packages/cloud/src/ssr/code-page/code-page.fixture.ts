@@ -104,9 +104,28 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   active: v4,
   waiting: null,
   internet: { active: ["https://bank.example", "https://status.example:8443"], waiting: ["https://bank.example", "https://new.example"] },
+  attentionReasons: null,
   automations: [
-    { entrypoint: "anfragenSortieren", kind: "schedule", cron: "*/15 * * * *", isNew: false, lastRun: runs[1]! },
-    { entrypoint: "wochenbericht", kind: "schedule", cron: "0 7 * * 1", isNew: false, lastRun: null },
+    {
+      entrypoint: "anfragenSortieren",
+      kind: "schedule",
+      cron: "*/15 * * * *",
+      isNew: false,
+      lastRun: runs[1]!,
+      missingTargets: [],
+      missingProven: false,
+      accessUnknown: false,
+    },
+    {
+      entrypoint: "wochenbericht",
+      kind: "schedule",
+      cron: "0 7 * * 1",
+      isNew: false,
+      lastRun: null,
+      missingTargets: [],
+      missingProven: false,
+      accessUnknown: false,
+    },
   ],
   access: access("present"),
   waitingTargets: null,
@@ -132,6 +151,8 @@ export const codePageFixture = (
     | "run-unclassified"
     | "versions"
     | "versions-failed"
+    | "waiting-unreadable"
+    | "internet"
     | "reader"
     | "activated"
     | "empty"
@@ -164,7 +185,16 @@ export const codePageFixture = (
           waitingTargets,
           automations: [
             ...ready().automations!,
-            { entrypoint: "lieferungenEintragen", kind: "schedule", cron: "0 8 * * 1-5", isNew: true, lastRun: null },
+            {
+              entrypoint: "lieferungenEintragen",
+              kind: "schedule",
+              cron: "0 8 * * 1-5",
+              isNew: true,
+              lastRun: null,
+              missingTargets: [],
+              missingProven: false,
+              accessUnknown: false,
+            },
           ],
           access: [
             ...access("present"),
@@ -183,7 +213,36 @@ export const codePageFixture = (
     case "approval":
       return { ...base, tab: "overview", state: ready({ waiting: { ...v5, status: "pending" }, waitingTargets }) };
     case "removed":
-      return { ...base, tab: "overview", state: ready({ access: access("removed") }) };
+      // „lieferungenEintragen“ failed at the space whose access was removed; „anfragenSortieren“ keeps running.
+      return {
+        ...base,
+        tab: "overview",
+        state: ready({
+          access: access("removed"),
+          automations: [
+            {
+              entrypoint: "anfragenSortieren",
+              kind: "schedule",
+              cron: "*/15 * * * *",
+              isNew: false,
+              lastRun: runs[1]!,
+              missingTargets: [],
+              missingProven: false,
+              accessUnknown: false,
+            },
+            {
+              entrypoint: "lieferungenEintragen",
+              kind: "schedule",
+              cron: "0 8 * * 1-5",
+              isNew: false,
+              lastRun: runs[3]!,
+              missingTargets: ["space"],
+              missingProven: true,
+              accessUnknown: false,
+            },
+          ],
+        }),
+      };
     case "deleted":
       return { ...base, tab: "overview", state: ready({ access: access("removed", true) }) };
     case "paused":
@@ -203,6 +262,8 @@ export const codePageFixture = (
                 kind: "action",
                 capability: "mail.conversation.move",
                 target: owner.ref,
+                refs: [],
+                accessRefused: false,
                 state: "succeeded",
                 summary: "in Ordner „Lieferungen“ verschoben",
               },
@@ -211,6 +272,8 @@ export const codePageFixture = (
                 kind: "action",
                 capability: "spaces.task.create",
                 target: space.ref,
+                refs: [],
+                accessRefused: false,
                 state: "succeeded",
                 summary: "Karte „Lieferung KW 45 – Rampe 2“ angelegt",
               },
@@ -234,6 +297,8 @@ export const codePageFixture = (
                 kind: "action",
                 capability: "mail.conversation.move",
                 target: owner.ref,
+                refs: [],
+                accessRefused: false,
                 state: "succeeded",
                 summary: "in Ordner „Lieferungen“ verschoben",
               },
@@ -242,6 +307,8 @@ export const codePageFixture = (
                 kind: "action",
                 capability: "spaces.task.create",
                 target: space.ref,
+                refs: [],
+                accessRefused: true,
                 state: "failed",
                 summary: "Space Logistik nicht erreichbar · Zeitüberschreitung nach 10 s",
               },
@@ -265,6 +332,8 @@ export const codePageFixture = (
               kind: "query" as const,
               capability: "mail.conversation.list",
               target: owner.ref,
+              refs: [],
+              accessRefused: false,
               state: "succeeded" as const,
               summary: "12 Unterhaltungen",
             })),
@@ -278,6 +347,37 @@ export const codePageFixture = (
       return { ...base, tab: "overview", state: ready({ internet: { active: [], waiting: [] } }) };
     case "internet-failed":
       return { ...base, tab: "overview", state: ready({ internet: { active: null, waiting: [] } }) };
+    case "internet":
+      // The running version calls one API; version 5 adds a second origin.
+      return {
+        ...base,
+        tab: "overview",
+        state: ready({
+          waiting: v5,
+          waitingTargets,
+          internet: {
+            active: ["https://api.spedition-probe.example"],
+            waiting: ["https://api.spedition-probe.example", "https://tracking.example:8443"],
+          },
+        }),
+      };
+    case "waiting-unreadable":
+      // The new target is a space the person may not read: only its ID is known to the page.
+      return {
+        ...base,
+        tab: "overview",
+        state: ready({
+          waiting: v5,
+          waitingTargets: [
+            waitingTargets[0]!,
+            {
+              target: { ...space, key: "hidden", ref: { type: "spaces.space", id: "sp_9zz9" }, title: null, href: null },
+              operations: ["spaces.task.create"],
+              isNew: true,
+            },
+          ],
+        }),
+      };
     case "versions-failed":
       return { ...base, tab: "overview", state: ready({ waiting: v5, waitingTargets, versionsFailed: true }) };
     case "reader":

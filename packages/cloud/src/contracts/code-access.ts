@@ -119,11 +119,22 @@ export const CodeAccessRefusalCodeSchema = z.enum([
 ]);
 export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
 
+/** Presentation is optional and follows the target Type's readable rule, independently of manager authority. */
+const codeAccessPresentation = {
+  readable: z.boolean().optional(),
+  title: z.string().min(1).max(500).optional(),
+  managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS).optional(),
+};
 export const CodeAccessSetDataSchema = z.discriminatedUnion("granted", [
+  z.object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, ...codeAccessPresentation }).strict(),
   z
-    .object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, managerUserIds: managerUserIdsSchema.optional() })
+    .object({
+      granted: z.literal(false),
+      reasonCode: CodeAccessRefusalCodeSchema,
+      reason: z.string().min(1).max(1000),
+      ...codeAccessPresentation,
+    })
     .strict(),
-  z.object({ granted: z.literal(false), reasonCode: CodeAccessRefusalCodeSchema, reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessSetData = z.infer<typeof CodeAccessSetDataSchema>;
 export const CodeAccessListInputSchema = z
@@ -176,3 +187,34 @@ export const CodeAccessRemoveRequestSchema = z
     grantId: z.uuid().describe("grantId of the Code entry in the target's share list."),
   })
   .strict();
+
+/** Grants from one target's share list, each named with its Code account, for Core's `POST /api/code/access/target`. */
+export const CodeGrantDetailsInputSchema = z
+  .object({
+    appId: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z][a-z0-9-]*$/)
+      .describe("Application that owns the target and its generated code.access.list."),
+    grants: z
+      .array(z.object({ grantId: z.uuid(), principal: z.uuid().describe("The grant's Code service account.") }).strict())
+      .min(1)
+      .max(CODE_ACCESS_ACCOUNTS_MAX),
+  })
+  .strict();
+/**
+ * What a target's manager sees about one Code grant: the operations it was switched on for, and who did that when.
+ * Core returns a grant only when the target's own `code.access.list` lists it for the viewer, so only at targets
+ * they manage. `activatedBy` is null when that account is gone or the viewer may not see other people's names
+ * (directory visibility); `activatedAt` is null while the activation has not finished.
+ */
+export const CodeGrantDetailSchema = z
+  .object({
+    grantId: z.uuid(),
+    operations: z.array(z.string()),
+    activatedBy: z.object({ id: z.uuid(), name: z.string() }).strict().nullable(),
+    activatedAt: z.iso.datetime().nullable(),
+  })
+  .strict();
+export type CodeGrantDetail = z.infer<typeof CodeGrantDetailSchema>;

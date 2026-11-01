@@ -71,6 +71,8 @@ const setup = async (options: {
   appContext?: "shell" | "canvas" | "none";
   expanded?: boolean;
   confirm?: boolean;
+  /** Core's answer for the grants the viewer manages; by default none. */
+  details?: () => Response | Promise<Response>;
 }) => {
   const dom = createDomTestHarness();
   installPopoverApi(dom);
@@ -86,11 +88,16 @@ const setup = async (options: {
   // Focus-mode pages carry no app in their shell data, only on the canvas around the page.
   if (options.appContext === "canvas") dom.root.setAttribute("data-app-id", "spaces");
   const calls: Call[] = [];
+  const detailCalls: Call[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
     async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : input.toString();
       const call = { url, body: init?.body ? JSON.parse(String(init.body)) : undefined };
+      if (url === "/api/code/access/target") {
+        detailCalls.push(call);
+        return options.details ? options.details() : Response.json({ data: [] });
+      }
       calls.push(call);
       return options.respond(call);
     },
@@ -134,6 +141,7 @@ const setup = async (options: {
   return {
     dom,
     calls,
+    detailCalls,
     confirmations,
     revoked,
     section,
@@ -201,7 +209,7 @@ describe("Code with access in the shared rights editor", () => {
       expect(view.confirmations).toEqual([
         {
           content:
-            "Was diesen Zugriff braucht, ist dann pausiert. Was der Code schon angelegt hat, bleibt." +
+            "Der Code kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was er schon angelegt hat, bleibt." +
             "Wieder einschalten kann, wer info@moebel-beispiel.de verwaltet und hier „Verwalten“ hat.",
           options: {
             title: "Zugriff von „Code von info@moebel-beispiel.de“ entfernen?",
@@ -429,6 +437,145 @@ describe("Code with access in the shared rights editor", () => {
       await waitFor(() => view.codeRows()[0]?.getAttribute("aria-busy") === null, "the settled removal");
       setEditable(true);
       await Bun.sleep(20);
+      expect(view.section()!.querySelector("[role=alert]")).toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("managers see each grant's operation and who switched it on when; grants Core does not return keep the level", async () => {
+    const view = await setup({
+      expanded: true,
+      respond: accountsResponse,
+      details: () =>
+        Response.json({
+          data: [
+            {
+              grantId: ids.grantInfo,
+              operations: ["spaces.task.create"],
+              activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
+              activatedAt: "2026-10-28T09:00:00.000Z",
+            },
+          ],
+        }),
+    });
+    try {
+      await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
+      expect(view.detailCalls).toEqual([
+        {
+          url: "/api/code/access/target",
+          body: {
+            appId: "spaces",
+            grants: [
+              { grantId: ids.grantInfo, principal: ids.info },
+              { grantId: ids.grantBase, principal: ids.base },
+            ],
+          },
+        },
+      ]);
+      expect(view.codeRows().map((row) => row.textContent)).toEqual([
+        "Code von info@moebel-beispiel.despaces.task.createeingeschaltet von Ben Schulz am 28.10.2026Entfernen",
+        "Code von EinkaufAnsehenEntfernen",
+      ]);
+      expect(view.codeRows()[0]!.querySelector("code")?.textContent).toBe("spaces.task.create");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a hidden name or an unfinished activation leaves out only what is unknown", async () => {
+    const view = await setup({
+      respond: accountsResponse,
+      details: () =>
+        Response.json({
+          data: [
+            {
+              grantId: ids.grantInfo,
+              operations: ["spaces.task.create", "spaces.task.update"],
+              activatedBy: null,
+              activatedAt: "2026-10-28T09:00:00.000Z",
+            },
+            { grantId: ids.grantBase, operations: ["spaces.task.list"], activatedBy: null, activatedAt: null },
+          ],
+        }),
+    });
+    try {
+      await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
+      expect(view.codeRows().map((row) => row.textContent)).toEqual([
+        "Code von info@moebel-beispiel.despaces.task.create, spaces.task.updateeingeschaltet am 28.10.2026Entfernen",
+        "Code von Einkaufspaces.task.listEntfernen",
+      ]);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("people who cannot change access never ask Core for grant details", async () => {
+    const view = await setup({ respond: accountsResponse, canEdit: false });
+    try {
+      await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
+      expect(view.detailCalls).toEqual([]);
+      expect(view.codeRows()[0]!.textContent).toBe("Code von info@moebel-beispiel.deBearbeiten");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("failed grant details show the section's error and load again on retry", async () => {
+    let attempt = 0;
+    const view = await setup({
+      respond: accountsResponse,
+      details: () => {
+        attempt += 1;
+        return attempt === 1 ? new Response("down", { status: 503 }) : Response.json({ data: [] });
+      },
+    });
+    try {
+      await waitFor(() => view.section()?.querySelector("[role=alert]") !== null, "the load failure");
+      view.section()!.querySelector<HTMLButtonElement>("[role=alert] button")!.click();
+      await waitFor(() => view.section()?.getAttribute("aria-busy") === null && view.codeRows().length === 2, "the loaded section");
+      expect(view.codeRows()[0]!.textContent).toContain("Bearbeiten");
+      // The owners were already known; only the details were asked again.
+      expect(view.calls).toHaveLength(1);
+      expect(view.detailCalls).toHaveLength(2);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("grant details leave with editing, also when their answer arrives afterwards", async () => {
+    const [editable, setEditable] = createSignal(true);
+    const detail = {
+      grantId: ids.grantInfo,
+      operations: ["spaces.task.create"],
+      activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
+      activatedAt: "2026-10-28T09:00:00.000Z",
+    };
+    let answer: (() => void) | undefined;
+    let late = false;
+    const view = await setup({
+      canEdit: editable,
+      respond: accountsResponse,
+      details: () =>
+        late
+          ? new Promise<Response>((resolve) => {
+              answer = () => resolve(Response.json({ data: [detail] }));
+            })
+          : Response.json({ data: [detail] }),
+    });
+    try {
+      await waitFor(() => view.codeRows()[0]?.textContent?.includes("spaces.task.create") === true, "the details");
+      setEditable(false);
+      await waitFor(() => view.codeRows()[0]?.textContent === "Code von info@moebel-beispiel.deBearbeiten", "the level line");
+      expect(view.dom.root.textContent).not.toContain("Ben Schulz am");
+      // Editing returns: details load again; stopping before the answer arrives keeps them away.
+      late = true;
+      setEditable(true);
+      await waitFor(() => answer !== undefined, "the new details request");
+      setEditable(false);
+      answer!();
+      await Bun.sleep(20);
+      expect(view.codeRows()[0]?.textContent).toBe("Code von info@moebel-beispiel.deBearbeiten");
       expect(view.section()!.querySelector("[role=alert]")).toBeNull();
     } finally {
       view.cleanup();
