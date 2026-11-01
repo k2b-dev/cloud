@@ -1,11 +1,19 @@
 ---
 name: cloud-mail
 description: "Use for work involving the user's Cloud mailboxes: finding, reading, summarizing, organizing, drafting, replying to, forwarding, sending, scheduling, or unsubscribing from email. Load it whenever a request involves Cloud Mail, an inbox, a mailbox, a message, or an email conversation."
+load-tools:
+  - mail.conversation.focus
+  - mail.search
+  - mail.conversation.read
+  - mail.message.read-content
+  - mail.draft.create
 ---
 
 # Work with Cloud Mail
 
 Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them. Load only the capabilities needed for the task. Reuse returned typed IDs and current revisions unchanged.
+
+Mailbox-scoped tools take `mailbox`: reuse its public ID. All resources and batch members must belong to it. Readers and cross-mailbox search keep their inputs; `mail.draft.send.check` keeps `mailboxId`.
 
 ## Choose the shortest useful path
 

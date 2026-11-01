@@ -24,6 +24,13 @@ The Mail send migration intentionally requires `expectedContentHash` on
 entries and their hashes are updated for the approved breaking contract; other
 Mail evolution checks remain active. See the [Mail migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#mail-send-requires-a-content-fingerprint).
 
+The coordinated Code target migration intentionally moves Mail's mailbox-scoped
+operations from `input.mailboxId` to a `mail.mailbox` target. Only those input
+fields, target declarations, and their hashes change in the Mail baseline;
+existing result and safety contracts remain checked. Readers, cross-mailbox
+queries, and `draft.send.check` keep their inputs. See the
+[Mail target migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#mail-capabilities-name-their-mailbox).
+
 The Weather geo migration removes only `city.search` from its baseline. Call
 Core `address.autocomplete` with `type: "city"` and pass the selected coordinates
 to Weather. The remaining evolution checks stay active. See the

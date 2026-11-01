@@ -10,6 +10,22 @@ updated: 2026-10-31
 
 # Deprecations and migrations
 
+## Mail capabilities name their mailbox
+
+The coordinated Code migration intentionally changes Mail's mailbox-scoped
+capability contract. For every Action and the mailbox-scoped Queries listed in
+[Mail capability targets](/en/docs/platform/mail-capabilities#choose-the-query-shape),
+move `input.mailboxId` to `target: { type: "mail.mailbox", id: mailboxId }`.
+Keep the other domain fields in `input`. Refresh the live catalog and schema
+hashes before reviewing or invoking these operations. Their local IDs stay the
+same; deploy the platform, Mail, and capability callers together.
+
+Chat and MCP tools remain flat, with `mailbox` naming the target. Canonical
+readers, discovery and cross-mailbox Queries keep their inputs.
+`draft.send.check` also keeps `{ mailboxId, draftId, expectedRevision }` for
+outcome recovery. Mail's REST API, `cld mail`, mailbox selection, and compose
+and send flows keep their behavior; no stored Mail data needs conversion.
+
 ## Service-account kind checks have separate purposes
 
 Replace `isStandaloneServiceAccountKind` with

@@ -2,7 +2,7 @@ import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { asUndoStep, type EditorAction, type EditorHandle, Toolbar, type ToolbarCustom, type ToolbarMenu } from "@k2b/editor";
 import { indentListItems, outdentListItems, setListKind } from "@k2b/editor/markdown";
-import { Button, Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { type InlineFormat, TableSizePicker, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
@@ -10,14 +10,6 @@ import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import { commentMessages } from "../comments/messages";
-import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/events";
-import { readNavigationHidden } from "../settings/NotebookSettingsStore";
-import {
-  createNavigationHidden,
-  keepFocusAfterShowingNavigation,
-  NOTEBOOK_NAVIGATION_ID,
-  setNavigationHidden,
-} from "../sidebar/navigation-visibility";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import {
   type CaretFormat,
@@ -30,6 +22,7 @@ import {
   toggleHeadingLevel,
   toggleInlineMark,
 } from "./editor-actions";
+import { DetailsButton, NavigationButton } from "./workspace-buttons";
 
 type Props = {
   connected: boolean;
@@ -37,7 +30,6 @@ type Props = {
   editor: EditorHandle;
   notebookId: string;
   noteId: string;
-  initialPanelOpen: boolean;
   /** Formats at the caret: pressed toggles, the text style, and whether Indent and Outdent apply. */
   format: CaretFormat;
   onUndo: () => void;
@@ -131,14 +123,10 @@ export default function EditorToolbar(props: Props) {
     );
   const style = () => (props.format.heading ? `H${props.format.heading}` : t().normalText);
   const styleLabels = () => [t().normalText, "H1", "H2", "H3", "H4", "H5", "H6"];
-  const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   const [coarsePointer, setCoarsePointer] = createSignal(false);
   // On touch screens, the controlled style menu opens on a tap without taking focus, so the note keeps focus, the
   // keyboard, and the lifted toolbar. Keys on the trigger still move focus into the menu.
   const [styleOpen, setStyleOpen] = createSignal(false);
-  // The toolbar renders only in the browser, where the cookie holds the same state SSR used.
-  const navigationHidden = createNavigationHidden(readNavigationHidden());
-  const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
   const [showDisconnected, setShowDisconnected] = createSignal(false);
   let disconnectedTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -156,39 +144,11 @@ export default function EditorToolbar(props: Props) {
     setCoarsePointer(coarse.matches);
     const pointerChanged = () => setCoarsePointer(coarse.matches);
     coarse.addEventListener("change", pointerChanged);
-    const handler = (event: Event) => {
-      const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
-      if (detail && typeof detail === "object" && "isOpen" in detail && typeof detail.isOpen === "boolean") setPanelOpen(detail.isOpen);
-    };
-    window.addEventListener(DETAIL_PANEL_STATE_EVENT, handler);
     onCleanup(() => {
       clearTimeout(disconnectedTimer);
       coarse.removeEventListener("change", pointerChanged);
-      window.removeEventListener(DETAIL_PANEL_STATE_EVENT, handler);
     });
   });
-
-  let navigationToggle: HTMLDivElement | undefined;
-  const toggleDetailPanel = () => window.dispatchEvent(new CustomEvent(DETAIL_PANEL_TOGGLE_EVENT));
-
-  const Btn = (p: { icon: string; title: string; shortcut?: string; pressed?: boolean; enabled?: boolean; onClick: () => void }) => (
-    <Tooltip.Anchor content={p.shortcut ? t().withShortcut({ label: p.title, keys: keys(p.shortcut) }) : p.title}>
-      <IconButton
-        label={p.title}
-        tooltip={false}
-        size="xs"
-        aria-pressed={p.pressed === undefined ? undefined : p.pressed ? "true" : "false"}
-        aria-disabled={p.enabled === false ? "true" : undefined}
-        aria-keyshortcuts={p.shortcut ? ariaShortcut(p.shortcut) : undefined}
-        onClick={() => {
-          if (p.enabled !== false) p.onClick();
-        }}
-        class="text-dimmed"
-      >
-        <i class={`ti ${p.icon} text-sm`} aria-hidden="true" />
-      </IconButton>
-    </Tooltip.Anchor>
-  );
 
   const styleMenu: ToolbarCustom = {
     kind: "custom",
@@ -367,32 +327,7 @@ export default function EditorToolbar(props: Props) {
           ],
         },
       ]}
-      start={
-        // The navigation sidebar is a column from a 64 rem app host; below that, from md, the toggle only brings a
-        // hidden navigation back, as the graph's does. Phones keep the header's menu (app.css).
-        <div ref={navigationToggle} class="notebooks-navigation-toggle" data-navigation-hidden={navigationHidden() ? "" : undefined}>
-          <Tooltip.Anchor content={navigationLabel()}>
-            <IconButton
-              label={navigationLabel()}
-              tooltip={false}
-              size="xs"
-              class="text-dimmed"
-              aria-expanded={!navigationHidden()}
-              aria-controls={NOTEBOOK_NAVIGATION_ID}
-              onClick={() => {
-                const showing = navigationHidden();
-                setNavigationHidden(!showing);
-                if (showing && navigationToggle) keepFocusAfterShowingNavigation(navigationToggle, () => view()?.focus());
-              }}
-            >
-              <i
-                class={`ti ${navigationHidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"} text-sm`}
-                aria-hidden="true"
-              />
-            </IconButton>
-          </Tooltip.Anchor>
-        </div>
-      }
+      start={<NavigationButton />}
       end={
         <>
           <Show when={showDisconnected()}>
@@ -433,11 +368,7 @@ export default function EditorToolbar(props: Props) {
               <i class="ti ti-book" aria-hidden="true" />
             </IconButtonLink>
           </Tooltip.Anchor>
-          <Btn
-            icon={panelOpen() ? "ti-layout-sidebar-right-collapse" : "ti-layout-sidebar-right-expand"}
-            title={panelOpen() ? t().collapseDetails : t().expandDetails}
-            onClick={toggleDetailPanel}
-          />
+          <DetailsButton />
         </>
       }
     />
