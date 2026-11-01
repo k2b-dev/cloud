@@ -117,7 +117,10 @@ cld code status ./instance-code --json
 `pull --all` requires a Cloud administrator and downloads every resource-owned
 Code through the same source reader as a single pull. Personal and
 application-owned Code are excluded. Resource folders use short IDs, for
-example `mail/box_1234`; titles and owners remain in `code.json`. Pull never
+example `mail/box_1234`; titles and owners remain in `code.json`. If an ID
+cannot be used as a filesystem segment or two resource types share the same
+short ID, pull uses `mail/@<code-id>` for that Code. Existing checkouts are
+never overwritten. Pull never
 activates Code. It refuses existing project folders. If a later project fails,
 earlier folders remain: inspect them and retry into a new root.
 
@@ -125,7 +128,8 @@ Status discovers every `code.json` below the selected root, or finds the
 surrounding project from a source path. Without a path, it uses the current
 project when present; otherwise it scans `./code`, matching pull's default. It compares local source with its saved base and reports the latest
 server version, approval receipt, active version, execution state, pause reason,
-and whether a newer server base exists. An empty root returns an empty list.
+and whether a newer server base exists. An empty root returns an empty list;
+a missing default `./code` also returns an empty list.
 Duplicate local Code IDs, linked paths, unavailable Code, and unreadable files
 fail visibly. Status does not update files or advance local bases.
 

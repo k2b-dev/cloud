@@ -235,7 +235,9 @@ test("pull creates ID folders and refuses to overwrite unsaved edits", async () 
   expect(await code.run(run.ctx)).toBe(1);
   expect(await readFile(join(directory, "code.ts"), "utf8")).toBe(source);
   expect(codeProjectFolder({ ...config, title: "mail@example.test / changed title" })).toBe("example/box_1234");
-  expect(() => codeProjectFolder({ ...config, owner: { kind: "resource", ref: { type: "example.box", id: "../escape" } } })).toThrow();
+  expect(codeProjectFolder({ ...config, owner: { kind: "resource", ref: { type: "example.box", id: "../escape" } } })).toBe(
+    "example/@c_1234",
+  );
 });
 test("local source never follows links or includes generated SDK/test code", async () => {
   const { directory, root } = await project();
@@ -322,7 +324,6 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
           binding,
           staleComparison: false,
           files: [{ path: "code.ts", lines: [{ kind: "add", text: "new" }] }],
-          secrets: [],
           permissions: [],
           secrets: [],
           policyRows: [],
@@ -758,6 +759,7 @@ test.each(["json", "jsonl"] as const)("empty pull --all preserves host %s format
     Response.json({ version: 1, items: [], nextCursor: null }),
   );
   expect(await code.run(invocation.ctx)).toBe(0);
+  expect(await listCodeProjects(join(root, "empty"))).toEqual([]);
   expect(invocation.printed.join("")).toBe(
     output === "json" ? '{\n  "version": 1,\n  "items": [],\n  "nextCursor": null\n}\n' : '{"version":1,"items":[],"nextCursor":null}\n',
   );
@@ -779,4 +781,67 @@ test("status defaults to the current project or ./code without scanning unrelate
     expect(stderr).toBe("");
     expect(JSON.parse(stdout)).toEqual([config.codeId]);
   }
+});
+
+test("resource pulls use Code IDs for unsafe IDs and colliding resource types without overwrites", async () => {
+  const { root, directory } = await project();
+  const second = { ...config, codeId: "c_5678", owner: { kind: "resource" as const, ref: { type: "example.folder", id: "box_1234" } } };
+  expect(await writeCodeProject(root, second, { "code.ts": "second" })).toBe(join(root, "example", "@c_5678"));
+  expect(await readFile(join(directory, "code.ts"), "utf8")).toBe(source);
+  await expect(writeCodeProject(root, second, {})).rejects.toThrow();
+  const unsafe = { ...config, codeId: "c_9012", owner: { kind: "resource" as const, ref: { type: "example.box", id: "a:b.c" } } };
+  expect(await writeCodeProject(root, unsafe, {})).toBe(join(root, "example", "@c_9012"));
+  expect((await listCodeProjects(root)).map((project) => project.config.codeId)).toEqual(["c_1234", "c_5678", "c_9012"]);
+});
+test("status discovers resource folders named build, test and sdk and returns empty roots", async () => {
+  const { root, directory } = await project();
+  const out = join(root, "all-names");
+  for (const [index, name] of ["build", "test", "sdk"].entries()) {
+    await writeCodeProject(
+      out,
+      { ...config, codeId: `c_000${index}`, owner: { kind: "resource", ref: { type: `${name}.item`, id: name } } },
+      {},
+    );
+  }
+  expect((await listCodeProjects(out)).map((project) => project.config.codeId)).toEqual(["c_0000", "c_0001", "c_0002"]);
+  const empty = join(directory, "empty-checkout");
+  await mkdir(empty);
+  expect(await listCodeProjects(empty)).toEqual([]);
+});
+test("pretty pull JSON preserves Unicode line separators in source strings", async () => {
+  const { root } = await project();
+  const pulled = { version: 1, config, files: { "code.ts": "const text = 'a\u2028b\u2029c';" } };
+  const invocation = context(["pull"], { all: true, out: join(root, "unicode") }, "json", () =>
+    Response.json({ version: 1, items: [pulled], nextCursor: null }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(JSON.parse(invocation.printed.join(""))).toEqual({ version: 1, items: [pulled], nextCursor: null });
+});
+test("invalid operation IDs fail without schema diagnostics or network requests", async () => {
+  const { directory } = await project();
+  const invocation = context(["runs", directory], { run: "nope" });
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.requests).toEqual([]);
+  expect(invocation.printed).toEqual([
+    {
+      version: 1,
+      error: { code: "code_cli_input", message: "Invalid Code command input. Check IDs, cursors and flags with --help.", details: null },
+    },
+  ]);
+});
+
+test("status with no current project and no default code folder returns an empty list", async () => {
+  const { root } = await project();
+  const empty = join(root, "no-project");
+  await mkdir(empty);
+  const script = join(root, "status-empty.ts");
+  await writeFile(
+    script,
+    `import { listCodeProjects } from ${JSON.stringify(import.meta.dir + "/code-files.ts")}; console.log(JSON.stringify(await listCodeProjects()));`,
+  );
+  const child = Bun.spawn([process.execPath, script], { cwd: empty, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect(exit).toBe(0);
+  expect(stderr).toBe("");
+  expect(JSON.parse(stdout)).toEqual([]);
 });

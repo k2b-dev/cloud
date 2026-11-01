@@ -14,7 +14,9 @@ export class RemoteCodeError extends Error {
 }
 export function request<K extends CodeAuthoringCommand>(ctx: CloudCliContext, name: K, input: unknown): Promise<CodeAuthoringData<K>>;
 export async function request(ctx: CloudCliContext, name: CodeAuthoringCommand, input: unknown) {
-  const body = JSON.stringify(codeAuthoringContracts[name].input.parse(input));
+  const parsedInput = codeAuthoringContracts[name].input.safeParse(input);
+  if (!parsedInput.success) throw new Error("Invalid Code command input. Check IDs, cursors and flags with --help.");
+  const body = JSON.stringify(parsedInput.data);
   if (Buffer.byteLength(body) > CODE_AUTHORING_REQUEST_BYTES) throw new Error("Code command exceeds the checker request budget.");
   const response = await ctx.fetch(`/api/code/authoring/${name}`, {
     method: "POST",

@@ -231,10 +231,10 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     await expect(codeAuthoringServices.pullAll({}, nonAdmin)).rejects.toThrow("Cloud administration");
     const [account] = await sql<
       { id: string }[]
-    >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES('authoring-resource','code',${id}::uuid) RETURNING id`;
+    >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES('code:example.box:box_1234','code',${id}::uuid) RETURNING id`;
     const [appAccount] = await sql<
       { id: string }[]
-    >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES('authoring-app','code',${id}::uuid) RETURNING id`;
+    >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES('code:app:example','code',${id}::uuid) RETURNING id`;
     if (!account || !appAccount) throw new Error("Missing test accounts");
     await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
       VALUES('c_allresource','resource','example.box','box_1234','Resource',${account.id}::uuid,${id}::uuid)`;

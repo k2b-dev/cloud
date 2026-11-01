@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { open, unlink } from "node:fs/promises";
+import { mkdir, open, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CloudCliContext, localizeCloudCliText } from "@k2b/cloud/cli";
@@ -8,8 +8,9 @@ import { request } from "./code-request";
 
 /** Keep at most one source page in memory. Stage structured output privately so a failed pull prints one complete error. */
 export async function pullAllCode(ctx: CloudCliContext, root: string) {
-  const structured = ctx.options.output !== "text";
+  await mkdir(root, { recursive: true });
   const pretty = ctx.options.output === "json";
+  const structured = pretty || ctx.options.output === "jsonl";
   const spool = structured ? join(tmpdir(), `cloud-code-pull-${crypto.randomUUID()}.json`) : null;
   const file = spool ? await open(spool, "wx", 0o600) : null;
   let count = 0;
@@ -21,7 +22,12 @@ export async function pullAllCode(ctx: CloudCliContext, root: string) {
       for (const item of page.items) {
         await writeCodeProject(root, item.config, item.files);
         if (file) {
-          const row = pretty ? JSON.stringify(item, null, 2).replace(/^/gm, "    ") : JSON.stringify(item);
+          const row = pretty
+            ? JSON.stringify(item, null, 2)
+                .split("\n")
+                .map((line) => `    ${line}`)
+                .join("\n")
+            : JSON.stringify(item);
           await file.writeFile(`${count ? "," : ""}${pretty ? "\n" : ""}${row}`);
         }
         count++;
