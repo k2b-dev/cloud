@@ -17,7 +17,7 @@ export class Cloud extends WorkerEntrypoint {
       // Code sees one stable code, never transport details.
       throw new Error("runner_bridge_unavailable");
     }
-    if (!result.ok) throw new Error(result.error.code);
+    if (!result.ok) throw new Error(result.error.origin ? result.error.code + ": " + result.error.origin : result.error.code);
     return result.data;
   }
 }

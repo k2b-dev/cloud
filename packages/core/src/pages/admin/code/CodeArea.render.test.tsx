@@ -38,6 +38,17 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
       },
     }),
   );
+test("approval lists every declared origin, including requests without secrets", () => {
+  const html = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 });
+  expect(html).toContain("Ursprünge im Internet");
+  expect(html).toContain("https://bank.example");
+  expect(html).toContain("https://status.example:8443");
+  expect(html).toContain("Secret-Bindungen");
+  expect(html).toContain("BUCHHALTUNG_TOKEN");
+  expect(html).toContain("https://api.buchhaltung-beispiel.de/v1");
+  expect(html).toContain("Kopfzeilen: authorization");
+});
+
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
 
 test("the area column names every section with waiting counts", () => {
@@ -79,8 +90,8 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(detail).toContain("Version 2 (freigegeben");
   expect(detail).toContain("Gilt genau für Version 3");
   expect(detail).toContain("https://api.buchhaltung-beispiel.de");
-  expect(detail).toContain("Secrets BUCHHALTUNG_TOKEN");
-  expect(detail).toContain("Aufrufe ohne Secret dürfen jede öffentliche HTTPS-Adresse");
+  expect(detail).toContain("von dieser Version deklariert");
+  expect(detail).not.toContain("dürfen jede öffentliche HTTPS-Adresse");
   expect(detail).not.toContain("am Tag");
   expect(detail).toContain("Version 3 freigeben");
   expect(detail).toContain("Ablehnen …");

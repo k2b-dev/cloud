@@ -98,6 +98,7 @@ const secrets = new Proxy(node(), {
   set() { throw new Error("code_sdk_readonly_secrets"); },
 });
 const http = Object.freeze({
+  allow(_origins) {},
   async fetch(url, options = {}) {
     if (!bridge) throw new Error("code_sdk_bridge_unbound");
     if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");

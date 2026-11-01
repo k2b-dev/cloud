@@ -119,3 +119,60 @@ test("code:false cannot be activated by resource or personal Code", () => {
     ).toThrow("unavailable");
   }
 });
+
+test("internet grants bind exact origins for personal and resource versions and preserve capability calls", () => {
+  for (const candidate of [
+    code,
+    { ...code, owner: { kind: "person" as const, userId: "11111111-1111-4111-8111-111111111111" }, serviceAccountId: null },
+  ]) {
+    const input = {
+      ...manifest([permission("example.item.change", "A")]),
+      internet: ["https://api.example:8443"],
+      policyRows: ["silent_shared", "internet"] as const,
+    };
+    const plan = buildCodeActivationPlan(candidate, { ...input, policyRows: [...input.policyRows] }, new Map([["example", catalog]]));
+    for (const [origin, expected] of [
+      ["https://api.example:8443", true],
+      ["https://api.example", false],
+      ["https://other.example:8443", false],
+    ] as const) {
+      expect(
+        mandatePolicyAllows(plan.policy, {
+          appId: "core",
+          operation: "runtime.http",
+          actionApproval: "none",
+          codeVersion: true,
+          codeAccount: candidate.owner.kind !== "person",
+          input: { origin },
+        }),
+      ).toBe(expected);
+    }
+    expect(
+      mandatePolicyAllows(plan.policy, {
+        appId: "example",
+        operation: "capability.action.run:item.change",
+        actionApproval: "none",
+        codeVersion: true,
+        codeAccount: candidate.owner.kind !== "person",
+        capabilityPolicy: { silent: "shared" },
+        call: { capability: "example.item.change", target: { type: "example.item", id: "A" }, refs: {}, input: {} },
+      }),
+    ).toBe(true);
+  }
+});
+
+test("internet and capability grants share the existing mandate budget with a domain error", () => {
+  const origins = Array.from({ length: 50 }, (_, index) => `https://api${index}.example`);
+  for (const candidate of [
+    code,
+    { ...code, owner: { kind: "person" as const, userId: "11111111-1111-4111-8111-111111111111" }, serviceAccountId: null },
+  ]) {
+    expect(() =>
+      buildCodeActivationPlan(
+        candidate,
+        { ...manifest([permission("example.item.change", "A")]), internet: origins, policyRows: ["silent_shared", "internet"] },
+        new Map([["example", catalog]]),
+      ),
+    ).toThrow("mandate grant budget");
+  }
+});
