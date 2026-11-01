@@ -38,7 +38,7 @@ export async function processCodePolicyPauseBatch(row: PauseRow): Promise<void> 
         tx,
       );
     if (candidates.length === 50)
-      await tx`INSERT INTO code.policy_pause_outbox(revision,previous,cursor) VALUES(${row.revision},${JSON.stringify(before)}::jsonb,${candidates.at(-1)!.id}) ON CONFLICT DO NOTHING`;
+      await tx`INSERT INTO code.policy_pause_outbox(revision,previous,cursor) VALUES(${row.revision},${JSON.stringify(before)}::text::jsonb,${candidates.at(-1)!.id}) ON CONFLICT DO NOTHING`;
   });
 }
 /** Durable Postgres outbox. Failed batches remain visible with attempts/last_error and retry with bounded backoff. */
