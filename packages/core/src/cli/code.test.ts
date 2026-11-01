@@ -216,6 +216,189 @@ test("activation without confirmation, in CI, or refused by server never reports
   expect(await code.run(denied.ctx)).toBe(1);
   expect(denied.printed).toEqual([failure]);
 });
+const previewOf = (overrides: Record<string, unknown> = {}): Record<string, unknown> & { rows: Record<string, unknown>[] } => ({
+  codeId: "c_1234",
+  title: "Code von info@",
+  versionId: uuid,
+  number: 5,
+  running: 4,
+  latest: 5,
+  activated: null,
+  allowed: { allowed: true },
+  readiness: { state: "ready" },
+  place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m_1" },
+  rows: [
+    {
+      target: { type: "mail.mailbox", id: "m_1" },
+      operations: ["mail.conversation.move"],
+      own: true,
+      isNew: true,
+      check: "manages",
+      title: "info@moebel-beispiel.de",
+      typeTitle: "Postfach",
+      managers: [],
+    },
+    {
+      target: { type: "spaces.space", id: "sp_2lg8" },
+      operations: ["spaces.task.create"],
+      own: false,
+      isNew: true,
+      check: "manages",
+      title: "Logistik",
+      typeTitle: "Space",
+      managers: [],
+    },
+  ],
+  ...overrides,
+});
+const receipt = (state: string, failure: unknown = null) => ({
+  id: uuid,
+  codeId: "c_1234",
+  versionId: uuid,
+  state,
+  failure,
+  mandateId: null,
+  createdAt: "2026-10-28T13:20:00.000Z",
+  updatedAt: "2026-10-28T13:20:00.000Z",
+});
+const activationResponses =
+  (preview: unknown, state = "active") =>
+  (path: string) =>
+    path.endsWith("/activation/preview")
+      ? Response.json({ data: preview })
+      : path.endsWith("/activation/read")
+        ? Response.json({ data: receipt(state) })
+        : Response.json({ version: 1, activation: receipt(state) });
+
+test("activate lists what the version gets, asks once, and only then switches on", async () => {
+  const { directory } = await project();
+  const run = context(["activate", directory], {}, "text", activationResponses(previewOf()));
+  const asked: string[] = [];
+  run.ctx.confirm = async (question) => {
+    asked.push(question);
+    expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview"]);
+    return true;
+  };
+  expect(await code.run(run.ctx)).toBe(0);
+  expect(asked).toEqual(["Einschalten? [j/N] "]);
+  const output = run.printed.join("\n");
+  expect(output).toContain("Version 5 von „Code von info@“ einschalten. Der Code handelt dann im Namen von info@moebel-beispiel.de.");
+  expect(output).toContain("Adresse: keine, nur Automationen");
+  expect(output).toContain("mail.conversation.move");
+  expect(output).toContain("am eigenen Postfach");
+  expect(output).toContain("✓ du verwaltest info@moebel-beispiel.de");
+  expect(output).toContain("an Space Logistik (sp_2lg8)");
+  expect(output).toContain("← neu, braucht den Admin des Space  ✓ du verwaltest ihn");
+  expect(output).toContain("✓ v5 eingeschaltet von dir");
+  expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview", "/api/code/authoring/activate"]);
+});
+
+test("a script gets its receipt at once and a missing running version is not claimed", async () => {
+  const { directory } = await project();
+  const pending = context(
+    ["activate", directory],
+    { yes: true, "activation-id": uuid },
+    "text",
+    activationResponses(previewOf(), "pending"),
+  );
+  expect(await code.run(pending.ctx)).toBe(0);
+  expect(pending.printed.at(-1)).toBe(`${uuid} · pending`);
+  expect(pending.requests.some((item) => item.path.endsWith("/activation/read"))).toBe(false);
+});
+
+test("Core's current refusal decides what is named, not the earlier preview", async () => {
+  const { directory } = await project();
+  const failure = { target: { type: "spaces.space", id: "sp_2lg8" }, code: "not_manager", reason: "Nur Verwalter.", readable: false };
+  const run = context(["activate", directory], {}, "text", (path) =>
+    path.endsWith("/activation/preview")
+      ? Response.json({ data: previewOf() })
+      : Response.json({ version: 1, activation: receipt("failed", failure) }),
+  );
+  run.ctx.confirm = async () => true;
+  expect(await code.run(run.ctx)).toBe(1);
+  const refusal = run.printed.slice(-3).join("\n");
+  expect(refusal).toContain("Du bist nicht Admin von sp_2lg8.");
+  expect(refusal).not.toContain("Logistik");
+});
+
+test("declining changes nothing and says what keeps running", async () => {
+  const { directory } = await project();
+  const run = context(["activate", directory], {}, "text", activationResponses(previewOf()));
+  run.ctx.confirm = async () => false;
+  expect(await code.run(run.ctx)).toBe(1);
+  expect(run.printed.at(-1)).toBe("Nichts eingeschaltet, v4 läuft weiter.");
+  expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview"]);
+});
+
+test("a refusing target stops before the question and names the manager and the link", async () => {
+  const { directory } = await project();
+  const blocked = previewOf();
+  blocked.rows[1] = { ...blocked.rows[1]!, check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] };
+  const run = context(["activate", directory], {}, "text", activationResponses(blocked));
+  run.ctx.confirm = async () => {
+    throw new Error("Must not ask");
+  };
+  expect(await code.run(run.ctx)).toBe(1);
+  const output = run.printed.join("\n");
+  expect(output).toContain("✗ du bist nicht Admin");
+  expect(output).toContain(
+    "✗ Du bist nicht Admin von Space Logistik. Einschalten kann nur, wer Postfach info@moebel-beispiel.de und Space Logistik verwaltet.",
+  );
+  expect(output).toContain("Das kann hier: Ben Schulz. Nichts eingeschaltet, v4 läuft weiter.");
+  expect(output).toContain("Link für Ben: https://cloud.test/app/mail/m_1");
+  expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview"]);
+});
+
+test("an unreadable refusing target stays an ID, without names", async () => {
+  const { directory } = await project();
+  const blocked = previewOf();
+  blocked.rows[1] = {
+    ...blocked.rows[1]!,
+    check: "blocked",
+    title: null,
+    typeTitle: null,
+    managers: [{ name: "Ben Schulz", firstName: "Ben" }],
+  };
+  const run = context(["activate", directory], {}, "text", activationResponses(blocked));
+  run.ctx.confirm = async () => true;
+  expect(await code.run(run.ctx)).toBe(1);
+  const output = run.printed.join("\n");
+  expect(output).toContain("Du bist nicht Admin von sp_2lg8.");
+  expect(output).not.toContain("Ben");
+});
+
+test("without a preview nothing is switched on unless --yes confirmed it", async () => {
+  const { directory } = await project();
+  const run = context(["activate", directory], {}, "text", (path) =>
+    path.endsWith("/preview") ? new Response("", { status: 503 }) : Response.json({ version: 1, activation: receipt("active") }),
+  );
+  run.ctx.confirm = async () => true;
+  expect(await code.run(run.ctx)).toBe(1);
+  expect(run.errors[0]).toContain("darum wurde nichts eingeschaltet");
+  expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview"]);
+});
+
+test("non-interactive use never hangs: it refuses clearly and keeps the published JSON", async () => {
+  const { directory } = await project();
+  for (const output of ["text", "json"] as const) {
+    const run = context(["activate", directory], { "activation-id": uuid }, output, activationResponses(previewOf()));
+    expect(await code.run(run.ctx)).toBe(1);
+    expect(run.requests).toEqual([]);
+    expect(JSON.stringify([run.errors, run.printed])).toContain("--yes");
+  }
+  const noIdentity = context(["activate", directory], { yes: true }, "json", activationResponses(previewOf()));
+  expect(await code.run(noIdentity.ctx)).toBe(1);
+  expect(noIdentity.requests).toEqual([]);
+  // A confirm offered by mistake is still ignored with structured output.
+  const machine = context(["activate", directory], { yes: true, "activation-id": uuid }, "json", activationResponses(previewOf()));
+  machine.ctx.confirm = async () => {
+    throw new Error("Must not ask");
+  };
+  expect(await code.run(machine.ctx)).toBe(0);
+  expect(machine.printed).toEqual([{ version: 1, activation: receipt("active") }]);
+  expect(machine.requests.map((item) => item.path)).toEqual(["/api/code/authoring/activate"]);
+});
+
 test("test and simulation keep the C17 result and failing exit status", async () => {
   const { directory } = await project();
   const fixture = { version: 1, name: "monday", now: 1793448000000, seed: 7, mocks: [], runs: [{ entrypoint: "monday" }] };
@@ -313,8 +496,24 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
       },
       text: "SDK aktualisiert.",
     },
-    { args: ["push", directory], flags: {}, data: { version: 1, submission }, text: `${uuid} · submitted` },
-    { args: ["submit", directory], flags: {}, data: { version: 1, submission }, text: `${uuid} · submitted` },
+    {
+      args: ["push", directory],
+      flags: {},
+      data: { version: 1, submission, runningVersion: 4 },
+      text: `✓ v${submission.version.number} hochgeladen, noch nicht eingeschaltet. Es läuft v4.`,
+    },
+    {
+      args: ["submit", directory],
+      flags: {},
+      data: { version: 1, submission, runningVersion: null },
+      text: `✓ v${submission.version.number} hochgeladen, noch nicht eingeschaltet. Es läuft noch keine Version.`,
+    },
+    {
+      args: ["submit", directory],
+      flags: {},
+      data: { version: 1, submission },
+      text: `✓ v${submission.version.number} hochgeladen, noch nicht eingeschaltet.`,
+    },
     {
       args: ["diff", directory],
       flags: {},
@@ -340,14 +539,14 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
           id: uuid,
           codeId: config.codeId,
           versionId: uuid,
-          state: "pending",
+          state: "active",
           failure: null,
           mandateId: null,
           createdAt,
           updatedAt: createdAt,
         },
       },
-      text: `${uuid} · pending`,
+      text: `✓ Die Version eingeschaltet von dir · ${new Intl.DateTimeFormat("de", { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}`,
     },
     {
       args: ["run", "monday", directory],
@@ -520,7 +719,7 @@ test.each(["json", "jsonl"] as const)("C18b %s success contracts remain unchange
     {
       args: ["secret", "list", directory],
       flags: {},
-      data: { version: 1, items: [secretMetadata], nextCursor: "NEXT" },
+      data: { version: 1, items: [{ ...secretMetadata, valueSetBy: null, valueSetAt: null }], nextCursor: "NEXT" },
       key: "secretList",
     },
     {
