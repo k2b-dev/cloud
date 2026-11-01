@@ -4,7 +4,7 @@ import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
 import { getCapability, listCapabilities } from "../_internal/registry";
 import { capabilityCallFromTool } from "../capabilities/calls";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";
-import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "../contracts/capabilities";
+import { CapabilityActionReviewDataSchema, capabilityActionPolicy, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
@@ -1114,7 +1114,7 @@ export class AiTurnExecutor {
         const pending = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: approvalCallId });
         if (!pending?.approvalId) return "approved";
         const result = await approvals.consume(pending.approvalId, {
-          input: capabilityApprovalArgs(capabilityOperations.get(pending.name), input),
+          input: capabilityApprovalArgs(capabilityOperations.get(pending.name), input, pending.args),
           review: approvalReviewForCallId(capabilityActionReviews, approvalCallId) ?? null,
           requester: { kind: "assistant_turn", ref: `${turnId}/${approvalCallId}` },
         });
@@ -2635,8 +2635,11 @@ export const __aiExecutorTest = {
 };
 
 /** Uses the operation already loaded for this call; approvals never add a registry dependency. */
-function capabilityApprovalArgs(entry: AiCapabilityCatalogEntry | undefined, args: unknown): unknown {
-  return entry && (entry.operation.target !== undefined || entry.operation.refs !== undefined)
+function capabilityApprovalArgs(entry: AiCapabilityCatalogEntry | undefined, args: unknown, storedArgs?: unknown): unknown {
+  // Startup migration normalizes existing app-wide approvals too; consume that same representation.
+  // Fresh app-wide approvals keep the existing runtime contract.
+  const migrated = storedArgs !== undefined && NormalizedCapabilityCallSchema.safeParse(storedArgs).success;
+  return entry && (entry.operation.target !== undefined || entry.operation.refs !== undefined || migrated)
     ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args))
     : args;
 }

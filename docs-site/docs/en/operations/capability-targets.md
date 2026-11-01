@@ -5,7 +5,7 @@ section: Operations
 order: 1258
 description: Upgrade Core and capability providers while applications adopt explicit resource targets.
 tags: [operations, capabilities, upgrades]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Roll out capability targets
@@ -17,10 +17,11 @@ the platform converts them into the same call.
 
 This is an additive rollout. Applications without target declarations keep
 their existing input, schema hashes, approval digests and idempotency behavior.
-Existing chats, pending approvals and routine grants are not migrated by this
-change. Converting an existing Action's resource ID input into a target changes
-its contract and schema hash; coordinate that application's callers and stored
-work before deploying its converted declaration.
+Converting an existing Action's resource ID input into a target changes its
+contract and schema hash. Core now migrates existing routine grants and pending
+approvals for the coordinated application conversion; see the
+[operator migration note](/en/docs/reference/deprecations-and-migrations#existing-assistant-routines-and-approvals-adopt-capability-targets).
+Existing chats and their stored history stay unchanged.
 
 Legacy mandates constrain domain input only. They are refused for operations
 that declare targets or refs unless an explicit target grant covers the call.
@@ -56,8 +57,8 @@ move the selected book out of `ContactDirectoryCreateInputSchema`.
 
 The Spaces invitation preparation and commit Actions declare `code: false`.
 Resource-owned Code must leave them out; person calls keep their service
-permission checks. Stored routine grants and approvals still need the
-coordinated migration before this branch is released.
+permission checks. Core performs the coordinated routine and approval migration before starting
+its AI workers.
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
