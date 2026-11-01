@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { mandates } from "@k2b/cloud/services";
 import { validateMandateIssueAuthority } from "@k2b/cloud/services/mandates";
 import { createWorkflowRun, deleteWorkflowScope } from "@k2b/cloud/workflows/store";
@@ -7,7 +8,6 @@ import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 // This interop test needs Mail's isolated database and process Sync, just like its own integration suites.
 import "../../mail/test/integration-preload";
-import { bindAppEvents } from "../../cloud/src/events/app-events";
 import type { MailRequestContext } from "../../mail/src/service/auth";
 import { migrateIncomingAutomationTargets } from "../../mail/src/service/incoming-automation-targets-migrate";
 import { resolveIncomingAutomationMandateCaller } from "../../mail/src/service/incoming-automation-workload";
@@ -23,7 +23,7 @@ suiteFor("database", "nats")("incoming Mail automation target upgrade against Sp
   let userId = "";
   beforeAll(async () => {
     // Production app.start binds the publisher; this boundary fixture does not start a server.
-    bindAppEvents("spaces", spacesCapabilities);
+    createAppEventTestHarness("spaces", spacesCapabilities);
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
       VALUES ('fictional-mail-spaces-target-upgrade', 'local', 'user', 'Fictional Mail owner') RETURNING id`;
     userId = user!.id;
