@@ -36,7 +36,11 @@ export const createDashboardController = (input: { target: DashboardTarget; pane
           if (!disposed)
             setResults((old) => ({
               ...old,
-              [panel.id]: { ...next, lastGood: next.lastGood ?? old[panel.id]?.lastGood ?? null },
+              // Cleared data or a new revision is a new variant: never keep showing values from before it.
+              [panel.id]: {
+                ...next,
+                lastGood: next.lastGood ?? (old[panel.id]?.variant === next.variant ? old[panel.id]?.lastGood : null) ?? null,
+              },
             }));
         } catch (error) {
           if (disposed) break;
@@ -54,6 +58,7 @@ export const createDashboardController = (input: { target: DashboardTarget; pane
               error: error instanceof DashboardClientError ? error.code : "REQUEST_FAILED",
               nextRefreshAt: new Date(Date.now() + DASHBOARD_REFRESH_MS).toISOString(),
               lastGood: old[panel.id]?.lastGood ?? null,
+              variant: old[panel.id]?.variant ?? "",
             },
           }));
         } finally {

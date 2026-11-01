@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { err, fail, ok } from "@k2b/cloud/server";
 import { sql } from "@k2b/cloud";
+import { err, fail, ok } from "@k2b/cloud/server";
 import {
   DASHBOARD_REFRESH_MS,
   DashboardDefinitionSchema,
@@ -25,6 +25,8 @@ export type DashboardPanelResult = {
   error: string | null;
   nextRefreshAt: string;
   lastGood: DashboardSnapshot | null;
+  /** Changes with revision, cleared data, timezone and range; a retained result is valid only for the same variant. */
+  variant: string;
 };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const load = async (target: Target) => {
@@ -78,6 +80,8 @@ export const createDashboardPanels = (
   return async (input: Input) => {
     const range = DashboardRangeSchema.safeParse(input.range);
     if (!range.success) return fail(err.badInput("Choose a valid dashboard range"));
+    // Preset ranges bound what a published link can calculate per interval.
+    if ("token" in input && range.data.from) return fail(err.badInput("Published dashboards support the preset ranges"));
     const loaded = await load(input);
     if (!loaded) return fail(err.notFound("Dashboard"));
     const { dashboard, base, tokenHash } = loaded;
@@ -189,6 +193,7 @@ export const createDashboardPanels = (
       error,
       nextRefreshAt,
       lastGood: snapshot,
+      variant,
     };
     return ok(result);
   };

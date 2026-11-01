@@ -441,7 +441,8 @@ and timestamp when available. Retries back off from one to five minutes.
 
 Review every output column before publishing. Anyone with the returned link
 can read those results. The public page contains presentation and selected
-columns, without SQL or parameters. Publishing requires write access and an
+columns, without SQL or parameters, and offers the preset ranges only; custom
+periods stay with people who have read access to the base. Publishing requires write access and an
 explicit confirmation. Assistant publication always asks for approval.
 
 SQL, parameters, selected-column, and output changes end the existing link;

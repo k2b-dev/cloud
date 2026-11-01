@@ -159,6 +159,7 @@ export const dashboardTestPanelResult = (panel: DashboardPanel): DashboardPanelR
   status: "ready",
   error: null,
   nextRefreshAt: "2026-10-20T14:33:00.000Z",
+  variant: "fixture",
   lastGood: {
     at: dashboardTestNow,
     slot: "2026-10-20T14:32:00.000Z",
