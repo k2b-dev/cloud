@@ -1018,7 +1018,10 @@ it cannot choose another type or containment level. A Query may also declare a
 target when it reads exactly one container. An operation without a target acts
 at application level. Every Action with resource ID input must declare a target,
 except Actions implementing a shared provider role, which keep that role's input
-contract, and the platform-generated access Actions described below. Third-party
+contract, and the platform-generated access Actions described below. Foreign
+provider-owned refs and selectors inside an application-wide document also stay
+in input: they do not select a resource owned by the Action provider to mutate.
+Third-party
 application authors follow the same contract; `code: false` alone does not
 exempt a resource Action.
 Canonical resource readers, Universal Search, Action outcome checks and shared

@@ -73,15 +73,14 @@ Use the provider's guide for its exact input changes:
 Notebooks binds note, comment and annotation Actions to the notebook. Pulse
 binds existing-resource Actions to the Base. Venue binds assignments to the
 venue, Weather binds deletion to the saved location, and Core binds Skill
-changes to the Skill and routine changes to the AI chat.
-[Code version and execution Actions](/en/docs/platform/code-versions#submit-a-version)
-use `core.code`; installation-wide policy changes keep their group-rule input. Their primary resource
+changes to the Skill and routine changes to the AI chat. These primary resource
 selectors move from `input` to `target`; contained object IDs remain in `input`.
+[Code version and execution Actions](/en/docs/platform/code-versions#submit-a-version)
+use `core.code`. Installation-wide policy changes keep their group-rule input.
 
 Examples of `code: false` include Chat Actions, Spaces invitation preparation
-and commit, and Gateway Ops'
-app-status forget Action declare `code: false`. Resource-owned Code must leave
-them out; person calls retain their existing service permission checks.
+and commit, and Gateway Ops' app-status forget Action. Resource-owned Code
+must leave them out; person calls retain their existing service permission checks.
 
 ## Enable target-side Code access
 
