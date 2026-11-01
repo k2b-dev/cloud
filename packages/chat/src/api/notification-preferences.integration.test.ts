@@ -163,13 +163,11 @@ suiteFor(
       user: actor.user,
       locale: "en",
       requestId: "notification-capability-fixture",
+      target: { type: "chat.conversation", id: chat.shortId },
       origin: "http",
       signal: new AbortController().signal,
     };
-    const changed = await chatCapabilities.actions["notifications.set"].run(
-      { conversation: chat.shortId, notifications: { level: "mentions" } },
-      context,
-    );
+    const changed = await chatCapabilities.actions["notifications.set"].run({ notifications: { level: "mentions" } }, context);
     expect(changed).toMatchObject({ ok: true, data: { data: { level: "mentions", choice: "mentions" } } });
     expect(await chatCapabilities.queries["notifications.read"].run({ conversation: chat.shortId }, context)).toEqual({
       ok: true,
@@ -301,6 +299,21 @@ suiteFor(
     const owner = await f.person();
     const { chat, thread } = await system(owner);
     expect(thread.following).toBeFalse();
+    const otherChat = await f.fixture(owner);
+    const capabilityContext: CapabilityExecutionContext = {
+      actor: owner.context.actor,
+      accessSubject: owner.context.accessSubject,
+      user: owner.context.actor.kind === "user" ? owner.context.actor.user : null,
+      locale: "en",
+      requestId: "foreign-thread-target",
+      origin: "http",
+      signal: new AbortController().signal,
+      target: { type: "chat.conversation", id: otherChat.shortId },
+    };
+    expect(await chatCapabilities.actions["thread.follow"].run({ thread: thread.id, following: true }, capabilityContext)).toMatchObject({
+      ok: false,
+      error: { status: 404 },
+    });
     expect(await preferences(owner, chat.shortId)).toMatchObject({ defaultLevel: "mentions", following: { count: 0, first: null } });
     const path = `/${chat.shortId}/threads/${thread.id}/follow`;
     await sql`DELETE FROM chat.participants WHERE conversation_id = ${chat.id}::uuid AND principal_id = ${owner.id}::uuid`;

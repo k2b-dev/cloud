@@ -1691,5 +1691,11 @@ test("chat approval snapshots use the loaded target contract and exclude model-o
   expect(approvalArgsDigest(__aiExecutorTest.capabilityApprovalArgs(entry, { ...args, book: "other" }))).not.toBe(approvalArgsDigest(call));
   const legacy = { ...entry, operation: { ...entry.operation, target: undefined, refs: undefined } };
   expect(__aiExecutorTest.capabilityApprovalArgs(legacy, args)).toBe(args);
+  const appWideArgs = { contactId: "contact" };
+  const migratedAppWide = { capability: "demo.move", target: null, refs: {}, input: appWideArgs };
+  expect(__aiExecutorTest.capabilityApprovalArgs(legacy, appWideArgs, migratedAppWide)).toEqual(migratedAppWide);
+  expect(approvalArgsDigest(__aiExecutorTest.capabilityApprovalArgs(legacy, appWideArgs, migratedAppWide))).toBe(
+    capabilityCallDigest(migratedAppWide),
+  );
   expect(__aiExecutorTest.capabilityApprovalArgs(undefined, args)).toBe(args);
 });

@@ -6,6 +6,8 @@ import { z } from "zod";
 import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
+import { defineAiTool } from "./tools";
+import type { AiRuntimeTool } from "./types";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -420,9 +422,11 @@ const createExecutor = (
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   validateTurn: typeof validateAiTurnRequest = fakeValidateTurn,
   onApprovalRequested?: (event: { approvalId: string }) => Promise<void>,
+  tools?: readonly AiRuntimeTool[],
 ) =>
   new AiTurnExecutor({
     leaseOwner,
+    tools,
     heartbeatMs: 5_000,
     enqueueContinuation: async () => {},
     validateTurn,
@@ -1038,6 +1042,61 @@ suite("AI executor integration", () => {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test.each([true, false])("host tools replace defaults through discovery and retain fixed scope (allowed=%s)", async (allowed) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, allowedTools: allowed ? ["code_check"] : [] });
+    const requests: unknown[] = [];
+    let calls = 0;
+    const replacement = defineAiTool({
+      name: "code_check",
+      description: "Host replacement for checked Code",
+      inputSchema: z.object({}).strict(),
+      outputSchema: z.object({ ok: z.boolean() }),
+      approval: "never",
+    }).server(async () => {
+      calls++;
+      return { ok: true };
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("load-host", "load_tools", { names: ["code_check"] }),
+        ...(allowed ? [toolCallCompletion("check-host", "code_check", {})] : []),
+        textCompletion("Done"),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Check Code", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "default" } },
+        userMessage: userMessage("Check Code"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "host-tools-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("host-tools-exec", undefined, fakeValidateToolTurn, undefined, [replacement]).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      expect(calls).toBe(allowed ? 1 : 0);
+      expect(JSON.stringify(requests).includes("Host replacement for checked Code")).toBe(allowed);
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
   test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {

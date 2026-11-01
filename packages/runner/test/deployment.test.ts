@@ -1,0 +1,114 @@
+import { expect, test } from "bun:test";
+import { parse } from "yaml";
+import { z } from "zod";
+import { appIds, devServiceName, httpAppIds, releaseImages } from "../../../scripts/workspace";
+
+const Compose = z.object({
+  services: z.record(
+    z.string(),
+    z
+      .object({
+        environment: z.unknown().optional(),
+        networks: z.unknown().optional(),
+        container_name: z.string().optional(),
+        ports: z.array(z.unknown()).optional(),
+        mem_limit: z.string().optional(),
+        stop_grace_period: z.string().optional(),
+      })
+      .passthrough(),
+  ),
+  networks: z.record(z.string(), z.unknown()),
+});
+
+test("runner has an application image and both Compose templates isolate its network and environment", async () => {
+  expect(appIds()).toContain("runner");
+  expect(httpAppIds()).not.toContain("runner");
+  expect(httpAppIds()).toContain("core");
+  expect(devServiceName("runner")).toBe("runner");
+  expect(releaseImages().find((image) => image.appId === "runner")).toEqual({
+    image: "cloud-app-runner",
+    dockerfile: "packages/runner/Dockerfile",
+    appId: "runner",
+  });
+  for (const file of ["compose.dev.yml", "compose.prod.yml"]) {
+    const compose = Compose.parse(parse(await Bun.file(`${import.meta.dir}/../../../${file}`).text()));
+    const runner = compose.services.runner!;
+    expect(Object.keys(z.record(z.string(), z.unknown()).parse(runner.environment)).sort()).toEqual([
+      "CLOUD_APP_KEY_FILE",
+      "CLOUD_CORE_INTERNAL_ORIGIN",
+    ]);
+    expect(runner.environment).toEqual({
+      CLOUD_APP_KEY_FILE: "/run/runner-key/source",
+      CLOUD_CORE_INTERNAL_ORIGIN: "http://app-core:3000",
+    });
+    expect(runner.secrets).toEqual([{ source: "runner-app-key", target: "/run/runner-key/source" }]);
+    expect(runner.cap_drop).toEqual(["ALL"]);
+    expect(runner.cap_add).toEqual(["SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE"]);
+    expect(runner.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(runner.pid).toBeUndefined();
+    expect(runner.read_only).toBe(true);
+    expect(runner.tmpfs).toEqual(["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]);
+    expect(runner.container_name).toBeUndefined();
+    expect(runner.ports).toBeUndefined();
+    expect(runner.mem_limit).toBe("1g");
+    expect(runner.stop_grace_period).toBe("6m");
+    expect(runner.networks).toEqual(["runner-core"]);
+    expect(compose.networks["runner-core"]).toEqual({ internal: true });
+    expect(compose.services["app-core"]!.networks).toContain("runner-core");
+    expect(
+      Object.entries(compose.services)
+        .filter(([, service]) => z.array(z.string()).safeParse(service.networks).data?.includes("runner-core"))
+        .map(([name]) => name)
+        .sort(),
+    ).toEqual(["app-core", "runner"]);
+  }
+});
+
+test("hostile runner CI is path-filtered and required by the gate", async () => {
+  const workflow = z
+    .object({
+      jobs: z.record(
+        z.string(),
+        z.object({
+          needs: z.union([z.array(z.string()), z.string().transform((value) => [value])]).optional(),
+          if: z.string().optional(),
+          steps: z.array(z.object({ run: z.string().optional(), env: z.record(z.string(), z.string()).optional() })).optional(),
+        }),
+      ),
+    })
+    .parse(parse(await Bun.file(`${import.meta.dir}/../../../.github/workflows/ci.yml`).text()));
+  const job = workflow.jobs["runner-attacks"]!;
+  expect(job.if).toBe("needs.changes.outputs.runner == 'true'");
+  const commands = job.steps!.map((step) => step.run ?? "").join("\n");
+  for (const file of ["hostile.test.js", "isolation.test.js", "engine.test.js", "shutdown.test.js", "attacks/bridge.ts"])
+    expect(commands).toContain(file);
+  expect(commands).toContain("--network host");
+  expect(commands).toContain("--read-only --cap-drop ALL");
+  expect(commands).toContain("--security-opt no-new-privileges");
+  expect(commands.match(/! grep -qE/g)).toHaveLength(2);
+  expect(commands).toContain('! grep -qF C14_OUTPUT_CANARY "$RUNNER_TEMP/runner-native.log"');
+  expect(commands).toContain("--kill-after=5s");
+  const changes = workflow.jobs.changes!.steps!.map((step) => step.run ?? "").join("\n");
+  expect(changes).toContain('echo "runner=$(match "$shared|^packages/runner/|^compose');
+  const pattern = /shared='([^']+)'/.exec(changes)?.[1];
+  expect(pattern).toBeDefined();
+  const affected = new RegExp(`${pattern!}|^packages/runner/|^compose[^/]*\\.yml$`);
+  for (const file of [
+    "packages/runner/native/isolate.c",
+    "packages/cloud/src/api/capabilities.ts",
+    "packages/cloud/src/api/authenticate-app-request.ts",
+    "packages/cloud/src/runtime/bootstrap-protocol.ts",
+    "packages/cloud/src/capabilities/claims.ts",
+    "packages/cloud/src/contracts/capabilities.ts",
+    "packages/cloud/src/services/mandates/index.ts",
+    "packages/cloud/package.json",
+    "patches/workerd.patch",
+    "bunfig.toml",
+    "packages/cloud/src/code/run-token.ts",
+    "packages/core/src/code/bridge.ts",
+    "packages/core/src/migrate/core/code-scheduling.ts",
+    "compose.prod.yml",
+    ".github/workflows/ci.yml",
+  ])
+    expect(affected.test(file)).toBe(true);
+});

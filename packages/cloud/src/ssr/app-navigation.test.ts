@@ -170,6 +170,19 @@ describe("visiblePanelProviders", () => {
       "a",
     ]);
   });
+  test("puts ordered panels first, lowest order first, and keeps labels for the rest", () => {
+    const ordered = (id: string, label: string, order: number) => ({
+      ...panelApp(id, label),
+      panel: { ...panelApp(id, label).panel!, order },
+    });
+    expect(
+      visiblePanelProviders(
+        [panelApp("help", "Help"), ordered("late", "Zulu", 5), panelApp("chat", "Chat"), ordered("first", "Gustav", 0)],
+        user,
+        "en",
+      ).map((provider) => provider.id),
+    ).toEqual(["first", "late", "chat", "help"]);
+  });
   test("uses id to break label ties and returns only the small provider projection", () => {
     expect(visiblePanelProviders([panelApp("b", "Same"), panelApp("a", "Same")], user, "en")).toEqual([
       { id: "a", appName: "a", consent: true, label: "Same", icon: "ti ti-box", href: "/app/a/panel" },

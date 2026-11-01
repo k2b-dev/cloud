@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -56,8 +57,83 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { CodeDataError, codePerson } from "./code/access";
+import { codeQueryContracts } from "./code/contracts";
+import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
+import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
+import { runCodeQuery } from "./code/queries";
+import { startCodeRun } from "./code/scheduling";
+import { codeSchedulingContracts } from "./code/scheduling-contracts";
+import { codeSecretContracts } from "./code/secret-contracts";
+import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
+import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { codeVersionContracts } from "./code/version-contracts";
+import {
+  decideCodeVersion,
+  diffCodeVersion,
+  listCodeVersions,
+  readCodeVersionDiff,
+  reviewCodeExecutionChange,
+  reviewCodeVersionDecision,
+  reviewCodeVersionSubmission,
+  setCodePaused,
+  submitCodeVersion,
+} from "./code/versions";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
+
+// Shared lifecycle reviews keep the installed Core registry compilable while C8 and C13 are stacked.
+const reviewCodeOperation = async (
+  input: { codeId: string; entrypoint?: string },
+  context: CapabilityExecutionContext,
+  operation: "run" | "submit" | "pause" | "resume",
+) => {
+  const result = await runCodeQuery(context, async (ctx) => {
+    codePerson(ctx, true);
+    const code = await sql.begin((db) => lockCodeForEdit(input.codeId, ctx, db));
+    const { t, locale } = coreCapabilityMessages(context.locale);
+    return {
+      locale,
+      slots: { code: { kind: "text" as const, value: code.title } },
+      scope: code.id,
+      sentence: {
+        action: t.codeOperationAction({ operation }),
+        running: t.codeOperationRunning({ operation }),
+        done: t.codeOperationDone({ operation }),
+        confirm: t.codeOperationConfirm({ operation }),
+        decline: t.codeOperationDecline,
+      },
+      ...(operation === "run"
+        ? { ask: "app_asks" as const }
+        : operation === "resume"
+          ? { ask: "keeps_working" as const }
+          : { reach: "you" as const }),
+      ...(input.entrypoint
+        ? {
+            content: {
+              kind: "page" as const,
+              title: t.codeOperationConfirm({ operation }),
+              format: "plain" as const,
+              body: input.entrypoint,
+            },
+          }
+        : {}),
+    };
+  });
+  return result.ok ? ok(result.data.data) : result;
+};
+
+const chatTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
+
+const taskInTargetChat = async (taskId: string, context: CapabilityExecutionContext) => {
+  if (!context.user) return null;
+  const task = await aiChatTasks.get({ userId: context.user.id, taskId });
+  return task?.chatId === chatTargetId(context) ? task : null;
+};
+
+const skillTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.skill" ? context.target.id : "");
+const codeTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.code" ? context.target.id : "");
+const CodeVersionDecisionActionInput = codeVersionContracts.decide.input.omit({ codeId: true });
 
 const CORE_APP_ID = "core";
 
@@ -104,7 +180,6 @@ const resourceCursorSchema = (scope: "conversation" | "user") =>
 const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
 const ChatTaskCreateInputSchema = z
   .object({
-    chatId: ChatIdSchema,
     title: z
       .string()
       .trim()
@@ -407,7 +482,6 @@ const ChatsResourcesDataSchema = z
 
 const ChatMessageInputSchema = z
   .object({
-    chatId: ChatIdSchema.describe("Readable ID of the owned target chat."),
     text: z.string().trim().min(1).max(10_000).describe("Exact message to send to the target chat."),
   })
   .strict();
@@ -486,7 +560,6 @@ const SkillCreateInputSchema = z
   .strict();
 const SkillUpdateInputSchema = z
   .object({
-    skillId: SkillIdSchema,
     expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
     name: SkillNameSchema.optional(),
     description: SkillDescriptionSchema.optional(),
@@ -500,7 +573,6 @@ const SkillUpdateInputSchema = z
   });
 const SkillReferenceSetInputSchema = z
   .object({
-    skillId: SkillIdSchema,
     expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
     path: SkillReferencePathSchema,
     content: z.string().max(MAX_CAPABILITY_SKILL_CONTENT_CHARS).describe("Complete Markdown content for this reference."),
@@ -508,7 +580,6 @@ const SkillReferenceSetInputSchema = z
   .strict();
 const SkillReferencesSetInputSchema = z
   .object({
-    skillId: SkillIdSchema,
     expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
     references: z
       .array(
@@ -526,12 +597,11 @@ const SkillReferencesSetInputSchema = z
   .strict();
 const SkillReferenceRemoveInputSchema = SkillReferenceSetInputSchema.omit({ content: true }).strict();
 const SkillEnabledSetInputSchema = z
-  .object({ skillId: SkillIdSchema, enabled: z.boolean().describe("Whether this Skill should be active for the current user.") })
+  .object({ enabled: z.boolean().describe("Whether this Skill should be active for the current user.") })
   .strict();
-const SkillDeleteInputSchema = z.object({ skillId: SkillIdSchema }).strict();
+const SkillDeleteInputSchema = z.object({}).strict();
 const SkillAccessChangeInput = z
   .object({
-    skillId: SkillIdSchema,
     expectedAccessRevision: z
       .string()
       .regex(/^[a-f0-9]{64}$/)
@@ -684,6 +754,11 @@ export const aiCapabilities = defineCapabilities({
   events: coreUserEvents,
   types: {
     ...coreUserEventTypes,
+    code: {
+      title: "Code",
+      description: "One independently versioned Code resource.",
+      icon: "ti ti-code",
+    },
     "ai.chat": {
       title: "AI conversation",
       description: "A private AI conversation owned by the current user.",
@@ -704,6 +779,94 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.secret.list": {
+      title: "List Code secret bindings",
+      description: "Editors list metadata and immutable binding revisions only. Values and ciphertext are never returned.",
+      ...codeSecretContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeSecrets(input, ctx)),
+    },
+    "code.version.diff.read": {
+      title: "Read complete Code comparison",
+      description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
+      ...codeVersionContracts.diffRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionDiff(input, ctx)),
+    },
+    "code.version.diff": {
+      title: "Compare Code version",
+      description: "Read full file rows against the last approved or activated version, with exact decision binding.",
+      ...codeVersionContracts.diff,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
+    },
+    "code.version.list": {
+      title: "List Code versions",
+      description: "Read version submission and approval receipts, including sole-admin decisions.",
+      ...codeVersionContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeVersions(input, ctx)),
+    },
+    "code.policy.read": {
+      title: "Read Code policy",
+      description: "Read default and applicable group rules; Cloud admins read the complete editable table.",
+      ...codePolicyContracts.read,
+      openWorld: false,
+      run: (_input, context) => runCodeQuery(context, readCodePolicy),
+    },
+    "code.policy.effective": {
+      title: "Resolve Code policy",
+      description:
+        "Resolve current classification rules for the personal owner, or a resource/app author. Other views require Cloud administration.",
+      ...codePolicyContracts.effective,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => effectiveCodePolicy(input, ctx)),
+    },
+    "code.policy.preview": {
+      title: "Preview Code policy",
+      description: "Preview an exact pause count and a page of affected active Code without writing. Cloud administrators only.",
+      ...codePolicyContracts.preview,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
+    },
+    "code.list": {
+      title: "List Code",
+      description:
+        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to include its live administrators. Follow nextCursor even on empty pages.",
+      ...codeQueryContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
+    },
+    "code.read": {
+      title: "Read Code",
+      description: "Read one Code identity, owner and current permission using its stable codeId.",
+      ...codeQueryContracts.read,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCode(input.codeId, ctx)),
+    },
+    "code.version.read": {
+      title: "Read a Code version",
+      description:
+        "Read immutable version metadata or a source, bundle or manifest text chunk. Follow nextOffset to obtain the full content.",
+      ...codeQueryContracts.versionRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),
+    },
+    "code.run.list": {
+      title: "List Code runs",
+      description: "List attempt metadata without run inputs, outputs or capability call contents.",
+      ...codeQueryContracts.runList,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeRuns(input, ctx)),
+    },
+    "code.run.read": {
+      title: "Read a Code run",
+      description:
+        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks; readers receive contents:null.",
+      ...codeQueryContracts.runRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
     "map.style": {
       title: "Show a map",
       description:
@@ -1146,7 +1309,216 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.run": {
+      title: "Run Code",
+      description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
+      ...codeSchedulingContracts.start,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "app_asks" },
+      review: (input, context) => reviewCodeOperation(input, context, "run"),
+      run: (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+        const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+      },
+    },
+    "code.secret.set": {
+      title: "Set Code secret",
+      description:
+        "Editors write a private credential without reading it back. Destination changes apply only to newly submitted versions. Supply the value privately through the CLI or editor, never through chat.",
+      ...codeSecretContracts.set,
+      code: false,
+      unattended: false,
+      destructive: false,
+      openWorld: false,
+      // Do not retain a guessable input digest of credential values in idempotency claims.
+      idempotency: "none",
+      approval: "none",
+      run: (input, context) =>
+        runCodeQuery(context, (ctx) => {
+          if (context.origin !== "http") throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
+          return setCodeSecret(input, ctx);
+        }),
+    },
+    "code.secret.delete": {
+      title: "Delete Code secret value",
+      description:
+        "Editors clear the current value for every version. Immutable destination evidence remains available for version review.",
+      ...codeSecretContracts.delete,
+      code: false,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "deletes" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion(input, ctx));
+        if (!result.ok) return result;
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const secret = result.data.data;
+        return ok({
+          locale,
+          ask: "deletes" as const,
+          slots: {},
+          sentence: {
+            action: t.codeSecretDeleteReview({ name: secret.name }),
+            running: t.codeSecretDeleteRunning,
+            done: t.codeSecretDeleteDone,
+            confirm: t.codeSecretDeleteConfirm,
+            decline: t.codePolicyDecline,
+          },
+          content: {
+            kind: "page" as const,
+            title: t.codeSecretDeleteConfirm,
+            format: "plain" as const,
+            body: JSON.stringify({ codeId: input.codeId, ...secret }, null, 2),
+          },
+        });
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret(input, ctx)),
+    },
+    "code.version.submit": {
+      title: "Submit Code version",
+      description:
+        "Save checked source and bundle against baseVersionId. Request version approval when policy requires it; leave the running version unchanged.",
+      ...codeVersionContracts.submit,
+      target: "code",
+      input: codeVersionContracts.submit.input.omit({ codeId: true }),
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission({ ...input, codeId: codeTargetId(context) }, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion({ ...input, codeId: codeTargetId(context) }, ctx)),
+    },
+    "code.version.approve": {
+      title: "Approve Code version",
+      description: "Approve the exact source, bundle and comparison through the platform's Cloud-admin rule.",
+      ...codeVersionContracts.decide,
+      target: "code",
+      input: CodeVersionDecisionActionInput,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof CodeVersionDecisionActionInput>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) =>
+          reviewCodeVersionDecision({ ...input, codeId: codeTargetId(context) }, true, ctx),
+        );
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion({ ...input, codeId: codeTargetId(context) }, true, ctx)),
+    },
+    "code.version.reject": {
+      title: "Reject Code version",
+      description: "Reject the exact version and comparison through the same platform request.",
+      ...codeVersionContracts.decide,
+      target: "code",
+      input: CodeVersionDecisionActionInput,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof CodeVersionDecisionActionInput>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) =>
+          reviewCodeVersionDecision({ ...input, codeId: codeTargetId(context) }, false, ctx),
+        );
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion({ ...input, codeId: codeTargetId(context) }, false, ctx)),
+    },
+    "code.pause": {
+      title: "Pause Code",
+      description: "Pause future Code execution without replacing the running version or replaying missed events.",
+      ...codeVersionContracts.pause,
+      target: "code",
+      input: codeVersionContracts.pause.input.omit({ codeId: true }),
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      async review(_input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(codeTargetId(context), true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (_input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), true, ctx)),
+    },
+    "code.resume": {
+      title: "Resume Code",
+      description: "Resume the active version only after checking current policy and live approval evidence.",
+      ...codeVersionContracts.resume,
+      target: "code",
+      input: codeVersionContracts.resume.input.omit({ codeId: true }),
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "keeps_working" },
+      async review(_input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(codeTargetId(context), false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (_input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), false, ctx)),
+    },
+    "code.policy.update": {
+      title: "Update Code policy",
+      description:
+        "Replace the Code policy at the expected revision and enqueue visible pauses. Cloud administration required; stale changes fail.",
+      ...codePolicyContracts.update,
+      code: false,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codePolicyContracts.update.input>, context: CapabilityExecutionContext) {
+        const preview = await runCodeQuery(context, (ctx) => previewCodePolicy({ ...input, limit: 20 }, ctx));
+        if (!preview.ok) return preview;
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const groupIds = [...new Set(input.definition.rules.flatMap((rule) => (rule.groupId ? [rule.groupId] : [])))];
+        const names = await resolveDisplayNames(groupIds.map((groupId) => ({ principal: { type: "group", groupId } })));
+        const labels = new Map(groupIds.map((id, index) => [id, `${principalLabel(names[index]!, locale)} (${id})`]));
+        return ok({
+          locale,
+          ask: "changes_access" as const,
+          slots: {},
+          sentence: {
+            action: t.codePolicyReview({ revision: input.revision, count: preview.data.data.total }),
+            running: t.codePolicyRunning,
+            done: t.codePolicyDone,
+            confirm: t.codePolicyConfirm,
+            decline: t.codePolicyDecline,
+          },
+          content: {
+            kind: "page" as const,
+            baseRevision: input.revision,
+            title: t.codePolicyTitle,
+            format: "plain" as const,
+            body: CODE_POLICY_ROWS.map(
+              (row) =>
+                `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
+                  .filter((rule) => rule.row === row)
+                  .map(
+                    (rule) =>
+                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
+                  )
+                  .join("\n")}`,
+            ).join("\n\n"),
+          },
+        });
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => updateCodePolicy(input, ctx)),
+    },
     "ai.skill.access.change": {
+      target: "ai.skill",
       title: "Change Skill access",
       description:
         "Grant, change or revoke one Skill permission after fresh user review. Read ai.skill.access.read first. Never grants access to an App referenced by the Skill.",
@@ -1157,7 +1529,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "required",
       async review(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "admin");
+          const skill = await readableSkill(skillTargetId(context), context, "admin");
           const grants = skill && (await aiSkills.listAccess(skill.id, context, skillAuthority(context)));
           if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
           if (accessRevision(grants) !== input.expectedAccessRevision)
@@ -1170,7 +1542,7 @@ export const aiCapabilities = defineCapabilities({
           const { t } = coreCapabilityMessages(context.locale);
           const level = (permission: "read" | "write" | "admin") => t[permission];
           return ok({
-            message: t.skillAccessChange({ name: skill.name, id: input.skillId }),
+            message: t.skillAccessChange({ name: skill.name, id: skillTargetId(context) }),
             details: [
               { label: t.recipient, value: `${principalLabel(recipient!, context.locale)} — ${JSON.stringify(principal)}` },
               { label: t.before, value: previous ? level(previous.permission) : t.noAccess },
@@ -1185,7 +1557,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "admin");
+          const skill = await readableSkill(skillTargetId(context), context, "admin");
           if (!skill) return fail(err.forbidden("Skill access requires Manage permission."));
           const changed =
             input.principal && input.permission
@@ -1211,13 +1583,13 @@ export const aiCapabilities = defineCapabilities({
                   : await aiSkills.revokeAccess(skill.id, input.accessId, context, input.expectedAccessRevision, skillAuthority(context))
                 : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
-          const readable = await readableSkill(input.skillId, context);
+          const readable = await readableSkill(skillTargetId(context), context);
           return ok({
             data: { changed: true },
             ...(readable
               ? {
-                  refs: [{ type: "core.ai.skill", id: input.skillId, title: skill.name }],
-                  links: [{ rel: "open" as const, href: skillHref(input.skillId) }],
+                  refs: [{ type: "core.ai.skill", id: skillTargetId(context), title: skill.name }],
+                  links: [{ rel: "open" as const, href: skillHref(skillTargetId(context)) }],
                 }
               : {}),
           });
@@ -1266,6 +1638,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.skill.update": {
+      target: "ai.skill",
       title: "Update an Assistant Skill",
       description: "Update one or more main fields of a writable Skill after reviewing the exact changed content.",
       input: SkillUpdateInputSchema,
@@ -1275,7 +1648,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "none",
       async review(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
           const { t } = coreCapabilityMessages(context.locale);
@@ -1296,7 +1669,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.update(
             skill.id,
@@ -1326,6 +1699,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.skill.reference.set": {
+      target: "ai.skill",
       title: "Set an Assistant Skill reference",
       description:
         "Add or replace exactly one Markdown reference on a writable Skill. Use Set Assistant Skill references for two or more files.",
@@ -1337,7 +1711,7 @@ export const aiCapabilities = defineCapabilities({
       approval: "rememberable",
       async review(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
           const { t } = coreCapabilityMessages(context.locale);
@@ -1356,7 +1730,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.setReference(skill.id, context, input, skillAuthority(context));
           if (!updated) return fail(err.notFound("Skill"));
@@ -1374,6 +1748,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.skill.references.set": {
+      target: "ai.skill",
       title: "Set Assistant Skill references",
       description:
         "Atomically add or replace multiple Markdown references on one writable Skill after reviewing every complete bounded file.",
@@ -1385,7 +1760,7 @@ export const aiCapabilities = defineCapabilities({
       approval: "rememberable",
       async review(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
           return ok({
@@ -1404,7 +1779,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.setReferences(skill.id, context, input, skillAuthority(context));
           if (!updated) return fail(err.notFound("Skill"));
@@ -1422,6 +1797,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.skill.reference.remove": {
+      target: "ai.skill",
       title: "Remove an Assistant Skill reference",
       description: "Remove one exact Markdown reference from a writable Skill after review.",
       input: SkillReferenceRemoveInputSchema,
@@ -1431,7 +1807,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "none",
       async review(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill?.references.some((reference) => reference.path === input.path)) return fail(err.notFound("Skill reference"));
           if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
           const { t } = coreCapabilityMessages(context.locale);
@@ -1446,7 +1822,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "write");
+          const skill = await readableSkill(skillTargetId(context), context, "write");
           if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.removeReference(skill.id, context, input, skillAuthority(context));
           if (!updated) return fail(err.notFound("Skill reference"));
@@ -1464,6 +1840,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.skill.enabled.set": {
+      target: "ai.skill",
       title: "Set personal Assistant Skill state",
       description: "Enable or disable one readable Skill only for the current user after review; Cloud access remains unchanged.",
       input: SkillEnabledSetInputSchema,
@@ -1473,7 +1850,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "none",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("Personal Skill state requires a user-backed actor"));
-        const skill = await readableSkill(input.skillId, context);
+        const skill = await readableSkill(skillTargetId(context), context);
         if (!skill) return fail(err.notFound("Skill"));
         const { t } = coreCapabilityMessages(context.locale);
         const target = { name: skill.name, person: context.user.displayName };
@@ -1484,7 +1861,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("Personal Skill state requires a user-backed actor"));
-        const skill = await readableSkill(input.skillId, context);
+        const skill = await readableSkill(skillTargetId(context), context);
         if (!skill) return fail(err.notFound("Skill"));
         const enabled = await aiSkills.setEnabled(skill.id, context, input.enabled, skillAuthority(context));
         if (enabled === null) return fail(err.notFound("Skill"));
@@ -1499,6 +1876,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.skill.delete": {
+      target: "ai.skill",
       title: "Delete an Assistant Skill",
       description: "Permanently delete one administered Skill, all references, and all access grants after review.",
       input: SkillDeleteInputSchema,
@@ -1508,7 +1886,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "required",
       async review(input, context) {
         try {
-          const skill = await readableSkill(input.skillId, context, "admin");
+          const skill = await readableSkill(skillTargetId(context), context, "admin");
           if (!skill) return fail(err.notFound("Skill"));
           const { t } = coreCapabilityMessages(context.locale);
           return ok({
@@ -1526,7 +1904,7 @@ export const aiCapabilities = defineCapabilities({
       async run(input, context) {
         try {
           if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
-          const skill = await readableSkill(input.skillId, context, "admin");
+          const skill = await readableSkill(skillTargetId(context), context, "admin");
           if (!skill) return fail(err.notFound("Skill"));
           const deleted = await aiSkills.delete(skill.id, context, skillAuthority(context));
           return audit.recordResultAfterSideEffect({
@@ -1545,6 +1923,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.create": {
+      target: "ai.chat",
       title: "Create an Assistant routine",
       description:
         "Create one reviewed autonomous routine in one of your AI conversations. Discover the capabilities needed for the whole routine first and propose their grants. Fix input fields such as a note or notebook ID where the user's request permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
@@ -1557,7 +1936,7 @@ export const aiCapabilities = defineCapabilities({
         const appSession = appSessionTaskError(context);
         if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const chat = await ownedChat(input.chatId, context.user.id);
+        const chat = await ownedChat(chatTargetId(context), context.user.id);
         if (!chat) return fail(err.notFound("Chat"));
         try {
           await aiChatTasks.validateGrants(input.grants);
@@ -1581,7 +1960,7 @@ export const aiCapabilities = defineCapabilities({
         const appSession = appSessionTaskError(context);
         if (appSession) return appSession;
         if (!context.user || !context.idempotencyKey) return fail(err.forbidden("Scheduled tasks require an idempotent user action"));
-        const idempotencyFingerprint = chatTaskCreateFingerprint(input);
+        const idempotencyFingerprint = chatTaskCreateFingerprint({ ...input, chatId: chatTargetId(context) });
         try {
           const replay = await aiChatTasks.getCreateByIdempotency({
             userId: context.user.id,
@@ -1610,7 +1989,7 @@ export const aiCapabilities = defineCapabilities({
         try {
           task = await aiChatTasks.create({
             userId: context.user.id,
-            chatId: input.chatId,
+            chatId: chatTargetId(context),
             prompt: input.prompt,
             title: input.title,
             locale: context.locale,
@@ -1634,6 +2013,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.update": {
+      target: "ai.chat",
       title: "Update an Assistant routine",
       description:
         "Update the prompt, future schedule or capability grants of one of your routines after reviewing the exact replacement. Read the routine and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
@@ -1646,7 +2026,7 @@ export const aiCapabilities = defineCapabilities({
         const appSession = appSessionTaskError(context);
         if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         try {
           if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
@@ -1673,6 +2053,8 @@ export const aiCapabilities = defineCapabilities({
         const appSession = appSessionTaskError(context);
         if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
+        const current = await taskInTargetChat(input.taskId, context);
+        if (!current) return fail(err.notFound("Task"));
         let normalized: Partial<Awaited<ReturnType<typeof normalizeChatTaskSchedule>>> = {};
         try {
           if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
@@ -1699,6 +2081,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.pause": {
+      target: "ai.chat",
       title: "Pause an Assistant routine",
       description: "Pause one of your routines after review.",
       input: ChatTaskIdInputSchema,
@@ -1709,7 +2092,7 @@ export const aiCapabilities = defineCapabilities({
       approval: "rememberable",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(task, "pause");
         if (stateError) return fail(err.conflict(stateError));
@@ -1725,7 +2108,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const current = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const current = await taskInTargetChat(input.taskId, context);
         if (!current) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(current, "pause");
         if (stateError) return fail(err.conflict(stateError));
@@ -1745,6 +2128,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.resume": {
+      target: "ai.chat",
       title: "Resume an Assistant routine",
       description: "Resume one of your routines after review.",
       input: ChatTaskIdInputSchema,
@@ -1756,7 +2140,7 @@ export const aiCapabilities = defineCapabilities({
         const appSession = appSessionTaskError(context);
         if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(task, "resume");
         if (stateError) return fail(err.conflict(stateError));
@@ -1773,7 +2157,7 @@ export const aiCapabilities = defineCapabilities({
         const appSession = appSessionTaskError(context);
         if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const current = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const current = await taskInTargetChat(input.taskId, context);
         if (!current) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(current, "resume");
         if (stateError) return fail(err.conflict(stateError));
@@ -1793,6 +2177,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.run": {
+      target: "ai.chat",
       title: "Run an Assistant routine now",
       description: "Queue one manual occurrence without changing the future schedule.",
       input: ChatTaskIdInputSchema,
@@ -1802,7 +2187,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "required",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(task, "run");
         if (stateError) return fail(err.conflict(stateError));
@@ -1817,7 +2202,7 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         if (!context.user || !context.idempotencyKey) return fail(err.forbidden("Scheduled tasks require an idempotent user action"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         let occurrence: Awaited<ReturnType<typeof aiChatTasks.createOccurrence>>;
         try {
@@ -1842,6 +2227,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.delete": {
+      target: "ai.chat",
       title: "Delete an Assistant routine",
       description: "Delete one routine and all of its run history after review.",
       input: ChatTaskIdInputSchema,
@@ -1851,7 +2237,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "required",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
@@ -1866,7 +2252,7 @@ export const aiCapabilities = defineCapabilities({
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        const task = await taskInTargetChat(input.taskId, context);
         if (!task) return fail(err.notFound("Task"));
         const deleted = await aiChatTasks.delete({ userId: context.user.id, taskId: input.taskId });
         if (deleted) void reconcileAiChatTasks().catch(() => undefined);
@@ -1882,6 +2268,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.chat.message": {
+      target: "ai.chat",
       title: "Message another AI conversation",
       description: "Queue one attributable message for another owned AI conversation after reviewing the exact target and text.",
       input: ChatMessageInputSchema,
@@ -1891,7 +2278,7 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "required",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
-        const target = await ownedChat(input.chatId, context.user.id);
+        const target = await ownedChat(chatTargetId(context), context.user.id);
         if (!target) return fail(err.notFound("Chat"));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
@@ -1915,7 +2302,7 @@ export const aiCapabilities = defineCapabilities({
           sourceConversationId: origin.conversationId,
           sourceTurnId: origin.turnId,
           sourceCallId: origin.callId,
-          targetChatId: input.chatId,
+          targetChatId: chatTargetId(context),
           actorUserId: context.user.id,
           text: input.text,
           idempotencyKey: context.idempotencyKey,

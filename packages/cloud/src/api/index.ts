@@ -44,6 +44,7 @@ import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
 import { createCapabilityRoutes } from "./capabilities";
+import { createCodeAccessRoutes } from "./code-access-routes";
 import geoRoutes from "./geo";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
@@ -92,6 +93,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/apps", appDiscoveryRoutes)
     .route("/app-events", createAppEventRoutes())
     .route("/resources", createResourceResolveRoutes())
+    .route("/resources/code-access", createCodeAccessRoutes())
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)
     .route("/admin/core/ai", adminAiRoutes)
@@ -137,6 +139,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export { type CodeBridgeAuthority, type CodeBridgeCall, type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
 export { createAdminAppDomainRoutes } from "./admin-app-domains";
 export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
@@ -144,6 +147,7 @@ export { createAppAccessRoutes } from "./app-access";
 export { createAppBootstrapRoutes } from "./app-bootstrap";
 /** Core-owned app-key request authentication. */
 export { authenticateSignedAppRequest } from "./authenticate-app-request";
+export { type CodeRunnerDispatchDependencies, codeHttpOriginAllowed, createCodeRunnerCallRoutes } from "./capabilities";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,

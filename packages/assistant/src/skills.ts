@@ -28,11 +28,13 @@ import assistantCodeModeViews from "./skills/assistant-code-mode/references/view
 import assistantCodeMode from "./skills/assistant-code-mode/SKILL.md" with { type: "text" };
 import assistantDataAnalysis from "./skills/assistant-data-analysis/SKILL.md" with { type: "text" };
 import cloudAssistant from "./skills/cloud-assistant/SKILL.md" with { type: "text" };
+import codeAuthoring from "./skills/code-authoring/SKILL.md" with { type: "text" };
 import scheduledTasks from "./skills/scheduled-tasks/SKILL.md" with { type: "text" };
 import skillCreator from "./skills/skill-creator/SKILL.md" with { type: "text" };
 
 /** Assistant Skills this app ships; Cloud installs and updates them from these files. */
 export const SKILLS = [
+  skill({ markdown: codeAuthoring }),
   skill({
     markdown: assistantCodeMode,
     references: {

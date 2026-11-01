@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as ai from "@k2b/cloud/ai";
 import * as live from "@k2b/cloud/ai/live";
+import * as capabilityServer from "@k2b/cloud/capabilities/server";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
@@ -11,6 +12,7 @@ import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import * as chatContext from "../chat-context";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
 
@@ -57,6 +59,10 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 beforeEach(() => {
+  // Core's Code queries answer empty unless a test says otherwise; no test reaches a real Core.
+  codeInvoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema");
+  spies.push(codeInvoke);
+  mockCodeQueries([]);
   spies.push(spyOn(ai, "getAiChatQuotas").mockResolvedValue({ enabled: false, balances: [] }));
   spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
   spies.push(spyOn(live.aiLive, "cursor").mockResolvedValue("s6t.cloud-live-core.0"));
@@ -211,7 +217,7 @@ const approval = {
   expiresAt: "2026-10-09T09:00:00.000Z",
 };
 
-test("?approvals=1 renders the approvals view without selecting a chat, and the row only while something waits", async () => {
+test("?approvals=1 renders Waiting for you without selecting a chat, and the row stays when nothing waits", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
       projects: [],
@@ -230,18 +236,120 @@ test("?approvals=1 renders the approvals view without selecting a chat, and the 
   expect(pending).toHaveBeenCalledWith(expect.anything(), { app: "assistant" });
   // The view replaces the chat: no chat is loaded, so the first open chat is not selected behind it.
   expect(lookup).not.toHaveBeenCalled();
-  expect(html).toContain("What the Assistant wants to do for you.");
+  expect(html).toContain("Waiting for you");
+  expect(html).toContain("What Gustav wants to do for you.");
   expect(html).toContain("Send the Q4 offer");
   expect(html).toContain('href="/app/assistant?approvals=1"');
   expect(html).toMatch(
     /href="\/app\/assistant\?approvals=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?approvals=1"/,
   );
 
-  // Nothing waits: a chat page has no Approvals row.
+  // Nothing waits: the row keeps its place, so the footer never moves; the view itself stays closed.
   pending.mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
-  expect(plain).not.toContain('href="/app/assistant?approvals=1"');
-  expect(plain).not.toContain("What the Assistant wants to do for you.");
+  expect(plain).toContain('href="/app/assistant?approvals=1"');
+  expect(plain).not.toContain("What Gustav wants to do for you.");
+});
+
+const codeItem = {
+  id: "c_week01",
+  owner: { kind: "person", userId: user.id },
+  title: "Weekly sales report",
+  serviceAccountId: null,
+  state: "active",
+  activeVersionId: null,
+  createdBy: user.id,
+  createdAt: "2026-10-12T07:00:00.000Z",
+  permission: "editor",
+};
+/** Core's public Code queries as the page calls them, with the person's credentials. */
+let codeInvoke: ReturnType<typeof spyOn<typeof capabilityServer, "invokeCapabilityWithDataSchema">>;
+const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => {
+  codeInvoke.mockImplementation(async (invocation, schema) => {
+    if (options.fail) return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Core is unavailable", status: 503 } };
+    const data =
+      invocation.capabilityId === "code.list"
+        ? { items, nextCursor: null }
+        : {
+            items: [{ id: "run-1", state: "succeeded", createdAt: "2026-10-26T07:00:00.000Z", endedAt: "2026-10-26T07:00:04.000Z" }],
+            nextCursor: null,
+          };
+    return { ok: true, data: { data: schema.parse(data) } };
+  });
+  return codeInvoke;
+};
+
+test("My apps & automations shows only for a person with Code, and ?code=1 renders their list from the server", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  const invoke = mockCodeQueries([]);
+  // No Code: no entry and no empty section.
+  const none = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(invoke).toHaveBeenCalledWith(
+    { appId: "core", capabilityId: "code.list", kind: "query", input: { owner: { kind: "person", userId: user.id }, limit: 1 } },
+    expect.anything(),
+    expect.objectContaining({ locale: "en" }),
+  );
+  expect(none).not.toContain('href="/app/assistant?code=1"');
+  expect(none).not.toContain("My apps &amp; automations");
+
+  mockCodeQueries([codeItem]);
+  const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(withCode).toContain('href="/app/assistant?code=1"');
+  const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
+  expect(view).toContain("Your Code runs as you.");
+  expect(view).toContain("Weekly sales report");
+  expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
+});
+
+test("an unknown Code answer keeps the entry, and the list shows its error with a way to retry", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  mockCodeQueries([], { fail: true });
+  const plain = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(plain).toContain('href="/app/assistant?code=1"');
+  const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
+  expect(view).toContain("Your apps and automations could not be loaded");
+  expect(view).toContain("Try again");
+});
+
+test("an existing chat still loads at its old address under the name Gustav", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  mockCodeQueries([]);
+  const lookup = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+  spies.push(lookup);
+  spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
+  spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
+  spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
+  spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  const response = await request("https://cloud.example.test/app/assistant?conversation=chat1");
+  // Same address, no redirect: links and bookmarks to old chats keep working.
+  expect(response.status).toBe(200);
+  expect(lookup).toHaveBeenCalledWith({ shortId: "chat1", ownerUserId: user.id });
+  const html = await response.text();
+  expect(html).toContain("<title>Gustav</title>");
+  expect(html).toContain(chat.title);
 });
 
 test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {
@@ -286,4 +394,73 @@ test("a panel conversation selector does not bypass ownership or fall back to an
   expect(response.status).toBe(404);
   expect(lookup).toHaveBeenCalledWith({ shortId: "foreign", ownerUserId: user.id });
   expect(await response.text()).not.toContain(chat.title);
+});
+
+test("the panel names the place's Code from the first paint, through the place's own reader", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  const mailbox = { type: "mail.mailbox", id: "m_info" };
+  spies.push(
+    spyOn(capabilityServer, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: {
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        appDescription: "Mail.",
+        manifest: {
+          protocolVersion: 2,
+          appId: "mail",
+          manifestHash: "a".repeat(64),
+          types: [{ localId: "mailbox", title: "Mailbox", description: "A mailbox.", icon: "ti ti-mail", reader: "mailbox.read" }],
+          queries: [
+            {
+              localId: "mailbox.read",
+              title: "Read mailbox",
+              description: "Read one mailbox.",
+              inputSchema: {},
+              dataSchema: {},
+              schemaHash: "b".repeat(64),
+              openWorld: false,
+            },
+          ],
+          actions: [],
+          commands: [],
+        },
+      },
+    }),
+  );
+  codeInvoke.mockImplementation(async (invocation, schema) => {
+    const data =
+      invocation.appId === "mail"
+        ? { view: { title: "info@example.test" } }
+        : invocation.capabilityId === "code.list"
+          ? {
+              items: [{ ...codeItem, id: "c_info01", title: "Sort requests", owner: { kind: "resource", ref: mailbox } }],
+              nextCursor: null,
+            }
+          : { items: [], nextCursor: null };
+    const links = invocation.appId === "mail" ? [{ rel: "open" as const, href: "/app/mail/m/info" }] : undefined;
+    return { ok: true, data: { data: schema.parse(data), ...(links ? { links } : {}) } };
+  });
+  const context = { v: 1, seq: 1, pageId: "88888888-8888-4888-8888-888888888888", app: "mail", scope: mailbox };
+  const html = await (
+    await request(`https://cloud.example.test/app/assistant/panel?cloud_panel_context=${encodeURIComponent(JSON.stringify(context))}`)
+  ).text();
+  expect(codeInvoke).toHaveBeenCalledWith(
+    { appId: "core", capabilityId: "code.list", kind: "query", input: { owner: { kind: "resource", ref: mailbox }, limit: 20 } },
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(html).toContain("Sort requests");
+  expect(html).toContain("of info@example.test");
+  expect(html).toContain("Open Mailbox");
+  expect(html).toContain('href="/app/mail/m/info"');
 });

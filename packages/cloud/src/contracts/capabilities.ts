@@ -4,6 +4,8 @@ import {
   CapabilityStreamPolicySchema,
   CapabilityStreamSchema,
 } from "./capability-streams";
+import type { CapabilityCodeDefinition, CodeAccessDeclaration } from "./code-access";
+import { CapabilityCodeManifestSchema } from "./code-access";
 import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "./resource-pages";
 
 export * from "./capability-streams";
@@ -18,7 +20,7 @@ import { AuthenticatedPrincipalSchema } from "./shared";
 
 export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
-export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
+export { CAPABILITY_MAX_RESULT_BYTES } from "./capability-limits";
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 export const CAPABILITY_QUALIFIED_ID_MAX_LENGTH = 180;
 export const CLOUD_RESOURCE_ID_MAX_LENGTH = 512;
@@ -917,7 +919,7 @@ export type CapabilityResourceTypeDefinition = {
   reader?: string;
   /** Local type in the same application. Describes containment, never inherited authority. */
   container?: string;
-  access?: {
+  access?: CodeAccessDeclaration & {
     /** Return only readable input principals, using current grants and account status, never credential scopes. */
     readable?: (
       input: ResourceReadableInput,
@@ -1035,6 +1037,15 @@ export type CapabilityQueryDefinition<
   Input extends z.ZodType = z.ZodType<any>,
   Data extends z.ZodType = z.ZodType<any>,
 > = CapabilityTargetDefinition & {
+  /**
+   * Title-only projection of a resource reader for Code owner/target checks.
+   * Required for Code owners and resource targets. Use the supplied read-only
+   * transaction and return null for a deleted resource. The framework exposes
+   * only this title to Core with account-bound authority, never reader data or
+   * a person's authority. It also distinguishes deleted normalized targets from
+   * access refusals before Code calls run.
+   */
+  codeResourceTitle?: (tx: import("bun").SQL, id: string) => string | null | Promise<string | null>;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1059,6 +1070,8 @@ export type CapabilityActionDefinition<
 > = CapabilityTargetDefinition & {
   /** Excludes this Action from resource-owned Code; personal Code retains person authority. */
   code?: false;
+  /** This Action cannot execute under any background mandate. */
+  unattended?: false;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1119,6 +1132,7 @@ export type CapabilityDiscussionsDeclaration = { item: string; containers: strin
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
   presentation?: CapabilityPresentationCatalog;
+  code?: CapabilityCodeDefinition;
   types?: CapabilityDefinitionCatalog<CapabilityResourceTypeDefinition>;
   queries?: CapabilityDefinitionCatalog<CapabilityQueryDefinition>;
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;
@@ -1195,6 +1209,7 @@ export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSche
 
 export const CapabilityActionManifestSchema = CapabilityOperationManifestBaseSchema.extend({
   code: z.literal(false).optional(),
+  unattended: z.literal(false).optional(),
   destructive: z.boolean(),
   openWorld: z.boolean(),
   idempotency: z.enum(["none", "required"]),
@@ -1362,6 +1377,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     resourceTypes: sentModels,
     discussions: sentDiscussions,
     appStatus: sentAppStatus,
+    code: sentCode,
     ...rest
   } = sent;
   const models = readEntries(sentModels ?? [], CapabilityResourceTypeModelSchema) ?? [];
@@ -1411,6 +1427,14 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     readableActions.some((action) => action.localId === statusRole.data.forget)
       ? statusRole.data
       : undefined;
+  const codeRole = CapabilityCodeManifestSchema.safeParse(sentCode);
+  const code =
+    codeRole.success &&
+    [...codeRole.data.owners, ...codeRole.data.access.types].every((id) =>
+      types.some((type) => type.localId === id && type.reader && queryIds.has(type.reader)),
+    )
+      ? codeRole.data
+      : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   const pageCounts = new Map<string, number>();
@@ -1430,6 +1454,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     ...rest,
     ...(sentModels !== undefined ? { resourceTypes } : {}),
     ...(discussions ? { discussions } : {}),
+    ...(code ? { code } : {}),
     ...(appStatus ? { appStatus } : {}),
     ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
@@ -1474,6 +1499,7 @@ export const CapabilityManifestSchema = z.preprocess(
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     discussions: CapabilityDiscussionsManifestSchema.optional(),
+    code: CapabilityCodeManifestSchema.optional(),
     appStatus: CapabilityAppStatusManifestSchema.optional(),
     resourceTypes: z.array(CapabilityResourceTypeModelSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),

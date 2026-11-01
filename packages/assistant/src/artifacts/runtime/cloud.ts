@@ -64,7 +64,7 @@ export function createCloud(rpc: Rpc, context: RuntimeContext, script = false) {
     ai: createAi(rpc),
     http: createHttp(rpc),
     capabilities: {
-      run: (name: string, input: unknown = {}) => rpc("capabilities.run", [name, input]),
+      run: (name: string, input: unknown = {}, options?: unknown) => rpc("capabilities.run", [name, input, options]),
       streams: {
         read: (ref: unknown) => rpc("capabilities.stream", [ref, "read"]),
         write: (ref: unknown, body: Blob | string | ArrayBuffer | Uint8Array) =>

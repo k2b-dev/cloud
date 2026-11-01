@@ -1,4 +1,5 @@
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
+export { createCodeSourceTool } from "./code-source-tools";
 export {
   CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   createCloudAiCardTool,

@@ -5,10 +5,120 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Deprecations and migrations
+
+## Capability targets: major release operator note
+
+Before upgrading, back up the database and inventory third-party capability
+providers and callers. Upgrade their `@k2b/cloud` dependency and declare
+`target` on every resource Action. Remove the primary resource ID from `input`,
+put additional destinations in `refs`, and retain child IDs with containment
+checks. `code: false` marks effects that reach another application; it does
+not replace a local target. Shared foreign-provider contracts keep their
+published shapes. See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
+
+Stop all old Core, Assistant and Mail replicas and workers. Start upgraded
+Core first, then deploy converted providers and their callers together before
+starting Assistant and Mail workers. Core and Mail run the migrations below
+before starting their own workers. Refresh cached catalogs, schema hashes and
+generated clients. Do not run mixed old and new writers. A rollback requires
+the matching pre-upgrade database backup and previous application images.
+
+After startup, verify a target-bound Action, review routines marked
+`needs_attention`, re-request aborted approvals, and inspect Mail's incoming
+automations for **Needs attention**. Do not re-enable background work until its
+intended destinations are confirmed. Chats and saved definitions are retained.
+The following sections describe recovery and application-specific input changes.
+
+## Existing Assistant routines and approvals adopt capability targets
+
+Stop every old Core and Assistant worker replica before upgrading. Start the
+upgraded Core before its Assistant workers, and deploy the converted capability
+providers and callers together. Do not run old replicas during this migration. Core migrates existing
+routine mandates and pending capability approvals during its AI startup migration.
+The Assistant app ID and `/assistant/…` addresses remain valid.
+
+A routine's literal container field, such as `fixedInput.spaceId`, becomes its
+exact grant target. Destination restrictions become exact additional refs;
+other fixed inputs keep restricting the call. A routine confirmed for Space A
+continues to authorize Space A only. The migration commits and audits each
+routine separately and does nothing to it on later starts.
+
+A missing, dynamic, conflicting, or unknown target puts the routine in
+`needs_attention` and pauses its mandate. Its notice names the capability:
+**Please confirm this routine again: … now needs a fixed target.** Review its
+grants, choose the intended target, and confirm it again before running it.
+Cloud does not infer a container from a task, note, contact, or other child ID.
+Unknown third-party capabilities also require this review.
+
+Pending capability approvals and approved calls still waiting to run that can
+be converted keep their question and review, with the digest bound to the complete normalized call. Confirmation
+still checks the current review and permissions. A proposal that cannot be
+converted becomes `aborted`; its chat says **Please ask again**
+(**Bitte neu anfragen** in German). Send the request again to review a new
+proposal. The old proposal is retained.
+
+Chats, messages, tool-call history, files, projects, memories, Skills, and
+**Always approve** preferences remain unchanged. History displays stored
+arguments without validating them against the new capability schema.
+
+## Incoming Mail automations keep their Spaces targets
+
+Upgrade Mail together with the target-bound Spaces capabilities. Stop older Mail
+replicas and workers before starting the new image; do not mix writers from the
+two versions. Back up the database before this coordinated upgrade. Rollback
+requires restoring that backup together with the previous application images.
+
+Mail migrates existing incoming-automation mandates before starting workers.
+The Space configured on each event step becomes its grant target; the column
+remains fixed. The migration retains existing grant restrictions. Later definition edits remain explicit reauthorization by the original person. Definitions, Mail-only
+steps, the authorizing person, and enabled/paused choices remain in place when
+the target can be mapped. This migration and its audit commit in the same
+transaction and are applied once.
+
+An old **Link Spaces item** step stores only the item ID, so its Space cannot
+be inferred safely. Missing or conflicting coordinates or an unavailable mandate
+also require confirmation. Mail disables that automation and its workflow,
+pauses its active mandate, and shows **Needs attention** under
+**Automations → Incoming mail**. The saved definition is retained. If an old policy is unreadable, confirmation revokes its old binding without changing the stored policy, then creates the replacement in the same transaction. The original
+author chooses **Edit automation**, selects the intended Spaces destinations
+again, saves, and enables it. If the authorization is missing, an interactive
+mailbox administrator can create a new one by saving. A toggle alone cannot
+bypass confirmation. Pending runs cannot use an automation in this state.
+
+New and edited **Link Spaces item** steps include `spaceId` as well as `itemId`;
+the item picker obtains the Space through the authorized Spaces reader. Its
+mandate binds both coordinates. Background links need no additional reader
+authority. Event steps bind `spaceId` and `columnId`. Neither step grants access
+to another Space. These automations continue to act as their author; replacement
+by resource-owned Code is a later phase.
+
+## Spaces and Contacts Actions name their container
+
+Move `spaceId` out of Spaces creation and calendar-import inputs into
+`target: { type: "spaces.space", id: spaceId }`. All resource Actions require
+that Space target, including changes to existing items and templates.
+
+Contacts Actions require `target: { type: "contacts.book", id: bookId }`.
+Remove `bookId` from `contact.create` input. For `contact.move`, pass the
+source book as the target and the destination as
+`refs: { targetBookId: { type: "contacts.book", id: destinationBookId } }`.
+The contact-directory create contract uses the same book target.
+
+Flat chat and MCP calls use `space` or `book` alongside domain fields;
+`targetBookId` remains a flat destination argument for moves. Upgrade Mail
+with the providers. See [capability targets](/en/docs/operations/capability-targets)
+for rollout constraints and retained person-call behavior.
+
+## Grids and Files capabilities name their container
+
+Move capability container IDs from domain input to `target` and refresh cached
+catalogs and schema hashes. Grids uses a base or table; Files uses a storage-root
+entry. See [Grids and Files targets](/en/docs/operations/grids-files-capability-targets)
+for the affected operations, flat tool fields, and deployment order.
 
 ## Mail capabilities name their mailbox
 
@@ -25,6 +135,15 @@ readers, discovery and cross-mailbox Queries keep their inputs.
 `draft.send.check` also keeps `{ mailboxId, draftId, expectedRevision }` for
 outcome recovery. Mail's REST API, `cld mail`, mailbox selection, and compose
 and send flows keep their behavior; no stored Mail data needs conversion.
+
+## Core Code Actions name the Code resource
+
+For `code.version.submit`, `code.version.approve`, `code.version.reject`,
+`code.pause` and `code.resume`, move `input.codeId` to
+`target: { type: "core.code", id: codeId }`. Chat and MCP use the flat field
+`code`. Version binding results and exported domain service schemas still
+contain `codeId`; omit it from capability decision input. Installation-wide
+`code.policy.update` keeps group selectors in its policy document.
 
 ## Service-account kind checks have separate purposes
 

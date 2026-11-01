@@ -16,9 +16,11 @@ import { touchAppKey } from "../services/app-keys";
 import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 
 type Dependencies = {
+  /** Trusted route-owned body budget; defaults to the capability request budget. */
+  maxBodyBytes?: number;
   db?: SQL;
   ingress?: (peer: string) => Promise<RateLimitResult>;
-  admit?: (keyId: string) => Promise<RateLimitResult>;
+  admit?: (keyId: string, appId: string) => Promise<RateLimitResult>;
 };
 const admission = async (kind: "ingress" | "key", id: string) =>
   ratelimit({ id: `app-bootstrap-${kind}`, limit: await bootstrapRateLimit() }).check(id);
@@ -49,15 +51,16 @@ export const authenticateSignedAppRequest = async (
     const header = c.req.header("Authorization") ?? "";
     if (!header.startsWith("Bearer ")) return reject(401, "invalid_proof", "A valid app proof is required");
     inspectAppProof(header.slice(7));
+    const maxBodyBytes = dependencies.maxBodyBytes ?? CAPABILITY_MAX_REQUEST_BYTES;
     const tooLarge = () => reject(413, "body_too_large", "App request exceeds the byte limit");
-    if (Number(c.req.header("Content-Length")) > CAPABILITY_MAX_REQUEST_BYTES) {
+    if (Number(c.req.header("Content-Length")) > maxBodyBytes) {
       void c.req.raw.body?.cancel().catch(() => undefined);
       return tooLarge();
     }
     signal.throwIfAborted();
     const copy = c.req.raw.clone();
     const reader = copy.body?.getReader();
-    const bytes = new Uint8Array(CAPABILITY_MAX_REQUEST_BYTES);
+    let bytes = new Uint8Array(Math.min(4096, maxBodyBytes));
     let total = 0;
     if (reader) {
       const cancel = () => {
@@ -71,9 +74,14 @@ export const authenticateSignedAppRequest = async (
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) break;
-          if (total + chunk.value.byteLength > bytes.byteLength) {
+          if (total + chunk.value.byteLength > maxBodyBytes) {
             cancel();
             return tooLarge();
+          }
+          if (total + chunk.value.byteLength > bytes.byteLength) {
+            const grown = new Uint8Array(Math.min(maxBodyBytes, Math.max(total + chunk.value.byteLength, bytes.byteLength * 2)));
+            grown.set(bytes);
+            bytes = grown;
           }
           bytes.set(chunk.value, total);
           total += chunk.value.byteLength;
@@ -99,7 +107,7 @@ export const authenticateSignedAppRequest = async (
       return reject(403, "scope_not_permitted", "App is not permitted to issue OAuth credentials");
     const declaredApp = c.req.header("X-Cloud-App-Id");
     if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app", "App identity does not match the proof");
-    const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId);
+    const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId, verified.identity.appId);
     if (rate.limited) return limited(rate);
     if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp, dependencies.db)))
       return reject(403, "replayed_proof", "App proof has already been used");

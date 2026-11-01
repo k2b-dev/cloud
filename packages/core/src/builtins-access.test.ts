@@ -7,7 +7,7 @@ import { canUseApp } from "@k2b/cloud/services";
 import { discoverableApps } from "@k2b/cloud/services/app-discovery";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { visibleNavigationApps } from "@k2b/cloud/ssr/app-navigation";
-import { appIds } from "../../../scripts/workspace";
+import { httpAppIds } from "../../../scripts/workspace";
 
 // The workspace is authoritative: a newly added built-in must make a deliberate
 // migration choice here, rather than silently keeping the third-party fallback.
@@ -38,7 +38,7 @@ const rules = {
   weather: "signedIn",
 } satisfies Record<string, "signedIn" | "roles">;
 const apps: AppMeta[] = await Promise.all(
-  appIds()
+  httpAppIds()
     .filter((id) => id !== "gateway")
     .map(async (id) => {
       const definition: { app: { meta: AppMeta } } = await import(`../../${id}/src/config.ts`);
@@ -98,6 +98,12 @@ const service = (
 const publicPaths: Record<string, string[]> = {
   core: [
     "/_internal/apps/bootstrap",
+    "/_internal/code/runner/call",
+    "/_internal/code/runner/config",
+    "/_internal/code/runner/fetch",
+    "/_internal/code/runner/bundle",
+    "/_internal/code/runner/heartbeat",
+    "/_internal/code/runner/complete",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",
@@ -263,6 +269,7 @@ const publicPaths: Record<string, string[]> = {
 const protectedPaths: Record<string, string[]> = {
   core: [
     "/_internal/apps/bootstrap/private",
+    "/_internal/code/runner/call/private",
     "/me",
     "/admin",
     "/api/auth/pwa/v1/pairings",

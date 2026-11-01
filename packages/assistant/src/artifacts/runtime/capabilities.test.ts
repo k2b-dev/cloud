@@ -65,3 +65,49 @@ test("a background host approval refusal reaches sandbox code with its exact mes
     resolve.mockRestore();
   }
 });
+
+test("SDK coordinates and idempotency metadata retain the existing action approval flow", async () => {
+  const options = { target: { type: "example.box", id: "box_fixture" }, refs: {}, idempotencyKey: "weekly:2030-01-07" };
+  const prepare = spyOn(artifactClient, "capabilityPrepare").mockResolvedValue({
+    status: "approval",
+    id: "11111111-1111-4111-8111-111111111111",
+    title: "Create item",
+    allowAlways: false,
+    appId: "example",
+    localId: "item.create",
+    kind: "action",
+    schemaHash: "fixture",
+    approval: "rememberable",
+    review: null,
+    scope: null,
+    name: "example.item.create",
+    input: { title: "Weekly review" },
+    appName: "Example",
+    appIcon: "ti ti-box",
+  });
+  const resolve = spyOn(artifactClient, "capabilityResolve").mockResolvedValue({
+    status: "completed",
+    result: { ok: true, data: { data: { id: "item_fixture" } } },
+  });
+  let approvals = 0;
+  try {
+    const result = await runCapability(
+      "example.item.create",
+      { title: "Weekly review" },
+      { conversationId: "chat_fixture" },
+      async () => {
+        approvals++;
+        return { approved: true };
+      },
+      new AbortController().signal,
+      options,
+    );
+    expect(approvals).toBe(1);
+    expect(prepare.mock.calls[0]?.[0]).toMatchObject({ ...options, name: "example.item.create", input: { title: "Weekly review" } });
+    expect(resolve.mock.calls[0]?.[1]).toEqual({ approved: true });
+    expect(result).toEqual({ data: { id: "item_fixture" } });
+  } finally {
+    prepare.mockRestore();
+    resolve.mockRestore();
+  }
+});

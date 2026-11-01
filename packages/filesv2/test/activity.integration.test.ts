@@ -1378,6 +1378,7 @@ suite("Files activity with real storage", () => {
   });
   test("folder capability records app and agent provenance through the real service", async () => {
     const mkdir = spyOn(filesService, "mkdir").mockImplementation(service.mkdir);
+    const rootLocation = spyOn(filesService, "rootLocation").mockImplementation(service.rootLocation);
     try {
       for (const [origin, expected] of [
         ["app", "app:notebooks"],
@@ -1392,10 +1393,11 @@ suite("Files activity with real storage", () => {
           user: actor.user,
           locale: "en",
           requestId: `request-${origin}`,
+          target: { type: "filesv2.entry", id: await persistedEntryRefId(baseId(), "") },
           origin,
           signal: new AbortController().signal,
         };
-        const result = await filesCapabilities.actions["folder.create"].run({ baseId: baseId(), path: `cap-${origin}` }, context);
+        const result = await filesCapabilities.actions["folder.create"].run({ path: `cap-${origin}` }, context);
         expect(result.ok).toBe(true);
         const [entry] = await sql<Row[]>`SELECT * FROM filesv2.activity WHERE request_id=${context.requestId}`;
         expect(entry).toMatchObject({
@@ -1409,6 +1411,7 @@ suite("Files activity with real storage", () => {
       }
     } finally {
       mkdir.mockRestore();
+      rootLocation.mockRestore();
     }
   });
   test("only a certain no-change error finalizes failed; ambiguous failures remain pending", async () => {

@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-10-22
+updated: 2026-10-31
 ---
 
 # Contacts
@@ -129,3 +129,25 @@ Use **New contact** in Cloud search to open the contact form and choose a writab
 Available keyboard shortcuts appear next to actions and in Layout Help.
 
 Cmd/Ctrl+Shift+K searches all accessible contacts. Cmd/Ctrl+Alt+N creates a contact in the current writable book, or asks for a book. E edits the selected contact outside input fields. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+
+## Call capabilities with an address-book target
+
+Every Contacts Action names a fixed `book` target. Pass the source book beside
+`input` as `target: { type: "contacts.book", id: bookId }`. `contact.create`
+no longer takes `bookId` in its input. Other Actions keep the contact ID in
+`input`; the contact must belong to the selected book. Tags and hierarchy
+links must belong to that book too. Readers and discovery Queries retain
+their existing inputs.
+
+`contact.move` also requires
+`refs: { targetBookId: { type: "contacts.book", id: destinationBookId } }`.
+The destination is no longer a domain input field. Review and execution
+require write access to both books. Moving still removes book-scoped tags
+and hierarchy links.
+
+Chat and MCP tools keep flat arguments: `book` is the source target and
+`targetBookId` is the additional destination. A move takes
+`{ book, targetBookId, contactId, expectedUpdatedAt }`.
+
+See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
+for the invocation and review contract.

@@ -81,8 +81,11 @@ export { announcements } from "./announcements";
 export type { AnnouncementsService } from "./announcements";
 
 export { session } from "./session";
-export { mandateMetrics, mandates, startMandateMaintenance } from "./mandates";
+export { CODE_VERSION_MANDATE_WORKLOAD_TYPE, mandateMetrics, mandates, startMandateMaintenance } from "./mandates";
 export type {
+  CapabilityGrant,
+  CodeVersionMandateBinding,
+  TaskGrant,
   Mandate,
   MandateInteractiveAuthority,
   MandateIssueAuthority,
@@ -298,3 +301,5 @@ export type {
 
 export { links } from "./links";
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
+
+export { type PurposeSecretRoots, purposeSecretCipher } from "./purpose-secrets";

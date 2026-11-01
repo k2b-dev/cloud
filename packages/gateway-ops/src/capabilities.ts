@@ -55,6 +55,7 @@ export const gatewayOpsCapabilities = defineCapabilities({
   },
   actions: {
     "app-status.forget": {
+      code: false,
       title: "Remove app from gateway listing",
       description: "Forget an offline app and stop its offline audit.",
       input: AppStatusForgetInputSchema,

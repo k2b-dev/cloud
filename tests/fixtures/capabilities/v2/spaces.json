@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "spaces",
-  "manifestHash": "9b537302f6649a09f0cdddaecbcd48bcc3dbcdb42e5b3ea1efd1fa65ad835fe3",
+  "manifestHash": "e6a482312ef24fa85261c1f6766726899311a9f7d75c0655823bd7422e263959",
   "types": [
     {
       "localId": "comment",
@@ -3919,11 +3919,6 @@
             "maxLength": 98304,
             "description": "Raw iCalendar invitation content, limited to 96 KiB."
           },
-          "spaceId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Writable destination Space ID."
-          },
           "conversation": {
             "type": "object",
             "properties": {
@@ -3960,7 +3955,7 @@
             "description": "Source Mail conversation linked to the imported event."
           }
         },
-        "required": ["mailboxId", "messageId", "calendar", "spaceId", "conversation"],
+        "required": ["mailboxId", "messageId", "calendar", "conversation"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3986,11 +3981,12 @@
         "required": ["itemId", "spaceId", "href", "outcome"],
         "additionalProperties": false
       },
-      "schemaHash": "8565564ac4ff5d2af3db1bd46bd6725efad1edb63c2a752e996bcb1a5d1c01c9",
+      "schemaHash": "787b56c0f52fd9a26b52c02800ac6c2325b21fe2df616cfbdf26d551b90a79b5",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "calendar-invitation.response.commit",
@@ -4049,12 +4045,13 @@
         "required": ["participationStatus", "state", "draftId", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "2d29117fdc44e9e9d9adc478231be8aebeb52c6d7e38459a263195dcdf3b90b8",
+      "schemaHash": "09c816c820c45846c220887b6e5c2c80248ef5d80f6f78c10533b7279e5b5a94",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "code": false
     },
     {
       "localId": "comment.create",
@@ -4149,12 +4146,13 @@
         "required": ["id", "itemId", "recurrenceId", "userId", "userName", "content", "createdAt", "updatedAt", "canEdit", "canDelete"],
         "additionalProperties": false
       },
-      "schemaHash": "c236278d2864cacfbae84961ce945c32d1f1fa6f3efa5ec2176661992012329d",
+      "schemaHash": "e1ed80e22f6616989aa0438058df9539af85e471d6a70e75516dc74474df45f2",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "comment.delete",
@@ -4189,11 +4187,12 @@
         "required": ["commentId", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "d01fb3d0841a823723592d4cbab0dc701ffa3304ef3aec8764d843108ba742ac",
+      "schemaHash": "0c4c7940339347cacf0b6035b34a79ab5cb2f144a8220c564bc642769dc3ec9a",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "comment.update",
@@ -4282,11 +4281,12 @@
         "required": ["id", "itemId", "recurrenceId", "userId", "userName", "content", "createdAt", "updatedAt", "canEdit", "canDelete"],
         "additionalProperties": false
       },
-      "schemaHash": "3126124b2cbbe94da24164e382d829819eeb2985d9d4ec872f5b5a4ee722e1e8",
+      "schemaHash": "550167ebc0f789ebbaef8efe002e2c6aa534bf1c496f23cc23bae72ffab1f239",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "event.create",
@@ -4296,11 +4296,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "spaceId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
-          },
           "columnId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -4441,7 +4436,7 @@
             }
           }
         },
-        "required": ["spaceId", "columnId", "title", "startsAt", "endsAt"],
+        "required": ["columnId", "title", "startsAt", "endsAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4677,10 +4672,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "1ff68fae25127bb9ab56f183a53541ae18f55fd73d1f936b0504a488b9b7250a",
+      "schemaHash": "06aa525a53608285664ffe48a0f933d6f96ce987edee8d4e363ad4cb1502d7de",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "required"
+      "idempotency": "required",
+      "target": "space"
     },
     {
       "localId": "event.invitation.commit",
@@ -4725,12 +4721,14 @@
         "required": ["deliveryId", "itemId", "draftId", "state"],
         "additionalProperties": false
       },
-      "schemaHash": "f944f09f90494fe06ac7290ccdf6afdcad0abd41be8b6d1e1e0ce1c49dd6b929",
+      "schemaHash": "c47ae13a97540b5ee57011382278310bb4fa06bcb39fc4350c692b5c21f6dddc",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space",
+      "code": false
     },
     {
       "localId": "event.invitation.prepare",
@@ -4868,10 +4866,12 @@
         "required": ["deliveryId", "itemId", "mailboxId", "draftId", "sequence", "filename", "contentType", "calendar"],
         "additionalProperties": false
       },
-      "schemaHash": "51c883820bcdee8b49be5de717673f51be4ad14b4cfd8c08bf7c819c7e2be23f",
+      "schemaHash": "358d77c619e63a808ffbc269792b8a89ae5130eb5752993872d250c089f34fee",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "required"
+      "idempotency": "required",
+      "target": "space",
+      "code": false
     },
     {
       "localId": "event.update",
@@ -5246,12 +5246,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "ae64097cfad69c907b65d6338de948eec6b0ebe26387609c21b83fcf6d8c4995",
+      "schemaHash": "5d06ed274d3af0817763c0ed857c988eb0f8a76cc644a50d58cf31029f2f9a42",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "item.delete",
@@ -5286,11 +5287,12 @@
         "required": ["itemId", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "c3269b8859a22b5429b630120d2bc16e2684379bbe0ec10ef7cada2ba95a0865",
+      "schemaHash": "05bf4df3e65645df76ecf5d5624b0f7583a56c849c9703eb56c727579466cf44",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "item.reference.add",
@@ -5385,12 +5387,13 @@
         "required": ["ref", "label", "createdAt"],
         "additionalProperties": false
       },
-      "schemaHash": "2a8e553975246ce4ce01ad9da027478e65b99ad410417b6ba4082313879e60ca",
+      "schemaHash": "63546a39286f48608ab67d93970955222d60375a50dac8d89177baf3f44872fe",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "item.reference.remove",
@@ -5465,12 +5468,13 @@
         "required": ["itemId", "ref", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "4ead936932c726735141e7640d6ccc43a228de87008857a39578ffae88f4b9d0",
+      "schemaHash": "b562048c0fb4535d443a7f00666b55bb6929b7ab863934ca063b73c288a1f968",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "item.tags.set",
@@ -6001,12 +6005,13 @@
           }
         ]
       },
-      "schemaHash": "62b419760688895309f0da7d0b02f8b2574dcbc26fdd5ddd65de273a1904c997",
+      "schemaHash": "ddbe8f0a582903f3f389fce18c231b3e8a23b4f55d2e40548a18cf1c1b34307b",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.blocker.add",
@@ -6082,12 +6087,13 @@
         "required": ["blocker", "createdAt"],
         "additionalProperties": false
       },
-      "schemaHash": "cf4c1ce433831d66b7b8192f25d1e48a1f627c1ea2d8b51b2886a8d12019a5fd",
+      "schemaHash": "151306c8adb1c758c6fd81c02656566ceb0d537a83d8c9f2961175b183495222",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.blocker.remove",
@@ -6131,12 +6137,13 @@
         "required": ["itemId", "blockerItemId", "removed"],
         "additionalProperties": false
       },
-      "schemaHash": "e3a03f4a278aac97fe788e5c3f3847c8ff7dcd07943fe6d1c921e90bf921299d",
+      "schemaHash": "28ea65985ba063ef9354eb775318932a75f85becb4b3886b62dd695b6bfd2f3b",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.checklist.create",
@@ -6184,12 +6191,13 @@
         "required": ["id", "label", "completed"],
         "additionalProperties": false
       },
-      "schemaHash": "0a3355af384f2304d04467ff3fc50f3f9013a21f467d7c4516461bf3be40de91",
+      "schemaHash": "be828596683cf16f5a987affea43d439eb10a8e5cd8db01729a0400524e02ff8",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.checklist.delete",
@@ -6229,11 +6237,12 @@
         "required": ["id", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "9b970979ae97e096da11544cd8044ba572ab6fdb24b999bf7a96a248772a5b75",
+      "schemaHash": "dcbf2a6634fd20c92d5f8c5e861eaaf6d1b9023f1f10d3efeb1700ef564c0966",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.checklist.update",
@@ -6290,12 +6299,13 @@
         "required": ["id", "label", "completed"],
         "additionalProperties": false
       },
-      "schemaHash": "85cb2174134ec30a79e8a1f45c132f8da885cd3561685e1012c57497b6bae226",
+      "schemaHash": "d65207504107ebec50f2974c552ebbf74b8870dc57ed382e58bf8dd2d2c61b3a",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.claim",
@@ -6461,10 +6471,11 @@
         "required": ["claim", "progress", "result"],
         "additionalProperties": false
       },
-      "schemaHash": "2db0f17eb97a0d78a2509e0adab96162eec4fb5031e26bf5644df9f75112aa22",
+      "schemaHash": "7386aedd0d3c2104f1dc2803df50d738ae16f239be51f621e467cfa1276e89b6",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none"
+      "idempotency": "none",
+      "target": "space"
     },
     {
       "localId": "task.create",
@@ -6474,11 +6485,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "spaceId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
-          },
           "columnId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6580,7 +6586,7 @@
             }
           }
         },
-        "required": ["spaceId", "columnId", "title"],
+        "required": ["columnId", "title"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6850,10 +6856,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "f92ae006fd5d53657cae1d438145b20dd2948d4a1dfd51cdf43a49238b680cd8",
+      "schemaHash": "5ca0e785e9ff76d0c5cfa004a9000970dc852bb2de3d0ab0e0650fb13b2d1f6b",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "required"
+      "idempotency": "required",
+      "target": "space"
     },
     {
       "localId": "task.progress",
@@ -7025,10 +7032,11 @@
         "required": ["claim", "progress", "result"],
         "additionalProperties": false
       },
-      "schemaHash": "515272161e33cb8df9741a01b2476df63aef3b3a0adb733e32613baac5e966eb",
+      "schemaHash": "1d454e017f64b6b0a9e3011bf8da1225c32eff8f201bd38329e8bb25324acd19",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none"
+      "idempotency": "none",
+      "target": "space"
     },
     {
       "localId": "task.release",
@@ -7198,10 +7206,11 @@
         "required": ["claim", "progress", "result"],
         "additionalProperties": false
       },
-      "schemaHash": "d20e3f203c721d5239b5b7c143c9c8582b08e07e4def5fcf45755462022834b4",
+      "schemaHash": "89b82c91d79036606f3535fa8ef5a441b73b9b34139a9710f2999b9660f2ae3d",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none"
+      "idempotency": "none",
+      "target": "space"
     },
     {
       "localId": "task.set-completed",
@@ -7508,12 +7517,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "6e55342cc8f1339be7de28f4ca060bf08ed1351bd3a4c0d67b4257bf7bdfe49c",
+      "schemaHash": "158bbd9e724486b70f1cbe152061153a868d64b4b05e2223c180988cfc4032f6",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     },
     {
       "localId": "task.update",
@@ -7884,12 +7894,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "a4d22a2f12fa4f86a3d1216095a74e129096086cf7f691535b305d0f17584aa3",
+      "schemaHash": "6b04223583665250c2ac76e9a6ce60a914bf0c702a488ceb3e808f4647dcde5b",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "space"
     }
   ],
   "commands": [

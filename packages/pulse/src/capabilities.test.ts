@@ -54,7 +54,6 @@ test("declares SQL and saved query capabilities with base and source readers", (
   }
   expect(
     pulseCapabilities.actions["source.create"].input.safeParse({
-      baseId: "Base01",
       kind: "http_ingest",
       name: "Web",
       bearerToken: "FORBIDDEN",
@@ -107,13 +106,14 @@ test("delete capability returns its declared receipt when the service returns no
     user: null,
     locale: "en",
     requestId: "pulse-delete-receipt-test",
+    target: { type: "pulse.base", id: "Base01" },
     origin: "http",
     signal: new AbortController().signal,
     idempotencyKey: "delete-receipt-test",
   };
   try {
     const action = pulseCapabilities.actions["saved_query.delete"];
-    const result = await action.run({ baseId: "Base01", queryId: "Query1", expectedRevision: 1 }, context);
+    const result = await action.run({ queryId: "Query1", expectedRevision: 1 }, context);
     expect(result).toEqual({ ok: true, data: { data: { deleted: true } } });
     if (!result.ok) throw new Error("DELETE_FAILED");
     expect(action.data.safeParse(result.data.data).success).toBe(true);
@@ -136,7 +136,7 @@ test("agent writes have bounded inputs and destructive base actions always ask",
     expect(pulseCapabilities.actions[key].destructive).toBe(false);
     expect(pulseCapabilities.actions[key].openWorld).toBe(false);
   }
-  const input = { baseId: "Base01", sourceId: "Source", expectedRevision: 1, batch: { events: [{ kind: "page_view" }] } };
+  const input = { sourceId: "Source", expectedRevision: 1, batch: { events: [{ kind: "page_view" }] } };
   expect(IngestWriteInputSchema.safeParse(input).success).toBe(true);
   const tooLarge = {
     ...input,
@@ -151,7 +151,6 @@ test("agent writes have bounded inputs and destructive base actions always ask",
 
 test("ingest.write accepts exactly 192 KiB and rejects one additional byte", () => {
   const input = {
-    baseId: "Base01",
     sourceId: "Source",
     expectedRevision: 1,
     batch: { events: Array.from({ length: 4 }, () => ({ kind: "page_view", payload: { text: "" } })) },
@@ -164,4 +163,31 @@ test("ingest.write accepts exactly 192 KiB and rejects one additional byte", () 
   expect(IngestWriteInputSchema.safeParse(input).success).toBe(true);
   input.batch.events[0]!.payload.text += "x";
   expect(IngestWriteInputSchema.safeParse(input).success).toBe(false);
+});
+
+test("Pulse actions name the base once and retain subordinate IDs", () => {
+  const manifest = compileCapabilityManifest("pulse", pulseCapabilities);
+  for (const action of manifest.actions) {
+    expect(action.target).toBe(action.localId === "base.create" ? undefined : "base");
+    expect(action.inputSchema.properties).not.toHaveProperty("baseId");
+  }
+  const source = manifest.actions.find((action) => action.localId === "source.update")!;
+  expect(source.inputSchema.properties).toHaveProperty("sourceId");
+});
+
+test("saved-query actions reject UUID Base targets instead of giving one Base two target identities", async () => {
+  const context: CapabilityExecutionContext = {
+    ...adminFixtureIdentity(),
+    user: null,
+    locale: "en",
+    requestId: "pulse-target-identity",
+    target: { type: "pulse.base", id: "11111111-1111-4111-8111-111111111111" },
+    origin: "http",
+    signal: new AbortController().signal,
+    idempotencyKey: "target-identity",
+  };
+  const action = pulseCapabilities.actions["saved_query.delete"];
+  const input = { queryId: "Query1", expectedRevision: 1 };
+  expect(await action.review(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
 });

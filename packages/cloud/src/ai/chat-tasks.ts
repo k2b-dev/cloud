@@ -1,7 +1,8 @@
 import type { Message } from "@k2b/nessi";
 import type { SQL } from "bun";
 import { getCapability } from "../_internal/registry";
-import { type CapabilityActionPolicy, capabilityActionPolicy } from "../contracts/capabilities";
+import { normalizeCapabilityCall } from "../capabilities/calls";
+import { type CapabilityActionPolicy, capabilityActionPolicy, type NormalizedCapabilityCall } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import {
@@ -177,8 +178,10 @@ const validateTaskGrants = async (input: unknown): Promise<TaskGrant[]> => {
       (item) => item.localId === grant.capabilityId,
     );
     if (!operation) throw new Error(`Capability unavailable: ${grant.appId}.${grant.capabilityId}`);
-    if (operation.target !== undefined || operation.refs !== undefined)
+    if (operation.target && grant.target == null)
       throw new Error(`Capability requires a target-aware mandate: ${grant.appId}.${grant.capabilityId}`);
+    // Validate coordinates against the live declaration without requiring dynamic input values.
+    normalizeCapabilityCall(grant.appId, operation, { input: {}, target: grant.target ?? undefined, refs: grant.refs });
     const policy = entry ? capabilityActionPolicy(entry.manifest, grant.capabilityId) : undefined;
     if (grant.kind === "action" && policy && (!("silent" in policy) || policy.routines === false))
       throw new Error(`Capability requires interactive approval: ${grant.appId}.${grant.capabilityId}`);
@@ -687,6 +690,7 @@ export const aiChatTasks = {
     capabilityId: string;
     kind: "query" | "action";
     input: unknown;
+    call?: NormalizedCapabilityCall;
     approval?: "none" | "rememberable" | "always";
     policy?: CapabilityActionPolicy;
   }): Promise<void> => {
@@ -697,6 +701,7 @@ export const aiChatTasks = {
       targetAppId: input.appId,
       operation: `capability.${input.kind === "query" ? "query" : "action.run"}:${input.capabilityId}`,
       input: input.input,
+      ...(input.call ? { call: input.call } : {}),
       capabilityApproval: input.approval,
       capabilityPolicy: input.policy,
     });
@@ -1076,6 +1081,12 @@ export const aiChatTasks = {
         const policy = taskMandatePolicy(mandate);
         if (!mandate.confirmed_at || !mandate.unexpired || !policy || !isChatTaskMandatePolicy(policy)) {
           throw new AiChatTaskAuthorityError("Scheduled task mandate cannot be resumed");
+        }
+        // Resuming cannot confirm a legacy policy whose coordinates still need an explicit new grant.
+        try {
+          await validateTaskGrants(policy.grants);
+        } catch (error) {
+          throw new AiChatTaskAuthorityError(error instanceof Error ? error.message : "Scheduled task grants need confirmation");
         }
       }
       const revision = await mandateRevision({ mandate_id: mandate.id, mandate_revision: mandate.revision }, input.state, input.userId, tx);

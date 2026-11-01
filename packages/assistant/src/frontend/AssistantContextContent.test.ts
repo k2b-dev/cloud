@@ -183,5 +183,16 @@ describe("Assistant Cloud references", () => {
       icon: "ti ti-file-text",
       href: "/app/notebooks/JJVtWA/notes/3rQGbm",
     });
+    expect(resolved.name).toBeUndefined();
+
+    // A canonical reader view names the resource itself, for headings such as "Code of …".
+    const named = await resolveAssistantCloudResource(ref, {
+      listCatalog: async () => catalog,
+      invoke: async () => ({
+        ok: true,
+        data: { data: { view: { title: "Release notes" } }, links: invocation.ok ? invocation.data.links : [] },
+      }),
+    });
+    expect(named.name).toBe("Release notes");
   });
 });

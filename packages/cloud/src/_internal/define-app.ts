@@ -19,6 +19,7 @@ import { createAppQueryRoutes } from "./app-queries";
 import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
+import { createCodeAccessAuthorityRoutes } from "./code-access-authority";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -479,6 +480,9 @@ const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "basePath" | 
     (!Array.isArray(panel.requiresRoles) || !panel.requiresRoles.every((role) => typeof role === "string"))
   ) {
     throw new Error(`App "${opts.id}" declares panel.requiresRoles; it must be an array of strings`);
+  }
+  if (panel.order !== undefined && !Number.isSafeInteger(panel.order)) {
+    throw new Error(`App "${opts.id}" declares panel.order; it must be a safe integer`);
   }
   return { ...panel, requiresRoles: panel.requiresRoles ? [...panel.requiresRoles] : undefined };
 };
@@ -957,6 +961,8 @@ export const defineApp = <
         server.route("/api/_internal/events/v1", createAppEventDeliveryRoutes(compiledCapabilities));
 
       if (compiledCapabilities) {
+        if (startOpts.capabilities && compiledCapabilities.actions.has("code.access.rm"))
+          server.route("/api/_internal/capabilities/v1/code-authority", createCodeAccessAuthorityRoutes(meta.id, startOpts.capabilities));
         server.route("/api/_internal/capabilities/v1/app-queries", createAppQueryRoutes(compiledCapabilities));
         server.route("/api/_internal/capabilities/v1/app-capabilities", createAppCapabilityRoutes(compiledCapabilities));
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>

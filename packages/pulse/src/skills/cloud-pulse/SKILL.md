@@ -200,7 +200,7 @@ Deleting a saved query requires its current `expectedRevision`, including the de
 Use `pulse.base.create` with `name` and optional `description`. Operator policy
 still decides who may create; the creating access subject becomes base admin.
 Create a source through `pulse.source.create` and read its revision before
-`pulse.ingest.write`. Supply `baseId`, `sourceId`, `expectedRevision`, and
+`pulse.ingest.write`. Supply the `pulse.base` target (`base` in flat tools), `sourceId`, `expectedRevision`, and
 `batch`. The entire input is at most 192 KiB. Only HTTP ingest sources created
 by that access subject qualify, even when it can administer another source.
 A source without a recorded creator needs a new source for this action.
@@ -216,7 +216,7 @@ key: part of the batch may already be stored. The direct HTTP ingest path
 has its own same-key recovery contract; it is not a bypass for an uncertain
 capability approval.
 `pulse.base.clear_data` and `pulse.base.delete` require base admin, always ask,
-and cannot run in a routine. Pass `baseId` and the exact `expectedUpdatedAt`
+and cannot run in a routine. Pass the `pulse.base` target (`base` in flat tools) and the exact `expectedUpdatedAt`
 from a fresh `pulse.base.read`. A 409 requires a fresh read and proposal.
 They return `{started:true}`; read base status until the operation completes.
 There are no token or membership capabilities. Source creation/update always

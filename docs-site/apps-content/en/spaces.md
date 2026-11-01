@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-29
+updated: 2026-11-01
 ---
 
 # Spaces
@@ -655,3 +655,62 @@ declares `item` inside `space`, lists authorized containers through
 Activity accepts `container` alongside the published `space` alias; when
 both are supplied they must identify the same space. The existing list
 and activity results remain compatible.
+
+## Call capabilities with a Space target
+
+Space Actions name a fixed `space` target. Pass the Space beside `input` as
+`target: { type: "spaces.space", id: spaceId }`. Creation inputs such as
+`task.create`, `event.create`, `template.create`, and
+`calendar-invitation.import` no longer contain `spaceId`.
+
+Keep item, column, tag, checklist, template, and blocker IDs in the domain
+input. They must belong to the selected Space. Runs and reviews reject an
+item from another Space even when the caller can write to both Spaces.
+Readers and discovery Queries retain their existing inputs.
+
+Chat and MCP tools keep flat arguments: use `space` for the target alongside
+fields such as `itemId`, `columnId`, and `title`. For example, `task.create`
+takes `{ space, columnId, title }`.
+
+`event.invitation.prepare`, `event.invitation.commit`, and
+`calendar-invitation.response.commit` declare `code: false` for their Mail
+draft workflow. Resource-owned Code cannot use them; person calls retain
+their existing permissions. The response commit has no Space target and
+resolves the linked event from its Mail correlation values.
+
+See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
+for the invocation and review contract.
+
+## Code access to a Space
+
+A Space can be a target for resource-owned Code. Core activates its access
+with `spaces.code.access.set`, lists it with `spaces.code.access.list`, and
+removes a grant with `spaces.code.access.rm`. The target is
+`{ type: "spaces.space", id: spaceId }`, using the public Space ID.
+Spaces does not declare Code owners in Phase 1.
+
+Spaces chooses the smallest level covering every requested operation: `read`
+for readers, or `write` for changes and Queries that require write access,
+such as assignee and writable-destination discovery. It refuses the entire
+request with a reason when any operation is unknown, belongs to another app,
+requires template administration, edits a person’s comment, or has a Mail
+workflow marked `code: false`. Code never receives an administrative level
+or counts as a Space manager. Forced task claims and releases still require
+admin and remain unavailable to Code. The version mandate still limits individual
+operations at each target.
+
+Only the Code account’s explicit grants count. Public, group, and
+all-signed-in access do not give it access to another Space. Removing a grant
+changes permission checks immediately; overlapping grants remain independent.
+Ordinary access lists include `grantId` for Code entries. Change those grants
+through Core using that ID; normal share updates and removals refuse them.
+Person and other service-account sharing keeps its existing behavior.
+
+See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
+for activation proofs, dry runs, retry safety, and cleanup.
+
+Code activation checks the person's current target administration rights in the
+same transaction as the grant. Changes to target shares or manager-group
+membership wait until that transaction completes. Successful dry runs return
+`managerUserIds`, including people in nested manager groups, for Core's activation
+notifications. Code accounts never appear among these managers.

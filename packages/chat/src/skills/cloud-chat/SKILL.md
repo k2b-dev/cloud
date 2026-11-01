@@ -46,3 +46,5 @@ substitute an application's own identity, cached access, or a broader grant.
 Chat derives the visible “via Assistant” or “via MCP” mark from the calling
 surface. Never send `via` in the action input. A direct edit keeps an existing
 mark. Use the returned open link to let the person inspect the discussion.
+
+`message.edit` and `message.delete` select a `chat.message` target (`message` in flat tools), replacing input `id`. All Chat Actions declare `code: false` for resource Code, including personal notification preferences. `notifications.set` and `thread.follow` select a `chat.conversation` target (`conversation` in flat tools).

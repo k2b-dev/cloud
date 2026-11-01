@@ -1,5 +1,21 @@
 import { z } from "zod";
-import { type CapabilityActionPolicy, CapabilityAppIdSchema, CapabilityLocalIdSchema } from "../../contracts/capabilities";
+import {
+  type CapabilityActionPolicy,
+  CapabilityAppIdSchema,
+  CapabilityLocalIdSchema,
+  CloudResourceRefSchema,
+  type NormalizedCapabilityCall,
+} from "../../contracts/capabilities";
+
+/** Core stores one mandate per immutable Code version, shared by all its entry points. */
+export const CODE_VERSION_MANDATE_WORKLOAD_TYPE = "code.version" as const;
+
+/** Durable binding consumed by Code activation and invocation. workloadId is the immutable version ID. */
+export type CodeVersionMandateBinding = {
+  ownerAppId: "core";
+  workloadType: typeof CODE_VERSION_MANDATE_WORKLOAD_TYPE;
+  workloadId: string;
+};
 
 export const MANDATE_POLICY_VERSION = 1 as const;
 export const MANDATE_POLICY_MAX_IDENTIFIERS = 100;
@@ -33,10 +49,25 @@ export const CapabilityGrantSchema = z
     appId: CapabilityAppIdSchema.describe("Exact discovered application ID."),
     capabilityId: CapabilityLocalIdSchema.describe("Exact local capability ID from discovery, without application prefix."),
     kind: z.enum(["query", "action"]).describe("Discovered capability kind."),
+    target: CloudResourceRefSchema.nullable()
+      .optional()
+      .describe("Exact primary target, or null for an app-wide operation. Omitted only for operation-only grants."),
+    refs: z
+      .record(z.string(), CloudResourceRefSchema)
+      .optional()
+      .describe("Exact additional targets, keyed by the declared reference field."),
     fixedInput: z.record(z.string(), z.json()).default({}).describe("Exact top-level input values. Omitted fields remain unrestricted."),
   })
   .strict();
 export const CapabilityGrantsSchema = z.array(CapabilityGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
+/**
+ * One operation at one target, shared by Code versions and person-owned routines.
+ * appId + capabilityId + kind identify the operation. target is a qualified resource
+ * reference, or null for app-wide Actions; refs fixes the complete additional-target map.
+ * Omission is operation-only authority, never a wildcard target for a bound Action.
+ * fixedInput only restricts domain input; it never substitutes for target or refs.
+ * Code queries use operation-only grants; person routines may bind queries to a target.
+ */
 export type CapabilityGrant = z.output<typeof CapabilityGrantSchema>;
 
 const httpsUrl = z
@@ -123,11 +154,25 @@ const equalJson = (a: unknown, b: unknown): boolean => {
 };
 export const capabilityGrantAllows = (
   grant: CapabilityGrant,
-  input: { appId: string; capabilityId: string; kind: "query" | "action"; input: unknown },
+  input: {
+    appId: string;
+    capabilityId: string;
+    kind: "query" | "action";
+    input: unknown;
+    call?: NormalizedCapabilityCall;
+    codeAccount?: boolean;
+  },
 ): boolean =>
   grant.appId === input.appId &&
   grant.capabilityId === input.capabilityId &&
   grant.kind === input.kind &&
+  !(input.codeAccount && input.kind === "action" && !input.call) &&
+  ((input.codeAccount && input.kind === "query") ||
+    (!input.call
+      ? grant.target === undefined && grant.refs === undefined
+      : (grant.target === undefined
+          ? input.call.target === null && (!input.codeAccount || input.kind !== "action")
+          : equalJson(grant.target, input.call.target)) && equalJson(grant.refs ?? {}, input.call.refs))) &&
   Object.entries(grant.fixedInput).every(
     ([key, value]) =>
       input.input !== null &&
@@ -184,13 +229,23 @@ export const isMandatePolicyNarrowing = (current: MandatePolicyV1, next: Mandate
   setAllows(current.operations, next.operations) &&
   ACTION_AUTHORITY[next.actions] <= ACTION_AUTHORITY[current.actions] &&
   (current.grants === undefined
-    ? !next.grants?.some((grant) => grant.kind === "http" || grant.kind === "database")
+    ? !next.grants?.some(
+        (grant) =>
+          grant.kind === "http" || grant.kind === "database" || grant.target !== undefined || Object.keys(grant.refs ?? {}).length > 0,
+      )
     : next.grants !== undefined &&
       next.grants.every((grant) =>
         current.grants!.some((existing) => {
           if (existing.kind !== grant.kind) return false;
           if ("appId" in existing && "appId" in grant && (existing.appId !== grant.appId || existing.capabilityId !== grant.capabilityId))
             return false;
+          if ("appId" in existing && "appId" in grant) {
+            if (existing.target !== undefined && !equalJson(existing.target, grant.target)) return false;
+            if (existing.refs !== undefined && !equalJson(existing.refs, grant.refs ?? {})) return false;
+            // An operation-only grant did not authorize Code Actions, including app-wide Actions.
+            if (existing.target === undefined && grant.target !== undefined) return false;
+            if (existing.refs === undefined && Object.keys(grant.refs ?? {}).length) return false;
+          }
           return Object.entries(existing.fixedInput).every(([key, value]) => equalJson(value, Reflect.get(grant.fixedInput, key)));
         }),
       ));
@@ -207,6 +262,12 @@ export const mandatePolicyAllows = (
     operation: string;
     actionApproval: "none" | "approved";
     input?: unknown;
+    /** Validated full call; required for target-bound authorization. */
+    call?: NormalizedCapabilityCall;
+    /** Derived from the live service-account row, never request JSON. */
+    codeAccount?: boolean;
+    /** Core-owned code.version workload; personal Code retains dynamic targets. */
+    codeVersion?: boolean;
     capabilityPolicy?: CapabilityActionPolicy;
     capabilityApproval?: "none" | "rememberable" | "always";
   },
@@ -216,7 +277,7 @@ export const mandatePolicyAllows = (
   if (input.operation === "runtime.http" || input.operation === "runtime.database") {
     const kind = input.operation === "runtime.http" ? "http" : "database";
     return (
-      input.appId === "assistant" &&
+      (input.appId === "assistant" || (input.codeVersion === true && input.appId === "core" && kind === "http")) &&
       !!policy.grants?.some(
         (grant) =>
           grant.kind === kind &&
@@ -237,12 +298,30 @@ export const mandatePolicyAllows = (
       : operation === "capability.action.run" || operation === "capability.action.review"
         ? "action"
         : null;
+  if (input.call && input.call.capability !== `${input.appId}.${capabilityId}`) return false;
+  if (kind === "action" && input.codeAccount && policy.grants === undefined) return false;
+  if (
+    policy.grants === undefined &&
+    input.call &&
+    (input.call.target !== null || Object.keys(input.call.refs).length > 0) &&
+    !input.codeVersion
+  )
+    return false;
   if (policy.grants !== undefined) {
     if (
       !kind ||
       !capabilityId ||
       !policy.grants.some(
-        (grant) => "appId" in grant && capabilityGrantAllows(grant, { appId: input.appId, capabilityId, kind, input: input.input }),
+        (grant) =>
+          "appId" in grant &&
+          capabilityGrantAllows(grant, {
+            appId: input.appId,
+            capabilityId,
+            kind,
+            input: input.input,
+            call: input.call,
+            codeAccount: input.codeAccount,
+          }),
       )
     )
       return false;
@@ -282,7 +361,19 @@ export const mandatePolicyCanPermitCapability = (
   return policy.grants.some(
     (grant) =>
       "appId" in grant &&
-      capabilityGrantAllows(grant, { ...input, input: grant.fixedInput }) &&
-      mandatePolicyAllows(policy, { ...call, input: grant.fixedInput }),
+      mandatePolicyAllows(policy, {
+        ...call,
+        input: grant.fixedInput,
+        ...(grant.target !== undefined || grant.refs !== undefined
+          ? {
+              call: {
+                capability: `${grant.appId}.${grant.capabilityId}`,
+                target: grant.target ?? null,
+                refs: grant.refs ?? {},
+                input: grant.fixedInput,
+              },
+            }
+          : {}),
+      }),
   );
 };

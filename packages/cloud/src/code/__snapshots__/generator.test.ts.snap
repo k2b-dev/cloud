@@ -1,0 +1,654 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: declarations 1`] = `
+"// Generated from Cloud capability manifests. Do not edit.
+
+/** A target identity created by a generated factory, never an authorization grant. */
+declare const __codeHandle: unique symbol;
+export type CodeHandle<Type extends string, Id extends string = string> = {
+  readonly [__codeHandle]: Type;
+  readonly type: Type;
+  readonly id: Id;
+};
+type CodeNonLiteralId<Id extends string> = Id extends unknown ? ({} extends Record<Id, never> ? true : false) : never;
+/** Resource Code accepts only finite string literal unions, including const tuples and imported constants. */
+export type CodeLiteralId<Id extends string> = Id & (true extends CodeNonLiteralId<Id> ? never : unknown);
+/** Core resolves the current person and groups before dispatching a future route. */
+export type CodeUser = { id: string; groups: string[] };
+/** Basic request helpers for future routes. No middleware system is part of Code. */
+export type CodeRequest = { raw: Request; param(name: string): string; query(name: string): string | undefined; json(): Promise<unknown> };
+/** Authenticated route context. */
+export type CodeContext = {
+  req: CodeRequest;
+  user: CodeUser;
+  json(value: unknown, status?: number): Response;
+  text(value: string, status?: number): Response;
+  html(value: unknown, status?: number): Response;
+  redirect(location: string, status?: number): Response;
+};
+/** A webhook is anonymous and must verify its request explicitly. */
+export type CodeWebhookContext = Omit<CodeContext, "user"> & { verify(secret: string): Promise<boolean> };
+/** Future navigation is presentation only; handlers must still authorize requests. */
+export type CodeNavigationItem = { title: string; path: string };
+/** A synchronous or asynchronous schedule callback, also used for a manual start. */
+export type CodeScheduleHandler = () => void | Promise<void>;
+
+/** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
+declare const __codeSecret: unique symbol;
+export type CodeSecret = string & { readonly [__codeSecret]: true };
+/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
+export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
+export type CodeHttp = {
+  fetch(
+    url: string,
+    options?: {
+      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<CodeHttpResult>;
+};
+
+type Input0 = (Record<string, never>);
+
+type Data0 = (Array<(string)>);
+
+type Input1 = ({ "cursor"?: (string) });
+
+type Data1 = ({ "next": ((string | null)); "rows": (Array<({ "id": (string); "state": (("ready" | "empty")) & (string) })>) });
+
+type Input2 = ({ "id": (string) });
+
+type Data2 = ({ "view": ({ "permission": (("read" | "write" | "admin")) & (string); "title": (string) }) });
+
+type Input3 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
+
+type Data3 = ({ "id": (string) });
+
+type Input4 = ({ "idempotencyKey"?: never });
+
+type Data4 = ({ "ok": (boolean) });
+
+type Input5 = ({ "itemId": (string); "destination": CodeHandle<"work-shop.workshop">; "idempotencyKey"?: never });
+
+type Data5 = ({ "moved": (boolean) });
+
+type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((input: Input0) => Promise<Data0>) }; readonly "workshop": { readonly "read": ((input: Input2) => Promise<Data2>) } };
+
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "item": { readonly "inspect": ((input: Input4) => Promise<Data4>) } };
+
+type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input3) => Promise<Data3>); readonly "move": ((input: Input5) => Promise<Data5>) }; readonly "stock": { readonly "list": ((input: Input1) => Promise<Data1>) } };
+
+export declare const work_shop: { readonly "app": (() => Handle0<"work-shop">); readonly "item": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle2<Id>) };
+
+export declare const owner: Handle2<"owner-shop">;
+
+export type CodeEvents = { "work-shop.changed": ({ "title": (string) }) };
+
+export type CodeApp = {
+  schedule(cron: string, handler: CodeScheduleHandler, options?: { name: string }): CodeApp;
+  /** Phase 3; check reports code_phase_unavailable. */
+  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
+  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
+  /** Phase 2; check reports code_phase_unavailable. */
+  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
+  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
+  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
+  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
+  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
+  nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
+  /** Phase 3; check reports code_phase_unavailable. */
+  webhook(path: string, handler: (c: CodeWebhookContext) => Response | Promise<Response>): CodeApp;
+  fetch(request: Request): Promise<Response>;
+};
+
+export declare const app: CodeApp;
+
+export declare const secrets: Readonly<Record<string, CodeSecret>>;
+
+export declare const http: CodeHttp;
+"
+`;
+
+exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
+"// Generated from Cloud capability manifests. Do not edit.
+const __codeSdk = (() => {
+const manifest = {"appMethods":{"all":2,"delete":2,"fetch":2,"get":2,"nav":2,"on":3,"post":2,"put":2,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
+const RESOURCE_ID_MAX = 512;
+
+const handles = new WeakMap();
+let bridge;
+const schedules = [];
+const diagnostics = [];
+const node = () => Object.create(null);
+function setPath(root, path, value) {
+  for (const key of path.slice(0, -1)) {
+    let child = Object.hasOwn(root, key) ? root[key] : undefined;
+    if (!child || (typeof child !== "object" && typeof child !== "function")) {
+      child = node();
+      Object.defineProperty(root, key, { value: child, enumerable: true, writable: true, configurable: true });
+    }
+    root = child;
+  }
+  const key = path[path.length - 1];
+  const previous = root[key];
+  if (previous && (typeof previous === "object" || typeof previous === "function")) Object.defineProperties(value, Object.getOwnPropertyDescriptors(previous));
+  Object.defineProperty(root, key, { value, enumerable: true, writable: true, configurable: true });
+}
+function coordinate(handle, type) {
+  const ref = handles.get(handle);
+  if (!ref || ref.type !== type) throw new Error("code_sdk_invalid_handle");
+  return { type: ref.type, id: ref.id };
+}
+function handle(appId, type, id) {
+  if (typeof id !== "string" || id.length === 0 || id.length > RESOURCE_ID_MAX) throw new Error("code_sdk_invalid_id");
+  const result = node();
+  const ref = Object.freeze({ type: type ?? "cloud.app", id });
+  handles.set(result, ref);
+  Object.defineProperties(result, { type: { value: ref.type, enumerable: true }, id: { value: ref.id, enumerable: true } });
+  for (const op of manifest.operations.filter(op => op.appId === appId && op.target === type)) {
+    setPath(result, op.methodPath, async (args) => {
+      if (!bridge) throw new Error("code_sdk_bridge_unbound");
+      if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("code_sdk_invalid_input");
+      const input = { ...args };
+      const refs = node();
+      for (const [field, refType] of Object.entries(op.refs)) {
+        refs[field] = coordinate(input[field], refType);
+        delete input[field];
+      }
+      const metadata = {};
+      if (op.kind === "action") {
+        const key = input.idempotencyKey;
+        if (op.idempotency === "required" && (typeof key !== "string" || key.trim().length === 0)) throw new Error("code_sdk_idempotency_required");
+        if (op.idempotency === "none" && key !== undefined) throw new Error("code_sdk_idempotency_not_allowed");
+        if (key !== undefined && (typeof key !== "string" || key.trim().length > 200 || !/^[\\x21-\\x7e]+$/.test(key.trim()))) throw new Error("code_sdk_invalid_idempotency_key");
+        if (key !== undefined) metadata.idempotencyKey = key.trim();
+        delete input.idempotencyKey;
+      }
+      const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
+      return bridge.call(op.capability, { call, metadata });
+    });
+  }
+  return Object.freeze(result);
+}
+const namespaces = node();
+for (const app of manifest.apps) namespaces[app.exportName] = node();
+for (const spec of manifest.handles) {
+  // The app-wide factory and a resource Type named "app" share one overloaded callable.
+  const peers = manifest.handles.filter(value => value.appId === spec.appId && JSON.stringify(value.factoryPath) === JSON.stringify(spec.factoryPath));
+  setPath(namespaces[spec.exportName], spec.factoryPath, (...args) => {
+    const selected = peers.find(value => args.length === (value.type === null ? 0 : 1));
+    if (!selected) throw new Error("code_sdk_invalid_id");
+    return handle(selected.appId, selected.type, selected.type === null ? selected.appId : args[0]);
+  });
+}
+let owner;
+if (manifest.owner) {
+  const value = manifest.owner;
+  owner = value.kind === "app" ? handle(value.appId, null, value.appId)
+    : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id);
+}
+const app = node();
+function unavailable(method) {
+  const phase = manifest.appMethods[method];
+  const diagnostic = { code: "code_phase_unavailable", method, phase, message: "app." + method + " kommt in Phase " + phase };
+  diagnostics.push(diagnostic);
+  throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code });
+}
+app.schedule = (cron, fn, options) => {
+  if (typeof cron !== "string" || !cron.trim() || typeof fn !== "function") throw new Error("code_sdk_invalid_schedule");
+  const name = options?.name;
+  if (options !== undefined && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
+  const entrypoint = name ?? "schedule:" + schedules.length;
+  if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
+  schedules.push({ entrypoint, cron, handler: fn });
+  return app;
+};
+for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
+Object.freeze(app);
+const secrets = new Proxy(node(), {
+  get(_target, name) {
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new Error("code_sdk_invalid_secret_name");
+    return "[secret:" + name + "]";
+  },
+  set() { throw new Error("code_sdk_readonly_secrets"); },
+});
+const http = Object.freeze({
+  async fetch(url, options = {}) {
+    if (!bridge) throw new Error("code_sdk_bridge_unbound");
+    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");
+    return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
+  },
+});
+const __codeSdk = Object.freeze({
+  namespaces, owner, app, secrets, http,
+  bind(cloud) {
+    if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
+    bridge = cloud;
+  },
+  entries: () => schedules.map(({ entrypoint, cron }) => ({ kind: "schedule", entrypoint, cron })),
+  diagnostics: () => diagnostics.map(value => ({ ...value })),
+  async run(entrypoint) {
+    const schedule = schedules.find(value => value.entrypoint === entrypoint);
+    if (!schedule) throw new Error("code_sdk_missing_entrypoint");
+    return schedule.handler();
+  },
+});
+
+return __codeSdk;
+})();
+export const secrets = __codeSdk.secrets;
+export const http = __codeSdk.http;
+export { __codeSdk };
+export const work_shop = __codeSdk.namespaces["work_shop"];
+export const owner = __codeSdk.owner;
+export const app = __codeSdk.app;
+"
+`;
+
+exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: manifest 1`] = `
+{
+  "appMethods": {
+    "all": 2,
+    "delete": 2,
+    "fetch": 2,
+    "get": 2,
+    "nav": 2,
+    "on": 3,
+    "post": 2,
+    "put": 2,
+    "schedule": 1,
+    "webhook": 3,
+  },
+  "apps": [
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "manifestHash": "4510bf0e2c83810f8cccbe2a3ed845c18ede4c1ecb2f636f89f9edeb8539e005",
+    },
+  ],
+  "events": [
+    {
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "maxLength": 120,
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+        ],
+        "type": "object",
+      },
+      "place": null,
+      "schemaHash": "83c1488a2b0a157c721838ecf990e9dc44cd2fc0af6405be47b22e3abb6fc364",
+      "type": "work-shop.changed",
+    },
+  ],
+  "handles": [
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "factoryPath": [
+        "app",
+      ],
+      "type": null,
+    },
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "factoryPath": [
+        "item",
+      ],
+      "type": "work-shop.item",
+    },
+    {
+      "appId": "work-shop",
+      "exportName": "work_shop",
+      "factoryPath": [
+        "workshop",
+      ],
+      "type": "work-shop.workshop",
+    },
+  ],
+  "mode": "resource",
+  "omitted": [
+    {
+      "capability": "work-shop.stock.export",
+      "reason": "stream",
+    },
+    {
+      "capability": "work-shop.workshop.readable",
+      "reason": "app_only",
+    },
+    {
+      "capability": "work-shop.outside.change",
+      "reason": "code_false",
+    },
+  ],
+  "operations": [
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.catalog.list",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "catalog.list",
+      "methodPath": [
+        "catalog",
+        "list",
+      ],
+      "refs": {},
+      "schemaHash": "32448e642d95211e868491ec08428ac989c6ef1afee9a29a8f99a9807d86610b",
+      "target": null,
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.stock.list",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "next": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                },
+                "state": {
+                  "enum": [
+                    "ready",
+                    "empty",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "id",
+                "state",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "rows",
+          "next",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Page cursor.",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "stock.list",
+      "methodPath": [
+        "stock",
+        "list",
+      ],
+      "refs": {},
+      "schemaHash": "d6f4776e22ecfbe694ea5f31e59bed02c1548085ce97dd34c7ae711faa7b7c56",
+      "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.workshop.read",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "view": {
+            "additionalProperties": false,
+            "properties": {
+              "permission": {
+                "enum": [
+                  "read",
+                  "write",
+                  "admin",
+                ],
+                "type": "string",
+              },
+              "title": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "title",
+              "permission",
+            ],
+            "type": "object",
+          },
+        },
+        "required": [
+          "view",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Workshop ID.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "workshop.read",
+      "methodPath": [
+        "workshop",
+        "read",
+      ],
+      "refs": {},
+      "schemaHash": "8dec5022589421f2f1ce24ee68cbf0e7fff1cf9f71ee4b5c5968d45b3f5589e6",
+      "target": null,
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.item.create",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "idempotency": "required",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "description": "Item details.",
+            "oneOf": [
+              {
+                "properties": {
+                  "kind": {
+                    "const": "note",
+                    "description": "Detail kind.",
+                    "type": "string",
+                  },
+                  "text": {
+                    "description": "Note text.",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "kind",
+                  "text",
+                ],
+                "type": "object",
+              },
+              {
+                "properties": {
+                  "count": {
+                    "description": "Item count.",
+                    "type": "number",
+                  },
+                  "kind": {
+                    "const": "count",
+                    "description": "Detail kind.",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "kind",
+                  "count",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "title": {
+            "description": "Item title.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+        ],
+        "type": "object",
+      },
+      "kind": "action",
+      "localId": "item.create",
+      "methodPath": [
+        "item",
+        "create",
+      ],
+      "refs": {},
+      "schemaHash": "4ab0094480d44f0dfdc4842068ba234746775760be5a673f731db347d107883c",
+      "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.item.inspect",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "ok",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "kind": "action",
+      "localId": "item.inspect",
+      "methodPath": [
+        "item",
+        "inspect",
+      ],
+      "refs": {},
+      "schemaHash": "c44026bdbeec072c4f444fb920da134aaa08ec70d8026eb907db2ae815833066",
+      "target": "work-shop.item",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.item.move",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "moved": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "moved",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Item to move.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "itemId",
+        ],
+        "type": "object",
+      },
+      "kind": "action",
+      "localId": "item.move",
+      "methodPath": [
+        "item",
+        "move",
+      ],
+      "refs": {
+        "destination": "work-shop.workshop",
+      },
+      "schemaHash": "b70a03ea02981a09b8b8f93d4cec6ac606a28956db5515de01652992aa66940b",
+      "target": "work-shop.workshop",
+    },
+  ],
+  "owner": {
+    "kind": "resource",
+    "ref": {
+      "id": "owner-shop",
+      "type": "work-shop.workshop",
+    },
+  },
+  "version": 1,
+}
+`;

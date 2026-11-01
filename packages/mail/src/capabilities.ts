@@ -19,6 +19,7 @@ import {
 import { logger } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import type { z } from "zod";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
@@ -76,6 +77,7 @@ import {
   triage,
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
+import { mailboxCodeAccess } from "./service/code-access";
 import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
@@ -1061,6 +1063,11 @@ const queryDefinitions = {
     input: c.MailboxReadInputSchema,
     data: c.MailboxDataSchema,
     openWorld: false,
+    codeResourceTitle: async (tx: SQL, id: string) => {
+      if (!ResourceShortIdSchema.safeParse(id).success) return null;
+      const [mailbox] = await tx<{ name: string }[]>`SELECT name FROM mail.mailboxes WHERE short_id=${id} AND deleted_at IS NULL`;
+      return mailbox?.name ?? null;
+    },
     run: async (input: z.output<typeof c.MailboxReadInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const mailContext = requestContext(context);
@@ -4769,6 +4776,7 @@ const actionDefinitions = {
 export const mailCapabilities = localizeCapabilityErrors(
   defineCapabilities({
     protocolVersion: 2,
+    code: { owners: ["mailbox"] },
     presentation: mailCapabilityPresentation,
     commands: {
       "draft.calendar": {
@@ -4793,6 +4801,7 @@ export const mailCapabilities = localizeCapabilityErrors(
         description: "A mailbox the actor may access.",
         icon: "ti ti-inbox",
         reader: "mailbox.read",
+        access: mailboxCodeAccess,
         pages: ["/app/mail/:id"],
       },
       "sender-identity": {

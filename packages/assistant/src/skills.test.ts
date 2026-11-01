@@ -4,6 +4,7 @@ import { SKILLS } from "./skills";
 
 test("ships its Skills with every reference linked from the instructions", () => {
   expect(SKILLS.map((skill) => skill.name)).toEqual([
+    "code-authoring",
     "assistant-code-mode",
     "assistant-data-analysis",
     "cloud-assistant",

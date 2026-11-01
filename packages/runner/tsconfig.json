@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@k2b/cloud/services/*": ["../cloud/src/services/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "attacks/**/*.ts"]
+}

@@ -60,7 +60,9 @@ const hash = async (content: string): Promise<string> => {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(content));
   return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 };
-const fits = (input: unknown): boolean => encoder.encode(JSON.stringify({ input })).byteLength <= CAPABILITY_MAX_REQUEST_BYTES;
+const notebookTarget = (id: string) => ({ type: "notebooks.notebook", id });
+const fits = (notebookId: string, input: unknown): boolean =>
+  encoder.encode(JSON.stringify({ target: notebookTarget(notebookId), input })).byteLength <= CAPABILITY_MAX_REQUEST_BYTES;
 // Offsets and public character caps use UTF-16. Keep a supplementary character in one request.
 const boundary = (content: string, end: number): number =>
   end > 0 && end < content.length && /[\uD800-\uDBFF]/.test(content[end - 1]!) && /[\uDC00-\uDFFF]/.test(content[end]!) ? end - 1 : end;
@@ -70,19 +72,19 @@ const createEnd = (content: string, notebookId: string): number => {
   let high = Math.min(content.length, 200_000);
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    if (fits({ notebookId, content: content.slice(0, mid) })) low = mid;
+    if (fits(notebookId, { content: content.slice(0, mid) })) low = mid;
     else high = mid - 1;
   }
   return boundary(content, low);
 };
 type Append = { kind: "append"; content: string; separator: "none" };
-const appendBatch = (content: string, start: number, noteId: string, ifContentHash: string) => {
+const appendBatch = (content: string, start: number, notebookId: string, noteId: string, ifContentHash: string) => {
   const operations: Append[] = [];
   let end = start;
   while (end < content.length && operations.length < 20) {
     const next = boundary(content, Math.min(end + 10_000, content.length));
     const operation: Append = { kind: "append", content: content.slice(end, next), separator: "none" };
-    if (!fits({ noteId, ifContentHash, blockLimit: 0, operations: [...operations, operation] })) break;
+    if (!fits(notebookId, { noteId, ifContentHash, blockLimit: 0, operations: [...operations, operation] })) break;
     operations.push(operation);
     end = next;
   }
@@ -195,7 +197,7 @@ export async function saveMapNotebook(options: MapNotebookSaveOptions): Promise<
     while (checkpoint.completed < content.length) {
       if (signal?.aborted) return result("cancelled", "cancelled");
       const beforeHash = await hash(content.slice(0, checkpoint.completed));
-      const batch = checkpoint.noteId ? appendBatch(content, checkpoint.completed, checkpoint.noteId, beforeHash) : undefined;
+      const batch = checkpoint.noteId ? appendBatch(content, checkpoint.completed, notebookId, checkpoint.noteId, beforeHash) : undefined;
       const end = batch?.end ?? createEnd(content, notebookId);
       if (end <= checkpoint.completed || (!checkpoint.noteId && end < (titleEnd < 0 ? content.length : titleEnd + 1))) {
         return result("error", "request_too_large");
@@ -223,7 +225,8 @@ export async function saveMapNotebook(options: MapNotebookSaveOptions): Promise<
             kind: "action",
             appId: "notebooks",
             capabilityId: "note.create",
-            input: { notebookId, content: content.slice(0, end) },
+            target: notebookTarget(notebookId),
+            input: { content: content.slice(0, end) },
             idempotencyKey: key,
             signal,
           },
@@ -250,6 +253,7 @@ export async function saveMapNotebook(options: MapNotebookSaveOptions): Promise<
             kind: "action",
             appId: "notebooks",
             capabilityId: "note.edit",
+            target: notebookTarget(notebookId),
             input: batch.input,
             signal,
           },

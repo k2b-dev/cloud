@@ -166,7 +166,7 @@ function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
 
       <SettingsCollection
         title={text("Models")}
-        description={text("Use one of these model IDs. Requests count toward your Assistant usage limits.")}
+        description={text("Use one of these model IDs. Requests count toward your Gustav usage limits.")}
         empty={text("No AI model is available to you. An administrator can grant model access in the AI settings.")}
       >
         <For each={props.access.models}>
@@ -423,10 +423,10 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
       <div class="flex flex-col gap-6" aria-busy={Boolean(busyId()) || memories.loading}>
         <SettingsGroup
           title={text("Use personalization")}
-          description={text("Choose how Assistant uses and learns durable context about you.")}
+          description={text("Choose how Gustav uses and learns durable context about you.")}
         >
           <Switch
-            label={text("Use personalization in Assistant chats")}
+            label={text("Use personalization in Gustav chats")}
             description={text("Relevant personal facts, preferences, and workflow defaults are added to new turns.")}
             value={memoryEnabled}
             onValueChange={setMemoryEnabled}
@@ -435,7 +435,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           <Switch
             label={text("Learn personalization from private chats")}
             description={text(
-              "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.",
+              "While this is on, Gustav may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.",
             )}
             value={learningEnabled}
             onValueChange={setLearningEnabled}
@@ -456,7 +456,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
 
         <SettingsGroup
           title={text("Saved personalization")}
-          description={text("Facts, preferences, and workflow defaults Assistant may carry into future conversations.")}
+          description={text("Facts, preferences, and workflow defaults Gustav may carry into future conversations.")}
         >
           {/* Loading shows only before the first list: a search keeps its field, focus and previous results while the next
               results load. */}
@@ -472,7 +472,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                 <Placeholder
                   state="empty"
                   title={text("No personalization yet")}
-                  description={text("Add a fact or preference Assistant can use in future conversations.")}
+                  description={text("Add a fact or preference Gustav can use in future conversations.")}
                   action={
                     <Button variant="ghost" loading={busyId() === "new"} disabled={Boolean(busyId())} onClick={() => void addMemory()}>
                       <i class="ti ti-plus" aria-hidden="true" />
@@ -609,17 +609,17 @@ function PrefsDialog(props: {
         when={skillEditor()}
         fallback={
           <SettingsModal
-            title={text("Assistant settings")}
+            title={text("Gustav settings")}
             activeTab={activeTab()}
             onTabChange={(tab) => setActiveTab(tab as AssistantPrefsTab)}
             onClose={() => void requestClose()}
-            closeLabel={text("Close Assistant settings")}
+            closeLabel={text("Close Gustav settings")}
           >
             <SettingsModal.Tab
               id="personalization"
               title={text("Personalization")}
               icon="ti ti-user-cog"
-              description={text("Facts, preferences, and workflow defaults Assistant may carry into future conversations.")}
+              description={text("Facts, preferences, and workflow defaults Gustav may carry into future conversations.")}
             >
               <MemorySettings prefs={props.prefs} onDirtyChange={setPersonalizationDirty} />
             </SettingsModal.Tab>
@@ -628,7 +628,7 @@ function PrefsDialog(props: {
               id="skills"
               title={text("Skills")}
               icon="ti ti-sparkles"
-              description={text("Create, import, and share reusable Assistant workflows.")}
+              description={text("Create, import, and share reusable Gustav workflows.")}
             >
               <Show when={activeTab() === "skills"}>
                 <AssistantSkillsSettings refreshKey={skillsRefreshKey()} onOpenEditor={setSkillEditor} />
@@ -650,7 +650,7 @@ function PrefsDialog(props: {
               id="approvals"
               title={text("Approvals")}
               icon="ti ti-shield-check"
-              description={text("Manage actions Assistant may run without asking each time.")}
+              description={text("Manage actions Gustav may run without asking each time.")}
             >
               <ApprovalPreferences />
             </SettingsModal.Tab>
@@ -661,7 +661,7 @@ function PrefsDialog(props: {
                   id="api-access"
                   title={text("API access")}
                   icon="ti ti-api"
-                  description={text("Use your Assistant models in other apps through an OpenAI-compatible API.")}
+                  description={text("Use your Gustav models in other apps through an OpenAI-compatible API.")}
                 >
                   <ApiAccessPanel access={access()} />
                 </SettingsModal.Tab>

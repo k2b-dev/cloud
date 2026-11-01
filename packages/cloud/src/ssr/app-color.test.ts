@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse } from "postcss";
-import { appIds } from "../../../../scripts/workspace";
+import { httpAppIds } from "../../../../scripts/workspace";
 import { appColorStyle, appColorSurfaces, appColors, contrastRatio, mixHex, relativeLuminance } from "./app-color";
 
 type HexColor = `#${string}`;
@@ -89,13 +89,16 @@ const resolveColor = (value: string, theme: (typeof themes)[number], base?: HexC
 
 describe("app colors", () => {
   test("all built-in and edge accents have AA ink against every theme and selection surface", () => {
-    const builtIn = appIds().flatMap((id) => {
+    // Outbound workers belong to the deployment set but declare no shell appearance.
+    const builtIn = httpAppIds().flatMap((id) => {
       const config = readFileSync(resolve(workspaceRoot, `packages/${id}/src/config.ts`), "utf8");
       const accent = config.match(/\baccent:\s*["'](#[\da-f]{6})["']/i)?.[1];
       return accent ? [{ id, accent: `#${accent.slice(1)}` satisfies HexColor }] : [];
     });
     expect(builtIn.length).toBeGreaterThan(0);
     expect(builtIn).toContainEqual({ id: "notebooks", accent: "#eab308" });
+    // Gustav's plum (the Assistant app) gets readable ink in both themes.
+    expect(builtIn).toContainEqual({ id: "assistant", accent: "#8e1b6f" });
     const accents: HexColor[] = [
       ...builtIn.map(({ accent }) => accent),
       "#ffff00",

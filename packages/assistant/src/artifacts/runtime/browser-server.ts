@@ -11,7 +11,7 @@ import { sharedStorage } from "./shared-storage";
 export function browserServerOptions(id: string, confirm: Confirm): RuntimeServices {
   return {
     ai: (request, signal) => artifactClient.ai(request, { resourceId: id }, signal),
-    capability: (name, input, signal) =>
+    capability: (name, input, signal, options) =>
       runCapability(
         name,
         input,
@@ -22,6 +22,7 @@ export function browserServerOptions(id: string, confirm: Confirm): RuntimeServi
             (decision) => decision.approved,
           ),
         signal,
+        options,
       ),
     http: (request, signal) =>
       runHttp(
