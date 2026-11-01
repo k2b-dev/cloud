@@ -49,25 +49,33 @@ const dropRetentionIndex = (db: SQL, name: string) => db.unsafe(`DROP INDEX CONC
  */
 export const ensureWorkflowEventRetentionIndexes = async (db: SQL = sql): Promise<boolean> => {
   try {
-    for (const index of retentionIndexes) {
-      const before = await readRetentionIndex(db, index);
-      if (before.valid) continue;
-      if (before.building) return false;
-      if (before.present) await dropRetentionIndex(db, index.name);
-      try {
-        await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
-      } catch (error) {
-        const after = await readRetentionIndex(db, index);
-        log.warn("Workflow event retention index build failed; retrying on the next sweep", {
-          index: index.name,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (after.present && !after.valid && !after.building) await dropRetentionIndex(db, index.name);
-        return false;
+    // Bun may pipeline ordinary pool queries behind this long-running DDL.
+    // Reserve its connection so a startup read cannot wait behind a build
+    // that is itself waiting for the reader's open transaction.
+    const build = await db.reserve();
+    try {
+      for (const index of retentionIndexes) {
+        const before = await readRetentionIndex(build, index);
+        if (before.valid) continue;
+        if (before.building) return false;
+        if (before.present) await dropRetentionIndex(build, index.name);
+        try {
+          await build.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
+        } catch (error) {
+          const after = await readRetentionIndex(build, index);
+          log.warn("Workflow event retention index build failed; retrying on the next sweep", {
+            index: index.name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          if (after.present && !after.valid && !after.building) await dropRetentionIndex(build, index.name);
+          return false;
+        }
+        if (!(await readRetentionIndex(build, index)).valid) return false;
       }
-      if (!(await readRetentionIndex(db, index)).valid) return false;
+      return true;
+    } finally {
+      build.release();
     }
-    return true;
   } catch (error) {
     log.warn("Workflow event retention indexes are unavailable; retrying on the next sweep", {
       error: error instanceof Error ? error.message : String(error),
