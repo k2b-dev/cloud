@@ -275,6 +275,10 @@ export default function MailComposer(props: {
     resumeCurrentLease,
     hasUnsavedChanges,
   } = draftSession;
+  const leaveTo = (href: string) => {
+    draftSession.allowNavigation();
+    navigateTo(href);
+  };
   const sharedT = () => mailSharedDraftMessages.resolve([locale()]).t;
   onBeforeLeave((event) => {
     const current = sharedState();
@@ -301,7 +305,7 @@ export default function MailComposer(props: {
         returnHref: props.returnHref,
         draft: currentDraft,
       });
-      navigateTo(launch.href);
+      leaveTo(launch.href);
     },
   });
   const saveLifecycleCopy = mutations.create<MailDraft, void>({
@@ -324,9 +328,24 @@ export default function MailComposer(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().saveAsNewFailed));
       return await response.json();
     },
-    onSuccess: (created) => navigateTo(mailDraftHref(props.mailboxId, created.id, props.returnHref, { popout: props.popout })),
+    onSuccess: (created) => {
+      const current = draft();
+      if (current) draftSession.forgetJournal(current.id, { closed: Boolean(lifecycleTransition()) });
+      leaveTo(mailDraftHref(props.mailboxId, created.id, props.returnHref, { popout: props.popout }));
+    },
     onError: (error) => prompts.error(error.message),
   });
+  const recoverSaveError = async () => {
+    if (!draftSession.revisionConflict()) return void (await persist());
+    if (draft()?.conversationId) return void (await restoreRecoveryCopy());
+    const reservation = composerTransition.reserve("recovery");
+    if (!reservation) return;
+    try {
+      await saveLifecycleCopy.mutate();
+    } finally {
+      composerTransition.release(reservation);
+    }
+  };
   const copyLifecycleText = async () => {
     try {
       await navigator.clipboard.writeText(body());
@@ -340,7 +359,7 @@ export default function MailComposer(props: {
     if (!current?.conversationId) return;
     const target = new URL(props.returnHref, window.location.origin);
     target.searchParams.set("conversation", current.conversationId);
-    navigateTo(`${target.pathname}${target.search}${target.hash}`);
+    leaveTo(`${target.pathname}${target.search}${target.hash}`);
   };
   const currentComposerPanes = createMemo(() => reconcileMailComposerPanes(composerPanes(), format(), Boolean(conversationId())));
   type PreviewInput = { draft: DraftEditableContentInput; conversationId: string | null };
@@ -400,7 +419,7 @@ export default function MailComposer(props: {
     draft,
     initialAttachments: () => props.initialSeed?.attachments ?? [],
     unfinishedUploads: props.unfinishedUploads ?? [],
-    setDraft,
+    setDraft: draftSession.acceptMutationDraft,
     editable,
     persist,
     serializeDraftMutation,
@@ -453,7 +472,7 @@ export default function MailComposer(props: {
         dateConfig: props.dateConfig,
       });
       if (updated && !disposed) {
-        setDraft(updated);
+        draftSession.acceptMutationDraft(updated);
         toast(t().invitationAddedDescription, { title: t().invitationAdded });
       }
     } catch (error) {
@@ -538,7 +557,9 @@ export default function MailComposer(props: {
       const copies: DraftRecoveryCopy[] = await response.json();
       if (disposed || recoveryController !== controller) return;
       const unresolved = copies.filter((copy) => !copy.restoredAt);
-      if (unresolved.length === 0) {
+      const localCopies = draftSession.localRecoveryCopies();
+      const canKeepCurrentInput = draftSession.revisionConflict() && !isShared();
+      if (unresolved.length === 0 && localCopies.length === 0 && !canKeepCurrentInput) {
         setDraft({ ...currentDraft, recoveryCopyCount: 0 });
         return void toast(t().noRecoveryCopies, { title: t().draftCurrent });
       }
@@ -562,14 +583,33 @@ export default function MailComposer(props: {
           recoveryCopyId: {
             type: "select",
             label: t().recoveryCopy,
-            options: unresolved.map((copy) => ({ id: copy.id, label: labels.get(copy.id) ?? copy.id })),
-            default: unresolved[0]?.id,
+            options: [
+              ...(canKeepCurrentInput ? [{ id: "current-input", label: t().keepCurrentInput }] : []),
+              ...unresolved.map((copy) => ({ id: copy.id, label: labels.get(copy.id) ?? copy.id })),
+              ...localCopies.map((copy, index) => ({
+                id: copy.id,
+                label: t().localRecoveryCopyOption({
+                  index: index + 1,
+                  preview: copy.content.body.replaceAll(/\s+/g, " ").slice(0, 80) || t().emptyMessage,
+                }),
+              })),
+            ],
+            default: unresolved[0]?.id ?? (canKeepCurrentInput ? "current-input" : localCopies[0]?.id),
             required: true,
           },
         },
         confirmText: t().restoreCopy,
       });
       if (!values || disposed || recoveryController !== controller) return;
+      if (values.recoveryCopyId === "current-input" && canKeepCurrentInput) {
+        if (!draftSession.restoreCurrentInput()) return void (await prompts.error(t().localMessageFailed));
+        if (!(await persist())) throw new Error(statusMessage() || t().draftSaveFailed);
+        return void toast.success(t().changesRestored);
+      }
+      if (localCopies.some((copy) => copy.id === values.recoveryCopyId)) {
+        if (!draftSession.restoreLocalRecoveryCopy(values.recoveryCopyId)) await prompts.error(t().recoveryCopyUnavailable);
+        return;
+      }
       const selected = unresolved.find((copy) => copy.id === values.recoveryCopyId);
       if (!selected) return void (await prompts.error(t().recoveryCopyUnavailable));
       const currentLease = lease();
@@ -577,7 +617,7 @@ export default function MailComposer(props: {
       if (isShared()) {
         const saved = await persist();
         if (!saved) throw new Error(statusMessage());
-      }
+      } else draftSession.keepCurrentRecoveryCopy();
       const restore = (leaseToken?: string) =>
         apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][":recoveryCopyId"].restore.$post(
           {
@@ -608,7 +648,7 @@ export default function MailComposer(props: {
       setDraft(restored);
       if (isShared()) await shared()?.refresh();
       else applyDraftContent(restored);
-      draftSession.markCurrentContentSaved();
+      draftSession.acceptRestoredContent();
       draftSession.forgetJournal(restored.id);
       setStatus("saved");
       setStatusMessage("");
@@ -767,7 +807,7 @@ export default function MailComposer(props: {
     },
     onSuccess: ({ command, attempt }) => {
       lastDeliveryAttempt = null;
-      draftSession.forgetJournal(attempt.draftId);
+      draftSession.forgetJournal(attempt.draftId, { closed: true });
       const returnHref = props.returnHref;
       const scheduled = Boolean(attempt.scheduledAt);
       toast.success(
@@ -782,7 +822,7 @@ export default function MailComposer(props: {
         return;
       }
       const pendingConversationId = command.result.conversationId;
-      navigateTo(
+      leaveTo(
         !scheduled && attempt.request.undoSeconds > 0 && typeof pendingConversationId === "string"
           ? mailConversationHref(props.mailboxId, pendingConversationId, returnHref)
           : returnHref,
@@ -1055,14 +1095,14 @@ export default function MailComposer(props: {
           { init: { signal: abortSignal } },
         );
         if (!response.ok) throw new Error(await readApiError(response, t().discardFailed));
-        draftSession.forgetJournal(currentDraft.id);
+        draftSession.forgetJournal(currentDraft.id, { closed: true });
         if (isShared()) await shared()?.discardLocal();
       });
       return true;
     },
     onSuccess: (discarded) => {
       if (!discarded) return;
-      navigateTo(props.returnHref);
+      leaveTo(props.returnHref);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -1096,18 +1136,18 @@ export default function MailComposer(props: {
     try {
       if (!draft() && !hasUnsavedChanges()) {
         clearInitialSeed();
-        navigateTo(props.returnHref);
+        leaveTo(props.returnHref);
         return;
       }
       if (draft() && !lease() && !isShared()) {
-        navigateTo(props.returnHref);
+        leaveTo(props.returnHref);
         return;
       }
       const currentDraft = await persist();
       if (disposed) return;
       if (!currentDraft) {
         if (isShared() && (await shared()?.flushLocal())) {
-          navigateTo(props.returnHref);
+          leaveTo(props.returnHref);
           return;
         }
         throw new Error(statusMessage());
@@ -1117,7 +1157,7 @@ export default function MailComposer(props: {
       } catch {
         await releaseLeaseOnExit();
       }
-      if (!disposed) navigateTo(props.returnHref);
+      if (!disposed) leaveTo(props.returnHref);
     } catch (error) {
       if (!disposed) await prompts.error(error instanceof Error ? error.message : t().closeDraftFailed);
     } finally {
@@ -1144,7 +1184,7 @@ export default function MailComposer(props: {
       releasedDraft = currentDraft;
       popup.name = `mail-draft-${currentDraft.id}`;
       popup.location.replace(href(currentDraft.id));
-      navigateTo(props.returnHref);
+      leaveTo(props.returnHref);
     } catch (error) {
       popup.close();
       if (disposed) return;
@@ -1167,7 +1207,7 @@ export default function MailComposer(props: {
     if (!popup) return void prompts.error(t().allowPopups);
     if (!draft() && !hasUnsavedChanges() && props.initialSeed) {
       popup.location.replace(mailDraftSeedHref(props.mailboxId, props.initialSeed.id, props.returnHref, { popout: true }));
-      navigateTo(props.returnHref);
+      leaveTo(props.returnHref);
       return;
     }
     void handoffTo((draftId) => draftHref(draftId, true), popup);
@@ -1192,8 +1232,8 @@ export default function MailComposer(props: {
       setStatus("preparing");
       const acquired = await acquireLease(currentDraft, true);
       if (!disposed && acquired) {
-        setStatus("saved");
-        setStatusMessage("");
+        setStatus(draftSession.revisionConflict() ? "error" : "saved");
+        setStatusMessage(draftSession.revisionConflict() ? t().draftRevisionConflict : "");
         toast.success(t().editingAvailable);
       }
     } catch (error) {
@@ -1231,6 +1271,7 @@ export default function MailComposer(props: {
       try {
         setSigningIn(true);
         await prepareSignIn();
+        draftSession.allowNavigation();
         window.location.reload();
       } catch {
         toast.error(t().draftSaveFailed);
@@ -1347,7 +1388,10 @@ export default function MailComposer(props: {
         }}
       />
       <Show when={!props.popout}>
-        <header class="flex shrink-0 items-center gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
+        <header
+          class="flex shrink-0 items-center gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2"
+          classList={{ "flex-wrap": status() === "error" }}
+        >
           <Tooltip.Anchor content={t().backToMailbox}>
             <IconButton
               type="button"
@@ -1363,9 +1407,11 @@ export default function MailComposer(props: {
           <span class="min-w-0 flex-1" />
           <Show when={status() === "error" || status() === "readonly"}>
             <span
-              class="min-w-0 truncate text-xs"
+              class="min-w-0 text-xs"
               classList={{
+                truncate: status() !== "error",
                 "text-red-600 dark:text-red-300": status() === "error" || connectionUnavailable(),
+                "basis-full whitespace-normal": status() === "error",
                 "text-dimmed": status() === "readonly" && !connectionUnavailable(),
               }}
               role="status"
@@ -1385,7 +1431,18 @@ export default function MailComposer(props: {
               {readonlyActionLabel()}
             </Button>
           </Show>
-          <Show when={editable() && (draft()?.recoveryCopyCount ?? 0) > 0}>
+          <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              loading={saveLifecycleCopy.loading()}
+              onClick={() => void recoverSaveError()}
+            >
+              {draftSession.revisionConflict() ? (draft()?.conversationId ? t().recoverChanges : t().saveAsNewDraft) : t().retry}
+            </Button>
+          </Show>
+          <Show when={editable() && ((draft()?.recoveryCopyCount ?? 0) > 0 || draftSession.localRecoveryCopies().length > 0)}>
             <Button variant="secondary" size="sm" type="button" onClick={() => void restoreRecoveryCopy()}>
               <i class="ti ti-history" aria-hidden="true" /> {t().recoverChanges}
             </Button>
@@ -1398,9 +1455,22 @@ export default function MailComposer(props: {
         </header>
       </Show>
 
+      <Show when={draftSession.localCopyFailed()}>
+        <div class="px-3 py-2 text-xs text-red-600 dark:text-red-300" role="status">
+          {t().localRecoveryUnavailable}
+        </div>
+      </Show>
+      <Show when={draftSession.revisionConflict()}>
+        <div class="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
+          <Button variant="secondary" size="sm" type="button" onClick={() => void copyLifecycleText()}>
+            {t().copyText}
+          </Button>
+        </div>
+      </Show>
+
       <Show when={props.popout && (status() === "error" || status() === "readonly")}>
         <div
-          class="flex shrink-0 items-center gap-2 px-3 py-2 text-xs"
+          class="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-xs"
           classList={{
             "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300": status() === "error" || connectionUnavailable(),
             "border-b border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] text-secondary":
@@ -1408,7 +1478,21 @@ export default function MailComposer(props: {
           }}
           role="status"
         >
-          <span class="min-w-0 flex-1 truncate">{collaborationStatus()}</span>
+          <span class="min-w-0 flex-1" classList={{ "basis-full": status() === "error" }}>
+            {collaborationStatus()}
+          </span>
+          <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              loading={saveLifecycleCopy.loading()}
+              onClick={() => void recoverSaveError()}
+            >
+              {draftSession.revisionConflict() ? (draft()?.conversationId ? t().recoverChanges : t().saveAsNewDraft) : t().retry}
+            </Button>
+          </Show>
+
           <Show when={status() === "readonly" && (authenticationRequired() || (draft() && (lease() || leaseConflict())))}>
             <Button
               variant="secondary"
@@ -1595,7 +1679,7 @@ export default function MailComposer(props: {
             variant="secondary"
             onClick={() => {
               const recovery = sharedState()?.recoveryDraft;
-              if (recovery) navigateTo(draftHref(recovery.id, props.popout));
+              if (recovery) leaveTo(draftHref(recovery.id, props.popout));
               else window.location.reload();
             }}
           >

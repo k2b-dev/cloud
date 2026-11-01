@@ -1,6 +1,7 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
+import { crypto as cryptoUtils } from "@k2b/stdlib";
 import type { Accessor } from "solid-js";
-import { batch, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import {
   type AcquiredDraftLease,
@@ -13,7 +14,7 @@ import {
 } from "../../contracts";
 import { type MailDraftDocumentClient, type MailSharedDraftState, openMailDraftDocumentClient } from "../../lib/draft-document-client";
 import { parseMailLiveEvent } from "../../live-event";
-import { readApiError } from "./api-response";
+import { readApiError, readApiFailure } from "./api-response";
 import { mailComposerMessages } from "./mail-composer-messages";
 import {
   advanceMailDraftJournalAfterSave,
@@ -21,6 +22,7 @@ import {
   mailDraftJournalKey,
   readMailDraftJournal,
   serializeMailDraftContent,
+  serializeMailDraftJournal,
 } from "./mail-draft-journal";
 import { classifyDraftLeaseAnswer, type DraftLeaseResult, recoverDraftLeaseRequest } from "./mail-draft-lease-recovery";
 import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
@@ -115,6 +117,10 @@ export const createMailDraftSession = (options: {
   const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : t().preparingDraft);
   const [lifecycleTransition, setLifecycleTransition] = createSignal<MailDraftLifecycleTransition | null>(null);
   const [initialized, setInitialized] = createSignal(false);
+  const [revisionConflict, setRevisionConflict] = createSignal(false);
+  let pendingSave: { revision: number; content: DraftEditableContent; reconciled?: boolean } | null = null;
+  let conflictBaseRevision: number | null = null;
+  const [journalVersion, setJournalVersion] = createSignal(0);
   const [materializedLeasePending, setMaterializedLeasePending] = createSignal(false);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,15 +132,79 @@ export const createMailDraftSession = (options: {
   const editorId = crypto.randomUUID();
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
   let lastSavedContent = seedBaseline ?? "";
+  let confirmedDigest: { content: string; digest: string } | null = null;
+  const [localCopyFailed, setLocalCopyFailed] = createSignal(false);
+  const markSaved = (content: DraftEditableContent) => {
+    lastSavedContent = serializeMailDraftContent(content);
+  };
   const serializeMutation = createSerializedDraftMutationQueue();
 
   const serializedContent = () => serializeMailDraftContent(options.content());
-  let userStorage: Storage | undefined;
+  let userStorage: ReturnType<typeof openMailUserDraftStorage> | undefined;
+  let navigationAllowed = false;
   const draftStorage = () => {
     if (!userStorage) throw new Error(t().draftPrepareFailed);
     return userStorage;
   };
   const draftKey = (draftId: string) => mailDraftJournalKey(options.mailboxId, draftId);
+  const backupKey = (draftId: string) => `${draftKey(draftId)}:editor:${editorId}`;
+  const journalPointerKey = (draftId: string) => `cloud:user:${options.currentActor.id}:mail:journal:${options.mailboxId}:${draftId}`;
+  const writeJournal = (draftId: string, journal: MailDraftJournal) => {
+    const raw = serializeMailDraftJournal({
+      ...journal,
+      // A conflict's server snapshot is not this input's confirmed base.
+      // Never turn it into evidence for an automatic rebase on the next reload.
+      confirmedDigest: !revisionConflict() && confirmedDigest?.content === lastSavedContent ? confirmedDigest.digest : undefined,
+      pendingSave: revisionConflict() ? undefined : (pendingSave ?? undefined),
+    } satisfies MailDraftJournal);
+    // Each open editor retains its own input even if another tab writes the
+    // shared handoff journal. The pointer contains no text and survives reload.
+    draftStorage().setItem(backupKey(draftId), raw);
+    try {
+      window.sessionStorage.setItem(journalPointerKey(draftId), backupKey(draftId));
+    } catch {
+      /* Other device copies remain available. */
+    }
+    try {
+      draftStorage().setItem(draftKey(draftId), raw);
+    } catch (error) {
+      if (error instanceof MailUserDraftStorageEndedError) throw error;
+      // The per-editor copy already protects this tab; handoff is best-effort.
+    }
+    setLocalCopyFailed(false);
+  };
+  const tryWriteJournal = (draftId: string, journal: MailDraftJournal) => {
+    try {
+      writeJournal(draftId, journal);
+    } catch (error) {
+      if (error instanceof MailUserDraftStorageEndedError) throw error;
+      setLocalCopyFailed(true);
+    }
+  };
+  const localRecoveryCopies = createMemo(() => {
+    journalVersion();
+    const currentDraft = draft();
+    if (!currentDraft || !lease() || isShared()) return [];
+    if (!userStorage) return [];
+    const storage = userStorage;
+    const prefix = `${draftKey(currentDraft.id)}:editor:`;
+    const copies: Array<{ id: string; revision: number; content: DraftEditableContent }> = [];
+    const seen = new Set([untrack(serializedContent), lastSavedContent]);
+    try {
+      for (const key of storage.keys()) {
+        if (!key.startsWith(prefix) || key === backupKey(currentDraft.id)) continue;
+        const journal = readMailDraftJournal(storage, key);
+        if (!journal) continue;
+        const serialized = serializeMailDraftContent(journal.content);
+        if (seen.has(serialized)) continue;
+        seen.add(serialized);
+        copies.push({ id: key, ...journal });
+      }
+    } catch {
+      return [];
+    }
+    return copies;
+  });
   const stopHeartbeat = () => {
     heartbeatGeneration += 1;
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
@@ -279,7 +349,10 @@ export const createMailDraftSession = (options: {
     setLease(acquired);
     setLeaseConflict(null);
     // Lease work must not clear an in-flight save or its result.
-    if (status() === "preparing" || status() === "readonly") {
+    if (revisionConflict()) {
+      setStatus("error");
+      setStatusMessage(t().draftRevisionConflict);
+    } else if (status() === "preparing" || status() === "readonly") {
       setStatus("saved");
       setStatusMessage("");
     }
@@ -438,9 +511,49 @@ export const createMailDraftSession = (options: {
     return result === "cancelled" ? null : result;
   };
 
-  const recoverJournal = (key: string, minimumRevision: number): boolean => {
-    const journal = readMailDraftJournal(draftStorage(), key);
-    if (!journal || journal.revision < minimumRevision) return false;
+  const recoverJournal = async (key: string, minimumRevision: number, allowHandoff = true): Promise<boolean> => {
+    const draftId = draft()?.id ?? options.initialSeed?.id;
+    let previous: string | null = null;
+    try {
+      previous = draftId ? window.sessionStorage.getItem(journalPointerKey(draftId)) : null;
+    } catch {
+      /* Use the handoff journal. */
+    }
+    const ownJournal = previous?.startsWith(`${key}:editor:`) ? readMailDraftJournal(draftStorage(), previous) : null;
+    const journal = ownJournal ?? (allowHandoff ? readMailDraftJournal(draftStorage(), key) : null);
+    if (!journal) return false;
+    if (ownJournal && previous && draftId && previous !== backupKey(draftId)) {
+      // Move this tab's predecessor only after the new backup and pointer exist.
+      try {
+        draftStorage().setItem(backupKey(draftId), JSON.stringify(journal));
+        window.sessionStorage.setItem(journalPointerKey(draftId), backupKey(draftId));
+        draftStorage().removeItem(previous);
+      } catch (error) {
+        if (error instanceof MailUserDraftStorageEndedError) throw error;
+        setLocalCopyFailed(true);
+        /* The predecessor remains available if the pointer cannot be moved. */
+      }
+    }
+    // An older revision can contain input typed AFTER a save whose answer was
+    // lost. Keep it visible, but never overwrite a newer server draft silently.
+    if (journal.revision < minimumRevision && serializeMailDraftContent(journal.content) !== lastSavedContent) {
+      const confirmed = journal.confirmedContent && serializeMailDraftContent(journal.confirmedContent);
+      const submitted = journal.pendingSave && serializeMailDraftContent(journal.pendingSave.content);
+      if (
+        confirmed !== lastSavedContent &&
+        submitted !== lastSavedContent &&
+        journal.confirmedDigest !== (await cryptoUtils.common.hash(lastSavedContent))
+      ) {
+        conflictBaseRevision = journal.revision;
+        setRevisionConflict(true);
+      }
+    }
+    if (!revisionConflict() && journal.pendingSave && serializeMailDraftContent(journal.pendingSave.content) !== lastSavedContent) {
+      // Reload can happen while the old request is still committing. Resolve
+      // that exact write before sending the newer journal input as another PUT.
+      pendingSave = journal.pendingSave;
+    }
+    if (options.isDisposed()) return false;
     options.applyDraftContent(journal.content);
     return true;
   };
@@ -472,7 +585,7 @@ export const createMailDraftSession = (options: {
         if (!options.isDisposed()) batch(() => options.applyDraftContent(next, "shared"));
       },
       onDurable: (next, revision) => {
-        lastSavedContent = serializeMailDraftContent(next);
+        markSaved(next);
         if (!options.isDisposed()) setDraft((current) => (current ? { ...current, ...next, revision } : current));
       },
       onFrozen: () => {
@@ -483,7 +596,7 @@ export const createMailDraftSession = (options: {
       client.dispose();
       return null;
     }
-    lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
+    markSaved(draftEditableContent(currentDraft));
     setShared(client);
     if (!client.state().terminal && currentDraft.generation !== client.generation) {
       setDraft((current) => (current ? { ...current, generation: client.generation } : current));
@@ -503,21 +616,52 @@ export const createMailDraftSession = (options: {
     if (options.isDisposed()) return null;
     if (currentDraft.editMode === "shared") return initializeShared(currentDraft);
     if (isClosedMailDraft(currentDraft)) {
-      lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
+      markSaved(draftEditableContent(currentDraft));
+      try {
+        // A peer can send while this tab is offline. Its own unsent typing
+        // must survive reload without importing another tab's handoff copy.
+        if (await recoverJournal(draftKey(currentDraft.id), currentDraft.revision, false)) options.onRecovered();
+      } catch (error) {
+        if (error instanceof MailUserDraftStorageEndedError) throw error;
+        setLocalCopyFailed(true);
+      }
+      if (options.isDisposed()) return null;
       setInitialized(true);
       applyClosedDraft(currentDraft);
       return currentDraft;
     }
     const acquired = await acquireLease(currentDraft, false, LEASE_HEARTBEAT_MS);
     if (options.isDisposed()) return null;
-    lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
+    markSaved(draftEditableContent(currentDraft));
     setDraft(currentDraft);
     setInitialized(true);
+    if (acquired) setStatus("preparing");
+    let recovered = false;
+    try {
+      recovered = await recoverJournal(draftKey(currentDraft.id), currentDraft.revision, Boolean(acquired));
+    } catch (error) {
+      if (error instanceof MailUserDraftStorageEndedError) throw error;
+      setLocalCopyFailed(true);
+    }
+    if (recovered) options.onRecovered();
+    try {
+      const storage = draftStorage();
+      for (const key of storage.keys()) {
+        if (!key.startsWith(`${draftKey(currentDraft.id)}:editor:`)) continue;
+        const journal = readMailDraftJournal(storage, key);
+        if (journal && !journal.pendingSave && serializeMailDraftContent(journal.content) === lastSavedContent) storage.removeItem(key);
+      }
+    } catch (error) {
+      if (error instanceof MailUserDraftStorageEndedError) throw error;
+      setLocalCopyFailed(true);
+    }
     if (acquired) {
-      const recovered = recoverJournal(draftKey(currentDraft.id), currentDraft.revision);
       setStatus("saved");
       setStatusMessage("");
-      if (recovered) options.onRecovered();
+      if (revisionConflict()) {
+        setStatus("error");
+        setStatusMessage(t().draftRevisionConflict);
+      }
     }
     return currentDraft;
   };
@@ -546,9 +690,9 @@ export const createMailDraftSession = (options: {
     return initializePromise;
   };
 
-  const persist = async (): Promise<MailDraft | null> => {
+  const runPersist = async (): Promise<MailDraft | null> => {
     return await serializeMutation(async () => {
-      if (lifecycleTransition() || authenticationRequired()) return null;
+      if (lifecycleTransition() || authenticationRequired() || revisionConflict()) return null;
       if (isShared()) {
         const current = await ensureDraft();
         const client = shared();
@@ -588,7 +732,7 @@ export const createMailDraftSession = (options: {
           return null;
         }
         currentDraft = await response.json();
-        lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
+        markSaved(draftEditableContent(currentDraft));
         batch(() => {
           setMaterializedLeasePending(true);
           setDraft(currentDraft);
@@ -596,6 +740,7 @@ export const createMailDraftSession = (options: {
         try {
           options.onMaterialized(currentDraft);
           draftStorage().removeItem(draftKey(options.initialSeed.id));
+          draftStorage().removeItem(backupKey(options.initialSeed.id));
         } catch {
           // URL and local-seed cleanup are best-effort; the durable draft remains authoritative.
         }
@@ -634,17 +779,26 @@ export const createMailDraftSession = (options: {
         currentDraft = await ensureDraft();
       }
       if (!currentDraft || !lease()) return null;
-      const nextContent = options.content();
+      // Resolve the exact uncertain PUT before saving newer typing. Reusing
+      // its input lets the server confirm a committed save without overwriting.
+      const nextContent = pendingSave?.content ?? options.content();
       const serialized = serializeMailDraftContent(nextContent);
-      if (serialized === lastSavedContent) return currentDraft;
+      if (!pendingSave && serialized === lastSavedContent) return currentDraft;
       setStatus("saving");
       setStatusMessage(t().savingDraft);
       const saveDraft = currentDraft;
+      // SHA-256 is an equality proof for recovery, never a weak hash that could rebase over peer text.
+      if (confirmedDigest?.content !== lastSavedContent)
+        confirmedDigest = { content: lastSavedContent, digest: await cryptoUtils.common.hash(lastSavedContent) };
+      const savedDigest = await cryptoUtils.common.hash(serialized);
+      pendingSave ??= { revision: saveDraft.revision, content: nextContent };
+      const saveRevision = pendingSave.revision;
+      tryWriteJournal(saveDraft.id, { revision: saveRevision, content: options.content() });
       const { response, kind } = await recoverDraftLeaseRequest({
         run: async () => {
           const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$put({
             param: { mailboxId: options.mailboxId, draftId: saveDraft.id },
-            json: { expectedRevision: saveDraft.revision, draft: nextContent },
+            json: { expectedRevision: saveRevision, draft: nextContent },
           });
           const body: unknown =
             response.status === 409
@@ -673,10 +827,50 @@ export const createMailDraftSession = (options: {
           await reportLeaseConflict(currentDraft, "lost");
           return null;
         }
-        const message = kind === "unavailable" ? t().draftSaveFailed : await readApiError(response, t().draftSaveFailed);
+        const failure = await readApiFailure(response, t().draftSaveFailed);
+        let conflictRefreshed = false;
+        if (failure.code === "CONFLICT") {
+          // An attachment/calendar write may have committed without an answer.
+          // Advance only when all editable fields still match our confirmed base;
+          // a peer's text must never be overwritten by a blind revision refresh.
+          const latestResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$get({
+            param: { mailboxId: options.mailboxId, draftId: saveDraft.id },
+          });
+          if (latestResponse.status === 401) {
+            waitForSignIn();
+            return null;
+          }
+          const latest = latestResponse.ok ? await latestResponse.json() : null;
+          if (latest) {
+            conflictRefreshed = true;
+            if (latest.state !== "draft") {
+              applyClosedDraft(latest);
+              return null;
+            }
+            if (
+              !pendingSave?.reconciled &&
+              latest.revision > saveRevision &&
+              serializeMailDraftContent(draftEditableContent(latest)) === lastSavedContent
+            ) {
+              pendingSave = { revision: latest.revision, content: nextContent, reconciled: true };
+              setDraft(latest);
+              return latest;
+            }
+          }
+          if (latest) {
+            if (latest.revision > saveRevision || serializeMailDraftContent(draftEditableContent(latest)) !== lastSavedContent) {
+              conflictBaseRevision = saveRevision;
+              setRevisionConflict(true);
+              setDraft(latest);
+            }
+          }
+          if (latest && !revisionConflict()) setDraft(latest);
+          pendingSave = null;
+        } else if (response.status < 500 && kind !== "unavailable") pendingSave = null;
+        const message = revisionConflict() ? t().draftRevisionConflict : kind === "unavailable" ? t().draftSaveFailed : failure.message;
         setStatus("error");
         setStatusMessage(message);
-        if (message.includes("recovery copy")) {
+        if (failure.code === "CONFLICT" && !conflictRefreshed) {
           setDraft((current) =>
             current
               ? {
@@ -689,20 +883,74 @@ export const createMailDraftSession = (options: {
         return null;
       }
       const saved = await response.json();
-      advanceMailDraftJournalAfterSave({
-        storage: draftStorage(),
-        key: draftKey(saved.id),
-        revision: saved.revision,
-        savedContent: nextContent,
+      pendingSave = null;
+      // A committed server revision must be accepted before best-effort device cleanup.
+      batch(() => {
+        markSaved(nextContent);
+        confirmedDigest = { content: serialized, digest: savedDigest };
+        if (!options.isDisposed()) setDraft(saved);
       });
+      try {
+        const storage = draftStorage();
+        const own = storage.getItem(backupKey(saved.id));
+        if (!own || storage.getItem(draftKey(saved.id)) === own)
+          advanceMailDraftJournalAfterSave({
+            storage,
+            key: draftKey(saved.id),
+            revision: saved.revision,
+            savedContent: nextContent,
+            confirmedDigest: savedDigest,
+          });
+        advanceMailDraftJournalAfterSave({
+          storage,
+          key: backupKey(saved.id),
+          revision: saved.revision,
+          savedContent: nextContent,
+          confirmedDigest: savedDigest,
+        });
+        for (const key of storage.keys()) {
+          if (!key.startsWith(`${draftKey(saved.id)}:editor:`)) continue;
+          const journal = readMailDraftJournal(storage, key);
+          if (journal && serializeMailDraftContent(journal.content) === serialized) storage.removeItem(key);
+        }
+        setJournalVersion((version) => version + 1);
+      } catch (error) {
+        if (error instanceof MailUserDraftStorageEndedError) throw error;
+        setLocalCopyFailed(true);
+      }
       if (options.isDisposed()) return saved;
-      setDraft(saved);
-      lastSavedContent = serialized;
       if (authenticationRequired()) return null;
-      setStatus("saved");
-      setStatusMessage("");
+      setStatus(revisionConflict() ? "error" : "saved");
+      setStatusMessage(revisionConflict() ? t().draftRevisionConflict : "");
       return saved;
+    })
+      .then(async (saved) => {
+        if (
+          saved &&
+          !options.isDisposed() &&
+          !authenticationRequired() &&
+          !revisionConflict() &&
+          !isShared() &&
+          (pendingSave || serializedContent() !== lastSavedContent)
+        )
+          return runPersist();
+        return saved;
+      })
+      .catch((error: unknown) => {
+        if (!options.isDisposed() && !authenticationRequired()) {
+          setStatus("error");
+          setStatusMessage(error instanceof TypeError ? t().draftSaveFailed : error instanceof Error ? error.message : t().draftSaveFailed);
+        }
+        return null;
+      });
+  };
+
+  let persistPromise: Promise<MailDraft | null> | null = null;
+  const persist = (): Promise<MailDraft | null> => {
+    persistPromise ??= runPersist().finally(() => {
+      persistPromise = null;
     });
+    return persistPromise;
   };
 
   /** `quiet` keeps a read-only composer as it is while the attempt runs. */
@@ -780,32 +1028,30 @@ export const createMailDraftSession = (options: {
         });
       return;
     }
-    if (!initialized() || serialized === lastSavedContent) {
+    if (!initialized() || (serialized === lastSavedContent && !pendingSave)) {
       if (!currentDraft && seedBaseline === serialized) stopScheduledSave();
       return;
     }
-    if (!currentDraft) {
-      stopScheduledSave();
-      saveTimer = setTimeout(() => void persist(), 700);
-      return;
-    }
+    const journalId = currentDraft?.id ?? options.initialSeed?.id;
+    if (!journalId) return;
     try {
-      draftStorage().setItem(
-        draftKey(currentDraft.id),
-        JSON.stringify({
-          revision: currentDraft.revision,
-          content: options.content(),
-        } satisfies MailDraftJournal),
-      );
+      tryWriteJournal(journalId, {
+        revision: conflictBaseRevision ?? currentDraft?.revision ?? 0,
+        content: options.content(),
+      });
     } catch {
       setStatus("error");
-      setStatusMessage(t().localMessageFailed);
+      setStatusMessage(t().deviceSessionEnded);
       stopScheduledSave();
       return;
     }
-    if (!lease()) return;
-    stopScheduledSave();
-    saveTimer = setTimeout(() => void persist(), 700);
+    if ((currentDraft && !lease()) || revisionConflict() || saveTimer) return;
+    // Coalesce the latest input without postponing autosave forever during
+    // continuous typing. The shared promise keeps at most one save in flight.
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      void persist();
+    }, 700);
   });
 
   onMount(() => {
@@ -816,6 +1062,23 @@ export const createMailDraftSession = (options: {
         /* Save reports unavailable device storage. */
       }
     }
+    const guardUnsaved = (event: BeforeUnloadEvent) => {
+      if (navigationAllowed) {
+        navigationAllowed = false;
+        return;
+      }
+      if (!isShared() && serializedContent() !== lastSavedContent) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    const refreshJournals = () => setJournalVersion((version) => version + 1);
+    window.addEventListener("beforeunload", guardUnsaved);
+    window.addEventListener("storage", refreshJournals);
+    onCleanup(() => {
+      window.removeEventListener("beforeunload", guardUnsaved);
+      window.removeEventListener("storage", refreshJournals);
+    });
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("pageshow", onPageShow);
     if (!options.hasVerifiedIdentity()) {
@@ -824,9 +1087,20 @@ export const createMailDraftSession = (options: {
       return;
     }
     if (options.initialSeed) {
-      const recovered = recoverJournal(draftKey(options.initialSeed.id), 0);
-      setInitialized(true);
-      if (recovered) options.onRecovered();
+      void recoverJournal(draftKey(options.initialSeed.id), 0)
+        .then((recovered) => {
+          setInitialized(true);
+          if (recovered) options.onRecovered();
+        })
+        .catch((error: unknown) => {
+          if (error instanceof MailUserDraftStorageEndedError) {
+            setStatus("error");
+            setStatusMessage(t().deviceSessionEnded);
+          } else {
+            setLocalCopyFailed(true);
+            setInitialized(true);
+          }
+        });
       return;
     }
     // A send, a discard, or another person's lease on this draft arrives as a change of its conversation or
@@ -868,9 +1142,91 @@ export const createMailDraftSession = (options: {
     void releaseLeaseOnExit();
   });
 
+  const keepCurrentRecoveryCopy = () => {
+    const currentDraft = draft();
+    if (!currentDraft || isShared()) return;
+    const current = options.content();
+    const copies = [{ revision: conflictBaseRevision ?? currentDraft.revision, content: current }];
+    const server = draftEditableContent(currentDraft);
+    // Explicit restoration can replace either version. Keep both the editor
+    // input and the loaded server version before applying the selected copy.
+    if (serializeMailDraftContent(server) !== serializeMailDraftContent(current))
+      copies.push({ revision: currentDraft.revision, content: server });
+    const storage = draftStorage();
+    const prefix = `${draftKey(currentDraft.id)}:editor:recovery:`;
+    const retained = new Set(
+      storage
+        .keys()
+        .filter((key) => key.startsWith(prefix))
+        .map((key) => readMailDraftJournal(storage, key))
+        .filter((journal) => journal !== null)
+        .map((journal) => serializeMailDraftContent(journal.content)),
+    );
+    for (const copy of copies) {
+      const serialized = serializeMailDraftContent(copy.content);
+      if (retained.has(serialized)) continue;
+      storage.setItem(`${prefix}${crypto.randomUUID()}`, JSON.stringify(copy satisfies MailDraftJournal));
+      retained.add(serialized);
+    }
+    setJournalVersion((version) => version + 1);
+  };
+
+  const restoreRecoveryContent = (content: DraftEditableContent): boolean => {
+    try {
+      keepCurrentRecoveryCopy();
+    } catch {
+      setStatus("error");
+      setStatusMessage(t().localMessageFailed);
+      return false;
+    }
+    const currentDraft = draft();
+    if (!currentDraft) return false;
+    // Selecting a copy is an explicit replacement, at the loaded server
+    // revision. A later peer edit still fails CAS; both replaced texts are backed up.
+    batch(() => {
+      conflictBaseRevision = null;
+      pendingSave = null;
+      markSaved(draftEditableContent(currentDraft));
+      setRevisionConflict(false);
+      options.applyDraftContent(content);
+      setStatus("saved");
+      setStatusMessage("");
+    });
+    return true;
+  };
+
   return {
     draft,
     setDraft,
+    acceptMutationDraft: (latest: MailDraft) => {
+      if (isClosedMailDraft(latest)) return applyClosedDraft(latest);
+      if (!isShared() && serializeMailDraftContent(draftEditableContent(latest)) !== lastSavedContent) {
+        if (!pendingSave && !revisionConflict() && serializedContent() === lastSavedContent) {
+          batch(() => {
+            markSaved(draftEditableContent(latest));
+            setDraft(latest);
+            options.applyDraftContent(latest);
+          });
+          return;
+        }
+        conflictBaseRevision ??= draft()?.revision ?? latest.revision;
+        pendingSave = null;
+        setRevisionConflict(true);
+        setStatus("error");
+        setStatusMessage(t().draftRevisionConflict);
+      }
+      setDraft(latest);
+    },
+    keepCurrentRecoveryCopy,
+    allowNavigation: () => {
+      navigationAllowed = true;
+    },
+    acceptRestoredContent: () => {
+      conflictBaseRevision = null;
+      pendingSave = null;
+      setRevisionConflict(false);
+      markSaved(options.content());
+    },
     shared,
     sharedState,
     isShared,
@@ -904,16 +1260,21 @@ export const createMailDraftSession = (options: {
         const seed = options.initialSeed;
         if (!currentDraft && seed) storeMailDraftSeed(draftStorage(), { ...seed, createdAt: new Date().toISOString() });
         if (currentDraft || seed) {
-          draftStorage().setItem(
-            draftKey(currentDraft?.id ?? seed!.id),
-            JSON.stringify({
-              revision: currentDraft?.revision ?? 0,
-              content: options.content(),
-            } satisfies MailDraftJournal),
-          );
+          writeJournal(currentDraft?.id ?? seed!.id, {
+            revision: conflictBaseRevision ?? currentDraft?.revision ?? 0,
+            content: options.content(),
+          });
         }
       }),
     leaseConflict,
+    revisionConflict,
+    localCopyFailed,
+    localRecoveryCopies,
+    restoreCurrentInput: () => restoreRecoveryContent(options.content()),
+    restoreLocalRecoveryCopy: (id: string) => {
+      const selected = localRecoveryCopies().find((copy) => copy.id === id);
+      return selected ? restoreRecoveryContent(selected.content) : false;
+    },
     lifecycleTransition,
     status,
     setStatus,
@@ -928,16 +1289,27 @@ export const createMailDraftSession = (options: {
     releaseLease,
     resumeCurrentLease,
     releaseLeaseOnExit,
-    forgetJournal: (draftId: string) => {
+    forgetJournal: (draftId: string, { closed = false }: { closed?: boolean } = {}) => {
       if (isShared()) return;
       try {
-        draftStorage().removeItem(draftKey(draftId));
+        const storage = draftStorage();
+        if (closed || storage.getItem(draftKey(draftId)) === storage.getItem(backupKey(draftId))) storage.removeItem(draftKey(draftId));
+        for (const key of storage.keys()) {
+          if (!key.startsWith(`${draftKey(draftId)}:editor:`)) continue;
+          const journal = readMailDraftJournal(storage, key);
+          // Terminal cleanup removes archives, never a different live tab's
+          // unsent typing. That tab can recover it even after the draft closes.
+          if (
+            (closed && key.startsWith(`${draftKey(draftId)}:editor:recovery:`)) ||
+            key === backupKey(draftId) ||
+            (journal && serializeMailDraftContent(journal.content) === serializedContent())
+          )
+            storage.removeItem(key);
+        }
+        setJournalVersion((version) => version + 1);
       } catch {
         /* A completed server action must still finish if device cleanup fails. */
       }
-    },
-    markCurrentContentSaved: () => {
-      lastSavedContent = serializedContent();
     },
     hasUnsavedChanges: () =>
       isShared()
