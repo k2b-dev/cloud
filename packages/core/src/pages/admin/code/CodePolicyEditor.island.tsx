@@ -1,4 +1,4 @@
-import { Button, ButtonLink, ChoiceList, NoticeCard, prompts, SegmentedControl, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, NoticeCard, prompts, SegmentedControl, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import {
@@ -193,10 +193,10 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   };
 
   const presetOptions = () => [
-    { value: "off" as const, label: t().presetOff, description: t().presetOffSub },
-    { value: "admin" as const, label: t().presetAdmin, description: t().presetAdminSub },
-    { value: "open" as const, label: t().presetOpen, description: t().presetOpenSub },
-    { value: "custom" as const, label: t().presetCustom, description: t().presetCustomSub },
+    { value: "off" as const, icon: "ti ti-power", label: t().presetOff, description: t().presetOffSub },
+    { value: "admin" as const, icon: "ti ti-user-shield", label: t().presetAdmin, description: t().presetAdminSub },
+    { value: "open" as const, icon: "ti ti-lock-open", label: t().presetOpen, description: t().presetOpenSub },
+    { value: "custom" as const, icon: "ti ti-adjustments", label: t().presetCustom, description: t().presetCustomSub },
   ];
 
   const options = () => [
@@ -206,8 +206,8 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       icon: VALUE_ICON[value],
       label: (
         <>
-          <span class="hidden md:inline">{t().value({ value })}</span>
-          <span class="md:hidden">{t().valueShort({ value })}</span>
+          <span class="hidden whitespace-nowrap md:inline">{t().value({ value })}</span>
+          <span class="whitespace-nowrap md:hidden">{t().valueShort({ value })}</span>
         </>
       ),
       disabled: false,
@@ -274,14 +274,18 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         </Show>
 
         <Show when={!props.groupId}>
-          <ChoiceList
-            label={t().presets}
-            options={presetOptions()}
-            value={draft().preset}
-            onValueChange={(preset) => {
-              if (preset !== "custom") edit(codePolicyPreset(preset));
-            }}
-          />
+          <div class="grid gap-1">
+            <SegmentedControl
+              label={t().presets}
+              options={presetOptions().map((option) => ({ value: option.value, label: option.label, icon: option.icon, disabled: option.value === "custom" }))}
+              value={() => draft().preset}
+              onValueChange={(preset) => {
+                if (preset !== "custom") edit(codePolicyPreset(preset));
+              }}
+              disabled={saving()}
+            />
+            <p class="text-xs text-(--k2b-text-muted)">{presetOptions().find((option) => option.value === draft().preset)?.description}</p>
+          </div>
         </Show>
 
         <div class="grid gap-1" role="table" aria-label={props.groupId ? t().groupDeviates : t().standard}>
