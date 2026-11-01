@@ -18,7 +18,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
   ];
-  // Areas show as one entry each. The AI area belongs to Core; Observability exists when an app contributes it.
+  // Areas show as one entry each. The AI and Code areas belong to Core; Observability exists when an app contributes it.
   const contributedApps = apps
     .map((app) => ({
       app,
@@ -51,6 +51,8 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/base", icon: "ti-adjustments", label: t.baseSettings },
     { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
     { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
+    // Core owns Code administration: approvals, policy, all Code and its operation.
+    { href: "/admin/code", icon: "ti-code", label: t.code },
     ...(observabilityPaths.length > 0
       ? [
           {

@@ -278,7 +278,7 @@ export async function submitCodeVersion(
           kind: "code_version",
           appId: "core",
           action: "code.version.approve",
-          requester: { kind: "code_version", ref: version.id, appId: "core", title: code.title, href: `/me/approvals?app=core` },
+          requester: { kind: "code_version", ref: version.id, appId: "core", title: code.title, href: `/admin/code?sec=approvals&id=${version.id}` },
           authorUserId: author.id,
           approverRole: "admin",
           sentence: review.sentence.action,
