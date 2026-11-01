@@ -311,7 +311,9 @@ and completion or reopening actions in the palette.
 ## Templates
 
 A Space keeps templates for new tasks and for new events, at most 100 of each,
-with names unique per kind. A template stores a title and a description that
+with names unique per kind. An optional icon appears next to its name in the
+**+** menu; without one, it uses the task or event default. Templates have no
+column. A template stores a title and a description that
 may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
 assignees or **Assign to me** for whoever creates the item, a task checklist
 and estimate, and an event's location, link, all-day flag, and duration. A due
@@ -338,8 +340,8 @@ before a template replaces typed input. The chip rows stay on one line and
 scroll sideways on phones; hovering, focusing, or switching chips moves
 nothing.
 
-Space admins create, change, and delete templates in the Space settings under
-**Templates**; people with write access use them, and read access lists them.
+People with write access create, change, delete, and use templates in the Space
+settings under **Templates**. Read access can list and read them.
 Created items keep no link to their template. A default assignee who loses
 access to the Space drops out of the template everywhere it is read until the
 access returns. The REST API offers
@@ -385,6 +387,10 @@ cld spaces reactions remove "Product":"Fix mobile dialog" "👍🏽"
 
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
 list templates with their rule and next proposals in the local time zone.
+JSON output includes `icon` (nullable). With write access, create one with
+`cld spaces templates add "Product" --kind task --name "Weekly report"
+--title "Report {{week}}" --icon "ti ti-report" --weekdays we,th --time 16:00`.
+Use `templates add --help` for checklist, tags, estimates, and event defaults.
 `cld spaces add "Product" --template "Weekly report" [--date YYYY-MM-DD |
 --no-date]` creates an item from a template; other `add` flags override it. A
 given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
@@ -440,7 +446,10 @@ included, and `date` picks the day, by default the first proposal. An explicit
 summary too. For "use the
 weekly report template for next Wednesday" an agent lists the templates, picks
 the matching proposal, and creates the item. `template.create`,
-`template.update`, and `template.delete` need Space admin access.
+`template.update`, and `template.delete` need Space write access. Template
+inputs accept an optional `icon`: a Tabler class such as `ti ti-report`, at most
+80 characters. Results include `icon` as a nullable field. Set it to `null` to
+restore the kind's default.
 
 `task.focus` finds open tasks across accessible Spaces without looping over
 each Space. It supports assignment, deadline, priority, blocker, and inactivity

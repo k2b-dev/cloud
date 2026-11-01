@@ -35,7 +35,7 @@ const grant = async (
 };
 
 suite("Spaces item templates", () => {
-  test("admins manage templates, writers create from them, readers only read", async () => {
+  test("writers and write-scoped agents manage templates, readers only read", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const [space] = await sql<{ id: string; short_id: string }[]>`
       INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, ${`Templates ${suffix}`}) RETURNING id, short_id`;
@@ -81,6 +81,7 @@ suite("Spaces item templates", () => {
       const weekly = {
         kind: "task",
         name: "Weekly report",
+        icon: "ti ti-report",
         title: "Weekly report {{week}}",
         description: "What happened in week {{week}}?",
         priority: "medium",
@@ -92,16 +93,15 @@ suite("Spaces item templates", () => {
         dateRule: { type: "weekdays", weekdays: ["WE", "TH"] },
       };
 
-      // Only admins create; writers, readers, and a write-scoped agent cannot.
-      expect((await writer.call(`${base}/templates`, { method: "POST", body: weekly })).status).toBe(403);
+      // Writers and write-scoped agents manage templates; readers cannot create.
       expect((await reader.call(`${base}/templates`, { method: "POST", body: weekly })).status).toBe(403);
-      expect((await agent(`${base}/templates`, { method: "POST", body: weekly })).status).toBe(403);
-      const created = await admin.call(`${base}/templates`, { method: "POST", body: weekly });
+      const created = await writer.call(`${base}/templates`, { method: "POST", body: weekly });
       expect(created.status).toBe(200);
       const template = (await created.json()) as SpaceItemTemplate;
       expect(template).toMatchObject({
         kind: "task",
         name: "Weekly report",
+        icon: "ti ti-report",
         tags: [{ id: tag!.short_id, name: "Report" }],
         assignees: [{ id: leaver.id }],
         checklist: weekly.checklist,
@@ -112,7 +112,7 @@ suite("Spaces item templates", () => {
 
       // Names are unique per Space and kind regardless of case; the other kind may reuse them.
       expect((await admin.call(`${base}/templates`, { method: "POST", body: { ...weekly, name: "WEEKLY REPORT" } })).status).toBe(409);
-      const event = await admin.call(`${base}/templates`, {
+      const event = await agent(`${base}/templates`, {
         method: "POST",
         body: {
           kind: "event",
@@ -124,6 +124,18 @@ suite("Spaces item templates", () => {
         },
       });
       expect(event.status).toBe(200);
+      const eventTemplate = (await event.json()) as SpaceItemTemplate;
+      expect(eventTemplate.icon).toBeNull();
+      const agentUpdate = await agent(`${base}/templates/${eventTemplate.id}`, { method: "PATCH", body: { icon: "ti ti-calendar" } });
+      expect(agentUpdate.status).toBe(200);
+      expect(((await agentUpdate.json()) as SpaceItemTemplate).icon).toBe("ti ti-calendar");
+      for (const icon of ["ti-report", "ti ti-report extra", "ti ti-Report", `ti ti-${"a".repeat(75)}`]) {
+        expect(
+          (await writer.call(`${base}/templates`, { method: "POST", body: { kind: "task", name: "Invalid icon", icon } })).status,
+        ).toBe(400);
+        expect((await agent(`${base}/templates/${eventTemplate.id}`, { method: "PATCH", body: { icon } })).status).toBe(400);
+      }
+
       // Fields of the other kind are refused.
       expect(
         (await admin.call(`${base}/templates`, { method: "POST", body: { kind: "event", name: "Bad", checklist: ["x"] } })).status,
@@ -142,7 +154,9 @@ suite("Spaces item templates", () => {
       // Everyone with read access lists them, in the Space detail too; readers cannot draft.
       const listed = (await (await reader.call(`${base}/templates?kind=task`)).json()) as SpaceItemTemplate[];
       expect(listed.map((entry) => entry.name)).toEqual(["Weekly report"]);
+      expect(listed[0]?.icon).toBe("ti ti-report");
       const detail = (await (await reader.call(base)).json()) as SpaceDetail;
+      expect(detail.templates.find((entry) => entry.id === template.id)?.icon).toBe("ti ti-report");
       expect(detail.templates.map((entry) => `${entry.kind}:${entry.name}`)).toEqual(["task:Weekly report", "event:Weekly report"]);
       expect((await reader.call(`${base}/templates/${template.id}/draft`)).status).toBe(403);
 
@@ -187,6 +201,7 @@ suite("Spaces item templates", () => {
         body: { title: shown.title, assigneeIds: shown.assignees.map((assignee) => assignee.id) },
       });
       expect(resaved.status).toBe(200);
+      expect(((await resaved.json()) as SpaceItemTemplate).icon).toBe("ti ti-report");
 
       // Creating from the draft makes the task, its checklist, and the creator's assignment in one request.
       const createdItem = await writer.call(`${base}/items`, {
@@ -221,23 +236,25 @@ suite("Spaces item templates", () => {
         ).status,
       ).toBe(400);
 
-      // Writers cannot change or delete; admins can, and removing a tag drops it from the template.
-      expect((await writer.call(`${base}/templates/${template.id}`, { method: "PATCH", body: { name: "Mine" } })).status).toBe(403);
-      expect((await writer.call(`${base}/templates/${template.id}`, { method: "DELETE" })).status).toBe(403);
-      const renamed = await admin.call(`${base}/templates/${template.id}`, {
+      // Readers cannot update or delete; writers can, and null clears the icon.
+      expect((await reader.call(`${base}/templates/${template.id}`, { method: "PATCH", body: { name: "Mine" } })).status).toBe(403);
+      expect((await reader.call(`${base}/templates/${template.id}`, { method: "DELETE" })).status).toBe(403);
+      const renamed = await writer.call(`${base}/templates/${template.id}`, {
         method: "PATCH",
-        body: { name: "Status report", dateRule: { type: "none" }, checklist: [] },
+        body: { name: "Status report", icon: null, dateRule: { type: "none" }, checklist: [] },
       });
       expect(renamed.status).toBe(200);
       expect((await renamed.json()) as SpaceItemTemplate).toMatchObject({
         name: "Status report",
+        icon: null,
         dateRule: { type: "none" },
         checklist: [],
       });
       expect((await admin.call(`${base}/templates/${template.id}`, { method: "PATCH", body: { location: "Room 1" } })).status).toBe(400);
       await sql`DELETE FROM spaces.tags WHERE id = ${tag!.id}::uuid`;
       expect(((await (await admin.call(`${base}/templates/${template.id}`)).json()) as SpaceItemTemplate).tags).toEqual([]);
-      expect((await admin.call(`${base}/templates/${template.id}`, { method: "DELETE" })).status).toBe(200);
+      expect((await writer.call(`${base}/templates/${template.id}`, { method: "DELETE" })).status).toBe(200);
+      expect((await agent(`${base}/templates/${eventTemplate.id}`, { method: "DELETE" })).status).toBe(200);
       expect((await admin.call(`${base}/templates/${template.id}`)).status).toBe(404);
       // The item made from it stays.
       expect((await writer.call(`${base}/items/${item.id}`)).status).toBe(200);

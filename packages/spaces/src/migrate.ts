@@ -689,6 +689,11 @@ export const migrate = async (): Promise<void> => {
       )
     )
   `.simple();
+  await sql`
+    ALTER TABLE spaces.item_templates
+      ADD COLUMN IF NOT EXISTS icon TEXT
+        CONSTRAINT item_templates_icon_format CHECK (char_length(icon) <= 80 AND icon ~ '^ti ti-[a-z0-9]+(-[a-z0-9]+)*$')
+  `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_templates_short_id ON spaces.item_templates(short_id)`.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_item_templates_space_kind_name

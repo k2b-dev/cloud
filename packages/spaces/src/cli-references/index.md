@@ -104,6 +104,7 @@ cld spaces create "Hiring" --description "Open roles"
 
 ```bash
 cld spaces templates ls "Roadmap" --json
+cld spaces templates add "Roadmap" --kind task --name "Weekly report" --title "Report {{week}}" --icon "ti ti-report" --weekdays we,th --time 16:00 --checklist "Collect numbers"
 cld spaces templates show "Roadmap":"Weekly report"
 cld spaces add "Roadmap" --template "Weekly report"
 cld spaces add "Roadmap" --template "Weekly report" --date 2026-10-14
@@ -111,11 +112,12 @@ cld spaces add "Roadmap":"Report for the board" --template "Weekly report" --pri
 cld spaces add "Roadmap" --template "Notes" --no-date
 ```
 
-A template stores defaults for new tasks or events of one space: title and description, which may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, priority, tags, assignees or the person who creates the item, a task checklist, and for events location, link, start time, and duration. Its date rule proposes dates: the next matching weekdays (`Wed or Thu · all day`), today plus some days, or none. A task template without a time creates an all-day deadline and keeps today available all day. A weekday template with a time offers today only while that time still lies ahead.
+A template has a name and an optional icon, and stores defaults for new tasks or events of one space: title and description, which may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, priority, tags, assignees or the person who creates the item, a task checklist, and for events location, link, start time, and duration. Its date rule proposes dates: the next matching weekdays (`Wed or Thu · all day`), today plus some days, or none. A task template without a time creates an all-day deadline and keeps today available all day. A weekday template with a time offers today only while that time still lies ahead.
 
-- `templates ls` shows each template's kind, date rule, and the next proposals in your system timezone (`TZ` overrides it). `templates show <space>:<template>` takes a name, matched without regard to case, or an ID. A name that both a task and an event template use needs `--kind task` or `--kind event`.
+- `templates add <space>` needs write access, `--kind task|event`, and `--name`. Optional flags are `--title`, `--description`, `--icon`, `--priority`, repeated `--tag` (name or ID), repeated `--checklist`, `--time HH:MM`, and either `--weekdays mo,tu,…` or `--offset-days 0..365`. Tasks accept `--estimate` in minutes; events accept `--duration` in minutes, `--all-day`, `--location`, and `--url`. A duplicate name or the limit of 100 templates per kind returns a conflict. `--icon` takes a Tabler class such as `ti ti-report` (at most 80 characters); omission uses the kind's default. Templates have no column.
+- `templates ls` shows each template's kind, date rule, and the next proposals in your system timezone (`TZ` overrides it). JSON output includes `icon`; the text table has no icon column. `templates show <space>:<template>` takes a name, matched without regard to case, or an ID. A name that both a task and an event template use needs `--kind task` or `--kind event`.
 - `add --template` fills every field you leave out, so `<space>` alone is enough when the template has a title. Without `--date` the first proposal applies and the text output names the others; `--date YYYY-MM-DD` picks another day, and `--no-date` makes a task without a due date. Other `add` flags win over the template; `--tag` and `--assignee` replace its lists. Pass at most one of `--date`, `--no-date`, `--deadline`, and `--starts-at`; a given `--deadline` or `--starts-at` also picks the day the placeholders use, and `--starts-at` needs `--ends-at`.
-- Assignees who have lost access to the space are left out. Templates are managed by space administrators in the space settings or through `spaces.template.*` capabilities; the CLI only reads and uses them.
+- Assignees who have lost access to the space are left out. Anyone with write access can create, update, and delete templates in the space settings or through `spaces.template.*` capabilities; `templates add` creates them from the CLI. Read access can list and read them.
 
 ## Write Markdown
 
@@ -245,7 +247,7 @@ Run `cld spaces <command> --help` for every flag.
 | Browse | `ls [space]`, `show <item\|space:>` |
 | Spaces | `create <name>` |
 | Items | `add <space:title>`, `set <item>`, `mv <item> <column>`, `rm <item>` |
-| Templates | `templates ls <space>`, `templates show <space:template>`, `add <space> --template <name>` |
+| Templates | `templates add <space> --kind task --name <name>`, `templates ls <space>`, `templates show <space:template>`, `add <space> --template <name>` |
 | Quick actions | `done`, `reopen`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
 | Dependencies | `deps <item> [--add <item>] [--rm <item>]` |
 | Agent work | `work`, `claim`, `release`, `progress`, `activity`, `show --context` |
@@ -275,7 +277,8 @@ Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link 
 | `ls` | Array of spaces `{ id, name, description, color, createdAt, updatedAt, … }` |
 | `ls <space>` | `{ items, total, page, pageSize, totalPages }` with full items |
 | `show <space>:` | Space with `columns`, `tags`, and `templates` |
-| `templates ls` | Array of templates `{ id, kind, name, title, dateRule, timeOfDay, checklist, tags, assignees, … }` |
+| `templates ls` | Array of templates `{ id, kind, name, icon, title, dateRule, timeOfDay, checklist, tags, assignees, … }` |
+| `templates add` | Created template, including `icon` (nullable) |
 | `templates show` | The template plus `proposals` (local `YYYY-MM-DD` dates) and `timeZone` |
 | `show <item>` | Item; tasks add `attachments` |
 | `show <item> --context` | Item plus `attachments`, `work`, `checklist`, `blockers`, `blocks` (page), `references`, `links`, `comments` (page) |
