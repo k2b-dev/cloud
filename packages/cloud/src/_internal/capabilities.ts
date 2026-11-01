@@ -1965,6 +1965,25 @@ export const invokeCompiledCapability = async (params: {
       }
     } else {
       if (operation.definition.appOnly) return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+      if (params.kind === "action" && context.actor.delegation?.workloadType === "code.version") {
+        // Version consent never widens a call that the owning app requires a person to confirm.
+        const policy = capabilityActionPolicy(params.compiled.manifest, params.localId);
+        if (
+          !policy ||
+          !("silent" in policy) ||
+          policy.routines === false ||
+          ("unattended" in operation.manifest && operation.manifest.unattended === false)
+        )
+          return { ok: false, error: { code: "CODE_UNATTENDED_FORBIDDEN", message: "This Action cannot execute unattended", status: 403 } };
+        const reviewed = await reviewCompiledCapability({
+          ...params,
+          context: { ...context, idempotencyKey: undefined },
+        });
+        if (!reviewed.ok) return reviewed;
+        if (!("sentence" in reviewed.data) || reviewed.data.ask !== undefined)
+          return { ok: false, error: { code: "CODE_UNATTENDED_FORBIDDEN", message: "This call requires confirmation", status: 403 } };
+        if (context.signal.aborted) return cancelledInvocation(context.locale);
+      }
       invoked = await operation.definition.run(input.data, context);
     }
     if (!invoked.ok) {

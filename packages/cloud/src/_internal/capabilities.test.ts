@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_MAX_RESULT_BYTES,
+  type CapabilityActionCallReview,
   type CapabilityActionManifest,
+  type CapabilityActionPolicy,
   type CapabilityDefinitions,
   type CapabilityManifest,
   CapabilityPageSchema,
@@ -1745,5 +1747,90 @@ test("capability execution caps OAuth actions even for direct and delegated call
       expect(result.ok).toBe(allowed);
       if (!allowed) expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
     }
+  }
+});
+
+describe("Code version call reviews", () => {
+  const sentence = { action: "Change task", running: "Changing task", done: "Changed task", confirm: "Change", decline: "Cancel" };
+  for (const scenario of [
+    "silent",
+    "call asks",
+    "no scope",
+    "review fails",
+    "no review",
+    "deletes",
+    "sends",
+    "unattended false",
+    "routines false",
+  ] as const) {
+    test(`${scenario} is checked before an unattended effect and leaves chat execution unchanged`, async () => {
+      const run = mock(async () => ok({ data: {} }));
+      const policy: CapabilityActionPolicy =
+        scenario === "deletes" || scenario === "sends"
+          ? { ask: scenario }
+          : { silent: "shared", ...(scenario === "routines false" ? { routines: false } : {}) };
+      const reviewed: CapabilityActionCallReview = {
+        locale: "en",
+        sentence,
+        slots: {},
+        ...(scenario !== "no scope" ? { scope: "task:one" } : {}),
+        ...(scenario === "call asks" ? { ask: "involves_people" } : {}),
+      };
+      const review = mock(async (_input: unknown, _context: unknown) =>
+        scenario === "review fails" ? fail({ code: "FORBIDDEN", message: "No access", status: 403 as const }) : ok(reviewed),
+      );
+      const compiled = compileCapabilities("example", {
+        protocolVersion: 2,
+        actions: {
+          change: {
+            title: "Change task",
+            description: "Change one task.",
+            input: z.object({}).strict(),
+            data: z.object({}).strict(),
+            destructive: scenario === "deletes",
+            openWorld: scenario === "sends",
+            idempotency: "required",
+            ...(scenario === "no review" ? {} : { policy, review }),
+            ...(scenario === "unattended false" ? { unattended: false } : {}),
+            run,
+          },
+        },
+      });
+      const args = {
+        compiled,
+        kind: "action" as const,
+        localId: "change",
+        input: {},
+        expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+      };
+      const codeContext = {
+        ...context,
+        idempotencyKey: "one",
+        actor: {
+          ...context.actor,
+          delegation: {
+            kind: "invocation" as const,
+            callingAppId: "core",
+            credentialKind: "mandate" as const,
+            invocationId: "invocation-one",
+            workloadType: "code.version",
+            workloadId: "version-one",
+          },
+        },
+      };
+      const result = await invokeCompiledCapability({ ...args, context: codeContext });
+      const allowed = scenario === "silent" || scenario === "no scope";
+      expect(result.ok).toBe(allowed);
+      expect(run).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      if (scenario !== "no review") {
+        if (["silent", "call asks", "no scope", "review fails"].includes(scenario)) {
+          expect(review).toHaveBeenCalledTimes(1);
+          expect(review.mock.calls[0]).toEqual([{}, expect.objectContaining({ idempotencyKey: undefined })]);
+        }
+      }
+      // Interactive execution remains behind its existing Cloud approval flow.
+      expect((await invokeCompiledCapability({ ...args, context: { ...context, idempotencyKey: "two" } })).ok).toBe(true);
+      expect(run).toHaveBeenCalledTimes(allowed ? 2 : 1);
+    });
   }
 });
