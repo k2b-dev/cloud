@@ -18,6 +18,7 @@ import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferen
 import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
+import * as authoringChecks from "./authoring-check";
 import { createCodeBridgeHost } from "./bridge";
 import * as origins from "./origins";
 import { dispatchCodeSecretHttp } from "./secret-http";
@@ -32,7 +33,6 @@ import {
 } from "./secrets";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, readCodeRun } from "./store";
-import * as authoringChecks from "./authoring-check";
 import { decideCodeVersion, diffCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-11-01T12:00:00Z");
