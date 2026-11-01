@@ -387,9 +387,15 @@
   overflow-y: hidden;
   padding: 0.5rem 0.75rem;
   scrollbar-width: thin;
+  /* The fade has to reach past the row's end padding into the last label, or
+     that label ends at a hard edge. A category scrolled into view stops
+     outside the fade. */
+  --scroll-fade-size: 2.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
-/* In the row a divider separates groups; their labels need the rail's width. */
+/* In the row, space separates groups (no divider line); their labels need the
+   rail's width. */
 .k2b-ui .k2b-settings__tab-group {
   display: flex;
   min-width: 0;
@@ -399,8 +405,7 @@
 }
 
 .k2b-ui .k2b-settings__tab-group + .k2b-settings__tab-group {
-  padding-left: 0.25rem;
-  border-left: 1px solid var(--k2b-border);
+  margin-left: 0.75rem;
 }
 
 .k2b-ui .k2b-settings__tab-group-label {
@@ -489,7 +494,6 @@
   min-height: 0;
   flex-direction: column;
   overflow: clip;
-  border-top: 1px solid var(--k2b-border);
 }
 
 /* Cloud's panel is `h-full overflow-y-auto` and the padding lives on the inner
@@ -2031,14 +2035,20 @@ html {
     margin: 0;
   }
 
+  /* The rail's own surface separates it from the panel, without a line. */
   .k2b-ui .k2b-settings__rail {
-    border-right: 1px solid var(--k2b-border);
     background: var(--k2b-surface-muted);
+  }
+
+  /* Forced colours paint rail and panel as Canvas, so only a line keeps the edge. */
+  @media (forced-colors: active) {
+    .k2b-ui .k2b-settings__rail {
+      border-right: 1px solid CanvasText;
+    }
   }
 
   .k2b-ui .k2b-settings__content {
     grid-area: 1 / 2;
-    border-top: 0;
   }
 
   .k2b-ui .k2b-settings__tabs {
@@ -2059,8 +2069,7 @@ html {
   }
 
   .k2b-ui .k2b-settings__tab-group + .k2b-settings__tab-group {
-    padding-left: 0;
-    border-left: 0;
+    margin-left: 0;
   }
 
   .k2b-ui .k2b-settings__tab-group-label {

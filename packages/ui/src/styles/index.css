@@ -14813,16 +14813,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.25rem;
 }
+/* A separator groups actions with space, not a line; it keeps `role="separator"`
+   for assistive technology. */
 .k2b-ui .k2b-toolbar__separator {
-  width: 1px;
+  width: 0.25rem;
   height: 1.25rem;
   flex: 0 0 auto;
   margin: 0 0.125rem;
-  background: var(--k2b-border);
 }
 .k2b-ui .k2b-toolbar__separator[data-orientation="horizontal"] {
   width: 1.25rem;
-  height: 1px;
+  height: 0.25rem;
   margin: 0.125rem 0;
 }
 .k2b-ui .k2b-toolbar__spacer {
