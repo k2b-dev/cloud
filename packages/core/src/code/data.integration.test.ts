@@ -549,9 +549,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
       registry.mockRestore();
     }
   });
-  test("personal owner deletion cascades Code, versions, runs and access entries", async () => {
+  test("final Code deletion cascades versions, runs and access entries", async () => {
     const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id=${code.id}`;
-    await sql`DELETE FROM auth.users WHERE id=${ids.owner}::uuid`;
+    // Owner deletion enters the durable lifecycle; this storage suite covers its final owned-record deletion.
+    await sql`DELETE FROM code.codes WHERE id=${code.id}`;
     expect(await sql`SELECT id FROM code.codes WHERE id=${code.id}`).toHaveLength(0);
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
     expect(await sql`SELECT id FROM code.runs WHERE code_id=${code.id}`).toHaveLength(0);

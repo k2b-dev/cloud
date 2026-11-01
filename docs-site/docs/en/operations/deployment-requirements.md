@@ -2207,3 +2207,12 @@ and answers its decision with `503`; install the handler and retry. This does
 not block personal Action approvals. See
 [Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
 for the service contract and device limits.
+
+## Code owner deletion
+
+Core must migrate the platform events outbox before applications use
+`codeOwnerDeleted`. Keep Core running to drain owner-deletion reports and
+durable Code grant cleanup. An unavailable target keeps cleanup pending and
+visible through the administrator cleanup read model; restoring connectivity
+lets retries complete. Do not erase a deleting Code account or its grant journal
+manually. See [Code lifecycle](/en/docs/platform/code-lifecycle).

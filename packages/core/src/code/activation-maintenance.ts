@@ -73,7 +73,7 @@ export async function cleanupCodeActivation(
     if (!held?.acquired) throw new Error("Code activation is busy; cleanup will retry");
     acquired = true;
     const code = await findCode(codeId);
-    if (!code) return;
+    if (!code || code.state === "deleting") return;
     const notices = await sql<{ activation_id: string; target: { type: string; id: string }; user_id: string; locale: string }[]>`
       SELECT n.*,a.locale FROM code.activation_notices n JOIN code.activations a ON a.id=n.activation_id
       WHERE a.code_id=${codeId} AND NOT n.sent ORDER BY n.activation_id,n.target_key,n.user_id LIMIT 50`;

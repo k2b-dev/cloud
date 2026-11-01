@@ -5,6 +5,8 @@ const catalog = i18n.define({
   baseLocale: DEFAULT_LOCALE,
   messages: {
     en: {
+      codeTargetDeleted: "Target deleted",
+      resourceCheckUnavailable: "The resource could not be checked; retry later",
       actionOutcomeUnknown: "The Action response was lost and its outcome is unknown; do not retry automatically",
       appCouldNotServe: ({ appId }: { appId: string }) => `App ${appId} could not serve the capability`,
       appUnavailable: ({ appId }: { appId: string }) => `App ${appId} is not currently available`,
@@ -40,6 +42,8 @@ const catalog = i18n.define({
       unsupportedSchema: ({ appId }: { appId: string }) => `App ${appId} registered an unsupported capability schema`,
     },
     de: {
+      codeTargetDeleted: "Ziel gelöscht",
+      resourceCheckUnavailable: "Die Ressource konnte nicht geprüft werden; später erneut versuchen",
       actionOutcomeUnknown: "Die Antwort der Action ging verloren und ihr Ergebnis ist unbekannt; nicht automatisch erneut ausführen",
       appCouldNotServe: ({ appId }) => `App ${appId} konnte die Capability nicht ausführen`,
       appUnavailable: ({ appId }) => `App ${appId} ist derzeit nicht verfügbar`,
