@@ -33,7 +33,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
 | `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
-| `@k2b/cloud/code/runner` | Preview, portable | Strict runner protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
+| `@k2b/cloud/code/runner` | Preview, portable | Strict run/job protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
@@ -246,6 +246,17 @@ not application resource authorization. The browser-safe contracts barrel
 exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.
+
+The platform-owned `@k2b/cloud/code` entry exports `CodeCheckResultSchema`
+and the remote form of `CodeCheckHost`. Core consumers use
+`createCodeCheckRequest`, `createRunnerCodeCheckHost`, and
+`createRunnerCodeTestingHost` from `packages/core/src/code/index.ts`; see
+[Code checker](/en/docs/platform/code-checker#use-the-core-runner-host) and
+[Test Code](/en/docs/platform/test-code#connect-cli-and-gustav-adapters).
+`@k2b/cloud/code/runner` exports `RunnerJobProofSchema`,
+`RunnerJobLeaseSchema`, `RunnerJobResultSchema`, `RunnerJobCompleteSchema`
+and their job proof/lease/result types. These are private runner transport
+contracts, not author-callable capabilities.
 
 The contracts barrel exports `CodeCheckedVersionManifestSchema`,
 `CodeCheckedVersionManifest`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,

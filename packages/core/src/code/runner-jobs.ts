@@ -113,7 +113,7 @@ async function submitJob(input: CodeRunnerJobInput, context: CodeContext): Promi
   const queueMax = await codeSettings.get("core.code.job_pending");
   const ownerMax = await codeSettings.get("core.code.concurrency_per_owner");
   const waitMs = await codeSettings.get("core.code.job_wait_ms");
-  const workMs = input.kind === "check" ? CODE_CHECK_LIMITS.checkMs : input.limits.wallClockMs;
+  const workMs = input.kind === "check" ? (input.request.limits?.checkMs ?? CODE_CHECK_LIMITS.checkMs) : input.limits.wallClockMs;
   const [job] = await sql.begin(async (db) => {
     await codeAdmissionLock(db);
     const [counts] = await db<
@@ -160,7 +160,15 @@ export function createRunnerCodeCheckHost(context: CodeContext): Extract<CodeChe
         ...context,
         signal: signal ? AbortSignal.any([signal, ...(context.signal ? [context.signal] : [])]) : context.signal,
       };
-      const result = await submitJob({ kind: "check", request: { ...request, limits: CODE_CHECK_LIMITS } }, effective);
+      const limits = {
+        ...CODE_CHECK_LIMITS,
+        sourceBytes: Math.min(CODE_CHECK_LIMITS.sourceBytes, await codeSettings.get("core.code.source_bytes")),
+        bundleBytes: Math.min(CODE_CHECK_LIMITS.bundleBytes, await codeSettings.get("core.code.bundle_bytes")),
+        files: Math.min(CODE_CHECK_LIMITS.files, await codeSettings.get("core.code.source_files")),
+        checkMs: Math.min(CODE_CHECK_LIMITS.checkMs, await codeSettings.get("core.code.wall_clock_ms")),
+        memoryBytes: Math.min(CODE_CHECK_LIMITS.memoryBytes, await codeSettings.get("core.code.runner_process_memory_bytes")),
+      };
+      const result = await submitJob({ kind: "check", request: { ...request, limits } }, effective);
       if (result.kind !== "check") throw new CodeJobError("code_job_failed");
       return CodeCheckResultSchema.parse(result.result);
     },
@@ -171,8 +179,8 @@ export async function createRunnerCodeTestingHost(context: CodeContext): Promise
   const limits: CodeTestLimits = {
     requestBytes: CODE_CHECK_LIMITS.requestBytes,
     outputBytes: CODE_CHECK_LIMITS.outputBytes,
-    cases: await codeSettings.get("core.code.source_files"),
-    runs: await codeSettings.get("core.code.calls_per_run"),
+    cases: await codeSettings.get("core.code.test_cases"),
+    runs: await codeSettings.get("core.code.test_runs"),
     calls: await codeSettings.get("core.code.calls_per_run"),
     wallClockMs: await codeSettings.get("core.code.wall_clock_ms"),
   };

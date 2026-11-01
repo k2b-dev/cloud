@@ -160,3 +160,6 @@ Forward cancellation to both the service and its host context. Cancellation
 or timeout fences the lease; the runner stops the isolated role. Queue
 admission returns `code_job_busy` when full. The test/simulate services preserve
 that stable code in their failure result so adapters can offer a retry.
+
+Administration defaults to 64 cases and 200 total fixture invocations per test
+job. Calls and total wall time use the existing Code execution budgets.

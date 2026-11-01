@@ -265,19 +265,26 @@ suiteFor(
       },
       permissions: [{ operation: "example.read", target: null, file: "code.ts", line: 7, status: "new" }],
     };
-    const response = createRunnerCodeCheckHost(context()).check(checkRequest());
-    await pendingJob();
-    const outbox = createCodeJobOutbox(() => queue);
-    expect(await outbox.reconcile()).toBe(1);
-    const fetched = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, { queue, sign });
-    expect(fetched.runs).toHaveLength(0);
-    const job = fetched.jobs![0]!;
-    expect("token" in job).toBe(false);
-    expect(
-      JSON.parse(await readCodeJobInput({ jobId: job.jobId, generation: job.generation, leaseKey: job.leaseKey })).request.files,
-    ).toEqual(checkRequest().files);
-    await completeCodeJob(job, { kind: "check", result: expected });
-    expect(await response).toEqual(expected);
+    const cancel = new AbortController();
+    const response = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal }).check(checkRequest());
+    const settled = response.catch((error) => error);
+    try {
+      await pendingJob();
+      const outbox = createCodeJobOutbox(() => queue);
+      expect(await outbox.reconcile()).toBe(1);
+      const fetched = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, { queue, sign });
+      expect(fetched.runs).toHaveLength(0);
+      const job = fetched.jobs![0]!;
+      expect("token" in job).toBe(false);
+      expect(
+        JSON.parse(await readCodeJobInput({ jobId: job.jobId, generation: job.generation, leaseKey: job.leaseKey })).request.files,
+      ).toEqual(checkRequest().files);
+      await completeCodeJob(job, { kind: "check", result: expected });
+      expect(await response).toEqual(expected);
+    } finally {
+      cancel.abort();
+      await settled;
+    }
   });
   test.each(["test", "simulate"] as const)("C13b production testing host transports %s results through the shared queue", async (mode) => {
     const cancel = new AbortController();
@@ -357,19 +364,24 @@ suiteFor(
     const controller = new AbortController();
     const pending = createRunnerCodeCheckHost({ ...context(), signal: controller.signal }).check(checkRequest());
     const settled = pending.catch((error) => error);
-    await pendingJob();
-    const first = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
-    await sql`UPDATE code.jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${first.jobId}::uuid`;
-    await reconcileCodeJobs();
-    const second = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
-    expect(second.generation).toBe(first.generation + 1);
-    expect(second.leaseKey).not.toBe(first.leaseKey);
-    await expect(readCodeJobInput(first)).rejects.toBeInstanceOf(RunnerLeaseLostError);
-    await expect(completeCodeJob(first, { kind: "check", result: { ok: false, diagnostics: [] } })).rejects.toBeInstanceOf(
-      RunnerLeaseLostError,
-    );
-    await completeCodeJob(second, { kind: "check", result: { ok: false, diagnostics: [] } });
-    expect(await settled).toEqual({ ok: false, diagnostics: [] });
+    try {
+      await pendingJob();
+      const first = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      await sql`UPDATE code.jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${first.jobId}::uuid`;
+      await reconcileCodeJobs();
+      const second = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      expect(second.generation).toBe(first.generation + 1);
+      expect(second.leaseKey).not.toBe(first.leaseKey);
+      await expect(readCodeJobInput(first)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+      await expect(completeCodeJob(first, { kind: "check", result: { ok: false, diagnostics: [] } })).rejects.toBeInstanceOf(
+        RunnerLeaseLostError,
+      );
+      await completeCodeJob(second, { kind: "check", result: { ok: false, diagnostics: [] } });
+      expect(await settled).toEqual({ ok: false, diagnostics: [] });
+    } finally {
+      controller.abort();
+      await settled;
+    }
   });
   test("C13b refuses oversized input and overload, and cancellation fences a lease", async () => {
     await expect(
@@ -381,12 +393,17 @@ suiteFor(
     const waiting = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal })
       .check(checkRequest())
       .catch((error) => error);
-    await pendingJob();
-    await expect(createRunnerCodeCheckHost(context()).check(checkRequest())).rejects.toMatchObject({ code: "code_job_busy" });
-    const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
-    cancel.abort();
-    expect(await waiting).toMatchObject({ code: "code_job_cancelled" });
-    await expect(readCodeJobInput(job)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    try {
+      await pendingJob();
+      await expect(createRunnerCodeCheckHost(context()).check(checkRequest())).rejects.toMatchObject({ code: "code_job_busy" });
+      const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      cancel.abort();
+      expect(await waiting).toMatchObject({ code: "code_job_cancelled" });
+      await expect(readCodeJobInput(job)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    } finally {
+      cancel.abort();
+      await waiting;
+    }
   });
   test("C13b a burst of checks cannot starve scheduled work with a single free slot", async () => {
     const code = await fixture();

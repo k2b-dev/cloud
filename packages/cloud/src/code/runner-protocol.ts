@@ -62,12 +62,12 @@ export type RunnerLease = z.infer<typeof RunnerLeaseSchema>;
 export const RunnerFetchRequestSchema = z.object({ instanceId: z.uuid(), freeSlots: positive }).strict();
 /** Core must atomically grant at most freeSlots leases; only Core owns the queue and generation increments. */
 export type RunnerFetchRequest = z.infer<typeof RunnerFetchRequestSchema>;
-/** Empty runs means the long-poll elapsed. Core waits up to pollMs, with cancellation when the runner drains. */
 /** Check/test/simulate leases have no bridge token. leaseKey authorizes only this job generation. */
 export const RunnerJobProofSchema = z
   .object({ jobId: z.uuid(), generation: positive, leaseKey: z.string().regex(/^[a-f0-9]{64}$/) })
   .strict();
 export type RunnerJobProof = z.infer<typeof RunnerJobProofSchema>;
+/** Authoring lease shares the runner slot budget; input is fetched separately through the signed job route. */
 export const RunnerJobLeaseSchema = RunnerJobProofSchema.extend({
   kind: z.enum(["check", "test", "simulate"]),
   deadlineAt: positive,
@@ -76,14 +76,19 @@ export const RunnerJobLeaseSchema = RunnerJobProofSchema.extend({
   inputBytes: positive,
   outputBytes: positive,
 }).strict();
+/** Payload-free authoring allocation; all times are absolute Unix milliseconds. */
 export type RunnerJobLease = z.infer<typeof RunnerJobLeaseSchema>;
+/** Stable bounded checker or fake-executor JSON; jobs never report production call results. */
 export const RunnerJobResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("check"), result: CodeCheckResultSchema }).strict(),
   z.object({ kind: z.enum(["test", "simulate"]), result: CodeTestResultSchema }).strict(),
   z.object({ kind: z.literal("error"), code: z.enum(["code_job_failed", "code_job_time_limit", "code_job_output_limit"]) }).strict(),
 ]);
+/** Result validated by both runner and Core before the waiting host receives it. */
 export type RunnerJobResult = z.infer<typeof RunnerJobResultSchema>;
+/** Separate job proof cannot authorize a production bridge call. */
 export const RunnerJobCompleteSchema = RunnerJobProofSchema.extend({ result: RunnerJobResultSchema }).strict();
+/** An empty batch means the long-poll elapsed. Combined runs/jobs never exceed advertised freeSlots. */
 export const RunnerFetchResponseSchema = z
   .object({ runs: z.array(RunnerLeaseSchema), jobs: z.array(RunnerJobLeaseSchema).optional() })
   .strict();

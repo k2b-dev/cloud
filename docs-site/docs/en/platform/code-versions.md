@@ -5,7 +5,7 @@ section: Platform services
 order: 962
 description: Submit checked Code, compare complete source versions and decide hash-bound Cloud-admin approvals.
 tags: [code, approvals, versions]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Code versions and approval
@@ -27,6 +27,12 @@ The result contains `version`, `binding`, `status`, `approvalId` and `decision`.
 `status: "submitted"` means the current policy needs no administrator's
 approval. `status: "pending"` has a platform approval request. Neither status
 changes the active version.
+
+Core repeats the authoritative check on an isolated runner before saving.
+The submitted bundle and static manifest evidence must match the fresh result;
+runner overload reports `code_job_busy` so the caller can retry. Forward
+cancellation to stop waiting. See [Code checker](/en/docs/platform/code-checker)
+for the production host API.
 
 Core checks the source and bundle hashes, source locations, manifest
 classifications against the current capability catalog, and current policy before committing. A forbidden row returns

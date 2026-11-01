@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { formatAppKey, importAppPublicKey } from "@k2b/cloud/app-key";
-import { RUNNER_PATHS } from "@k2b/cloud/code/runner";
+import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { jwtVerify } from "jose";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
 import { CoreBridge, readBytes } from "../src/bridge";
@@ -17,6 +17,7 @@ const key: AppKey = { installationId: INSTALLATION_ID, keyId: KEY_ID, appId: "ru
 test("mock Core receives real app-key signatures over each long-poll body with a fresh nonce", async () => {
   jest.setSystemTime(NOW);
   const nonces = new Set<unknown>();
+  const jobProof = { jobId: INSTALLATION_ID, generation: 2, leaseKey: "a".repeat(64) };
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -36,7 +37,21 @@ test("mock Core receives real app-key signatures over each long-poll body with a
       expect(payload.bdh).toBe(Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body))).toString("base64url"));
       expect(nonces.has(payload.jti)).toBe(false);
       nonces.add(payload.jti);
-      if (new URL(request.url).pathname === RUNNER_PATHS.config) return Response.json(config);
+      const path = new URL(request.url).pathname;
+      if (path === RUNNER_PATHS.config) return Response.json(config);
+      if (path === RUNNER_PATHS.jobInput) {
+        expect(JSON.parse(body)).toEqual(jobProof);
+        expect(body).not.toContain("token");
+        return Response.json({ kind: "check", request: { files: { "code.ts": "fixture" } } });
+      }
+      if (path === RUNNER_PATHS.heartbeat) {
+        expect(JSON.parse(body)).toEqual(jobProof);
+        return Response.json({ leaseExpiresAt: NOW + 15000 });
+      }
+      if (path === RUNNER_PATHS.complete) {
+        expect(JSON.parse(body)).toEqual({ ...jobProof, result: { kind: "check", result: { ok: false, diagnostics: [] } } });
+        return new Response(null, { status: 409 });
+      }
       expect(JSON.parse(body).freeSlots).toBe(2);
       return Response.json({ runs: [] });
     },
@@ -45,7 +60,13 @@ test("mock Core receives real app-key signatures over each long-poll body with a
     const bridge = new CoreBridge(key, server.url.origin);
     await bridge.configure(new AbortController().signal);
     for (let i = 0; i < 2; i++) await bridge.fetch({ instanceId: INSTALLATION_ID, freeSlots: 2 }, new AbortController().signal);
-    expect(nonces.size).toBe(3);
+    const signal = new AbortController().signal;
+    expect(JSON.parse(await bridge.jobInput(jobProof, signal, 1024))).toMatchObject({ kind: "check" });
+    expect(await bridge.jobHeartbeat(jobProof, signal)).toEqual({ leaseExpiresAt: NOW + 15000 });
+    await expect(
+      bridge.jobComplete({ ...jobProof, result: { kind: "check", result: { ok: false, diagnostics: [] } } }, signal),
+    ).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    expect(nonces.size).toBe(6);
   } finally {
     await server.stop(true);
     jest.useRealTimers();
