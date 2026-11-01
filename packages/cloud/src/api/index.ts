@@ -46,6 +46,7 @@ import { createAuthRoutes } from "./auth";
 import { createCapabilityRoutes } from "./capabilities";
 import geoRoutes from "./geo";
 import { createHelpRoutes } from "./help";
+import { createIpCountryRoutes } from "./ip-country";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
 import { createPwaRoutes } from "./pwa";
@@ -80,6 +81,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
   const widgetRoutes = createWidgetRoutes();
   return new Hono()
     .use(prettyJSON())
+    .route("/_internal/ip-country", createIpCountryRoutes())
     .route(
       "/auth/app-approval/v1",
       createAppApprovalRoutes({ notify: options.notifications.sendNewBrowserSignIn }, undefined, undefined, options.terminalLogins),

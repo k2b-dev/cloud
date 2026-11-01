@@ -150,6 +150,7 @@ const publicPaths: Record<string, string[]> = {
     "/_cloud/app-access/inventory",
     "/open/notebooks.notebook/~fixture",
     "/api/resources/resolve",
+    "/api/_internal/ip-country",
     "/api/_internal/identity/v1/invoke",
     "/api/_internal/identity/v1/invoke-child",
     "/api/_internal/ai/code/execute",
