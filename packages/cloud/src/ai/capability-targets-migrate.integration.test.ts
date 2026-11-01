@@ -1,6 +1,7 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import { SQL } from "bun";
-import { createMigratedDatabase, databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { closeMigratedDatabaseTemplate, migratedDatabaseTemplate } from "../../../../scripts/fixtures/test-database-template";
+import { createMigratedDatabase, databaseSuite, requireDatabaseUrl, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import * as registry from "../_internal/registry";
 import { capabilityCallDigest, capabilityValueDigest } from "../capabilities/calls";
@@ -11,6 +12,13 @@ import { projectCapabilityMigrationErrors, projectMigratedCapabilityCalls } from
 import { migrateAiCapabilityTargets, routineTargetMigrationHint } from "./capability-targets-migrate";
 import { chatTaskReasonSentence } from "./chat-task-reasons";
 import { buildBlocksFromMessages } from "./protocol";
+
+// A direct single-file run has no runner bootstrap. Prepare the cold production
+// schema before timing migration assertions; each test still gets its own clone.
+if (testInfra.database) {
+  afterAll(closeMigratedDatabaseTemplate);
+  await migratedDatabaseTemplate(requireDatabaseUrl());
+}
 
 const legacyPolicy = (fixedInput: unknown, capabilityId = "task.create") => ({
   version: 1,
@@ -344,7 +352,7 @@ databaseSuite()("capability target upgrade with existing Assistant data", () => 
       const [auditBefore] = await db<
         { count: number }[]
       >`SELECT count(*)::int AS count FROM audit.events WHERE action IN ('ai.routine.targets.migrate','ai.approval.targets.migrate')`;
-      expect(auditBefore!.count).toBe(tasks.length + pending.length);
+      expect(auditBefore!.count).toBe(tasks.length + 1 + pending.length); // Includes the routine without a mandate.
       await migrateAiCapabilityTargets(db);
       expect(await bytes(allChangedTables)).toEqual(first);
       expect(await db`SELECT encode(record_send(row),'hex') AS bytes FROM auth.mandates row ORDER BY id`).toEqual(mandatesFirst);
