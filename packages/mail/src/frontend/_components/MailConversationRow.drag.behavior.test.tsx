@@ -51,6 +51,8 @@ const question: MailListItem = {
   unread: false,
   activeFolderIds: ["inbox"],
   flagged: false,
+  imageAttachments: [],
+  imageAttachmentCount: 0,
   hasAttachments: false,
   messageCount: 2,
   workStatus: "needs_action",

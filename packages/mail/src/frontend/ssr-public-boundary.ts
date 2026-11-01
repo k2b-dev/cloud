@@ -186,6 +186,10 @@ export const projectMailboxPageData = async (data: MailboxPageData, loadPublicId
     add(paths, "folders", ["listItems", index, "sourceFolderId"], item.sourceFolderId);
     item.activeFolderIds.forEach((id, child) => add(paths, "folders", ["listItems", index, "activeFolderIds", child], id));
     item.unreadFolderIds.forEach((id, child) => add(paths, "folders", ["listItems", index, "unreadFolderIds", child], id));
+    item.imageAttachments.forEach((image, child) => {
+      add(paths, "messages", ["listItems", index, "imageAttachments", child, "messageId"], image.messageId);
+      add(paths, "attachments", ["listItems", index, "imageAttachments", child, "attachmentId"], image.attachmentId);
+    });
     addResourceList(paths, "tags", ["listItems", index, "localTags"], item.localTags);
   });
   addResourceList(paths, "messages", ["detailMessages"], data.detailMessages);

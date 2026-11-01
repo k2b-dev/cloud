@@ -67,6 +67,8 @@ const item = (index: number, overrides: Partial<MailListItem> = {}): MailListIte
   unread: index % 3 === 0,
   activeFolderIds: [],
   flagged: false,
+  imageAttachments: [],
+  imageAttachmentCount: 0,
   hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
@@ -134,6 +136,12 @@ const css =
   (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
 /** Milliseconds the preview endpoint waits before it answers. */
 let previewDelay = 0;
+/** A 2×2 PNG, and the attachments whose thumbnails the page requested. */
+const THUMBNAIL_PNG = Uint8Array.from(
+  atob("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg=="),
+  (char) => char.charCodeAt(0),
+);
+const thumbnailRequests: string[] = [];
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -141,6 +149,13 @@ const server = Bun.serve({
     const { pathname } = new URL(request.url);
     if (pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+    // Thumbnails: an attachment named "Broken" fails, as an unreadable image does.
+    const thumbnail = /^\/api\/mail\/mailboxes\/Box001\/messages\/[^/]+\/attachments\/([^/]+)\/thumbnail$/u.exec(pathname);
+    if (thumbnail?.[1]) {
+      thumbnailRequests.push(thumbnail[1]);
+      if (thumbnail[1] === "Broken") return new Response(null, { status: 400 });
+      return new Response(THUMBNAIL_PNG, { headers: { "Content-Type": "image/png" } });
+    }
     const match = /^\/api\/mail\/mailboxes\/Box001\/conversations\/([^/]+)\/preview$/u.exec(pathname);
     if (match?.[1]) {
       if (previewDelay) await Bun.sleep(previewDelay);
@@ -1292,6 +1307,95 @@ describe("Mail row actions", () => {
       }, 30_000);
     });
   }
+});
+
+describe("Mail image thumbnails in the columns view", () => {
+  const images = (ids: string[], count = ids.length) => ({
+    hasAttachments: true,
+    imageAttachments: ids.map((attachmentId) => ({ messageId: "Msg001", attachmentId })),
+    imageAttachmentCount: count,
+  });
+  const thumbnailItems = [item(1, images(["Img001", "Img002", "Img003"], 5)), item(2, images(["Broken"])), item(3), ...items.slice(4, 12)];
+  /** Per row: whether its thumbnails show, their boxes, and what each box holds. */
+  const thumbnails = (page: Page) =>
+    page.evaluate(() =>
+      ["Cv0001", "Cv0002", "Cv0003"].map((id) => {
+        const row = document.querySelector(`.mail-list-entry[data-conversation-id="${id}"]`)!;
+        const group = row.querySelector<HTMLElement>("[data-mail-row-thumbnails]");
+        return {
+          id,
+          shown: group ? getComputedStyle(group).display !== "none" : false,
+          boxes: [...row.querySelectorAll(".mail-row-thumbnail")].map((box) => {
+            const { width, height } = box.getBoundingClientRect();
+            const image = box.querySelector("img");
+            return {
+              width,
+              height,
+              image: image ? image.complete && image.naturalWidth > 0 : box.querySelector(".ti-photo") ? "placeholder" : null,
+            };
+          }),
+          more: row.querySelector(".mail-row-thumbnail-more")?.textContent ?? null,
+          rowHeight: row.getBoundingClientRect().height,
+        };
+      }),
+    );
+
+  test("a wide list shows up to three fixed 24 px thumbnails and +n, and a failed one keeps its box with a placeholder", async () => {
+    thumbnailRequests.length = 0;
+    const page = await load({
+      columns: "personal",
+      listSize: 620,
+      items: thumbnailItems,
+      context: { viewport: { width: 1600, height: 900 } },
+    });
+    // settled: the boxes before any image arrives are the subject; the loaded state below is awaited.
+    const first = await thumbnails(page);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".mail-row-thumbnail")].every(
+        (box) =>
+          (box.querySelector("img")?.complete !== false && (box.querySelector("img")?.naturalWidth ?? 1) > 0) ||
+          box.querySelector(".ti-photo"),
+      ),
+    );
+    const loaded = await thumbnails(page);
+    expect(loaded).toEqual([
+      {
+        id: "Cv0001",
+        shown: true,
+        boxes: Array(3).fill({ width: 24, height: 24, image: true }),
+        more: "+2",
+        rowHeight: first[0]!.rowHeight,
+      },
+      { id: "Cv0002", shown: true, boxes: [{ width: 24, height: 24, image: "placeholder" }], more: null, rowHeight: first[1]!.rowHeight },
+      { id: "Cv0003", shown: false, boxes: [], more: null, rowHeight: first[2]!.rowHeight },
+    ]);
+    expect(first.map((row) => row.boxes.map(({ width, height }) => [width, height]))).toEqual(
+      loaded.map((row) => row.boxes.map(({ width, height }) => [width, height])),
+    );
+    expect([...thumbnailRequests].sort()).toEqual(["Broken", "Img001", "Img002", "Img003"]);
+    expect(page.errors).toEqual([]);
+    await close(page);
+  }, 30_000);
+
+  test("a narrow app area and a phone show no thumbnails and load none", async () => {
+    for (const viewport of [
+      { width: 820, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      thumbnailRequests.length = 0;
+      const page = await load({ columns: "personal", items: thumbnailItems, context: { viewport } });
+      await page.locator(row("Cv0001")).waitFor();
+      const rows = await thumbnails(page);
+      expect(
+        rows.map((entry) => entry.shown),
+        `${viewport.width}`,
+      ).toEqual([false, false, false]);
+      // Lazy images inside a hidden group are never fetched.
+      await page.waitForLoadState("networkidle");
+      expect(thumbnailRequests, `${viewport.width}`).toEqual([]);
+      await close(page);
+    }
+  }, 30_000);
 });
 
 describe("Mail columns view time column", () => {

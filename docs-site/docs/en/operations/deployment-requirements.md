@@ -1089,6 +1089,17 @@ it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
 
+### Mail attachment thumbnails
+
+Mail's list shows small thumbnails of image attachments. Its thumbnail endpoint
+uses the isolated Linux image workers that the shared build adds to the Mail
+image, two at once per process, with up to 64 requests waiting; beyond that it
+answers 503 and the list shows a placeholder. Sources are limited to 25 MiB and
+responses to 96×96 pixels and 48 KiB. Access is checked before reading and again
+before returning the image. Browsers revalidate each thumbnail, so a revoked
+access is never served from their cache. No setting, service, or migration is
+required.
+
 ### Mail draft signatures
 
 Mail adds the column `mail.drafts.signature_template_id` on its next start. No

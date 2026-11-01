@@ -2,6 +2,13 @@ import { describe, expect, test } from "bun:test";
 import api from "./index";
 
 describe("Mail API composition", () => {
+  test("exposes the received attachment thumbnail behind the attachment parameter resolver", () => {
+    const prefix = "/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId";
+    const resolver = api.routes.findIndex((route) => route.method === "ALL" && route.path === `${prefix}/*`);
+    const thumbnail = api.routes.findIndex((route) => route.method === "GET" && route.path === `${prefix}/thumbnail`);
+    expect(resolver).toBeGreaterThanOrEqual(0);
+    expect(thumbnail).toBeGreaterThan(resolver);
+  });
   test("exposes mailbox signature logo read, upload and remove routes", () => {
     for (const method of ["GET", "PUT", "DELETE"]) {
       expect(api.routes.some((route) => route.method === method && route.path === "/mailboxes/:mailboxId/compose-logo")).toBe(true);

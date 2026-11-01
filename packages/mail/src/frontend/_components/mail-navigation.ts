@@ -98,6 +98,13 @@ export const buildMailAttachmentDownloadHref = (requestUrl: URL, item: MailListI
   return `/api/mail/mailboxes/${match[1]}/messages/${encodeURIComponent(item.attachmentMatch.messageId)}/attachments/${encodeURIComponent(item.attachmentMatch.attachmentId)}`;
 };
 
+/** The small thumbnail of one of a row's image attachments, under the mailbox the list shows. */
+export const buildMailAttachmentThumbnailHref = (requestUrl: URL, image: MailListItem["imageAttachments"][number]): string | null => {
+  const match = /^\/app\/mail\/([^/]+)$/.exec(requestUrl.pathname);
+  if (!match?.[1]) return null;
+  return `/api/mail/mailboxes/${match[1]}/messages/${encodeURIComponent(image.messageId)}/attachments/${encodeURIComponent(image.attachmentId)}/thumbnail`;
+};
+
 export const buildMailingListHref = (requestUrl: URL, listKey: string): string => {
   const next = new URL(requestUrl);
   next.searchParams.set("mailingList", listKey);

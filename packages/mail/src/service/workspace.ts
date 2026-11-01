@@ -35,6 +35,7 @@ import * as conversationSummaries from "./conversation-summary";
 import { getMailboxDoneTodayCounts } from "./done-today";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
+import { listRowImageAttachments } from "./list-image-attachments";
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
@@ -69,6 +70,8 @@ export type MailListItem = {
   activeFolderIds: string[];
   flagged: boolean;
   hasAttachments: boolean;
+  imageAttachments: { messageId: string; attachmentId: string }[];
+  imageAttachmentCount: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -285,6 +288,8 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   latestMessageAt: conversation.latestMessageAt,
   preview: conversation.preview,
   attachmentMatch: null,
+  imageAttachments: [],
+  imageAttachmentCount: 0,
   unread: conversation.unread,
   activeFolderIds: conversation.activeFolderIds,
   flagged: conversation.flagged,
@@ -322,6 +327,8 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     latestMessageAt: item.latestMessageAt,
     preview: item.snippet,
     attachmentMatch: item.attachmentMatch,
+    imageAttachments: [],
+    imageAttachmentCount: 0,
     unread: item.unread,
     activeFolderIds: item.activeFolderIds,
     flagged: item.flagged,
@@ -357,6 +364,31 @@ const attachLocalTags = async (
       localTags: item.conversationId ? (result.data.get(item.conversationId) ?? []) : [],
     })),
   };
+};
+
+const attachListMetadata = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  items: MailListItem[],
+  nextCursor: string | null,
+): Promise<MailListPage> => {
+  const page = await attachLocalTags(context, mailboxId, items, nextCursor);
+  if (page.error || !page.items.some((item) => item.hasAttachments)) return page;
+  try {
+    const images = await listRowImageAttachments({
+      context,
+      mailboxId,
+      rows: page.items.filter((item) => item.hasAttachments).map(({ id, selectionKind }) => ({ id, selectionKind })),
+    });
+    if (!images.ok) {
+      log.warn("Failed to load Mail list images", { mailboxId, code: images.error.code });
+      return page;
+    }
+    return { ...page, items: page.items.map((item) => ({ ...item, ...images.data.get(item.id) })) };
+  } catch (error) {
+    log.warn("Failed to load Mail list images", { mailboxId, error: error instanceof Error ? error.message : String(error) });
+    return page;
+  }
 };
 
 const loadConversationDetails = async (
@@ -577,7 +609,7 @@ const loadListItems = async (params: {
       return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed" };
     }
     const items = result.data.items.map((item) => searchHitToListItem(item, params.listMode));
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+    return attachListMetadata(params.context, params.mailboxId, items, result.data.nextCursor);
   }
 
   if (params.savedView) {
@@ -590,7 +622,7 @@ const loadListItems = async (params: {
     });
     if (!result.ok) return { items: [], nextCursor: null, error: "search_failed" };
     const items = result.data.items.map(conversationToListItem);
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+    return attachListMetadata(params.context, params.mailboxId, items, result.data.nextCursor);
   }
 
   const result = await messages.listConversations({
@@ -604,7 +636,7 @@ const loadListItems = async (params: {
   });
   if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
   const items = result.data.items.map(conversationToListItem);
-  return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+  return attachListMetadata(params.context, params.mailboxId, items, result.data.nextCursor);
 };
 
 /** A workspace URL after its public IDs were resolved: resource parameters and search conditions carry internal IDs. */

@@ -1,6 +1,7 @@
 export type AttachmentPreviewKind = "image" | "pdf" | "text" | "audio" | "video";
 
-const MAX_IMAGE_PREVIEW_BYTES = 25 * 1024 * 1024;
+export const IMAGE_PREVIEW_CONTENT_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+export const MAX_IMAGE_PREVIEW_BYTES = 25 * 1024 * 1024;
 const MAX_DOCUMENT_PREVIEW_BYTES = 50 * 1024 * 1024;
 const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
 
@@ -9,7 +10,7 @@ export const baseAttachmentContentType = (contentType: string): string => conten
 export const attachmentPreviewKind = (contentType: string, byteLength: number): AttachmentPreviewKind | null => {
   if (!Number.isSafeInteger(byteLength) || byteLength < 0) return null;
   const mime = baseAttachmentContentType(contentType);
-  if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mime)) {
+  if (IMAGE_PREVIEW_CONTENT_TYPES.includes(mime)) {
     return byteLength <= MAX_IMAGE_PREVIEW_BYTES ? "image" : null;
   }
   if (mime === "application/pdf") return byteLength <= MAX_DOCUMENT_PREVIEW_BYTES ? "pdf" : null;
