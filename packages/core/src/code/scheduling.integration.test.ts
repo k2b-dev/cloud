@@ -9,6 +9,7 @@ import { createSync, type Queue, type Sync, type Worker } from "@k2b/sync";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
+import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
@@ -30,7 +31,7 @@ import {
 } from "./scheduling";
 import { type CodeRunWakeup, createCodeRunOutbox, createCodeScheduleReconciler, fetchCodeRuns } from "./scheduling-runtime";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { appendCodeCall, codeBundleHash, codeSourceHash, insertCodeRun, readCodeRun } from "./store";
+import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertCodeRun, readCodeRun } from "./store";
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const other = "22222222-2222-4222-8222-222222222222";
@@ -147,6 +148,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
   beforeAll(async () => {
     database = await useFreshDatabase("code_c13");
     await migrateAuth();
+    await migrateAudit();
     await migrateSettings();
     await migrateAppApproval();
     await migrateCode();
@@ -196,6 +198,11 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     ]);
     expect(new Set(results.map((r) => r.runId)).size).toBe(1);
     expect(results.filter((r) => !r.duplicate)).toHaveLength(1);
+    const events = await sql<{ actor_user_id: string }[]>`SELECT actor_user_id FROM audit.events
+      WHERE action='core.code.run.started' AND target_id=${code.codeId}`;
+    expect(events).toEqual([{ actor_user_id: owner }]);
+    await expect(startCodeRun({ ...request, input: { changed: true } }, context())).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(startCodeRun({ ...request, entrypoint: "other" }, context())).rejects.toMatchObject({ code: "CONFLICT" });
     const rerun = await startCodeRun({ ...request, idempotencyKey: "invoice:001:rerun" }, context());
     expect(rerun.runId).not.toBe(results[0]!.runId);
     await expect(startCodeRun(request, context(other))).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -215,6 +222,68 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     expect(second.generation).toBe(2);
     await completeCodeRun(await claims(second), "succeeded");
     await publisher.stop();
+  });
+  for (const ownerLimit of [false, true])
+    test(`real outbox drains default-limit backlog without recovery (owner limit: ${ownerLimit})`, async () => {
+      overrides.set("core.code.runner_poll_ms", 100);
+      if (ownerLimit) overrides.set("core.code.concurrency_per_owner", 1);
+      const code = await fixture();
+      const neighbor = ownerLimit ? await fixture() : code;
+      const ids = [];
+      for (let index = 0; index < 6; index++)
+        ids.push(
+          (
+            await startCodeRun(
+              {
+                codeId: index % 2 ? neighbor.codeId : code.codeId,
+                entrypoint: "weekly",
+                idempotencyKey: `backlog:${index}`,
+              },
+              context(),
+            )
+          ).runId,
+        );
+      const publisher = createCodeRunOutbox(() => queue);
+      const instanceId = "88888888-8888-4888-8888-888888888888";
+      const fetch = () => fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign });
+      try {
+        await publisher.reconcile();
+        let response = await fetch();
+        // Exhaust the real published tickets while capacity is occupied, just as concurrent idle runners do.
+        expect((await fetch()).runs).toHaveLength(0);
+        const seen = new Set<string>();
+        for (let index = 0; index < ids.length; index++) {
+          expect(response.runs).toHaveLength(1);
+          const lease = response.runs[0]!;
+          expect(seen.has(lease.runId)).toBe(false);
+          seen.add(lease.runId);
+          await completeCodeRun(await claims(lease), "succeeded");
+          if (index < ids.length - 1) {
+            expect(await publisher.reconcile()).toBeGreaterThan(0);
+            response = await fetch();
+          }
+        }
+        expect(seen).toEqual(new Set(ids));
+      } finally {
+        await publisher.stop();
+      }
+    }, 10_000);
+  test("expired wall budget has its own outcome for queued and running runs", async () => {
+    const code = await fixture();
+    const ids = await enqueueMany(code, 2);
+    await take();
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()-interval '1 second' WHERE code_id=${code.codeId}`;
+    await reconcileCodeRuns();
+    for (const id of ids) expect(await state(id)).toMatchObject({ state: "failed", outcome: "wall_clock_limit" });
+  });
+  test("a refused scheduled tick is visible and permanently deduplicated", async () => {
+    const code = await fixture();
+    await sql`DELETE FROM code.version_submissions WHERE version_id=${code.versionId}::uuid`;
+    const tick = { ...code, slot };
+    const result = await processCodeScheduleTick(tick);
+    expect(await state(result!.runId)).toMatchObject({ state: "failed", outcome: "code_admission_refused" });
+    expect(await processCodeScheduleTick(tick)).toEqual({ runId: result!.runId, duplicate: true });
+    expect(await claimCodeRuns(1, await readCodeRunLimits())).toHaveLength(0);
   });
   test("three runners complete 200 runs exactly once, never exceeding their free slots", async () => {
     overrides.set("core.code.concurrency_per_code", 100);
@@ -290,7 +359,16 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     expect((await state(lease.runId)).state).toBe("failed");
     const result = await readCodeRun({ codeId: code.codeId, runId: lease.runId, cursor: 0, offset: 0, length: 1000 }, context());
     expect(result.contents?.calls[0]?.ordinal).toBe(1);
-    expect(result.contents?.calls[0]?.state).toBe("failed");
+    expect(result.contents?.calls[0]?.state).toBe("uncertain");
+    expect(result.contents?.calls[0]?.result).toEqual({ ok: false, error: { code: "code_result_unknown" } });
+    await sql.begin((db) =>
+      finishCodeCall(
+        { runId: lease.runId, ordinal: 1, state: "succeeded", result: { ok: true, data: { stored: true } }, endedAt: new Date() },
+        db,
+      ),
+    );
+    const late = await readCodeRun({ codeId: code.codeId, runId: lease.runId, cursor: 0, offset: 0, length: 1000 }, context());
+    expect(late.contents?.calls[0]).toMatchObject({ state: "succeeded", result: { ok: true, data: { stored: true } } });
     expect(await claimCodeRuns(1, await readCodeRunLimits())).toHaveLength(0);
   });
   test("killed runner before an Action requeues; after an Action fails; expired generation cannot heartbeat or call", async () => {
@@ -346,7 +424,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       await completeCodeRun(await claims(lease), "failed");
       if (generation < 3) lease = await take();
     }
-    expect((await state(lease.runId)).state).toBe("failed");
+    expect(await state(lease.runId)).toMatchObject({ state: "failed", outcome: "retry_exhausted" });
   });
   test("one permanent schedule tick with three Core deliveries; running predecessor records the skipped tick", async () => {
     const code = await fixture();
@@ -389,6 +467,36 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     } finally {
       for (const worker of workers) worker.stop();
       await Promise.all(workers.map((w) => w.drain({ timeoutMs: 1000 })));
+    }
+  }, 10_000);
+  test("retained schedule callbacks bind a newly active version without waiting for reconciliation", async () => {
+    const code = await fixture();
+    const sync = createSync({ connection, namespace: testSyncNamespace("c13-activation"), application: "core", defaults: { replicas: 1 } });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    const reconcile = createCodeScheduleReconciler(scheduler);
+    await reconcile();
+    const original = (await scheduler.list())[0]!;
+    const [next] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
+      SELECT code_id,2,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by
+      FROM code.versions WHERE id=${code.versionId}::uuid RETURNING id`;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding)
+      SELECT ${next!.id}::uuid,code_id,jsonb_set(binding,'{versionId}',to_jsonb(${next!.id}::text))
+      FROM code.version_submissions WHERE version_id=${code.versionId}::uuid`;
+    await sql`UPDATE code.codes SET active_version_id=${next!.id}::uuid WHERE id=${code.codeId}`;
+    const worker = await scheduler.process();
+    try {
+      const tick = await scheduler.runNow({ id: original.id, requestId: "after-activation" });
+      expect((await scheduler.awaitRun({ id: original.id, runId: tick.runId, timeoutMs: 5000 })).completed).toBe(true);
+      const runs = await sql<{ version_id: string }[]>`SELECT version_id FROM code.runs WHERE code_id=${code.codeId}`;
+      expect(runs).toEqual([{ version_id: next!.id }]);
+      await reconcile();
+      expect((await scheduler.list()).map((s) => s.id)).toEqual([original.id]);
+    } finally {
+      worker.stop();
+      await worker.drain({ timeoutMs: 1000 });
     }
   }, 10_000);
   test("fully occupied runners remain visible through lease heartbeats", async () => {

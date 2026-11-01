@@ -8,7 +8,8 @@ import {
   RunnerFetchRequestSchema,
   RunnerLeaseProofSchema,
 } from "@k2b/cloud/code/runner";
-import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, ratelimit, setRequestTimeout } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { requireCodeRunFence } from "./bridge";
 import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
@@ -21,7 +22,13 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
     router.post(path, async (c) => {
       const signed = await authenticateSignedAppRequest(c, "identity:invoke", {
         // The enrolled app key is shared by the fleet; per-Code/run limits, not one key's bootstrap rate, own admission.
-        admit: async () => ({ limited: false, remaining: 0, resetIn: 0 }),
+        admit: async (keyId, appId) =>
+          appId === "runner"
+            ? { limited: false, remaining: 0, resetIn: 0 }
+            : ratelimit({
+                id: "app-bootstrap-key",
+                limit: Math.max(1, Math.floor(await coreSettings.get<number>("security.rate_limit_per_second"))),
+              }).check(keyId),
         ...options.appProof,
       });
       if (signed instanceof Response) return signed;

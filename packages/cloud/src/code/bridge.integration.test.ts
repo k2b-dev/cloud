@@ -369,6 +369,23 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       settings.mockRestore();
     }
   });
+  test("C13 protocol admission reserves the shared app-key bypass for runners", async () => {
+    realAdmission = true;
+    const limits = spyOn(rateLimits, "ratelimit");
+    const settings = spyOn(coreSettings, "get").mockResolvedValue(60);
+    try {
+      for (const path of [RUNNER_PATHS.config, RUNNER_PATHS.fetch, RUNNER_PATHS.bundle, RUNNER_PATHS.heartbeat, RUNNER_PATHS.complete]) {
+        limits.mockClear();
+        await runnerProtocolRequest(path, {});
+        expect(limits.mock.calls.filter(([config]) => config.id === "app-bootstrap-key")).toHaveLength(0);
+        expect((await runnerProtocolRequest(path, {}, other)).status).toBe(403);
+        expect(limits.mock.calls.filter(([config]) => config.id === "app-bootstrap-key")).toHaveLength(1);
+      }
+    } finally {
+      limits.mockRestore();
+      settings.mockRestore();
+    }
+  });
   test("run token is required even with an enrolled runner signature", async () =>
     error({ token: "not-a-token" }, "code_invalid_token", 403));
   test("own HTTP origins are refused at bridge ingress", async () =>

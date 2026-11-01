@@ -267,3 +267,9 @@ its return value, and gives `cloud` only the `call` method. The SDK bundler
 must produce this module boundary. `RunnerEngine` (`load`, `run`, `kill`,
 `close`) and `SandboxCall` are exported from `packages/runner/src/engine.ts`
 for the attack tests and simulation kit; no application imports that package.
+
+When a running attempt ends, Core commits a dispatch wakeup for waiting work
+of the same owner. A backlog held by the per-Code or per-owner concurrency
+limit can continue as soon as capacity frees up; lease recovery is not needed
+for ordinary progress. Schedule registration scans bounded database pages on
+each Core reconciliation pass, using stable Code/entrypoint identities.

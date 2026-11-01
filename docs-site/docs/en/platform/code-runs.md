@@ -22,11 +22,12 @@ needs Code editor permission and a credential that permits writes. The
 entrypoint must occur in the active version's checked manifest. The active
 version still needs its current policy, approval, and version mandate.
 
-The same key for the same Code returns the original `runId` and
+The same key and request for the same Code return the original `runId` and
 `duplicate: true`; concurrent requests cannot create a second run. Receipts
 remain after the 30-day run-detail retention, so a repeated old key can refer
 to a run whose details are no longer available. Receipts contain only the key
-and run ID and are deleted with the Code.
+run ID, and request digest and are deleted with the Code. Reusing a key with a
+different entrypoint or input returns a conflict.
 
 “Run again” (“Erneut ausführen”) uses a new request key and the currently
 active version. Capability calls with an idempotency key can return their
@@ -64,12 +65,16 @@ if several Core instances receive the same tick.
 If the previous tick of that entrypoint is queued or running, Core records the
 new tick as `skipped` with outcome `previous_schedule_running`: “Skipped,
 previous run is still running” (“Übersprungen, vorheriger Lauf läuft noch”).
-Activation of a newer version does not permit overlap with the previous
-version's run of the same schedule. A stale version's callback cannot start work.
+Schedule identity stays the same across version activation. Each tick binds the
+current active version under the Code lock. Activation does not permit overlap
+with the previous version's run of the same schedule. Removed or changed
+schedules reject callbacks from obsolete definitions.
 
 A manual start of the same schedule entrypoint also blocks an overlapping
 tick. Manual starts keep their own request keys. A paused Code accepts no new
-manual run; scheduled callbacks do not create runs while it is paused.
+manual run; scheduled callbacks do not create runs while it is paused. If a
+current schedule is refused by policy or version approval, its tick appears as
+a failed run with `code_admission_refused`.
 
 ## Read runs and calls
 
@@ -77,14 +82,19 @@ Use `core.code.run.list` and `core.code.run.read` as described in
 [Code data model](/en/docs/platform/code-data-model#read-through-core-queries).
 Readers see run metadata; editors can read inputs and call results. Calls are
 observations committed before invoking a capability, with the result recorded
-afterward. A lost attempt leaves a visible failure for an unfinished call.
+afterward. An unfinished call in a lost attempt has state `uncertain` and result
+code `code_result_unknown`: the effect may have completed. An authoritative
+result arriving later replaces that marker; it does not restart the run.
 
 Core maintainers consume the scheduling contracts from
 `packages/core/src/code/index.ts`: `CodeStartRequestSchema`, `CodeStartRequest`,
 `CodeStartResult`, `CodeRunLimits`, `CodeScheduleTick`, `CodeRunnerMetrics`,
 `startCodeRun`, `processCodeScheduleTick`, and `readCodeRunnerMetrics`.
 `codeRunMessages` supplies English and German UI labels; stable outcomes remain
-untranslated on the transport. Applications use Core capabilities rather than
+untranslated on the transport. `CODE_RUN_OUTCOMES` covers runner results,
+`lease_lost`, `retry_exhausted`, admission failures, inactive versions, and
+skipped ticks. A wall-clock expiry is `wall_clock_limit`, including a retry
+whose deadline expires while queued. Applications use Core capabilities rather than
 importing Core source.
 
 For runner capacity, lease recovery, and shutdown, see

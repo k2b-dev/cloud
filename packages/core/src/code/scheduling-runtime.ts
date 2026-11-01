@@ -8,7 +8,7 @@ import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import {
   claimCodeRuns,
   codeRunnerLease,
-  processCodeScheduleTick,
+  processCurrentCodeScheduleTick,
   readCodeRunLimits,
   reconcileCodeRuns,
   recordCodeRunner,
@@ -83,47 +83,62 @@ export async function fetchCodeRuns(
   }
 }
 
-const scheduleId = (versionId: string, entrypoint: string) =>
-  `code:${new Bun.CryptoHasher("sha256").update(`${versionId}:${entrypoint}`).digest("hex")}`;
-/** Reconciles at most 50 Codes per pass. Stale version callbacks recheck the active version before admitting a tick. */
+const scheduleId = (codeId: string, entrypoint: string) =>
+  `code:${new Bun.CryptoHasher("sha256").update(`${codeId}:${entrypoint}`).digest("hex")}`;
+/** Every replica registers all handlers, in bounded database pages. Definition changes and deletion
+ * recheck the current Code under its row lock, so another replica's newer snapshot cannot be undone.
+ * Stable entrypoint IDs keep retained ticks across version activation; callbacks bind the current version.
+ */
 export function createCodeScheduleReconciler(scheduler: Scheduler) {
-  let cursor = "";
-  let desired = new Set<string>();
   return async () => {
-    const versions = await sql<{ id: string; version_id: string; manifest: unknown }[]>`SELECT c.id,v.id AS version_id,v.manifest
-      FROM code.codes c JOIN code.versions v ON v.id=c.active_version_id WHERE c.state='active' AND c.id>${cursor}
-      ORDER BY c.id LIMIT 50`;
+    const registered = await scheduler.list();
     const timezone = (await coreSettings.get<string>("app.timezone")) || "UTC";
-    for (const version of versions) {
-      const manifest = CodeCheckedVersionManifestSchema.safeParse(version.manifest);
-      if (!manifest.success) continue;
-      for (const entry of manifest.data.entrypoints) {
-        if (entry.kind !== "schedule" || !entry.cron) continue;
-        const id = scheduleId(version.version_id, entry.entrypoint);
-        desired.add(id);
-        await scheduler.create({
-          id,
-          cron: entry.cron,
-          timezone,
-          misfire: "latest",
-          meta: { family: "code", codeId: version.id },
-          process: async (ctx) => {
-            await processCodeScheduleTick({
-              codeId: version.id,
-              versionId: version.version_id,
-              entrypoint: entry.entrypoint,
-              slot: ctx.slot,
-            });
-          },
+    let cursor = "";
+    while (true) {
+      const codes = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE id>${cursor} ORDER BY id LIMIT 50`;
+      for (const code of codes) {
+        await sql.begin(async (db) => {
+          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
+          const [current] = await db<{ state: string; manifest: unknown }[]>`SELECT c.state,v.manifest FROM code.codes c
+            LEFT JOIN code.versions v ON v.id=c.active_version_id WHERE c.id=${code.id}`;
+          const manifest = CodeCheckedVersionManifestSchema.safeParse(current?.manifest);
+          const desired = new Set<string>();
+          if (current?.state === "active" && manifest.success)
+            for (const entry of manifest.data.entrypoints) {
+              if (entry.kind !== "schedule" || !entry.cron) continue;
+              const cron = entry.cron;
+              const id = scheduleId(code.id, entry.entrypoint);
+              desired.add(id);
+              await scheduler.create({
+                id,
+                cron,
+                timezone,
+                misfire: "latest",
+                meta: { family: "code", codeId: code.id },
+                process: async (ctx) => {
+                  await processCurrentCodeScheduleTick({
+                    codeId: code.id,
+                    entrypoint: entry.entrypoint,
+                    cron,
+                    slot: ctx.slot,
+                  });
+                },
+              });
+            }
+          for (const schedule of registered) {
+            if (schedule.id.startsWith("code:") && schedule.meta?.codeId === code.id && !desired.has(schedule.id))
+              await scheduler.delete({ id: schedule.id });
+          }
         });
       }
+      if (codes.length < 50) break;
+      cursor = codes.at(-1)!.id;
     }
-    if (versions.length === 50) cursor = versions.at(-1)!.id;
-    else {
-      for (const schedule of await scheduler.list())
-        if (schedule.id.startsWith("code:") && !desired.has(schedule.id)) await scheduler.delete({ id: schedule.id });
-      cursor = "";
-      desired = new Set();
+    // Deleted Codes cannot acquire new active versions. Check absence freshly, never against a replica-local desired set.
+    for (const schedule of registered) {
+      if (!schedule.id.startsWith("code:") || typeof schedule.meta?.codeId !== "string") continue;
+      const [exists] = await sql`SELECT id FROM code.codes WHERE id=${schedule.meta.codeId}`;
+      if (!exists) await scheduler.delete({ id: schedule.id });
     }
   };
 }

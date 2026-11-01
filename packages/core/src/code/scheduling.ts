@@ -2,6 +2,8 @@ import { sql } from "@k2b/cloud";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { audit } from "@k2b/cloud/services";
+import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { requireCodeRunFence } from "./bridge";
@@ -32,8 +34,10 @@ export async function readCodeRunLimits(): Promise<CodeRunLimits> {
   };
 }
 
+type ScheduledTick = Omit<CodeScheduleTick, "versionId"> & { versionId?: string; cron?: string };
+
 async function enqueue(
-  input: { codeId: string; entrypoint: string; requestKey: string; input: unknown; tick?: CodeScheduleTick },
+  input: { codeId: string; entrypoint: string; requestKey: string; input: unknown; tick?: ScheduledTick },
   db: SQL,
   context?: CodeContext,
 ): Promise<CodeStartResult | null> {
@@ -41,16 +45,31 @@ async function enqueue(
   if (!context) await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
   const code = context ? await lockCodeForEdit(input.codeId, context, db) : await findCode(input.codeId, db);
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
-  const [receipt] = await db<{ run_id: string }[]>`SELECT run_id FROM code.run_requests
+  const requestDigest = approvalArgsDigest({ entrypoint: input.entrypoint, input: input.input });
+  const [receipt] = await db<{ run_id: string; request_digest: string | null }[]>`SELECT run_id,request_digest FROM code.run_requests
     WHERE code_id=${code.id} AND request_key=${input.requestKey}`;
-  if (receipt) return { runId: receipt.run_id, duplicate: true };
-  if (input.tick && (code.state !== "active" || code.activeVersionId !== input.tick.versionId)) return null;
+  if (receipt) {
+    if (receipt.request_digest !== requestDigest) throw new CodeDataError("CONFLICT", "Idempotency key was used for a different request.");
+    return { runId: receipt.run_id, duplicate: true };
+  }
+  if (input.tick && (code.state !== "active" || (input.tick.versionId !== undefined && code.activeVersionId !== input.tick.versionId)))
+    return null;
   if (code.state !== "active" || !code.activeVersionId) throw new CodeDataError("CONFLICT", "Code is not active.");
-  await requireCodeVersionApproval(code, code.activeVersionId, db);
   const [version] = await db<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
   const entry = manifest.entrypoints.find((entry) => entry.entrypoint === input.entrypoint && (!input.tick || entry.kind === "schedule"));
-  if (!entry) throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
+  if (!entry) {
+    if (input.tick) return null;
+    throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
+  }
+  if (input.tick?.cron !== undefined && input.tick.cron !== entry.cron) return null;
+  let refused = false;
+  try {
+    await requireCodeVersionApproval(code, code.activeVersionId, db);
+  } catch (error) {
+    if (!input.tick || !(error instanceof CodeVersionError)) throw error;
+    refused = true;
+  }
   const runId = await insertCodeRun(
     {
       codeId: code.id,
@@ -71,7 +90,24 @@ async function enqueue(
       outcome=${busy ? "previous_schedule_running" : null},ended_at=CASE WHEN ${!!busy} THEN clock_timestamp() ELSE NULL END WHERE id=${runId}::uuid`;
     if (busy) await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
   }
-  await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${input.requestKey},${runId}::uuid)`;
+  if (refused) {
+    await db`UPDATE code.runs SET state='failed',outcome='code_admission_refused',ended_at=clock_timestamp() WHERE id=${runId}::uuid`;
+    await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
+  }
+  await db`INSERT INTO code.run_requests(code_id,request_key,run_id,request_digest)
+    VALUES(${code.id},${input.requestKey},${runId}::uuid,${requestDigest})`;
+  if (context)
+    await audit.record(
+      {
+        action: "core.code.run.started",
+        outcome: "allowed",
+        actor: { userId: codePerson(context, true).id },
+        target: { type: "code", id: code.id },
+        requestId: context.requestId,
+        metadata: { runId, versionId: code.activeVersionId },
+      },
+      db,
+    );
   return { runId, duplicate: false };
 }
 /** Permission-aware manual start/rerun for CLI, chat and resource pages. Rerun uses a NEW request key. */
@@ -84,6 +120,15 @@ export async function startCodeRun(request: CodeStartRequest, context: CodeConte
 }
 /** Permanent database tick receipt supplements Sync's at-least-once delivery and finite dedupe window. */
 export async function processCodeScheduleTick(tick: CodeScheduleTick): Promise<CodeStartResult | null> {
+  return admitScheduleTick(tick);
+}
+/** Scheduler callbacks bind the current version atomically with admission, including concurrent activation. */
+export async function processCurrentCodeScheduleTick(
+  tick: Omit<CodeScheduleTick, "versionId"> & { cron: string },
+): Promise<CodeStartResult | null> {
+  return admitScheduleTick(tick);
+}
+async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult | null> {
   if (!Number.isFinite(tick.slot.getTime())) throw new RangeError("Invalid schedule slot");
   return sql.begin((db) =>
     enqueue(
@@ -225,15 +270,17 @@ export async function heartbeatCodeRun(claims: CodeRunTokenClaims): Promise<{ le
 }
 async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunLimits, db: SQL) {
   // An in-flight or uncertain Action is an effect boundary too. Never retry it automatically.
-  const [result] = await db<{ retry: boolean }[]>`SELECT
+  const [result] = await db<{ retry: boolean; exhausted: boolean }[]>`SELECT
     (${outcome}<>'succeeded' AND generation<${limits.attempts} AND deadline_at>clock_timestamp()
-      AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS retry
+      AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS retry,
+    (${outcome}<>'succeeded' AND generation>=${limits.attempts} AND deadline_at>clock_timestamp()
+      AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS exhausted
     FROM code.runs r WHERE id=${runId}::uuid`;
   const retry = result?.retry ?? false;
-  await db`UPDATE code.calls SET state='failed',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"lease_lost"}}'::json
+  await db`UPDATE code.calls SET state='uncertain',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"code_result_unknown"}}'::json
     WHERE run_id=${runId}::uuid AND state='running'`;
   await db`UPDATE code.runs SET state=${retry ? "queued" : outcome === "succeeded" ? "succeeded" : "failed"},
-    outcome=${retry ? null : outcome}, ended_at=CASE WHEN ${retry} THEN NULL ELSE clock_timestamp() END,lease_expires_at=NULL WHERE id=${runId}::uuid`;
+    outcome=${retry ? null : result?.exhausted ? "retry_exhausted" : outcome}, ended_at=CASE WHEN ${retry} THEN NULL ELSE clock_timestamp() END,lease_expires_at=NULL WHERE id=${runId}::uuid`;
 }
 /** A reported failure before an Action can requeue within the ORIGINAL budgets; success is terminal. */
 export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: RunnerOutcome): Promise<void> {
@@ -247,11 +294,11 @@ export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: Runne
 export async function reconcileCodeRuns(): Promise<void> {
   const limits = await readCodeRunLimits();
   await sql.begin(async (db) => {
-    const expired = await db<{ id: string }[]>`SELECT id FROM code.runs
+    const expired = await db<{ id: string; timed_out: boolean }[]>`SELECT id,deadline_at<=clock_timestamp() AS timed_out FROM code.runs
       WHERE state='running' AND (lease_expires_at<=clock_timestamp() OR deadline_at<=clock_timestamp())
       ORDER BY lease_expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED`;
-    for (const run of expired) await settleRun(run.id, "lease_lost", limits, db);
-    await db`UPDATE code.runs r SET state='failed',outcome='code_not_active',ended_at=clock_timestamp()
+    for (const run of expired) await settleRun(run.id, run.timed_out ? "wall_clock_limit" : "lease_lost", limits, db);
+    await db`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
       WHERE r.id IN(SELECT q.id FROM code.runs q JOIN code.codes c ON c.id=q.code_id WHERE q.state='queued'
         AND (c.state<>'active' OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
         ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED)`;

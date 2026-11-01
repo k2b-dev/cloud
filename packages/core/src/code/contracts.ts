@@ -132,7 +132,7 @@ export const CodeCallSchema = z
     callChunked: z.boolean(),
     resultChunked: z.boolean(),
     result: z.json().nullable(),
-    state: z.enum(["running", "succeeded", "failed"]),
+    state: z.enum(["running", "succeeded", "failed", "uncertain"]),
     startedAt: timestamp,
     endedAt: timestamp.nullable(),
   })

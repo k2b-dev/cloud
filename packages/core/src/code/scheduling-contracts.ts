@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CodeIdSchema } from "./contracts";
 
 /** Manual start and explicit rerun both create one attempt, pinned to the currently active version.
- * Keys are permanent per Code, including after run-detail retention. A repeated key returns the original ID.
+ * Keys are permanent per Code, including after run-detail retention. A repeated matching request returns the original ID; a changed request conflicts.
  */
 export const CodeStartRequestSchema = z
   .object({
@@ -40,6 +40,14 @@ export const CODE_RUN_OUTCOMES = {
   previousRunning: "previous_schedule_running",
   lost: "lease_lost",
   inactive: "code_not_active",
+  admissionRefused: "code_admission_refused",
+  mandateMismatch: "code_mandate_mismatch",
+  retryExhausted: "retry_exhausted",
+  succeeded: "succeeded",
+  failed: "failed",
+  wallClockLimit: "wall_clock_limit",
+  memoryLimit: "memory_limit",
+  stalled: "stalled",
 } as const;
 /** Transport leases last three heartbeat periods; independent of replica count. */
 export const CODE_RUN_HEARTBEAT_MS = 5_000;
