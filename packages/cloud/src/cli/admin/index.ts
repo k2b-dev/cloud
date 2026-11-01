@@ -101,7 +101,7 @@ const build = (locale?: string) =>
         de: "App-Domains zuordnen und DNS, TLS und Gateway-Erreichbarkeit prüfen.",
       }),
       "apps keys": "Create, list, and revoke Ed25519 app keys.",
-      "apps observation": "Start the legacy-use observation window for the app-key migration.",
+      "apps migration": "Check the app-key migration and start its legacy-use observation window.",
       documentation: "Manage the administration documentation website.",
       geoip: "Replace and inspect sign-in location databases.",
       jobs: "Inspect background jobs and their runs.",
