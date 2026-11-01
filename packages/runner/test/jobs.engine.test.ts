@@ -119,7 +119,7 @@ test("C13b checker scrub retains only its trusted Go execution-thread budget", a
     await child.exited;
   }
 }, 10000);
-test("C13b killing the launcher terminates its namespace init", async () => {
+test("C13b killing the launcher terminates and reaps its namespace init", async () => {
   const child = Bun.spawn(
     [
       "/app/job-isolate",
@@ -145,11 +145,7 @@ test("C13b killing the launcher terminates its namespace init", async () => {
     let stopped = false;
     while (performance.now() < until) {
       try {
-        const status = await readFile(`/proc/${pid}/stat`, "utf8");
-        if (/\) Z /.test(status)) {
-          stopped = true;
-          break;
-        }
+        await readFile(`/proc/${pid}/stat`, "utf8");
       } catch (error) {
         if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
           stopped = true;

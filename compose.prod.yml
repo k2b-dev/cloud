@@ -43,6 +43,7 @@ networks:
 services:
   # No shared environment or runtime: runner must never receive installation credentials.
   runner:
+    init: true
     image: ghcr.io/k2b-dev/cloud-app-runner:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     restart: unless-stopped
     environment:

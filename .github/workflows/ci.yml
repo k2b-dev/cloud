@@ -713,7 +713,7 @@ jobs:
       - name: Exercise the compiled runner under its container restrictions
         run: |
           sudo apparmor_parser -r packages/runner/apparmor.profile
-          runner_limits=(--rm --network none --read-only --cap-drop ALL
+          runner_limits=(--rm --init --network none --read-only --cap-drop ALL
             --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE
             --security-opt no-new-privileges --security-opt seccomp=packages/runner/seccomp.json
             --security-opt apparmor=cloud-code-runner --security-opt systempaths=unconfined --memory 1g --pids-limit 256

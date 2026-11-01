@@ -342,6 +342,11 @@ setup or a failed mandatory filter logs
 profile and container envelope. The local profile syntax check cannot replace
 this image verification.
 
+Keep Compose's `init: true`, or Docker's `--init` for custom deployments.
+The container init reaps orphaned namespace processes after an abrupt launcher
+death. A dead namespace process must disappear from `/proc`, including its
+zombie entry, so repeated cancellations do not exhaust the container PID budget.
+
 Administration defaults to one simultaneous authoring role per runner,
 within its four shared slots. Increase the authoring-slot setting only with
 a corresponding container memory/process allocation. Each role has a
