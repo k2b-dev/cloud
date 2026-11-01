@@ -202,6 +202,23 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     setSystemTime();
   });
 
+  test("submission awaits the binding check and persists no version when it fails", async () => {
+    const code = await newCode();
+    const draft = input(code, "binding check refused");
+    const failure = new Error("Authoritative checker refused the submission");
+    serverCheck.mockClear();
+    serverCheck.mockRejectedValueOnce(failure);
+    try {
+      await expect(submitCodeVersion(draft, author)).rejects.toBe(failure);
+      expect(serverCheck).toHaveBeenCalledTimes(1);
+      expect(serverCheck).toHaveBeenCalledWith(draft, author);
+      expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+      expect(await sql`SELECT version_id FROM code.version_submissions WHERE code_id=${code.id}`).toHaveLength(0);
+    } finally {
+      serverCheck.mockReset();
+      serverCheck.mockResolvedValue();
+    }
+  });
   test("forward migration is additive and idempotent over filled version evidence", async () => {
     const code = await newCode(),
       submission = await submitCodeVersion(input(code, "one"), author);

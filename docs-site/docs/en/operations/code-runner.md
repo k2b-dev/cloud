@@ -408,8 +408,9 @@ limited to one page each; only `/tmp` receives the 16 MiB workspace budget.
 The job's separate lease key stays in the supervisor; no
 bridge token reaches the job or is issued for it.
 
-Before starting runners, install the supplied AppArmor policy once on each
-Linux Docker host:
+Before starting runners, obtain `packages/runner/apparmor.profile` and
+`packages/runner/seccomp.json` from the Cloud release tag matching the runner
+image. Install the AppArmor policy once on each Linux Docker host:
 
 ```sh
 sudo apparmor_parser -r packages/runner/apparmor.profile
