@@ -76,6 +76,7 @@ import {
   triage,
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
+import { mailboxCodeAccess } from "./service/code-access";
 import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
@@ -4769,6 +4770,7 @@ const actionDefinitions = {
 export const mailCapabilities = localizeCapabilityErrors(
   defineCapabilities({
     protocolVersion: 2,
+    code: { owners: ["mailbox"] },
     presentation: mailCapabilityPresentation,
     commands: {
       "draft.calendar": {
@@ -4793,6 +4795,7 @@ export const mailCapabilities = localizeCapabilityErrors(
         description: "A mailbox the actor may access.",
         icon: "ti ti-inbox",
         reader: "mailbox.read",
+        access: mailboxCodeAccess,
         pages: ["/app/mail/:id"],
       },
       "sender-identity": {
