@@ -567,10 +567,7 @@ pickers. It supports search, included and excluded user IDs, a minimum
 permission, and a limit from `1` to `500`. It does not expand `public` or
 `authenticated` into every account.
 Search results list exact login-name matches first, then exact display-name
-matches, so a limit never hides them. For a complete recipient audience, pass
-`afterId: null` on the first page and the last returned user's ID on subsequent
-pages. Cursor pages sort by UUID; keep the same access IDs and filters until an
-empty page ends the traversal. Omitting `afterId` retains search/name ordering.
+matches, so a limit never hides them.
 
 For a bounded machine-recipient query, use
 `recursiveServiceAccountGroupIdsSubquery(serviceAccountId)` from

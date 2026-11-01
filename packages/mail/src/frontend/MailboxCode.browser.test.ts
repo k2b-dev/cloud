@@ -88,7 +88,9 @@ const server = Bun.serve({
               code: "not_manager",
               reason: "Target manager authority required",
               title: "Logistik",
-              managers: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "Ben Schulz" }],
+              readable: true,
+              managerUserIds: ["00000000-0000-4000-8000-0000000000b1"],
+              managerNames: ["Ben Schulz"],
             },
           },
         });

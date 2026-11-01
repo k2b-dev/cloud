@@ -8,6 +8,7 @@ import {
   CodeGrantDetailsInputSchema,
   capabilityResultSchema,
 } from "@k2b/cloud/contracts";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { type CodeContext, codePerson } from "./access";
@@ -91,7 +92,7 @@ export const readCodeGrantDetails = async (
   >`SELECT g.grant_id, c.service_account_id AS principal, g.target, g.operations, a.activating_person,
       CASE WHEN a.state='active' THEN a.updated_at END AS activated_at
     FROM code.target_grants g JOIN code.activations a ON a.id=g.activation_id JOIN code.codes c ON c.id=g.code_id
-    WHERE g.grant_id = ANY(${ids}::uuid[]) AND g.state='granted'`;
+    WHERE g.grant_id = ANY(${toPgUuidArray(ids)}::uuid[]) AND g.state='granted'`;
   // An application vouches only for its own targets: Core's record must name the same Code account and the same
   // target, and that target must belong to the answering application, or another app could reveal foreign grants.
   const ownTarget = (target: { type: string; id: string }) =>
@@ -119,7 +120,7 @@ export const readCodeGrantDetails = async (
     people.length
       ? (
           await db<{ id: string; display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
-            SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${people}::uuid[])`
+            SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${toPgUuidArray(people)}::uuid[])`
         ).map((row) => [row.id, row.display_name?.trim() || `${row.given_name ?? ""} ${row.sn ?? ""}`.trim() || row.uid])
       : [],
   );

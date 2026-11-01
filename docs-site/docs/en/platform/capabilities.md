@@ -564,12 +564,12 @@ are incomplete. The manifest advertises the supported targets and owners in
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
 
-Successful dry-run `code.access.set` results include `managerUserIds`: the current
-people managing the target, including members of manager groups. Core uses these
-IDs to notify managers when a Cloud administrator activates Code. Return an empty
-array when no person manages the target; service accounts are never notification
-recipients. The platform preserves this field in its set result, including dry-run
-retries of existing grants.
+Successful adapter dry runs identify current human managers in `managerUserIds`,
+including members of manager groups. Return an empty array when no person
+manages the target; service accounts are never notification recipients.
+Generated `code.access.set` answers preserve this field only when the activating
+person may read the target. Core notifications use the separate server-only
+lookup described below, including for Cloud admins who cannot read the target.
 
 `CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
 using the capability result byte budget. The complete set result and its receipt
@@ -634,13 +634,6 @@ Cloud generates these capabilities once per app:
 | `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level, readable }` or `{ granted: false, reasonCode, reason, readable }`; readable dry runs may include `title` and `managerUserIds` |
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
-
-Successful adapter `grant` decisions can include `managerUserIds`, the current
-human administrators of the target, including administrator group members.
-Return this field on dry runs; Core saves it before applying grants. Core requires it for Cloud-admin activation
-and sends one durable notification per affected target and manager after the
-version becomes active. See [Code activation](/en/docs/platform/code-activation).
-The four adapter functions and signed proof v1 remain unchanged.
 
 Generated titles, descriptions and all input-field descriptions include English
 and German presentation. Apps do not need to repeat these translations; any

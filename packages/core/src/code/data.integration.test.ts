@@ -420,6 +420,13 @@ databaseSuite()("Core Code data and Query authorization", () => {
       ),
     ).rejects.toBeInstanceOf(access.CodeOwnerUnavailableError);
   });
+  test("the Code page names people through a real array query, and guests only themselves", async () => {
+    const { loadPeople } = await import("@k2b/cloud/ssr/code-page/load");
+    const member = await loadPeople([ids.owner, ids.reader], { id: ids.owner, directory: true });
+    expect([...member.keys()].sort()).toEqual([ids.owner, ids.reader].sort());
+    const guest = await loadPeople([ids.owner, ids.reader], { id: ids.reader, directory: false });
+    expect([...guest.keys()]).toEqual([ids.reader]);
+  });
   test("owner attention lists only readable Code and flags a failed newest run per entrypoint", async () => {
     clearCodeAttentionCache();
     const owner = { kind: "resource" as const, ref: { type: "example.mailbox", id: "attention" } };
@@ -576,9 +583,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
       registry.mockRestore();
     }
   });
-  test("personal owner deletion cascades Code, versions, runs and access entries", async () => {
+  test("final Code deletion cascades versions, runs and access entries", async () => {
     const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id=${code.id}`;
-    await sql`DELETE FROM auth.users WHERE id=${ids.owner}::uuid`;
+    // Owner deletion enters the durable lifecycle; this storage suite covers its final owned-record deletion.
+    await sql`DELETE FROM code.codes WHERE id=${code.id}`;
     expect(await sql`SELECT id FROM code.codes WHERE id=${code.id}`).toHaveLength(0);
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
     expect(await sql`SELECT id FROM code.runs WHERE code_id=${code.id}`).toHaveLength(0);

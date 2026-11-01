@@ -541,10 +541,9 @@ test("generated set answers disclose title and managers only to the activating t
                 title: "Read item",
                 description: "Item.",
                 openWorld: false,
-                // Lifecycle checks need the server-side title; disclosure is what this test checks.
-                codeResourceTitle: () => "Fixture target",
                 input: z.object({ id: z.string() }),
                 data: z.object({ view: CloudResourceReaderViewSchema }),
+                codeResourceTitle: () => "Fixture target",
                 run: () => {
                   read.calls++;
                   return { ok: true, data: { data: { view: { title: "Fixture target", permission: "read" } } } };
@@ -692,10 +691,9 @@ test("a readable canonical reader may return the target title on its structured 
           title: "Read item",
           description: "Item.",
           openWorld: false,
-          // Lifecycle checks need the server-side title; disclosure is what this test checks.
-          codeResourceTitle: () => "Fixture target",
           input: z.object({ id: z.string() }),
           data: z.object({ name: z.string() }),
+          codeResourceTitle: () => "Readable item",
           run: () => ({
             ok: true,
             data: {

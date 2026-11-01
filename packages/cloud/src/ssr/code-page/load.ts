@@ -84,11 +84,11 @@ export const visiblePersonIds = (ids: Iterable<string | null | undefined>, viewe
       [...ids].filter((id): id is string => typeof id === "string" && uuid.safeParse(id).success && (viewer.directory || id === viewer.id)),
     ),
   ].slice(0, 100);
-const loadPeople = async (ids: Iterable<string | null | undefined>, viewer: Viewer): Promise<Map<string, CodePagePerson>> => {
+export const loadPeople = async (ids: Iterable<string | null | undefined>, viewer: Viewer): Promise<Map<string, CodePagePerson>> => {
   const unique = visiblePersonIds(ids, viewer);
   if (unique.length === 0) return new Map();
   const rows = await sql<{ id: string; display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
-    SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${unique}::uuid[])`;
+    SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${sql.array(unique, "uuid")}::uuid[])`;
   return new Map(
     rows.map((row) => [
       row.id,

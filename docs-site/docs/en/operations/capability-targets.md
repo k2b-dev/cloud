@@ -5,7 +5,7 @@ section: Operations
 order: 1258
 description: Upgrade Core and capability providers while applications adopt explicit resource targets.
 tags: [operations, capabilities, upgrades]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Roll out capability targets
@@ -17,10 +17,11 @@ the platform converts them into the same call.
 
 This is an additive rollout. Applications without target declarations keep
 their existing input, schema hashes, approval digests and idempotency behavior.
-Existing chats, pending approvals and routine grants are not migrated by this
-change. Converting an existing Action's resource ID input into a target changes
-its contract and schema hash; coordinate that application's callers and stored
-work before deploying its converted declaration.
+Converting an existing Action's resource ID input into a target changes its
+contract and schema hash. Core now migrates existing routine grants and pending
+approvals for the coordinated application conversion; see the
+[operator migration note](/en/docs/reference/deprecations-and-migrations#existing-assistant-routines-and-approvals-adopt-capability-targets).
+Existing chats and their stored history stay unchanged.
 
 Legacy mandates constrain domain input only. They are refused for operations
 that declare targets or refs unless an explicit target grant covers the call.
@@ -56,8 +57,8 @@ move the selected book out of `ContactDirectoryCreateInputSchema`.
 
 The Spaces invitation preparation and commit Actions declare `code: false`.
 Resource-owned Code must leave them out; person calls keep their service
-permission checks. Stored routine grants and approvals still need the
-coordinated migration before this branch is released.
+permission checks. Core performs the coordinated routine and approval migration before starting
+its AI workers.
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
@@ -87,14 +88,12 @@ the generated Code access routes. Dry-run answers reveal only what the person
 may read through the target Type's existing `access.readable`. Core obtains
 Cloud-admin notification recipients through its separate target-bound server
 authority; they are not required in an unreadable person's dry-run answer.
-Deploy Spaces and Mail with the `managerUserIds` set-result field before enabling
-Cloud-admin activation in Core. A successful dry-run identifies the current
-person managers, including nested manager-group members. Core refuses Cloud-admin
-activation when the target cannot identify its managers. No new configuration or
-migration is needed for this result field. A target with more managers than the
-capability response budget allows refuses preflight with a reason; reduce that
-target's manager audience before trying again. During a directory update, retry
-a transiently unavailable manager check after the update finishes.
+Adapters return the current human managers, including nested manager-group
+members, on dry runs. A target that omits its audience refuses activation; a
+network outage waits for retry. No new configuration or migration is needed. An
+audience exceeding the capability response budget refuses preflight; reduce that target's
+manager audience before retrying. During a directory update, retry a transiently
+unavailable manager check after the update finishes.
 
 Keep the adapter available while its app has Code grants to remove. Core must
 finish target cleanup before deleting the Code account. Live grants prevent

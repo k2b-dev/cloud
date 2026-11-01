@@ -206,12 +206,6 @@ an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
 
-`canReadAppAdministration(authority)` from `@k2b/cloud/services` authorizes
-Core administration metadata with the current person's administrator role and
-OAuth `read` or `admin`. It grants no app use or repair. `canRepairAppAccess`
-retains explicit `admin` scope for OAuth repair operations. Both helpers expect
-request authority from Cloud authentication; do not cache role decisions.
-
 `appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
 provide Core's administrator-only batch summary for up to 500 input app IDs.
 Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,

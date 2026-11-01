@@ -261,13 +261,15 @@ suite("Spaces Code access", () => {
 
   test("Code never gains admin or counts as the last manager", async () => {
     const target = await space();
-    await expect(sql`INSERT INTO auth.access (service_account_id, permission)
-      VALUES (${principal(code)}::uuid, 'admin')`).rejects.toMatchObject({ code: "23514" });
+    await expect(
+      sql`INSERT INTO auth.access (service_account_id, permission)
+      VALUES (${principal(code)}::uuid, 'admin')`.execute(),
+    ).rejects.toMatchObject({ errno: "23514" });
     expect(await permission(target.id)).toBe("none");
     const write = await grant(target.short_id, code, ["spaces.task.create"]);
     expect(write.decision).toEqual({ granted: true, level: "write" });
-    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`).rejects.toMatchObject({
-      code: "23514",
+    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
     });
     expect(await permission(target.id)).toBe("write");
     expect(await manages(code, target.short_id)).toBe(false);
@@ -506,7 +508,7 @@ suite("Spaces Code access", () => {
     const target = await space();
     await sql.begin(async (writer) => {
       await writer`LOCK TABLE auth.groups, auth.user_groups_v2, auth.group_groups_v2 IN ROW EXCLUSIVE MODE`;
-      await expect(sql.begin((tx) => spaceCodeAccess.manages(tx, ownerContext, target.short_id))).rejects.toMatchObject({ code: "55P03" });
+      await expect(sql.begin((tx) => spaceCodeAccess.manages(tx, ownerContext, target.short_id))).rejects.toMatchObject({ errno: "55P03" });
       // Admin authority is checked by the platform, so the adapter only needs
       // its target lock and a single-snapshot manager list during preflight.
       const grantId = crypto.randomUUID();

@@ -1386,12 +1386,14 @@ function ActivationDialog(props: {
   const blockedReadable = () => {
     const current = view();
     if (current.kind !== "failed" || !current.failure?.target) return false;
+    // Core's current reader check must agree with what the page's own reader named.
+    if (current.failure.readable === false) return false;
     const target = targetByRef(current.failure.target);
     return Boolean(target && (target.own || (target.title !== null && !target.deleted)));
   };
   const managersText = () => {
     const current = view();
-    const names = current.kind === "failed" && blockedReadable() ? (current.failure?.managers ?? []).map((manager) => manager.name) : [];
+    const names = current.kind === "failed" && blockedReadable() ? (current.failure?.managerNames ?? []) : [];
     return names.length > 0 ? t().managedBy({ names: names.join(", ") }) : "";
   };
   const failureText = (): string | null => {
