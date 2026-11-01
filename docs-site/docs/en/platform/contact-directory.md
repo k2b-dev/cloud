@@ -5,7 +5,7 @@ section: Platform services
 order: 557
 description: Implement the provider-neutral contact-directory contract so Mail can use your application for recipients and participant contacts.
 tags: [capabilities, contacts, mail, contracts]
-updated: 2026-10-16
+updated: 2026-11-01
 ---
 
 # Provide a contact directory
@@ -180,10 +180,14 @@ Each issue names the `code` (`kind`, `idempotency`, `stream`, `input`, or
 
 Administrators choose the provider in the **Contact directory** dialog on
 **Administration → Mail**, or with `cld mail admin contact-directory`. Both
-list every application with capabilities and, for each function, only the
-compatible capabilities of the selected application; `cld mail admin
+list every application the acting administrator can use that publishes
+capabilities and, for each function, only that application’s compatible
+capabilities; `cld mail admin
 contact-directory candidates --app <id>` shows what Mail would accept from your
-application.
+application. Single-key writes with `cld admin settings set <key> --app mail`
+use the same mapping validation. When changing related capability IDs or switching
+providers, use `cld mail admin contact-directory set` to submit the related fields
+together.
 `suggest` and `resolve` are required. Leave `read`, `listWritableBooks`, and
 `create` empty to hide the Mail features that need them. `listWritableBooks`
 and `create` work only together. The [Mail app page](/en/apps/mail) describes

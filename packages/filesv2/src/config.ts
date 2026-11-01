@@ -31,6 +31,7 @@ export const app = defineApp({
   routes: ["/api/filesv2", "/app/filesv2", "/admin/filesv2", "/public/filesv2", "/share/filesv2"],
   settings: {
     "filesv2.configuration": {
+      adminWrite: "application",
       kind: "secret",
       label: "Files configuration",
       default: "",
