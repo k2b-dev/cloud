@@ -74,6 +74,30 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // Scheduling state and the latest timing sample stay bounded to one row per mailbox.
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.hydration_work (
+      mailbox_id uuid PRIMARY KEY REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+      job_id uuid,
+      delivery_id text,
+      queued_at timestamptz,
+      requested_again_at timestamptz,
+      retry_requested boolean NOT NULL DEFAULT false,
+      retry_bodies boolean NOT NULL DEFAULT false,
+      foreground_requested boolean NOT NULL DEFAULT false,
+      foreground_bodies boolean NOT NULL DEFAULT false,
+      started_at timestamptz,
+      published_at timestamptz,
+      queue_wait_ms bigint,
+      lease_wait_ms bigint,
+      batch_ms bigint,
+      batch_finished_at timestamptz
+    )
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
+    WHERE job_id IS NOT NULL AND published_at IS NULL
+  `.simple();
   // Release N understands both modes; existing and newly created drafts stay
   // in lock mode until the subsequent activation release. No body is rewritten.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
