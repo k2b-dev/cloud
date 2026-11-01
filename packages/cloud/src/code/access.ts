@@ -15,6 +15,7 @@ import {
 import { sql } from "../runtime/clients";
 import { hasInstallationAdminInTransaction } from "../services/accounts/users";
 import { audit } from "../services/audit";
+import { codeAccessMessages } from "../shared/code-access-messages";
 import { verifyCodeAccessProof } from "./access-proof";
 
 /** Core-mediated person calls only. In particular, personal Code's mandate is still Code origin. */
@@ -119,6 +120,16 @@ class RollbackDecision extends Error {
   }
 }
 
+/** Check the exact generated set envelope before committing any target writes. */
+export const boundSetResult = (data: CodeAccessSetData, context: CapabilityExecutionContext, dryRun: boolean): CodeAccessSetData => {
+  if (!data.granted) return data;
+  const copy = codeAccessMessages(context.locale);
+  const body = { data, receipt: { text: dryRun ? copy.setAvailable : copy.setDone } };
+  return new TextEncoder().encode(JSON.stringify(body)).byteLength <= CAPABILITY_MAX_RESULT_BYTES
+    ? data
+    : decisionNo("capacity_exceeded", "Target manager list exceeds the Code access response budget");
+};
+
 /** Target-side set: proof validation precedes authority, all adapter writes and audit are atomic. */
 export const setCodeAccess = async (
   appId: string,
@@ -185,7 +196,26 @@ export const setCodeAccess = async (
         const result = live
           ? { granted: true as const, grantId: claims.grantId, level: live.level }
           : decisionNo("removed", "Code access was removed; activate again to restore it");
-        if (input.dryRun) throw new RollbackDecision(result);
+        if (input.dryRun) {
+          if (!live) throw new RollbackDecision(result);
+          // A retry still needs the target's current managers for Core notifications.
+          const decision = CodeAccessDecisionSchema.parse(
+            await adapter.grant(tx, {
+              id: input.target.id,
+              principal: claims.principal,
+              operations: input.operations,
+              grantId: claims.grantId,
+              dryRun: true,
+            }),
+          );
+          throw new RollbackDecision(
+            boundSetResult(
+              decision.granted ? { ...decision, grantId: claims.grantId } : { ...decision, reasonCode: "adapter_refused" },
+              context,
+              true,
+            ),
+          );
+        }
         return result;
       }
       const decision = CodeAccessDecisionSchema.parse(
@@ -197,10 +227,12 @@ export const setCodeAccess = async (
           dryRun: input.dryRun === true,
         }),
       );
-      const result: CodeAccessSetData = decision.granted
-        ? { ...decision, grantId: claims.grantId }
-        : { ...decision, reasonCode: "adapter_refused" };
-      if (!decision.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
+      const result = boundSetResult(
+        decision.granted ? { ...decision, grantId: claims.grantId } : { ...decision, reasonCode: "adapter_refused" },
+        context,
+        input.dryRun === true,
+      );
+      if (!decision.granted || !result.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
       const previous = await tx<
         GrantRow[]
       >`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND principal = ${claims.principal}::uuid AND NOT revoked LIMIT ${maxListGrants + 1}`;
@@ -315,4 +347,39 @@ export const removeCodeAccess = async (
     );
     return true;
   });
+};
+
+/** Caller must first verify the bound Core proof. Always rolls back, including an adapter's accidental writes. */
+export const readCodeAccessManagers = async (
+  appId: string,
+  bindings: CodeAccessBindings,
+  claims: Pick<import("./access-proof").CodeAccessProofClaims, "target" | "principal" | "operations" | "grantId">,
+  db = sql,
+): Promise<string[] | null> => {
+  const adapter = targetAdapter(bindings, appId, claims.target);
+  if (!adapter) return null;
+  class Probe extends Error {
+    constructor(readonly managers: string[] | null) {
+      super("Code manager probe rolled back");
+    }
+  }
+  try {
+    await db.begin(async (tx) => {
+      if (!(await accountIsCode(tx, claims.principal))) throw new Probe(null);
+      const decision = CodeAccessDecisionSchema.parse(
+        await adapter.grant(tx, {
+          id: claims.target.id,
+          principal: claims.principal,
+          operations: claims.operations,
+          grantId: claims.grantId,
+          dryRun: true,
+        }),
+      );
+      throw new Probe(decision.granted ? (decision.managerUserIds ?? null) : null);
+    });
+  } catch (error) {
+    if (error instanceof Probe) return error.managers;
+    throw error;
+  }
+  return null;
 };
