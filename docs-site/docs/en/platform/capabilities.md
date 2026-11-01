@@ -667,8 +667,10 @@ rows. Stable `reasonCode` values are `origin_forbidden`, `proof_invalid`,
 `capacity_exceeded`. Keep the
 application's human-facing refusal reason separate from these recovery codes.
 
-Normal target share lists expose `grantId` for each Code share so the rights
-editor can remove it directly. Cloud lists only live, ledger-backed grants and
+Normal target share lists expose `grantId` and `serviceAccountKind: "code"` for
+each Code share. The shared rights editor then lists it under
+[Code with access](/en/docs/identity/authorization#code-with-access) and removes
+it through Core and `code.access.rm`. Cloud lists only live, ledger-backed grants and
 enforces the existing 256 KiB capability result budget; adapters must keep their
 account lists within that budget. Operation IDs must belong to the receiving
 app. Actions and Queries with an explicit target must name the target Type in
