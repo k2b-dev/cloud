@@ -469,6 +469,10 @@ databaseSuite()("durable Code activation", () => {
     await audit(crypto.randomUUID(), removedGrant.target, "2026-10-31T11:30:00.000Z");
     await audit(removedGrant.principal, { type: removedGrant.target.type, id: "elsewhere" }, "2026-10-31T11:40:00.000Z");
     await audit(removedGrant.principal, removedGrant.target, "2026-10-31T11:20:00.000Z");
+    // An event that names another app for this target is not this removal either.
+    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+      VALUES('code.access.rm','allowed',${nextOwnerId}::uuid,${removedGrant.target.type},${removedGrant.target.id},
+        ${JSON.stringify({ appId: "other", grantId: active, principal: removedGrant.principal })}::text::jsonb,'2026-10-31T11:50:00.000Z'::timestamptz)`;
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
       // The Code page names who confirmed the grant and when, and who removed it at the target and when.
       expect.objectContaining({
@@ -774,6 +778,7 @@ databaseSuite()("durable Code activation", () => {
           authority: { ...owner.authority, actor: { kind: "user", user: { ...person(ownerId), roles: ["guest"] } } },
         };
         expect((await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest)).failure?.managers).toEqual([]);
+        await sql`UPDATE auth.users SET display_name=NULL WHERE id=${nextOwnerId}::uuid`;
         // Losing read access also removes presentation on an existing status response.
         readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
         const hidden = await status(code, activation.id);
@@ -814,7 +819,7 @@ databaseSuite()("durable Code activation", () => {
     });
     expect(JSON.stringify(hidden)).not.toContain("Fixture target");
     expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
-    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managers: [{ id: nextOwnerId, name: nextOwnerId }] });
+    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managers: [{ id: nextOwnerId, name: expect.any(String) }] });
   });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;

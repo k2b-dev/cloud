@@ -426,6 +426,7 @@ function handlerFunction(checker: ts.TypeChecker, handler: ts.Expression): ts.No
   if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   const declaration = symbol?.declarations?.length === 1 ? symbol.declarations[0] : undefined;
   if (!declaration) return undefined;
+  // The type check refuses assigning to a function declaration (TS2630), so it always runs its own body.
   if (ts.isFunctionDeclaration(declaration)) return declaration;
   const value = ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
   // Only a const binding is fixed; a let could run another function by the time the schedule fires.
@@ -433,7 +434,11 @@ function handlerFunction(checker: ts.TypeChecker, handler: ts.Expression): ts.No
   return fixed && (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) ? value : undefined;
 }
 
-/** Name each permission's entrypoints by the handler that lexically contains its call; unplaced calls stay unnamed. */
+/**
+ * Name each permission's entrypoints by the handler whose own body makes the call. The walk stops at the first function
+ * on the way up: a call inside a nested function, such as a callback, runs whenever that function runs, which the
+ * checker cannot prove, so it stays unnamed.
+ */
 function attributeEntrypoints(
   checker: ts.TypeChecker,
   permissions: CodePermission[],
@@ -447,10 +452,10 @@ function attributeEntrypoints(
   }
   if (!names.size) return;
   for (const { index, node } of placed) {
-    const found = new Set<string>();
-    for (let current: ts.Node | undefined = node; current; current = current.parent)
-      for (const name of names.get(current) ?? []) found.add(name);
-    if (found.size) permissions[index]!.entrypoints = [...found].sort();
+    let current: ts.Node | undefined = node.parent;
+    while (current && !ts.isFunctionLike(current)) current = current.parent;
+    const found = current && names.get(current);
+    if (found) permissions[index]!.entrypoints = [...found].sort();
   }
 }
 

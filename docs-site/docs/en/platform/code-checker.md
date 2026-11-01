@@ -105,8 +105,9 @@ contract, shared with the version service, contains:
   for each literal target and additional reference. `entrypoints` lists, sorted,
   the schedules whose handler contains the call: an inline function, or a
   function declaration or `const` function the schedule names directly, also
-  from another file. A call in a helper that the handler calls, or in a function
-  bound with `let`, has no `entrypoints` field. Share dialogs name the
+  from another file. Only the handler's own body counts: a call in a helper
+  that the handler calls, in a nested function such as a `map` callback, or in
+  a function bound with `let` has no `entrypoints` field. Share dialogs name the
   automation from it ("for “weekly”") and leave the line out when it is absent;
   it never affects authorization;
 - `ai`: whether the detected calls use AI;

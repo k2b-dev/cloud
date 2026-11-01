@@ -72,25 +72,25 @@ export async function reconcileCodeAccess(
 }
 /**
  * Who removed a grant and when. The platform's generated `code.access.rm` writes its audit event in the same transaction
- * as the target's tombstone; the newest allowed event for this grant, Code account and target answers it.
+ * as the target's tombstone; the newest allowed event for this grant, Code account, target and its app answers it.
  */
 async function withRemovals(rows: CodeTargetAccess[], principal: string): Promise<CodeTargetAccess[]> {
   const removed = rows.filter((row) => row.state === "removed");
   if (!removed.length) return rows;
-  const events = await sql<{ grant_id: string; target_type: string; target_id: string; actor_user_id: string | null; created_at: Date }[]>`
-    SELECT DISTINCT ON (metadata->>'grantId') metadata->>'grantId' AS grant_id, target_type, target_id, actor_user_id, created_at
-    FROM audit.events
-    WHERE action='code.access.rm' AND outcome='allowed'
-      AND target_id = ANY(${[...new Set(removed.map((row) => row.target.id))]}::text[])
-      AND metadata->>'grantId' = ANY(${removed.map((row) => row.grantId)}::text[])
-      AND metadata->>'principal' = ${principal}
-    ORDER BY metadata->>'grantId', created_at DESC`;
+  // Each grant is matched with its own target and owning app before the newest event is chosen.
+  const events = await sql<{ grant_id: string; actor_user_id: string | null; created_at: Date }[]>`
+    SELECT DISTINCT ON (r.grant_id) r.grant_id, e.actor_user_id, e.created_at
+    FROM unnest(${removed.map((row) => row.grantId)}::text[], ${removed.map((row) => row.target.type)}::text[],
+      ${removed.map((row) => row.target.id)}::text[], ${removed.map((row) => targetApp(row.target))}::text[])
+      AS r(grant_id, target_type, target_id, app_id)
+    JOIN audit.events e ON e.target_type = r.target_type AND e.target_id = r.target_id
+    WHERE e.action = 'code.access.rm' AND e.outcome = 'allowed'
+      AND e.metadata->>'grantId' = r.grant_id AND e.metadata->>'appId' = r.app_id AND e.metadata->>'principal' = ${principal}
+    ORDER BY r.grant_id, e.created_at DESC`;
   const byGrant = new Map(events.map((event) => [event.grant_id, event]));
   return rows.map((row) => {
     const event = row.state === "removed" ? byGrant.get(row.grantId) : undefined;
-    // The event must name the same target the grant was set at.
-    if (!event || event.target_type !== row.target.type || event.target_id !== row.target.id) return row;
-    return { ...row, removedBy: event.actor_user_id, removedAt: event.created_at.toISOString() };
+    return event ? { ...row, removedBy: event.actor_user_id, removedAt: event.created_at.toISOString() } : row;
   });
 }
 /** Cleanup waits for queued/running runs of every superseded version, then removes only unused explicit grants and revokes drained mandates. */

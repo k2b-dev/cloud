@@ -242,7 +242,7 @@ C19 chat tools use the same schemas and `codeAuthoringServices`.
 
 `result` in check is `CodeCheckResultSchema`; `manifest` is the complete
 submission manifest or null on check failure. Permission rows contain
-`operation`, `target`, `title`, `typeTitle`, `own`, `needsTargetAdmin`, `file`, `line`, and `status`.
+`operation`, `target`, `title`, `typeTitle`, `own`, `needsTargetAdmin`, `file`, `line`, optional `entrypoints` (the schedules whose handler makes the call), and `status`.
 Unavailable titles are null; status is `new` or `existing`. Existing grants
 are observed live rather than inferred from old source. Personal Code never
 needs target-admin grants; `needsTargetAdmin` is always false for it.
