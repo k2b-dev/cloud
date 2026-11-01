@@ -1,0 +1,43 @@
+import { z } from "zod";
+import { CodeIdSchema } from "./contracts";
+
+/** Manual start and explicit rerun both create one attempt, pinned to the currently active version.
+ * Keys are permanent per Code, including after run-detail retention. A repeated key returns the original ID.
+ */
+export const CodeStartRequestSchema = z
+  .object({
+    codeId: CodeIdSchema,
+    entrypoint: z.string().min(1).max(256),
+    idempotencyKey: z.string().min(1).max(96),
+    input: z.json().default(null),
+  })
+  .strict();
+export type CodeStartRequest = z.input<typeof CodeStartRequestSchema>;
+/** Duplicate requests never publish a second run, even across Core replicas. */
+export type CodeStartResult = { runId: string; duplicate: boolean };
+/** Snapshot of administrator admission budgets; retries retain the original deadline and call budget. */
+export type CodeRunLimits = { perCode: number; perOwner: number; wallMs: number; attempts: number };
+/** Durable tick identity comes from the checked version and named app.schedule export, never a runner. */
+export type CodeScheduleTick = { codeId: string; versionId: string; entrypoint: string; slot: Date };
+/** Payload-free, installation-wide read model for Administration › Code (C22).
+ * instances/freeSlots include only fresh signed polls. instance pages use UUID cursors, at most 50 rows.
+ */
+export type CodeRunnerMetrics = {
+  queued: number;
+  running: number;
+  oldestWaitingMs: number;
+  instances: number;
+  freeSlots: number;
+  runners: Array<{ instanceId: string; freeSlots: number; lastSeenAt: string }>;
+  nextCursor: string | null;
+};
+/** Stable outcomes are translated at the UI, including the skipped tick and explicit rerun recovery. */
+export const CODE_RUN_OUTCOMES = {
+  previousRunning: "previous_schedule_running",
+  lost: "lease_lost",
+  exhausted: "retry_exhausted",
+  inactive: "code_not_active",
+} as const;
+/** Transport leases last three heartbeat periods; independent of replica count. */
+export const CODE_RUN_HEARTBEAT_MS = 5_000;
+export const CODE_RUN_LEASE_MS = 3 * CODE_RUN_HEARTBEAT_MS;

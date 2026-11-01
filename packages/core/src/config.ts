@@ -10,6 +10,11 @@ export const app = defineApp({
     publicRoutes: [
       "/_internal/apps/bootstrap",
       "/_internal/code/runner/call",
+      "/_internal/code/runner/config",
+      "/_internal/code/runner/fetch",
+      "/_internal/code/runner/bundle",
+      "/_internal/code/runner/heartbeat",
+      "/_internal/code/runner/complete",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",

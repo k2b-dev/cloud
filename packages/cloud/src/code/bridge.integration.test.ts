@@ -14,6 +14,7 @@ import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateCode } from "../../../core/src/migrate/core/code";
 import { migrate as migratePolicy } from "../../../core/src/migrate/core/code-policy";
+import { migrate as migrateScheduling } from "../../../core/src/migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../../../core/src/migrate/core/code-versions";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import * as registry from "../_internal/registry";
@@ -188,6 +189,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await migrateAppBootstrap();
     await migrateAppApproval();
     await migrateCode();
+    await migrateScheduling();
     await migratePolicy();
     await migrateVersions();
     await migrateCloudCapabilities();

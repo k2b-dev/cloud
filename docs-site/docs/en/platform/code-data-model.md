@@ -195,3 +195,6 @@ storage seams. The dispatcher must authorize execution and validate its lease
 and generation in the same transaction before recording calls. They do not
 grant invocation authority. `generation` and `lease_expires_at` reserve the
 additive storage columns for the execution service.
+
+Scheduling, retries, generation fencing and skipped ticks are described in
+[Code runs](/en/docs/platform/code-runs).
