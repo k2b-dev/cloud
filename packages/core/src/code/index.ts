@@ -5,6 +5,9 @@ export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readC
 export * from "./activation-contracts";
 export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
 export * from "./contracts";
+export { listCodeCleanupJobs } from "./lifecycle";
+export * from "./lifecycle-contracts";
+export { checkCodeOwnerBeforeRun, readCodeRunOwnerTitle } from "./owner-check";
 export * from "./policy";
 export * from "./policy-contracts";
 export * from "./policy-effective";
