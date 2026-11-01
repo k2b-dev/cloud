@@ -170,8 +170,12 @@ describe("Mailbox Code page in a browser", () => {
       const page = await load(state, 1440);
       try {
         const entry = page.locator('.mail-sidebar a[href="/app/mail/Mb4kd2/code"]').first();
-        expect(await entry.locator('[aria-label="Code braucht Aufmerksamkeit"]').count()).toBe(dot ? 1 : 0);
-        if (dot) expect(await entry.locator('[aria-label="Code braucht Aufmerksamkeit"]').isVisible()).toBe(true);
+        const mark = entry.locator(".k2b-app-workspace__sidebar-status-attention");
+        expect(await mark.count()).toBe(dot ? 1 : 0);
+        if (dot) {
+          expect(await mark.isVisible()).toBe(true);
+          expect(await entry.getByText(", Code braucht Aufmerksamkeit").count()).toBe(1);
+        }
         expect(/\d/.test((await entry.textContent()) ?? "")).toBe(false);
       } finally {
         await page.context().close();

@@ -43,6 +43,7 @@ import {
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
 
+export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
 
 /** The browser calls Core's public Code capabilities with the person's own session, like any page. */
@@ -191,9 +192,12 @@ function EditWithPanel(props: { data: CodePageData; t: CodePageMessages; size?: 
 /** Same rule as Core's attention query: a failed last run, missing access, or a version waiting for approval. */
 export const codePageNeedsAttention = (state: CodePageData["state"]): boolean =>
   state.kind === "ready" &&
-  ((state.automations ?? []).some((automation) => automation.lastRun?.state === "failed") ||
-    (state.access ?? []).some((row) => row.state === "removed") ||
-    state.waiting?.status === "pending");
+  (state.attentionReasons !== null
+    ? state.attentionReasons.length > 0
+    : // Without Core's answer the page judges from what it loaded.
+      (state.automations ?? []).some((automation) => automation.lastRun?.state === "failed") ||
+      (state.access ?? []).some((row) => row.state === "removed") ||
+      state.waiting?.status === "pending");
 
 /** "Copy link" shares this page, so the person who can switch it on lands right here. */
 const copyPageLink = async (data: CodePageData, t: CodePageMessages) => {
@@ -490,11 +494,17 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
   const affectedText = (key: string): string[] => {
     const automations = (props.state.automations ?? []).filter((automation) => !automation.isNew);
     const affected = automations.filter((automation) => automation.missingTargets.includes(key));
-    const others = automations.filter((automation) => !automation.missingTargets.includes(key));
     if (affected.length === 0) return [];
+    // Only automations whose last run succeeded are said to keep running; unknown ones are not mentioned.
+    const others = automations.filter(
+      (automation) => !automation.missingTargets.includes(key) && !automation.accessUnknown && automation.lastRun?.state === "succeeded",
+    );
+    const proven = affected.filter((automation) => automation.missingProven);
+    const needing = affected.filter((automation) => !automation.missingProven);
     const names = (list: CodePageAutomation[]) => list.map((automation) => `„${automation.entrypoint}“`).join(", ");
     return [
-      t().affectedFailed({ names: names(affected) }),
+      ...(proven.length > 0 ? [t().affectedFailed({ names: names(proven) })] : []),
+      ...(needing.length > 0 ? [t().needsThisAccess({ names: names(needing), count: needing.length })] : []),
       ...(others.length > 0 ? [t().othersRunning({ names: names(others), count: others.length })] : []),
     ];
   };

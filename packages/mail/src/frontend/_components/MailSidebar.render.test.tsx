@@ -237,7 +237,9 @@ describe("Mail sidebar", () => {
     // Inbox, Sent, then Code, then More: the folder rows keep their places.
     expect(group.indexOf('title="Sent"')).toBeLessThan(group.indexOf('href="/app/mail/Box001/code"'));
     expect(group.indexOf('href="/app/mail/Box001/code"')).toBeLessThan(group.indexOf(">More<"));
-    expect(html).toContain('aria-label="Code needs attention"');
+    // The shared status: a warning dot, and the phrase in the row's accessible name.
+    expect(html).toContain('class="k2b-app-workspace__sidebar-status-attention"');
+    expect(html).toContain(", Code needs attention<");
     // While Code is open, the mailbox row itself is not the current place.
     type Entry = { id: string; active?: boolean; href?: string; description?: string; children?: Entry[] };
     const json = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1];

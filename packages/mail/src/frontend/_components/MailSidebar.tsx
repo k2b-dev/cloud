@@ -1,5 +1,7 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
+// Its own entry: the mailbox island must not load the Code page.
+import { CodeNavStatus, codeNavAttentionLabel } from "@k2b/cloud/ssr/code-nav-status";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
@@ -462,11 +464,7 @@ export default function MailSidebar(
             href={`/app/mail/${open().mailboxId}/code`}
             icon="ti ti-code"
             active={code().active}
-            meta={
-              code().attention ? (
-                <span class="mail-sidebar-code-attention" role="img" aria-label={messages().codeNeedsAttention} />
-              ) : undefined
-            }
+            meta={code().attention ? <CodeNavStatus attention /> : undefined}
             viewTransitionName="mail-code"
           >
             {messages().code}
@@ -699,7 +697,7 @@ export default function MailSidebar(
               href: `/app/mail/${open.mailboxId}/code`,
               icon: "ti ti-code",
               active: open.code.active,
-              description: open.code.attention ? messages().codeNeedsAttention : undefined,
+              description: open.code.attention ? codeNavAttentionLabel(locale()) : undefined,
             },
           ]
         : []),

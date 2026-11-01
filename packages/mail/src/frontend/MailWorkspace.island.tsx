@@ -2,7 +2,6 @@ import { liveConnection } from "@k2b/cloud/browser/live";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
-import type { CodeAttention } from "@k2b/cloud/ssr/code-page";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import {
   captureScroll,
@@ -195,8 +194,6 @@ type MailWorkspaceProps = {
     pinnedMailboxIds: string[];
     hiddenMailboxIds: string[];
   };
-  /** Core's answer for the server-rendered mailbox's Code; null when Core did not answer in time. */
-  codeAttention?: { mailboxId: string; value: CodeAttention | null };
 };
 
 type MailboxSession = Pick<MailWorkspaceProps, "data" | "requestPath" | "initialPreferences" | "initialUserPreferences">;
@@ -2756,7 +2753,8 @@ function createMailboxController(props: MailboxControllerProps) {
       // Administrators always reach the mailbox's Code; others once Core said they may see it.
       code: mailCodeEntry({
         mailboxAdmin: canAdmin() && !assignedOnly(),
-        attention: props.codeAttention?.mailboxId === data.mailbox.id ? props.codeAttention.value : null,
+        // Each loaded mailbox brings its own answer, also after switching mailboxes in place.
+        attention: data.codeAttention ?? null,
         active: false,
       }),
     }),

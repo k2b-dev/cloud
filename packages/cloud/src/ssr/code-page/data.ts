@@ -166,6 +166,8 @@ export type CodePageCall = {
   kind: "query" | "action";
   capability: string;
   target: { type: string; id: string } | null;
+  /** Additional resources the call named. */
+  refs: { type: string; id: string }[];
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;
@@ -191,6 +193,10 @@ export type CodePageAutomation = {
    * because it is the only automation. Its runs fail there until someone switches the Code on again.
    */
   missingTargets: string[];
+  /** Its last run failed at one of those targets; otherwise it needs them but has not failed there yet. */
+  missingProven: boolean;
+  /** Access was removed, but whether this automation needs it could not be told. */
+  accessUnknown: boolean;
   lastRun: CodePageRun | null;
 };
 export type CodePageVersion = {
@@ -225,6 +231,8 @@ export type CodePageReady = {
   /** The newest version when it is newer than the running one and not rejected, expired, or cancelled. */
   waiting: CodePageVersion | null;
   automations: CodePageAutomation[] | null;
+  /** Core's attention reasons for this Code, the same answer the owner's navigation uses; null when unavailable. */
+  attentionReasons: string[] | null;
   /** Null when Core could not reconcile target access. */
   access: CodePageAccessRow[] | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */

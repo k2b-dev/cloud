@@ -1,13 +1,11 @@
 import type { Context } from "hono";
-import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { getLocale } from "../../server";
+import { AttentionSchema } from "./attention-schema";
 import { type CodeAttention, type CodePageInvoke, coreQuery, wrapped } from "./data";
 
 export type { CodeAttention };
-
-const AttentionSchema = z.object({ items: z.array(z.object({ codeId: z.string(), reasons: z.array(z.string()) })) });
 
 /** Core answers from a short cache; a slower answer only loses the dot, never delays the page beyond this. */
 export const CODE_ATTENTION_TIMEOUT_MS = 800;

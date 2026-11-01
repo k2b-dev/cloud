@@ -1,11 +1,12 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { appAccessAuthority, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
-import { Layout, loadCodeAttention, requestPath } from "@k2b/cloud/ssr";
+import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { mailPageHelp } from "../../help";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
+import { startMailboxCodeAttention } from "../../service/code-attention";
 import { requestContactDirectory } from "../../service/contact-directory";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/workspace";
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
@@ -14,9 +15,6 @@ import MailWorkspace from "../MailWorkspace.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
 import { mailPageMessages } from "../pages-messages";
 import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
-
-/** How long the page waits for Core's Code answer after its own data is ready. */
-const CODE_ATTENTION_GRACE_MS = 50;
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -40,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
   const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
   // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
   // Started first and never awaited longer than the page's own data: a slow Core only loses the dot.
-  const codeAttention = loadCodeAttention(c, { type: "mail.mailbox", id: mailboxShortId });
+  const codeAttention = startMailboxCodeAttention(c, mailboxShortId);
   const [internalData, spacesIntegration, sidebar, appUrl] = await Promise.all([
     loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
     getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
@@ -48,8 +46,7 @@ export default ssr<AuthContext>(async (c) => {
     coreSettings.get<string>("app.url"),
   ]);
   if (!internalData.ok) return ssr.error(c, internalData.error.status);
-  const data = await projectMailboxPageData(internalData.data);
-  const attention = await Promise.race([codeAttention, Bun.sleep(CODE_ATTENTION_GRACE_MS).then(() => null)]);
+  const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
   const dateConfig = getDateConfig(c);
 
   const directory = await requestContactDirectory(c);
@@ -76,7 +73,6 @@ export default ssr<AuthContext>(async (c) => {
         initialTheme={themePreference === "system" ? null : themePreference}
         calendarIntegrationAvailable={spacesIntegration.invitations}
         sidebar={sidebar}
-        codeAttention={{ mailboxId: data.mailbox.id, value: attention }}
       />
     </Layout>
   );

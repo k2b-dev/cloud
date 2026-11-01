@@ -57,6 +57,7 @@ export const codePageMessages = i18n.define({
   messages: {
     en: {
       pageTitle: ({ name }: Name) => `Code of ${name}`,
+      navAttention: "Code needs attention",
       actsAs: ({ name }: Name) => `Acts on behalf of ${name}, not as a person`,
       versionLine: ({ version }: Version) => `Version ${version}`,
       activatedBy: ({ name, date }: { name: string; date: string }) => `switched on by ${name} on ${date}`,
@@ -105,6 +106,8 @@ export const codePageMessages = i18n.define({
       affectedFailed: ({ names }: { names: string }) => `That is why the last run of ${names} failed.`,
       othersRunning: ({ names, count }: { names: string; count: number }) =>
         count === 1 ? `${names} keeps running.` : `${names} keep running.`,
+      needsThisAccess: ({ names, count }: { names: string; count: number }) =>
+        count === 1 ? `${names} needs this access.` : `${names} need this access.`,
       targetDeletedTitle: ({ name }: Name) => `${name} was deleted.`,
       targetDeletedDescription: ({ name }: Name) => `Calls to ${name} fail. Change the Code so it no longer needs it.`,
       allAccessRemovedTitle: "All access was removed.",
@@ -247,6 +250,7 @@ export const codePageMessages = i18n.define({
     },
     de: {
       pageTitle: ({ name }: Name) => `Code von ${name}`,
+      navAttention: "Code braucht Aufmerksamkeit",
       actsAs: ({ name }: Name) => `Handelt im Namen von ${name}, nicht als Person`,
       versionLine: ({ version }: Version) => `Version ${version}`,
       activatedBy: ({ name, date }: { name: string; date: string }) => `eingeschaltet von ${name} am ${date}`,
@@ -294,6 +298,8 @@ export const codePageMessages = i18n.define({
       affectedFailed: ({ names }: { names: string }) => `Darum ist der letzte Lauf von ${names} fehlgeschlagen.`,
       othersRunning: ({ names, count }: { names: string; count: number }) =>
         count === 1 ? `${names} läuft weiter.` : `${names} laufen weiter.`,
+      needsThisAccess: ({ names, count }: { names: string; count: number }) =>
+        count === 1 ? `${names} braucht diesen Zugriff.` : `${names} brauchen diesen Zugriff.`,
       targetDeletedTitle: ({ name }: Name) => `${name} wurde gelöscht.`,
       targetDeletedDescription: ({ name }: Name) => `Aufrufe an ${name} scheitern. Ändere den Code, damit er es nicht mehr braucht.`,
       allAccessRemovedTitle: "Alle Zugriffe wurden entfernt.",

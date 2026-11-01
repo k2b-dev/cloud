@@ -26,7 +26,9 @@ export const CODE_ATTENTION_CACHE_MS = 30_000;
 const CACHE_LIMIT = 1_000;
 /** An owner has at most one Code; a page of 20 bounds an owner query in any case. */
 const OWNER_LIMIT = 20;
-const cache = new Map<string, { at: number; reasons: Promise<CodeAttentionReason[]> }>();
+/** Target apps answer slowly at worst; past this, access is simply not judged for this answer. */
+export const CODE_ATTENTION_ACCESS_BUDGET_MS = 2_000;
+const cache = new Map<string, { at: number; settled: boolean; reasons: Promise<CodeAttentionReason[]> }>();
 
 const failedRun = async (code: Code) => {
   // The newest finished run of each entrypoint; skipped ticks and cancellations are not failures.
@@ -52,8 +54,11 @@ const computeReasons = async (code: Code, context: CodeContext): Promise<CodeAtt
   const [failed, pending, access] = await Promise.all([
     failedRun(code).catch(() => false),
     pendingApproval(code).catch(() => false),
-    // A target that cannot answer right now says nothing about access; only a confirmed removal counts.
-    reconcileCodeAccess({ codeId: code.id }, context).catch(() => []),
+    // A target that cannot answer in time says nothing about access; only a confirmed removal counts.
+    Promise.race([
+      reconcileCodeAccess({ codeId: code.id }, context).catch(() => []),
+      Bun.sleep(CODE_ATTENTION_ACCESS_BUDGET_MS).then(() => []),
+    ]),
   ]);
   return [
     ...(failed ? (["run_failed"] as const) : []),
@@ -64,12 +69,22 @@ const computeReasons = async (code: Code, context: CodeContext): Promise<CodeAtt
 
 const cachedReasons = (code: Code, context: CodeContext, now = Date.now()) => {
   const hit = cache.get(code.id);
-  if (hit && now - hit.at < CODE_ATTENTION_CACHE_MS) return hit.reasons;
+  // One computation per Code at a time: an unfinished one is shared, however old.
+  if (hit && (!hit.settled || now - hit.at < CODE_ATTENTION_CACHE_MS)) return hit.reasons;
   const reasons = computeReasons(code, context);
-  // A failed computation is not kept, so the next page asks again.
-  reasons.catch(() => cache.delete(code.id));
+  const entry = { at: now, settled: false, reasons };
+  reasons.then(
+    () => {
+      entry.settled = true;
+      entry.at = Date.now();
+    },
+    // A failed computation is not kept, so the next page asks again.
+    () => {
+      if (cache.get(code.id) === entry) cache.delete(code.id);
+    },
+  );
   cache.delete(code.id);
-  cache.set(code.id, { at: now, reasons });
+  cache.set(code.id, entry);
   while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
   return reasons;
 };

@@ -9,11 +9,13 @@ import { coreOrigin } from "../../services/identity/core-origin";
 import { LOCALE_HEADER } from "../../shared/locale";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
+import { AttentionSchema } from "./attention-schema";
 import { loadCodeRunCalls, loadCodeRunCallsForDetail } from "./calls";
 import {
   CodeListSchema,
   type CodePageAccessRow,
   type CodePageAutomation,
+  type CodePageCall,
   type CodePageData,
   type CodePageDiff,
   type CodePageInvoke,
@@ -38,8 +40,10 @@ import {
 const PAGE = 20;
 /** Core's default manifest budget is 1 MiB: 64 chunks of 16 Ki code units. A larger manifest shows as unreadable. */
 const MANIFEST_CHUNKS = 64;
-/** Failed automations whose last calls are read to find which one lost access. */
-const MISSING_ACCESS_CHECKS = 5;
+/** Failed automations whose last calls are read to find which one lost access, one after another. */
+const MISSING_ACCESS_CHECKS = 3;
+/** Calls read per check: a failing call to a removed target is usually among the first. */
+const MISSING_ACCESS_BATCH = 10;
 /** Distinct targets named on one page; a version has at most 200 operations. */
 const TARGET_LIMIT = 50;
 
@@ -230,10 +234,14 @@ const loadReady = async (
 ): Promise<CodePageReady> => {
   const catalog = catalogCache(getLocale(c));
   const code = listed;
-  const [versionsResult, runsResult, accessResult] = await Promise.all([
+  const [versionsResult, runsResult, accessResult, attentionResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), wrapped(VersionListSchema)),
     invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), wrapped(RunListSchema)),
     coreRoute(caller, "/api/code/access", { codeId: code.id }, TargetAccessSchema).catch(() => null),
+    // The same answer the owner's navigation gets, so its dot and this page agree.
+    invoke(coreQuery("code.attention", { owner: { kind: "resource", ref: options.owner.ref } }), wrapped(AttentionSchema)).catch(
+      () => null,
+    ),
   ]);
   const receipts = versionsResult.ok ? versionsResult.data.data.data.items : [];
   const latest = receipts[0];
@@ -372,7 +380,9 @@ const loadReady = async (
           }),
         ]
       : null;
-  const lastRunOf = (entrypoint: string) => runs?.find((run) => run.entrypoint === entrypoint) ?? null;
+  // A skipped tick or a cancelled start is not a run's result.
+  const lastRunOf = (entrypoint: string) =>
+    runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
     manifest.entrypoints.map((entry) => ({
       entrypoint: entry.entrypoint,
@@ -381,6 +391,8 @@ const loadReady = async (
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       missingTargets: [],
+      missingProven: false,
+      accessUnknown: false,
     }));
   const activeEntrypoints = new Set(activeManifest?.entrypoints.map((entry) => entry.entrypoint) ?? []);
   const automations =
@@ -393,27 +405,39 @@ const loadReady = async (
             : []),
         ];
 
-  // Removed access: which automation needs it. The only automation does; otherwise a failed last run that failed there.
+  // Removed access: which automation needs it. Proven by a last run that failed there; the only automation needs it
+  // in any case; an automation whose last run succeeded is unaffected so far; anything else stays unknown.
   const removedKeys = new Set((access ?? []).filter((row) => row.state === "removed").map((row) => targetKey(row.target)));
   if (automations && removedKeys.size > 0) {
     const running = automations.filter((automation) => !automation.isNew);
-    if (running.length === 1) running[0]!.missingTargets = [...removedKeys];
-    else
-      await Promise.all(
-        running
-          .filter((automation) => automation.lastRun?.state === "failed")
-          .slice(0, MISSING_ACCESS_CHECKS)
-          .map(async (automation) => {
-            const calls = await loadCodeRunCalls(invoke, code.id, automation.lastRun!.id, 0).catch(() => null);
-            automation.missingTargets = [
-              ...new Set(
-                (calls?.calls ?? [])
-                  .filter((call) => call.state === "failed" && call.target && removedKeys.has(targetKey(call.target)))
-                  .map((call) => targetKey(call.target!)),
-              ),
-            ];
-          }),
-      );
+    const callKeys = (call: CodePageCall) => [
+      targetKey(call.target ?? { type: "app", id: call.capability.split(".")[0]! }),
+      ...call.refs.map(targetKey),
+    ];
+    const failed = running.filter((automation) => automation.lastRun?.state === "failed");
+    // Readers get no call contents; editors read a few short batches, one automation after another.
+    const checked = code.permission === "editor" ? failed.slice(0, MISSING_ACCESS_CHECKS) : [];
+    for (const automation of checked) {
+      const calls = await loadCodeRunCalls(invoke, code.id, automation.lastRun!.id, 0, MISSING_ACCESS_BATCH).catch(() => null);
+      const hits = [
+        ...new Set(
+          (calls?.calls ?? [])
+            .filter((call) => call.state === "failed")
+            .flatMap(callKeys)
+            .filter((key) => removedKeys.has(key)),
+        ),
+      ];
+      if (hits.length > 0) {
+        automation.missingTargets = hits;
+        automation.missingProven = true;
+      } else if (!calls || calls.next !== null) automation.accessUnknown = true;
+    }
+    for (const automation of failed.filter((automation) => !checked.includes(automation))) automation.accessUnknown = true;
+    for (const automation of running.filter((automation) => !automation.lastRun)) automation.accessUnknown = true;
+    if (running.length === 1 && running[0]!.missingTargets.length === 0) {
+      running[0]!.missingTargets = [...removedKeys];
+      running[0]!.accessUnknown = false;
+    }
   }
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
   const activeVersion =
@@ -466,6 +490,9 @@ const loadReady = async (
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
     access: accessRows,
+    attentionReasons: attentionResult?.ok
+      ? (attentionResult.data.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? [])
+      : null,
     waitingTargets,
     runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.data.nextCursor } : null,
     run,

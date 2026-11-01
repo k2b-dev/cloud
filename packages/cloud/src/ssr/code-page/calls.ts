@@ -17,6 +17,11 @@ export const summarizeCallResult = (result: unknown): string | null => {
   return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 };
 
+const callRefs = (call: unknown): { type: string; id: string }[] => {
+  const parsed = z.object({ refs: z.record(z.string(), z.object({ type: z.string(), id: z.string() })) }).safeParse(call);
+  return parsed.success ? Object.values(parsed.data.refs) : [];
+};
+
 const callTarget = (call: unknown): { type: string; id: string } | null => {
   const parsed = z.object({ target: z.object({ type: z.string(), id: z.string() }) }).safeParse(call);
   return parsed.success ? parsed.data.target : null;
@@ -28,6 +33,7 @@ export const loadCodeRunCalls = async (
   codeId: string,
   runId: string,
   after: number,
+  size = CODE_PAGE_CALL_BATCH,
 ): Promise<{
   run: z.infer<typeof RunReadSchema>["run"];
   calls: CodePageCall[];
@@ -37,7 +43,7 @@ export const loadCodeRunCalls = async (
   readable: boolean;
 } | null> => {
   const pages = await Promise.all(
-    Array.from({ length: CODE_PAGE_CALL_BATCH }, (_, index) =>
+    Array.from({ length: size }, (_, index) =>
       invoke(coreQuery("code.run.read", { codeId, runId, cursor: after + index }), wrapped(RunReadSchema)),
     ),
   );
@@ -57,6 +63,7 @@ export const loadCodeRunCalls = async (
       kind: call.kind,
       capability: call.capability,
       target: callTarget(call.call),
+      refs: callRefs(call.call),
       state: call.state,
       summary: summarizeCallResult(call.result),
     });
