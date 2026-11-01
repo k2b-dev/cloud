@@ -76,6 +76,8 @@ const ignoredTestPaths = ["node_modules/", "dist/", "build/", "_ssr/"];
 const testFiles = new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx}");
 const integrationImport = /scripts\/fixtures\/test-infra/;
 const browserImport = /\/test\/browser["']/;
+/** A fresh WebKit needs seconds for this, so this budget only catches an engine that hangs; a suite's own limits stay untouched. */
+const browserWarmupMs = 120_000;
 /** Browser behavior tests, which this runner runs with browser conditions and the Solid DOM preload. */
 export const behaviorTest = /\.behavior\.test\.tsx?$/;
 /** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
@@ -464,6 +466,16 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
       if (bootstrap !== 0) {
         throw new Error("integration database bootstrap failed");
       }
+    }
+
+    if (options.browser) {
+      console.log("\n=== browser warm-up ===");
+      const warmup = await runTestCommand(
+        { name: "browser warm-up", cwd: join(workspaceRoot, "packages", "ui"), command: ["bun", join("test", "browser-warmup.ts")] },
+        env,
+        Math.min(remainingMs() ?? browserWarmupMs, browserWarmupMs),
+      );
+      if (warmup !== 0) throw new Error("browser warm-up failed");
     }
 
     for (const suite of suites) {
