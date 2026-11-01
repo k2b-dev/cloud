@@ -1,5 +1,16 @@
-import { type AuthContext, auth, getLocale, jsonResponse, middleware, rateLimit, requiresAdmin, respond, v } from "@k2b/cloud/server";
-import { read, set } from "@k2b/cloud/services";
+import {
+  type AuthContext,
+  auth,
+  expectUserBackedActor,
+  getLocale,
+  jsonResponse,
+  middleware,
+  rateLimit,
+  requiresAdmin,
+  respond,
+  v,
+} from "@k2b/cloud/server";
+import { read, settingsService } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -240,7 +251,18 @@ const app = new Hono<AuthContext>()
     v("json", z.object({ retentionDays: z.coerce.number().int().min(1), replaceUnreadable: z.boolean().optional() })),
     async (c) => {
       const { retentionDays, replaceUnreadable } = c.req.valid("json");
-      await set("logs.retention_days", retentionDays, undefined, { replaceUnreadable: replaceUnreadable === true });
+      const saved = await settingsService.entry.update({
+        key: "logs.retention_days",
+        value: retentionDays,
+        replaceUnreadable: replaceUnreadable === true,
+        audit: {
+          action: "settings.update",
+          outcome: "allowed",
+          actor: { userId: expectUserBackedActor(c).id },
+          target: { type: "setting", id: "logs.retention_days" },
+        },
+      });
+      if (!saved.ok) return respond(c, saved);
       return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.logRetentionUpdated }));
     },
   );

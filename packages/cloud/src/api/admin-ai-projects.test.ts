@@ -2,9 +2,14 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { AiProjectLastAdminError, aiProjects } from "../ai/projects";
 import type { AuthContext } from "../server";
+import { buildProjectedUser } from "../services/session/user";
 import { createAdminAiProjectsRoutes } from "./admin-ai-projects";
 
-const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
+const actorId = "33333333-3333-4333-8333-333333333333";
+const pass: MiddlewareHandler<AuthContext> = async (c, next) => {
+  c.set("user", buildProjectedUser({ id: actorId, provider: "local", profile: "user", effective_admin: true }));
+  return next();
+};
 const projectId = "22222222-2222-4222-8222-222222222222";
 const projectShortId = "pRk234";
 const project = {
@@ -75,10 +80,14 @@ describe("admin AI Project routes", () => {
     });
 
     expect(response.status).toBe(201);
-    expect(aiProjects.admin.grantAccess).toHaveBeenCalledWith(projectId, {
-      principal: access.principal,
-      permission: "admin",
-    });
+    expect(aiProjects.admin.grantAccess).toHaveBeenCalledWith(
+      projectId,
+      {
+        principal: access.principal,
+        permission: "admin",
+      },
+      actorId,
+    );
     expect(await response.json()).toEqual({ access });
   });
 
@@ -101,7 +110,7 @@ describe("admin AI Project routes", () => {
     const response = await routes.request(`/${projectShortId}`, { method: "DELETE" });
 
     expect(response.status).toBe(200);
-    expect(aiProjects.admin.delete).toHaveBeenCalledWith(projectId);
+    expect(aiProjects.admin.delete).toHaveBeenCalledWith(projectId, actorId);
     expect(await response.json()).toEqual({ deleted: true });
   });
 });

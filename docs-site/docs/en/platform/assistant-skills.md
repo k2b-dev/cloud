@@ -5,7 +5,7 @@ section: Platform services
 order: 585
 description: Ship app-owned Assistant Skills as Markdown files that Cloud installs, updates, and shows only to people who may open the app.
 tags: [ai, assistant, skills, markdown, agents]
-updated: 2026-10-24
+updated: 2026-10-31
 ---
 
 # Ship Assistant Skills
@@ -115,6 +115,22 @@ The description tells Assistant when to load the Skill. Say what the Skill is
 for and when to load it. Name app operations by their qualified capability ID,
 such as `inventory.location.list`, so Assistant can load them without searching.
 
+List the few operations that most requests need in `load-tools`.
+`load_skill` loads them with the instructions, which saves Assistant a model
+round on every simple request. Each one still requires the person's normal
+access, and a chat's tool scope or a routine's grants still apply. Keep the
+list short: every loaded operation adds its schema to each later model request.
+
+```md
+---
+name: inventory-counting
+description: Use for stock counts in Cloud Inventory …
+load-tools:
+  - inventory.location.list
+  - inventory.count.record
+---
+```
+
 Link references relatively, as `references/<file>.md`. The links work in the
 checkout. Cloud stores links as written and mounts them in loaded instructions
 as `/skills/<name>/references/<file>.md`. Stored and exported `SKILL.md` files
@@ -131,6 +147,7 @@ start with an error that names it:
 | Instructions | At most 100,000 characters and 500 lines |
 | References | Paths `references/<file>.md`; at most 50 files, 100,000 characters each, 1,000,000 together |
 | Mentioned references | Every `references/<file>.md` the instructions mention must be declared |
+| `load-tools` | Optional; 1 to 25 unique capability IDs or built-in tool names |
 | Optional frontmatter | Any other field is kept and exported unchanged; JSON-representable values, at most 20,000 characters |
 | All Skills of one app | Their catalog lines (`- name: description`) fit the 8,000-character Assistant catalog |
 
@@ -252,4 +269,17 @@ test("ships the counting Skill with its count sheet", () => {
 ```
 
 Check that every capability ID the Skill names exists and that Assistant can
-complete the workflow with a person's normal access.
+complete the workflow with a person's normal access. For `load-tools`, compile
+the app's manifest and compare:
+
+```ts
+import { aiSkillLoadTools } from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { inventoryCapabilities } from "./capabilities";
+
+test("Skills load only declared capabilities", () => {
+  const manifest = compileCapabilityManifest("inventory", inventoryCapabilities);
+  const declared = [...manifest.queries, ...manifest.actions].map((operation) => `inventory.${operation.localId}`);
+  for (const skill of SKILLS) for (const name of aiSkillLoadTools(skill.extraFrontmatter)) expect(declared).toContain(name);
+});
+```

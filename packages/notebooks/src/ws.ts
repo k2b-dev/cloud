@@ -75,6 +75,7 @@ const ReplayRequestMessageSchema = z.object({
   type: z.literal(WS_TYPE.replayRequest),
   payload: z.object({
     noteId: z.string().regex(SHORT_ID_REGEX),
+    presencePeerId: z.uuid().optional(),
     // A bounded opaque cursor is validated by the owning topic; stale formats resync.
     fromCursor: z.string().max(256).nullable().optional(),
     restoreRevision: RestoreRevisionSchema.nullable(),
@@ -107,11 +108,20 @@ const WorkspaceSubscribeMessageSchema = z.object({
   }),
 });
 
+const WorkspacePresenceWatchMessageSchema = z.object({
+  type: z.literal(WORKSPACE_WS_TYPE.presenceWatch),
+  payload: z.object({
+    noteId: z.string().regex(SHORT_ID_REGEX).nullable(),
+    presencePeerId: z.uuid(),
+  }),
+});
+
 const ClientMessageSchema = z.discriminatedUnion("type", [
   ReplayRequestMessageSchema,
   SyncPublishMessageSchema,
   AwarenessPublishMessageSchema,
   WorkspaceSubscribeMessageSchema,
+  WorkspacePresenceWatchMessageSchema,
 ]);
 
 type ClientMessage = z.infer<typeof ClientMessageSchema>;
@@ -127,15 +137,18 @@ type WsContext = {
   noteId: string | null;
   /** Stable public short-id used on the websocket wire. */
   noteShortId: string | null;
-  /** Revision of the document joined by this socket; never relabel old bytes after a restore. */
+  /** Null for workspace readers; collaboration pins a revision and must never relabel old bytes after a restore. */
   restoreRevision: string | null;
   canWrite: boolean;
   peerId: string;
+  presencePeerId: string | undefined;
   trustedAwareness: ReturnType<typeof createTrustedTextAwareness> | null;
   awarenessUserId: string | null;
   streamAbort: AbortController | null;
   snapshotInterval: ReturnType<typeof setInterval> | null;
   presenceHeartbeatInterval: ReturnType<typeof setInterval> | null;
+  presenceTask: Promise<void> | null;
+  noteLeaveTask: Promise<void> | null;
   accessRefreshTimeout: ReturnType<typeof setTimeout> | null;
   /** Notebook owning the joined note — the tenant of its permission events. */
   noteNotebookId: string | null;
@@ -191,11 +204,14 @@ const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | 
   noteAccessWatchAbort: null,
   canWrite: false,
   peerId: crypto.randomUUID(),
+  presencePeerId: undefined,
   trustedAwareness: null,
   awarenessUserId: null,
   streamAbort: null,
   snapshotInterval: null,
   presenceHeartbeatInterval: null,
+  presenceTask: null,
+  noteLeaveTask: null,
   accessRefreshTimeout: null,
   workspaceNotebookId: null,
   workspaceNotebookShortId: null,
@@ -349,7 +365,8 @@ const unregisterPresenceMember = (ctx: WsContext, noteId: string) => {
 
 const sendPresenceSnapshot = async (ctx: WsContext, noteId: string) => {
   const state = await notebooksService.presence.snapshot({ noteId });
-  if (ctx.noteShortId) sendPresenceMessage(ctx.socket, WS_TYPE.presenceSnapshot, ctx.noteShortId, state.participants);
+  if (ctx.noteId === noteId && ctx.phase === "joined" && ctx.noteShortId)
+    sendPresenceMessage(ctx.socket, WS_TYPE.presenceSnapshot, ctx.noteShortId, state.participants);
 };
 
 const startPresenceHeartbeat = (ctx: WsContext) => {
@@ -359,9 +376,9 @@ const startPresenceHeartbeat = (ctx: WsContext) => {
   ctx.presenceHeartbeatInterval = setInterval(() => {
     const noteId = ctx.noteId;
     const user = ctx.user;
-    if (!noteId || !user || ctx.phase !== "joined") return;
+    if (!noteId || !user || ctx.phase !== "joined" || ctx.presenceTask) return;
 
-    void notebooksService.presence
+    ctx.presenceTask = notebooksService.presence
       .heartbeat({
         noteId,
         peerId: ctx.peerId,
@@ -371,6 +388,7 @@ const startPresenceHeartbeat = (ctx: WsContext) => {
         await notebooksService.presence.join({
           noteId,
           peerId: ctx.peerId,
+          presencePeerId: ctx.presencePeerId,
           userId: user.id,
           displayName: user.displayName,
           avatarHash: user.avatarHash,
@@ -382,8 +400,38 @@ const startPresenceHeartbeat = (ctx: WsContext) => {
           peerId: ctx.peerId,
           error: error instanceof Error ? error.message : String(error),
         });
+      })
+      .finally(() => {
+        ctx.presenceTask = null;
       });
   }, PRESENCE_HEARTBEAT_INTERVAL_MS);
+};
+
+/** Workspace and collaboration sockets hold independent leases for the same logical tab. */
+const joinPresence = async (ctx: WsContext) => {
+  stopPresenceHeartbeat(ctx);
+  await ctx.presenceTask;
+  const noteId = ctx.noteId;
+  const user = ctx.user;
+  if (!noteId || !user || ctx.phase !== "joined") return;
+  registerPresenceMember(ctx, noteId);
+  ctx.presenceTask = notebooksService.presence
+    .join({
+      noteId,
+      peerId: ctx.peerId,
+      presencePeerId: ctx.presencePeerId,
+      userId: user.id,
+      displayName: user.displayName,
+      avatarHash: user.avatarHash,
+    })
+    .finally(() => {
+      ctx.presenceTask = null;
+    });
+  await ctx.presenceTask;
+  if (ctx.phase !== "joined" || ctx.noteId !== noteId) return;
+  await sendPresenceSnapshot(ctx, noteId);
+  await broadcastPresenceChanged(noteId);
+  if (ctx.phase === "joined" && ctx.noteId === noteId) startPresenceHeartbeat(ctx);
 };
 
 const queueSnapshotIfNeeded = async (ctx: WsContext, reason: "periodic" | "unload") => {
@@ -421,13 +469,26 @@ const startSnapshotScheduler = (ctx: WsContext) => {
   }, SNAPSHOT_INTERVAL_MS);
 };
 
-const leaveCurrentNote = async (ctx: WsContext) => {
+const leaveCurrentNote = (ctx: WsContext): Promise<void> => {
+  // Refresh callbacks and incoming watches share cleanup before a new note can join.
+  if (ctx.noteLeaveTask) return ctx.noteLeaveTask;
+  ctx.noteLeaveTask = performNoteLeave(ctx).finally(() => {
+    ctx.noteLeaveTask = null;
+  });
+  return ctx.noteLeaveTask;
+};
+
+const performNoteLeave = async (ctx: WsContext) => {
   const noteId = ctx.noteId;
+  // Stop delivery immediately, including an initial presence join racing a revocation.
+  if (ctx.phase !== "closing") ctx.phase = "open";
   await queueSnapshotIfNeeded(ctx, "unload");
   stopAccessRefresh(ctx);
   stopNoteAccessWatch(ctx);
   stopSnapshotScheduler(ctx);
   stopPresenceHeartbeat(ctx);
+  // Complete a renewal before deleting its lease, so an in-flight rejoin cannot resurrect a departed reader.
+  await ctx.presenceTask;
   stopLiveStream(ctx);
   if (noteId) {
     const removal = ctx.trustedAwareness?.remove();
@@ -472,7 +533,9 @@ const leaveCurrentNote = async (ctx: WsContext) => {
   }
 };
 
-const leaveCurrentWorkspace = (ctx: WsContext) => {
+const leaveCurrentWorkspace = async (ctx: WsContext) => {
+  // Reader sessions have no document revision or collaboration streams.
+  if (ctx.noteId && ctx.restoreRevision === null) await leaveCurrentNote(ctx);
   stopWorkspaceAccessRefresh(ctx);
   stopWorkspaceStream(ctx);
   ctx.workspaceNotebookId = null;
@@ -484,7 +547,7 @@ const fatal = async (ctx: WsContext, code: NotebooksYjsErrorCode, message: strin
   ctx.phase = "closing";
   warn(ctx.socket, code, message, noteId, reopen);
   await leaveCurrentNote(ctx);
-  leaveCurrentWorkspace(ctx);
+  await leaveCurrentWorkspace(ctx);
   ctx.socket.close(closeCodeForError(code), code);
 };
 
@@ -504,7 +567,7 @@ const evaluateResolvedNoteAccess = async (
   note: ResolvedNote,
   noteShortId: string,
   user: User,
-  mode: "read" | "write",
+  mode: "read" | "write" | "presence",
   deniedCode: NotebooksYjsErrorCode,
   messages: NotebooksWsMessages,
 ): Promise<AccessEvaluation> => {
@@ -532,7 +595,7 @@ const evaluateResolvedNoteAccess = async (
     };
   }
 
-  if (note.lockedAt) {
+  if (note.lockedAt && mode !== "presence") {
     return {
       ok: false,
       code: ERROR_CODE.noteLocked,
@@ -552,7 +615,7 @@ const evaluateResolvedNoteAccess = async (
 const evaluateAccess = async (
   noteShortId: string,
   user: User,
-  mode: "read" | "write",
+  mode: "read" | "write" | "presence",
   deniedCode: NotebooksYjsErrorCode,
   messages: NotebooksWsMessages,
 ): Promise<AccessEvaluation> => {
@@ -635,8 +698,17 @@ const refreshJoinedAccess = async (ctx: WsContext): Promise<AccessEvaluation> =>
 
   const note = await notebooksService.note.get({ id: ctx.noteId });
   if (!note) return { ok: false, code: ERROR_CODE.noteNotFound, message: ctx.messages.noteNotFound, noteId: ctx.noteShortId };
-  const access = await evaluateResolvedNoteAccess(note, ctx.noteShortId, user, "read", ERROR_CODE.accessRevoked, ctx.messages);
+  const access = await evaluateResolvedNoteAccess(
+    note,
+    ctx.noteShortId,
+    user,
+    ctx.restoreRevision === null ? "presence" : "read",
+    ERROR_CODE.accessRevoked,
+    ctx.messages,
+  );
   if (!access.ok) return access;
+  if (ctx.restoreRevision === null && access.notebookId !== ctx.workspaceNotebookId)
+    return { ok: false, code: ERROR_CODE.accessRevoked, message: ctx.messages.accessRevoked };
   ctx.user = user;
   ctx.canWrite = access.canWrite ?? false;
   return access;
@@ -671,12 +743,27 @@ const refreshWorkspaceAccess = async (ctx: WsContext): Promise<AccessEvaluation>
   return access;
 };
 
-/** Re-evaluate the joined note's access. Returns false once the socket is done for. */
+/** Losing a reader's note must not interrupt workspace updates or editor recovery. */
+const leaveReaderPresence = async (ctx: WsContext) => {
+  const noteShortId = ctx.noteShortId;
+  await leaveCurrentNote(ctx);
+  if (noteShortId) sendPresenceMessage(ctx.socket, WS_TYPE.presenceChanged, noteShortId, []);
+};
+
+/** Re-evaluate the joined note. Readers leave only that note; collaboration failures remain terminal. */
 const revalidateNoteAccess = async (ctx: WsContext): Promise<boolean> => {
   if (ctx.phase !== "joined") return false;
+  const noteId = ctx.noteId;
+  const revision = ctx.restoreRevision;
+  const stillCurrent = () => ctx.phase === "joined" && ctx.noteId === noteId && ctx.restoreRevision === revision;
   try {
     const access = await refreshJoinedAccess(ctx);
+    if (!stillCurrent()) return false;
     if (access.ok) return true;
+    if (ctx.restoreRevision === null) {
+      await leaveReaderPresence(ctx);
+      return false;
+    }
     await fatal(
       ctx,
       access.code ?? ERROR_CODE.internalError,
@@ -685,11 +772,13 @@ const revalidateNoteAccess = async (ctx: WsContext): Promise<boolean> => {
     );
     return false;
   } catch (error) {
+    if (!stillCurrent()) return false;
     log.error("Access refresh failed", {
       noteId: ctx.noteId,
       error: error instanceof Error ? error.message : String(error),
     });
-    await fatal(ctx, ERROR_CODE.internalError, ctx.messages.accessRefreshFailed, ctx.noteShortId ?? undefined);
+    if (ctx.restoreRevision === null) await leaveReaderPresence(ctx);
+    else await fatal(ctx, ERROR_CODE.internalError, ctx.messages.accessRefreshFailed, ctx.noteShortId ?? undefined);
     return false;
   }
 };
@@ -708,13 +797,16 @@ const revalidateWorkspaceAccess = async (ctx: WsContext): Promise<boolean> => {
   if (!ctx.workspaceNotebookId || !ctx.workspaceNotebookShortId) return false;
   try {
     const access = await refreshWorkspaceAccess(ctx);
-    if (access.ok) return true;
+    if (access.ok) {
+      if (ctx.noteId && ctx.restoreRevision === null) await revalidateNoteAccess(ctx);
+      return true;
+    }
     send(ctx.socket, WORKSPACE_WS_TYPE.revoked, {
       notebookId: ctx.workspaceNotebookShortId,
       code: access.code ?? ERROR_CODE.accessRevoked,
       message: access.message ?? ctx.messages.workspaceAccessRevoked,
     });
-    leaveCurrentWorkspace(ctx);
+    await leaveCurrentWorkspace(ctx);
     return false;
   } catch (error) {
     log.error("Workspace access refresh failed", {
@@ -726,7 +818,7 @@ const revalidateWorkspaceAccess = async (ctx: WsContext): Promise<boolean> => {
       code: ERROR_CODE.internalError,
       message: ctx.messages.workspaceAccessRefreshFailed,
     });
-    leaveCurrentWorkspace(ctx);
+    await leaveCurrentWorkspace(ctx);
     return false;
   }
 };
@@ -1042,7 +1134,7 @@ const ensurePhase = (ctx: WsContext, allowedTypes: readonly string[], attemptedT
 };
 
 const ensureJoinedNote = (ctx: WsContext, noteShortId: string): boolean => {
-  if (ctx.phase !== "joined" || !ctx.noteShortId || ctx.noteShortId !== noteShortId) {
+  if (ctx.phase !== "joined" || ctx.restoreRevision === null || !ctx.noteShortId || ctx.noteShortId !== noteShortId) {
     warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.replayRequired, noteShortId);
     return false;
   }
@@ -1058,6 +1150,7 @@ const ensureWritableNote = (ctx: WsContext, noteId: string): boolean => {
 };
 
 const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof ReplayRequestMessageSchema.shape.payload>) => {
+  await ctx.noteLeaveTask;
   const user = await resolveSessionUser(ctx.sessionToken);
   if (!user) {
     await fatal(ctx, ERROR_CODE.loginRequired, ctx.messages.loginRequired, payload.noteId);
@@ -1071,7 +1164,7 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   }
   const dbNoteId = access.resolvedNoteId!;
 
-  if (ctx.noteId && ctx.noteId !== dbNoteId) {
+  if (ctx.noteId && (ctx.noteId !== dbNoteId || ctx.restoreRevision === null)) {
     await leaveCurrentNote(ctx);
   }
 
@@ -1096,20 +1189,12 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   ctx.noteId = dbNoteId;
   ctx.noteShortId = payload.noteId;
   ctx.restoreRevision = snapshot.restoreRevision;
+  ctx.presencePeerId = payload.presencePeerId;
   ctx.noteNotebookId = access.notebookId ?? null;
   ctx.canWrite = access.canWrite ?? false;
 
-  registerPresenceMember(ctx, dbNoteId);
-  await notebooksService.presence.join({
-    noteId: dbNoteId,
-    peerId: ctx.peerId,
-    userId: user.id,
-    displayName: user.displayName,
-    avatarHash: user.avatarHash,
-  });
-  await sendPresenceSnapshot(ctx, dbNoteId);
-  await broadcastPresenceChanged(dbNoteId);
-  startPresenceHeartbeat(ctx);
+  await joinPresence(ctx);
+  if (ctx.phase !== "joined" || ctx.noteId !== dbNoteId) return;
 
   const clientCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
   let replayCursor = clientCursor;
@@ -1268,6 +1353,7 @@ const handleWorkspaceSubscribe = async (ctx: WsContext, payload: z.infer<typeof 
     return;
   }
 
+  await leaveCurrentWorkspace(ctx);
   ctx.user = user;
   ctx.workspaceNotebookId = access.notebookId;
   ctx.workspaceNotebookShortId = payload.notebookId;
@@ -1275,18 +1361,54 @@ const handleWorkspaceSubscribe = async (ctx: WsContext, payload: z.infer<typeof 
   startWorkspaceAccessRefresh(ctx);
 };
 
+/** One opened note per workspace socket; replacing it never starts Yjs replay. */
+const handleWorkspacePresenceWatch = async (ctx: WsContext, payload: z.infer<typeof WorkspacePresenceWatchMessageSchema.shape.payload>) => {
+  if (!ctx.workspaceNotebookId || ctx.restoreRevision !== null) {
+    send(ctx.socket, WORKSPACE_WS_TYPE.error, { code: ERROR_CODE.invalidMessage, message: ctx.messages.invalidMessage });
+    return;
+  }
+  const workspaceNotebookId = ctx.workspaceNotebookId;
+  await leaveCurrentNote(ctx);
+  if (!payload.noteId) return;
+  const user = await resolveSessionUser(ctx.sessionToken);
+  const access = user ? await evaluateAccess(payload.noteId, user, "presence", ERROR_CODE.accessDenied, ctx.messages) : null;
+  if (ctx.phase === "closing" || ctx.workspaceNotebookId !== workspaceNotebookId) return;
+  if (!user || !access?.ok || access.notebookId !== workspaceNotebookId || !access.resolvedNoteId) {
+    send(ctx.socket, WORKSPACE_WS_TYPE.error, {
+      noteId: payload.noteId,
+      code: !user ? ERROR_CODE.loginRequired : ERROR_CODE.accessDenied,
+      message: !user ? ctx.messages.loginRequired : ctx.messages.accessDenied,
+    });
+    return;
+  }
+  ctx.phase = "joined";
+  ctx.user = user;
+  ctx.noteId = access.resolvedNoteId;
+  ctx.noteShortId = payload.noteId;
+  ctx.noteNotebookId = access.notebookId;
+  ctx.presencePeerId = payload.presencePeerId;
+  await joinPresence(ctx);
+};
+
 const handlers = {
   [WS_TYPE.replayRequest]: handleReplayRequest,
   [WS_TYPE.syncPublish]: handleSyncPublish,
   [WS_TYPE.awarenessPublish]: handleAwarenessPublish,
   [WORKSPACE_WS_TYPE.subscribe]: handleWorkspaceSubscribe,
+  [WORKSPACE_WS_TYPE.presenceWatch]: handleWorkspacePresenceWatch,
 } satisfies {
   [K in ClientMessage["type"]]: (ctx: WsContext, payload: Extract<ClientMessage, { type: K }>["payload"]) => Promise<void>;
 };
 
 const allowedTypesByPhase: Record<WsPhase, readonly ClientMessage["type"][]> = {
-  open: [WS_TYPE.replayRequest, WORKSPACE_WS_TYPE.subscribe],
-  joined: [WS_TYPE.replayRequest, WS_TYPE.syncPublish, WS_TYPE.awarenessPublish, WORKSPACE_WS_TYPE.subscribe],
+  open: [WS_TYPE.replayRequest, WORKSPACE_WS_TYPE.subscribe, WORKSPACE_WS_TYPE.presenceWatch],
+  joined: [
+    WS_TYPE.replayRequest,
+    WS_TYPE.syncPublish,
+    WS_TYPE.awarenessPublish,
+    WORKSPACE_WS_TYPE.subscribe,
+    WORKSPACE_WS_TYPE.presenceWatch,
+  ],
   closing: [],
 };
 
@@ -1301,6 +1423,10 @@ const dispatchClientMessage = async (ctx: WsContext, message: ClientMessage) => 
   }
   if (message.type === WORKSPACE_WS_TYPE.subscribe) {
     await handlers[WORKSPACE_WS_TYPE.subscribe](ctx, message.payload);
+    return;
+  }
+  if (message.type === WORKSPACE_WS_TYPE.presenceWatch) {
+    await handlers[WORKSPACE_WS_TYPE.presenceWatch](ctx, message.payload);
     return;
   }
   await handlers[WS_TYPE.awarenessPublish](ctx, message.payload);
@@ -1354,6 +1480,9 @@ const app = new Hono<AuthContext>().get(
     // browser, which puts the full credential into the page HTML.
     const sessionToken = await auth.session.resolveToken(c);
     const locale = getLocale(c);
+    const expected = c.req.queries("expectedUserId");
+    const actor = c.get("actor");
+    const accountChanged = expected && (expected.length !== 1 || actor?.kind !== "user" || actor.user.id !== expected[0]);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
@@ -1364,7 +1493,7 @@ const app = new Hono<AuthContext>().get(
         if (!ctx) return;
         ctx.phase = "closing";
         await leaveCurrentNote(ctx);
-        leaveCurrentWorkspace(ctx);
+        await leaveCurrentWorkspace(ctx);
         ctx.socket.close(1012, "Restarting");
       })().then(
         () => {
@@ -1381,6 +1510,10 @@ const app = new Hono<AuthContext>().get(
     return guardAppAccessSocket(c, "notebooks", {
       onOpen(_, ws) {
         ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
+        if (accountChanged) {
+          void fatal(ctx, ERROR_CODE.accessDenied, ctx.messages.accessDenied);
+          return;
+        }
         if (stoppingConnections) {
           void close();
           return;

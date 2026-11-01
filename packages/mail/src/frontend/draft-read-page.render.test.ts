@@ -14,6 +14,7 @@ import type { MailDraft } from "../contracts";
 import * as access from "../service/access";
 import * as reviewReaders from "../service/capability-review-readers";
 import * as drafts from "../service/drafts";
+import * as mailboxes from "../service/mailboxes";
 import * as publicResources from "../service/public-resources";
 
 const root = mkdtempSync(join(tmpdir(), "mail-draft-read-page-tests-"));
@@ -73,6 +74,24 @@ beforeEach(() => {
   spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
   spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
   spies.push(spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(draftId));
+  spies.push(
+    spyOn(mailboxes, "getMailbox").mockResolvedValue(
+      ok({
+        accessScope: "mailbox",
+        id: mailboxId,
+        name: "Vertrieb Nord",
+        description: null,
+        health: "active",
+        healthReason: null,
+        syncEnabled: true,
+        searchBackend: "postgres",
+        automaticReplyManagementPermission: "admin",
+        composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
+        createdAt: "2026-10-01T00:00:00.000Z",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      }),
+    ),
+  );
 });
 
 const request = (locale = "en", query = "") =>
@@ -197,4 +216,31 @@ test("a changed effective send fingerprint never shows a substituted message", a
   const response = await request("en", "?revision=1&sendContent=" + "a".repeat(64));
   expect(response.status).toBe(409);
   expect(await response.text()).not.toContain("Please find");
+});
+
+test("the way back names the mailbox it leads to", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok(draft)));
+  const html = await (await request()).text();
+  const published = /<script[^>]*data-k2b-page-trail[^>]*>([^<]*)<\/script>/.exec(html)?.[1];
+  expect(published).toBeDefined();
+  expect(JSON.parse(published!).ancestors).toContainEqual({ title: "Vertrieb Nord", href: "/app/mail/Box001" });
+  expect(html).not.toMatch(/"title":"Mail","href":"\/app\/mail\/Box001"/);
+});
+
+test("a mailbox the caller may not read answers 404 and shows neither its name nor the draft", async () => {
+  const draftRead = spyOn(drafts, "getDraft").mockResolvedValue(ok(draft));
+  // The service's real answer for a caller without access is 403; the page answers as for an unknown address.
+  spies.push(draftRead, spyOn(mailboxes, "getMailbox").mockResolvedValue(fail(err.forbidden("Access denied"))));
+  const response = await request();
+  expect(response.status).toBe(404);
+  const html = await response.text();
+  expect(html).not.toContain("Vertrieb Nord");
+  expect(html).not.toContain("Quarterly offer");
+});
+
+test("a draft read refused for access answers 404 as well", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(fail(err.forbidden("Access denied"))));
+  const response = await request();
+  expect(response.status).toBe(404);
+  expect(await response.text()).not.toContain("Quarterly offer");
 });
