@@ -25,13 +25,13 @@ import { baseLabel } from "./frontend/base-label";
 import { browserMessages } from "./frontend/browser-messages";
 import { filesUrl } from "./frontend/urls";
 import { FilesError, filesService } from "./service";
+import { strictName, userPath } from "./service/paths";
 
 // Match the existing code-run file budget and stay within Cloud HTTP body budgets.
 const Base = z.string().min(1).max(512).describe("Exact base ID returned by bases.list.");
 const Path = z.string().max(4096).describe("Path relative to this storage base; empty means its root.");
-const Location = z.object({ baseId: Base, path: Path }).strict();
+const Location = z.object({ path: Path }).strict();
 const Browse = BrowseQuerySchema.extend({
-  baseId: Base,
   path: BrowseQuerySchema.shape.path.describe("Folder path relative to the storage base."),
   after: BrowseQuerySchema.shape.after.describe("Cursor from the previous page; omit for the first page."),
   sort: BrowseQuerySchema.shape.sort.describe("Sort entries by this field."),
@@ -65,6 +65,20 @@ const Entry = z.object({
 const Ref = z.object({ type: z.literal("filesv2.entry"), id: z.string() });
 const Item = Entry.extend({ ref: Ref, links: z.array(CapabilitySemanticLinkSchema).max(10) });
 const Result = z.object({ baseId: Base, entry: Item.optional(), uploadId: z.string().optional() });
+/** Files Actions are bound to a storage root, never a caller-selected folder level. */
+const rootBase = async (c: CapabilityExecutionContext, ref: CapabilityExecutionContext["target"]): Promise<string> => {
+  if (!ref || ref.type !== "filesv2.entry") throw new FilesError("not_found", 404);
+  const root = await filesService.rootLocation(capabilityCall(c), ref.id);
+  return root.baseId;
+};
+const rootInput = async <T extends object>(input: T, c: CapabilityExecutionContext) => {
+  for (const [field, value] of Object.entries(input)) {
+    if (typeof value !== "string") continue;
+    if (field === "path" || field === "folder") userPath(value);
+    if (field === "name") strictName(value);
+  }
+  return { ...input, baseId: await rootBase(c, c.target) };
+};
 const readActor = (c: CapabilityExecutionContext) => {
   capabilityCall(c);
   return c.actor.kind === "user" ? c.actor.user.id : `service_account:${c.actor.serviceAccount.id}`;
@@ -222,11 +236,19 @@ const Upload = Location.extend({
 export const fileQueries = {
   "bases.list": {
     title: "List storage bases",
-    description: "List accessible homes and group storage. Use the returned base IDs for browsing; unavailable bases include their state.",
+    description:
+      "List accessible homes and group storage. Use each returned root ref as the target for browsing and changes; unavailable bases include their state.",
     input: z.object({ after: Base.optional() }).strict(),
     data: z.object({
       items: z.array(
-        z.object({ id: Base, name: z.string(), area: z.enum(["cloud", "freeipa"]), kind: z.enum(["users", "groups"]), status: z.string() }),
+        z.object({
+          id: Base,
+          ref: Ref,
+          name: z.string(),
+          area: z.enum(["cloud", "freeipa"]),
+          kind: z.enum(["users", "groups"]),
+          status: z.string(),
+        }),
       ),
       next: z.string().nullable(),
     }),
@@ -237,23 +259,33 @@ export const fileQueries = {
           .sort((a, b) => (a.id < b.id ? -1 : 1))
           .filter((i) => !input.after || i.id > input.after);
         const items = available.slice(0, 100);
-        return ok({ data: { items, next: available.length > items.length ? items.at(-1)!.id : null } });
+        return ok({
+          data: {
+            items: await Promise.all(
+              items.map(async (base) => ({ ...base, ref: { type: "filesv2.entry" as const, id: await entryRef(base.id, { path: "" }) } })),
+            ),
+            next: available.length > items.length ? items.at(-1)!.id : null,
+          },
+        });
       }),
   },
   "entry.list": {
     title: "List folder entries",
-    description: "Read one page of immediate children of a known folder. Continue with next until null, including empty filtered pages.",
+    description:
+      "Read one page of immediate children at a path relative to the storage-root entry target from bases.list. Continue with next until null, including empty filtered pages.",
+    target: "entry",
     input: Browse,
     data: z.object({ baseId: Base, path: Path, items: z.array(Item), next: z.string().nullable() }),
     openWorld: false,
-    run: async (input: z.infer<typeof BrowseQuerySchema> & { baseId: string }, c: CapabilityExecutionContext) =>
+    run: async (input: z.infer<typeof Browse>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const page = await filesService.list(capabilityCall(c), input);
+        const located = await rootInput(input, c);
+        const page = await filesService.list(capabilityCall(c), located);
         return ok({
           data: {
-            baseId: input.baseId,
+            baseId: located.baseId,
             path: page.path,
-            items: await Promise.all(page.items.map((e) => item(input.baseId, e))),
+            items: await Promise.all(page.items.map((e) => item(located.baseId, e))),
             next: page.next,
           },
         });
@@ -262,7 +294,8 @@ export const fileQueries = {
   "entry.search-in-base": {
     title: "Search within storage",
     description:
-      "Find files and folders below one known storage folder by name, with typos and folder names by default and the best matches first; filter by extension, size and modification time. Continue with next until null; on cursor_invalid restart without after. search_limited means narrow the folder, query or filters. Does not search file contents.",
+      "Find files and folders below a path in the storage-root entry target from bases.list by name, with typos and folder names by default and the best matches first; filter by extension, size and modification time. Continue with next until null; on cursor_invalid restart without after. search_limited means narrow the folder, query or filters. Does not search file contents.",
+    target: "entry",
     input: SearchInput,
     data: z.object({
       baseId: Base,
@@ -275,12 +308,13 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: z.infer<typeof SearchInput>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const page = await filesService.search(capabilityCall(c), { ...input, scope: "tree", signal: c.signal });
+        const located = await rootInput(input, c);
+        const page = await filesService.search(capabilityCall(c), { ...located, scope: "tree", signal: c.signal });
         return ok({
           data: {
-            baseId: input.baseId,
+            baseId: located.baseId,
             path: page.path,
-            items: await Promise.all(page.items.map(({ highlight: _highlight, ...e }) => item(input.baseId, e))),
+            items: await Promise.all(page.items.map(({ highlight: _highlight, ...e }) => item(located.baseId, e))),
             next: page.next,
             total: page.total,
             truncated: page.truncated,
@@ -290,8 +324,10 @@ export const fileQueries = {
   },
   "trash.list": {
     title: "List trash",
-    description: "List one page of recoverable entries; next is the cursor for the following page.",
-    input: z.object({ baseId: Base, after: z.string().max(16384).optional().describe("Cursor returned by the previous page.") }).strict(),
+    description:
+      "List one page of recoverable entries in the storage-root entry target from bases.list; next is the cursor for the following page.",
+    target: "entry",
+    input: z.object({ after: z.string().max(16384).optional().describe("Cursor returned by the previous page.") }).strict(),
     data: z.object({
       base: z.object({ id: Base, name: z.string() }),
       entries: z.array(
@@ -308,8 +344,8 @@ export const fileQueries = {
       next: z.string().nullable(),
     }),
     openWorld: false,
-    run: async (input: { baseId: string; after?: string }, c: CapabilityExecutionContext) =>
-      domain(c, async () => ok({ data: await filesService.trash(capabilityCall(c), input) })),
+    run: async (input: { after?: string }, c: CapabilityExecutionContext) =>
+      domain(c, async () => ok({ data: await filesService.trash(capabilityCall(c), { ...input, baseId: await rootBase(c, c.target) }) })),
   },
   "content.read": {
     title: "Read file content",
@@ -432,31 +468,38 @@ const reviewText = async (c: CapabilityExecutionContext) => {
     base,
   };
 };
-function action<S extends z.ZodType>(
+function action<S extends z.ZodObject>(
   title: string,
   input: S,
-  review: (input: z.output<S>, copy: Awaited<ReturnType<typeof reviewText>>, c: CapabilityExecutionContext) => Review | Promise<Review>,
-  run: (input: z.output<S>, c: CapabilityExecutionContext) => Promise<CapabilityResult<z.infer<typeof Result>>>,
+  review: (
+    input: z.output<S> & { baseId: string },
+    copy: Awaited<ReturnType<typeof reviewText>>,
+    c: CapabilityExecutionContext,
+  ) => Review | Promise<Review>,
+  run: (input: z.output<S> & { baseId: string }, c: CapabilityExecutionContext) => Promise<CapabilityResult<z.infer<typeof Result>>>,
   approval?: "rememberable",
 ): CapabilityActionDefinition<S, typeof Result> {
   return {
     title,
-    description: title + " using current storage permissions. Existing targets are not overwritten.",
+    description:
+      title + " in the storage-root entry target from bases.list, using current permissions. Existing targets are not overwritten.",
+    target: "entry",
     input,
     data: Result,
     openWorld: false,
     destructive: false,
     idempotency: "required",
     ...(approval ? { approval } : {}),
-    review: async (value, c) => domain(c, async () => ok(await review(value, await reviewText(c), c))),
-    run: async (value, c) => domain(c, async () => ok(await run(value, c))),
+    review: async (value, c) => domain(c, async () => ok(await review(await rootInput(value, c), await reviewText(c), c))),
+    run: async (value, c) => domain(c, async () => ok(await run(await rootInput(value, c), c))),
   };
 }
 export const fileActions = {
   "content.create": {
     title: "Write file content",
     description:
-      "Prepare one binary upload at an exact base-relative path. Default: create only. Replacing requires an expectedRevision obtained from current metadata.",
+      "Prepare one binary upload at an exact path relative to the storage-root entry target from bases.list. Default: create only. Replacing requires an expectedRevision obtained from current metadata.",
+    target: "entry",
     input: Upload,
     data: Result,
     openWorld: false,
@@ -465,32 +508,34 @@ export const fileActions = {
     approval: "rememberable" as const,
     review: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        await filesService.uploadTarget(capabilityCall(c), input);
+        const located = await rootInput(input, c);
+        await filesService.uploadTarget(capabilityCall(c), located);
         const r = await reviewText(c);
         const name = r.name(input.path);
         return ok({
           message: input.onConflict === "overwrite" ? r.t.replaceFile({ name }) : r.t.createFile({ name }),
           details: [
-            { label: r.t.storage, value: r.base(input.baseId) },
+            { label: r.t.storage, value: r.base(located.baseId) },
             { label: r.t.path, value: r.path(input.path) },
             { label: r.t.size, value: r.size(input.size) },
           ],
           // Replacing content asks every time; creating a new file can be remembered for its base.
-          ...(input.onConflict === "overwrite" ? {} : await baseApprovalScope(c, input.baseId, input.path)),
+          ...(input.onConflict === "overwrite" ? {} : await baseApprovalScope(c, located.baseId, input.path)),
         });
       }),
     run: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
+        const located = await rootInput(input, c);
         if (input.onConflict === "overwrite" && !input.expectedRevision)
           return fail(err.badInput(filesCapabilityMessages(c.locale).replaceNeedsRevision));
         const session = await filesService.upload(capabilityCall(c), {
-          ...input,
-          idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c), c.idempotencyKey!])),
+          ...located,
+          idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c), c.target, c.idempotencyKey!])),
         });
         return ok({
-          data: { baseId: input.baseId, uploadId: session.id },
+          data: { baseId: located.baseId, uploadId: session.id },
           stream: {
-            id: JSON.stringify({ baseId: input.baseId, id: session.id }),
+            id: JSON.stringify({ baseId: located.baseId, id: session.id }),
             direction: "write" as const,
             name: input.path.split("/").at(-1)!,
             mediaType: input.mediaType,
@@ -502,6 +547,8 @@ export const fileActions = {
     stream: uploadStream(result),
   },
   "provider.save": {
+    // The shared file-provider contract is targetless; explicit root-bound uploads use content.create.
+    code: false as const,
     title: "Save a new file",
     description:
       "Create one new file in a writable folder from provider.list, then send its bytes through the write stream. Never replaces: an existing name fails with code FILE_NAME_CONFLICT; choose another name.",
@@ -568,7 +615,7 @@ export const fileActions = {
   ),
   "trash.restore": action(
     "Restore entry from trash",
-    z.object({ baseId: Base, id: z.string().max(5500).describe("ID returned by trash.list."), path: Path.optional() }).strict(),
+    z.object({ id: z.string().max(5500).describe("ID returned by trash.list."), path: Path.optional() }).strict(),
     async (input, r, c) => {
       const entry = await filesService.trashEntry(capabilityCall(c), input);
       const destination = input.path ?? entry.original;
@@ -643,33 +690,41 @@ export const fileActions = {
       ),
     "rememberable",
   ),
-  "entry.copy": action(
-    "Copy entry",
-    Target.extend({ targetBaseId: Base, folder: Path }).strict(),
-    async (input, r, c) => ({
-      message: r.t.copyEntry({ name: r.name(input.path) }),
-      details: [
-        { label: r.t.storage, value: r.base(input.baseId) },
-        { label: r.t.path, value: r.path(input.path) },
-        { label: r.t.targetStorage, value: r.base(input.targetBaseId) },
-        { label: r.t.targetFolder, value: r.path(input.folder) },
-      ],
-      // A copy into another base shows the file to that base's audience, so it asks every time.
-      ...(input.targetBaseId === input.baseId ? await baseApprovalScope(c, input.baseId, joinName(input.folder, nameOf(input.path))) : {}),
-    }),
-    async (input, c) =>
-      result(
-        input.targetBaseId,
-        successfulEntry(
-          c,
-          await filesService.copy(capabilityCall(c), {
-            baseId: input.baseId,
-            paths: [input.path],
-            targetBaseId: input.targetBaseId,
-            folder: input.folder,
-          }),
-        ),
-      ),
-    "rememberable",
-  ),
+  "entry.copy": {
+    ...action(
+      "Copy entry",
+      Target.extend({ folder: Path }).strict(),
+      async (input, r, c) => {
+        const targetBaseId = await rootBase(c, c.refs?.targetRootId);
+        return {
+          message: r.t.copyEntry({ name: r.name(input.path) }),
+          details: [
+            { label: r.t.storage, value: r.base(input.baseId) },
+            { label: r.t.path, value: r.path(input.path) },
+            { label: r.t.targetStorage, value: r.base(targetBaseId) },
+            { label: r.t.targetFolder, value: r.path(input.folder) },
+          ],
+          // A copy into another base shows the file to that base's audience, so it asks every time.
+          ...(targetBaseId === input.baseId ? await baseApprovalScope(c, input.baseId, joinName(input.folder, nameOf(input.path))) : {}),
+        };
+      },
+      async (input, c) => {
+        const targetBaseId = await rootBase(c, c.refs?.targetRootId);
+        return result(
+          targetBaseId,
+          successfulEntry(
+            c,
+            await filesService.copy(capabilityCall(c), {
+              baseId: input.baseId,
+              paths: [input.path],
+              targetBaseId,
+              folder: input.folder,
+            }),
+          ),
+        );
+      },
+      "rememberable",
+    ),
+    refs: { targetRootId: "entry" },
+  },
 };

@@ -19,6 +19,15 @@ query results, conflict protection, and durable issuance replay. The independent
 required-idempotency inventory and normal evolution check remain active for
 future changes; this is not a blanket exemption for Grids.
 
+The coordinated Code container migration intentionally moves Grids GQL, View
+creation and workflow actions to a `grids.base` target, and record writes and
+document issuance to a `grids.table` target. The Grids baseline includes this
+reviewed input/target change; normal evolution checks and the required-idempotency
+inventory remain active. Files is covered by its owning capability tests, not
+this provider inventory. See the
+[Grids and Files target migration](../../../docs-site/docs/en/operations/grids-files-capability-targets.md)
+for caller changes.
+
 The Mail send migration intentionally requires `expectedContentHash` on
 `draft.send` and returns `contentHash` from `draft.send.review`. These two schema
 entries and their hashes are updated for the approved breaking contract; other
