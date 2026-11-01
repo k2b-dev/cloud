@@ -629,17 +629,45 @@ describe("workspace title beside exact-current navigation", () => {
       }
     });
   }
-  test("a deeper page with an active ancestor keeps its desktop back link", async () => {
+  test("a deeper page whose sidebar marks its ancestor shows no desktop back link; the ancestor and Alt+Up lead back", async () => {
     const { context, page } = await open(laptop, "/app/accounts/teams/engineering");
     try {
       expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
       const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
       expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
       expect(await ancestor.evaluate((element) => element.classList.contains("is-active"))).toBe(true);
-      const back = page.locator(".k2b-app-workspace__head .k2b-page-title__up");
+      const head = page.locator('.k2b-app-workspace__head[data-trail="up"]');
+      const box = await head.boundingBox();
+      expect(box!.width).toBeLessThanOrEqual(1);
+      expect(box!.height).toBeLessThanOrEqual(1);
+      expect(await page.locator(".k2b-page-title__up:visible,.k2b-page-title__back:visible").count()).toBe(0);
+      // Only a sidebar item counts: a current option in a closed switcher popover leaves the back link in place.
+      const item = (await ancestor.elementHandle())!;
+      await item.evaluate((element) => {
+        element.removeAttribute("aria-current");
+        const option = document.createElement("a");
+        option.href = "/app/accounts";
+        option.setAttribute("aria-current", "true");
+        const popover = document.createElement("div");
+        popover.setAttribute("popover", "auto");
+        popover.append(option);
+        element.closest(".k2b-app-workspace__sidebar")!.append(popover);
+      });
+      expect(await page.locator(".k2b-app-workspace__head .k2b-page-title__up").isVisible()).toBe(true);
+      await item.evaluate((element) => element.setAttribute("aria-current", "true"));
+      expect(await page.locator(".k2b-app-workspace__head .k2b-page-title__up").isVisible()).toBe(false);
+      await page.keyboard.press("Alt+ArrowUp");
+      await page.waitForURL(/\/app\/accounts\/teams$/);
+    } finally {
+      await context.close();
+    }
+  });
+  test("on a phone, a deeper page keeps its back arrow to the page above", async () => {
+    const { context, page } = await open(phone, "/app/accounts/teams/engineering");
+    try {
+      const back = page.locator(".k2b-app-workspace__head .k2b-page-title__back");
       expect(await back.isVisible()).toBe(true);
       expect(await back.getAttribute("href")).toBe("/app/accounts/teams");
-      expect((await page.locator(".k2b-app-workspace__head").boundingBox())!.height).toBe(46);
     } finally {
       await context.close();
     }

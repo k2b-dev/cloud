@@ -86,13 +86,16 @@ value, and the readers below follow the prop.
 `AppWorkspace` shows the host's trail in its [head](/en/ui/layout/workspace)
 when the page has a page above it. The head's visible title is a `p`,
 because many pages render their own `h1`. From 64 rem (1024 px), a visible,
-non-collapsed workspace sidebar that marks the exact current page with
-`aria-current="page"` hides the head and its back link.
-`AppWorkspace.SidebarItem active` supplies that attribute. On a page without
+non-collapsed workspace sidebar that marks the current page with
+`aria-current="page"`, or the item a deeper page lies below with
+`aria-current="true"`, hides the head and its back link.
+`AppWorkspace.SidebarItem active` and `active="ancestor"` supply these
+attributes. On a page without
 its own `h1` in Main, the title then remains a visually hidden `h1` for
 assistive technology; a page with its own `h1` keeps that one only. Deeper
-pages without an exact-current sidebar item keep their back link, as do
-compact layouts and phones. Mark only the exact page, never its ancestor.
+pages without a marked sidebar item keep their back link, as do compact
+layouts and phones. Mark the exact page with `active`, a deeper page's
+container with `active="ancestor"`.
 The host's document title and Alt+Up shortcut remain available.
 
 Once the host runs `followPageTrail()`, a

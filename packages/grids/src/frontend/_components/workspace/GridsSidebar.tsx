@@ -68,9 +68,10 @@ export default function GridsSidebar(props: { userId?: string; state: PublicOkWo
   const sidebarViews = state.catalog.tables.flatMap((table) =>
     (state.catalog.viewsByTable[table.id] ?? []).map((view) => ({ table, view })),
   );
+  // A query scoped to a table or view is no page below Query: its head names the source and leads back to it.
   const renderQueryItem = () =>
     state.canUseQueryWorkspace ? (
-      <SidebarLink href={`/app/grids/${state.base.id}/query`} active={route.kind === "query" && (route.currentSource ? "ancestor" : true)}>
+      <SidebarLink href={`/app/grids/${state.base.id}/query`} active={route.kind === "query" && !route.currentSource}>
         <AppWorkspace.SidebarItemIcon icon="ti ti-code" />
         <AppWorkspace.SidebarItemLabel>{t.query}</AppWorkspace.SidebarItemLabel>
       </SidebarLink>
