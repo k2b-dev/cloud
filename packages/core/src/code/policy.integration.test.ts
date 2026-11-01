@@ -71,7 +71,7 @@ async function active(n: number, rows: CodePolicyRow[] | null, covered: CodePoli
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES(${codeId(n)},'person',${ownerId}::uuid,${`Code ${n}`},${ownerId}::uuid,${now})`;
   }
   await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by,created_at)
-    VALUES(${versionId(n)}::uuid,${codeId(n)},1,'{}','',${"a".repeat(64)},${"b".repeat(64)},${rows === null ? null : JSON.stringify({ policyRows: rows })}::jsonb,0,0,${ownerId}::uuid,${now})`;
+    VALUES(${versionId(n)}::uuid,${codeId(n)},1,'{}','',${"a".repeat(64)},${"b".repeat(64)},${rows === null ? null : JSON.stringify({ policyRows: rows })}::text::jsonb,0,0,${ownerId}::uuid,${now})`;
   await sql`UPDATE code.codes SET state='active',active_version_id=${versionId(n)}::uuid WHERE id=${codeId(n)}`;
   await sql.begin((tx) => replaceCodePolicyCoverage(versionId(n), covered, tx));
 }

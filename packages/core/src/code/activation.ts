@@ -162,7 +162,7 @@ export async function activateCodeVersion(
     const code = await authorizedCode(input.codeId, context, tx);
     await requireCodeVersionApproval(code, input.versionId, tx);
     const created = await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,authority,locale,cloud_admin)
-      VALUES(${input.activationId}::uuid,${code.id},${input.versionId}::uuid,${person.id}::uuid,${JSON.stringify(authority)}::jsonb,
+      VALUES(${input.activationId}::uuid,${code.id},${input.versionId}::uuid,${person.id}::uuid,${JSON.stringify(authority)}::text::jsonb,
         ${context.locale ?? "en"},${person.roles.includes("admin") && canRepairAppAccess(context.authority)}) ON CONFLICT(id) DO NOTHING RETURNING id`;
     if (created.length)
       await audit.record(
@@ -196,7 +196,7 @@ export async function readCodeActivation(
   return receipt(row);
 }
 async function state(id: string, value: CodeActivation["state"], failure: CodeActivationFailure | null = null) {
-  await sql`UPDATE code.activations SET state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE ${value} END,failure=CASE WHEN cancel_requested THEN failure ELSE ${failure === null ? null : JSON.stringify(failure)}::jsonb END,updated_at=now() WHERE id=${id}::uuid`;
+  await sql`UPDATE code.activations SET state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE ${value} END,failure=CASE WHEN cancel_requested THEN failure ELSE ${failure === null ? null : JSON.stringify(failure)}::text::jsonb END,updated_at=now() WHERE id=${id}::uuid`;
 }
 class ActivationRefused extends Error {
   constructor(readonly failure: CodeActivationFailure) {
@@ -263,10 +263,10 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
   await sql.begin(async (tx) => {
     await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
     if ((await findCode(code.id, tx))?.state === "deleting") refuse(null, "code_unavailable", "Code is being deleted.");
-    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::jsonb,mandate_policy=${JSON.stringify(built.policy)}::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
+    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(built.policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-        VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::jsonb,${item.operations}::text[],'planned')`;
+        VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${item.operations}::text[],'planned')`;
   });
   return plan;
 }
@@ -340,7 +340,7 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
           refuse(item.target, "managers_unavailable", "The target must identify its managers before Cloud-admin activation.");
         item.managerUserIds = decision.managerUserIds ?? item.managerUserIds;
       }
-      await sql`UPDATE code.activations SET plan=${JSON.stringify(plan)}::jsonb WHERE id=${row.id}::uuid`;
+      await sql`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb WHERE id=${row.id}::uuid`;
       await state(row.id, "applying");
       for (const item of plan.filter((item) => !item.owner && !item.reused)) {
         failedTarget = item.target;
@@ -447,7 +447,7 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
           for (const item of plan.filter((item) => item.owner || !item.reused))
             for (const userId of new Set(item.managerUserIds ?? []))
               await tx`INSERT INTO code.activation_notices(activation_id,target,target_key,user_id)
-              SELECT ${row.id}::uuid,${JSON.stringify(item.target)}::jsonb,${targetKey(item.target)},id FROM auth.users WHERE id=${userId}::uuid ON CONFLICT DO NOTHING`;
+              SELECT ${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${targetKey(item.target)},id FROM auth.users WHERE id=${userId}::uuid ON CONFLICT DO NOTHING`;
         await recordCodeVersionBaseline(code.id, row.version_id, tx);
         await tx`UPDATE code.codes SET active_version_id=${row.version_id}::uuid,state='active',pause_reason=NULL,pause_rows='{}',pause_policy_revision=NULL WHERE id=${code.id}`;
         await tx`UPDATE code.activations SET state='active',failure=NULL,mandate_id=${mandate.id}::uuid,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
@@ -509,7 +509,7 @@ export async function cancelCodeActivation(
     const [row] = await tx<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${input.activationId}::uuid FOR UPDATE`;
     if (!row || row.code_id !== input.codeId) throw new CodeDataError("NOT_FOUND", "Activation not found.");
     if (!terminal(row.state) && row.state !== "rolling_back") {
-      await tx`UPDATE code.activations SET cancel_requested=TRUE,state='rolling_back',failure=${JSON.stringify({ target: null, code: "cancelled", reason: "Activation cancelled." })}::jsonb,updated_at=now() WHERE id=${row.id}::uuid`;
+      await tx`UPDATE code.activations SET cancel_requested=TRUE,state='rolling_back',failure=${JSON.stringify({ target: null, code: "cancelled", reason: "Activation cancelled." })}::text::jsonb,updated_at=now() WHERE id=${row.id}::uuid`;
       if (!row.cancel_requested)
         await audit.record(
           {

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
@@ -19,6 +20,7 @@ import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import * as ownerTransport from "./activation-transport";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import {
   claimCodeRuns,
@@ -94,7 +96,7 @@ suiteFor(
     if (!value) throw new Error("Invalid fixture token");
     return value;
   }
-  async function fixture(userId = owner) {
+  async function fixture(userId = owner, resource = false) {
     const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
     const files = { "code.ts": "fixture" },
       bundle = "export async function weekly() {}";
@@ -107,11 +109,19 @@ suiteFor(
       ai: false,
       policyRows: ["read"],
     };
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state) VALUES(${codeId},'person',${userId}::uuid,'Fixture','active')`;
+    let principal: string | null = null;
+    if (resource) {
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,created_by)
+        VALUES(${`code:example.resource:${codeId}`},'code',${userId}::uuid) RETURNING id`;
+      principal = account!.id;
+    }
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,owner_type,owner_id,service_account_id,title,state,created_by)
+      VALUES(${codeId},${resource ? "resource" : "person"},${resource ? null : userId}::uuid,
+        ${resource ? "example.resource" : null},${resource ? codeId : null},${principal}::uuid,'Fixture','active',${userId}::uuid)`;
     const [version] = await sql<
       { id: string }[]
     >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
-      VALUES(${codeId},1,${JSON.stringify(files)}::jsonb,${bundle},${manifest.hashes.source},${manifest.hashes.bundle},${JSON.stringify(manifest)}::jsonb,7,32,${userId}::uuid) RETURNING id`;
+      VALUES(${codeId},1,${JSON.stringify(files)}::text::jsonb,${bundle},${manifest.hashes.source},${manifest.hashes.bundle},${JSON.stringify(manifest)}::text::jsonb,7,32,${userId}::uuid) RETURNING id`;
     if (!version) throw new Error("Missing fixture version");
     await sql`UPDATE code.codes SET active_version_id=${version.id}::uuid WHERE id=${codeId}`;
     const binding = {
@@ -124,9 +134,9 @@ suiteFor(
       comparisonSourceHash: null,
       comparisonBundleHash: null,
     };
-    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${version.id}::uuid,${codeId},${JSON.stringify(binding)}::jsonb)`;
-    await sql`INSERT INTO auth.mandates(subject_kind,subject_user_id,owner_app_id,workload_type,workload_id,policy)
-      VALUES('user',${userId}::uuid,'core','code.version',${version.id},'{"version":1}'::jsonb)`;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${version.id}::uuid,${codeId},${JSON.stringify(binding)}::text::jsonb)`;
+    await sql`INSERT INTO auth.mandates(subject_kind,subject_user_id,subject_service_account_id,owner_app_id,workload_type,workload_id,policy)
+      VALUES(${resource ? "service_account" : "user"},${resource ? null : userId}::uuid,${principal}::uuid,'core','code.version',${version.id},'{"version":1}'::jsonb)`;
     return { codeId, versionId: version.id, entrypoint: "weekly" };
   }
   async function enqueueMany(code: Awaited<ReturnType<typeof fixture>>, count: number) {
@@ -141,7 +151,9 @@ suiteFor(
   async function take() {
     const runs = await claimCodeRuns(1, await readCodeRunLimits());
     expect(runs).toHaveLength(1);
-    return codeRunnerLease(runs[0]!, sign);
+    const lease = await codeRunnerLease(runs[0]!, sign);
+    if (!lease) throw new Error("Fixture owner refused");
+    return lease;
   }
   async function state(id: string) {
     const [row] = await sql<
@@ -192,6 +204,162 @@ suiteFor(
     await connection?.drain();
     await database?.drop();
     setSystemTime();
+  });
+
+  test("checks resource owner after claim commit, pauses missing owners and never signs", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    const [claimed] = await claimCodeRuns(1, await readCodeRunLimits());
+    expect(claimed).toBeDefined();
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async () => {
+      await sql.begin(async (tx) => {
+        const [lock] = await tx<{ free: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtextextended('core.code.dispatch',0)) AS free`;
+        expect(lock?.free).toBe(true);
+        const [run] = await tx<{ state: string }[]>`SELECT state FROM code.runs WHERE id=${runId!}::uuid FOR UPDATE NOWAIT`;
+        expect(run?.state).toBe("running");
+      });
+      return null;
+    });
+    let signed = false;
+    try {
+      expect(
+        await codeRunnerLease(claimed!, async (...args) => {
+          signed = true;
+          return sign(...args);
+        }),
+      ).toBeNull();
+      expect(title).toHaveBeenCalledTimes(1);
+      expect(signed).toBe(false);
+      expect(await state(runId!)).toMatchObject({ state: "skipped", outcome: "owner_not_found" });
+      const [paused] = await sql`SELECT state,pause_reason FROM code.codes WHERE id=${code.codeId}`;
+      expect(paused).toMatchObject({ state: "paused", pause_reason: "owner_not_found" });
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("an owner-reader outage preserves healthy batch leases and advertises their remaining slots", async () => {
+    const healthy = await fixture();
+    const unavailable = await fixture(owner, true);
+    const [healthyId] = await enqueueMany(healthy, 1);
+    const [unavailableId] = await enqueueMany(unavailable, 1);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockRejectedValue(new Error("offline"));
+    const instanceId = "66666666-6666-4666-8666-666666666666";
+    try {
+      const response = await fetchCodeRuns({ instanceId, freeSlots: 2 }, new AbortController().signal, { queue, sign });
+      expect(response.runs.map((run) => run.runId)).toEqual([healthyId!]);
+      expect(await state(unavailableId!)).toMatchObject({ state: "running", generation: 1 });
+      expect(await state(healthyId!)).toMatchObject({ state: "running", generation: 1 });
+      const [instance] = await sql`SELECT free_slots FROM code.runner_instances WHERE instance_id=${instanceId}::uuid`;
+      expect(instance?.free_slots).toBe(1);
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("the delivered lease renews after its owner read; expired generations stay refused", async () => {
+    const code = await fixture(owner, true);
+    await enqueueMany(code, 1);
+    const [claimed] = await claimCodeRuns(1, await readCodeRunLimits());
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    let shortExpiry = 0;
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async (_ref, _principal, signal) => {
+      expect(signal).toBeInstanceOf(AbortSignal);
+      const [short] = await sql<{ lease_expires_at: Date }[]>`UPDATE code.runs SET lease_expires_at=clock_timestamp()+interval '5 seconds'
+        WHERE id=${claimed!.id}::uuid RETURNING lease_expires_at`;
+      shortExpiry = short!.lease_expires_at.getTime();
+      return "Current owner";
+    });
+    try {
+      const lease = await codeRunnerLease(claimed!, sign);
+      expect(lease?.leaseExpiresAt).toBeGreaterThan(shortExpiry);
+      expect(lease?.generation).toBe(claimed!.generation);
+      title.mockResolvedValue("Current owner");
+      await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${claimed!.id}::uuid`;
+      expect(await codeRunnerLease(claimed!, sign)).toBeNull();
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("fetch returns an empty batch when every claimed owner is missing", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    overrides.set("core.code.runner_poll_ms", 1000);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue(null);
+    try {
+      const response = await fetchCodeRuns(
+        { instanceId: "88888888-8888-4888-8888-888888888888", freeSlots: 1 },
+        new AbortController().signal,
+        {
+          queue,
+          sign: async () => {
+            throw new Error("Missing owner must not sign");
+          },
+        },
+      );
+      expect(response).toEqual({ runs: [] });
+      expect(await state(runId!)).toMatchObject({ state: "skipped", outcome: "owner_not_found" });
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
+  test("a person deleted after claim never receives a signed lease", async () => {
+    const transient = "77777777-7777-4777-8777-777777777777";
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${transient}::uuid,${transient},'local','user',true)`;
+    const code = await fixture(transient);
+    await enqueueMany(code, 1);
+    const [claimed] = await claimCodeRuns(1, await readCodeRunLimits());
+    await sql`DELETE FROM auth.users WHERE id=${transient}::uuid`;
+    let signed = false;
+    expect(
+      await codeRunnerLease(claimed!, async (...args) => {
+        signed = true;
+        return sign(...args);
+      }),
+    ).toBeNull();
+    expect(signed).toBe(false);
+    expect(await sql`SELECT id FROM code.codes WHERE id=${code.codeId}`).toHaveLength(0);
   });
 
   test("same permanent key starts one run across Core replicas, while a new key explicitly reruns", async () => {
