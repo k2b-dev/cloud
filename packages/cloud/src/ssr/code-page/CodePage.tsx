@@ -582,7 +582,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             {(row) => (
               <NoticeCard
                 tone="warning"
-                icon={row.target.deleted ? "ti ti-trash" : "ti ti-lock-off"}
+                icon={row.target.deleted ? "ti ti-trash" : "ti ti-alert-triangle"}
                 title={
                   row.target.deleted
                     ? t().targetDeletedTitle({ name: props.text.targetName(row.target) })
