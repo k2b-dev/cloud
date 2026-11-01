@@ -26,7 +26,8 @@ const messages = i18n.define({
       chat_archived: "Paused because the chat is archived.",
       owner_inactive: "Paused because the account is inactive.",
       failed: "The last run failed.",
-      rights_changed: "What it may do changed. Please confirm again.",
+      rights_changed: ({ action }: { action?: string }) =>
+        action ? `Please confirm this routine again: ${action} now needs a fixed target.` : "What it may do changed. Please confirm again.",
       needs_approval: ({ action }: { action?: string }) =>
         `${action ? `Tried to ${action.replace(/^\p{Lu}(?=\p{Ll})/u, (first) => first.toLowerCase())}. ` : ""}That needs your approval every time, and routines never ask.`,
       stopped: ({ list }: { list: string }) =>
@@ -39,7 +40,10 @@ const messages = i18n.define({
       chat_archived: "Pausiert, weil der Chat archiviert ist.",
       owner_inactive: "Pausiert, weil das Konto inaktiv ist.",
       failed: "Der letzte Lauf ist fehlgeschlagen.",
-      rights_changed: "Was sie darf, hat sich geändert. Bitte neu bestätigen.",
+      rights_changed: ({ action }) =>
+        action
+          ? `Bitte Routine neu bestätigen: ${action} braucht jetzt ein festes Ziel`
+          : "Was sie darf, hat sich geändert. Bitte neu bestätigen.",
       needs_approval: ({ action }) => `${action ? `Wollte ${action}. ` : ""}Das macht der Assistant nur mit dir, und Routinen fragen nie.`,
       stopped: ({ list }) =>
         list
@@ -75,7 +79,7 @@ export const chatTaskReasonSentence = (reason: ChatTaskReason, context: { locale
     chat_archived: () => t.chat_archived,
     owner_inactive: () => t.owner_inactive,
     failed: () => t.failed,
-    rights_changed: () => t.rights_changed,
+    rights_changed: () => t.rights_changed({ action: reason.action }),
     needs_approval: () => t.needs_approval({ action: reason.action }),
   };
   return sentences[reason.code]();
