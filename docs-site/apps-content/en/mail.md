@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Mail
@@ -425,6 +425,19 @@ its Spaces actions, or make cosmetic changes. Changing a definition that keeps
 Spaces actions, or enabling it again, requires the original author. If Cloud
 denies that change, ask the author to authorize it rather than bypassing the
 check. Cosmetic edits do not restore paused or revoked access.
+
+## Confirm Spaces destinations after an upgrade
+
+Incoming automations keep their saved steps. A configured Space remains the
+only Space where that step may create an event or link an item. The automation
+still acts as the person who authorized it, with that person's current access.
+
+If Mail cannot recover a step's Space, **Automations → Incoming mail** shows
+**Needs attention** and keeps the automation off. Choose **Edit automation**,
+select its Spaces item or event destination again, and save. Then enable it.
+The person who originally authorized Spaces access must confirm it again.
+Older item-link steps need this confirmation because they stored the item ID
+without its Space. Mail keeps the definition for review.
 
 ## Re-run failed incoming automations
 
