@@ -198,6 +198,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.run": {
+          title: "Code ausführen",
+          description:
+            "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
+        },
         "code.version.submit": {
           title: "Code-Version einreichen",
           description:

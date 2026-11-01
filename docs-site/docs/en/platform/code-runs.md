@@ -16,7 +16,12 @@ its capability calls in order. A run does not resume at a saved step.
 
 ## Start or run again
 
-Core's permission-aware service `startCodeRun(request, context)` accepts
+Use the `core.code.run` Action with `codeId`, `entrypoint`, optional JSON
+`input`, and the normal capability idempotency key. It returns `runId` and
+`duplicate`. Code itself cannot invoke this Action. CLI, chat, and resource
+pages share the same permission-aware service.
+
+Core's service `startCodeRun(request, context)` accepts
 `codeId`, `entrypoint`, `idempotencyKey`, and optional JSON `input`. The caller
 needs Code editor permission and a credential that permits writes. The
 entrypoint must occur in the active version's checked manifest. The active
@@ -88,7 +93,7 @@ result arriving later replaces that marker; it does not restart the run.
 
 Core maintainers consume the scheduling contracts from
 `packages/core/src/code/index.ts`: `CodeStartRequestSchema`, `CodeStartRequest`,
-`CodeStartResult`, `CodeRunLimits`, `CodeScheduleTick`, `CodeRunnerMetrics`,
+`CodeStartResult`, `codeSchedulingContracts`, `CodeRunLimits`, `CodeScheduleTick`, `CodeRunnerMetrics`,
 `startCodeRun`, `processCodeScheduleTick`, and `readCodeRunnerMetrics`.
 `codeRunMessages` supplies English and German UI labels; stable outcomes remain
 untranslated on the transport. `CODE_RUN_OUTCOMES` covers runner results,

@@ -2,12 +2,13 @@ import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } f
 import { sql } from "@k2b/cloud";
 import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
-import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext, CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { createSync, type Queue, type Sync, type Worker } from "@k2b/sync";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
@@ -206,6 +207,28 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     const rerun = await startCodeRun({ ...request, idempotencyKey: "invoice:001:rerun" }, context());
     expect(rerun.runId).not.toBe(results[0]!.runId);
     await expect(startCodeRun(request, context(other))).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+  test("the public manual-run Action shares durable admission across callers", async () => {
+    const code = await fixture();
+    const request: CapabilityExecutionContext = {
+      authority: context().authority,
+      actor: context().authority.actor,
+      accessSubject: context().authority.accessSubject,
+      user: person(owner),
+      locale: "en",
+      origin: "http",
+      signal: new AbortController().signal,
+      idempotencyKey: "public-run",
+    };
+    const input = { codeId: code.codeId, entrypoint: "weekly", input: null };
+    const results = await Promise.all([0, 1, 2].map(() => aiCapabilities.actions["code.run"].run(input, request)));
+    for (const result of results) expect(result.ok).toBe(true);
+    const runs = await sql`SELECT id FROM code.runs WHERE code_id=${code.codeId}`;
+    expect(runs).toHaveLength(1);
+    expect(await aiCapabilities.actions["code.run"].run({ ...input, input: { changed: true } }, request)).toMatchObject({
+      ok: false,
+      error: { code: "CONFLICT" },
+    });
   });
   test("committed starts and retries reach the real queue through the durable outbox", async () => {
     const code = await fixture();

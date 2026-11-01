@@ -60,6 +60,8 @@ import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
+import { startCodeRun } from "./code/scheduling";
+import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
@@ -1246,6 +1248,21 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.run": {
+      title: "Run Code",
+      description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
+      ...codeSchedulingContracts.start,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      run: (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+        const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(context.idempotencyKey).digest("hex")}`;
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+      },
+    },
     "code.version.submit": {
       title: "Submit Code version",
       description:

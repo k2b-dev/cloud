@@ -19,6 +19,13 @@ export const CodeStartRequestSchema = z
 export type CodeStartRequest = z.input<typeof CodeStartRequestSchema>;
 /** Duplicate requests never publish a second run, even across Core replicas. */
 export type CodeStartResult = { runId: string; duplicate: boolean };
+/** Public capability boundary. The framework's idempotency key supplies the permanent start receipt. */
+export const codeSchedulingContracts = {
+  start: {
+    input: CodeStartRequestSchema.omit({ idempotencyKey: true }),
+    data: z.object({ runId: z.uuid(), duplicate: z.boolean() }).strict(),
+  },
+} as const;
 /** Snapshot of administrator admission budgets; retries retain the original deadline and call budget. */
 export type CodeRunLimits = { perCode: number; perOwner: number; wallMs: number; attempts: number };
 /** Durable tick identity comes from the checked version and named app.schedule export, never a runner. */
