@@ -60,7 +60,7 @@ type Edge = {
   edge: "start" | "end";
   active: "data-workspace-resize-active" | "data-active";
   drawer?: boolean;
-  /** A column handle darkens its boundary's own shadow instead of painting one. */
+  /** A column or drawer handle darkens its boundary's own shadow instead of painting one. */
   column?: boolean;
   rtl?: boolean;
 };
@@ -68,7 +68,14 @@ const workspaceEdges: Edge[] = [
   { selector: '[data-app-workspace-resize="sidebar"]', axis: "width", edge: "end", active: "data-workspace-resize-active", column: true },
   { selector: '[data-app-workspace-resize="pane"]', axis: "width", edge: "end", active: "data-workspace-resize-active", column: true },
   { selector: '[data-app-workspace-resize="detail"]', axis: "width", edge: "start", active: "data-workspace-resize-active", column: true },
-  { selector: '[data-app-workspace-resize="drawer"]', axis: "height", edge: "start", active: "data-workspace-resize-active", drawer: true },
+  {
+    selector: '[data-app-workspace-resize="drawer"]',
+    axis: "height",
+    edge: "start",
+    active: "data-workspace-resize-active",
+    drawer: true,
+    column: true,
+  },
 ];
 const separatorEdges: Edge[] = [
   { selector: '[aria-controls="start-region"]', axis: "width", edge: "start", active: "data-active" },
@@ -150,7 +157,7 @@ async function cue(page: Page, selector: string) {
         ? getComputedStyle(handle.closest(".k2b-app-workspace")!.querySelector(".k2b-app-workspace__content")!, "::before")
         : kind === "detail"
           ? getComputedStyle(handle.closest(".k2b-app-workspace__content")!, "::after")
-          : kind === "pane"
+          : kind === "pane" || kind === "drawer"
             ? getComputedStyle(handle.nextElementSibling!, "::before")
             : null;
     return {
@@ -173,6 +180,20 @@ async function cue(page: Page, selector: string) {
       columnContent: boundary?.content ?? null,
       columnEdge: boundary?.getPropertyValue("--k2b-workspace-shade-edge") ?? null,
       columnTransition: boundary?.transitionDuration ?? null,
+    };
+  });
+}
+
+/** The drawer edge shade: where it lies relative to the drawer, and how dark it is. */
+async function drawerShade(page: Page) {
+  // settled: callers wait two frames or settle before reading the paint-only shade.
+  return page.locator(".k2b-app-workspace__drawer").evaluate((drawer) => {
+    const shade = getComputedStyle(drawer, "::before");
+    return {
+      content: shade.content,
+      position: shade.position,
+      geometry: [shade.top, shade.right, shade.left, shade.height, shade.transform].join(" "),
+      edge: shade.getPropertyValue("--k2b-workspace-shade-edge"),
     };
   });
 }
@@ -232,7 +253,7 @@ async function exercise(page: Page, spec: Edge) {
     expect(idle.columnContent).not.toBe("normal");
     expect(idle.columnTransition).toBe("0s");
   } else {
-    // The drawer and every separator render their own shadow (#1652).
+    // Every standalone separator renders its own shadow (#1652).
     expect(idle.content).not.toBe("none");
     expect(idle.content).not.toBe("normal");
     expect(idle.opacity).toBe("0");
@@ -240,6 +261,25 @@ async function exercise(page: Page, spec: Edge) {
   }
   expect(idle.grip).toBe("0");
   expect(idle.gripTransition).toBe("0s");
+  expect(idle.line).toBe(false);
+  if (spec.drawer) {
+    // settled: the page settled in `away`; the drawer's edge is its surface step, not a border.
+    const drawer = await page.locator(spec.selector).evaluate((handle) => {
+      const region = document.getElementById(handle.getAttribute("aria-controls")!)!;
+      const style = getComputedStyle(region);
+      const main = getComputedStyle(region.closest(".k2b-app-workspace")!);
+      const handleBox = handle.getBoundingClientRect();
+      return {
+        border: style.borderTopStyle,
+        surfaceStep: style.backgroundColor !== main.backgroundColor,
+        // The handle stays centred on the edge it resizes.
+        centred: Math.abs(handleBox.top + handleBox.height / 2 - region.getBoundingClientRect().top) <= 0.5,
+      };
+    });
+    expect(drawer).toEqual({ border: "none", surfaceStep: true, centred: true });
+  }
+  const restingShade = spec.drawer ? await drawerShade(page) : null;
+  if (restingShade) expect(restingShade.position).toBe("absolute");
 
   await handle.hover();
   await workspaceFrames(page);
@@ -247,6 +287,12 @@ async function exercise(page: Page, spec: Edge) {
   expect(await page.evaluate(geometry)).toEqual(baseline);
   const hovered = await cue(page, spec.selector);
   expect(shown(hovered)).toBe(true);
+  if (restingShade) {
+    // The drawer's one shade only darkens: same place and size as at rest.
+    const shade = await drawerShade(page);
+    expect(shade.geometry).toBe(restingShade.geometry);
+    expect(shade.edge).not.toBe(restingShade.edge);
+  }
   expect(hovered.grip).toBe("1");
   await page.mouse.down();
   await workspaceFrames(page);
@@ -271,7 +317,8 @@ async function exercise(page: Page, spec: Edge) {
   const dragging = await cue(page, spec.selector);
   expect(shown(dragging)).toBe(true);
   expect(dragging.grip).toBe("1");
-  expect(dragging.line).toBe(spec.drawer === true);
+  // No handle draws a line in any state.
+  expect(dragging.line).toBe(false);
   if (spec.column) {
     expect(dragging.content).toBe("none");
   } else if (spec.axis === "width") {
@@ -330,6 +377,18 @@ for (const group of ["workspace", "separators"] as const)
       await page.close();
     }
   });
+
+test("forced colours keep the drawer's edge as a line, where both surfaces become Canvas", async () => {
+  const { page, errors } = await load("workspace");
+  try {
+    await page.emulateMedia({ forcedColors: "active" });
+    await settled(page);
+    expect(await page.locator(".k2b-app-workspace__drawer").evaluate((drawer) => getComputedStyle(drawer).borderTopStyle)).toBe("solid");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
 
 for (const direction of ["rtl", "css-rtl", "plain-rtl"] as const)
   test(`${direction}: separators shade and resize the logical region`, async () => {
