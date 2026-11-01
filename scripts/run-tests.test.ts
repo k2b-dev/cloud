@@ -23,7 +23,8 @@ describe("root test orchestration", () => {
     const suites = await discoverTestSuites(workspaceRoot);
     const byName = new Map(suites.map((suite) => [suite.name, suite]));
 
-    expect(byName.get("@k2b/ui")?.command).toEqual(["bun", "run", "test"]);
+    expect(byName.get("@k2b/ui")).toBeUndefined();
+    expect(byName.get("@k2b/ui rest")?.command).toEqual(["bun", "run", "test:part:rest"]);
     expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-tools")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
@@ -445,6 +446,22 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
 }
+
+test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
+  for (const [workspace, part, name] of [
+    ["packages/cloud", "test:part:ssr-ai", "@k2b/cloud"],
+    ["packages/ui", "test:part:layout-content", "@k2b/ui"],
+  ] as const) {
+    const { scripts } = (await Bun.file(join(workspaceRoot, workspace, "package.json")).json()) as { scripts: Record<string, string> };
+    const directories = /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [];
+    expect(directories.length).toBeGreaterThan(0);
+    for (const directory of directories) expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${directory}/**'`);
+    expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns 'src\//g)?.length).toBe(directories.length);
+    const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: [workspace] });
+    expect(suites.map((suite) => suite.name)).not.toContain(name);
+    expect(suites.map((suite) => suite.name)).toContain(`${name} rest`);
+  }
+});
 
 test("integration --list prints the exact selection without a target, heavy slot or bootstrap", async () => {
   const args = ["--integration", "--exclude", "grids", "--shard", "2/3", "--list"];
