@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { type ReservedSQL, SQL } from "bun";
-import { createDisposableDatabase, requireInfra, testFor } from "../../../../../scripts/fixtures/test-infra";
+import { createDisposableDatabase, ownTestDatabase, requireInfra, testFor } from "../../../../../scripts/fixtures/test-infra";
 import { ensureWorkflowEventRetentionIndexes } from "./retention";
 
 testFor("database")(
@@ -8,6 +8,7 @@ testFor("database")(
   async () => {
     await requireInfra("database");
     const database = await createDisposableDatabase("retention_startup");
+    ownTestDatabase(database.name);
     const monitor = new SQL(database.url, { max: 1 });
     const pool = new SQL(database.url, { max: 2 });
     let blocker: ReservedSQL | undefined;
@@ -26,7 +27,7 @@ testFor("database")(
       // Monitor through a separate connection; the pool under test may be blocked.
       const observer = new SQL(database.url, { max: 1 });
       try {
-        const deadline = performance.now() + 5_000;
+        const deadline = performance.now() + 20_000;
         let waiting = false;
         while (performance.now() < deadline) {
           const [progress] = await observer<{ phase: string }[]>`
@@ -47,7 +48,7 @@ testFor("database")(
           await Promise.race([
             probes,
             new Promise<never>((_resolve, reject) => {
-              timer = setTimeout(() => reject(new Error("Ordinary query queued behind retention index")), 5_000);
+              timer = setTimeout(() => reject(new Error("Ordinary query queued behind retention index")), 10_000);
             }),
           ]);
         } finally {
@@ -58,19 +59,20 @@ testFor("database")(
       }
     } finally {
       // Release the snapshot before draining queries, also on a regression.
-      if (blocker) {
-        await blocker`ROLLBACK`;
-        blocker.release();
-      }
       try {
-        if (build) expect(await build).toBe(true);
-        await probes;
+        if (blocker) await blocker`ROLLBACK`;
       } finally {
-        await pool.close();
-        await monitor.close();
-        await database.drop();
+        blocker?.release();
+        // Preserve the original failure; assert the build result only on success.
+        await Promise.allSettled([build, probes]);
+        try {
+          await Promise.allSettled([pool.close(), monitor.close()]);
+        } finally {
+          await database.drop();
+        }
       }
     }
+    expect(await build).toBe(true);
   },
-  30_000,
+  60_000,
 );

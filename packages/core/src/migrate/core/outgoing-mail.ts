@@ -214,13 +214,19 @@ export const buildSearchIndexes = async (db: SQL = sql): Promise<BuildOutcome> =
     const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), SEARCH_INDEX_LEASE_MS / 3);
     renewal.unref();
     try {
-      let outcome: BuildOutcome = "ready";
-      for (const name of names) {
-        const built = await buildSearchIndex(db, name);
-        if (built === "busy" || built === "failed") return built;
-        if (built === "built") outcome = "built";
+      // Keep pool queries out of the concurrent build's snapshot wait.
+      const build = await db.reserve();
+      try {
+        let outcome: BuildOutcome = "ready";
+        for (const name of names) {
+          const built = await buildSearchIndex(build, name);
+          if (built === "busy" || built === "failed") return built;
+          if (built === "built") outcome = "built";
+        }
+        return outcome;
+      } finally {
+        build.release();
       }
-      return outcome;
     } finally {
       clearInterval(renewal);
       await mutex.release(lease).catch(() => false);
