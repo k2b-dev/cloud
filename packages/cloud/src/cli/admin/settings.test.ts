@@ -8,7 +8,7 @@ const invoke = async (args: string[], flags: CloudCliFlags, result: unknown) => 
   const output: unknown[] = [],
     requests: { path: string; body: unknown }[] = [];
   const ctx: CloudCliContext = {
-    args: ["settings", ...args],
+    args: args[0] === "retention" ? args : ["settings", ...args],
     flags,
     options: { profile: "test", server: "https://test.example", token: "test", output: "json" },
     getDefault: async () => undefined,
@@ -18,7 +18,27 @@ const invoke = async (args: string[], flags: CloudCliFlags, result: unknown) => 
     },
     fetch: async (path, init) => {
       requests.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
-      return Response.json(result);
+      return Response.json(
+        path.includes("/catalog") && args[0] === "set"
+          ? {
+              settings: [
+                {
+                  key: args[1],
+                  kind: args[1]?.includes("secret") ? "secret" : "string",
+                  group: "test",
+                  stored: "none",
+                  storedValuePresent: false,
+                  envBacked: true,
+                },
+              ],
+            }
+          : args[0] === "retention" && path === "/api/gateway/settings"
+            ? [
+                { key: "gateway.telemetry_event_retention_days", value: 7 },
+                { key: "gateway.telemetry_rollup_retention_days", value: 90 },
+              ]
+            : result,
+      );
     },
     readJson: async (response) => response.json(),
     print: (value) => output.push(value),
@@ -29,7 +49,7 @@ const invoke = async (args: string[], flags: CloudCliFlags, result: unknown) => 
     table: (rows) => output.push(rows),
   };
   const code = await module.run(ctx);
-  return { code, output, requests };
+  return { code, output, requests: args[0] === "set" ? requests.filter((request) => !request.path.includes("/catalog")) : requests };
 };
 test("status requires --env and preserves JSON with nonzero attention", async () => {
   await expect(invoke(["status"], {}, {})).rejects.toThrow("--env");
@@ -56,4 +76,18 @@ test("setting repairs require JSON and confirmation and carry explicit replaceme
   expect((await invoke(["set", "mail.workflow_ai_body_max_chars"], { value: "12000", app: "mail", yes: true }, {})).requests).toEqual([
     { path: "/api/admin/core/settings/env/mail/mail.workflow_ai_body_max_chars", body: { value: 12000, replaceUnreadable: false } },
   ]);
+});
+
+test("setting inventory strips every supplied value and secret writes reject argv", async () => {
+  const row = { key: "app.secret", kind: "secret", group: "app", stored: "readable", storedValuePresent: true, envBacked: false };
+  expect((await invoke(["list"], {}, { settings: [{ ...row, value: "private", default: "private" }] })).output).toEqual([
+    { settings: [row] },
+  ]);
+  expect((await invoke(["show", "app.secret"], {}, { settings: [row] })).output).toEqual([row]);
+  await expect(invoke(["set", "app.secret"], { value: '"private"', yes: true }, {})).rejects.toThrow("--from");
+});
+
+test("retention composes the owning settings without exposing unrelated settings", async () => {
+  const result = await invoke(["retention", "show"], {}, { days: 30 });
+  expect(result.output).toEqual([{ logs: { days: 30 }, events: { days: 7 }, rollups: { days: 90 } }]);
 });

@@ -44,6 +44,7 @@ import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MailWorkspaceMessage } from "../../service/workspace";
+import { automationLogHref } from "../automation-log-href";
 import { readApiError } from "./api-response";
 import MailAutomationTrace from "./MailAutomationTrace";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
@@ -318,8 +319,7 @@ export default function MailConversationReader(props: {
   const summarySaving = () => summarySave().loading();
   const automationOrderHref = () => `/app/mail/${props.mailboxId}/automations/workflows`;
   /** The Protokoll entry with the whole chain, from rule to the fixed row that decided. */
-  const automationWhyHref = (item: AutomationLogItem) =>
-    `/app/mail/${props.mailboxId}/automations/log?entry=${encodeURIComponent(item.id)}`;
+  const automationWhyHref = (item: AutomationLogItem) => automationLogHref(props.mailboxId, item.id);
   type SummaryGenerate = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; mode: MailSummaryGenerateMode };
   /** A person asks the AI for this conversation's summary; the card shows "being written" until the live update arrives. */
   const summaryGenerate = createMemo(
