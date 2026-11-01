@@ -125,6 +125,8 @@
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
+    "test:part:ssr-ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr src/ai",
+    "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**'",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
