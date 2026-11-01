@@ -14,9 +14,13 @@ import { IconChoices, type IconChoiceOption } from "@k2b/ui";
 
 ## Options and state
 
-`options` contain `value`, a `label` that names the icon, and `icon`, an icon class such as `ti ti-report`. The controlled `value` is one option's value or `null`. The chosen icon takes the selection tint without changing its size. Buttons are 2 rem, and 2.75 rem on touch screens (`pointer: coarse`). Each button carries its label as its name and tooltip, so the picture is never the only signal. Arrow keys move between the icons as in any radio group.
+`options` contain `value`, a `label` that names the icon, and `icon`, an icon class such as `ti ti-report`. The controlled `value` is one option's value or `null`. The chosen icon takes the selection tint without changing its size. Buttons are 2 rem, and 2.75 rem on touch screens (`pointer: coarse`). Each button carries its label as its tooltip.
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for labels, descriptions, errors, disabled state, and value accessors.
+
+## Accessibility
+
+The icons form a radio group named by the field label. Each icon is a radio button whose name is its `label`, so a screen reader says what it shows. Only the chosen icon, or the first one, is in the tab order; arrow keys move and choose.
 
 ## Runtime
 
