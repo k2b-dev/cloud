@@ -1,4 +1,5 @@
 import { getProcessApplicationId } from "../_internal/process-identity";
+import { getCapability } from "../_internal/registry";
 import { dispatchCapability } from "../api/capabilities";
 import type { RequestAuthority } from "../server/middleware/auth";
 
@@ -31,4 +32,10 @@ export const invokeCodeAccess = (params: {
     origin: "app",
     callingAppId: "core",
   });
+};
+
+/** Core activation reads the complete registered manifest independently of the activating person's app-entry rights. */
+export const readCodeActivationManifest = async (appId: string) => {
+  if (getProcessApplicationId() !== "core") throw new Error("Code activation manifests are owned by Core");
+  return (await getCapability(appId))?.manifest ?? null;
 };
