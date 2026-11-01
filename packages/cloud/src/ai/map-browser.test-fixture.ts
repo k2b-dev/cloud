@@ -299,7 +299,10 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
       const saveScenario = new URL(request.headers.get("referer") ?? "http://localhost").searchParams.get("scenario") ?? "places";
       if (path === "/api/capabilities/v1/actions/notebooks/note.create") {
         const body = z
-          .object({ input: z.object({ notebookId: z.string(), content: z.string().max(200_000) }) })
+          .object({
+            target: z.object({ type: z.literal("notebooks.notebook"), id: z.literal("Book01") }).strict(),
+            input: z.object({ content: z.string().max(200_000) }).strict(),
+          })
           .parse(await request.json());
         commands.push(body);
         if (saveScenario.includes("unknown-save"))
@@ -313,6 +316,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
       if (path === "/api/capabilities/v1/actions/notebooks/note.edit") {
         const body = z
           .object({
+            target: z.object({ type: z.literal("notebooks.notebook"), id: z.literal("Book01") }).strict(),
             input: z.object({
               noteId: z.string(),
               ifContentHash: z.string(),

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.39.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.1...npm-ui-v0.39.0) (2026-10-31)
+
+
+### Features
+
+* **editor:** polish table editing with outside grips, scoped menus and full-height cells ([#2226](https://github.com/k2b-dev/cloud/issues/2226)) ([10d326e](https://github.com/k2b-dev/cloud/commit/10d326e35fc4ca35b9c6909d79dc24ee09e1b3c3))
+
+
+### Bug Fixes
+
+* **ui:** keep shortcut hints from covering selection toolbar icons ([#2231](https://github.com/k2b-dev/cloud/issues/2231)) ([4880c02](https://github.com/k2b-dev/cloud/commit/4880c022b1ea285a8daf48e2dc273c79f32b3cc1))
+* **ui:** the chat command list holds its rows while one is pressed, so arriving rows cannot move it away from the pointer ([#2239](https://github.com/k2b-dev/cloud/issues/2239)) ([c6c6eb6](https://github.com/k2b-dev/cloud/commit/c6c6eb6fc8d4170225e13e9dece3ce17cd3db3ac))
+
 ## [0.38.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.0...npm-ui-v0.38.1) (2026-10-31)
 
 

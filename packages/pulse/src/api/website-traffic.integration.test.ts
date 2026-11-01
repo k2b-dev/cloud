@@ -93,6 +93,7 @@ suiteFor(
       user: identity.actor.user,
       locale: "en",
       requestId: "website-proof",
+      target: { type: "pulse.base", id: base.shortId },
       origin: "assistant",
       signal: new AbortController().signal,
       idempotencyKey: "create-website-source",
@@ -106,10 +107,7 @@ suiteFor(
     try {
       await createBaseLifecycle(store)(base.id);
       await store.query(`ALTER TABLE ${q(base.database)}._events REMOVE TTL`);
-      const source = await pulseCapabilities.actions["source.create"].run(
-        { baseId: base.shortId, kind: "http_ingest", name: "Willow website" },
-        context,
-      );
+      const source = await pulseCapabilities.actions["source.create"].run({ kind: "http_ingest", name: "Willow website" }, context);
       if (!source.ok) throw new Error(source.error.message);
       const [internalSource] = await sql<{ id: string }[]>`SELECT id FROM pulse.sources WHERE short_id=${source.data.data.id}`;
       const token = await createSourceApiKey({
@@ -165,7 +163,6 @@ suiteFor(
       const writing = spyOn(pulseService.ingest, "batch").mockImplementation(writer);
       try {
         const input = {
-          baseId: base.shortId,
           sourceId: source.data.data.id,
           expectedRevision: 1,
           batch: {
@@ -238,12 +235,11 @@ suiteFor(
         idempotencyKey: "agent-source-create",
       };
       const agentSource = await pulseCapabilities.actions["source.create"].run(
-        { baseId: base.shortId, name: "Agent collector", kind: "http_ingest" },
+        { name: "Agent collector", kind: "http_ingest" },
         agentContext,
       );
       if (!agentSource.ok) throw new Error(agentSource.error.message);
       const agentInput = {
-        baseId: base.shortId,
         sourceId: agentSource.data.data.id,
         expectedRevision: 1,
         batch: { events: [{ kind: "agent_proof", ts: "2026-10-20T11:00:00Z" }] },

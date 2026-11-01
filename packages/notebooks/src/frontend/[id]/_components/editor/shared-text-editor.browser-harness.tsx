@@ -9,7 +9,12 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
-import { createNotebookTablePresentation, listCommandsExtension, notebookSourceFormulasExtension } from "@k2b/editor/markdown";
+import {
+  createNotebookTablePresentation,
+  listCommandsExtension,
+  localChartPreviews,
+  notebookSourceFormulasExtension,
+} from "@k2b/editor/markdown";
 import { encoding } from "@k2b/stdlib";
 import { AppWorkspace, Button, installAppWorkspaceController, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
@@ -18,10 +23,12 @@ import { render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { notebookChartOptions } from "../../../../lib/chart-options";
 import type { NoteTableActionRequest } from "../../../../lib/table-actions";
 import { notebookTableOptions } from "../../../../lib/table-options";
 import { editor } from "../../../lib/editor";
 import { notebookListOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
+import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import {
   caretIntoTableCell,
   cellFormattingKeys,
@@ -159,9 +166,23 @@ function Harness() {
     onUnknown: (action) => setUnknown(action),
   });
 
+  // Charts draw from the note's own tables here; the application loads the same previews from its server.
+  const blockPreviews = createQueryBlockPreviews({
+    notebookId: "Book01",
+    noteId: "Note01",
+    readOnly: false,
+    initialMarkdown: initial,
+    view,
+    enabled: rich,
+    locale: () => locale,
+    load: async (markdown) =>
+      localChartPreviews(markdown ?? ytext.toString(), locale, notebookChartOptions, (diagnostic) => diagnostic.code),
+  });
+
   // Same order and modes as NoteEditor.client.tsx.
   let openTablePicker = () => {};
   const extensions = createEditor();
+  extensions.use(blockPreviews.listener);
   extensions.use(cellFormattingKeys(controls));
   extensions.use(tableCellSearch);
   extensions.use(() => yCollab(ytext, null, { undoManager }));
@@ -202,6 +223,7 @@ function Harness() {
           editor.listsExtension(notebookListOptions),
           editor.infoBlocksExtension(locale),
           editor.dataBlocksExtension(),
+          blockPreviews.extension,
           editor.namedBlocksExtension(),
           editor.linksExtension(notebookUrlOptions("Book01")),
           editor.markupExtension(),
@@ -254,6 +276,25 @@ function Harness() {
         mode = next;
       },
       posts: () => posts,
+      blockDrift() {
+        const current = view();
+        if (!current) throw new Error("Editor not ready");
+        // CodeMirror places every line from its height map; each drawn block must sit where the map says.
+        const children = [...current.contentDOM.children].filter((child) => !child.classList.contains("cm-gap"));
+        return current.viewportLineBlocks.flatMap((block, index) => {
+          const child = children[index];
+          const box = child?.getBoundingClientRect();
+          // A relative offset moves only the drawing, not the lines after it.
+          const style = child && getComputedStyle(child);
+          const offset = style?.position === "relative" ? Number.parseFloat(style.top) || 0 : 0;
+          const top = box ? Math.round(box.top - offset - current.documentTop - block.top) : null;
+          const height = box ? Math.round(box.height - block.height) : null;
+          // A rounding pixel is no drift.
+          return top !== null && height !== null && Math.abs(top) <= 1 && Math.abs(height) <= 1
+            ? []
+            : [{ block: child?.className ?? "missing", top, height }];
+        });
+      },
       mounts: () => editorMounts,
       uploads: () => [...uploads],
       undo: async () => {
@@ -349,7 +390,6 @@ function Harness() {
           editor={extensions}
           notebookId="Book01"
           noteId="Note01"
-          initialPanelOpen={false}
           format={format()}
           onUndo={() => {
             void actions.undo();
@@ -377,6 +417,8 @@ export type NoteHarness = {
   setOnline: (online: boolean) => void;
   setServer: (mode: ServerMode) => void;
   posts: () => number;
+  /** Drawn blocks whose position or height differs from CodeMirror's height map, in whole pixels. */
+  blockDrift: () => { block: string; top: number | null; height: number | null }[];
   mounts: () => number;
   uploads: () => string[];
   undo: () => Promise<void>;
@@ -394,6 +436,7 @@ declare global {
 }
 
 let editorMounts = 0;
+const [navigationHidden, setNavigationHidden] = createSignal(false);
 // `workspace` puts the editor where the notebook page does: beside the resizable navigation, in the document surface.
 const dispose = params.has("workspace")
   ? (() => {
@@ -401,8 +444,17 @@ const dispose = params.has("workspace")
       const unmount = render(
         () => (
           <LocaleProvider locale={locale}>
-            <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
-              <AppWorkspace.Sidebar id="notebook-navigation" class="notebook-sidebar" label="Navigation" resizable defaultSize={256}>
+            {/* As on the note page: no head; the toolbar holds the navigation button. */}
+            <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0" head={false}>
+              <AppWorkspace.Sidebar
+                id="notebook-navigation"
+                class="notebook-sidebar"
+                label="Navigation"
+                resizable
+                defaultSize={256}
+                hidden={navigationHidden()}
+                onHiddenChange={setNavigationHidden}
+              >
                 <nav class="p-3 text-sm">Budget</nav>
               </AppWorkspace.Sidebar>
               <AppWorkspace.Content>

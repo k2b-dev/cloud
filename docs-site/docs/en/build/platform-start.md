@@ -57,9 +57,8 @@ These clients use the initialized installation connections. The application
 owns their lifecycle: close them when the work or its lifecycle ends. SQL
 connections use `application_name=cloud:<app-id>` unless the URL supplies an
 operator name or startup options, or the pool's `connection` options override
-it. Platform initialization leaves the environment URL unchanged. During the
-transition from Bun-global clients, `defineApp()` retains the existing URL
-application name for those clients; a separate follow-up removes that rewrite after every application migration has merged.
+it. Platform initialization leaves the environment URL unchanged; Bun-global
+clients get no application name from Cloud.
 
 ## Migrate existing imports
 

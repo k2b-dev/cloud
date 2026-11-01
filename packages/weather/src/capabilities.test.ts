@@ -50,6 +50,7 @@ const userContext = {
   user,
   locale: "en",
   requestId: "req-test",
+  target: { type: "weather.location", id: locationId },
   origin: "app",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
@@ -273,7 +274,7 @@ describe("weather capabilities", () => {
       { source: { kind: "saved", locationId } },
       germanUserContext,
     );
-    const review = await weatherCapabilities.actions["location.delete"].review!({ locationId }, germanUserContext);
+    const review = await weatherCapabilities.actions["location.delete"].review!({}, germanUserContext);
 
     expect(get).toHaveBeenCalled();
     expect(current).toHaveBeenCalled();
@@ -353,8 +354,8 @@ describe("weather capabilities", () => {
       { name: location.name, state: location.state ?? undefined, lat: location.lat, lon: location.lon },
       userContext,
     );
-    const denied = await weatherCapabilities.actions["location.delete"].run({ locationId }, serviceAccountContext);
-    const deleted = await weatherCapabilities.actions["location.delete"].run({ locationId }, userContext);
+    const denied = await weatherCapabilities.actions["location.delete"].run({}, serviceAccountContext);
+    const deleted = await weatherCapabilities.actions["location.delete"].run({}, userContext);
 
     expect(create).toHaveBeenCalledWith({
       userId,
@@ -412,4 +413,19 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
     assertResourceOpenLink(result.data);
   }
+});
+
+test("location deletion uses only its declared target and rejects a second location selector", async () => {
+  const action = weatherCapabilities.actions["location.delete"];
+  const manifest = compileCapabilityManifest("weather", weatherCapabilities);
+  expect(manifest.actions.find((item) => item.localId === "location.delete")?.target).toBe("location");
+  expect(action.input.safeParse({ locationId: "Other1" }).success).toBe(false);
+  const get = spyOn(weatherService.location.saved, "get").mockResolvedValue(null);
+  const remove = spyOn(weatherService.location.saved, "remove");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const target = { ...userContext, target: { type: "weather.location", id: "Other1" } };
+  expect(await action.review!({}, target)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  expect(await action.run({}, target)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  expect(get).toHaveBeenCalledWith({ id: "Other1", userId });
+  expect(remove).not.toHaveBeenCalled();
 });

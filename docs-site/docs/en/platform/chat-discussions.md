@@ -22,8 +22,8 @@ comments remain separate.
 | `chat.discussion.list` | `ref`, optional `limit` and `cursor` | Newest-first message previews. Listing never creates a conversation or thread. |
 | `chat.message.read` | `id` from a `chat.message` ref | Full message body, attachments, shared refs, content revision, and an `open` link. |
 | `chat.discussion.post` | `ref`, `body`, optional `replyTo` message ID | The stored message. Creates the item's thread when needed. |
-| `chat.message.edit` | `id`, `revision`, `body` | The updated own message. |
-| `chat.message.delete` | `id`, `revision` | A deleted-message marker. Text and attachments are permanently removed. |
+| `chat.message.edit` | Message target, `revision`, `body` | The updated own message. |
+| `chat.message.delete` | Message target, `revision` | A deleted-message marker. Text and attachments are permanently removed. |
 
 List pages contain at most 20 messages. Previews contain at most 300 Unicode
 code points; `previewTruncated` tells the caller to use `message.read`. Follow
@@ -34,6 +34,22 @@ Messages accept at most 20,000 Unicode code points and must contain non-whitespa
 text. The provider owns item identity: the same ref addresses one discussion. If a
 provider returns a series ref, all occurrences share that discussion. Include
 an occurrence date in the text when relevant.
+
+## Action targets
+
+`message.edit` and `message.delete` target `chat.message`; their `input` no
+longer contains `id`. Chat tools and MCP use the flat field `message`.
+`discussion.post` keeps its foreign item `ref` in `input`: the resource type
+belongs to its provider, so Chat does not declare it as a Chat target.
+
+All Chat Actions declare `code: false`, including personal notification preferences.
+Resource Code cannot change personal preferences or act on a provider-owned resource;
+personal Code keeps the person's existing permissions.
+
+`notifications.set` and `thread.follow` target `chat.conversation`. Their
+`input` omits `conversation`; Chat tools and MCP use that same name as the flat
+target field. A followed `thread` must belong to that conversation. Notification
+reads keep their existing `conversation` input.
 
 ## Access and incoming authority
 
