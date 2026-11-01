@@ -736,6 +736,23 @@ databaseSuite()("durable Code activation", () => {
       "revoked",
     );
   });
+  test("owner-deletion cleanup removes target grants before deleting the activation journal", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    await run(activation.id);
+    const grants = [...live.keys()];
+    await sql`UPDATE code.codes SET state='deleting',active_version_id=NULL WHERE id=${code.id}`;
+    await cleanupCodeActivation(code.id, transport, async () => {});
+    await cleanupCodeActivation(code.id, transport, async () => {});
+    expect(removals).toEqual(grants);
+    expect(live.size).toBe(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id} AND state<>'released'`).toHaveLength(0);
+    expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE workload_id=${submitted.version.id}`)[0]!.state).toBe(
+      "revoked",
+    );
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid`).toHaveLength(1);
+  });
   test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
     for (const readable of [false, true]) {
       targetReadable = readable;
