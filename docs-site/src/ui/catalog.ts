@@ -80,6 +80,7 @@ const portableSections = [
         "A labeled single choice of tiles with a preview, for picking how something looks.",
       ),
       page("color-choices", "ColorChoices", "ti ti-palette", "A labeled single choice from a fixed palette of named colour swatches."),
+      page("icon-choices", "IconChoices", "ti ti-icons", "A labeled single choice from a few named icons."),
       page(
         "autocomplete-select",
         "AutocompleteSelect",

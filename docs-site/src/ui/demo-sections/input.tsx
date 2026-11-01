@@ -25,6 +25,7 @@ import {
   FileDropzone,
   fileDropTarget,
   highlightSql,
+  IconChoices,
   IconInput,
   ImageCropper,
   type ImageCropState,
@@ -1765,6 +1766,41 @@ const ChoiceTilesDemo = () => {
   );
 };
 
+const IconChoicesDemo = () => {
+  const [icon, setIcon] = createSignal<string | null>("ti ti-report");
+  return (
+    <DemoCard
+      id="icon-choices"
+      chip={{ kind: "component", name: "IconChoices", from: "@k2b/ui" }}
+      description="A labeled radio group of a few named icons, such as the icon a template shows in a menu. Every icon carries its name; touch screens get 44 px buttons."
+      code={`<IconChoices
+  label="Icon"
+  value={icon}
+  onValueChange={setIcon}
+  options={[
+    { value: "ti ti-report", label: "Report", icon: "ti ti-report" },
+    { value: "ti ti-package", label: "Package", icon: "ti ti-package" },
+  ]}
+/>`}
+    >
+      <IconChoices
+        label="Icon"
+        value={icon}
+        onValueChange={setIcon}
+        options={[
+          { value: "ti ti-report", label: "Report", icon: "ti ti-report" },
+          { value: "ti ti-package", label: "Package", icon: "ti ti-package" },
+          { value: "ti ti-alert-triangle", label: "Warning", icon: "ti ti-alert-triangle" },
+          { value: "ti ti-truck", label: "Truck", icon: "ti ti-truck" },
+          { value: "ti ti-users", label: "People", icon: "ti ti-users" },
+          { value: "ti ti-coffee", label: "Coffee", icon: "ti ti-coffee" },
+          { value: "ti ti-receipt", label: "Receipt", icon: "ti ti-receipt" },
+        ]}
+      />
+    </DemoCard>
+  );
+};
+
 const ColorChoicesDemo = () => {
   const [color, setColor] = createSignal<string | null>("teal");
   return (
@@ -1948,6 +1984,11 @@ const demos: DemoSection = {
   "color-choices": () => (
     <DemoGrid columns="one">
       <ColorChoicesDemo />
+    </DemoGrid>
+  ),
+  "icon-choices": () => (
+    <DemoGrid columns="one">
+      <IconChoicesDemo />
     </DemoGrid>
   ),
   "autocomplete-select": () => (

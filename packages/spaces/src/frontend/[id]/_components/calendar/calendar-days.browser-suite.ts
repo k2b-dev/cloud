@@ -8,7 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { CalendarItem, SpaceItem, SpaceTag } from "@/contracts";
+import type { CalendarItem, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import type { CalendarTray } from "../workspace/workspace-types";
 import { parseCalendarRoute } from "./filter";
@@ -195,6 +195,42 @@ const waitingTray = (tray: CalendarTray): CalendarTray => {
 
 type Case = { html: string; items: CalendarItem[]; tray: CalendarTray };
 
+// Invented templates of the same team; `&tpl=1` puts them into the calendar's "+" menus and quick create.
+const calendarTemplate = (id: string, kind: "task" | "event", name: string, patch: Partial<SpaceItemTemplate>): SpaceItemTemplate => ({
+  id,
+  spaceId: "Space1",
+  kind,
+  name,
+  icon: null,
+  title: name,
+  description: null,
+  priority: null,
+  tags: [],
+  assignees: [],
+  assignCreator: false,
+  checklist: [],
+  estimatedDurationMinutes: null,
+  location: null,
+  url: null,
+  allDay: false,
+  durationMinutes: null,
+  timeOfDay: null,
+  dateRule: { type: "none" },
+  createdAt: "2026-10-01T00:00:00.000Z",
+  updatedAt: "2026-10-01T00:00:00.000Z",
+  ...patch,
+});
+const calendarTemplates: SpaceItemTemplate[] = [
+  calendarTemplate("Tpl001", "event", "Kundentermin", { icon: "ti ti-users", title: "Kundentermin ", timeOfDay: "10:00", durationMinutes: 60 }),
+  calendarTemplate("Tpl002", "event", "Lieferantenbesuch", { icon: "ti ti-truck", durationMinutes: 90, location: "Halle 2" }),
+  calendarTemplate("Tpl003", "task", "Wochenbericht", {
+    icon: "ti ti-report",
+    title: "Wochenbericht KW {{week}}",
+    checklist: ["Zahlen holen", "Bericht schicken", "Ablage"],
+    dateRule: { type: "weekdays", weekdays: ["FR"] },
+  }),
+];
+
 const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: CalendarTray; href: string }) => {
   setSystemTime(NOW);
   try {
@@ -207,6 +243,7 @@ const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: C
         baseUrl: options.href,
         columns,
         tags,
+        templates: options.href.includes("tpl=1") ? calendarTemplates : [],
         initialState: {
           ...route,
           range,
@@ -475,6 +512,60 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       await small.context().close();
     }
   }, 120_000);
+
+  test("the toolbar's New event opens one menu with both kinds of templates, and the quick create takes a template", async () => {
+    const page = await open(desktop, { href: `${hrefOf(TODAY)}&tpl=1` });
+    try {
+      const toolbar = page.getByRole("button", { name: "Neuer Termin" }).first();
+      await toolbar.click();
+      const menu = page.locator(".k2b-dropdown__menu:popover-open");
+      await menu.waitFor();
+      expect(await menu.locator("[role='menuitem'] .k2b-dropdown__copy > span").allTextContents()).toEqual([
+        "Leerer Termin",
+        "Leere Aufgabe mit Frist",
+        "Kundentermin",
+        "Lieferantenbesuch",
+        "Wochenbericht",
+        "Vorlage erstellen …",
+      ]);
+      await page.screenshot({ path: join(shots, "plus-toolbar-menu-1440.png") });
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" }).catch(() => {});
+
+      // The quick create in free time offers Template at a fixed width; a template fills the title, the slot stays.
+      await page.locator(".k2b-calendar-days__day[data-today] .k2b-calendar-gap__button").filter({ hasText: "1 Std. 15 frei" }).click();
+      const popover = page.locator(".k2b-calendar-popover:popover-open");
+      await popover.waitFor();
+      const trigger = popover.getByRole("button", { name: "Vorlage" });
+      const before = await trigger.boundingBox();
+      const footer = await popover.getByRole("button", { name: "Anlegen" }).boundingBox();
+      await trigger.click();
+      const templates = page.locator(".k2b-dropdown__menu:popover-open");
+      await templates.waitFor();
+      expect(await templates.locator(".k2b-dropdown__note").textContent()).toBe("Der gewählte Zeitraum bleibt, die Vorlage füllt den Rest.");
+      await page.screenshot({ path: join(shots, "plus-quick-create-templates-1440.png") });
+      await templates.getByRole("menuitem", { name: /^Lieferantenbesuch/ }).click();
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      expect(await popover.getByRole("textbox").inputValue()).toBe("Lieferantenbesuch");
+      expect(await popover.locator("[data-spaces-quick-create-from]").textContent()).toBe("Ort Halle 2 · Zeit aus dem Zeitraum");
+      expect(await popover.locator("[data-spaces-quick-create-when]").textContent()).toBe("Fr 9. Okt · 11:15–12:30");
+      // Choosing a template moves nothing in the quick create.
+      expect((await popover.getByRole("button", { name: /Lieferantenbesuch/ }).boundingBox())?.width).toBe(before?.width);
+      expect(await popover.getByRole("button", { name: "Anlegen" }).boundingBox()).toEqual(footer);
+      await page.screenshot({ path: join(shots, "plus-quick-create-chosen-1440.png") });
+      writes.splice(0);
+      await popover.getByRole("button", { name: "Anlegen" }).click();
+      await eventually(() => writes.find((write) => write.method === "POST"));
+      expect(writes.find((write) => write.method === "POST")?.body).toMatchObject({
+        title: "Lieferantenbesuch",
+        location: "Halle 2",
+        startsAt: at("10-09", "11:15"),
+        endsAt: at("10-09", "12:30"),
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
 
   test("creates in free time through the quick create, and checks a task off with its box", async () => {
     const page = await open(desktop);

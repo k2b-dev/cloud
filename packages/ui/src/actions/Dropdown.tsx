@@ -188,6 +188,8 @@ export type DropdownProps = {
   attach?: () => HTMLElement | null | undefined;
   /** `tile` sets every entry's icon on a quiet square, for menus whose icons tell entries apart, such as templates. */
   icons?: "plain" | "tile";
+  /** One quiet sentence below the entries that explains them all, such as what choosing one keeps; it describes the menu. */
+  note?: string;
 };
 
 export type DropdownTriggerProps = Omit<
@@ -762,6 +764,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         top: props.sheetTop,
         search: props.search,
         icons: props.icons,
+        note: props.note,
         signal: current.signal,
       }).finally(() => {
         sheet = undefined;
@@ -882,6 +885,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           popover="auto"
           role={props.search ? "dialog" : "menu"}
           aria-label={props.label ?? messages().dropdownMenu}
+          aria-describedby={props.note ? `${menuId}-note` : undefined}
           class={`k2b-dropdown__menu ${props.menuClass ?? ""}`}
           style={props.width ? { "--k2b-dropdown-width": props.width } : undefined}
           data-width={props.width ? "fixed" : undefined}
@@ -927,6 +931,12 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
                   }}
                 />
               )}
+            </Show>
+            {/* Hidden from the menu's children, which are entries only; the menu reads it as its description. */}
+            <Show when={props.note}>
+              <p id={`${menuId}-note`} class="k2b-dropdown__note" aria-hidden="true">
+                {props.note}
+              </p>
             </Show>
           </Show>
         </div>

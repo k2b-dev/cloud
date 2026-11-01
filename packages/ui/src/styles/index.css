@@ -6207,6 +6207,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1rem;
 }
 
+.k2b-ui .k2b-dropdown__note {
+  max-inline-size: 18rem;
+  padding: 0.375rem 0.75rem 0.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
 /* The entry most people want: its icon carries the action color. */
 .k2b-ui .k2b-dropdown__item[data-accent="true"] > i {
   color: var(--k2b-action);
@@ -6996,6 +7005,53 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-choice-tiles__group[data-layout="row"] :is(.k2b-choice-tiles__label, .k2b-choice-tiles__text) {
     align-items: center;
     text-align: center;
+  }
+}
+
+/* IconChoices: a row of named icons; the chosen one takes the selection tint, so its size never changes. */
+.k2b-ui .k2b-icon-choices__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-icon-choices__option {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-icon-choices__option:hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-icon-choices__option[aria-checked="true"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-icon-choices__option:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-icon-choices__option:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-icon-choices__option {
+    width: 2.75rem;
+    height: 2.75rem;
   }
 }
 

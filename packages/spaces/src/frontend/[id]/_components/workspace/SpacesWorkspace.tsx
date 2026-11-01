@@ -5,12 +5,14 @@ import { useSpaceMessages } from "../../messages";
 import ItemDetailRoute from "../detail/ItemDetailRoute.island";
 import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { boardFilter, defaultFilter, parseFilterFromUrl } from "../filter/types";
+import { createMenuPopup } from "../shared/create-menu";
 import SpaceSidebar from "../sidebar/SpaceSidebar";
 import type { SpacesSidebarData } from "../sidebar/SpacesSidebarList";
 import { spacePrimaryHref } from "../sidebar/space-primary";
 import type { SpaceContext } from "../sidebar/types";
 import RememberSpace from "./RememberSpace.island";
 import SpaceHeadActions from "./SpaceHeadActions.island";
+import SpaceCreateMenu from "./SpaceCreateMenu.island";
 import SpaceLiveEvents from "./SpaceLiveEvents.island";
 import SpacesCalendarRoute from "./SpacesCalendarRoute.island";
 import SpacesKanbanRoute from "./SpacesKanbanRoute.island";
@@ -97,6 +99,17 @@ export default function SpacesWorkspace(props: {
         snapshotDay={state.snapshotDay}
         dateConfig={props.dateConfig}
       />
+      {state.canWrite && (
+        <SpaceCreateMenu
+          spaceId={state.space.id}
+          spaceName={state.space.name}
+          columns={state.space.columns}
+          tags={state.space.tags}
+          templates={state.space.templates}
+          calendar={state.currentView === "calendar"}
+          dateConfig={props.dateConfig}
+        />
+      )}
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <SpaceSidebar
           ctx={sidebarContext}
@@ -139,6 +152,7 @@ export default function SpacesWorkspace(props: {
                   label: state.currentView === "calendar" ? t.newEvent : t.newTask,
                   icon: "ti ti-plus",
                   href: spacePrimaryHref(sidebarContext),
+                  popup: createMenuPopup(state.currentView === "calendar" ? "calendar" : "task", state.space.templates),
                 }
               : undefined
           }

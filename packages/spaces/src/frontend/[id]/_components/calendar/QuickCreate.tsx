@@ -1,10 +1,13 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Button, InlineGuidance, Kbd, SegmentedControl, TextInput } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
-import type { SpaceItem } from "@/contracts";
+import { Button, Dropdown, type DropdownItem, InlineGuidance, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, Show } from "solid-js";
+import type { ItemTemplateKind, SpaceItem, SpaceItemTemplate } from "@/contracts";
+import { draftFromTemplate, templateText } from "@/presentation/item-templates";
 import { useSpaceMessages } from "../../messages";
+import { templateIcon, templateMenuRow } from "../shared/create-menu";
 import { createSpaceItem } from "../shared/editItem";
 import { allDayEnd, allDayStart, instantFromLocalDateTime } from "../shared/item-form/date";
+import { browserTimeZone, templateDraftSource } from "../shared/item-form/templates";
 import type { ItemFormData, ItemFormProps } from "../shared/item-form/types";
 
 /** The selected days as `YYYY-MM-DD` keys, both inclusive. */
@@ -64,12 +67,64 @@ export default function QuickCreate(props: {
   /** Status and tags a new item takes from the calendar's filter. */
   defaults: Pick<QuickCreateDefaults, "columnId" | "tagIds">;
   columnId: string;
+  /** The Space's templates; "Template" offers those of the chosen kind. */
+  templates?: readonly SpaceItemTemplate[];
+  /** Opens the template form for "Create template…"; the quick create closes first. */
+  onCreateTemplate?: (kind: ItemTemplateKind) => void;
   onCreated: (item: SpaceItem) => void;
   onMoreOptions: (defaults: QuickCreateDefaults) => void;
 }) {
   const t = useSpaceMessages();
+  const locale = useLocale();
   const [title, setTitle] = createSignal("");
   const [kind, setKind] = createSignal<QuickCreateKind>(props.kind);
+  const [template, setTemplate] = createSignal<SpaceItemTemplate>();
+  const templateKind = (): ItemTemplateKind => (kind() === "task" ? "task" : "event");
+  const kindTemplates = createMemo(() => (props.templates ?? []).filter((candidate) => candidate.kind === templateKind()));
+  /** The day a template's placeholders name: the due day of a task, the first day of an event. */
+  const templateDay = () => (kind() === "task" ? props.days.last : props.days.first);
+  const chooseTemplate = (chosen: SpaceItemTemplate) => {
+    setTemplate(chosen);
+    setTitle(templateText(chosen, { date: templateDay(), locale: locale() }).title);
+    setError("");
+  };
+  /** A template belongs to one kind, so switching the kind leaves it; the typed title stays. */
+  const changeKind = (next: QuickCreateKind) => {
+    setKind(next);
+    if (template() && template()!.kind !== templateKind()) setTemplate(undefined);
+  };
+  /** What the chosen template adds beyond its title, and that the selection decides when. */
+  const fromTemplate = () => {
+    const chosen = template();
+    if (!chosen) return "";
+    const parts =
+      chosen.kind === "task"
+        ? [
+            chosen.tags[0]?.name,
+            chosen.checklist.length ? t.templateHintChecklist({ count: chosen.checklist.length }) : undefined,
+            chosen.assignees[0]?.displayName,
+            t.quickCreateDueFromSelection,
+          ]
+        : [chosen.location ? t.templateHintPlace({ place: chosen.location }) : undefined, t.quickCreateTimeFromSelection];
+    return parts.filter(Boolean).join(" · ");
+  };
+  const templateItems = (): DropdownItem[] => [
+    ...kindTemplates().map((candidate) => templateMenuRow(candidate, t, locale(), chooseTemplate)),
+    ...(props.onCreateTemplate
+      ? [
+          {
+            label: t.createMenuCreateTemplate,
+            icon: "ti ti-template",
+            description: kindTemplates().length
+              ? undefined
+              : kind() === "task"
+                ? t.quickCreateNoTaskTemplates
+                : t.quickCreateNoEventTemplates,
+            action: () => props.onCreateTemplate?.(templateKind()),
+          },
+        ]
+      : []),
+  ];
   const [error, setError] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
 
@@ -107,10 +162,11 @@ export default function QuickCreate(props: {
     return `${day(props.days.first)}, ${time(values.startsAt ?? "")} – ${day(props.days.last)}, ${time(values.endsAt ?? "")}`;
   };
 
-  const formDefaults = (): QuickCreateDefaults => ({
+  const formDefaults = (): QuickCreateDefaults & { templateId?: string } => ({
     ...props.defaults,
     ...quickCreateDefaults(kind(), props.days, props.dateConfig, props.time),
     title: title().trim() || undefined,
+    templateId: template()?.id,
   });
 
   const submit = async () => {
@@ -130,6 +186,27 @@ export default function QuickCreate(props: {
       deadline: defaults.type === "task" ? defaults.deadline : undefined,
       tagIds: defaults.tagIds?.length ? defaults.tagIds : undefined,
     };
+    // The template fills in the rest; the selection keeps the date, the time, and the length.
+    const chosen = template();
+    if (chosen) {
+      const draft = draftFromTemplate(templateDraftSource(chosen), {
+        date: null,
+        timeZone: props.dateConfig?.timeZone ?? browserTimeZone(),
+        locale: locale(),
+        now: new Date(`${templateDay()}T12:00:00Z`),
+      });
+      const tagIds = [...new Set([...(data.tagIds ?? []), ...draft.tagIds])];
+      Object.assign(data, {
+        description: draft.description,
+        priority: draft.priority,
+        tagIds: tagIds.length ? tagIds : undefined,
+        assigneeIds: draft.assigneeIds.length ? draft.assigneeIds : undefined,
+        ...(draft.assignCreator ? { assignCreator: true } : {}),
+        ...(defaults.type === "task"
+          ? { checklist: draft.checklist.length ? draft.checklist : undefined, estimatedDurationMinutes: draft.estimatedDurationMinutes }
+          : { location: draft.location, url: draft.url }),
+      } satisfies Partial<ItemFormData>);
+    }
     setSubmitting(true);
     try {
       props.onCreated(await createSpaceItem(props.spaceId, data, t.createItemFailed));
@@ -162,7 +239,7 @@ export default function QuickCreate(props: {
           ariaLabel={t.type}
           size="sm"
           value={kind}
-          onValueChange={setKind}
+          onValueChange={changeKind}
           options={[
             { value: "event", label: t.event },
             { value: "allday", label: t.allDay },
@@ -178,11 +255,41 @@ export default function QuickCreate(props: {
           {error()}
         </InlineGuidance>
       </Show>
+      {/* Always one line high, so choosing a template moves nothing. */}
+      <p class="min-h-[1.125rem] truncate text-xs text-[var(--k2b-text-secondary)]" data-spaces-quick-create-from="" aria-live="polite">
+        {fromTemplate()}
+      </p>
       <div class="mt-0.5 flex items-center gap-1">
-        {/* Keys help only where a keyboard is likely. */}
-        <span class="mr-auto text-[0.6875rem] text-[var(--k2b-text-muted)] pointer-coarse:invisible" aria-hidden="true">
-          <Kbd keys="enter" /> {t.quickCreateEnter} · <Kbd keys="escape" /> {t.quickCreateEscape}
-        </span>
+        <Show when={kindTemplates().length || props.onCreateTemplate} fallback={<span class="mr-auto" />}>
+          <span class="mr-auto">
+            <Dropdown.Root
+              items={templateItems()}
+              label={
+                kind() === "task"
+                  ? t.quickCreateTaskTemplateFor({ day: day(templateDay()) })
+                  : t.quickCreateEventTemplateFor({ day: day(templateDay()) })
+              }
+              icons="tile"
+              phone="sheet"
+              width="18rem"
+              note={t.quickCreateTemplateHint}
+              sheetTop={() => (
+                <p class="px-3 pb-1 text-[0.9375rem] font-semibold">
+                  {kind() === "task"
+                    ? t.quickCreateTaskTemplateFor({ day: day(templateDay()) })
+                    : t.quickCreateEventTemplateFor({ day: day(templateDay()) })}
+                </p>
+              )}
+            >
+              {/* A fixed width: the chosen template's name truncates instead of moving the buttons beside it. */}
+              <Dropdown.Trigger variant="secondary" size="sm" class="w-[9.5rem] [&_.k2b-button__label]:min-w-0">
+                <i class={template() ? templateIcon(template()!) : "ti ti-template"} aria-hidden="true" />
+                <span class="min-w-0 flex-1 truncate text-left">{template()?.name ?? t.quickCreateTemplate}</span>
+                <i class="ti ti-chevron-down text-xs opacity-70" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </span>
+        </Show>
         {/* While a save runs, the full form would create the same item a second time. */}
         <Button type="button" variant="ghost" size="sm" disabled={submitting()} onClick={() => props.onMoreOptions(formDefaults())}>
           {t.withDetails}

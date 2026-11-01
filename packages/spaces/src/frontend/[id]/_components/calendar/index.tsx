@@ -13,6 +13,7 @@ import {
   type CalendarSelectionControls,
   Calendar as CoreCalendar,
   type CalendarView as CoreCalendarView,
+  Dropdown,
   type DropdownItem,
   dialogCore,
   FilterChip,
@@ -20,6 +21,7 @@ import {
   PanelDialog,
   panelDialogOptions,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -31,17 +33,21 @@ import {
   type Recurrence,
   type SpaceColumn,
   type SpaceItem,
+  type SpaceItemTemplate,
 } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
+import { openTemplateDialog } from "../edit/TemplateDialog";
 import { resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
+import { type CreateMenuChoice, calendarTemplateSections } from "../shared/create-menu";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { allDayEnd, allDayStart, instantFromLocalDateTime } from "../shared/item-form/date";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
+import { CreateMenu } from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
 import { countCalendarEvents } from "./count";
@@ -49,6 +55,7 @@ import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defau
 import { CalendarItemContent } from "./ItemContent";
 import QuickCreate, {
   type CalendarDays,
+  type CalendarSlot,
   type QuickCreateDefaults,
   type QuickCreateKind,
   quickCreateDefaults,
@@ -235,6 +242,7 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
+  const locale = useLocale();
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
@@ -697,14 +705,54 @@ export default function Calendar(props: CalendarProps) {
    * The day menu creates through the quick create at the days. Without write access it keeps the calendar's own
    * entries, Open day and Open week.
    */
-  const selectionMenu = (_range: CalendarEventTimeChange, controls: CalendarSelectionControls): DropdownItem[] =>
-    props.canWrite ? createMenu(controls) : [];
-  const createMenu = (controls: CalendarSelectionControls): DropdownItem[] => [
+  const selectionMenu = (range: CalendarEventTimeChange, controls: CalendarSelectionControls): DropdownItem[] =>
+    props.canWrite ? createMenu(range, controls) : [];
+  const createMenu = (range: CalendarEventTimeChange, controls: CalendarSelectionControls): DropdownItem[] => [
     // New event creates as N and the toolbar do: at nine on one day, all day over several.
     { label: t.newEvent, icon: "ti ti-calendar-plus", action: () => controls.quickCreate() },
     { label: t.newAllDayEvent, icon: "ti ti-sun", action: () => controls.quickCreate("allday" satisfies QuickCreateKind) },
     { label: t.newTaskWithDeadline, icon: "ti ti-square-check", action: () => controls.quickCreate("task" satisfies QuickCreateKind) },
+    // A template takes the selected days; the template fills in the rest.
+    ...calendarTemplateSections(props.templates ?? [], t, locale(), (template) => void createFromTemplate(template, daysOf(range))),
   ];
+  /**
+   * A template opens the dialog with it chosen. Selected days or a time slot keep their date and time; without one the
+   * template proposes its own dates.
+   */
+  const createFromTemplate = (template: SpaceItemTemplate, days?: CalendarDays, time?: CalendarSlot) => {
+    if (!days) return openCreateDialog({ type: template.kind, templateId: template.id });
+    const kind: QuickCreateKind = template.kind === "task" ? "task" : template.allDay && !time ? "allday" : "event";
+    return openCreateDialog({ ...quickCreateDefaults(kind, days, props.dateConfig, time), templateId: template.id });
+  };
+  /** The calendar's selection or slot the toolbar's "+" creates at, if the view has one. */
+  const toolbarTarget = () => {
+    const target = isScrollingCalendarView(props.view) || props.view === "month" ? controller()?.createTarget() : undefined;
+    if (!target) return undefined;
+    return {
+      days: daysOf(target),
+      time: target.allDay ? undefined : { start: target.start.toISOString(), end: target.end.toISOString() },
+    };
+  };
+  const createTaskWithDeadline = () => {
+    const target = toolbarTarget();
+    if (!target) return createTaskInDialog();
+    return openCreateDialog(quickCreateDefaults("task", target.days, props.dateConfig, target.time));
+  };
+  const chooseFromToolbar = (choice: CreateMenuChoice) => {
+    if (choice.type === "blank") void (choice.kind === "event" ? createNewEvent() : createTaskWithDeadline());
+    else if (choice.type === "template") {
+      const target = toolbarTarget();
+      void createFromTemplate(choice.template, target?.days, target?.time);
+    } else
+      void openTemplateDialog({
+        spaceId: props.spaceId,
+        kind: choice.kind,
+        tags: props.tags,
+        templates: props.templates ?? [],
+        dateConfig: props.dateConfig,
+        locale: locale(),
+      }).then((saved) => saved && reconcileAfterWrite());
+  };
   const creatingEvent = createDialogPending;
   /**
    * New event creates on the selected days of the month view, else on today while it shows, else on the 1st of the
@@ -848,18 +896,21 @@ export default function Calendar(props: CalendarProps) {
         dateConfig={props.dateConfig}
         toolbarActions={
           <Show when={props.canWrite}>
-            <Button
-              type="button"
-              variant="input"
-              size="sm"
-              class="shrink-0 whitespace-nowrap"
+            <CreateMenu
+              kind="calendar"
+              templates={props.templates ?? []}
+              choose={chooseFromToolbar}
+              shortcuts
               disabled={creatingEvent()}
-              onClick={() => void createNewEvent()}
+              align="end"
             >
-              <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} />
-              {/* A phone keeps the icon, so the header holds Today, the views, and this button in one row. */}
-              <span class="max-sm:sr-only">{t.newEvent}</span>
-            </Button>
+              <Dropdown.Trigger variant="input" size="sm" class="shrink-0 whitespace-nowrap">
+                <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} aria-hidden="true" />
+                {/* A phone keeps the icon, so the header holds Today, the views, and this button in one row. */}
+                <span class="max-sm:sr-only">{t.newEvent}</span>
+                <i class="ti ti-chevron-down text-xs opacity-70 max-sm:hidden" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </CreateMenu>
           </Show>
         }
         toolbarContent={
@@ -950,6 +1001,11 @@ export default function Calendar(props: CalendarProps) {
                   dateConfig={props.dateConfig}
                   defaults={filterDefaults()}
                   columnId={filterDefaults().columnId ?? props.columns[0]?.id ?? ""}
+                  templates={props.templates}
+                  onCreateTemplate={(kind) => {
+                    close();
+                    chooseFromToolbar({ type: "create-template", kind });
+                  }}
                   onCreated={(item) => {
                     close();
                     announceCreated(item);
