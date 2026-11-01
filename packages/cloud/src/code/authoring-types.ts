@@ -27,3 +27,19 @@ export type CodeWebhookContext = Omit<CodeContext, "user"> & { verify(secret: st
 export type CodeNavigationItem = { title: string; path: string };
 /** A synchronous or asynchronous schedule callback, also used for a manual start. */
 export type CodeScheduleHandler = () => void | Promise<void>;
+
+/** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
+declare const __codeSecret: unique symbol;
+export type CodeSecret = string & { readonly [__codeSecret]: true };
+/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
+export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
+export type CodeHttp = {
+  fetch(
+    url: string,
+    options?: {
+      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<CodeHttpResult>;
+};

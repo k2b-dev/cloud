@@ -468,3 +468,19 @@ test("grant references retain the declaration's case-sensitive field names", () 
   });
   expect(policy.grants?.[0]).toMatchObject({ refs: { targetBookId: { type: "demo.book", id: "b" } } });
 });
+
+test("only trusted Core Code version issuance may use Core runtime.http grants", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["core"],
+    operations: ["runtime.http", "runtime.database"],
+    actions: "preapproved",
+    grants: [{ kind: "http", fixedInput: { origin: "https://api.example:8443" } }],
+  });
+  const call = { appId: "core", operation: "runtime.http", actionApproval: "none" as const, input: { origin: "https://api.example:8443" } };
+  expect(mandatePolicyAllows(policy, call)).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true })).toBe(true);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, input: { origin: "https://api.example" } })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, operation: "runtime.database" })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, appId: "other" })).toBe(false);
+});

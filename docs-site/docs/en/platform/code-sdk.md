@@ -15,6 +15,9 @@ resource an operation acts on. The available factories, methods, inputs and
 results come from [application capability manifests](/en/docs/platform/capabilities).
 Third-party applications use the same path as built-in applications.
 
+`secrets.NAME` supplies a placeholder and `http.fetch` dispatches a bounded public HTTPS request.
+Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations and result encoding.
+
 This is the Phase 1 SDK contract on the Code integration branch. The SDK
 registers schedules; Core owns scheduling, authorization and execution.
 

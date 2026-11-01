@@ -15,6 +15,8 @@ export * from "./policy-effective";
 export { codeRunMessages } from "./run-messages";
 export { processCodeScheduleTick, readCodeRunnerMetrics, startCodeRun } from "./scheduling";
 export * from "./scheduling-contracts";
+export * from "./secret-contracts";
+export * from "./secrets";
 export { CODE_SETTINGS, codeSettings } from "./settings";
 export * from "./store";
 export * from "./version-contracts";
