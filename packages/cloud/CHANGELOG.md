@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.52.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.51.0...npm-cloud-v0.52.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** migrate deployments to app key files with checked upgrade steps ([#2268](https://github.com/k2b-dev/cloud/issues/2268)) ([52c1438](https://github.com/k2b-dev/cloud/commit/52c1438cc02a7746099d672631f513cf12b4ce42))
+* **cloud:** require migration evidence before retiring app credentials ([#2266](https://github.com/k2b-dev/cloud/issues/2266)) ([b1ba1da](https://github.com/k2b-dev/cloud/commit/b1ba1dad5319622cecb6b6308446543328f30bc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.40.0 to 0.41.0
+    * @k2b/editor bumped from 0.3.1 to 0.4.0
+
 ## [0.51.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.50.0...npm-cloud-v0.51.0) (2026-11-01)
 
 
