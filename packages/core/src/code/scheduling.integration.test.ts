@@ -608,6 +608,55 @@ suiteFor(
     expect(late.contents?.calls[0]).toMatchObject({ state: "succeeded", result: { ok: true, data: { stored: true } } });
     expect(await claimCodeRuns(1, await readCodeRunLimits())).toHaveLength(0);
   });
+  test("late call completion waits for the run before locking the call", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const lease = await take();
+    await sql.begin((db) =>
+      appendCodeCall({ runId: lease.runId, kind: "action", call: { capability: "example.write", target: null, refs: {}, input: {} } }, db),
+    );
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const backend = Promise.withResolvers<number>();
+    const blocker = sql.begin(async (db) => {
+      await db`SELECT id FROM code.runs WHERE id=${lease.runId}::uuid FOR UPDATE`;
+      locked.resolve();
+      await release.promise;
+    });
+    await locked.promise;
+    const completion = sql.begin(async (db) => {
+      await db`SET LOCAL lock_timeout='3s'`;
+      const [row] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      backend.resolve(row!.pid);
+      await finishCodeCall(
+        { runId: lease.runId, ordinal: 1, state: "succeeded", result: { ok: true, data: null }, endedAt: new Date() },
+        db,
+      );
+    });
+    // Observe the database wait, rather than assuming the completion has started after a delay.
+    try {
+      const pid = await backend.promise;
+      let waiting = false;
+      for (let probe = 0; probe < 100; probe++) {
+        const [activity] = await sql<
+          { waiting: boolean }[]
+        >`SELECT wait_event_type='Lock' AS waiting FROM pg_stat_activity WHERE pid=${pid}`;
+        if (activity?.waiting) {
+          waiting = true;
+          break;
+        }
+        await Bun.sleep(10);
+      }
+      expect(waiting).toBe(true);
+      await sql.begin(async (db) => {
+        const calls = await db`SELECT ordinal FROM code.calls WHERE run_id=${lease.runId}::uuid FOR UPDATE NOWAIT`;
+        expect(calls).toHaveLength(1);
+      });
+    } finally {
+      release.resolve();
+      await Promise.all([blocker, completion]);
+    }
+  });
   test("killed runner before an Action requeues; after an Action fails; expired generation cannot heartbeat or call", async () => {
     const code = await fixture();
     await enqueueMany(code, 1);
