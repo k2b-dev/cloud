@@ -23,6 +23,50 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.version.diff.read": {
+          title: "Vollständigen Code-Vergleich lesen",
+          description:
+            "Liest begrenzte Abschnitte des vollständigen CodeDiff-JSON zweier unveränderlicher Versionen. Vor der Anzeige vollständig zusammensetzen.",
+        },
+        "code.version.diff": {
+          title: "Code-Version vergleichen",
+          description:
+            "Liest vollständige Dateizeilen gegen die letzte freigegebene oder eingeschaltete Version mit genauem Entscheidungsstand.",
+        },
+        "code.version.list": {
+          title: "Code-Versionen auflisten",
+          description: "Liest Einreichungen und Freigabe-Belege einschließlich der Allein-Admin-Entscheidung.",
+        },
+        "code.policy.read": {
+          title: "Code-Richtlinie lesen",
+          description: "Liest Standard und passende Gruppenregeln; Cloud-Admins sehen die vollständige Tabelle.",
+        },
+        "code.policy.effective": {
+          title: "Wirksame Code-Richtlinie",
+          description: "Ermittelt aktuelle Regeln je Einstufung für Besitzer oder Autor. Fremde Sichten erfordern Cloud-Administration.",
+        },
+        "code.policy.preview": {
+          title: "Code-Richtlinie prüfen",
+          description: "Zeigt Anzahl und Seite betroffener aktiver Codes ohne Änderung. Nur für Cloud-Admins.",
+        },
+        "code.list": {
+          title: "Code auflisten",
+          description:
+            "Listet eigenen und explizit geteilten Code; Cloud-Admins sehen allen. Für Zugriff als Besitzer-Admin den genauen Besitzer angeben. Dem Cursor auch bei leeren Seiten folgen.",
+        },
+        "code.read": { title: "Code lesen", description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung." },
+        "code.version.read": {
+          title: "Code-Version lesen",
+          description: "Liest unveränderliche Versionen und Quelltext, Bundle oder Manifest in Teilen.",
+        },
+        "code.run.list": {
+          title: "Code-Läufe auflisten",
+          description: "Listet Lauf-Metadaten ohne Eingaben, Ausgaben oder Inhalte von Capability-Aufrufen.",
+        },
+        "code.run.read": {
+          title: "Code-Lauf lesen",
+          description: "Liest einen Versuch. Bearbeiter sehen Eingaben, Ausgaben und Aufrufe in Reihenfolge, Leser nur Metadaten.",
+        },
         ...geoCapabilityPresentation,
         "ai.task.run.read": {
           title: "Lauf einer Assistant-Routine lesen",
@@ -154,6 +198,31 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.version.submit": {
+          title: "Code-Version einreichen",
+          description:
+            "Speichert geprüften Quelltext und Bundle gegen baseVersionId. Fragt nötige Freigaben an; die aktive Version läuft weiter.",
+        },
+        "code.version.approve": {
+          title: "Code-Version freigeben",
+          description: "Gibt genau diesen Quelltext, dieses Bundle und diesen Vergleich über die Cloud-Admin-Regel der Plattform frei.",
+        },
+        "code.version.reject": {
+          title: "Code-Version ablehnen",
+          description: "Lehnt die genaue Version und ihren Vergleich über dieselbe Plattform-Anfrage ab.",
+        },
+        "code.pause": {
+          title: "Code pausieren",
+          description: "Pausiert weitere Ausführung. Die aktive Version bleibt erhalten; verpasste Ereignisse werden nicht nachgeholt.",
+        },
+        "code.resume": {
+          title: "Code fortsetzen",
+          description: "Setzt die aktive Version nach Prüfung der aktuellen Richtlinie und Freigabe-Belege fort.",
+        },
+        "code.policy.update": {
+          title: "Code-Richtlinie ändern",
+          description: "Ersetzt die Richtlinie am erwarteten Stand und plant sichtbare Pausen. Veraltete Änderungen werden abgelehnt.",
+        },
         "ai.skill.access.change": {
           title: "Skill-Zugriffsrechte ändern",
           description:

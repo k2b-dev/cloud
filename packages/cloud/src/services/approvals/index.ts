@@ -1,4 +1,5 @@
 import type { SQL } from "bun";
+import { approvalMessages } from "../../approvals/messages";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
@@ -137,6 +138,17 @@ const columns = (compact = false) => sql`id, kind, sole_admin AS "soleAdmin", ap
   decided_via AS "decidedVia", decided_at AS "decidedAt", consumed_at AS "consumedAt",
   created_at AS "createdAt", expires_at AS "expiresAt"`;
 
+/** Advisory notice for every Code decision surface. The winning decision rechecks sole-admin eligibility under locks. */
+export const codeVersionSoleAdminNotice = async (
+  request: ApprovalRequest,
+  userId: string,
+  authority: RequestAuthority,
+  locale = "en",
+): Promise<string | null> => {
+  if (request.kind !== "code_version" || request.authorUserId !== userId || !approvalAdminActor(userId, authority)) return null;
+  return (await soleCodeAdmin(sql)) === userId ? approvalMessages.resolve([locale]).t.soleAdminNotice : null;
+};
+
 const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));
 
 const lockDecider = async (tx: SQL, userId: string, deviceId: string | null) => {
@@ -216,6 +228,18 @@ export type ApprovalDecisionResult =
       code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" | "REAUTHENTICATE" | "BUSY";
     }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
+/** A kind owner refuses a stale/invalid review. The transaction rolls back; transports return a visible conflict.
+ * Throw only after resolving the request recipient; never include private source or payloads in the message.
+ */
+export class ApprovalDecisionConflictError<C extends string = string> extends Error {
+  constructor(
+    readonly code: C,
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 /**
  * A kind owner updates its durable domain decision in the same transaction as the platform decision. Throwing rolls
  * back both writes. Called exactly once for the winning decision, never on replay. No external effects belong here.

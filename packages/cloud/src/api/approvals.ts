@@ -25,7 +25,7 @@ import { noTransform } from "../server/middleware/no-transform";
 import { jsonResponse, requiresAuth } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
 import { ok } from "../server/services";
-import { approvalDecisionChannel, approvals, countPending } from "../services/approvals";
+import { ApprovalDecisionConflictError, approvalDecisionChannel, approvals, countPending } from "../services/approvals";
 import { readApprovalContent } from "../services/approvals/content";
 import { decodeApprovalCursor } from "../services/approvals/cursor";
 import { loadPendingApprovals } from "./approvals-loader";
@@ -149,15 +149,21 @@ export const approvalRoutes = new Hono<AuthContext>()
       const record = await approvals.get(c.req.valid("param").id, undefined, true);
       if (record?.kind === "code_version") {
         const decision = c.req.valid("json");
-        const result = await approvals.decide(record.id, decision, {
-          userId: user.id,
-          authority: auth.getAuthority(c),
-          via: approvalDecisionChannel({
-            credentialKind: c.get("credentialKind"),
-            actor: c.get("actor"),
-            client: c.req.header(APPROVAL_CLIENT_HEADER),
-          }),
-        });
+        const result = await approvals
+          .decide(record.id, decision, {
+            userId: user.id,
+            authority: auth.getAuthority(c),
+            via: approvalDecisionChannel({
+              credentialKind: c.get("credentialKind"),
+              actor: c.get("actor"),
+              client: c.req.header(APPROVAL_CLIENT_HEADER),
+            }),
+          })
+          .catch((error: unknown) => {
+            if (error instanceof ApprovalDecisionConflictError) return error;
+            throw error;
+          });
+        if (result instanceof ApprovalDecisionConflictError) return c.json({ code: result.code, message: result.message }, 409);
         if (result.ok) return respond(c, ok({ status: decision.approved ? ("approved" as const) : ("rejected" as const) }));
         if (result.code === "BUSY")
           return c.json({ code: "BUSY", message: "The admin population is changing or another review is in progress. Try again." }, 503);

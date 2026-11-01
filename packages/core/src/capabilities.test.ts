@@ -304,6 +304,14 @@ describe("Core AI capabilities", () => {
       "ai.task.read",
       "ai.task.run.read",
       "ai.tasks.list",
+      "code.list",
+      "code.policy.effective",
+      "code.policy.preview",
+      "code.policy.read",
+      "code.read",
+      "code.run.list",
+      "code.run.read",
+      "code.version.read",
       "entities.search",
       "geo.availability",
       "map.style",
@@ -327,6 +335,7 @@ describe("Core AI capabilities", () => {
       "ai.task.resume",
       "ai.task.run",
       "ai.task.update",
+      "code.policy.update",
     ];
     expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual([
       "core.ai.chat",
@@ -354,6 +363,7 @@ describe("Core AI capabilities", () => {
         manifest.actions.map((action) => [action.localId, { destructive: action.destructive, idempotency: action.idempotency }]),
       ),
     ).toEqual({
+      "code.policy.update": { destructive: true, idempotency: "required" },
       "ai.chat.message": { destructive: false, idempotency: "required" },
       "ai.skill.access.change": { destructive: true, idempotency: "required" },
       "ai.skill.create": { destructive: false, idempotency: "required" },
