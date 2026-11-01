@@ -7,6 +7,7 @@ import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
+import { codeAccessCleanupOutbox, codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
 import { startCodeScheduling } from "./code/scheduling-runtime";
@@ -15,6 +16,7 @@ import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
 import { migrate as migrateCodeActivation } from "./migrate/core/code-activation";
 import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
+import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
 import { migrate as migrateCodeSecrets } from "./migrate/core/code-secrets";
@@ -195,6 +197,9 @@ export const startCoreServices = async (
     stopCodeScheduling = await startCodeScheduling();
     codeActivationOutbox.start();
     codeActivationCleanupOutbox.start();
+    codeOwnerDeletedOutbox.start();
+    codeAccessCleanupOutbox.start();
+    codeDeletionOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({

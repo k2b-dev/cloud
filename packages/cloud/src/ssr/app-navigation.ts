@@ -63,6 +63,8 @@ export type PanelProvider = {
   appName: string;
   consent: boolean;
   order?: number;
+  /** The panel works on a resource's Code with the person; shared Code pages offer it as "Edit with …". */
+  code?: true;
 };
 
 /** Authorized presentation only: the panel route still authorizes every request. */
@@ -83,6 +85,7 @@ export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: Use
               appName: presentation.name,
               consent: panelProviderNeedsConsent(app.id),
               ...(app.panel.order !== undefined ? { order: app.panel.order } : {}),
+              ...(app.panel.code === true ? { code: true as const } : {}),
             },
           ]
         : [];
