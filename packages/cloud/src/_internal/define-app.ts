@@ -930,7 +930,9 @@ export const defineApp = <
             invocationApp,
           ),
         )
-        .use("/_internal/sync/*", auth.requireOAuthScope("admin"))
+        .use("/_internal/sync/*", (c, next) =>
+          auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+        )
         .use("/_internal/sync/*", async (c, next) => {
           if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
           return next();

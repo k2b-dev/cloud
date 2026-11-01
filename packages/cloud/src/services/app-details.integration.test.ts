@@ -279,9 +279,10 @@ suiteFor("database")("app administration detail", () => {
     });
   });
 
-  test("non-admin and read-only OAuth authority are refused by service and HTTP", async () => {
+  test("administrator read OAuth reaches details but non-admin authority is refused", async () => {
     expect((await routes({ ...authority(), credentialKind: "oauth", scopes: ["admin"] }).request("/apps/demo")).status).toBe(200);
-    for (const requestAuthority of [authority(false), { ...authority(), credentialKind: "oauth" as const, scopes: ["read"] }]) {
+    expect((await routes({ ...authority(), credentialKind: "oauth", scopes: ["read"] }).request("/apps/demo")).status).toBe(200);
+    for (const requestAuthority of [authority(false), { ...authority(), credentialKind: "oauth" as const, scopes: ["write"] }]) {
       await expect(details("demo", { authority: requestAuthority })).rejects.toMatchObject({ status: 403 });
       expect((await routes(requestAuthority).request("/apps/demo")).status).toBe(403);
     }

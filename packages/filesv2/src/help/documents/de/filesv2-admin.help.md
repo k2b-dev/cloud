@@ -93,7 +93,7 @@ Historische Versionen lassen sich nur über die Versionsaktion im administrative
 
 ## Terminal verwenden {icon="terminal"}
 
-`cld filesv2 admin inventory --storage freeipa --kind groups --json` liest denselben Bestand. Übergib einen zurückgegebenen `next`-Cursor als `--after`. `cld filesv2 admin configuration get --json` liest die Konfiguration. Übermittle eine vollständige bearbeitete Konfiguration mit `cld filesv2 admin configuration set --input-file ./filesv2.json` oder `--stdin`. Ein fehlender oder leerer `token` behält das Secret bei.
+`cld filesv2 admin inventory --storage freeipa --kind groups --json` liest denselben Bestand. Übergib einen zurückgegebenen `next`-Cursor als `--after`. `cld filesv2 admin configuration get --json` liest die Konfiguration. Übermittle eine vollständige bearbeitete Konfiguration mit `cld filesv2 admin configuration set --input-file ./filesv2.json --yes` oder `--stdin`. Ein fehlender oder leerer `token` behält das Secret bei.
 
 `cld filesv2 admin shares list --json` zeigt alle Links; `admin shares revoke <share-id> --yes` sperrt einen davon. `cld filesv2 admin uploads list --json` zeigt ungeklärte Eingangsreservierungen. Mit `--after` erreichst du weitere Seiten dieser Listen.
 

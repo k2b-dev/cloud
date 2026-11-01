@@ -23,6 +23,20 @@ usage of a built-in or module command and change nothing. `help` as the value
 of a flag stays a value: `cld logout --profile help` signs out the profile
 named `help`.
 
+## Administrator operations
+
+A person with the current administrator role can read diagnostics with ordinary
+OAuth `read` scope and configure routine settings with `write`. The default
+`cld login` requests both. Use the same permission-aware services as the UI,
+protect secret input with files or stdin, and require confirmation for changes.
+Every administrator setting needs a CLI command; the monorepo enforces this
+with `admin-cli-settings`. Structured configuration keeps its owning API so
+validation, audit and live hooks run on both paths.
+
+See [CLI administration](/en/docs/operations/cli-administration) for setting
+discovery, named commands and approved short-lived `admin` scope for dangerous
+actions. This does not grant standalone OAuth clients a person's role.
+
 ## Select a locale
 
 `cld` resolves one locale per invocation: `--locale <BCP-47-tag>` wins over

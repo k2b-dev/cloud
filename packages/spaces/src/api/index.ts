@@ -1,8 +1,10 @@
 import { type CloudCliText, cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
+import { PaginationQuerySchema, parsePagination } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getDateConfig,
   getLocale,
   getTimeZone,
@@ -3195,6 +3197,44 @@ const app = new Hono<AuthContext>()
 const adminApp = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
   .get(
+    "/",
+    auth.requireOAuthScope("read", "admin"),
+    describeRoute({
+      tags: ["Spaces Admin"],
+      summary: "List Spaces for access recovery",
+      description: "Lists Space metadata and access counts without calendar export tokens. Requires Cloud admin.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            items: z.array(SpaceSchema.omit({ icalToken: true }).extend({ permissionCount: z.number() })),
+            page: z.number(),
+            perPage: z.number(),
+            total: z.number(),
+            hasNext: z.boolean(),
+            summary: z.object({ total: z.number(), orphaned: z.number(), totalPermissions: z.number() }),
+          }),
+          "Space metadata and access counts",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "Cloud admin required"),
+      },
+    }),
+    v("query", PaginationQuerySchema.extend({ search: z.string().max(200).optional() })),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const query = c.req.valid("query");
+      const filter = { query: query.search };
+      const [spaces, summary] = await Promise.all([
+        spacesService.space.admin.list({ pagination: parsePagination(query), filter }),
+        spacesService.space.admin.summary({ filter }),
+      ]);
+      return respond(
+        c,
+        ok({ ...spaces, items: await projectSpaces(spaces.items.map(({ icalToken: _icalToken, ...item }) => item)), summary }),
+      );
+    },
+  )
+  .get(
     "/:id/access",
     describeRoute({
       tags: ["Spaces Admin"],
@@ -3322,7 +3362,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      return respondMessage(c, spacesService.space.remove({ id: spaceId! }), "spaceDeleted");
+      return respondMessage(c, spacesService.space.remove({ id: spaceId!, actorId: expectUserBackedActor(c).id }), "spaceDeleted");
     },
   );
 
