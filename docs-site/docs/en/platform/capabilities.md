@@ -560,9 +560,23 @@ are incomplete. The manifest advertises the supported targets and owners in
 | Function | Responsibility |
 | --- | --- |
 | `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
-| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
+| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`; successful dry runs also return `managerUserIds`. |
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
+
+Successful adapter dry runs identify current human managers in `managerUserIds`,
+including members of manager groups. Return an empty array when no person
+manages the target; service accounts are never notification recipients.
+Generated `code.access.set` answers preserve this field only when the activating
+person may read the target. Core notifications use the separate server-only
+lookup described below, including for Cloud admins who cannot read the target.
+
+`CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
+using the capability result byte budget. The complete set result and its receipt
+must fit that budget too. Refuse with a reason when all managers cannot fit;
+never truncate the notification recipients. Spaces and Mail return manager IDs
+only during dry runs. A Code manager check during a directory update can fail
+transiently; retry after the update finishes.
 
 Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
 dry runs and retries. Lock the target's authority before reading its current
@@ -587,9 +601,11 @@ that transaction first or acquire the platform locks first. Core account inspect
 uses its separate account-scoped authority.
 
 Use only the supplied transaction for adapter reads and writes. Never open a
-separate database connection from `manages`, `grant`, `revoke` or `list`. Do not publish
-events, send notifications, or perform other external effects there. A dry run
-must produce the same decision without effects; Cloud also rolls back its
+separate database connection from `manages`, `grant`, `revoke` or `list`. Transactional
+outbox writes, such as access invalidations, are allowed and roll back with the
+grant. Do not deliver events, send notifications, or perform other external
+effects there. A dry run must produce the same decision without effects;
+Cloud also rolls back its
 transaction. A refusal or exception rolls back the adapter's writes. Code
 receives neither `admin` nor a manager role. Keep different grant IDs
 independent, even for the same account and target: rolling back a new
