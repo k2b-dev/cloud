@@ -302,7 +302,7 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
     await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(built.policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-        VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${item.operations}::text[],'planned')`;
+        VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${tx.array(item.operations, "text")},'planned')`;
   });
   return plan;
 }

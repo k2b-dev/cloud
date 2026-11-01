@@ -14,6 +14,7 @@ import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
@@ -73,18 +74,29 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
   types: { item: { title: "Item", description: "Fixture item.", reader: "item.read" } },
   queries: { "item.read": { ...operation, input: z.object({ id: z.string().describe("Item ID.") }).strict() } },
   actions: {
-    "item.change": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
-    "item.add": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
+    "item.change": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
+    "item.add": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
   },
 });
 
+let database: Awaited<ReturnType<typeof useFreshDatabase>>;
 databaseSuite()("durable Code activation", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
     readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -189,6 +201,7 @@ databaseSuite()("durable Code activation", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
+    await migratePwa();
     readersSpy = spyOn(provider, "readResourcePrincipals").mockImplementation(async (input) => ({
       state: "checked",
       readable: [...input.principals],
@@ -201,6 +214,14 @@ databaseSuite()("durable Code activation", () => {
     await migrateApprovals();
     await migrateVersions();
     await migrateActivation();
+    // Exercise upgrades before status queries cache the original table result shape.
+    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
+    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
+    await migrateActivation();
+    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(
+      (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
+    ).toBeNull();
     for (const id of [ownerId, adminId, nextOwnerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',${id === adminId})`;
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
@@ -227,7 +248,6 @@ databaseSuite()("durable Code activation", () => {
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
-    await database?.drop();
     setSystemTime();
   });
 
@@ -853,14 +873,19 @@ databaseSuite()("durable Code activation", () => {
     await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("cancelled");
     expect(live.size).toBe(0);
-    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
-    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
     await migrateActivation();
     await migrateActivation();
-    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid AND cancel_requested`).toEqual([
+      { id: activation.id },
+    ]);
     expect(
       (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
     ).toBeNull();
     expect((await status(code, activation.id)).state).toBe("cancelled");
   });
+});
+
+// The session fixture's file-level cleanup runs before the private database is removed.
+afterAll(async () => {
+  await database?.drop();
 });
