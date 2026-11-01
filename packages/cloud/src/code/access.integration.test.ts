@@ -261,7 +261,11 @@ suite("Code access at the target", () => {
 
   test("live grants block account deletion, cleanup releases the account and preserves replay tombstones", async () => {
     await setCodeAccess("inventory", bindings, input, context, dependencies);
-    await expect(sql`DELETE FROM auth.service_accounts WHERE id = ${principal}::uuid`).rejects.toThrow();
+    // Bun's rejection matcher observes the promise without starting a lazy SQL query.
+    await expect(sql`DELETE FROM auth.service_accounts WHERE id = ${principal}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23503",
+      constraint: "code_access_grants_live_principal_fkey",
+    });
     await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${principal}::uuid`;
     expect(await listCodeAccess("inventory", bindings, principal, { listPrincipal: principal })).toHaveLength(1);
     await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" });
