@@ -1,6 +1,6 @@
 import { CapabilityAppIdSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, err, fail, getDateConfig, getLocale, middleware, ok, respond, v } from "@k2b/cloud/server";
-import { canRepairAppAccess } from "@k2b/cloud/services";
+import { canReadAppAdministration } from "@k2b/cloud/services";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { createAppStatusReader } from "../../../app-status";
@@ -25,7 +25,7 @@ export const createAdminAppStatusRoutes = (authenticate: MiddlewareHandler<AuthC
     (c) =>
       respond(c, async () => {
         const authority = auth.getAuthority(c);
-        if (!canRepairAppAccess(authority)) return fail(err.forbidden("Cloud administration authority is required."));
+        if (!canReadAppAdministration(authority)) return fail(err.forbidden("Cloud administration authority is required."));
         const locale = getLocale(c);
         const { appId } = c.req.valid("param");
         const summaries = await createAppStatusReader().readAppStatusSummaries({
