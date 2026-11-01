@@ -8,6 +8,8 @@ import type { CapabilityActionManifest, CapabilityQueryManifest } from "./capabi
 export type CapabilityContract = {
   kind: "query" | "action";
   idempotency?: "required";
+  /** Fixed local resource Type whose ID the consumer supplies beside domain input. */
+  target?: string;
   /** The binary stream direction the operation must declare. Without it, streaming operations do not match. */
   stream?: "read" | "write";
   input: z.ZodType;
@@ -365,8 +367,14 @@ export const capabilityContractIssues = (
     return [{ code: "kind", path: "$", message: `Expected ${contract.kind === "query" ? "a Query" : "an Action"}` }];
   }
   const issues: CapabilityContractIssue[] = [];
-  if (candidate.operation.target !== undefined || candidate.operation.refs !== undefined)
-    issues.push({ code: "input", path: "$", message: "This consumer contract does not supply target or refs" });
+  if (candidate.operation.target !== contract.target || candidate.operation.refs !== undefined)
+    issues.push({
+      code: "input",
+      path: "$",
+      message: contract.target
+        ? `Expected target ${contract.target} without additional refs`
+        : "This consumer contract does not supply target or refs",
+    });
   const direction = candidate.operation.stream?.direction;
   if (contract.stream && direction !== contract.stream) {
     issues.push({ code: "stream", path: "$", message: `Expected a ${contract.stream} stream` });

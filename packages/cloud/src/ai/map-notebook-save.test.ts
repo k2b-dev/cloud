@@ -53,9 +53,12 @@ function fixture(content: string) {
     client: {
       fetch: async (url, init) => {
         expect(new TextEncoder().encode(String(init?.body)).byteLength).toBeLessThanOrEqual(CAPABILITY_MAX_REQUEST_BYTES);
-        const input = JSON.parse(String(init?.body)).input;
+        const body = JSON.parse(String(init?.body));
+        const input = body.input;
         const key = new Headers(init?.headers).get("idempotency-key");
         if (String(url).endsWith("note.create")) {
+          expect(body.target).toEqual({ type: "notebooks.notebook", id: "book01" });
+          expect(input).not.toHaveProperty("notebookId");
           expect(checkpoint?.pending?.kind).toBe("create");
           expect(key).toBe(checkpoint?.pending?.key ?? "");
           expect(input.content.length).toBeLessThanOrEqual(200_000);
@@ -74,6 +77,7 @@ function fixture(content: string) {
           return Response.json({ data: { id: "note01", notebookId: "book01", contentHash: contentHash(stored) } });
         }
         expect(String(url)).toEndWith("note.edit");
+        expect(body.target).toEqual({ type: "notebooks.notebook", id: "book01" });
         expect(key).toBeNull(); // This Action rejects platform idempotency keys.
         expect(checkpoint?.pending?.kind).toBe("append");
         attempts.push(checkpoint!.pending!.key);

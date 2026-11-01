@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { capabilityCallDigest } from "@k2b/cloud/capabilities/server";
 import {
   type CapabilityActionReview,
   type CapabilityExecutionContext,
@@ -487,6 +488,7 @@ const resolveContactForCheckedOperation = async (
   if (!internalContactId) return fail(err.notFound("Contact"));
   const bookId = await contactsService.contact.findBookId({ id: internalContactId });
   if (!bookId) return fail(err.notFound("Contact"));
+  if (context.target && (await resolvePublicId("books", context.target.id)) !== bookId) return fail(err.notFound("Contact"));
   const contact = withBookAccessMessage(
     await contactsService.contact.get({ actor: context.actor, accessSubject: context.accessSubject, bookId, id: internalContactId }),
     required,
@@ -501,6 +503,7 @@ const resolveContactAtLevel = async (contactId: string, context: CapabilityExecu
   if (!internalContactId) return fail(err.notFound("Contact"));
   const bookId = await contactsService.contact.findBookId({ id: internalContactId });
   if (!bookId) return fail(err.notFound("Contact"));
+  if (context.target && (await resolvePublicId("books", context.target.id)) !== bookId) return fail(err.notFound("Contact"));
   const contact = withBookAccessMessage(
     await contactsService.contact.get({
       level: required,
@@ -872,15 +875,15 @@ const resolveWriteRelations = async <T extends { parentContactId?: string | null
 };
 
 const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>, context: CapabilityExecutionContext) => {
-  const auditParams = actionAudit(context, "contact.create", "contact_book", input.bookId);
+  const auditParams = actionAudit(context, "contact.create", "contact_book", context.target?.id ?? "");
   let replayed = false;
   return audited(
     auditParams,
     async () => {
       if (!context.idempotencyKey) return fail(err.badInput("Idempotency-Key is required"));
-      const internalBookId = await resolvePublicId("books", input.bookId);
+      const internalBookId = await resolvePublicId("books", context.target?.id ?? "");
       if (!internalBookId) return fail(err.notFound("Book"));
-      const { bookId, ...data } = input;
+      const data = input;
       const internalData = await resolveWriteRelations(internalBookId, data);
       if (!internalData.ok) return failAfterBookAccess(context, [{ bookId: internalBookId, level: "write" }], internalData.error);
       const result = await contactsService.contact.createIdempotent({
@@ -891,7 +894,12 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
         actorKey: actorKey(context),
         actionId: CONTACT_CREATE_ACTION_ID,
         idempotencyKeyHash: sha256(context.idempotencyKey),
-        requestHash: sha256(JSON.stringify(input)),
+        requestHash: capabilityCallDigest({
+          capability: "contacts.contact.create",
+          target: context.target ?? null,
+          refs: context.refs ?? {},
+          input,
+        }),
       });
       if (!result.ok) return withBookAccessMessage(result, "write");
       replayed = result.data.replayed;
@@ -959,7 +967,7 @@ const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, con
   return audited(auditParams, async () => {
     const source = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!source.ok) return source;
-    const targetBookId = await resolvePublicId("books", input.targetBookId);
+    const targetBookId = await resolvePublicId("books", context.refs?.targetBookId?.id ?? "");
     if (!targetBookId) return failAfterBookAccess(context, [{ bookId: source.data.bookId, level: "write" }], err.notFound("Book"));
     const result = await contactsService.contact.move({
       actor: context.actor,
@@ -1088,7 +1096,12 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
         actorKey: actorKey(context),
         actionId: NOTE_CREATE_ACTION_ID,
         idempotencyKeyHash: sha256(context.idempotencyKey),
-        requestHash: sha256(JSON.stringify(input)),
+        requestHash: capabilityCallDigest({
+          capability: "contacts.note.create",
+          target: context.target ?? null,
+          refs: context.refs ?? {},
+          input,
+        }),
       });
       if (!created.ok) return withBookAccessMessage(created, "write");
       replayed = created.data.replayed;
@@ -1254,6 +1267,7 @@ export const contactsCapabilities = defineCapabilities({
   },
   actions: {
     "contact.create": {
+      target: "book",
       title: "Create contact",
       description: "Create one contact in an explicitly selected writable address book.",
       input: ContactCreateInputSchema,
@@ -1264,9 +1278,9 @@ export const contactsCapabilities = defineCapabilities({
       approval: "rememberable",
       review: async (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
-        const access = await requireBookPermission(input.bookId, context, "write");
+        const access = await requireBookPermission(context.target?.id ?? "", context, "write");
         if (!access.ok) return access;
-        const { bookId: _bookId, ...data } = input;
+        const data = input;
         const internalData = await resolveWriteRelations(access.data.bookId, data);
         if (!internalData.ok) return internalData;
         const [publicBook] = await projectBooks([access.data.book]);
@@ -1313,6 +1327,7 @@ export const contactsCapabilities = defineCapabilities({
       run: runContactCreate,
     },
     "contact.update": {
+      target: "book",
       title: "Update contact",
       description: "Update selected contact fields; provided collection fields replace their current values.",
       input: ContactUpdateInputSchema,
@@ -1377,6 +1392,8 @@ export const contactsCapabilities = defineCapabilities({
       run: runContactUpdate,
     },
     "contact.move": {
+      target: "book",
+      refs: { targetBookId: "book" },
       title: "Move contact",
       description: "Move a contact to another writable book. Book-scoped tags and hierarchy links are removed.",
       input: ContactMoveInputSchema,
@@ -1387,7 +1404,7 @@ export const contactsCapabilities = defineCapabilities({
       idempotency: "required",
       review: async (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
-        const target = await requireBookPermission(input.targetBookId, context, "write");
+        const target = await requireBookPermission(context.refs?.targetBookId?.id ?? "", context, "write");
         if (!target.ok) return target;
         return reviewContactAction(input.contactId, context, "write", (contact) => ({
           message: t.moveReview({ contact: resolveContactName(contact), book: target.data.book.name }),
@@ -1401,6 +1418,7 @@ export const contactsCapabilities = defineCapabilities({
       run: runContactMove,
     },
     "contact.delete": {
+      target: "book",
       title: "Delete contact",
       description: "Permanently delete one contact after an optimistic version check.",
       input: ContactDeleteInputSchema,
@@ -1418,6 +1436,7 @@ export const contactsCapabilities = defineCapabilities({
       run: runContactDelete,
     },
     "favorite.set": {
+      target: "book",
       title: "Set contact favorite",
       description: "Set or clear the current user's favorite state for one readable contact.",
       input: FavoriteSetInputSchema,
@@ -1438,6 +1457,7 @@ export const contactsCapabilities = defineCapabilities({
       run: runFavoriteSet,
     },
     "tag.change": {
+      target: "book",
       title: "Change contact tags",
       description: "Atomically add and remove book-scoped tags on one writable contact.",
       input: ContactTagChangeInputSchema,
@@ -1479,6 +1499,7 @@ export const contactsCapabilities = defineCapabilities({
       run: runTagChange,
     },
     "note.create": {
+      target: "book",
       title: "Create contact note",
       description: "Append a user-authored note to one writable contact exactly once.",
       input: ContactNoteCreateInputSchema,

@@ -491,7 +491,6 @@ export const TemplateDataSchema = z
   })
   .strict();
 export const TemplateCreateInputSchema = CreateItemTemplateSchema.safeExtend({
-  spaceId: SpaceIdSchema,
   description: markdownInput(CreateItemTemplateSchema.shape.description),
 });
 export const TemplateUpdateInputSchema = UpdateItemTemplateSchema.safeExtend({
@@ -511,8 +510,9 @@ const TemplateUseInputShape = {
 
 export const TaskCreateInputSchema = z
   .object({
-    spaceId: SpaceIdSchema,
-    columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
+    columnId: ResourceShortIdSchema.optional().describe(
+      "Optional target column ID returned by Read space. When omitted, the task goes to the Space's first open column, the first one in board order that is not marked done.",
+    ),
     title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
     description: markdownInput(z.string().max(5000).optional().describe("Optional task description.")),
     deadline: DeadlineInputSchema.optional(),
@@ -558,7 +558,6 @@ const validTimeRange = (value: { startsAt?: string; endsAt?: string }) =>
 
 export const EventCreateInputSchema = z
   .object({
-    spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).optional().describe("Event title; required unless the template has one."),
     description: markdownInput(z.string().max(5000).optional().describe("Optional event description.")),
@@ -684,7 +683,6 @@ export const CalendarInvitationResponsePrepareInputSchema = CalendarInvitationPr
 }).strict();
 export const CalendarInvitationResponsePrepareDataSchema = CalendarInvitationResponseSchema;
 export const CalendarInvitationImportCapabilityInputSchema = CalendarInvitationPreviewCapabilityInputSchema.extend({
-  spaceId: ResourceShortIdSchema.describe("Writable destination Space ID."),
   conversation: ItemResourceReferenceInputSchema.describe("Source Mail conversation linked to the imported event."),
 }).strict();
 export const CalendarInvitationImportCapabilityDataSchema = CalendarInvitationImportResultSchema;

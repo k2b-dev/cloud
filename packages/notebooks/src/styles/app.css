@@ -307,21 +307,15 @@
     --notebook-measure: 100%;
   }
 }
-/* The button that hides or shows the navigation sidebar beside the editor
-   and the graph: the sidebar is a column from a 64 rem app host. Below that
-   the workspace head's button opens it as an overlay, so this button only
-   brings a hidden navigation back (from 48 rem). Phones keep the header's
-   menu. */
+/* The navigation button in the editor's and the graph's toolbar: those pages
+   draw no workspace head, so from 48 rem it opens the overlay navigation below
+   a 64 rem app host and shows or hides the column from there. Phones keep the
+   header's menu. */
 .notebooks-navigation-toggle {
   display: none;
   flex-shrink: 0;
 }
 @media (min-width: 48rem) {
-  .notebooks-navigation-toggle[data-navigation-hidden] {
-    display: flex;
-  }
-}
-@container k2b-app-area (min-width: 64rem) {
   .notebooks-navigation-toggle {
     display: flex;
   }

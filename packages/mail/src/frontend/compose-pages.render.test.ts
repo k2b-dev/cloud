@@ -227,6 +227,24 @@ for (const page of pages) {
   });
 }
 
+for (const page of pages) {
+  test(`${page.island} answers 404 for a mailbox the caller may not read, as for an unknown address`, async () => {
+    spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
+    spies.push(spyOn(mailboxes, "getMailbox").mockResolvedValue(fail(err.forbidden("Access denied"))));
+    const response = await request(page.path);
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain(page.island);
+  });
+}
+
+test("a draft hidden from a member of the mailbox answers 404 on its compose page", async () => {
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "assigned", permission: "write", userId: user.id })));
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(fail(err.notFound("Draft"))));
+  const response = await request("Drf001");
+  expect(response.status).toBe(404);
+  expect(await response.text()).not.toContain("MailComposerPage");
+});
+
 for (const path of ["Drf001", "local/seed-1"]) {
   test(`compose ${path} keeps resolved credential limits for calendar discovery`, async () => {
     spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ permission: "write", scope: "assigned", userId: user.id })));

@@ -139,8 +139,8 @@ suiteFor(
     expect(forbidden.ok).toBe(false);
     calls.length = 0;
     const editReview = await chatCapabilities.actions["message.edit"].review(
-      { id: first.ref.id, revision: 0, body: "Corrected" },
-      context(author, "edit-review"),
+      { revision: 0, body: "Corrected" },
+      { ...context(author, "edit-review"), target: { type: "chat.message", id: first.ref.id } },
     );
     expect(editReview.ok).toBe(true);
     expect(calls).toEqual(["resource.fetch", "collection.read"]);
@@ -173,8 +173,8 @@ suiteFor(
     expect(mcpEdit.ok && mcpEdit.data.data.via).toBe("mcp");
     calls.length = 0;
     const deleteReview = await chatCapabilities.actions["message.delete"].review(
-      { id: first.ref.id, revision: 2 },
-      context(author, "delete-review"),
+      { revision: 2 },
+      { ...context(author, "delete-review"), target: { type: "chat.message", id: first.ref.id } },
     );
     expect(deleteReview.ok).toBe(true);
     expect(calls).toEqual(["resource.fetch", "collection.read"]);

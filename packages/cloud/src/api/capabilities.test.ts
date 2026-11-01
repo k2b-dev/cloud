@@ -1,5 +1,5 @@
 import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
@@ -2115,13 +2115,14 @@ test("resource target and refs traverse HTTP, dispatcher, review and provider wi
             : { parentInvocation }),
           dependencies: {
             getCapability: async () => app,
+            withMandateIssueAuthority: async () => fail(err.forbidden("Mandate policy does not allow this operation")),
             fetch: async () => {
               throw new Error("Must not forward");
             },
           },
         });
         expect(response.status).toBe(403);
-        expect(await response.json()).toMatchObject({ code: "MANDATE_POLICY_DENIED" });
+        expect(await response.json()).toMatchObject({ code: source === "direct" ? "MANDATE_FORBIDDEN" : "MANDATE_POLICY_DENIED" });
       }
     }
   }

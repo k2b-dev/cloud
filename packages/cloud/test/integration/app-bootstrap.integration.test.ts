@@ -14,7 +14,13 @@ import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { platformStartFixture } from "../../scripts/platform-start.test-fixture";
 import { bootstrapConnections } from "../../src/runtime/bootstrap-client";
-import { BOOTSTRAP_BODY, BOOTSTRAP_PATH, bootstrapBodyDigest, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
+import {
+  BOOTSTRAP_BODY,
+  BOOTSTRAP_PATH,
+  bootstrapBodyDigest,
+  signAppProof,
+  signBootstrapProof,
+} from "../../src/runtime/bootstrap-protocol";
 import { sql } from "../../src/runtime/clients";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
@@ -107,6 +113,39 @@ suiteFor(
       await sql`UPDATE auth.service_account_credentials SET connections_allowed = true WHERE id = ${key.keyId}::uuid`;
     }
     expect((await routes[1].request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
+  });
+
+  test("runner key cannot bootstrap even with connections_allowed, but can sign run acquisition", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "runner", publicKey: APP_KEY_FIXTURES[2].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const runnerKey: AppKey = {
+      appId: "runner",
+      keyId: enrolled.data.keyId,
+      installationId: enrolled.data.installationId,
+      seed: APP_KEY_FIXTURES[2].seed,
+    };
+    try {
+      await sql`UPDATE auth.service_account_credentials SET connections_allowed = true WHERE id = ${runnerKey.keyId}::uuid`;
+      for (const route of routes) {
+        const response = await route.request(BOOTSTRAP_PATH, request(await signBootstrapProof(runnerKey)));
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ code: "connections_not_permitted" });
+      }
+      const body = new TextEncoder().encode(JSON.stringify({ instanceId: "33333333-3333-4333-8333-333333333333", freeSlots: 2 }));
+      const runRequest = { method: "POST", path: "/_internal/code/runner/fetch", body };
+      const verified = await authenticateAppProof(await signAppProof(runnerKey, runRequest), runRequest);
+      expect(verified.identity.appId).toBe("runner");
+      const [replays] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE key_id = ${runnerKey.keyId}::uuid`;
+      expect(replays?.n).toBe(0);
+    } finally {
+      // Cleanup budgets count every enrolled key, including revoked keys. Remove
+      // this test's account/key even when an assertion fails, restoring that budget.
+      await sql.begin(async (db) => {
+        await db`DELETE FROM auth.app_start_rejections WHERE app_id = 'runner' AND key_id = ${runnerKey.keyId}::uuid`;
+        await db`DELETE FROM auth.service_accounts WHERE id = (
+          SELECT service_account_id FROM auth.service_account_credentials WHERE id = ${runnerKey.keyId}::uuid)`;
+      });
+    }
   });
 
   const lastRejectedStart = async () => {
@@ -585,6 +624,9 @@ suiteFor(
       await seedExpired(350);
       expect(await cleanupBootstrapProofs()).toEqual({ deleted: 350, remaining: 0 });
       await setSetting("security.rate_limit_per_second", 1);
+      // At one proof/second, one enrolled key admits 120 retained proofs.
+      const [keys] = await sql`SELECT count(*)::int AS n FROM auth.service_account_credentials WHERE kind = 'app_key'`;
+      expect(keys?.n).toBe(1);
       await seedExpired(250);
       const cancelled = new AbortController();
       cancelled.abort(new Error("cleanup cancelled"));

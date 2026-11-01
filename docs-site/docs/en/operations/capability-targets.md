@@ -23,8 +23,19 @@ its contract and schema hash; coordinate that application's callers and stored
 work before deploying its converted declaration.
 
 Legacy mandates constrain domain input only. They are refused for operations
-that declare targets or refs. Upgrade target-aware grant support and migrate
-stored work before enabling these operations for background callers.
+that declare targets or refs unless an explicit target grant covers the call.
+Migrate stored work to the [target grant format](/en/docs/identity/background-mandates#bind-operations-to-targets)
+before enabling these operations for background callers. Never discard an old
+fixed target field when migrating a routine; unresolvable restrictions require
+`needs_attention`. Code version invocations use their mandate instead of
+credential scopes and human app-entry rules, while each target still checks
+the Code account's own resource access.
+
+Human app-entry rules, including admin-only roles, guest restrictions and app
+access lists, do not disable confirmed Code version invocations. To stop that
+Code, pause or revoke its mandate, disable its account, or remove its own access
+at the target. People's app-entry checks continue to apply to personal Code
+and person-owned routines.
 
 A resource-bound approval and idempotency claim include the target and every
 additional reference. Reusing a key with a different target returns
@@ -36,5 +47,30 @@ Older Core readers omit operations with target fields they cannot understand.
 They do not invoke those operations after stripping the fields. Other
 operations remain available.
 
+Spaces and Contacts Actions now use fixed `space` and `book` targets.
+Creation inputs omit `spaceId` and `bookId`; contact moves carry their
+destination in `refs.targetBookId`. Upgrade Mail with these providers so its
+calendar, linked-item and contact-creation calls send the new coordinates.
+Directory providers implementing `create` declare a local `book` Type and
+move the selected book out of `ContactDirectoryCreateInputSchema`.
+
+The Spaces invitation preparation and commit Actions declare `code: false`.
+Resource-owned Code must leave them out; person calls keep their service
+permission checks. Stored routine grants and approvals still need the
+coordinated migration before this branch is released.
+
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
+
+## Converted application Actions
+
+Notebooks binds note, comment and annotation Actions to the notebook. Pulse
+binds existing-resource Actions to the Base. Venue binds assignments to the
+venue, Weather binds deletion to the saved location, and Core binds Skill
+changes to the Skill and routine changes to the AI chat. Chat binds message
+changes to the message and notification preferences and follows to the
+conversation. Their primary resource selectors move from `input` to `target`;
+refresh generated clients and the capability catalog together with these apps.
+
+All Chat Actions declare `code: false` for resource Code, including
+personal notification preferences. Calls acting as a person retain their existing permission checks.

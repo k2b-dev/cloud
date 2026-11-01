@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { aiSkillLoadTools } from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { spacesCapabilities } from "./capabilities";
 import { SKILLS } from "./skills";
 
 test("ships its Skills with every reference linked from the instructions", () => {
@@ -43,4 +46,14 @@ test("Spaces skill explains assignee previews and overdue tasks", () => {
 
 test("main instructions stay compact", () => {
   expect(SKILLS[0]!.instructions.length).toBeLessThan(5000);
+});
+
+test("Skills load only capabilities the app declares", () => {
+  const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
+  const declared = [...manifest.queries, ...manifest.actions].map((operation) => `spaces.${operation.localId}`);
+  for (const skill of SKILLS) {
+    const names = aiSkillLoadTools(skill.extraFrontmatter);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(declared).toContain(name);
+  }
 });

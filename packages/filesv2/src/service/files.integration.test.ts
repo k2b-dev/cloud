@@ -15,7 +15,7 @@ import { operations, ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
-import { entryRefId } from "../resource-ref";
+import { entryRefId, stableEntryRefId } from "../resource-ref";
 import { createFilesService } from ".";
 import { systemCall } from "./activity";
 import { connectFilegate } from "./filegate-facade";
@@ -2928,6 +2928,38 @@ suite("Files service and durable bindings", () => {
     privateSession(expired.id)!.state = "expired";
     await service.abortUpload(testCall(actor), { baseId, id: expired.id });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${expired.id}`)[0]!.state).toBe("expired");
+  });
+  test("root targets preserve access to readable descendants below a traverse-only FreeIPA root", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice", 1001, 2001, "0110");
+    directory("freeipa", "users/alice/Shared");
+    const base = (await service.bases(testCall(actor))).items[0]!;
+    const id = entryRefId(base.id, "")!;
+    expect(await service.rootLocation(testCall(actor), id)).toEqual({ baseId: base.id });
+    await expect(
+      service.rootLocation(testCall(actor), stableEntryRefId(base.id, "11111111-1111-4111-8111-111111111111")!),
+    ).rejects.toMatchObject({
+      code: "root_target_required",
+    });
+    await expect(service.folderLocation(testCall(actor), id)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await service.list(testCall(actor), { baseId: base.id, path: "Shared" })).path).toBe("Shared");
+    await expect(service.rootLocation(testCall(actor), entryRefId(base.id, "Shared")!)).rejects.toMatchObject({
+      code: "root_target_required",
+    });
+  });
+  test("root entry refs resolve through the canonical reader with current storage permissions", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const base = (await service.bases(testCall(actor))).items[0]!;
+    const id = entryRefId(base.id, "")!;
+    const root = await service.entryById(testCall(actor), id);
+    expect(root).toMatchObject({
+      base: { id: base.id },
+      entry: { path: "", directory: true, name: base.name, resourceId: id },
+      resourceId: id,
+    });
+    directory("freeipa", "users/alice", 1001, 2001, "0000");
+    await expect(service.entryById(testCall(actor), id)).rejects.toMatchObject({ code: "forbidden" });
   });
   test("long resource references persist complete paths without bypassing current rights", async () => {
     const actor = await user("alice", "ipa");

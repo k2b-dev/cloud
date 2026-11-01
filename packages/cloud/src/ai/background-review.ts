@@ -1,4 +1,4 @@
-import type { CapabilityActionPolicy, CapabilityActionReviewData } from "../contracts/capabilities";
+import type { CapabilityActionPolicy, CapabilityActionReviewData, NormalizedCapabilityCall } from "../contracts/capabilities";
 import { aiChatTasks } from "./chat-tasks";
 
 export class AiBackgroundApprovalRequiredError extends Error {
@@ -19,6 +19,8 @@ type BackgroundActionInput = {
   capabilityId: string;
   kind: "query" | "action";
   args: unknown;
+  /** Validated operation and target coordinates; domain arguments alone cannot authorize a bound grant. */
+  call?: NormalizedCapabilityCall;
   policy?: CapabilityActionPolicy;
   approval?: "none" | "rememberable" | "always";
   hasReview: boolean;
@@ -43,6 +45,7 @@ export const authorizeBackgroundActionWith = async (
     capabilityId: input.capabilityId,
     kind: input.kind,
     input: input.args,
+    ...(input.call ? { call: input.call } : {}),
     approval: input.approval,
     ...(input.policy ? { policy: input.policy } : {}),
   });

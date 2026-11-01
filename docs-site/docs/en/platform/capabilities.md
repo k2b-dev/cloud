@@ -871,6 +871,9 @@ state.
 
 Record security-sensitive mutations with [Audit events](/en/docs/platform/audit-events).
 
+The [Code SDK](/en/docs/platform/code-sdk) generates target-specific handles
+from these contracts, with typed refs and idempotency keys.
+
 ### Name the resource an operation acts on
 
 Declare `target` when an Action acts on a resource. It names a local Type of
@@ -881,7 +884,9 @@ at application level; existing declarations continue to work during migration.
 Canonical resource readers, Universal Search, Action outcome checks and shared
 file, calendar and discussion provider contracts supply only their existing
 domain input. They cannot declare `target` or `refs`; publish a separate Query
-when an explicit caller needs a container target.
+when an explicit caller needs a container target. Consumer contracts may name
+a fixed local `CapabilityContract.target`; the provider must match it exactly
+without additional refs. The contact directory's create Action uses `book`.
 
 ```ts
 actions: {
