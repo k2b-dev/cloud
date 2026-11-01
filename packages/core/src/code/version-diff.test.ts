@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
 import type { CodeDiffFile } from "@k2b/ui";
@@ -129,7 +130,13 @@ describe("C8 complete CodeDiff and submission contracts", () => {
     expect(actions).toHaveLength(8);
     expect(actions.every((action) => action.code === false)).toBe(true);
     expect(actions.every((action) => action.target === "code")).toBe(true);
-    for (const action of actions) expect(action.inputSchema).not.toHaveProperty("properties.codeId");
+    for (const action of actions) {
+      expect(action.inputSchema).not.toHaveProperty("properties.codeId");
+      const toolInput = capabilityToolInputSchema(action);
+      expect(toolInput).toHaveProperty("properties.code");
+      expect(toolInput.required).toContain("code");
+      expect(toolInput).not.toHaveProperty("properties.codeId");
+    }
     expect(aiCapabilities.actions["code.version.approve"].policy).toEqual({ ask: "changes_access" });
     expect(aiCapabilities.actions["code.version.reject"].policy).toEqual({ ask: "changes_access" });
     expect(codeVersionMessages.check()).toEqual([]);

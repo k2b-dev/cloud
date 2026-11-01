@@ -332,7 +332,8 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
         appId: "core",
         capabilityId: paused ? "code.pause" : "code.resume",
         kind: "action",
-        input: { codeId: props.state.code.id },
+        target: { type: "core.code", id: props.state.code.id },
+        input: {},
         idempotencyKey: crypto.randomUUID(),
       },
       ChangedSchema,
@@ -754,7 +755,14 @@ function ResumeButton(props: { codeId: string; t: CodePageMessages }) {
   const resume = async () => {
     setBusy(true);
     const result = await invokeCapabilityWithDataSchema(
-      { appId: "core", capabilityId: "code.resume", kind: "action", input: { codeId: props.codeId }, idempotencyKey: crypto.randomUUID() },
+      {
+        appId: "core",
+        capabilityId: "code.resume",
+        kind: "action",
+        target: { type: "core.code", id: props.codeId },
+        input: {},
+        idempotencyKey: crypto.randomUUID(),
+      },
       ChangedSchema,
     );
     setBusy(false);
@@ -786,7 +794,8 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
         appId: "core",
         capabilityId: "code.run",
         kind: "action",
-        input: { codeId: props.state.code.id, entrypoint: props.automation.entrypoint, input: null },
+        target: { type: "core.code", id: props.state.code.id },
+        input: { entrypoint: props.automation.entrypoint, input: null },
         idempotencyKey: crypto.randomUUID(),
       },
       wrapped(StartSchema),
@@ -1018,7 +1027,8 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
         appId: "core",
         capabilityId: "code.run",
         kind: "action",
-        input: { codeId: props.state.code.id, entrypoint: run().entrypoint, input: props.detail.input ?? null },
+        target: { type: "core.code", id: props.state.code.id },
+        input: { entrypoint: run().entrypoint, input: props.detail.input ?? null },
         // One rerun per failed run, also after a lost response or a double click.
         idempotencyKey: `rerun:${run().id}`,
       },

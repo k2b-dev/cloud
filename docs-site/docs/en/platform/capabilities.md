@@ -1081,8 +1081,7 @@ except Actions implementing a shared provider role, which keep that role's input
 contract, and the platform-generated access Actions described below. Foreign
 provider-owned refs and selectors inside an application-wide document also stay
 in input: they do not select a resource owned by the Action provider to mutate.
-Third-party
-application authors follow the same contract; `code: false` alone does not
+Third-party application authors follow the same contract; `code: false` alone does not
 exempt a resource Action.
 Canonical resource readers, Universal Search, Action outcome checks and shared
 file, calendar, app-status and discussion provider contracts supply only their existing
