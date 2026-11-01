@@ -189,7 +189,9 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     const summary = await readCodeSummary({ owner }, ctx(ids.manager));
     expect(summary.items).toHaveLength(1);
     expect(summary.items[0]).toMatchObject({ codeId: row!.id, automations: 2 });
-    expect((await readCodeSummary({ owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-none" } } }, ctx(ids.manager))).items).toEqual([]);
+    expect(
+      (await readCodeSummary({ owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-none" } } }, ctx(ids.manager))).items,
+    ).toEqual([]);
   });
 
   test("an owner that cannot answer skips its Code instead of failing the list", async () => {

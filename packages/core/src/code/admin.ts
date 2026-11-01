@@ -653,7 +653,10 @@ export async function explainCodeVersion(
     });
     text = result.output.explanation;
   } catch (error) {
-    logger("core:code-admin").warn("Code version explanation failed", { versionId, error: error instanceof Error ? error.name : "unknown" });
+    logger("core:code-admin").warn("Code version explanation failed", {
+      versionId,
+      error: error instanceof Error ? error.name : "unknown",
+    });
     throw new CodeExplanationUnavailableError();
   }
   const [saved] = await sql<{ text: string }[]>`INSERT INTO code.version_explanations(version_id,locale,text)

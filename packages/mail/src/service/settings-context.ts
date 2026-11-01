@@ -31,7 +31,11 @@ const CodeSummarySchema = z.object({
 const CODE_SUMMARY_TIMEOUT_MS = 800;
 
 /** Asks Core through its public query, like any application. It never fails the settings: no answer means null. */
-const loadMailboxCodeSummary = async (mailboxId: string, authority: RequestAuthority | null, locale?: string): Promise<MailboxCodeSummary | null> => {
+const loadMailboxCodeSummary = async (
+  mailboxId: string,
+  authority: RequestAuthority | null,
+  locale?: string,
+): Promise<MailboxCodeSummary | null> => {
   if (!authority) return null;
   try {
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;

@@ -319,13 +319,9 @@ databaseSuite()("C22 Administration › Code read model", () => {
       return { output: { explanation: "Zählt einmal pro Woche." } };
     }) as unknown as Parameters<typeof explainCodeVersion>[2];
     await expect(
-      explainCodeVersion(
-        plain.version.id,
-        reviewer,
-        (async () => {
-          throw new Error("no model");
-        }) as unknown as Parameters<typeof explainCodeVersion>[2],
-      ),
+      explainCodeVersion(plain.version.id, reviewer, (async () => {
+        throw new Error("no model");
+      }) as unknown as Parameters<typeof explainCodeVersion>[2]),
     ).rejects.toBeInstanceOf(CodeExplanationUnavailableError);
     expect(await explainCodeVersion(plain.version.id, reviewer, generate)).toEqual({ text: "Zählt einmal pro Woche." });
     expect(await explainCodeVersion(plain.version.id, reviewer, generate)).toEqual({ text: "Zählt einmal pro Woche." });
@@ -335,7 +331,15 @@ databaseSuite()("C22 Administration › Code read model", () => {
     // Source reads with the version bound to its Code; another Code's version is not found.
     expect(await readCodeAdminVersionSource("c_check1", tested.version.id, reviewer)).toMatchObject({
       number: 1,
-      files: [{ path: "code.ts", lines: [{ kind: "add", text: "export const a = 1;" }, { kind: "add", text: "example.item.change();" }] }],
+      files: [
+        {
+          path: "code.ts",
+          lines: [
+            { kind: "add", text: "export const a = 1;" },
+            { kind: "add", text: "example.item.change();" },
+          ],
+        },
+      ],
     });
     await expect(readCodeAdminVersionSource("c_admin1", tested.version.id, reviewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });

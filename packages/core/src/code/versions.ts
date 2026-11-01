@@ -29,8 +29,8 @@ import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersi
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
-import { validateCodeSecretBindings } from "./secrets";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
+import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
 import {
   codeBundleHash,
@@ -42,6 +42,7 @@ import {
   readCode,
   readCodeVersion,
 } from "./store";
+import { testCode } from "./testing";
 import {
   CodeCheckedVersionManifestSchema,
   type CodeVersionBinding,
@@ -49,9 +50,8 @@ import {
   type CodeVersionSubmission,
   codeVersionContracts,
 } from "./version-contracts";
-import { testCode } from "./testing";
-import { type CodeVersionEvidence, codeVersionEvidence, NO_TESTS_EVIDENCE, unavailableEvidence } from "./version-evidence";
 import { codeVersionDiff } from "./version-diff";
+import { type CodeVersionEvidence, codeVersionEvidence, NO_TESTS_EVIDENCE, unavailableEvidence } from "./version-evidence";
 import { codeVersionMessages } from "./version-messages";
 
 /** Stable refusal codes for CLI, chat tools and activation. Conflict details contain the current full comparison. */
@@ -244,7 +244,9 @@ async function submissionEvidence(
   if (!input.tests || !Object.keys(input.tests).length) return NO_TESTS_EVIDENCE;
   try {
     const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, context);
-    return codeVersionEvidence(await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(context), context.signal));
+    return codeVersionEvidence(
+      await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(context), context.signal),
+    );
   } catch (error) {
     if (context.signal?.aborted) throw error;
     return unavailableEvidence("code_test_runner_unavailable");

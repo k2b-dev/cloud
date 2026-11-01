@@ -10,14 +10,15 @@ const root = mkdtempSync(join(tmpdir(), "core-code-area-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const [{ LocaleProvider }, { approvalCheck, CodeAreaView }, { codeAdminMessages }, { parseCodeAreaQuery }, { codeFixtureData }, data] = await Promise.all([
-  import("@k2b/ui"),
-  import("./view"),
-  import("./messages"),
-  import("./area"),
-  import("./CodeArea.fixture-data"),
-  import("./CodeArea.fixture-data"),
-]);
+const [{ LocaleProvider }, { approvalCheck, CodeAreaView }, { codeAdminMessages }, { parseCodeAreaQuery }, { codeFixtureData }, data] =
+  await Promise.all([
+    import("@k2b/ui"),
+    import("./view"),
+    import("./messages"),
+    import("./area"),
+    import("./CodeArea.fixture-data"),
+    import("./CodeArea.fixture-data"),
+  ]);
 
 type State = Parameters<typeof codeFixtureData>[0];
 const render = (query: Record<string, string>, state: State = "normal", locale = "de") =>

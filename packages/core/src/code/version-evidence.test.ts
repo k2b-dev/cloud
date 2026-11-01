@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CodeTestResult } from "@k2b/cloud/code";
-import { codeVersionEvidence, CodeVersionEvidenceSchema } from "./version-evidence";
+import { CodeVersionEvidenceSchema, codeVersionEvidence } from "./version-evidence";
 
 const call = (operation: string) => ({ sequence: 1, operation }) as CodeTestResult["cases"][number]["runs"][number]["calls"][number];
 const run = (operations: string[], ok = true) => ({

@@ -20,7 +20,10 @@ describe.skipIf(isServer)("Delete a mailbox", () => {
   let cleanup: (() => void) | undefined;
   afterEach(() => cleanup?.());
 
-  const mount = (remove: () => Promise<MailboxDeleteOutcome>, code: { exists: boolean; automations: number; access: { title: string; count: number }[] } | null) => {
+  const mount = (
+    remove: () => Promise<MailboxDeleteOutcome>,
+    code: { exists: boolean; automations: number; access: { title: string; count: number }[] } | null,
+  ) => {
     const dom = createDomTestHarness();
     const { MailboxDeleteDialog, LocaleProvider } = modules!;
     const closed: boolean[] = [];

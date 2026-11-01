@@ -18,10 +18,10 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { codeSummaryText, MailboxDeleteDialog } from "./MailboxDeleteDialog";
 import type { ConfigurableFolderRole, FolderDisplay, Mailbox } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
+import { codeSummaryText, MailboxDeleteDialog } from "./MailboxDeleteDialog";
 import MailCalendarSettings from "./MailCalendarSettings";
 import MailComposeSettings from "./MailComposeSettings";
 import { MailConnectionSettings } from "./MailConnectionSettings";

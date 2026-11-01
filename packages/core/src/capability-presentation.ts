@@ -148,7 +148,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "code.summary": {
           title: "Code eines Besitzers zusammenfassen",
-          description: "Zählt für einen genauen Besitzer die Automationen und die Ziele mit Zugriff des lesbaren Codes. Ohne Namen und Inhalte.",
+          description:
+            "Zählt für einen genauen Besitzer die Automationen und die Ziele mit Zugriff des lesbaren Codes. Ohne Namen und Inhalte.",
           input: {
             owner: "Genauer Code-Besitzer.",
             "owner.kind": "Art des Besitzers: person, resource oder app.",

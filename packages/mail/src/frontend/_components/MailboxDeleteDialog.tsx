@@ -7,7 +7,9 @@ type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
 
 /** The mailbox's Code in one phrase, for settings and for the delete dialog. */
 export const codeSummaryText = (t: Messages, code: MailboxCodeSummary): string =>
-  [t.codeAutomations({ n: code.automations }), ...code.access.map((entry) => t.codeAccess({ n: entry.count, title: entry.title }))].join(", ");
+  [t.codeAutomations({ n: code.automations }), ...code.access.map((entry) => t.codeAccess({ n: entry.count, title: entry.title }))].join(
+    ", ",
+  );
 
 /** What `remove` reports: `refused` proves nothing changed, `unknown` means a lost answer that may follow a committed delete. */
 export type MailboxDeleteOutcome = "deleted" | "refused" | "unknown";

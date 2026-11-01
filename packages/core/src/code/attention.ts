@@ -33,9 +33,7 @@ export const codeAttentionContracts = {
             .object({
               codeId: CodeIdSchema,
               automations: z.number().int().nonnegative(),
-              access: z.array(
-                z.object({ type: z.string(), title: z.string(), count: z.number().int().positive() }).strict(),
-              ),
+              access: z.array(z.object({ type: z.string(), title: z.string(), count: z.number().int().positive() }).strict()),
             })
             .strict(),
         ),

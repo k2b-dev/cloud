@@ -1046,19 +1046,22 @@ export const mailSettingsMessages = i18n.define({
       failedUpdateAutomaticReplyAccess: "Der Zugriff auf automatische Antworten konnte nicht aktualisiert werden",
       automaticReplyAccessUpdated: "Zugriff auf automatische Antworten aktualisiert",
       deleteMailboxTitle: ({ address }: { address: string }) => `Postfach ${address} löschen?`,
-      deleteMailboxLead: "Das Postfach wird pausiert und ausgeblendet. Ein Admin kann es wiederherstellen, nur sein Code kommt nicht zurück.",
+      deleteMailboxLead:
+        "Das Postfach wird pausiert und ausgeblendet. Ein Admin kann es wiederherstellen, nur sein Code kommt nicht zurück.",
       deleteCascadeMail: ({ mails, folders }: { mails: string; folders: string }) =>
         `${mails} Mails in ${folders} Ordnern und alle Entwürfe bleiben zum Wiederherstellen erhalten, bis dahin unerreichbar`,
       deleteCascadeAccess: ({ entries }: { entries: string }) =>
         `${entries} Personen und Gruppen verlieren den Zugang, bis das Postfach wiederhergestellt ist`,
       deleteCascadeCode: ({ detail }: { detail: string }) =>
         `Löscht den Code dieses Postfachs endgültig (${detail}). Das lässt sich nicht rückgängig machen.`,
-      deleteCascadeCodeUnknown: "Löscht den Code dieses Postfachs endgültig, falls es welchen gibt. Das lässt sich nicht rückgängig machen.",
+      deleteCascadeCodeUnknown:
+        "Löscht den Code dieses Postfachs endgültig, falls es welchen gibt. Das lässt sich nicht rückgängig machen.",
       deleteCodeKeeps: "Was der Code in anderen Apps angelegt hat, bleibt dort und ist als Werk von gelöschtem Code erkennbar.",
       deleteConfirmLabel: "Zum Bestätigen die Adresse eingeben",
       deleteCancel: "Abbrechen",
       deleteFailedTitle: "Löschen hat nicht geklappt.",
-      deleteFailedBody: "Es wurde nichts gelöscht: Postfach, Mails und Code sind unverändert und laufen weiter. Versuch es gleich noch einmal.",
+      deleteFailedBody:
+        "Es wurde nichts gelöscht: Postfach, Mails und Code sind unverändert und laufen weiter. Versuch es gleich noch einmal.",
       deleteUnknownBody: "Die Antwort ging verloren, das Postfach ist vielleicht schon gelöscht. Erneut versuchen ist sicher.",
       codeSection: "Code",
       codeOpen: "Code öffnen",
