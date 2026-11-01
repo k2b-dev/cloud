@@ -1,7 +1,10 @@
+import { sql } from "@k2b/cloud";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { z } from "zod";
 import type { SenderIdentity } from "../contracts";
-import type { MailboxSettingsContext } from "../settings-context";
+import type { MailboxCodeSummary, MailboxSettingsContext } from "../settings-context";
 import * as mailboxAccess from "./access";
 import { getSpacesMailIntegrationAvailability } from "./app-integrations";
 import type { MailRequestContext } from "./auth";
@@ -14,10 +17,54 @@ import * as providerConnections from "./provider-connections";
 import * as savedViews from "./saved-views";
 import * as senderIdentities from "./sender-identities";
 
+const CodeSummarySchema = z.object({
+  data: z.object({
+    items: z.array(
+      z.object({
+        automations: z.number(),
+        access: z.array(z.object({ title: z.string(), count: z.number() })),
+      }),
+    ),
+  }),
+});
+/** Settings open without this number when Core is slow; the same budget as the Code entry's attention dot. */
+const CODE_SUMMARY_TIMEOUT_MS = 800;
+
+/** Asks Core through its public query, like any application. It never fails the settings: no answer means null. */
+const loadMailboxCodeSummary = async (mailboxId: string, authority: RequestAuthority | null, locale?: string): Promise<MailboxCodeSummary | null> => {
+  if (!authority) return null;
+  try {
+    const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    if (!row) return null;
+    const result = await invokeCapabilityWithDataSchema(
+      {
+        appId: "core",
+        capabilityId: "code.summary",
+        kind: "query",
+        input: { owner: { kind: "resource", ref: { type: "mail.mailbox", id: row.short_id } } },
+      },
+      CodeSummarySchema,
+      { authority, locale, signal: AbortSignal.timeout(CODE_SUMMARY_TIMEOUT_MS) },
+    );
+    if (!result.ok) return null;
+    const items = result.data.data.data.items;
+    const access = new Map<string, number>();
+    for (const item of items) for (const entry of item.access) access.set(entry.title, (access.get(entry.title) ?? 0) + entry.count);
+    return {
+      exists: items.length > 0,
+      automations: items.reduce((sum, item) => sum + item.automations, 0),
+      access: [...access].map(([title, count]) => ({ title, count })),
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const loadMailboxSettingsContext = async (
   context: MailRequestContext,
   mailboxId: string,
   authority: RequestAuthority | null,
+  locale?: string,
 ): Promise<Result<MailboxSettingsContext>> => {
   const permission = await mailboxAccess.getMailboxPermission(context, mailboxId);
   if (permission === "none") return fail(err.forbidden("Access denied"));
@@ -63,11 +110,12 @@ export const loadMailboxSettingsContext = async (
     return ok({ mailbox: mailboxResult.data, permission, integrations, organization, compose, admin: null });
   }
 
-  const [accessResult, connectionResult, bindingResult, adminFolderResult] = await Promise.all([
+  const [accessResult, connectionResult, bindingResult, adminFolderResult, code] = await Promise.all([
     mailboxAccess.listMailboxAccess(context, mailboxId),
     providerConnections.listProviderConnections(context, mailboxId),
     bindings.listProviderBindings(context, mailboxId),
     folders.listAdminFolders(context, mailboxId),
+    loadMailboxCodeSummary(mailboxId, authority, locale),
   ]);
   if (!accessResult.ok) return fail(accessResult.error);
   if (!connectionResult.ok) return fail(connectionResult.error);
@@ -81,6 +129,7 @@ export const loadMailboxSettingsContext = async (
     compose,
     admin: {
       accessEntries: accessResult.data,
+      code,
       connections: connectionResult.data,
       bindings: bindingResult.data,
       folders: adminFolderResult.data,

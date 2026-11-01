@@ -76,6 +76,7 @@ const binding: ProviderBinding = {
 
 const connectedAdmin: MailboxAdminSettingsContext = {
   accessEntries: [],
+  code: null,
   bindings: [binding],
   connections: [connection],
   folders: [],

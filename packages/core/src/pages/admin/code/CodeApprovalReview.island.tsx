@@ -1,5 +1,6 @@
-import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { z } from "zod";
 import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { codeAdminMessages } from "./messages";
@@ -14,7 +15,23 @@ export type CodeApprovalRight = {
   line?: number;
 };
 
+/** One operation of the trial run, with its count here and, when compared, in the earlier version. */
+export type CodeApprovalTrialCall = { label: string; operation: string; now: number; before: number };
+
+/** What Core recorded at submission, already worded by the page. `null` for a version submitted without a record. */
+export type CodeApprovalCheck = {
+  tests: string;
+  testsOk: boolean;
+  trial: string | null;
+  calls: CodeApprovalTrialCall[];
+  /** The earlier version's number when its trial run can be compared. */
+  comparedWith: number | null;
+};
+
 export type CodeApprovalReviewProps = {
+  versionId: string;
+  explanation: string | null;
+  check: CodeApprovalCheck | null;
   number: number;
   binding: CodeVersionBinding;
   status: "submitted" | "pending" | "approved" | "rejected" | "expired" | "cancelled";
@@ -48,7 +65,30 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [busy, setBusy] = createSignal<"approve" | "reject" | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
   const [done, setDone] = createSignal<"approved" | "rejected" | null>(null);
+  const [explanation, setExplanation] = createSignal(props.explanation);
+  // An open approval asks once by itself; the first render reserves the place, so the page does not shift.
+  const [explaining, setExplaining] = createSignal(props.explanation === null && props.status === "pending");
+  const [explainFailed, setExplainFailed] = createSignal(false);
+  const [callsOpen, setCallsOpen] = createSignal(false);
+  const explainAbort = new AbortController();
+  onCleanup(() => explainAbort.abort());
   let diffRegion: HTMLElement | undefined;
+
+  const explain = async () => {
+    setExplaining(true);
+    setExplainFailed(false);
+    try {
+      const result = await postCodeAdmin("explain", { versionId: props.versionId }, z.object({ text: z.string() }), explainAbort.signal);
+      setExplanation(result.text);
+    } catch {
+      if (!explainAbort.signal.aborted) setExplainFailed(true);
+    } finally {
+      setExplaining(false);
+    }
+  };
+  onMount(() => {
+    if (explaining()) void explain();
+  });
 
   const pending = () => props.status === "pending" && !done();
   const blocked = () => (props.newer ? t().outdated({ n: props.number }) : props.files ? null : t().notLoaded);
@@ -279,6 +319,107 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
             <Show when={props.internet.open}>
               <p class="text-xs text-(--k2b-text-muted)">{t().internetOpen}</p>
             </Show>
+          </Show>
+        </section>
+
+        <section class="grid gap-2" aria-labelledby="code-review-explanation">
+          <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h3 id="code-review-explanation" class="text-base font-semibold">
+              {t().whatHappens}
+            </h3>
+            <span class="text-xs text-(--k2b-text-muted)">
+              <i class="ti ti-sparkles text-(--k2b-ai-accent)" aria-hidden="true" /> {t().aiHint}
+            </span>
+          </div>
+          <Show
+            when={explanation()}
+            fallback={
+              <Show
+                when={!explaining()}
+                fallback={
+                  <div class="grid gap-2 py-0.5" role="status" aria-label={t().whatHappens}>
+                    <Skeleton class="h-3 w-full" />
+                    <Skeleton class="h-3 w-4/5" />
+                  </div>
+                }
+              >
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Show when={explainFailed()}>
+                    <p class="text-sm text-(--k2b-text-muted)">{t().explainFailed}</p>
+                  </Show>
+                  <Button size="sm" variant="secondary" onClick={() => void explain()}>
+                    <i class={`ti ${explainFailed() ? "ti-refresh" : "ti-sparkles"}`} aria-hidden="true" />
+                    {explainFailed() ? t().explainRetry : t().explain}
+                  </Button>
+                </div>
+              </Show>
+            }
+          >
+            {(text) => <p class="max-w-prose text-sm">{text()}</p>}
+          </Show>
+        </section>
+
+        <section class="grid gap-2" aria-labelledby="code-review-check">
+          <h3 id="code-review-check" class="text-base font-semibold">
+            {t().check}
+          </h3>
+          <Show when={props.check} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().evidenceMissing}</p>}>
+            {(check) => (
+              <ul class="grid gap-1">
+                <li class="flex items-center gap-3 px-3 py-1 text-sm" data-check="tests">
+                  <i
+                    class={`ti ${check().testsOk ? "ti-circle-check text-(--k2b-success-text)" : "ti-alert-triangle text-(--k2b-warning-text)"}`}
+                    aria-hidden="true"
+                  />
+                  <span class="min-w-0 flex-1">
+                    {t().checkTypes} · {check().tests}
+                  </span>
+                </li>
+                <Show when={check().trial}>
+                  {(trial) => (
+                    <li class="grid gap-2 px-3 py-1 text-sm" data-check="trial">
+                      <div class="flex items-center gap-3">
+                        <i class="ti ti-player-play text-(--k2b-text-muted)" aria-hidden="true" />
+                        <span class="min-w-0 flex-1">{trial()}</span>
+                        <Show when={check().calls.length}>
+                          <Button size="sm" variant="ghost" aria-expanded={callsOpen()} onClick={() => setCallsOpen(!callsOpen())}>
+                            {callsOpen() ? t().hideCalls : check().comparedWith === null ? t().showCalls : t().compare}
+                          </Button>
+                        </Show>
+                      </div>
+                      <Show when={callsOpen()}>
+                        <table class="w-full text-left text-xs">
+                          <thead class="text-(--k2b-text-muted)">
+                            <tr>
+                              <th class="py-1 pr-3 font-medium">{t().callColumn}</th>
+                              <Show when={check().comparedWith}>
+                                {(number) => <th class="py-1 pr-3 text-right font-medium">{t().callsBefore({ n: number() })}</th>}
+                              </Show>
+                              <th class="py-1 text-right font-medium">{t().callsNow}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <For each={check().calls}>
+                              {(call) => (
+                                <tr>
+                                  <td class="py-1 pr-3" title={call.operation}>
+                                    {call.label}
+                                  </td>
+                                  <Show when={check().comparedWith}>
+                                    <td class="py-1 pr-3 text-right tabular-nums">{call.before}</td>
+                                  </Show>
+                                  <td class="py-1 text-right tabular-nums">{call.now}</td>
+                                </tr>
+                              )}
+                            </For>
+                          </tbody>
+                        </table>
+                      </Show>
+                    </li>
+                  )}
+                </Show>
+              </ul>
+            )}
           </Show>
         </section>
 

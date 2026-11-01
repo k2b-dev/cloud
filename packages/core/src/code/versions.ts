@@ -24,12 +24,13 @@ import {
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
-import { verifyCodeSubmission } from "./authoring-check";
+import { createCodeCheckRequest, verifyCodeSubmission } from "./authoring-check";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { validateCodeSecretBindings } from "./secrets";
+import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { codeSettings } from "./settings";
 import {
   codeBundleHash,
@@ -48,6 +49,8 @@ import {
   type CodeVersionSubmission,
   codeVersionContracts,
 } from "./version-contracts";
+import { testCode } from "./testing";
+import { type CodeVersionEvidence, codeVersionEvidence, NO_TESTS_EVIDENCE, unavailableEvidence } from "./version-evidence";
 import { codeVersionDiff } from "./version-diff";
 import { codeVersionMessages } from "./version-messages";
 
@@ -233,6 +236,20 @@ export async function reviewCodeVersionSubmission(
     throw new CodeDataError("BAD_INPUT", "The complete submission review exceeds the approval content budget.");
   return review;
 }
+/** Run the author's fixtures once for reviewers. Their result informs the decision; a failure never refuses the version. */
+async function submissionEvidence(
+  input: { codeId: string; sourceFiles: Record<string, string>; manifest: { entry: string }; tests?: Record<string, string> },
+  context: CodeContext,
+): Promise<CodeVersionEvidence> {
+  if (!input.tests || !Object.keys(input.tests).length) return NO_TESTS_EVIDENCE;
+  try {
+    const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, context);
+    return codeVersionEvidence(await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(context), context.signal));
+  } catch (error) {
+    if (context.signal?.aborted) throw error;
+    return unavailableEvidence("code_test_runner_unavailable");
+  }
+}
 /** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
 export async function submitCodeVersion(
   raw: z.input<typeof codeVersionContracts.submit.input>,
@@ -243,6 +260,7 @@ export async function submitCodeVersion(
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
   await verifyCodeSubmission(input, context);
+  const evidence = await submissionEvidence(input, context);
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
@@ -309,8 +327,8 @@ export async function submitCodeVersion(
       approvalId = asked.id;
       reviewDigest = approvalReviewDigest(review);
     }
-    await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest)
-      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest})`;
+    await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest,evidence)
+      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest},${JSON.stringify(evidence)}::text::jsonb)`;
     await audit.record(
       {
         action: "core.code.version.submitted",

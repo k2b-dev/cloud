@@ -108,8 +108,8 @@ export const codeAuthoringContracts = {
   check: { input: source, data: check },
   test: { input: source.extend({ tests: CodeSourceFilesSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
   simulate: { input: source.extend({ fixture: CodeTestCaseSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
-  push: { input: source.extend({ baseVersionId: z.uuid().nullable() }), data: submitted },
-  submit: { input: source.extend({ baseVersionId: z.uuid().nullable() }), data: submitted },
+  push: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
+  submit: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
   diff: {
     input: z.object({ codeId: CodeIdSchema, versionId: z.uuid() }).strict(),
     data: z.object({ version: z.literal(1), diff: codeVersionContracts.diff.data }).strict(),

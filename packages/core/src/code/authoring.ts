@@ -263,6 +263,7 @@ export const codeAuthoringServices = {
         bundle: checked.result.bundle,
         manifest: checked.manifest,
         baseVersionId: input.baseVersionId,
+        tests: input.tests,
       },
       context,
     );

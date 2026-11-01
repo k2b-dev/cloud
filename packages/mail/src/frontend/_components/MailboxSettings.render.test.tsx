@@ -46,7 +46,7 @@ const context = (permission: MailboxSettingsContext["permission"], options: Rend
           style: { mailboxId, customCss: "", formattingWarnings: options.styleWarnings ?? [], revision: 1, updatedAt: now },
           identities: [],
         },
-  admin: permission === "admin" ? { accessEntries: [], bindings: [], connections: [], folders: [], identities: [] } : null,
+  admin: permission === "admin" ? { accessEntries: [], code: null, bindings: [], connections: [], folders: [], identities: [] } : null,
 });
 
 const renderSettings = (

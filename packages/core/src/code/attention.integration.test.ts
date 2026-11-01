@@ -15,7 +15,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import * as access from "./access";
 import { codeActivationTransport } from "./activation-transport";
-import { clearCodeAttentionCache, listCodeAttention } from "./attention";
+import { clearCodeAttentionCache, listCodeAttention, readCodeSummary } from "./attention";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { countOwnCodeRuns, createCode, createCodeVersion, insertCodeRun } from "./store";
 
@@ -176,6 +176,20 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     // Someone who administers none of the owners sees nothing, also as a Cloud admin.
     expect((await listCodeAttention({}, ctx(ids.other))).items).toEqual([]);
     expect((await listCodeAttention({}, ctx(ids.admin, true))).items).toEqual([]);
+  });
+
+  test("summarizes an owner's Code in numbers, and only for those who may read it", async () => {
+    const owner = { kind: "resource" as const, ref: { type: "mail.mailbox", id: "box-failed" } };
+    const [row] = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE owner_type='mail.mailbox' AND owner_id='box-failed'`;
+    const entrypoints = [
+      { kind: "schedule", entrypoint: "sort", cron: "0 7 * * 1", file: "code.ts", line: 1 },
+      { kind: "manual", entrypoint: "again", cron: null, file: "code.ts", line: 2 },
+    ];
+    await sql`UPDATE code.versions SET manifest=${JSON.stringify({ entrypoints })}::text::jsonb WHERE code_id=${row!.id}`;
+    const summary = await readCodeSummary({ owner }, ctx(ids.manager));
+    expect(summary.items).toHaveLength(1);
+    expect(summary.items[0]).toMatchObject({ codeId: row!.id, automations: 2 });
+    expect((await readCodeSummary({ owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-none" } } }, ctx(ids.manager))).items).toEqual([]);
   });
 
   test("an owner that cannot answer skips its Code instead of failing the list", async () => {

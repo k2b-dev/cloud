@@ -24,6 +24,11 @@ Resource Actions (`code.version.submit`, `code.version.approve`,
 MCP tools use `code`. Remove `codeId` from their inputs; Queries and exported
 service schemas keep it.
 
+Submission may carry `tests`, the declarative `test/**/*.json` fixtures. Core
+runs them once against fake data and stores the counts, plus the calls per
+operation, with the submission for reviewers. Failing tests do not refuse the
+version. `cld code push`, `cld code submit` and `code_submit` send them.
+
 `core.code.version.submit` accepts `sourceFiles`, `bundle`,
 `manifest` and `baseVersionId`. Use the latest saved version's UUID as the base,
 or null for the first push. The caller needs Code editor access and a write
@@ -216,7 +221,8 @@ storage primitive and does not implement submission or approval lifecycle.
   the transaction of a successful activation, after acquiring the Code lock.
   It records comparison history and grants no execution or resource authority.
 
-The additive migration creates `code.version_submissions`,
+The additive migration creates `code.version_explanations` and
+`code.version_submissions`,
 `code.version_decisions` and `code.version_baselines`. Submissions and decisions
 are immutable; deleting the approving user erases decision attribution and
 conservatively revokes that approval for future activation or resume. Requests may be

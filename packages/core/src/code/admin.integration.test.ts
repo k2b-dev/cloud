@@ -8,7 +8,9 @@ import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { CodeContext } from "./access";
 import {
+  CodeExplanationUnavailableError,
   codeAdminOwnerNames,
+  explainCodeVersion,
   listCodeAdminApprovals,
   listCodeAdminCleanup,
   listCodeAdminCodes,
@@ -20,10 +22,12 @@ import {
   readCodeAdminPolicyHistory,
   readCodeAdminRunners,
   readCodeAdminSummary,
+  readCodeAdminVersionSource,
 } from "./admin";
 import * as authoringChecks from "./authoring-check";
 import type { CodeSourceFiles } from "./contracts";
 import { readCodePolicySnapshot, updateCodePolicy } from "./policy";
+import * as runnerJobs from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash } from "./store";
 import type { CodeCheckedVersionManifest } from "./version-contracts";
@@ -262,8 +266,84 @@ databaseSuite()("C22 Administration › Code read model", () => {
     expect(await readCodeAdminRunners(reviewer)).toMatchObject({ queued: 0, running: 0, instances: 0, freeSlots: 0, runners: [] });
   });
 
+  test("a version's check record, explanation and source read through the admin gate, without an open approval", async () => {
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES('c_check1','person',${authorId}::uuid,'Prüfbericht',${authorId}::uuid,${fixed})`;
+    const check = spyOn(authoringChecks, "createCodeCheckRequest").mockResolvedValue({
+      files: {},
+      entry: "code.ts",
+      sdk: {},
+      limits: {},
+    } as Awaited<ReturnType<typeof authoringChecks.createCodeCheckRequest>>);
+    const host = spyOn(runnerJobs, "createRunnerCodeTestingHost").mockResolvedValue({
+      check: async () => ({ ok: true, bundle: "x", manifest: {}, permissions: [] }),
+      execute: async () => ({
+        version: 1,
+        mode: "test",
+        ok: true,
+        error: null,
+        diagnostics: [],
+        cases: [
+          {
+            name: "weekly",
+            file: "test/weekly.json",
+            ok: true,
+            runs: [{ entrypoint: "weekly", ok: true, error: null, value: null, calls: [], failures: [] }],
+          },
+        ],
+      }),
+      limits: { requestBytes: 1_000_000, outputBytes: 1_000_000, cases: 10, runs: 10, calls: 10, wallClockMs: 1000 },
+    } as unknown as Awaited<ReturnType<typeof runnerJobs.createRunnerCodeTestingHost>>);
+    const fixture = JSON.stringify({ version: 1, name: "weekly", now: 0, seed: 1, mocks: [], runs: [{ entrypoint: "weekly" }] });
+    const tested = await submitCodeVersion(
+      { ...submission("c_check1", "export const a = 1;\nexample.item.change();", null), tests: { "test/weekly.json": fixture } },
+      author,
+    );
+    check.mockRestore();
+    host.mockRestore();
+    const detail = await readCodeAdminApproval(tested.version.id, reviewer);
+    expect(detail.evidence).toEqual({
+      version: 1,
+      tests: { state: "passed", passed: 1, total: 1, error: null },
+      trial: { runs: 1, calls: [] },
+    });
+    expect(detail.explanation).toBeNull();
+
+    // No tests submitted is its own recorded state, and the fixtures never run.
+    const plain = await submitCodeVersion(submission("c_check1", "export const b = 2;\nexample.item.change();", tested.version.id), author);
+    expect((await readCodeAdminApproval(plain.version.id, reviewer)).evidence?.tests.state).toBe("none");
+
+    // One explanation per version and language: the second read costs nothing, and a failure stores nothing.
+    let asked = 0;
+    const generate = (async () => {
+      asked++;
+      return { output: { explanation: "Zählt einmal pro Woche." } };
+    }) as unknown as Parameters<typeof explainCodeVersion>[2];
+    await expect(
+      explainCodeVersion(
+        plain.version.id,
+        reviewer,
+        (async () => {
+          throw new Error("no model");
+        }) as unknown as Parameters<typeof explainCodeVersion>[2],
+      ),
+    ).rejects.toBeInstanceOf(CodeExplanationUnavailableError);
+    expect(await explainCodeVersion(plain.version.id, reviewer, generate)).toEqual({ text: "Zählt einmal pro Woche." });
+    expect(await explainCodeVersion(plain.version.id, reviewer, generate)).toEqual({ text: "Zählt einmal pro Woche." });
+    expect(asked).toBe(1);
+    expect((await readCodeAdminApproval(plain.version.id, reviewer)).explanation).toBe("Zählt einmal pro Woche.");
+
+    // Source reads with the version bound to its Code; another Code's version is not found.
+    expect(await readCodeAdminVersionSource("c_check1", tested.version.id, reviewer)).toMatchObject({
+      number: 1,
+      files: [{ path: "code.ts", lines: [{ kind: "add", text: "export const a = 1;" }, { kind: "add", text: "example.item.change();" }] }],
+    });
+    await expect(readCodeAdminVersionSource("c_admin1", tested.version.id, reviewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   test("people without the Cloud-admin role read nothing", async () => {
     for (const read of [
+      () => readCodeAdminVersionSource("c_admin1", "e0000000-0000-4000-8000-000000000001", stranger),
+      () => explainCodeVersion("e0000000-0000-4000-8000-000000000001", stranger),
       () => readCodeAdminSummary(stranger),
       () => listCodeAdminApprovals(stranger),
       () => listCodeAdminDecided(stranger),

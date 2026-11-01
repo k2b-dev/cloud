@@ -16,6 +16,9 @@ test("the URL keeps only valid selections, so reload and back return to the same
     q: "Bericht",
   });
   expect(parseCodeAreaQuery({ sec: "code", status: "gone", app: "Not An App" })).toEqual({ sec: "code" });
+  expect(parseCodeAreaQuery({ sec: "code", id: "c_abcd", version: id })).toEqual({ sec: "code", id: "c_abcd", version: id });
+  expect(parseCodeAreaQuery({ sec: "code", id: "c_abcd", version: "x" })).toEqual({ sec: "code", id: "c_abcd" });
+  expect(parseCodeAreaQuery({ sec: "code", version: id })).toEqual({ sec: "code" });
   expect(parseCodeAreaQuery({ sec: "policy", id })).toEqual({ sec: "policy" });
   expect(codeAreaHref({ sec: "code", status: "paused", id: undefined })).toBe("/admin/code?sec=code&status=paused");
   expect(codeAreaHref({})).toBe("/admin/code");

@@ -45,6 +45,10 @@ Core also reports personal owners when their user row is deleted.
 The helper accepts only the running application's declared `code.owners`.
 Call it after `app.start()` has bound the application declaration.
 
+Your delete dialog says what goes along before this happens: `core.code.summary`
+gives the numbers. A soft delete is final for the Code even when the resource
+can be restored, so say that too.
+
 The helper writes the existing platform transactional outbox. Core consumes the
 committed report at least once without depending on event-stream retention.
 Before contacting another application, Core atomically marks the Code

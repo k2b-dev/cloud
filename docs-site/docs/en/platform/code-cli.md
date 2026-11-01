@@ -101,7 +101,8 @@ Pull creates a new folder and downloads the latest saved version's exact
 source and base. It refuses an existing folder. For an update, pull into a
 new root and reconcile your local changes there.
 
-Push and submit use the same [version submission](/en/docs/platform/code-versions)
+Push and submit also send `test/**/*.json`; Core runs them once and shows the
+result to reviewers. Push and submit use the same [version submission](/en/docs/platform/code-versions)
 service: check the source, save an immutable version, and request any required
 Cloud-admin approval. The active version keeps running. Both send the local
 `baseVersionId`; a successful save advances that field in `code.json`.

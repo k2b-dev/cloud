@@ -146,6 +146,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
         },
+        "code.summary": {
+          title: "Code eines Besitzers zusammenfassen",
+          description: "Zählt für einen genauen Besitzer die Automationen und die Ziele mit Zugriff des lesbaren Codes. Ohne Namen und Inhalte.",
+          input: {
+            owner: "Genauer Code-Besitzer.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+          },
+        },
         "code.attention": {
           title: "Aufmerksamkeit für Code prüfen",
           description:
