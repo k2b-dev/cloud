@@ -66,7 +66,7 @@ type IpCountryResult = {
 };
 ```
 
-`country` is an uppercase ISO 3166-1 alpha-2 code. A missing record, private
+`country` is an uppercase ISO 3166-1 alpha-2 code, or `XK` for Kosovo. A missing record, private
 address, invalid IP, or input longer than 45 characters returns `null`.
 `available` says whether Core has a country-capable database loaded, even when
 that address has no country. A missing database, unavailable Core, rejected

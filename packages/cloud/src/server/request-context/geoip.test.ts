@@ -523,7 +523,7 @@ test("country results admit only ISO country codes and never read private or inv
   const city = openGeoIpDatabase("city", mmdbFixture("city"))!;
   const get = spyOn(city, "get");
   geo.install("city", city);
-  for (const code of ["ZZ", "AA", "EU", "XK", "AUT", ""]) {
+  for (const code of ["ZZ", "AA", "EU", "AUT", ""]) {
     get.mockReturnValue({ country: { iso_code: code } });
     expect(geo.country("8.8.8.8").country).toBeNull();
   }
