@@ -2,7 +2,7 @@
 title: Code bridge
 navTitle: Code bridge
 section: Platform services
-order: 963
+order: 964
 description: Authenticate runner requests and check each actual Code call against the current lease, policy, approval and mandate.
 tags: [code, runner, capabilities, mandates]
 updated: 2026-11-01
