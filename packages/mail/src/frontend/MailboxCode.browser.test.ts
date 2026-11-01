@@ -61,6 +61,8 @@ const activations: unknown[] = [];
 /** Core's answer before the click; without one the harness answers like an older Core, and switching on decides. */
 let checkAnswer: unknown = null;
 const checks: unknown[] = [];
+/** Holds Core's answer before the click until the test releases it. */
+let checkGate: Promise<void> | null = null;
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -71,6 +73,7 @@ const server = Bun.serve({
     if (url.pathname === "/tabler.woff2") return new Response(Bun.file(icons.font), { headers: { "Content-Type": "font/woff2" } });
     if (url.pathname === "/api/code/activation/check") {
       checks.push(await request.json());
+      await checkGate;
       if (checkAnswer === null) return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
       return Response.json({ data: checkAnswer });
     }
@@ -296,6 +299,29 @@ describe("Mailbox Code page in a browser", () => {
       expect(activations).toHaveLength(0);
       await shoot(page, "einschalten-vorab-1440");
     } finally {
+      checkAnswer = null;
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the button waits for the targets' answers, so a refusal can never come after the click", async () => {
+    let release = () => {};
+    checkGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    checkAnswer = { targets: [{ target: { type: "spaces.space", id: "sp_2lg8" }, state: "granted", failure: null }] };
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("wird geprüft", { exact: false }).first().waitFor();
+      expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isDisabled()).toBe(true);
+      release();
+      await dialog.getByText("du verwaltest Space Logistik", { exact: false }).waitFor();
+      await dialog.getByRole("button", { name: "Version 5 einschalten", disabled: false }).waitFor();
+    } finally {
+      release();
+      checkGate = null;
       checkAnswer = null;
       await page.context().close();
     }

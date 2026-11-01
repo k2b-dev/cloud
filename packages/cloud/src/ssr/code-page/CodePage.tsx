@@ -94,6 +94,8 @@ const loadActivationCheck = async (codeId: string, versionId: string): Promise<C
       credentials: "same-origin",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ codeId, versionId }),
+      // The same patience as following an activation; after that, switching on decides.
+      signal: AbortSignal.timeout(ACTIVATION_POLLS * ACTIVATION_POLL_MS),
     });
     if (!response.ok) return null;
     const parsed = wrapped(ActivationCheckSchema).safeParse(await response.json());
@@ -1482,7 +1484,7 @@ function ActivationDialog(props: {
   };
   // A dialog opened while an earlier attempt is unresolved continues with that attempt.
   if (resumed) void check();
-  // Otherwise each target answers right away, so a refusal shows before the click. A person who already clicked follows that attempt.
+  // Otherwise each target answers first, so a refusal shows before the click; the button waits for that answer.
   else if (props.data.activation.allowed) {
     setChecking(true);
     void loadActivationCheck(props.state.code.id, props.version.id).then((targets) => {
@@ -1491,7 +1493,7 @@ function ActivationDialog(props: {
       setChecked(targets ?? []);
       const refused = (targets ?? []).filter((item) => item.state === "refused" && item.failure);
       const first = refused.find((item) => item.failure?.code === "not_manager") ?? refused[0];
-      if (first && view().kind === "idle") setView({ kind: "failed", failure: first.failure, message: null });
+      if (first) setView({ kind: "failed", failure: first.failure, message: null });
     });
   }
   const verdict = (row: CodePageActivationRow) =>
@@ -1677,7 +1679,7 @@ function ActivationDialog(props: {
         <Button
           type="button"
           variant="primary"
-          disabled={!props.data.activation.allowed || blocked() || busy()}
+          disabled={!props.data.activation.allowed || blocked() || busy() || checking()}
           loading={busy() && view().kind === "progress" && (view() as { state: string }).state !== "waiting"}
           onClick={() => void (view().kind === "unknown" ? check() : start())}
         >

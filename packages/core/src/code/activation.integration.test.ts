@@ -832,6 +832,20 @@ databaseSuite()("durable Code activation", () => {
       },
     });
     expect(silent.targets.every((item) => item.state === "unknown" && item.failure === null)).toBe(true);
+    // An application that cannot list its grants leaves its targets unknown instead of guessing that they are new.
+    sets.length = 0;
+    const unlisted = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        list: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(unlisted.targets.find((item) => item.target.id === "A")).toMatchObject({ state: "unknown", failure: null });
+    expect(unlisted.targets.find((item) => item.target.id === "B")).toMatchObject({ state: "unknown", failure: null });
+    expect(sets.some((set) => set.id === "A" || set.id === "B")).toBe(false);
     // Only a person who could start this activation may ask.
     await expect(
       checkCodeActivation(

@@ -415,6 +415,9 @@ suiteFor(
     await expect(
       startCodeRun({ ...request, idempotencyKey: "origin:unknown", rerunOf: crypto.randomUUID() }, context()),
     ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    await expect(
+      startCodeRun({ ...request, entrypoint: "other", idempotencyKey: "origin:other", rerunOf: first.runId }, context()),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
     const again = await startCodeRun({ ...request, idempotencyKey: "origin:again", rerunOf: first.runId }, context());
     const { items } = await listCodeRuns({ codeId: code.codeId, limit: 10 }, context());
     const listed = items.find((run) => run.id === again.runId)!;

@@ -234,7 +234,8 @@ export async function activateCodeVersion(
 }
 /**
  * The switch-on dialog's answer before the click: every target an activation would ask, asked the same way with `dryRun`.
- * Only a person who could start this activation may ask. It records nothing, so activating later checks everything again.
+ * Only a person who could start this activation may ask. It changes no access and starts no activation; each target logs
+ * the question like any capability call. Activating later checks everything again.
  */
 export async function checkCodeActivation(
   raw: z.input<typeof codeActivationContracts.check.input>,
@@ -249,11 +250,24 @@ export async function checkCodeActivation(
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await requireCodeVersionApproval(code, input.versionId, tx);
   });
+  // An application that cannot list its grants leaves only its own targets unknown; the others still answer.
+  const unavailable = new Set<string>();
+  const listAvailable: typeof liveGrants = async (listed, items, transport) => {
+    const live = new Map<string, CodeAccessGrant>();
+    if (listed.serviceAccountId)
+      for (const app of new Set(items.map((item) => targetApp(item.target))))
+        try {
+          for (const grant of await transport.list(app, listed.serviceAccountId)) live.set(grant.grantId, grant);
+        } catch (error) {
+          if (!(error instanceof CodeActivationTransportError)) throw error;
+          unavailable.add(app);
+        }
+    return live;
+  };
   let plan: CodeActivationTarget[];
   try {
-    ({ plan } = await planActivation(input.versionId, code, deps));
+    ({ plan } = await planActivation(input.versionId, code, deps, listAvailable));
   } catch (error) {
-    if (error instanceof CodeActivationTransportError) return { targets: [] };
     if (!(error instanceof ActivationRefused)) throw error;
     const { failure } = error;
     return {
@@ -265,7 +279,7 @@ export async function checkCodeActivation(
   const activationId = crypto.randomUUID();
   for (const item of plan.filter((item) => item.owner || !item.reused)) {
     context.signal?.throwIfAborted();
-    if (!code.serviceAccountId) {
+    if (!code.serviceAccountId || (!item.owner && unavailable.has(targetApp(item.target)))) {
       targets.push({ target: item.target, state: "unknown", failure: null });
       continue;
     }
@@ -362,7 +376,7 @@ async function liveGrants(code: Code, targets: readonly { target: { type: string
   return live;
 }
 /** What this version asks of its targets right now, with new grant identities. Writes nothing. */
-async function planActivation(versionId: string, code: Code, deps: CodeActivationDependencies) {
+async function planActivation(versionId: string, code: Code, deps: CodeActivationDependencies, list = liveGrants) {
   const [version] = await sql<
     { manifest: unknown }[]
   >`SELECT manifest FROM code.versions WHERE id=${versionId}::uuid AND code_id=${code.id}`;
@@ -383,7 +397,7 @@ async function planActivation(versionId: string, code: Code, deps: CodeActivatio
   const prior = await sql<
     GrantRow[]
   >`SELECT g.* FROM code.target_grants g JOIN code.version_grants vg ON vg.grant_id=g.grant_id WHERE g.code_id=${code.id} AND g.state='granted' AND vg.version_id=${code.activeVersionId}::uuid ORDER BY g.grant_id`;
-  const live = await liveGrants(code, built.targets, deps.transport);
+  const live = await list(code, built.targets, deps.transport);
   const plan: CodeActivationTarget[] = [];
   const owner = ownerTarget(code);
   if (owner) plan.push({ target: owner, operations: [], grantId: crypto.randomUUID(), reused: false, owner: true });
