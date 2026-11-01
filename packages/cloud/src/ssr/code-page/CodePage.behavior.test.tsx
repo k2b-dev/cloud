@@ -28,7 +28,7 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
       ok: false,
       error: { code: "BAD_INPUT", message: "Fixture refusal", status: 400 },
     });
-    const notice = spyOn(toast, "error").mockImplementation(() => {});
+    const notice = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const data = codePageFixture(control.startsWith("resume") ? "paused" : control === "rerun" ? "run-failed" : "overview", "en");
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
     if (control === "run") data.state.automations![0]!.kind = "manual";
