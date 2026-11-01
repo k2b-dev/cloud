@@ -46,7 +46,7 @@ import { mandates } from "../services/mandates";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
 
-const now = new Date("2026-11-01T12:00:00Z");
+let now: Date;
 const issuer = "https://cloud.example";
 const userId = "11111111-1111-4111-8111-111111111111";
 const kid = "22222222-2222-4222-8222-222222222222";
@@ -194,8 +194,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(fetched).toBe(before);
   };
   beforeAll(async () => {
-    setSystemTime(now);
     database = await useFreshDatabase("code_bridge_c4");
+    // Freeze the application clock at the database clock: heartbeat persists token expiry in PostgreSQL.
+    // An unrelated fixed calendar date would expire leases and replay evidence as the test ages.
+    const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+    now = clock!.now;
+    setSystemTime(now);
     await migrateAuth();
     await migrateRailPreferences();
     await migrateRailShortcuts();
@@ -357,9 +361,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(bundle.status).toBe(200);
     expect(await bundle.text()).toBe("fixture");
     expect((await runnerProtocolRequest(RUNNER_PATHS.heartbeat, proof)).status).toBe(200);
+    const [heartbeat] = await sql<{ live: boolean; bounded: boolean }[]>`SELECT lease_expires_at>clock_timestamp() AS live,
+      lease_expires_at<=to_timestamp(${Math.floor(now.getTime() / 1000) + 300}) AS bounded FROM code.runs WHERE id=${claims.runId}::uuid`;
+    expect(heartbeat).toEqual({ live: true, bounded: true });
     const bad = await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: "f".repeat(64) });
     expect(bad.status).toBe(403);
     expect((await runnerProtocolRequest(RUNNER_PATHS.complete, { ...proof, outcome: "succeeded" })).status).toBe(204);
+    const [completed] = await sql`SELECT state,lease_expires_at FROM code.runs WHERE id=${claims.runId}::uuid`;
+    expect(completed).toEqual({ state: "succeeded", lease_expires_at: null });
     expect((await runnerProtocolRequest(RUNNER_PATHS.heartbeat, proof)).status).toBe(409);
     expect((await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: claims.bundleHash })).status).toBe(409);
     expect((await runnerProtocolRequest(RUNNER_PATHS.complete, { ...proof, outcome: "succeeded" })).status).toBe(409);
