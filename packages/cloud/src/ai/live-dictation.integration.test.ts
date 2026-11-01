@@ -118,7 +118,7 @@ suite("live dictation server", () => {
         },
       },
     });
-  }, 300_000);
+  }, 30_000);
   afterAll(async () => {
     for (const session of active) session.abort();
     await Promise.all(active.map((session) => session.settled()));
