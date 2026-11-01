@@ -151,3 +151,27 @@ export async function writeCodeSdk(directory: string, files: Record<string, stri
     }
   }
 }
+/** Discover local projects without traversing links, dependencies or generated output. A project is a traversal boundary. */
+export async function listCodeProjects(root = "code") {
+  const projects: Awaited<ReturnType<typeof loadCodeProject>>[] = [];
+  async function visit(directory: string) {
+    await assertCodePath(directory);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const config = entries.find((entry) => entry.name === "code.json");
+    if (config) {
+      if (!config.isFile()) throw new Error("code.json must be a regular file.");
+      projects.push(await loadCodeProject(directory));
+      return;
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (entry.name.startsWith(".") || ignored.has(entry.name)) continue;
+      if (entry.isSymbolicLink()) throw new Error("Symbolic links are not allowed in Code workspaces.");
+      if (entry.isDirectory()) await visit(join(directory, entry.name));
+    }
+  }
+  await visit(resolve(root));
+  projects.sort((a, b) => (a.config.codeId < b.config.codeId ? -1 : a.config.codeId > b.config.codeId ? 1 : 0));
+  if (new Set(projects.map((project) => project.config.codeId)).size !== projects.length)
+    throw new Error("Duplicate local Code IDs. Select one checkout root.");
+  return projects;
+}

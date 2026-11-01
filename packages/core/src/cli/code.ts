@@ -13,12 +13,9 @@ import {
 import { CodeTestCaseSchema } from "@k2b/cloud/code";
 import { z } from "zod";
 import {
-  CODE_AUTHORING_REQUEST_BYTES,
-  type CodeAuthoringCommand,
   CodeAuthoringConflictSchema,
   type CodeAuthoringData,
   type CodeAuthoringError,
-  CodeAuthoringErrorSchema,
   codeAuthoringContracts,
 } from "../code/authoring-contracts";
 import { CodeIdSchema } from "../code/contracts";
@@ -32,53 +29,9 @@ import {
   writeCodeProject,
   writeCodeSdk,
 } from "./code-files";
+import { codeOperationCommands } from "./code-operations";
+import { RemoteCodeError, request } from "./code-request";
 
-class RemoteCodeError extends Error {
-  constructor(readonly body: CodeAuthoringError) {
-    super(body.error.message);
-  }
-}
-function request(ctx: CloudCliContext, name: "init", input: unknown): Promise<CodeAuthoringData<"init">>;
-function request(ctx: CloudCliContext, name: "pull", input: unknown): Promise<CodeAuthoringData<"pull">>;
-function request(ctx: CloudCliContext, name: "sdk", input: unknown): Promise<CodeAuthoringData<"sdk">>;
-function request(ctx: CloudCliContext, name: "check", input: unknown): Promise<CodeAuthoringData<"check">>;
-function request(ctx: CloudCliContext, name: "test", input: unknown): Promise<CodeAuthoringData<"test">>;
-function request(ctx: CloudCliContext, name: "simulate", input: unknown): Promise<CodeAuthoringData<"simulate">>;
-function request(ctx: CloudCliContext, name: "push", input: unknown): Promise<CodeAuthoringData<"push">>;
-function request(ctx: CloudCliContext, name: "submit", input: unknown): Promise<CodeAuthoringData<"submit">>;
-function request(ctx: CloudCliContext, name: "diff", input: unknown): Promise<CodeAuthoringData<"diff">>;
-function request(ctx: CloudCliContext, name: "activate", input: unknown): Promise<CodeAuthoringData<"activate">>;
-function request(ctx: CloudCliContext, name: "run", input: unknown): Promise<CodeAuthoringData<"run">>;
-function request(ctx: CloudCliContext, name: "push" | "submit", input: unknown): Promise<CodeAuthoringData<"push">>;
-async function request(ctx: CloudCliContext, name: CodeAuthoringCommand, input: unknown) {
-  const body = JSON.stringify(codeAuthoringContracts[name].input.parse(input));
-  if (Buffer.byteLength(body) > CODE_AUTHORING_REQUEST_BYTES) throw new Error("Code command exceeds the checker request budget.");
-  const response = await ctx.fetch(`/api/code/authoring/${name}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body,
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = null;
-    }
-    const failure = CodeAuthoringErrorSchema.safeParse(parsed);
-    if (failure.success) throw new RemoteCodeError(failure.data);
-    throw new RemoteCodeError({
-      version: 1,
-      error: {
-        code: `http_${response.status}`,
-        message: `Code request failed (${response.status}). Read the current state before retrying a write.`,
-        details: null,
-      },
-    });
-  }
-  return codeAuthoringContracts[name].data.parse(await response.json());
-}
 function printDiff(ctx: CloudCliContext, files: CodeVersionDiffFile[]) {
   for (const file of files) {
     ctx.print(`--- ${file.path}`);
@@ -122,6 +75,7 @@ export function buildCodeCli(locale?: string) {
     requiresCloud: true,
     groupSummaries: { sdk: t("Download the generated SDK", "Erzeugtes SDK herunterladen") },
     commands: [
+      ...codeOperationCommands(locale),
       command("init", {
         summary: t("Create Code and a local project", "Code und lokales Projekt anlegen"),
         flags: {
@@ -170,9 +124,30 @@ export function buildCodeCli(locale?: string) {
       }),
       command("pull", {
         summary: t("Download the latest version into a new folder", "Neueste Version in einen neuen Ordner holen"),
-        args: { code: arg.required({ description: "Code ID" }) },
-        flags: outFlag,
+        args: { code: arg.optional({ description: "Code ID; omit with --all" }) },
+        flags: {
+          ...outFlag,
+          all: flag.boolean({ description: t("Pull all resource Code (Cloud admin)", "Alle Ressourcen-Codes holen (Cloud-Admin)") }),
+        },
         async run({ ctx, args, flags }) {
+          if (flags.all) {
+            if (args.code) throw new Error(t("Use a Code ID or --all.", "Nutze eine Code-ID oder --all."));
+            await assertCodePath(resolve(flags.out!));
+            const items: CodeAuthoringData<"pullAll">["items"] = [];
+            let cursor: string | undefined;
+            do {
+              const page = await request(ctx, "pullAll", { cursor });
+              for (const item of page.items) {
+                await writeCodeProject(flags.out!, item.config, item.files);
+                items.push(item);
+              }
+              cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+            const data: CodeAuthoringData<"pullAll"> = { version: 1, items, nextCursor: null };
+            if (!printStructured(ctx, data))
+              ctx.print(t(`Pulled ${items.length} resource Codes.`, `${items.length} Ressourcen-Codes geholt.`));
+            return;
+          }
           const codeId = CodeIdSchema.parse(args.code);
           await assertCodePath(resolve(flags.out!));
           const data = await request(ctx, "pull", { codeId });
@@ -384,24 +359,33 @@ export default {
   help: (locale?: string) => buildCodeCli(locale).help?.(locale) ?? "",
   async run(ctx: CloudCliContext) {
     try {
-      return await buildCodeCli(ctx.options.locale).run(ctx);
+      return (await buildCodeCli(ctx.options.locale).run(ctx)) ?? 0;
     } catch (error) {
       const body: CodeAuthoringError =
-        error instanceof RemoteCodeError
-          ? error.body
-          : {
+        ctx.args[0] === "secret" && ctx.args[1] === "set" && !(error instanceof RemoteCodeError)
+          ? {
               version: 1,
               error: {
-                code: "code_cli_input",
-                message:
-                  error instanceof Error && "code" in error && typeof error.code === "string"
-                    ? `Local Code files could not be read or written (${error.code}). Existing project folders are not overwritten.`
-                    : error instanceof Error
-                      ? error.message
-                      : "Code command failed.",
+                code: "code_cli_secret_input",
+                message: "Code secret write failed. Use --from <file|-> and check the binding metadata.",
                 details: null,
               },
-            };
+            }
+          : error instanceof RemoteCodeError
+            ? error.body
+            : {
+                version: 1,
+                error: {
+                  code: "code_cli_input",
+                  message:
+                    error instanceof Error && "code" in error && typeof error.code === "string"
+                      ? `Local Code files could not be read or written (${error.code}). Existing project folders are not overwritten.`
+                      : error instanceof Error
+                        ? error.message
+                        : "Code command failed.",
+                  details: null,
+                },
+              };
       if (!printStructured(ctx, body)) {
         ctx.error(
           body.error.code === "code_version_conflict"
