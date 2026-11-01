@@ -47,7 +47,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
     if (performance.now() >= deadline) throw new Error("code_check_time_limit");
     const child = Bun.spawn([host.isolate, ...command], {
       cwd: directory,
-      env: { GOMAXPROCS: "2" },
+      env: {},
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

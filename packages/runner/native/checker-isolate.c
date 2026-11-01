@@ -54,8 +54,9 @@ int main(int argc, char **argv) {
   struct sock_fprog program = { .len = sizeof(rules) / sizeof(rules[0]), .filter = rules };
   if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program)) return 126;
   if (constrain_namespaces()) return 126;
-  char *empty_env[] = {NULL};
-  execve(argv[1], argv + 1, empty_env);
+  /* A trusted constant survives the environment scrub and bounds tsgo's execution threads. */
+  char *role_env[] = {"GOMAXPROCS=2",NULL};
+  execve(argv[1], argv + 1, role_env);
   perror("checker_exec");
   return 126;
 }

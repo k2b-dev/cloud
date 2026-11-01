@@ -103,6 +103,22 @@ test("C13b job init has private proc/tmp and inherits no credentials or network"
 test("C13b production startup probe confirms namespace setup and irreversible mount/userns denial", async () => {
   await probeJobIsolation();
 }, 10000);
+test("C13b checker scrub retains only its trusted Go execution-thread budget", async () => {
+  const child = Bun.spawn(["/app/checker-isolate", "/usr/bin/env"], {
+    env: { GOMAXPROCS: "999", CLOUD_APP_KEY: "fixture-secret-must-not-cross" },
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+  try {
+    expect(await new Response(child.stdout).text()).toBe("GOMAXPROCS=2\n");
+    expect(await child.exited).toBe(0);
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null) child.kill("SIGKILL");
+    await child.exited;
+  }
+}, 10000);
 test("C13b killing the launcher terminates its namespace init", async () => {
   const child = Bun.spawn(
     [

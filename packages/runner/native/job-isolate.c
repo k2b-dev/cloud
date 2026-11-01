@@ -18,7 +18,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* No setuid or file capabilities. The supervisor reserves a never-reused UID range.
+/* No setuid or file capabilities. The supervisor reserves a disjoint UID range until reaped.
  * Only stdio reaches a credential-free init in new user/PID/mount/network namespaces. */
 static void fail(const char *step) { perror(step); _exit(126); }
 #define REQUIRE(x) do { if ((x) == -1) fail(#x); } while (0)
