@@ -34,6 +34,8 @@ export type CodeSecret = string & { readonly [__codeSecret]: true };
 /** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
 export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
 export type CodeHttp = {
+  /** Declare exact HTTPS origins for dynamic URLs and redirects. Literal array; never grants runtime authority. */
+  allow(origins: readonly string[]): void;
   fetch(
     url: string,
     options?: {

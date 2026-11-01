@@ -765,6 +765,26 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const phone: CodeContext = { authority: { ...author.authority, actor: { kind: "user", user: person(authorId), sessionKind: "app" } } };
     await expect(submitCodeVersion(input(code, "denied"), phone)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+  test("changed internet origins need a new approval bound to the exact manifest", async () => {
+    const code = await newCode();
+    const firstInput = input(code, "same source", null, ["internet"]);
+    firstInput.manifest.internet = ["https://first.example"];
+    const first = await submitCodeVersion(firstInput, author);
+    expect(first.status).toBe("pending");
+    await decideCodeVersion(first.binding, true, reviewer);
+    await activate(code, first);
+    const secondInput = input(code, "same source", first.version.id, ["internet"]);
+    secondInput.manifest.internet = ["https://first.example", "https://second.example:8443"];
+    const second = await submitCodeVersion(secondInput, author);
+    expect(second.status).toBe("pending");
+    expect(second.binding.sourceHash).toBe(first.binding.sourceHash);
+    expect(second.binding.bundleHash).toBe(first.binding.bundleHash);
+    expect(second.binding.manifestHash).not.toBe(first.binding.manifestHash);
+    await expect(activate(code, second)).rejects.toMatchObject({ code: "code_approval_required" });
+    await expect(decideCodeVersion({ ...first.binding, versionId: second.version.id }, true, reviewer)).rejects.toThrow();
+    await decideCodeVersion(second.binding, true, reviewer);
+    await activate(code, second);
+  });
 });
 
 // Imported session-fixture cleanup runs at file scope, after the suite's hooks.
