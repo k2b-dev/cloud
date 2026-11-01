@@ -49,8 +49,8 @@ static int child(void *pointer) {
   char options[128];
   snprintf(options,sizeof(options),"size=%s,mode=1777",args->tmpbytes);
   REQUIRE(mount("tmpfs", "/tmp", "tmpfs", MS_NOSUID|MS_NODEV|MS_NOEXEC, options));
-  REQUIRE(mount("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID|MS_NODEV|MS_NOEXEC, options));
-  REQUIRE(mount("tmpfs", "/dev/mqueue", "tmpfs", MS_NOSUID|MS_NODEV|MS_NOEXEC, options));
+  REQUIRE(mount("tmpfs", "/dev/shm", "tmpfs", MS_RDONLY|MS_NOSUID|MS_NODEV|MS_NOEXEC, "size=4096,mode=0500"));
+  REQUIRE(mount("tmpfs", "/dev/mqueue", "tmpfs", MS_RDONLY|MS_NOSUID|MS_NODEV|MS_NOEXEC, "size=4096,mode=0500"));
   unsigned int runtime=(1U<<CAP_SETUID)|(1U<<CAP_SETGID)|(1U<<CAP_CHOWN)|(1U<<CAP_KILL);
   struct __user_cap_header_struct header={.version=_LINUX_CAPABILITY_VERSION_3};
   struct __user_cap_data_struct caps[2]={{.effective=runtime,.permitted=runtime},{0}};
@@ -106,7 +106,11 @@ int main(int argc,char **argv) {
   mapping(pid,"uid_map",first);mapping(pid,"gid_map",first);
   if(write(gate[1],"1",1)!=1)fail("job_start");
   REQUIRE(sigprocmask(SIG_SETMASK,&original,NULL));
-  int status;while(waitpid(pid,&status,0)<0){if(errno!=EINTR)fail("job_wait");}
+  /* Observe exit without reaping: keep the PID reserved until the handler can no longer kill it. */
+  siginfo_t ended={0};
+  while(waitid(P_PID,(id_t)pid,&ended,WEXITED|WNOWAIT)<0){if(errno!=EINTR)fail("job_wait");}
+  REQUIRE(sigprocmask(SIG_BLOCK,&blocked,NULL));init_pid=0;
+  int status;while(waitpid(pid,&status,0)<0){if(errno!=EINTR)fail("job_reap");}
   REQUIRE(close(gate[1]));
   /* Only these exits prove waitpid reaped the namespace: success, cancellation, role failure. */
   free(stack);return cancelled?124:(WIFEXITED(status)&&WEXITSTATUS(status)==0?0:125);

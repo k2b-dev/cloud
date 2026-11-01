@@ -3,6 +3,7 @@ import type { RunnerBridge, RunnerCompleteRequest, RunnerLease, RunnerLeaseProof
 import { BundleCache, bundleHash } from "../src/cache";
 import type { RunnerEngine } from "../src/engine";
 import { reserveJobIdentities } from "../src/identities";
+import { executeRunnerJob } from "../src/jobs";
 import { Runner } from "../src/runner";
 import { config, lease, source } from "./fixtures";
 
@@ -325,3 +326,63 @@ test("C13b successfully reaped job ranges are reused without consuming productio
     next.release();
   }
 });
+
+for (const cooperative of [true, false])
+  test(`C13b cancellation recycles only a reaped launcher receipt (cooperative: ${cooperative})`, async () => {
+    const cancel = new AbortController();
+    const input = JSON.stringify({ kind: "check", request: {} });
+    let started = false;
+    let first = 0;
+    const work = executeRunnerJob(
+      {
+        kind: "check",
+        jobId: "11111111-1111-4111-8111-111111111111",
+        generation: 1,
+        leaseKey: "a".repeat(64),
+        deadlineAt: NOW + 30000,
+        leaseExpiresAt: NOW + 15000,
+        heartbeatMs: 5000,
+        inputBytes: Buffer.byteLength(input),
+        outputBytes: 1000,
+      },
+      input,
+      config,
+      cancel.signal,
+      (command) => {
+        first = Number(command[1]);
+        return Bun.spawn(
+          [
+            process.execPath,
+            "--no-env-file",
+            "-e",
+            `process.on("SIGTERM", () => { ${cooperative ? "process.exit(124);" : ""} }); process.send("ready"); setInterval(() => {}, 1000);`,
+          ],
+          {
+            env: {},
+            stdin: "pipe",
+            stdout: "pipe",
+            stderr: "ignore",
+            ipc: () => {
+              started = true;
+            },
+          },
+        );
+      },
+    ).catch((error: unknown) => error);
+    try {
+      await waitFor(() => started);
+      cancel.abort();
+      expect(await work).toBeInstanceOf(Error);
+      expect(first).toBeGreaterThan(0);
+      const next = reserveJobIdentities();
+      try {
+        if (cooperative) expect(next.first).toBe(first);
+        else expect(next.first).not.toBe(first);
+      } finally {
+        next.release();
+      }
+    } finally {
+      cancel.abort();
+      await work;
+    }
+  }, 10000);

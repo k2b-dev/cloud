@@ -308,7 +308,9 @@ The runner image contains both isolated roles and the compiler. Core needs
 none of these binaries. Each role receives only its input over stdin and
 returns bounded JSON over stdout. It runs as PID 1 with private user, PID,
 mount, network and IPC namespaces, an empty environment, private `/proc` and
-bounded `/tmp`. The job's separate lease key stays in the supervisor; no
+bounded `/tmp`. Private `/dev/shm` and `/dev/mqueue` mounts are read-only and
+limited to one page each; only `/tmp` receives the 16 MiB workspace budget.
+The job's separate lease key stays in the supervisor; no
 bridge token reaches the job or is issued for it.
 
 Before starting runners, install the supplied AppArmor policy once on each
@@ -344,6 +346,8 @@ profile and container envelope. The local profile syntax check cannot replace
 this image verification.
 
 Keep Compose's `init: true`, or Docker's `--init` for custom deployments.
+The supervisor refuses PID 1 with `runner_init_required`. Custom deployments,
+including Kubernetes, must put an init/reaper ahead of the image entrypoint.
 The container init reaps orphaned namespace processes after an abrupt launcher
 death. A dead namespace process must disappear from `/proc`, including its
 zombie entry, so repeated cancellations do not exhaust the container PID budget.

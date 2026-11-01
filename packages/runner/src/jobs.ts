@@ -3,12 +3,15 @@ import { type RunnerConfig, type RunnerJobLease, type RunnerJobResult, RunnerJob
 import { readBytes } from "./bridge";
 import { reserveJobIdentities } from "./identities";
 
+const launchJob = (command: string[]) => Bun.spawn(command, { env: {}, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+
 /** Launcher owns process-tree teardown. No key, Core URL, run token, or inherited descriptors reach either role. */
 export async function executeRunnerJob(
   lease: RunnerJobLease,
   input: string,
   config: RunnerConfig,
   signal: AbortSignal,
+  launch = launchJob,
 ): Promise<RunnerJobResult> {
   signal.throwIfAborted();
   if (Buffer.byteLength(input) > lease.inputBytes || lease.inputBytes > CODE_CHECK_LIMITS.requestBytes)
@@ -26,17 +29,14 @@ export async function executeRunnerJob(
   const identities = reserveJobIdentities();
   const child = (() => {
     try {
-      return Bun.spawn(
-        [
-          "/app/job-isolate",
-          String(identities.first),
-          String(2 * CODE_CHECK_LIMITS.requestBytes),
-          process.execPath,
-          "--no-env-file",
-          lease.kind === "check" ? "/app/checker.js" : "/app/code-test.js",
-        ],
-        { env: {}, stdin: "pipe", stdout: "pipe", stderr: "ignore" },
-      );
+      return launch([
+        "/app/job-isolate",
+        String(identities.first),
+        String(2 * CODE_CHECK_LIMITS.requestBytes),
+        process.execPath,
+        "--no-env-file",
+        lease.kind === "check" ? "/app/checker.js" : "/app/code-test.js",
+      ]);
     } catch (error) {
       identities.release();
       throw error;
