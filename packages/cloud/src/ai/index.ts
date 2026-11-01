@@ -34,6 +34,8 @@ export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, 
 export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
+/** Trusted runtime host: refresh the current conversation owner before calling a permission-aware service. */
+export { resolveAiCapabilityActor } from "./capability-execution";
 export { getAiChatQuotas } from "./chat-quotas";
 export {
   type AiChatTaskOccurrenceView,

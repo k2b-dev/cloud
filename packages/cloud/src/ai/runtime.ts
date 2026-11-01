@@ -40,6 +40,7 @@ import type {
   AiInterChatMessage,
   AiModelPolicy,
   AiPendingTurnAction,
+  AiRuntimeTool,
   AiStoredMessage,
   AiTurn,
   AiTurnFinalizedAction,
@@ -456,6 +457,7 @@ const runClaimedTurn = async (
   leaseOwner: string,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
+  tools?: readonly AiRuntimeTool[],
 ): Promise<void> => {
   const timeoutMinutes = await coreSettings.get<number>("ai.turn_timeout_minutes");
   const runBudgetMs = Math.max(0, Number(timeoutMinutes ?? 30)) * 60_000;
@@ -481,6 +483,7 @@ const runClaimedTurn = async (
 
   const executor = new AiTurnExecutor({
     leaseOwner,
+    tools,
     heartbeatMs: AI_TURN_HEARTBEAT_MS,
     enqueueContinuation: (input) => enqueueAiTurn(input).then(() => undefined),
     onTurnFinalized,
@@ -494,6 +497,7 @@ const processMessage = async (
   signal: AbortSignal,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
+  tools?: readonly AiRuntimeTool[],
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
@@ -516,7 +520,7 @@ const processMessage = async (
   }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
-    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested);
+    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested, tools);
   } catch (error) {
     log.error("AI turn worker error", {
       conversationId: message.data.conversationId,
@@ -587,6 +591,8 @@ let refCount = 0;
 
 export const startAiRuntime = (
   input: {
+    /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
+    tools?: readonly AiRuntimeTool[];
     concurrency?: number;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
@@ -627,7 +633,7 @@ export const startAiRuntime = (
     signal: controller.signal,
     run: async (signal) => {
       const worker = await aiTurnQueue().process({ concurrency, signal }, (message) =>
-        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested),
+        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested, input.tools),
       );
       try {
         await new Promise<void>((resolve) => {

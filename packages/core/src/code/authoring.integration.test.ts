@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { type AiRuntimeTool, aiConversations, prepareAiTools } from "@k2b/cloud/ai";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CodeCheckRequest, type CodeCheckResult, codeSdkHash } from "@k2b/cloud/code";
 import type { User } from "@k2b/cloud/contracts";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
+import { memoryStore, nessi, type Provider, type TextBlock, type ToolCallBlock } from "@k2b/nessi";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
@@ -17,7 +19,8 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
 import { codeAuthoringServices } from "./authoring";
-import { CodeAuthoringConflictSchema, type CodeAuthoringData, codeAuthoringContracts } from "./authoring-contracts";
+import { CodeAuthoringConflictSchema, type CodeAuthoringData, CodeAuthoringErrorSchema, codeAuthoringContracts } from "./authoring-contracts";
+import { createCodeAuthoringChatTools } from "./chat-tools";
 import { codePolicyPreset } from "./policy-contracts";
 import * as hosts from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -123,6 +126,259 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     const pulled = await codeAuthoringServices.pull({ codeId: common.codeId }, context);
     expect(codeAuthoringContracts.pull.data.parse(pulled).config.baseVersionId).toBe(success.value.submission.version.id);
     expect(["first", "second"]).toContain(pulled.files["code.ts"]!);
+  });
+  // Runner transport is deterministic here; C13b/C16/C17 cover isolation and execution.
+  test("scripted agent builds a Space task schedule, checks permissions, tests and submits without activation", async () => {
+    const chat = spyOn(aiConversations, "getConversation").mockResolvedValue({
+      id,
+      shortId: "chat_fixture",
+      title: "Build a schedule",
+      titleSource: "user",
+      description: "",
+      descriptionSource: "default",
+      keywords: [],
+      pinnedAt: null,
+      archivedAt: null,
+      done: false,
+      isDone: false,
+      lastUsedAt: fixed.toISOString(),
+      runStatus: "running",
+      runError: null,
+      unreadCompletion: false,
+      projectId: null,
+      draft: { content: [], revision: 0, updatedAt: null },
+      createdByUserId: id,
+      createdAt: fixed.toISOString(),
+      updatedAt: fixed.toISOString(),
+    });
+    // Legacy interactive turns omit kind; they must remain supported.
+    const turn = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
+      input: "Build a schedule",
+      actor: context.authority.actor,
+    });
+    const manifest = compileCapabilityManifest("spaces", {
+      protocolVersion: 2,
+      types: { space: { title: "Space", description: "A fictional Space." } },
+      actions: {
+        "task.create": {
+          title: "Create task",
+          description: "Create a fictional task.",
+          target: "space",
+          openWorld: false,
+          destructive: false,
+          idempotency: "required",
+          input: z.object({ title: z.string().describe("Task title.") }).strict(),
+          data: z.object({ id: z.string() }).strict(),
+          run: () => {
+            throw new Error("Real actions must never run in authoring tests");
+          },
+        },
+      },
+    });
+    const display = spyOn(catalog, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: {
+        appId: "spaces",
+        appName: "Spaces",
+        appIcon: "ti ti-square",
+        appDescription: "Fictional Spaces",
+        manifest,
+      },
+    });
+    capabilities.mockResolvedValue({
+      ok: true,
+      data: {
+        protocolVersion: 2,
+        apps: [{ appId: "spaces", appName: "Spaces", appIcon: "ti ti-square", appDescription: "Fictional Spaces", manifest }],
+        page: { hasMore: false },
+      },
+    });
+    const permission = { operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_fixture" }, file: "code.ts", line: 3 };
+    runner.mockReturnValue({
+      check: async (request) => {
+        const result = checked(request);
+        if (!result.ok) return result;
+        return { ...result, permissions: [{ ...permission, status: "new" }], manifest: { ...result.manifest, permissions: [permission] } };
+      },
+    });
+    const execution = spyOn(hosts, "createRunnerCodeTestingHost").mockImplementation(async () => ({
+      ...hosts.createRunnerCodeCheckHost(context),
+      limits: { requestBytes: 2_097_152, outputBytes: 65_536, cases: 10, runs: 10, calls: 10, wallClockMs: 10_000 },
+      execute: async (request) => {
+        expect(request.cases[0]?.fixture.mocks[0]?.operation).toBe("spaces.task.create");
+        expect(request.cases[0]?.fixture.now).toBe(fixed.getTime());
+        expect(request.sdk.manifest.operations.some((row) => row.capability === "spaces.task.create")).toBe(true);
+        return { version: 1, mode: request.mode, ok: true, error: null, diagnostics: [], cases: [] };
+      },
+    }));
+    const source =
+      'import {app, spaces} from "@sdk";\napp.schedule("0 8 * * 1", async () => {\n  await spaces.space("sp_fixture").task.create({title: "Weekly review", idempotencyKey: "review:2030-01-07"});\n}, {name: "monday"});\nexport default app;\n';
+    const fixture = {
+      version: 1,
+      name: "weekly task",
+      now: fixed.getTime(),
+      seed: 42,
+      mocks: [{ operation: "spaces.task.create", target: permission.target, replies: [{ ok: true, data: { id: "task_fixture" } }] }],
+      runs: [{ entrypoint: "monday", expect: { ok: true } }],
+    };
+    let project: z.infer<typeof codeAuthoringContracts.pull.data> | undefined;
+    let versionId: string | undefined;
+    const seen: string[] = [];
+    let step = 0;
+    const answer = (): TextBlock | ToolCallBlock => {
+      const names = ["code_init", "code_write", "code_check", "code_test", "code_simulate", "code_submit", "code_diff", "code_pull"];
+      const name = names[step++];
+      if (!name) return { type: "text", text: "Version submitted. Activate it yourself after review." };
+      const common = project ? { codeId: project.config.codeId, entry: project.config.entry, files: project.files } : {};
+      const args =
+        name === "code_init"
+          ? { title: "Weekly review" }
+          : name === "code_write"
+            ? { project, path: "code.ts", content: source }
+            : name === "code_test"
+              ? { ...common, tests: { "test/monday.json": JSON.stringify(fixture) } }
+              : name === "code_simulate"
+                ? { ...common, fixture }
+                : name === "code_submit"
+                  ? { ...common, baseVersionId: project?.config.baseVersionId }
+                  : name === "code_diff"
+                    ? { codeId: project?.config.codeId, versionId }
+                    : name === "code_pull"
+                      ? { codeId: project?.config.codeId }
+                      : common;
+      return { type: "tool_call", id: `call-${step}`, name, args };
+    };
+    const provider: Provider = {
+      name: "scripted",
+      family: "openai-compatible",
+      model: "scripted",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async complete() {
+        throw new Error("Unexpected completion");
+      },
+      async *stream() {
+        const block = answer();
+        yield block.type === "text"
+          ? { type: "block_start", blockId: "b", index: 0, kind: "text" }
+          : { type: "block_start", blockId: "b", index: 0, kind: "tool_call", callId: block.id, name: block.name };
+        yield { type: "block_end", blockId: "b", index: 0, block };
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: block.type === "text" ? "stop" : "tool_use" };
+      },
+    };
+    try {
+      const tools = prepareAiTools({
+        tools: createCodeAuthoringChatTools(),
+        actor: context.authority.actor,
+        conversationId: id,
+        turnId: id,
+      }).tools;
+      for await (const event of nessi({
+        provider,
+        systemPrompt: "Build and submit Code; activation is a human step.",
+        input: "Build a weekly task schedule",
+        tools,
+        store: memoryStore(),
+        maxTurns: 10,
+      })) {
+        if (event.type === "tool_execution_end") {
+          expect(event.isError).toBeFalsy();
+          seen.push(event.name);
+          if (["code_init", "code_write", "code_pull"].includes(event.name)) project = codeAuthoringContracts.pull.data.parse(event.result);
+          if (event.name === "code_check")
+            expect(codeAuthoringContracts.check.data.parse(event.result).permissions).toEqual([
+              { ...permission, status: "new", title: null, typeTitle: "Space", own: false, needsTargetAdmin: false },
+            ]);
+          if (event.name === "code_test" || event.name === "code_simulate")
+            expect(codeAuthoringContracts.test.data.parse(event.result).ok).toBe(true);
+          if (event.name === "code_submit") versionId = codeAuthoringContracts.submit.data.parse(event.result).submission.version.id;
+          if (event.name === "code_diff") expect(codeAuthoringContracts.diff.data.safeParse(event.result).success).toBe(true);
+        }
+        if (event.type === "loop_end") expect(event.reason).toBe("stop");
+      }
+      expect(seen).toEqual([
+        "code_init",
+        "code_write",
+        "code_check",
+        "code_test",
+        "code_simulate",
+        "code_submit",
+        "code_diff",
+        "code_pull",
+      ]);
+      if (!project || !versionId) throw new Error("Agent did not submit a version");
+      expect(project.config.baseVersionId).toBe(versionId);
+      expect(project?.files["code.ts"]).toBe(source);
+      expect(await sql`SELECT id FROM code.activations WHERE code_id=${project.config.codeId}`).toHaveLength(0);
+      const runtimeTools: AiRuntimeTool[] = createCodeAuthoringChatTools();
+      const invoke = async (name: string, input: unknown, signal = new AbortController().signal) => {
+        const tool = runtimeTools.find((item) => item.def.name === name);
+        if (!tool || !("location" in tool) || tool.location !== "server") throw new Error("Expected server tool");
+        return tool.run(tool.def.inputSchema.parse(input), {
+          actor: context.authority.actor,
+          conversationId: id,
+          turnId: id,
+          signal,
+          requestApproval: async () => {
+            throw new Error("Authoring must never request activation approval");
+          },
+          requestClientTool: async () => {
+            throw new Error("Authoring is server owned");
+          },
+        });
+      };
+      const aborted = AbortSignal.abort(new DOMException("Cancelled", "AbortError"));
+      let cancelled: unknown;
+      try {
+        await invoke("code_pull", { codeId: project.config.codeId }, aborted);
+      } catch (error) {
+        cancelled = error;
+      }
+      expect(cancelled).toBe(aborted.reason);
+      const stale = CodeAuthoringErrorSchema.parse(
+        await invoke("code_submit", {
+          codeId: project.config.codeId,
+          files: project.files,
+          entry: "code.ts",
+          baseVersionId: null,
+        }),
+      );
+      expect(stale.error.code).toBe("code_version_conflict");
+      expect(CodeAuthoringConflictSchema.parse(stale.error.details).latestVersionId).toBe(versionId);
+      turn.mockResolvedValue({ input: "background", mandate: { id, revision: 1 } });
+      expect(CodeAuthoringErrorSchema.parse(await invoke("code_pull", { codeId: project.config.codeId })).error.code).toBe("FORBIDDEN");
+      turn.mockResolvedValue({ input: "interactive", actor: context.authority.actor });
+      // An administrator can read another person's Code but is not its editor.
+      const otherId = "33333333-3333-4333-8333-333333333333";
+      await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${otherId}::uuid,'chat-other','local','user',false)`;
+      const otherContext: CodeContext = {
+        ...context,
+        authority: {
+          ...context.authority,
+          actor: { kind: "user", user: { ...user, id: otherId, uid: "chat-other", roles: [] } },
+          accessSubject: { type: "user", userId: otherId },
+        },
+      };
+      const other = await codeAuthoringServices.init({ title: "Other person's Code" }, otherContext);
+      expect((await codeAuthoringServices.pull({ codeId: other.config.codeId }, context)).config.codeId).toBe(other.config.codeId);
+      for (const name of ["code_read", "code_pull", "code_sdk"])
+        expect(CodeAuthoringErrorSchema.parse(await invoke(name, { codeId: other.config.codeId })).error.code).toBe("NOT_FOUND");
+      // Resource ownership and its Code account are immutable from creation.
+      const resourceCodeId = "c_resourcefixture";
+      const accountId = "44444444-4444-4444-8444-444444444444";
+      await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by)
+        VALUES(${accountId}::uuid,'code:spaces.space:sp_other','code',${otherId}::uuid)`;
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
+        VALUES(${resourceCodeId},'resource','spaces.space','sp_other','Other resource Code',${accountId}::uuid,${otherId}::uuid)`;
+      for (const name of ["code_read", "code_pull", "code_sdk"])
+        expect(CodeAuthoringErrorSchema.parse(await invoke(name, { codeId: resourceCodeId })).error.code).toBe("NOT_FOUND");
+    } finally {
+      chat.mockRestore();
+      turn.mockRestore();
+      display.mockRestore();
+      execution.mockRestore();
+      capabilities.mockResolvedValue({ ok: true, data: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
+      runner.mockReturnValue({ check: async (request) => checked(request) });
+    }
   });
   test("phone, read-only and machine credentials cannot activate through the shared service", async () => {
     const input = { codeId: "c_1234", versionId: id, activationId: id };

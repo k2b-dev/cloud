@@ -2,6 +2,7 @@ import { CapabilityStreamSchema } from "@k2b/cloud/contracts";
 import { artifactClient } from "../client";
 import type { HttpApproval } from "../http-host";
 import { CloudError, cloudError } from "./errors";
+import type { RuntimeSdkCallOptions } from "./services";
 export type CapabilityApproval = Extract<Awaited<ReturnType<typeof artifactClient.capabilityPrepare>>, { status: "approval" }>;
 export type CapabilityDecision = { approved: boolean; remember?: "always" };
 export type ApproveCapability = (request: CapabilityApproval, signal: AbortSignal, conversationId?: string) => Promise<CapabilityDecision>;
@@ -12,10 +13,11 @@ export async function runCapability(
   context: { artifactId?: string; conversationId?: string },
   approve: ApproveCapability,
   signal: AbortSignal,
+  options?: RuntimeSdkCallOptions,
 ) {
   signal.throwIfAborted();
   const callId = crypto.randomUUID();
-  let response = await artifactClient.capabilityPrepare({ id: callId, name, input, ...context }, signal);
+  let response = await artifactClient.capabilityPrepare({ id: callId, name, input, ...options, ...context }, signal);
   signal.throwIfAborted();
   if (response.status === "approval") {
     const id = response.id;

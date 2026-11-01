@@ -1,14 +1,25 @@
-import type { z } from "zod";
+import { CapabilityIdempotencyKeySchema, CapabilityInvocationBodySchema } from "@k2b/cloud/contracts";
+import { z } from "zod";
 import { LIMITS } from "../contracts";
 import { CloudError } from "./errors";
 import { RuntimeStorage } from "./shared-storage";
 import { RuntimeStream, runStream } from "./streams";
 
+/** Normalized coordinates and retry metadata; validated again at the authenticated capability endpoint. */
+export const RuntimeSdkCallOptions = z
+  .object({
+    target: CapabilityInvocationBodySchema.shape.target,
+    refs: CapabilityInvocationBodySchema.shape.refs,
+    idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
+  })
+  .strict();
+export type RuntimeSdkCallOptions = z.infer<typeof RuntimeSdkCallOptions>;
+
 /** Host services behind `cloud.*`, shared by script runs and HTML app frames. Each one rechecks access on the server. */
 export type RuntimeServices = {
   /** Loads a lazy runtime chunk; the default reads the authenticated artifacts API. */
   chunk?: (name: string, signal: AbortSignal) => Promise<string>;
-  capability?: (name: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  capability?: (name: string, input: unknown, signal: AbortSignal, options?: RuntimeSdkCallOptions) => Promise<unknown>;
   http?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   ai?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   pdf?: (request: unknown, signal: AbortSignal) => Promise<Blob>;
@@ -46,7 +57,12 @@ export function createServiceCalls(services: RuntimeServices) {
       case "capabilities.run": {
         if (!services.capability) throw new CloudError("unavailable", "Capability execution unavailable");
         if (typeof args[0] !== "string") throw new CloudError("invalid", "cloud.capabilities.run(name, input) needs a capability name.");
-        const result = await services.capability(args[0], args[1], signal);
+        const result = await services.capability(
+          args[0],
+          args[1],
+          signal,
+          args[2] === undefined ? undefined : RuntimeSdkCallOptions.parse(args[2]),
+        );
         if (result && typeof result === "object" && "stream" in result && result.stream) {
           const ref = RuntimeStream.parse(result.stream);
           if (streams.size >= LIMITS.files) throw new CloudError("limit", "Too many capability streams in this run.");
