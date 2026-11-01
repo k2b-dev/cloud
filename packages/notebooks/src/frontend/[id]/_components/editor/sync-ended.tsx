@@ -8,6 +8,7 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
 import { resolveSameNotebookNoteTarget } from "./note-navigation";
+import { DetailsButton, NavigationButton } from "./workspace-buttons";
 
 export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
 export const signInCodes = new Set<YjsProviderError["code"]>(["SESSION_EXPIRED", "LOGIN_REQUIRED"]);
@@ -139,7 +140,7 @@ export function SyncEndedBar(props: {
     props.sync.allowLeave();
     refreshCurrentPath();
   };
-  // The unsent text exists only in this tab: closing it or following a link asks first, like Reload does.
+  // Preserve the warning for input the server has not confirmed; device storage also protects discarded tabs.
   createEffect(() => {
     if (!props.sync.shouldConfirmLeave()) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -177,6 +178,8 @@ export function SyncEndedBar(props: {
       class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed"
       data-sync-ended={props.ended.code}
     >
+      {/* This bar replaces the toolbar, so it keeps the workspace's navigation and Details buttons. */}
+      <NavigationButton />
       <InlineGuidance
         role="alert"
         tone={props.ended.unsent ? "danger" : "warning"}
@@ -197,6 +200,7 @@ export function SyncEndedBar(props: {
         <i class={signIn() ? "ti ti-login-2" : "ti ti-copy"} aria-hidden="true" />
         {signIn() ? t().signInAgain : t().copyText}
       </Button>
+      <DetailsButton />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "mail",
-  "manifestHash": "0da9a8322b69e7bf1359215013fb6c2d350741a2b15e2e752a4de8fbc344db62",
+  "manifestHash": "30abf06e79ca2e5fbd5b4298c9cbca9f66e24093940319a16362046f981fd345",
   "types": [
     {
       "localId": "attachment",
@@ -606,11 +606,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "description": "Optional conversation ID filter.",
             "type": "string",
@@ -630,7 +625,6 @@
             "maximum": 100
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -718,8 +712,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "03c2f83eadb27f7edc68517511cfc1b189beb0b916edd415bef77fbfbfa8319b",
-      "openWorld": false
+      "schemaHash": "20cb7b5bf68f1c870262a12f3d07f83a24852e7c277e8b5cc64b944a4cbc8309",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.comment.list",
@@ -729,11 +724,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -759,7 +749,7 @@
             "maximum": 100
           }
         },
-        "required": ["mailboxId", "conversationId"],
+        "required": ["conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -901,8 +891,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "c676da6743799edf87b823469272b31fc74de2ef9c10330670430fd59cc8bfdd",
-      "openWorld": false
+      "schemaHash": "ed37e3db68ce98aebba54a281992a134b473cdf2c07be633dc2f71a766df3c2e",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.focus",
@@ -1077,11 +1068,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "folderId": {
             "description": "Optional provider folder ID filter.",
             "anyOf": [
@@ -1137,7 +1123,6 @@
             "maximum": 50
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1276,8 +1261,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "01acc1cd541405a97aa963972c6df97f9ce959a569f32e495acbf734c81c1628",
-      "openWorld": true
+      "schemaHash": "60a9bcf4dd4159e95f3fb221cc12d4deb126f2a8ea87617a5fde8c158c32d448",
+      "openWorld": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.read",
@@ -1600,11 +1586,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -1618,7 +1599,7 @@
             "maximum": 10
           }
         },
-        "required": ["mailboxId", "conversationId"],
+        "required": ["conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1717,8 +1698,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "6fe43781ef058b906197e339b4b9e9f4fea432e90c7630e713f05e0d52bc2918",
-      "openWorld": true
+      "schemaHash": "ce4b7a80bb95178cd3d8c81617fa2757c1d7ef67d221cdb21139b54ed4f1ae04",
+      "openWorld": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.reminder.get",
@@ -1728,18 +1710,13 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Exact mail.conversation ID returned by a conversation list, search, focus result, or typed conversation ref."
           }
         },
-        "required": ["mailboxId", "conversationId"],
+        "required": ["conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1796,8 +1773,9 @@
           }
         ]
       },
-      "schemaHash": "26aafa4be20ae4ebeb98172c9b108269021667cb7a63811bf43a289929d23d52",
-      "openWorld": false
+      "schemaHash": "15140a049468c8ca1cc1834a53133a5a3059034662ea03ba1ff109210980b11e",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.search",
@@ -1807,11 +1785,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "expression": {
             "anyOf": [
               {
@@ -2750,7 +2723,7 @@
             "maximum": 50
           }
         },
-        "required": ["mailboxId", "expression"],
+        "required": ["expression"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2987,8 +2960,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "8f99e061ee5712c366721b5939462d66c2a4483d38ef015fc6e008c6f43ec964",
-      "openWorld": true
+      "schemaHash": "501ea50b82b3c0c6c7fa6add840567c865ec82840cf5a3ff008623ec854ce983",
+      "openWorld": true,
+      "target": "mailbox"
     },
     {
       "localId": "delivery.list",
@@ -2998,11 +2972,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
             "type": "string",
@@ -3017,7 +2986,6 @@
             "maximum": 100
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3132,8 +3100,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "c9203f2abb73a02a608664924c6e00582a94d8570f0ffdfd4b6942272d587cf0",
-      "openWorld": false
+      "schemaHash": "c5d59e7c89f2bc4774324722e5c59fbbf9c4019baf930444ade4e6ef334c5b28",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "delivery.read",
@@ -3256,11 +3225,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
             "type": "string",
@@ -3275,7 +3239,6 @@
             "maximum": 100
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3407,8 +3370,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "e0c880a633832f66c32f5d7cc8beccb63b14b5f37d59933eae821fd909d28c30",
-      "openWorld": false
+      "schemaHash": "f86273c1c295161f681e26a2d80e09c744a2e09612d63982a7702450e13485d2",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "draft.read",
@@ -3709,11 +3673,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -3726,7 +3685,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision"],
+        "required": ["draftId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3783,8 +3742,9 @@
         "required": ["draftId", "revision", "fingerprint", "warnings", "contentHash"],
         "additionalProperties": false
       },
-      "schemaHash": "dc904f7146485dff5cbe6d48a919051d4386303d25dfe016752c514f6f8dda03",
-      "openWorld": false
+      "schemaHash": "a2f71f1d137441f8e6ea6e627fa142c865e749bcb67f5a1318eedc5879dd4a5f",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "folder.list",
@@ -3794,11 +3754,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
             "type": "string",
@@ -3813,7 +3768,6 @@
             "maximum": 50
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3943,8 +3897,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "56857fab5e25cd53f3301928ff4a9fd66bd42567a493ae0d193ae98fa7cbea8a",
-      "openWorld": false
+      "schemaHash": "fa3f3be412f4211a76e5a5dfd3da260a9d01d813bd5172c876d834f257fc7543",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "mailbox.browse",
@@ -4085,11 +4040,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
             "type": "string",
@@ -4104,7 +4054,6 @@
             "maximum": 50
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4260,8 +4209,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "5c5baf1ebbfc3d8e3f3de5451664380dbc1554244dc4f6941d9f52c0a798e24e",
-      "openWorld": false
+      "schemaHash": "8dcc4326fd8b09090aefdf3e9bba4456155b12f265cd2b6024429c842ce046fc",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "mailbox.list",
@@ -4420,11 +4370,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "query": {
             "description": "Optional member name or user identifier search.",
             "type": "string",
@@ -4444,7 +4389,6 @@
             "maximum": 100
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4476,8 +4420,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "e31d3d7ba01cba8b88b13154b17dbf6ba2c64aad24e82c773982d06eafc34143",
-      "openWorld": false
+      "schemaHash": "7557b25fe41ee09004b16854a1b1f2e1464ea1239691a8b4eb2009356bac055e",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "mailbox.read",
@@ -4596,11 +4541,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
             "type": "string",
@@ -4615,7 +4555,6 @@
             "maximum": 50
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4659,8 +4598,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "d982006a75f3d200e5656c3280093976680e405c644fa65b660257226d139ea5",
-      "openWorld": false
+      "schemaHash": "a335ab02e539f2c5df121781674540ac941e46ddb9d01880c02d1496008f5794",
+      "openWorld": false,
+      "target": "mailbox"
     },
     {
       "localId": "mailing-list.subscription.get",
@@ -4670,11 +4610,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "listKey": {
             "type": "string",
             "minLength": 1,
@@ -4682,7 +4617,7 @@
             "description": "Stable detected mailing-list key."
           }
         },
-        "required": ["mailboxId", "listKey"],
+        "required": ["listKey"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4788,8 +4723,9 @@
           }
         ]
       },
-      "schemaHash": "e05e8751fbf54e01c40e32ba739cb67568d7773b0e92725e93f8a8243dd1ec63",
-      "openWorld": true
+      "schemaHash": "d1a0c3c4036affa0b2b3912061a4530c232fdee091ef03aec3564019a88f77a1",
+      "openWorld": true,
+      "target": "mailbox"
     },
     {
       "localId": "mailing-list.subscription.list",
@@ -4799,11 +4735,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
             "type": "string",
@@ -4818,7 +4749,6 @@
             "maximum": 25
           }
         },
-        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4910,8 +4840,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "4ba2e046091f7e5eaffa963783c5c59a22b51802e87d0f80f0755d07cc8a7705",
-      "openWorld": true
+      "schemaHash": "500fbf5cd997576a70498a7829351a0351d33088fab9f22bddc289d4247faadc",
+      "openWorld": true,
+      "target": "mailbox"
     },
     {
       "localId": "message.list",
@@ -4921,11 +4852,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -4945,7 +4871,7 @@
             "maximum": 50
           }
         },
-        "required": ["mailboxId", "conversationId"],
+        "required": ["conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5122,8 +5048,9 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "13bbe7bbdae73a0dd07bbfd05954ba18d445cc91c9431b9f20e96e48e66c98c4",
-      "openWorld": true
+      "schemaHash": "8cfa2f0bb07c0bbe8dfd27d8d36cb90983c91afb8568b68c3f3b3f524512c3bc",
+      "openWorld": true,
+      "target": "mailbox"
     },
     {
       "localId": "message.read",
@@ -5919,11 +5846,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -5945,7 +5867,7 @@
             "description": "Add users, remove users, or replace the entire assignee set."
           }
         },
-        "required": ["mailboxId", "conversationId", "assigneeUserIds", "mode"],
+        "required": ["conversationId", "assigneeUserIds", "mode"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6007,12 +5929,13 @@
         "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "17512e2e89be3d60aa6bd552d13174c9f4d12ffcf959c96716478f40f52f5f4b",
+      "schemaHash": "0731bbde6d7fe71eb8d7390cd7027da158cf621bfb6a3857e2da595348aad716",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.assign.batch",
@@ -6022,11 +5945,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationIds": {
             "minItems": 1,
             "maxItems": 50,
@@ -6054,7 +5972,7 @@
             "description": "Add users, remove users, or replace the entire assignee set."
           }
         },
-        "required": ["mailboxId", "conversationIds", "assigneeUserIds", "mode"],
+        "required": ["conversationIds", "assigneeUserIds", "mode"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6110,12 +6028,13 @@
         "required": ["assignees", "results"],
         "additionalProperties": false
       },
-      "schemaHash": "3db1936fbda1ed1b634c48ebf3baa3d8a8583a2589f4f15acdccde0fc756d15a",
+      "schemaHash": "9b4be002401f149178ef77f2193833b6287d478c197fcdaa3f8e538636f89a2a",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.comment.create",
@@ -6125,11 +6044,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6155,7 +6069,7 @@
             ]
           }
         },
-        "required": ["mailboxId", "conversationId", "body"],
+        "required": ["conversationId", "body"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6196,12 +6110,13 @@
         "required": ["id", "conversationId", "referencedMessageId", "revision", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "c24f1a15d692e7d9d75f6a3bea4672619e74e041b1b9a63024d3c056f7ad6d88",
+      "schemaHash": "ce0d6a9abae07acbda4571cf2b631d8bb9c8b9ee4ced46ea58f2cf1673aad2fa",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.comment.delete",
@@ -6211,11 +6126,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6233,7 +6143,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": ["mailboxId", "conversationId", "commentId", "expectedRevision"],
+        "required": ["conversationId", "commentId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6274,11 +6184,12 @@
         "required": ["id", "conversationId", "referencedMessageId", "revision", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "561cecb7da5dda78e64ce9caf186040add5d37e0a3dbe3478c0f19171fab968e",
+      "schemaHash": "bab4ee3c594ef22fbb4939a9a3184c205b9a231ead58404de56411937b8555ec",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.comment.update",
@@ -6288,11 +6199,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6316,7 +6222,7 @@
             "description": "Replacement internal comment body."
           }
         },
-        "required": ["mailboxId", "conversationId", "commentId", "expectedRevision", "body"],
+        "required": ["conversationId", "commentId", "expectedRevision", "body"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6357,12 +6263,13 @@
         "required": ["id", "conversationId", "referencedMessageId", "revision", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "e6af99af451d3162f21a68c467f4aeda1325afc8e54d53f2b787a4b0db2bf13b",
+      "schemaHash": "5d6005beb5a47f9a15225faedf5627bf66a56b1f54712be7ed6befc116ae6240",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.mark",
@@ -6372,11 +6279,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "target": {
             "type": "object",
             "properties": {
@@ -6404,7 +6306,7 @@
             "type": "boolean"
           }
         },
-        "required": ["mailboxId", "target"],
+        "required": ["target"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6444,12 +6346,13 @@
         "required": ["conversationId", "correlationId", "commands"],
         "additionalProperties": false
       },
-      "schemaHash": "f5928af0c1c9b10c468c0c805fac9884583e14585b26ba9b4f52f2e5b9116f6b",
+      "schemaHash": "2ac180b03035844dba29c70b2a41c2b09f7150a2ff7bd81084ddbe693a02eec1",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.move",
@@ -6459,11 +6362,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "target": {
             "type": "object",
             "properties": {
@@ -6522,7 +6420,7 @@
             "description": "Provider destination role or folder."
           }
         },
-        "required": ["mailboxId", "target", "destination"],
+        "required": ["target", "destination"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6562,11 +6460,12 @@
         "required": ["conversationId", "correlationId", "commands"],
         "additionalProperties": false
       },
-      "schemaHash": "4df68d0f949ec5cecfeac5c21d00aee6c2aa98e815260e0dc43d315f88ba017f",
+      "schemaHash": "ee9e9b4eaf26a880742a52093f62992eaafef0064cdb77e6279547261434d80f",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.reminder.cancel",
@@ -6576,11 +6475,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6593,7 +6487,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": ["mailboxId", "conversationId", "expectedRevision"],
+        "required": ["conversationId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6643,12 +6537,13 @@
         "required": ["id", "conversationId", "userId", "dueAt", "state", "revision", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "984ad3ea7899110d25d0fb20cf6e2d298fdb774d2a8238c570b900010f780d70",
+      "schemaHash": "7fedcf6f6203b97ed64d8279375ff4bf46bf915f01c84e599a932734742e8719",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.reminder.set",
@@ -6658,11 +6553,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6688,7 +6578,7 @@
             "description": "Current reminder revision, or null when creating it."
           }
         },
-        "required": ["mailboxId", "conversationId", "dueAt", "expectedRevision"],
+        "required": ["conversationId", "dueAt", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6738,12 +6628,13 @@
         "required": ["id", "conversationId", "userId", "dueAt", "state", "revision", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "fdb941493a2fd2604bbcd5d2855d9dd566de1ccf74f567aa703a75a2b9bba2dd",
+      "schemaHash": "741fc825acf6900aa15f4324548e3767be8ae7162c9955f78e76b10a1b262afe",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.snooze",
@@ -6753,11 +6644,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6783,7 +6669,7 @@
             "description": "Time to show the conversation again, or null to show it now."
           }
         },
-        "required": ["mailboxId", "conversationId", "expectedRevision", "snoozedUntil"],
+        "required": ["conversationId", "expectedRevision", "snoozedUntil"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6845,12 +6731,13 @@
         "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "e2fb3778e023ef44323c8556d5f0835c2b60c4e7937d0e60e9c833d6b936c638",
+      "schemaHash": "654ce996aa5cf08a5b5c2dad9d73ac5d00d70474c228eb7639847ad3e04b1d8e",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.status.update",
@@ -6860,11 +6747,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6882,7 +6764,7 @@
             "description": "Mark the conversation done or reopen it."
           }
         },
-        "required": ["mailboxId", "conversationId", "expectedRevision", "status"],
+        "required": ["conversationId", "expectedRevision", "status"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6944,12 +6826,13 @@
         "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "49889f775e8adc94149f8cf86503c89e741b9cabc682f342ea3a04ddbe82ccd7",
+      "schemaHash": "ffe94db49f88ef4a3753f6c9638c9abe197a62ce8c150b040e42e20b05de4dff",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "conversation.tag.update",
@@ -6959,11 +6842,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "conversationId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -6998,7 +6876,7 @@
             }
           }
         },
-        "required": ["mailboxId", "conversationId", "expectedRevision"],
+        "required": ["conversationId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7059,12 +6937,13 @@
         "required": ["conversationId", "conversationRevision", "tags"],
         "additionalProperties": false
       },
-      "schemaHash": "a4f8d355dd2d85db4454fd1d44fa0f15074b8b225d336423e4e4012f9a46e92b",
+      "schemaHash": "80f61b2c122fd1309222ed63e38c61cb9aeab082d3a04199891aaca558c7d9f7",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "delivery.cancel",
@@ -7074,11 +6953,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "deliveryId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7091,7 +6965,7 @@
             "enum": ["draft", "discard"]
           }
         },
-        "required": ["mailboxId", "deliveryId"],
+        "required": ["deliveryId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7111,11 +6985,12 @@
         "required": ["disposition", "draftId"],
         "additionalProperties": false
       },
-      "schemaHash": "aa1c1d6d23fa45229b691bb358e573e59441cfea137dc602fc3192362809f983",
+      "schemaHash": "97a5624281d428d957ee207c0bec8a57c53a3056a3f43dc745ae929c04042b21",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.attachment.add",
@@ -7125,11 +7000,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7169,7 +7039,7 @@
             "description": "Attachment to add."
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision", "attachment"],
+        "required": ["draftId", "expectedRevision", "attachment"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7238,12 +7108,13 @@
         "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
-      "schemaHash": "5e92fd63fc272d9a5a8b741be7462e1f4565139be7de6ade05f362956031cf9f",
+      "schemaHash": "1af7d6d0989711bc2901fa98a957a9b11de42583ab69f8f4a172eed2b6bf0b61",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.attachment.remove",
@@ -7253,11 +7124,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7275,7 +7141,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": ["mailboxId", "draftId", "attachmentId", "expectedRevision"],
+        "required": ["draftId", "attachmentId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7344,11 +7210,12 @@
         "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
-      "schemaHash": "3e3cc06e035625728b96eab6593a881ee512534e74df0c27b59e3e6f20074f0c",
+      "schemaHash": "7f299fd6023cfd3166b52c1bac6084e0d11a021a26b7a2855f31232b93b62181",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.create",
@@ -7358,11 +7225,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "senderIdentityId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7565,7 +7427,7 @@
             }
           }
         },
-        "required": ["mailboxId", "senderIdentityId"],
+        "required": ["senderIdentityId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7634,12 +7496,13 @@
         "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
-      "schemaHash": "297937228b6edfeb47c7db56f4315d39cad89e1e0cfb39ce5fe27f3d9eebd038",
+      "schemaHash": "64abe931d2f7577ba37f5a885842a53373f3b148914b2c3ef7b04039b801a034",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.discard",
@@ -7649,11 +7512,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7666,7 +7524,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision"],
+        "required": ["draftId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7681,11 +7539,12 @@
         "required": ["deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "ae5cfffa7fc893f9f4627ec8e24ee8128afb4967db2609d6a9e3848d0b7dde69",
+      "schemaHash": "adde991d89ba434f03e9877eaebca2b3d9adc3b865787d3d1f4b49f6e6e8f8d6",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.patch",
@@ -7695,11 +7554,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7842,7 +7696,7 @@
             "description": "Fields to replace; omitted fields remain unchanged. Recipient arrays replace the entire list."
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision", "patch"],
+        "required": ["draftId", "expectedRevision", "patch"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7911,12 +7765,13 @@
         "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
-      "schemaHash": "2ef6348a1f188c786511ca0f6d8016cbdfd56bca18ec8e0392dc06a92c829bcd",
+      "schemaHash": "05327ce95c9197dc2a80b58686c580a5fc7f80c137c6e940dfd0f3a2d392e32b",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.send",
@@ -7926,11 +7781,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -8002,7 +7852,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision", "expectedContentHash", "senderIdentityId"],
+        "required": ["draftId", "expectedRevision", "expectedContentHash", "senderIdentityId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8039,11 +7889,12 @@
         "required": ["commandId", "state", "draftId", "conversationId"],
         "additionalProperties": false
       },
-      "schemaHash": "ae5c3ff8cad5baac4642525e9f6e1716dec34ba318bf9610c5c70e4f0b792e91",
+      "schemaHash": "5622ff491883e115729aa3ec1e3dfd30636d038b2d7e3133c7d94d10a69e083b",
       "destructive": true,
       "openWorld": true,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "draft.update",
@@ -8053,11 +7904,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "draftId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -8210,7 +8056,7 @@
             "description": "Complete editable draft content replacing the current content."
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision", "draft"],
+        "required": ["draftId", "expectedRevision", "draft"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8279,12 +8125,13 @@
         "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
-      "schemaHash": "8e6e61b24ce2dd2ba8c3e15690e6b324980d972d701e82e82ff5b39a6544eba6",
+      "schemaHash": "9ac4df3ddf5941050ca14743fb989711e301d8da0bec258c09c35eafe766b830",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "folder.display.set",
@@ -8294,11 +8141,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "folderId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -8310,7 +8152,7 @@
             "description": "everywhere shows the folder's mail in All mail and the work views; folder_only keeps it inside the folder; hidden also hides the folder."
           }
         },
-        "required": ["mailboxId", "folderId", "display"],
+        "required": ["folderId", "display"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8346,11 +8188,12 @@
         "required": ["folderId", "display", "effectiveDisplay", "displayInheritedFromFolderId"],
         "additionalProperties": false
       },
-      "schemaHash": "8909529ab0eae82217118e9ac9b7ecfc6fe5535e488fc27b77198406c29f4c21",
+      "schemaHash": "86b0774f8ada6ae1f6b1ed7b106b15ec63f1008a6d894b56fd838fe2fb53cc0e",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "mailbox.tag.create",
@@ -8360,11 +8203,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "name": {
             "type": "string",
             "minLength": 1,
@@ -8377,7 +8215,7 @@
             "description": "Tag color as a six-digit hexadecimal value."
           }
         },
-        "required": ["mailboxId", "name", "color"],
+        "required": ["name", "color"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8406,12 +8244,13 @@
         "required": ["id", "name", "color", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "e09b23283bc4cf9c664e4afec783623318073ade60f01e367fdf95ab29cb8971",
+      "schemaHash": "412dce84a6bfa90b84a89dd0a489bd59b4215907470b187cd221062c7a264270",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "mailbox.tag.delete",
@@ -8421,11 +8260,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "tagId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -8438,7 +8272,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": ["mailboxId", "tagId", "expectedRevision"],
+        "required": ["tagId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8453,11 +8287,12 @@
         "required": ["deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "80ebcf2d224ca6a2b5157aa13aa165b46bd48ab33ff635f1397b9aafcbf56993",
+      "schemaHash": "deacf1f0477beba1985b70b898a39082668f0a9c6765075a9580c3d931316644",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "mailbox.tag.update",
@@ -8467,11 +8302,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "tagId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -8495,7 +8325,7 @@
             "pattern": "^#[0-9a-fA-F]{6}$"
           }
         },
-        "required": ["mailboxId", "tagId", "expectedRevision"],
+        "required": ["tagId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8524,11 +8354,12 @@
         "required": ["id", "name", "color", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "6f62ff408b11a1f8aad89965a977de57d863b870407df7679e5e60541e5f3c63",
+      "schemaHash": "1d9950214353c12f563edfb4e75ecb0342ed6632facc7f75d6d7ce5ac6f07bea",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     },
     {
       "localId": "mailing-list.unsubscribe",
@@ -8538,11 +8369,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "mailboxId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
-          },
           "listKey": {
             "type": "string",
             "minLength": 1,
@@ -8555,7 +8381,7 @@
             "description": "Exact advertised one-click HTTPS unsubscribe URL."
           }
         },
-        "required": ["mailboxId", "listKey", "href"],
+        "required": ["listKey", "href"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8579,11 +8405,12 @@
         "required": ["listKey", "status", "requestedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "c703f1831018af8e3cdb26d28be62c0f41eacdef3e040f6517ef144758cd3218",
+      "schemaHash": "80e8d5292b3ce827c341f9b37b086b5f4e6081e6a8abe5ab637a957c39af430f",
       "destructive": true,
       "openWorld": true,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "mailbox"
     }
   ],
   "commands": [

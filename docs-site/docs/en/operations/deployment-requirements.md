@@ -320,6 +320,12 @@ While bootstrap waits, there is no HTTP listener or readiness response. A
 permanent credential/protocol failure exits immediately; an exhausted network
 budget exits so the container restart policy can retry.
 
+Cloud no longer rewrites an application's `DATABASE_URL` to add
+`application_name`. The platform clients (`sql` and `createSql()` from
+`@k2b/cloud`) still name their connections `cloud:<app-id>` unless the URL sets
+an operator name or startup options. An application that still uses Bun-global
+clients shows no Cloud application name in `pg_stat_activity`.
+
 **Key-only production operation is not yet supported.** Keep each app's
 infrastructure environment values until the platform-client import migration
 is complete; Bun-global SQL/Redis imports still depend on them. This release
@@ -2177,3 +2183,18 @@ apps through `cld admin apps keys` or Core’s administrator API. Enrollment use
 the same app-bound service account as workload credentials. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
+
+## Code-version role approvals
+
+Core adds the Code-version request kind and Cloud-admin recipient to the
+existing approvals table on startup. Existing Action requests, pending chat
+actions and remembered choices retain their data and recipient semantics.
+There is no separate Assistant migration for this change.
+
+Start the upgraded Core before a version service creates Code approval
+requests. Every Core process that handles decisions must install the version
+owner's transactional handler. A missing handler leaves the request pending
+and answers its decision with `503`; install the handler and retry. This does
+not block personal Action approvals. See
+[Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
+for the service contract and device limits.

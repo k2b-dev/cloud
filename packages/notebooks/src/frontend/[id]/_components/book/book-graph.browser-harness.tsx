@@ -32,7 +32,6 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
                 view: props.view,
                 now: props.now,
                 timeZone: "Europe/Berlin",
-                navigationHidden: props.navigator.navigationHidden,
               })
             ) : (
               <article id="notebook-book-content" class="notebook-book-content">
