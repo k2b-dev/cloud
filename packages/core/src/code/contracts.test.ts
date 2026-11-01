@@ -75,7 +75,7 @@ describe("Core Code data contracts", () => {
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
-      ["code.version.submit", "code.version.approve", "code.version.reject", "code.pause", "code.resume", "code.policy.update"].map(
+      ["code.pause", "code.policy.update", "code.resume", "code.version.approve", "code.version.reject", "code.version.submit"].map(
         (id) => ({ id, code: false }),
       ),
     );
