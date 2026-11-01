@@ -19,6 +19,8 @@ import { weatherCapabilityPresentation } from "./capability-presentation";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherIconSchema, WeatherLocationIdSchema } from "./contracts";
 import { resolveWeatherMessages, type WeatherMessages } from "./messages";
 
+const locationTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "weather.location" ? context.target.id : "");
+
 const MAX_CURSOR_OFFSET = 10_000;
 const WEATHER_LOCATIONS_APPROVAL_SCOPE = "locations";
 
@@ -57,11 +59,7 @@ const LocationReadInputSchema = z
   })
   .strict();
 
-const LocationTargetInputSchema = z
-  .object({
-    locationId: WeatherLocationIdSchema.describe("Saved-location ID returned by saved-location search/list or a weather.location ref."),
-  })
-  .strict();
+const LocationTargetInputSchema = z.object({}).strict();
 
 const ForecastSourceSchema = z.discriminatedUnion("kind", [
   z
@@ -423,12 +421,12 @@ const runLocationCreate = async (input: z.infer<typeof LocationCreateInputSchema
     },
   );
 
-const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema>, context: CapabilityExecutionContext) =>
+const runLocationDelete = async (_input: z.infer<typeof LocationTargetInputSchema>, context: CapabilityExecutionContext) =>
   audited(
     {
       action: "weather.capability.location.delete",
       actor: capabilityAuditActor(context),
-      target: { type: "weather_location", id: input.locationId },
+      target: { type: "weather_location", id: locationTargetId(context) },
       requestId: context.requestId,
       metadata: { capability: "weather.location.delete", origin: context.origin },
     },
@@ -436,12 +434,12 @@ const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema
       const { t } = resolveWeatherMessages(context.locale);
       const userId = requireUserId(context);
       if (!userId.ok) return userId;
-      const location = await weatherService.location.saved.get({ id: input.locationId, userId: userId.data });
+      const location = await weatherService.location.saved.get({ id: locationTargetId(context), userId: userId.data });
       if (!location) return fail({ code: "NOT_FOUND", message: t.capabilityLocationNotFound, status: 404 });
-      const result = await weatherService.location.saved.remove({ id: input.locationId, userId: userId.data });
+      const result = await weatherService.location.saved.remove({ id: locationTargetId(context), userId: userId.data });
       return result.ok
         ? ok({
-            data: { locationId: input.locationId, deleted: true as const },
+            data: { locationId: locationTargetId(context), deleted: true as const },
             summary: t.capabilityDeletedSummary({ name: mapLocation(location).name }),
           })
         : fail({ ...result.error, message: t.removeLocationFailed });
@@ -545,6 +543,7 @@ export const weatherCapabilities = defineCapabilities({
       run: runLocationCreate,
     },
     "location.delete": {
+      target: "location",
       title: "Delete saved weather location",
       description: "Permanently delete one saved weather location owned by the current user.",
       input: LocationTargetInputSchema,
@@ -552,11 +551,11 @@ export const weatherCapabilities = defineCapabilities({
       destructive: true,
       openWorld: false,
       idempotency: "required",
-      review: async (input, context) => {
+      review: async (_input, context) => {
         const { t } = resolveWeatherMessages(context.locale);
         const userId = requireUserId(context);
         if (!userId.ok) return userId;
-        const location = await weatherService.location.saved.get({ id: input.locationId, userId: userId.data });
+        const location = await weatherService.location.saved.get({ id: locationTargetId(context), userId: userId.data });
         if (!location) return fail({ code: "NOT_FOUND", message: t.capabilityLocationNotFound, status: 404 });
         const name = location.name.trim().slice(0, 120);
         return ok({

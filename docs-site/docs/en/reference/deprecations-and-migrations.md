@@ -10,6 +10,46 @@ updated: 2026-10-31
 
 # Deprecations and migrations
 
+## Spaces and Contacts Actions name their container
+
+Move `spaceId` out of Spaces creation and calendar-import inputs into
+`target: { type: "spaces.space", id: spaceId }`. All resource Actions require
+that Space target, including changes to existing items and templates.
+
+Contacts Actions require `target: { type: "contacts.book", id: bookId }`.
+Remove `bookId` from `contact.create` input. For `contact.move`, pass the
+source book as the target and the destination as
+`refs: { targetBookId: { type: "contacts.book", id: destinationBookId } }`.
+The contact-directory create contract uses the same book target.
+
+Flat chat and MCP calls use `space` or `book` alongside domain fields;
+`targetBookId` remains a flat destination argument for moves. Upgrade Mail
+with the providers. See [capability targets](/en/docs/operations/capability-targets)
+for rollout constraints and retained person-call behavior.
+
+## Grids and Files capabilities name their container
+
+Move capability container IDs from domain input to `target` and refresh cached
+catalogs and schema hashes. Grids uses a base or table; Files uses a storage-root
+entry. See [Grids and Files targets](/en/docs/operations/grids-files-capability-targets)
+for the affected operations, flat tool fields, and deployment order.
+
+## Mail capabilities name their mailbox
+
+The coordinated Code migration intentionally changes Mail's mailbox-scoped
+capability contract. For every Action and the mailbox-scoped Queries listed in
+[Mail capability targets](/en/docs/platform/mail-capabilities#choose-the-query-shape),
+move `input.mailboxId` to `target: { type: "mail.mailbox", id: mailboxId }`.
+Keep the other domain fields in `input`. Refresh the live catalog and schema
+hashes before reviewing or invoking these operations. Their local IDs stay the
+same; deploy the platform, Mail, and capability callers together.
+
+Chat and MCP tools remain flat, with `mailbox` naming the target. Canonical
+readers, discovery and cross-mailbox Queries keep their inputs.
+`draft.send.check` also keeps `{ mailboxId, draftId, expectedRevision }` for
+outcome recovery. Mail's REST API, `cld mail`, mailbox selection, and compose
+and send flows keep their behavior; no stored Mail data needs conversion.
+
 ## Service-account kind checks have separate purposes
 
 Replace `isStandaloneServiceAccountKind` with

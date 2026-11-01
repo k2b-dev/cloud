@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-22
+updated: 2026-10-31
 ---
 
 # Mail
@@ -804,6 +804,12 @@ A lease does not replace revision checks. Keep the local expected revision
 when acquiring again so a concurrent change becomes a recovery copy.
 
 ## Agent-oriented capabilities
+
+Mail Actions use one `mail.mailbox` target; their domain input no longer contains
+`mailboxId`. Chat and MCP keep flat arguments with `mailbox` as the target field.
+Contained resources must belong to that mailbox, including every conversation
+in a batch. See [Mail capability targets](/en/docs/platform/mail-capabilities)
+for the Query exceptions, call shape and calendar composition contract.
 
 Use `mailbox.browse` to select a mailbox: it returns permissions and unread/needs-action
 conversation counts matching the overview, with a brief problem indicator when sync

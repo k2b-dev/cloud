@@ -80,20 +80,17 @@ for (const outcome of ["no scope", "review throws", "review unavailable", "no re
     const invoke = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: {} } });
     try {
       const call = runtimeCapabilities.prepare(
-        { id: crypto.randomUUID(), name: "demo.write", input: {}, conversationId },
+        {
+          id: crypto.randomUUID(),
+          name: "demo.write",
+          input: {},
+          conversationId,
+          ...(outcome === "bound target" ? { target: { type: "demo.book", id: "one" } } : {}),
+        },
         identity,
         { locale: "de", signal: new AbortController().signal },
         { turnId, mandate },
       );
-      if (outcome === "bound target") {
-        await expect(call).rejects.toThrow("target-aware mandate");
-        expect(authorize).not.toHaveBeenCalled();
-        expect(marker).not.toHaveBeenCalled();
-        expect(review).not.toHaveBeenCalled();
-        expect(invoke).not.toHaveBeenCalled();
-        expect(order).toEqual([]);
-        return;
-      }
       if (outcome === "mandate denied") {
         await expect(call).rejects.toBe(denied);
         expect(marker).not.toHaveBeenCalled();
@@ -109,6 +106,9 @@ for (const outcome of ["no scope", "review throws", "review unavailable", "no re
         kind: "action",
         input: {},
         approval: "rememberable",
+        ...(outcome === "bound target"
+          ? { call: { capability: "demo.write", target: { type: "demo.book", id: "one" }, refs: {}, input: {} } }
+          : {}),
       });
       if (outcome === "mandate denied" || outcome === "no review") {
         expect(review).not.toHaveBeenCalled();

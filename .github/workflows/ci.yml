@@ -77,7 +77,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
-          apps=$(bun scripts/workspace.ts apps | xargs)
+          apps=$(bun scripts/workspace.ts http-apps | xargs)
           # Without the base, a commit that changes the release manifest against its parent still
           # gets the release checks. Without a parent, it gets them too: they are only stricter.
           all() {
@@ -107,7 +107,7 @@ jobs:
             echo "grids=$(match '^packages/grids/')"
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
-            echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
+            echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|packages/runner/|pwas/|compose[^/]*\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
@@ -700,6 +700,36 @@ jobs:
             CLOUD_RELEASE=sha-${{ github.sha }}
           cache-from: type=gha,scope=ci-pwa-auth
           cache-to: type=gha,mode=max,scope=ci-pwa-auth
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: packages/runner/Dockerfile
+          platforms: linux/amd64
+          load: true
+          target: test
+          tags: cloud-runner:ci
+          cache-from: type=gha,scope=ci-runner
+          cache-to: type=gha,mode=max,scope=ci-runner
+      - name: Exercise the compiled runner under its container restrictions
+        run: |
+          runner_limits=(--rm --network none --read-only --cap-drop ALL
+            --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE
+            --security-opt no-new-privileges --memory 1g --pids-limit 256
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777)
+          docker run "${runner_limits[@]}" cloud-runner:ci \
+            bun --no-env-file test /app/engine.test.js /app/isolation.test.js /app/shutdown.test.js
+          # This test invokes the entrypoint itself, including its startup-only cap.
+          docker run "${runner_limits[@]}" --entrypoint bun cloud-runner:ci \
+            --no-env-file test /app/entrypoint.test.js
+          # Local Compose secrets keep the host user's UID and mode. Exercise that
+          # exact mount path, including a 0600 file not owned by container root.
+          # RFC 8032 public test vector, never an installation credential.
+          install -m 0600 packages/runner/test/runner-key.fixture "$RUNNER_TEMP/runner-smoke.key"
+          docker run "${runner_limits[@]}" \
+            --env CLOUD_APP_KEY_FILE=/run/runner-key/source \
+            --volume "$RUNNER_TEMP/runner-smoke.key:/run/runner-key/source:ro" \
+            --volume "$GITHUB_WORKSPACE/packages/runner/test/image-smoke.ts:/smoke.ts:ro" \
+            cloud-runner:ci bun --no-env-file /smoke.ts
       - name: Boot core and gateway against fresh infrastructure
         env:
           APP_SECRET: ${{ env.TEST_SECRET }}

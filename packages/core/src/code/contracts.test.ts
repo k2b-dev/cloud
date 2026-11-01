@@ -13,6 +13,7 @@ import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
 import { CodeOwnerSchema, CodeRunCursorSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
 import { runCodeQuery } from "./queries";
 import { codeSourceHash, codeTextChunk } from "./store";
+import { CodeVersionError } from "./versions";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -51,15 +52,43 @@ const context: CapabilityExecutionContext = {
 };
 
 describe("Core Code data contracts", () => {
-  test("exports five permission-aware Queries without a mutation or runnable capability", () => {
+  test("exports permission-aware data and policy capabilities", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     expect(
       manifest.queries
         .filter((query) => query.localId.startsWith("code."))
         .map((query) => query.localId)
         .sort(),
-    ).toEqual(["code.list", "code.read", "code.run.list", "code.run.read", "code.version.read"]);
-    expect(manifest.actions.filter((action) => action.localId.startsWith("code."))).toEqual([]);
+    ).toEqual([
+      "code.list",
+      "code.policy.effective",
+      "code.policy.preview",
+      "code.policy.read",
+      "code.read",
+      "code.run.list",
+      "code.run.read",
+      "code.version.diff",
+      "code.version.diff.read",
+      "code.version.list",
+      "code.version.read",
+    ]);
+    expect(
+      manifest.actions
+        .filter((action) => action.localId.startsWith("code."))
+        .map((action) => ({ id: action.localId, code: action.code }))
+        // The manifest's order follows registration across the stacked slices; the set is the contract.
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    ).toEqual(
+      [
+        "code.pause",
+        "code.policy.update",
+        "code.resume",
+        "code.run",
+        "code.version.approve",
+        "code.version.reject",
+        "code.version.submit",
+      ].map((id) => ({ id, code: false })),
+    );
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
     expect(CodeOwnerSchema.parse({ kind: "resource", ref: { type: "example.mailbox", id: "m_1234" } })).toEqual({
@@ -83,6 +112,22 @@ describe("Core Code data contracts", () => {
     expect(Buffer.byteLength(JSON.stringify({ text: "\u0001".repeat(input.length) }))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES / 2);
     expect(codeQueryContracts.versionRead.input.safeParse({ ...input, length: 16_385 }).success).toBe(false);
     expect(codeQueryContracts.list.input.safeParse({ limit: 51 }).success).toBe(false);
+  });
+  test("manual run requires request authority and a write credential at the capability boundary", async () => {
+    const input = { codeId: "c_8hw2", entrypoint: "weekly", input: null };
+    const action = aiCapabilities.actions["code.run"];
+    expect(await action.run(input, { ...context, idempotencyKey: "one", authority: undefined })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+    expect(
+      await action.run(input, {
+        ...context,
+        idempotencyKey: "one",
+        authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
   });
   test("missing authority and scope-limited credentials cannot fall back to the context's user", async () => {
     const result = await aiCapabilities.queries["code.read"].run({ codeId: "c_8hw2" }, { ...context, authority: undefined });
@@ -166,4 +211,17 @@ test("owner-provider failures return a recoverable Query error", async () => {
     expect(result.error.code).toBe("INTERNAL");
     expect(result.error.message).toContain("Try again");
   }
+});
+
+test("large base conflicts retain their stable refusal and complete-diff reader", async () => {
+  const diffRead = { query: "core.code.version.diff.read", input: { codeId: "c_test" } };
+  const result = await runCodeQuery(context, async () => {
+    throw new CodeVersionError("code_version_conflict", "Newer version", {
+      latestVersionId: user.id,
+      files: "x".repeat(CAPABILITY_MAX_RESULT_BYTES),
+      diffRead,
+    });
+  });
+  expect(result).toMatchObject({ ok: false, error: { code: "code_version_conflict", details: { latestVersionId: user.id, diffRead } } });
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
 });

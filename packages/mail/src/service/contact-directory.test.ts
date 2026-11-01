@@ -37,6 +37,7 @@ const customer = { contactId: CustomerId, bookId: z.literal("customers"), custom
 const crmCapabilities = (overrides: Partial<Record<"suggestData", z.ZodType>> = {}): CapabilityDefinitions =>
   defineCapabilities({
     protocolVersion: 2,
+    types: { book: { title: "Book", description: "Address book." } },
     queries: {
       "customer.suggest": {
         title: "Suggest customers",
@@ -88,6 +89,7 @@ const crmCapabilities = (overrides: Partial<Record<"suggestData", z.ZodType>> = 
     },
     actions: {
       "customer.create": {
+        target: "book",
         title: "Create customer",
         description: "Create one customer.",
         input: ContactDirectoryCreateInputSchema,

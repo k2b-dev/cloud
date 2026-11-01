@@ -96,6 +96,9 @@ export const app = defineApp({
 URLs, protocol-relative URLs, and paths that escape the route are rejected at
 startup. `defineApp()` also rejects `panel.href` at or below the app's Help path
 `<basePath>/help`, because the framework answers those paths with Help redirects.
+`code: true` says the panel works on the Code of the page's resource with the
+person. The shared [Code page](/en/docs/platform/code-page) then offers
+"Edit with <label>" and opens this panel; it must be a boolean.
 `label` and `icon` must be nonempty strings. Translate the label with
 `presentation.translations[locale].panelLabel`; the label defaults to the
 application's base locale. Cloud sorts visible providers by `order` first,

@@ -5,9 +5,17 @@ import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
+import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
+import { startCodeScheduling } from "./code/scheduling-runtime";
+import { startCodeVersionApprovals } from "./code/versions";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
+import { migrate as migrateCodeActivation } from "./migrate/core/code-activation";
+import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
+import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
+import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -67,6 +75,8 @@ let stopHelpMaintenance: (() => Promise<void>) | undefined;
 let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
 let stopCapabilityExecutionMaintenance: (() => void) | null = null;
+let stopCodeVersionApprovals: (() => void) | undefined;
+let stopCodeScheduling: (() => Promise<void>) | undefined;
 let stopCodeRunRetention: (() => Promise<void>) | undefined;
 let stopWorkflowEventRetention: (() => void) | null = null;
 
@@ -122,6 +132,10 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "extensions", run: migrateExtensions },
     { name: "auth", run: migrateAuth },
     { name: "code", run: migrateCode },
+    { name: "code-policy", run: migrateCodePolicy },
+    { name: "code-versions", run: migrateCodeVersions },
+    { name: "code-scheduling", run: migrateCodeScheduling },
+    { name: "code-activation", run: migrateCodeActivation },
     { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
@@ -162,6 +176,7 @@ export const startCoreServices = async (
   void getGeoIp().refresh();
   await outgoingMailAllowlist();
   try {
+    stopCodeVersionApprovals = startCodeVersionApprovals();
     await initializeIdentityAuthority();
     stopAppWorkloadBroker = await startAppWorkloadBroker();
     stopAppEventBroker = await startAppEventBroker();
@@ -172,6 +187,10 @@ export const startCoreServices = async (
     stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
     stopWorkflowEventRetention = startWorkflowEventRetention();
     stopCodeRunRetention = startCodeRunRetention();
+    codePolicyPauseOutbox.start();
+    stopCodeScheduling = await startCodeScheduling();
+    codeActivationOutbox.start();
+    codeActivationCleanupOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -223,6 +242,13 @@ export const startCoreServices = async (
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    stopCodeVersionApprovals?.();
+    stopCodeVersionApprovals = undefined;
+    await stopCodeScheduling?.();
+    stopCodeScheduling = undefined;
+    await codePolicyPauseOutbox.stop();
+    await codeActivationOutbox.stop();
+    await codeActivationCleanupOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
     stopWorkflowEventRetention?.();
@@ -264,6 +290,13 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    stopCodeVersionApprovals?.();
+    stopCodeVersionApprovals = undefined;
+    await stopCodeScheduling?.();
+    stopCodeScheduling = undefined;
+    await codePolicyPauseOutbox.stop();
+    await codeActivationOutbox.stop();
+    await codeActivationCleanupOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
     stopWorkflowEventRetention?.();

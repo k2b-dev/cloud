@@ -137,6 +137,8 @@ export type AppPanel = {
   order?: number;
   /** Coarse visibility like nav.requiresRoles; the slot grants no access. */
   requiresRoles?: Role[];
+  /** The panel works on the Code of the page's resource with the person, so shared Code pages offer "Edit with <label>". */
+  code?: boolean;
 };
 
 export type AppMeta = {

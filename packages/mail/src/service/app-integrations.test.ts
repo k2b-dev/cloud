@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import * as capabilityServer from "@k2b/cloud/capabilities/server";
 import {
   calendarEventSchema,
   calendarInvitationImportResultSchema,
@@ -6,7 +7,7 @@ import {
   eventInvitationCommitDataSchema,
   spacesMailDestinationContextSchema,
 } from "../app-integration-contracts";
-import { projectAppCapabilityError } from "./app-integrations";
+import { createCalendarEvent, importCalendarInvitation, linkSpaceItemResource, projectAppCapabilityError } from "./app-integrations";
 
 const legacyUuid = "11111111-1111-4111-8111-111111111111";
 
@@ -124,6 +125,53 @@ describe("Mail app capability integration errors", () => {
       code: "CAPABILITY_NOT_FOUND",
       message: "Missing",
       status: 503,
+    });
+  });
+});
+
+describe("Spaces invocation targets", () => {
+  afterEach(() => mock.restore());
+
+  test("calendar creation and import lift the Space out of input", async () => {
+    const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockResolvedValue({ ok: true, data: { data: {} } });
+    const input = {
+      spaceId: "Space1",
+      columnId: "Column",
+      title: "Event",
+      startsAt: "2026-10-31T08:00:00Z",
+      endsAt: "2026-10-31T09:00:00Z",
+    };
+    const { spaceId, ...domain } = input;
+    await createCalendarEvent(input, { requestId: "create-event" });
+    expect(invoke.mock.calls[0]?.[0]).toMatchObject({ target: { type: "spaces.space", id: spaceId }, input: domain });
+    expect(invoke.mock.calls[0]?.[0].input).not.toHaveProperty("spaceId");
+    await importCalendarInvitation(
+      {
+        spaceId,
+        mailboxId: "Box001",
+        messageId: "Msg001",
+        calendar: "calendar",
+        conversation: { ref: { type: "mail.conversation", id: "Conv01" }, label: "Planning" },
+      },
+      {},
+    );
+    expect(invoke.mock.calls[1]?.[0]).toMatchObject({ target: { type: "spaces.space", id: spaceId } });
+    expect(invoke.mock.calls[1]?.[0].input).not.toHaveProperty("spaceId");
+  });
+
+  test("linked-item actions resolve their target through the authorized reader", async () => {
+    const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema")
+      .mockResolvedValueOnce({ ok: true, data: { data: { spaceId: "Space1" } } })
+      .mockResolvedValueOnce({ ok: true, data: { data: {} } });
+    const input = { itemId: "Item01", reference: { ref: { type: "mail.conversation", id: "Conv01" }, label: "Planning" } };
+    await linkSpaceItemResource(input, {}, "link-1");
+    expect(invoke.mock.calls[0]?.[0]).toMatchObject({ kind: "query", capabilityId: "item.read", input: { id: input.itemId } });
+    expect(invoke.mock.calls[1]?.[0]).toMatchObject({
+      kind: "action",
+      capabilityId: "item.reference.add",
+      target: { type: "spaces.space", id: "Space1" },
+      input,
+      idempotencyKey: "link-1",
     });
   });
 });

@@ -56,6 +56,7 @@
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
     "./browser/composer-insert": "./src/browser/composer-insert.ts",
     "./browser/files": "./src/browser/files.tsx",
+    "./code": "./src/code/index.ts",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
     "./capabilities/store": "./src/capabilities/executions.ts",
@@ -93,6 +94,7 @@
     "./approvals/ui": "./src/approvals/ui.ts",
     "./ssr": "./src/ssr/index.ts",
     "./ssr/islands": "./src/ssr/islands/index.ts",
+    "./ssr/code-page": "./src/ssr/code-page/CodePage.tsx",
     "./ssr/WorkspaceNavigation.island": "./src/ssr/WorkspaceNavigation.island.tsx",
     "./ssr/layout-runtime": "./src/ssr/layout-runtime.ts",
     "./ssr/*": "./src/ssr/*",
@@ -115,7 +117,10 @@
     "./clients/core": "./src/clients/core.ts",
     "./styles/global.css": "./src/styles/global.css",
     "./app-pwa": "./src/app-pwa/index.ts",
-    "./app-pwa/browser": "./src/app-pwa/protocol.ts"
+    "./app-pwa/browser": "./src/app-pwa/protocol.ts",
+    "./app-proof": "./src/app-proof.ts",
+    "./code/runner": "./src/code/runner-protocol.ts",
+    "./code/run-token": "./src/code/run-token.ts"
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
@@ -163,7 +168,8 @@
     "hash-wasm": "4.12.0",
     "@types/sanitize-html": "2.16.1",
     "@types/web-push": "3.6.4",
-    "@k2b/editor": "0.2.0"
+    "@k2b/editor": "0.2.0",
+    "@typescript/typescript6": "6.0.2"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",

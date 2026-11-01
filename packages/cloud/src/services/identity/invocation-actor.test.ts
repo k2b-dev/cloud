@@ -1,7 +1,18 @@
-import { describe, expect, test } from "bun:test";
-import type { sql } from "bun";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import { SQL, type sql } from "bun";
+import * as userSession from "../session/user";
 import { resolveInvocationAuthority } from "./invocation-actor";
 import type { CloudInvocationClaims } from "./invocation-token";
+
+// Projection fragments are constructed without executing SQL or requiring platform startup.
+const fragmentDb = new SQL("postgres://127.0.0.1:1/invocation_projection_test");
+const projection = spyOn(userSession, "userProjectionSql").mockImplementation(() => fragmentDb`u.*`);
+const joins = spyOn(userSession, "userProjectionJoin").mockImplementation(() => fragmentDb``);
+afterAll(async () => {
+  projection.mockRestore();
+  joins.mockRestore();
+  await fragmentDb.close();
+});
 
 const claims = (principal: "user" | "service_account"): CloudInvocationClaims => ({
   iss: "https://cloud.example.test",

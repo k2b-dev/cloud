@@ -772,7 +772,7 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
   });
 
   test("capability mailbox list, search and conversation read use the same current visibility", async () => {
-    const context = capContext(readerA);
+    const context = { ...capContext(readerA), target: { type: "mail.mailbox", id: mailboxShortId } };
     const listed = await mailCapabilities.queries["mailbox.list"].run(MailboxListInputSchema.parse({}), context);
     if (!listed.ok) throw new Error(listed.error.message);
     expect(listed.data.data.map((item) => [item.ref.id, item.accessScope])).toEqual([[mailboxShortId, "assigned"]]);
@@ -780,7 +780,6 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     const hidden = unwrap(
       await search.run(
         ConversationSearchInputSchema.parse({
-          mailboxId: mailboxShortId,
           expression: { type: "text", field: "any", query: "hiddenquasar", match: "words" },
         }),
         context,
@@ -790,7 +789,6 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     const visible = unwrap(
       await search.run(
         ConversationSearchInputSchema.parse({
-          mailboxId: mailboxShortId,
           expression: { type: "text", field: "any", query: "visiblelighthouse", match: "words" },
         }),
         context,
@@ -866,10 +864,10 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     expect(sent.some((input) => input.recipientUserId === readerA.id)).toBe(false);
     notFound(await mailCapabilities.queries["conversation.read"].run({ id: c1.shortId }, capContext(readerA)));
     const searched = unwrap(
-      await mailCapabilities.queries["conversation.search"].run(
-        ConversationSearchInputSchema.parse({ mailboxId: mailboxShortId, expression: { type: "all" } }),
-        capContext(readerA),
-      ),
+      await mailCapabilities.queries["conversation.search"].run(ConversationSearchInputSchema.parse({ expression: { type: "all" } }), {
+        ...capContext(readerA),
+        target: { type: "mail.mailbox", id: mailboxShortId },
+      }),
     );
     expect(searched.data).toEqual([]);
     const page = unwrap(

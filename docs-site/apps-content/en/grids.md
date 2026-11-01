@@ -875,6 +875,22 @@ beside the identity heading and use saved values.
 
 ## Assistant capabilities and approvals
 
+GQL capabilities (`gql.context`, `gql.preview`, `gql.execute`, and
+`gql.view.execute`) and `view.create` name one `grids.base` as `target`.
+Record creation, updates, external upserts, and `document.create` name one
+`grids.table`; `workflow.record-action` names its `grids.base`. HTTP and SDK
+calls send this resource beside `input`. Chat and MCP tools use the flat field
+`base` or `table`. Remove the former `baseId` or `tableId` target field from
+that operation's input when upgrading a caller.
+
+Contained IDs stay in `input`: context table and field filters, saved Views,
+records, templates, and workflow launchers. Grids checks that every supplied
+object belongs to the declared container during review and execution. A record
+from another table or a source table from another base is rejected even when
+the caller can access both. Canonical readers and discovery keep their current
+input contracts. Refresh cached capability schemas before calling the new
+contracts; see [Capability targets](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
+
 `gql.preview`, `gql.execute`, and `gql.view.execute` accept
 `showTableToUser` (default `false`). Set it to `true` to request the existing
 Assistant/CLI table presentation. Research and intermediate queries can omit it.

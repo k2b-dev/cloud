@@ -1,13 +1,17 @@
 ---
 title: Code data model
-section: Platform
-order: 960
+navTitle: Code data model
+section: Platform services
+order: 568
 description: Understand Code ownership, immutable versions, Query access and run retention.
 tags: [code, capabilities, data, permissions]
 updated: 2026-10-31
 ---
 
 # Code data model
+
+A Code exposes `pauseReason`, `pauseRows` and `pausePolicyRevision` alongside its
+state so people can identify a policy pause.
 
 A Code has one owner and a fixed `codeId`, such as `c_8hw2`. Saving a new
 version preserves that identity. Core stores Code, its versions and its runs
@@ -63,8 +67,11 @@ activation owns those grants.
 A version stores all source files, the exact UTF-8 bundle, `sourceHash`,
 `bundleHash` and a checked-version manifest slot. Source paths are relative
 POSIX paths. Source, bundle and jsonb inputs reject NUL characters and malformed Unicode
-with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL. The source hash is SHA-256 of compact JSON containing the sorted
-`[path, content]` pairs; the bundle hash is SHA-256 of the exact bundle bytes.
+with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL.
+Submitted versions use the checker's entry-bound source hash, described in
+[Code versions and approval](/en/docs/platform/code-versions#checker-manifest).
+Unsubmitted storage snapshots hash compact JSON of sorted `[path, content]`
+pairs. The bundle hash is SHA-256 of the exact bundle bytes.
 
 The source, bundle, hashes and manifest are immutable. The checker and
 submission services supply the final manifest when inserting a version. The
@@ -115,7 +122,9 @@ content selector, the Query returns metadata and `content: null`.
 contains the run input and output plus at most one capability call. Follow
 `contents.nextCursor` to read calls in invocation order. A call records its
 normalized `{ capability, target, refs, input }`, capability name, kind,
-result, state and times. It is an observation of one attempt; it does not
+result, state and times. Call states are `running`, `succeeded`, `failed`,
+and `uncertain`; an unfinished call in a lost attempt stays uncertain until an
+authoritative result arrives. It is an observation of one attempt; it does not
 provide replay or resumption.
 
 Values larger than 16 KiB of compact JSON return `null` inline and set
@@ -161,12 +170,18 @@ service.
 | `core.code.bundle_bytes` | 4 MiB | 16 MiB |
 | `core.code.manifest_bytes` | 1 MiB of JSON | 4 MiB |
 | `core.code.payload_bytes` | 32 KiB per run input or normalized call input | 32 KiB |
-| `core.code.calls_per_run` | 1,000 | 1,000 |
+| `core.code.calls_per_run` | 200 | 1,000 |
+| `core.code.calls_per_second` | 60 per Code | 1,000 |
 
-All settings require positive integers. New versions use current limits; a
+The [Code policy](/en/docs/platform/code-policy) controls which classifications
+can run. [Code policy operations](/en/docs/operations/code-policy) lists the
+registered execution, AI, database and concurrency budgets.
+
+All storage settings require positive integers. New versions use current limits; a
 run pins its call and payload limits at creation. Smaller settings do not
-rewrite existing versions or active runs. Transport budgets bound the file
-count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
+rewrite existing versions or active runs. The bridge enforces the smaller of
+the saved attempt limits and current payload/call settings on each new call.
+Transport budgets bound the file count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
 byte count, including its separator whitespace, before invocation. Capability results use the public 256 KiB
 result budget independently of the run input setting. Results and run output
 use Postgres `json`, preserving exact JSON text without expanding numeric
@@ -202,3 +217,6 @@ storage seams. The dispatcher must authorize execution and validate its lease
 and generation in the same transaction before recording calls. They do not
 grant invocation authority. `generation` and `lease_expires_at` reserve the
 additive storage columns for the execution service.
+
+Scheduling, retries, generation fencing and skipped ticks are described in
+[Code runs](/en/docs/platform/code-runs).

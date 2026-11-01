@@ -58,6 +58,18 @@ export const CODE_TABLES = {
   versions: "code.versions",
   runs: "code.runs",
   calls: "code.calls",
+  versionSubmissions: "code.version_submissions",
+  versionDecisions: "code.version_decisions",
+  versionBaselines: "code.version_baselines",
+  activations: "code.activations",
+  targetGrants: "code.target_grants",
+  versionGrants: "code.version_grants",
+  activationNotices: "code.activation_notices",
+  activationOutbox: "code.activation_outbox",
+  policy: "code.policy",
+  policyRules: "code.policy_rules",
+  policyCoverage: "code.policy_coverage",
+  policyPauseOutbox: "code.policy_pause_outbox",
 } as const;
 const timestamp = z.iso.datetime();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -69,6 +81,9 @@ export const CodeSchema = z
     serviceAccountId: z.uuid().nullable(),
     state: z.enum(["draft", "active", "paused", "deleting"]),
     activeVersionId: z.uuid().nullable(),
+    pauseReason: z.string().nullable(),
+    pauseRows: z.array(z.string()),
+    pausePolicyRevision: z.number().int().positive().nullable(),
     createdBy: z.uuid().nullable(),
     createdAt: timestamp,
   })
@@ -122,7 +137,7 @@ export const CodeCallSchema = z
     callChunked: z.boolean(),
     resultChunked: z.boolean(),
     result: z.json().nullable(),
-    state: z.enum(["running", "succeeded", "failed"]),
+    state: z.enum(["running", "succeeded", "failed", "uncertain"]),
     startedAt: timestamp,
     endedAt: timestamp.nullable(),
   })

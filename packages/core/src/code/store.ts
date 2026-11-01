@@ -35,6 +35,9 @@ type CodeRow = {
   service_account_id: string | null;
   state: Code["state"];
   active_version_id: string | null;
+  pause_reason?: string | null;
+  pause_rows?: string[];
+  pause_policy_revision?: number | null;
   created_by: string | null;
   created_at: Date;
 };
@@ -51,6 +54,9 @@ const mapCode = (row: CodeRow): Code => ({
   serviceAccountId: row.service_account_id,
   state: row.state,
   activeVersionId: row.active_version_id,
+  pauseReason: row.pause_reason ?? null,
+  pauseRows: row.pause_rows ?? [],
+  pausePolicyRevision: row.pause_policy_revision ?? null,
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
 });
@@ -141,15 +147,13 @@ export const codeTextChunk = (text: string, offset: number, length: number) => {
 };
 const bytes = (value: string) => Buffer.byteLength(value, "utf8");
 const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
-/** Hash sorted [path,content] pairs as compact JSON, UTF-8/SHA-256; key insertion order cannot change the digest. */
-export const codeSourceHash = (source: CodeSourceFiles): string =>
-  sha256(
-    JSON.stringify(
-      Object.keys(source)
-        .sort()
-        .map((path) => [path, source[path]]),
-    ),
-  );
+/** C16 hashes { entry, files: sorted [path,content] pairs }; unsubmitted C6 snapshots omit entry. UTF-8/SHA-256. */
+export const codeSourceHash = (source: CodeSourceFiles, entry?: string): string => {
+  const files = Object.keys(source)
+    .sort()
+    .map((path) => [path, source[path]]);
+  return sha256(JSON.stringify(entry === undefined ? files : { entry, files }));
+};
 export const codeBundleHash = (bundle: string): string => sha256(bundle);
 
 /** Create one owner identity and its credentialless account in one transaction. This grants no target permissions. */
@@ -192,7 +196,7 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
   }
 };
 /** Serialize local share/version edits and recheck grants after acquiring the owner row lock. */
-const lockCodeForEdit = async (codeId: string, context: CodeContext, db: TransactionSQL): Promise<Code> => {
+export const lockCodeForEdit = async (codeId: string, context: CodeContext, db: CodeDb): Promise<Code> => {
   const [row] = await db<CodeRow[]>`SELECT * FROM code.codes WHERE id = ${codeId} FOR UPDATE`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const code = mapCode(row);
@@ -261,7 +265,9 @@ const mapVersion = (row: VersionRow): CodeVersion => ({
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
 });
-/** Save the full executable snapshot once. C8/C16 supply the final manifest at insertion; never fill it by UPDATE. */
+/** Internal storage primitive for C8's transaction; CLI, chat and all push callers must use submitCodeVersion.
+ * Save the full executable snapshot once; never fill the manifest by UPDATE.
+ */
 export const createCodeVersion = async (
   input: {
     codeId: string;
@@ -269,8 +275,11 @@ export const createCodeVersion = async (
     bundle: string;
     manifest: CodeVersionManifest | null;
     baseVersionId: string | null;
+    /** Original C16 check entry, bound into submitted source hashes. */
+    entry?: string;
   },
   context: CodeContext,
+  db: CodeDb = sql,
 ): Promise<CodeVersion> => {
   codePerson(context, true);
   const source = CodeSourceFilesSchema.parse(input.sourceFiles);
@@ -291,7 +300,7 @@ export const createCodeVersion = async (
     bytes(jsonText(manifest, true)) > manifestLimit
   )
     throw new CodeDataError("BAD_INPUT", "Code version exceeds storage limits.");
-  return sql.begin(async (tx) => {
+  const save = async (tx: CodeDb) => {
     await lockCodeForEdit(input.codeId, context, tx);
     const [latest] = await tx<
       { id: string; number: number }[]
@@ -300,10 +309,11 @@ export const createCodeVersion = async (
     const [row] = await tx<
       VersionRow[]
     >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
-      VALUES(${input.codeId},${(latest?.number ?? 0) + 1},${JSON.stringify(source)}::text::jsonb,${input.bundle},${codeSourceHash(source)},${codeBundleHash(input.bundle)},${manifest === null ? null : JSON.stringify(manifest)}::text::jsonb,${sourceBytes},${bundleBytes},${codePerson(context).id}::uuid) RETURNING *`;
+      VALUES(${input.codeId},${(latest?.number ?? 0) + 1},${JSON.stringify(source)}::text::jsonb,${input.bundle},${codeSourceHash(source, input.entry)},${codeBundleHash(input.bundle)},${manifest === null ? null : JSON.stringify(manifest)}::text::jsonb,${sourceBytes},${bundleBytes},${codePerson(context).id}::uuid) RETURNING *`;
     if (!row) throw new Error("Version insert returned no row");
     return mapVersion(row);
-  });
+  };
+  return db === sql ? sql.begin(save) : save(db);
 };
 /** UTF-16 offsets address the returned text; chunks never split a surrogate pair. */
 export const readCodeVersion = async (
@@ -483,7 +493,7 @@ export const finishCodeCall = async (
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
   const result =
-    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state = 'running'`;
+    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state IN ('running','uncertain')`;
   if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
 };
 /** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */

@@ -815,6 +815,38 @@ export const loadMailboxListView = async (params: MailboxListParams): Promise<Re
   });
 };
 
+/** The mailbox's own sidebar beside its Code page: folders, counts, and the person's access, without any list. */
+export type MailboxCodePageData = {
+  mailbox: Mailbox;
+  access: MailboxAccess;
+  folders: MailFolderView[];
+  viewCounts: ConversationViewCounts;
+  scheduledCount: number;
+  receivingAddress: string | null;
+};
+
+export const loadMailboxCodePageData = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxCodePageData>> => {
+  const access = await requireMailboxAccess(context, mailboxId, "read");
+  if (!access.ok) return fail(access.error);
+  const [mailbox, folders, viewCounts, scheduledCount, receivingAddress] = await Promise.all([
+    mailboxes.getMailbox(context, mailboxId),
+    messages.listFolders(context, mailboxId),
+    messages.getConversationViewCounts({ context, mailboxId }),
+    scheduledSends.countScheduledSends({ context, mailboxId }),
+    mailboxes.getMailboxReceivingAddress(mailboxId),
+  ]);
+  if (!mailbox.ok) return fail(mailbox.error);
+  return ok({
+    mailbox: mailbox.data,
+    access: access.data,
+    // Counts are a convenience beside the Code page; a failed count shows none instead of failing the page.
+    folders: folders.ok ? folders.data : [],
+    viewCounts: viewCounts.ok ? viewCounts.data : EMPTY_VIEW_COUNTS,
+    scheduledCount: scheduledCount.ok ? scheduledCount.data : 0,
+    receivingAddress,
+  });
+};
+
 export const loadMailboxPageData = async (params: {
   context: MailRequestContext;
   mailboxId: string;

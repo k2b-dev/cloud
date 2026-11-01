@@ -35,7 +35,8 @@ instructions is useful. Many Apps need no Skill, and many Skills need no code.
 
 For Skill sharing, discover `core.ai.skill.access.read` and
 `core.ai.skill.access.change`. Read current grants with `{skillId}`; change one
-using `{skillId, expectedAccessRevision, principal, permission}` or an existing
+using flat tool field `ai.skill` for the Skill target and
+`{expectedAccessRevision, principal, permission}` or an existing
 `accessId`. Skill levels are `read`, `write`, and `admin`; `null` revokes an
 existing grant. These capabilities also require Manage, fresh review, and the
 current grants revision, and preserve the last administrator.

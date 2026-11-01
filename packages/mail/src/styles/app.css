@@ -677,6 +677,11 @@
     padding-inline-start: 0.75rem;
   }
 
+  .mail-sidebar-code-attention {
+    color: var(--k2b-warning-500);
+    font-size: 0.75rem;
+  }
+
   .mail-sidebar-folders-heading {
     margin: 0.5rem 0 0.125rem;
     padding-inline: 0.5rem;

@@ -17,7 +17,7 @@ async function harness(deny = false) {
   const file = new File(["pdf"], "invoice.pdf", { type: "application/pdf" });
   const cloud = {
     html,
-    kv: { get: async () => ({ gridsTemplateId: "Tpl001", filesBaseId: "base" }) },
+    kv: { get: async () => ({ gridsTemplateId: "Tpl001", filesRootId: "root-ref" }) },
     download: async (name: string, content: File) => saved.push({ content, name }),
     capabilities: {
       run: async (name: string, input: unknown) => {
@@ -62,6 +62,7 @@ test("combines source-local identities, paginates explicitly and downloads throu
   const app = await harness();
   try {
     expect(app.keys()).toEqual(["grids:same-id", "files:same-id"]);
+    expect(app.calls[1]).toEqual(["filesv2.entry.list", { entry: "root-ref", path: "", type: "files" }]);
     for (const index of [0, 1]) {
       app.select(index);
       await app.click("#download");

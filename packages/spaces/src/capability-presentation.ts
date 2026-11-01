@@ -210,7 +210,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "calendar-destination.list": {
           title: "Kalenderziele auflisten",
           description:
-            "Listen Sie das beschreibbare Ziel Spaces auf, nachdem calendar-invitation.preview kein verknüpftes Ereignis gefunden hat. Übergeben Sie eine zurückgegebene spaceId an calendar-invitation.import.",
+            "Listen Sie das beschreibbare Ziel Spaces auf, nachdem calendar-invitation.preview kein verknüpftes Ereignis gefunden hat. Übergeben Sie eine zurückgegebene ID als space-Ziel an calendar-invitation.import.",
           input: { cursor: "Fortsetzung der vorherigen Seite.", limit: "Maximal 100 Ziele pro Seite; page.hasMore beachten." },
         },
         "calendar-invitation.preview": {
@@ -440,7 +440,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine Aufgaben- oder Terminvorlage in einem Space anlegen, den der Akteur verwaltet. Namen sind je Space und Art eindeutig.",
           input: {
-            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             kind: "Ob die Vorlage Aufgaben oder Termine anlegt.",
             name: "Name der Vorlage, je Space und Art eindeutig.",
             title: "Vorgabetitel; darf {{date}}, {{weekday}} und {{week}} enthalten.",
@@ -558,7 +557,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             mailboxId: "Quelle Mail Postfach ID.",
             messageId: "Quelle Mail-Nachricht ID.",
             calendar: "Rohinhalt der iCalendar-Einladung, begrenzt auf 96 KiB.",
-            spaceId: "Beschreibbares Ziel Space ID.",
             conversation: "Quell-Mail-Konversation, die mit dem importierten Ereignis verknüpft ist.",
             "conversation.ref": "Stabile Cloud-Ressource reference",
             "conversation.ref.type": "Namespace-Ressourcentyp, der von der besitzenden App deklariert wird.",
@@ -649,7 +647,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Einen Termin in einem beschreibbaren Space anlegen, mit gültigem Zeitraum oder mit templateId und einem Datum aus den Vorschlägen von template.list.",
           input: {
-            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             columnId: "Zielspalte ID, zurückgegeben vom Lesebereich für den ausgewählten Space.",
             title: "Veranstaltungstitel.",
             description: "Optionale Ereignisbeschreibung.",
@@ -783,7 +780,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine Aufgabe in einem ausgewählten beschreibbaren Space und einer Spalte anlegen. Mit templateId füllt die Vorlage jedes weggelassene Feld samt Checkliste; date wählt den Fälligkeitstag aus den Vorschlägen.",
           input: {
-            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             columnId: "Zielspalte ID, zurückgegeben vom Lesebereich für den ausgewählten Space.",
             title: "Aufgabentitel.",
             description: "Optionale Aufgabenbeschreibung.",
