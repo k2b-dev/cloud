@@ -1696,3 +1696,35 @@ test("code check rejects an empty --out and documents the temporary directory de
   expect(help.stdout.join("")).toContain("--out");
   expect(help.stdout.join("")).toContain("new printed temp directory");
 });
+
+test("Studio administration confirms before input and keeps malformed credential input out of errors", async () => {
+  let calls = 0;
+  const fetcher: CloudCliContext["fetch"] = async () => {
+    calls++;
+    return json({ saved: true });
+  };
+  for (const command of ["configure", "storage-configure", "grant", "change-grant"]) {
+    const context = createContext(
+      [
+        "studio-admin",
+        command,
+        ...(["grant", "change-grant"].includes(command) ? ["Abc234"] : []),
+        ...(command === "change-grant" ? ["entry"] : []),
+      ],
+      fetcher,
+    );
+    context.ctx.flags = { input: "{}" };
+    await expect(assistantCli.run(context.ctx)).rejects.toThrow("--yes");
+  }
+  const context = createContext(["studio-admin", "configure"], fetcher);
+  context.ctx.flags = { input: '{"token":"private"}', yes: true };
+  await expect(assistantCli.run(context.ctx)).rejects.toThrow("--input-file or --stdin");
+  context.ctx.flags = { stdin: true, yes: true };
+  const stdin = spyOn(Bun.stdin, "text").mockResolvedValue('{"token":"private"oops}');
+  try {
+    await expect(assistantCli.run(context.ctx)).rejects.toThrow("Input must be valid JSON.");
+  } finally {
+    stdin.mockRestore();
+  }
+  expect(calls).toBe(0);
+});
