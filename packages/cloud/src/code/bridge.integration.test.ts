@@ -4,6 +4,7 @@ import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
+import { createCodeRunnerRoutes } from "../../../core/src/code/runner-routes";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
 import { codeBundleHash, codeSourceHash } from "../../../core/src/code/store";
 import { migrate as migrateAppApproval } from "../../../core/src/migrate/core/app-approval";
@@ -309,6 +310,40 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     setSystemTime();
   });
 
+  async function runnerProtocolRequest(path: string, body: object, app: AppKey | null = runner) {
+    const text = JSON.stringify(body);
+    const authorization = app ? `Bearer ${await signAppProof(app, { method: "POST", path, body: new TextEncoder().encode(text) })}` : "";
+    const router = createCodeRunnerRoutes({ token: { issuer, key, now }, appProof: dependencies().appProof });
+    return router.request(`http://core.test${path}`, {
+      method: "POST",
+      headers: { authorization, "Content-Type": "application/json" },
+      body: text,
+    });
+  }
+  test("C13 protocol routes require the runner app proof independently of a valid run token", async () => {
+    const token = await signCodeRunToken(claims, { deadlineAt: now.getTime() + 300_000, issuer, signer, now });
+    const proof = { token, runId: claims.runId, generation: claims.generation };
+    for (const path of [RUNNER_PATHS.config, RUNNER_PATHS.fetch, RUNNER_PATHS.bundle, RUNNER_PATHS.heartbeat, RUNNER_PATHS.complete]) {
+      expect((await runnerProtocolRequest(path, proof, null)).status).toBe(401);
+      expect((await runnerProtocolRequest(path, proof, other)).status).toBe(403);
+    }
+  });
+  test("C13 signed configuration and run-scoped bundle, heartbeat and completion use the current fence", async () => {
+    const token = await signCodeRunToken(claims, { deadlineAt: now.getTime() + 300_000, issuer, signer, now });
+    const proof = { token, runId: claims.runId, generation: claims.generation };
+    expect((await runnerProtocolRequest(RUNNER_PATHS.config, {})).status).toBe(200);
+    expect((await runnerProtocolRequest(RUNNER_PATHS.fetch, { freeSlots: 0 })).status).toBe(400);
+    const bundle = await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: claims.bundleHash });
+    expect(bundle.status).toBe(200);
+    expect(await bundle.text()).toBe("fixture");
+    expect((await runnerProtocolRequest(RUNNER_PATHS.heartbeat, proof)).status).toBe(200);
+    const bad = await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: "f".repeat(64) });
+    expect(bad.status).toBe(403);
+    expect((await runnerProtocolRequest(RUNNER_PATHS.complete, { ...proof, outcome: "succeeded" })).status).toBe(204);
+    expect((await runnerProtocolRequest(RUNNER_PATHS.heartbeat, proof)).status).toBe(409);
+    expect((await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: claims.bundleHash })).status).toBe(409);
+    expect((await runnerProtocolRequest(RUNNER_PATHS.complete, { ...proof, outcome: "succeeded" })).status).toBe(409);
+  });
   test("a Core token without a runner signature is refused", async () => {
     const response = await send({ app: null });
     expect(response.status).toBe(401);

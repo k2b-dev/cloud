@@ -3,7 +3,7 @@ import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-t
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import type { SQL } from "bun";
-import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
+import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { requireCodeRunFence } from "./bridge";
 import {
   CODE_RUN_HEARTBEAT_MS,
@@ -16,7 +16,7 @@ import {
   type CodeStartResult,
 } from "./scheduling-contracts";
 import { codeSettings } from "./settings";
-import { findCode, insertCodeRun } from "./store";
+import { findCode, insertCodeRun, lockCodeForEdit } from "./store";
 import { CodeVersionError, requireCodeVersionApproval } from "./versions";
 
 /** All Core replicas take this short database admission lock; no network work runs while holding it. */
@@ -35,10 +35,11 @@ export async function readCodeRunLimits(): Promise<CodeRunLimits> {
 async function enqueue(
   input: { codeId: string; entrypoint: string; requestKey: string; input: unknown; tick?: CodeScheduleTick },
   db: SQL,
+  context?: CodeContext,
 ): Promise<CodeStartResult | null> {
   await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
-  await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
-  const code = await findCode(input.codeId, db);
+  if (!context) await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
+  const code = context ? await lockCodeForEdit(input.codeId, context, db) : await findCode(input.codeId, db);
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const [receipt] = await db<{ run_id: string }[]>`SELECT run_id FROM code.run_requests
     WHERE code_id=${code.id} AND request_key=${input.requestKey}`;
@@ -48,8 +49,8 @@ async function enqueue(
   await requireCodeVersionApproval(code, code.activeVersionId, db);
   const [version] = await db<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
-  if (!manifest.entrypoints.some((entry) => entry.entrypoint === input.entrypoint && (!input.tick || entry.kind === "schedule")))
-    throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
+  const entry = manifest.entrypoints.find((entry) => entry.entrypoint === input.entrypoint && (!input.tick || entry.kind === "schedule"));
+  if (!entry) throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
   const runId = await insertCodeRun(
     {
       codeId: code.id,
@@ -60,6 +61,7 @@ async function enqueue(
     },
     db,
   );
+  if (!input.tick && entry.kind === "schedule") await db`UPDATE code.runs SET schedule_key=${input.entrypoint} WHERE id=${runId}::uuid`;
   if (input.tick) {
     // Schedule identity deliberately excludes version: activating a new version cannot overlap the old tick.
     const scheduleKey = input.entrypoint;
@@ -75,10 +77,8 @@ async function enqueue(
 /** Permission-aware manual start/rerun for CLI, chat and resource pages. Rerun uses a NEW request key. */
 export async function startCodeRun(request: CodeStartRequest, context: CodeContext): Promise<CodeStartResult> {
   const input = CodeStartRequestSchema.parse(request);
-  const code = await findCode(input.codeId);
-  if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
-  await requireCodePermission(code, context, true);
-  const result = await sql.begin((db) => enqueue({ ...input, requestKey: `manual:${input.idempotencyKey}` }, db));
+  codePerson(context, true);
+  const result = await sql.begin((db) => enqueue({ ...input, requestKey: `manual:${input.idempotencyKey}` }, db, context));
   if (!result) throw new Error("Manual admission returned no run");
   return result;
 }
@@ -115,7 +115,7 @@ type ClaimedRun = {
 /** Fair DB admission, triggered by a Sync queue delivery. Tickets wake the fleet; they do not pin a worker to a busy Code.
  * Database rows and the generation fence guarantee one active lease despite repeated/delayed queue delivery.
  */
-export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits): Promise<ClaimedRun[]> {
+export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits, instanceId?: string): Promise<ClaimedRun[]> {
   const slots = Math.min(freeSlots, await codeSettings.get("core.code.runner_slots"));
   if (!Number.isSafeInteger(slots) || slots < 1) throw new RangeError("Invalid runner capacity");
   return sql.begin(async (db) => {
@@ -141,7 +141,8 @@ export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits): P
       } catch (error) {
         if (!(error instanceof CodeVersionError)) throw error;
         await db`UPDATE code.runs SET state='failed',outcome='code_admission_refused',ended_at=clock_timestamp()
-          WHERE code_id=${code.id} AND state='queued'`;
+          WHERE id IN (SELECT id FROM code.runs WHERE code_id=${code.id} AND state='queued' ORDER BY created_at,id LIMIT 100)`;
+        await db`UPDATE code.codes SET last_dispatched_at=clock_timestamp() WHERE id=${code.id}`;
         continue;
       }
       const [mandate] = await db<{ id: string; revision: number }[]>`SELECT id,revision::int FROM auth.mandates
@@ -152,14 +153,15 @@ export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits): P
         ORDER BY id LIMIT 1 FOR SHARE`;
       if (!mandate) {
         await db`UPDATE code.runs SET state='failed',outcome='code_mandate_mismatch',ended_at=clock_timestamp()
-          WHERE code_id=${code.id} AND state='queued'`;
+          WHERE id IN (SELECT id FROM code.runs WHERE code_id=${code.id} AND state='queued' ORDER BY created_at,id LIMIT 100)`;
+        await db`UPDATE code.codes SET last_dispatched_at=clock_timestamp() WHERE id=${code.id}`;
         continue;
       }
       const [run] = await db<ClaimedRun[]>`WITH next AS (
         SELECT id FROM code.runs WHERE code_id=${code.id} AND version_id=${code.activeVersionId}::uuid AND state='queued'
         AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) ORDER BY created_at,id LIMIT 1 FOR UPDATE
       ), leased AS (
-        UPDATE code.runs r SET state='running',generation=generation+1,
+        UPDATE code.runs r SET state='running',generation=generation+1,runner_instance_id=${instanceId ?? null}::uuid,
           started_at=COALESCE(started_at,clock_timestamp()),
           deadline_at=COALESCE(deadline_at,clock_timestamp()+${limits.wallMs}*interval '1 millisecond'),
           lease_expires_at=LEAST(COALESCE(deadline_at,clock_timestamp()+${limits.wallMs}*interval '1 millisecond'),
@@ -216,6 +218,8 @@ export async function heartbeatCodeRun(claims: CodeRunTokenClaims): Promise<{ le
       SET lease_expires_at=LEAST(deadline_at,to_timestamp(${claims.exp}),clock_timestamp()+${CODE_RUN_LEASE_MS}*interval '1 millisecond')
       WHERE id=${claims.runId}::uuid RETURNING lease_expires_at`;
     if (!row) throw new Error("Lease disappeared while locked");
+    await db`UPDATE code.runner_instances SET last_seen_at=clock_timestamp()
+      WHERE instance_id=(SELECT runner_instance_id FROM code.runs WHERE id=${claims.runId}::uuid)`;
     return { leaseExpiresAt: row.lease_expires_at.getTime() };
   });
 }

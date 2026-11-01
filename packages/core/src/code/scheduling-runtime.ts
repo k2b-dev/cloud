@@ -20,18 +20,20 @@ export type CodeRunWakeup = { runId: string };
 export const codeRunQueue = lazySync((sync) => sync.queue<CodeRunWakeup>({ id: "core-code-runs" }));
 export const codeRunScheduler = lazySync((sync) => sync.scheduler({ id: "core-code-schedules" }));
 /** Postgres commit precedes publication; a crashed publisher can repeat delivery safely. */
-export const codeRunOutbox = createPgOutbox<OutboxRow & { run_id: string }>({
-  table: "code.run_outbox",
-  name: "core:code-runs",
-  orderBy: "run_id",
-  sequence: "sequence",
-  batchSize: 100,
-  reconcileIntervalMs: 1_000,
-  publish: async (row) => {
-    await codeRunQueue().send({ data: { runId: row.run_id }, idempotencyKey: row.id });
-    await sql`UPDATE code.runs SET wake_at=clock_timestamp() WHERE id=${row.run_id}::uuid`;
-  },
-});
+export const createCodeRunOutbox = (queue: () => Queue<CodeRunWakeup>) =>
+  createPgOutbox<OutboxRow & { run_id: string }>({
+    table: "code.run_outbox",
+    name: "core:code-runs",
+    orderBy: "run_id",
+    sequence: "sequence",
+    batchSize: 100,
+    reconcileIntervalMs: 1_000,
+    publish: async (row) => {
+      await queue().send({ data: { runId: row.run_id }, idempotencyKey: row.id });
+      await sql`UPDATE code.runs SET wake_at=clock_timestamp() WHERE id=${row.run_id}::uuid`;
+    },
+  });
+export const codeRunOutbox = createCodeRunOutbox(codeRunQueue);
 /** Configuration is read at runner startup. No runner environment variables control budgets. */
 export async function readCodeRunnerConfig() {
   return RunnerConfigSchema.parse({
@@ -62,7 +64,7 @@ export async function fetchCodeRuns(
       const ticket = await reader.receive({ waitMs: 1000, signal: abort });
       if (!ticket) continue;
       // Selection skips Codes at their limit rather than making this runner wait behind their tickets.
-      const runs = await claimCodeRuns(free, await readCodeRunLimits());
+      const runs = await claimCodeRuns(free, await readCodeRunLimits(), request.instanceId);
       await ticket.ack();
       if (runs.length) {
         const leases = [];

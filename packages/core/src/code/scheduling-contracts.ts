@@ -8,7 +8,11 @@ export const CodeStartRequestSchema = z
   .object({
     codeId: CodeIdSchema,
     entrypoint: z.string().min(1).max(256),
-    idempotencyKey: z.string().min(1).max(96),
+    idempotencyKey: z
+      .string()
+      .min(1)
+      .max(96)
+      .refine((value) => new TextEncoder().encode(value).byteLength <= 96, "Key exceeds 96 UTF-8 bytes"),
     input: z.json().default(null),
   })
   .strict();
@@ -35,7 +39,6 @@ export type CodeRunnerMetrics = {
 export const CODE_RUN_OUTCOMES = {
   previousRunning: "previous_schedule_running",
   lost: "lease_lost",
-  exhausted: "retry_exhausted",
   inactive: "code_not_active",
 } as const;
 /** Transport leases last three heartbeat periods; independent of replica count. */

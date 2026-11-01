@@ -67,7 +67,8 @@ previous run is still running” (“Übersprungen, vorheriger Lauf läuft noch�
 Activation of a newer version does not permit overlap with the previous
 version's run of the same schedule. A stale version's callback cannot start work.
 
-Manual starts are separate from schedule ticks. A paused Code accepts no new
+A manual start of the same schedule entrypoint also blocks an overlapping
+tick. Manual starts keep their own request keys. A paused Code accepts no new
 manual run; scheduled callbacks do not create runs while it is paused.
 
 ## Read runs and calls

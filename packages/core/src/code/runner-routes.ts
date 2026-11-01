@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { authenticateSignedAppRequest, CodeBridgeRefusal } from "@k2b/cloud/api";
+import { authenticateSignedAppRequest, CodeBridgeRefusal, type CodeRunnerDispatchDependencies } from "@k2b/cloud/api";
 import { verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import {
   RUNNER_PATHS,
@@ -15,13 +15,14 @@ import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
 import { fetchCodeRuns, readCodeRunnerConfig } from "./scheduling-runtime";
 
 /** Private, signed runner-only routes. Every Core replica uses the same durable lease fence and signing key ring. */
-export function createCodeRunnerRoutes() {
+export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependencies, "appProof" | "token"> = {}) {
   const router = new Hono();
   for (const path of [RUNNER_PATHS.config, RUNNER_PATHS.fetch, RUNNER_PATHS.bundle, RUNNER_PATHS.heartbeat, RUNNER_PATHS.complete]) {
     router.post(path, async (c) => {
       const signed = await authenticateSignedAppRequest(c, "identity:invoke", {
         // The enrolled app key is shared by the fleet; per-Code/run limits, not one key's bootstrap rate, own admission.
         admit: async () => ({ limited: false, remaining: 0, resetIn: 0 }),
+        ...options.appProof,
       });
       if (signed instanceof Response) return signed;
       if (signed.appId !== "runner") return c.json({ code: "code_runner_required" }, 403);
@@ -50,7 +51,7 @@ export function createCodeRunnerRoutes() {
             : null,
         );
         if (!proof.success) return c.json({ code: "code_invalid_call" }, 400);
-        const claims = await verifyCodeRunToken(proof.data.token);
+        const claims = await verifyCodeRunToken(proof.data.token, options.token);
         if (!claims) return c.json({ code: "code_invalid_token" }, 403);
         if (claims.runId !== proof.data.runId || claims.generation !== proof.data.generation)
           return c.json({ code: "runner_lease_lost" }, 409);

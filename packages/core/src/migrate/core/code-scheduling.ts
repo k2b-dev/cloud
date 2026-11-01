@@ -7,9 +7,11 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.code.scheduling.migrate',0))`;
     await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS last_dispatched_at TIMESTAMPTZ`;
     await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS deadline_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS runner_instance_id UUID,
       ADD COLUMN IF NOT EXISTS effect_started BOOLEAN NOT NULL DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS schedule_key TEXT, ADD COLUMN IF NOT EXISTS wake_at TIMESTAMPTZ`;
     await tx`CREATE INDEX IF NOT EXISTS runs_dispatch ON code.runs(code_id,created_at,id) WHERE state='queued'`;
+    await tx`CREATE INDEX IF NOT EXISTS runs_running_code ON code.runs(code_id) WHERE state='running'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_leases ON code.runs(lease_expires_at,id) WHERE state='running'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_schedule ON code.runs(schedule_key) WHERE state IN ('queued','running')`;
     // Receipts deliberately outlive the 30-day run detail retention; they contain no input or result.

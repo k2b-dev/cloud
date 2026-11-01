@@ -28,7 +28,7 @@ import {
   reconcileCodeRuns,
   startCodeRun,
 } from "./scheduling";
-import { type CodeRunWakeup, createCodeScheduleReconciler, fetchCodeRuns } from "./scheduling-runtime";
+import { type CodeRunWakeup, createCodeRunOutbox, createCodeScheduleReconciler, fetchCodeRuns } from "./scheduling-runtime";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { appendCodeCall, codeBundleHash, codeSourceHash, insertCodeRun, readCodeRun } from "./store";
 
@@ -73,6 +73,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let timezone: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
   let ordinal = 0;
+  let distantCron = "";
   const overrides = new Map<string, number>();
   const issuer = "https://cloud.example";
   const sign: typeof signCodeRunToken = (claims, options) =>
@@ -95,7 +96,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: [{ kind: "schedule", entrypoint: "weekly", cron: "* * * * *", file: "code.ts", line: 1 }],
+      entrypoints: [{ kind: "schedule", entrypoint: "weekly", cron: distantCron, file: "code.ts", line: 1 }],
       permissions: [],
       ai: false,
       policyRows: ["read"],
@@ -157,6 +158,8 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
     setSystemTime(clock!.now);
+    const distant = new Date(clock!.now.getTime() + 7 * 86_400_000);
+    distantCron = `0 0 ${distant.getUTCDate()} ${distant.getUTCMonth() + 1} *`;
     const pair = await generateKeyPair("RS256", { extractable: true });
     const kid = "33333333-3333-4333-8333-333333333333";
     signer = { kid, key: pair.privateKey, signUntil: new Date(clock!.now.getTime() + 3_600_000) };
@@ -196,6 +199,22 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     const rerun = await startCodeRun({ ...request, idempotencyKey: "invoice:001:rerun" }, context());
     expect(rerun.runId).not.toBe(results[0]!.runId);
     await expect(startCodeRun(request, context(other))).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+  test("committed starts and retries reach the real queue through the durable outbox", async () => {
+    const code = await fixture();
+    const started = await startCodeRun({ codeId: code.codeId, entrypoint: "weekly", idempotencyKey: "outbox" }, context());
+    const publisher = createCodeRunOutbox(() => queue);
+    expect(await publisher.reconcile()).toBe(1);
+    const instanceId = "77777777-7777-4777-8777-777777777777";
+    const first = (await fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign })).runs[0]!;
+    expect(first.runId).toBe(started.runId);
+    await completeCodeRun(await claims(first), "failed");
+    expect(await publisher.reconcile()).toBe(1);
+    const second = (await fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign })).runs[0]!;
+    expect(second.runId).toBe(started.runId);
+    expect(second.generation).toBe(2);
+    await completeCodeRun(await claims(second), "succeeded");
+    await publisher.stop();
   });
   test("three runners complete 200 runs exactly once, never exceeding their free slots", async () => {
     overrides.set("core.code.concurrency_per_code", 100);
@@ -340,6 +359,13 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     const next = await processCodeScheduleTick({ ...code, slot: new Date(slot.getTime() + 120_000) });
     expect((await state(next!.runId)).state).toBe("queued");
   });
+  test("a manual execution of a schedule also causes an overlapping tick to be skipped", async () => {
+    const code = await fixture();
+    await startCodeRun({ codeId: code.codeId, entrypoint: "weekly", idempotencyKey: "manual-schedule" }, context());
+    await take();
+    const skipped = await processCodeScheduleTick({ ...code, slot });
+    expect(await state(skipped!.runId)).toMatchObject({ state: "skipped", outcome: "previous_schedule_running" });
+  });
   test("real Sync scheduler fires once with three Core workers, independently of runner count", async () => {
     const code = await fixture();
     const namespace = testSyncNamespace("c13-scheduler");
@@ -365,6 +391,18 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       await Promise.all(workers.map((w) => w.drain({ timeoutMs: 1000 })));
     }
   }, 10_000);
+  test("fully occupied runners remain visible through lease heartbeats", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const instanceId = "66666666-6666-4666-8666-666666666666";
+    const response = await fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign });
+    const lease = response.runs[0]!;
+    expect((await readCodeRunnerMetrics(context())).freeSlots).toBe(0);
+    await sql`UPDATE code.runner_instances SET last_seen_at=clock_timestamp()-interval '1 minute' WHERE instance_id=${instanceId}::uuid`;
+    expect((await readCodeRunnerMetrics(context())).instances).toBe(0);
+    await heartbeatCodeRun(await claims(lease));
+    expect((await readCodeRunnerMetrics(context())).instances).toBe(1);
+  });
   test("fleet metrics expose queue age, fresh instances and free slots without run payloads", async () => {
     const code = await fixture();
     await enqueueMany(code, 2);

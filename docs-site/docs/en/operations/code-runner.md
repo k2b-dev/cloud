@@ -169,7 +169,8 @@ Core's administration read model reports fresh runner instances, their free
 slots, the number of queued and running runs, and the oldest queued run's
 waiting time in milliseconds. An instance remains fresh for the configured
 long-poll duration plus the 15-second lease window. A stale instance contributes
-no capacity. Polls report free slots; Core subtracts the leases it returns.
+no capacity. Polls report free slots; Core subtracts the leases it returns. Heartbeats keep
+fully occupied instances visible until they can poll again.
 These values are observations, not a promise that a slot remains available.
 
 The Core service `readCodeRunnerMetrics(context, { cursor, limit })` requires
