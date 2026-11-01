@@ -1,6 +1,8 @@
 import { sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import { audit } from "@k2b/cloud/services";
+import { invalidateSettingsCache, set } from "@k2b/cloud/services/settings";
 import { z } from "zod";
 import { app } from "../config";
 import { checkStore } from "./check";
@@ -71,7 +73,7 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
     const parsed = StoreSaveInput.safeParse(input);
     if (!parsed.success) throw new StoreAdminError("INVALID_INPUT");
     const next = parsed.data;
-    return sql.begin(async (tx) => {
+    const saved = await sql.begin(async (tx) => {
       // Try, never wait: a waiter would hold a pooled connection for the whole check of the save before it.
       const [lock] = await tx<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext('pulse.store.settings')) AS locked`;
       if (!lock?.locked) throw new StoreAdminError("STORE_BUSY", 409);
@@ -85,9 +87,20 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
       const status = await checkStore({ ...candidate, prefix, clock, signal, mode: "full" });
       if (!status.ok) return { ...publicConfig(current), status };
       // One write of complete explicit admin input: readers see the old tuple or the new one, never a mix.
-      await app.settings.set("pulse.clickhouse_connection", JSON.stringify(candidate satisfies Connection), { replaceUnreadable: true });
+      await set("pulse.clickhouse_connection", JSON.stringify(candidate satisfies Connection), tx, { replaceUnreadable: true });
+      await audit.record(
+        {
+          action: "pulse.store.configure",
+          outcome: "allowed",
+          actor: { userId: identity.actor.kind === "user" ? identity.actor.user.id : null },
+          target: { type: "setting", id: "pulse.clickhouse_connection" },
+        },
+        tx,
+      );
       return { ...publicConfig(candidate), status };
     });
+    if (saved.status?.ok) await invalidateSettingsCache(["pulse.clickhouse_connection"]);
+    return saved;
   },
   async setupSql(identity: StoreIdentity, input: unknown) {
     requireStoreAdmin(identity);

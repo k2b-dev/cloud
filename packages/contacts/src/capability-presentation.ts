@@ -157,7 +157,6 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Kontakt erstellen",
           description: "Erstellt einen Kontakt in einem explizit ausgewählten Adressbuch mit Schreibzugriff.",
           input: {
-            bookId: "Öffentliche ID des Adressbuchs, dem der Kontakt zugeordnet wird.",
             label: "Optionale explizite Anzeigebezeichnung.",
             firstName: "Vorname einer Person.",
             lastName: "Nachname der Person.",
@@ -213,7 +212,6 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
             "Verschieben Sie einen Kontakt in ein anderes beschreibbares Buch. Buchbezogene Tags und Hierarchielinks werden entfernt.",
           input: {
             contactId: "Stabile öffentliche ID des zu verschiebenden Kontakts.",
-            targetBookId: "Öffentliche ID des Zieladressbuchs mit Schreibzugriff.",
             expectedUpdatedAt: "updatedAt-Wert aus dem letzten Lesevorgang; verhindert das Verschieben einer veralteten Version.",
           },
         },

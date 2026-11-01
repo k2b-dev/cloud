@@ -12,7 +12,7 @@ import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/reg
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
-import { AppAccessManagementError, appAccessGrantCounts, canRepairAppAccess } from "./app-access-management";
+import { AppAccessManagementError, appAccessGrantCounts, canReadAppAdministration } from "./app-access-management";
 import type { StoredDeclaration } from "./app-events/declarations";
 
 type SubscriptionRow = {
@@ -51,7 +51,7 @@ type Dependencies = {
 export function createAppDetailsService(dependencies: Dependencies = {}) {
   return async (appId: string, options: { authority: RequestAuthority; locale?: string }): Promise<AppDetails | null> => {
     const db = dependencies.db ?? sql;
-    if (!canRepairAppAccess(options.authority))
+    if (!canReadAppAdministration(options.authority))
       throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
     const locale = options.locale ?? "en";
     const [app, known] = await Promise.all([

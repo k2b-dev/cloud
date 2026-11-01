@@ -42,7 +42,8 @@ The executable repository example is `packages/pulse/examples/website-tracking.t
 Read the [backend tracking guide](/en/apps/pulse#track-a-website-from-its-backend)
 for setup, retry behavior and the expected day/path/session counts.
 
-Agents may instead call `ingest.write` with `baseId`, `sourceId`, the current
+Agents may instead call `ingest.write` with a `pulse.base` target (`base` in
+flat tools), `sourceId`, the current
 `expectedRevision`, and `batch` (whole input at most 192 KiB). This needs base
 write access and a source created by the current access subject. It accepts
 remembered approval per source and requires an idempotency key. Source token

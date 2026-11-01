@@ -22,6 +22,7 @@ import type {
 import type { RequestActor } from "../server";
 import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
+import type { AiToolUnavailableReason } from "./capabilities";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
 
@@ -1106,6 +1107,14 @@ export type AiWebsiteReceipt = { index: number; method: string; url: string };
 
 export type AiFrontendToolMode = "client" | "client_view" | "client_interaction";
 
+/** What load_tools reports; `call` is the name to call a loaded tool by. */
+export type AiLoadToolsResult = {
+  loaded: { name: string; call: string }[];
+  alreadyLoaded: { name: string; call: string }[];
+  unavailable: { name: string; reason: AiToolUnavailableReason }[];
+  evicted: string[];
+};
+
 export type AiCapabilityToolPresentation = {
   kind: "capability";
   appId: string;
@@ -1168,6 +1177,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
+          /** Loads tools for the next model turn under the same rules as load_tools; absent where a turn has no tool discovery. */
+          loadTools?: (names: readonly string[]) => Promise<AiLoadToolsResult>;
         },
       ): Promise<z.infer<TOutput>>;
     }

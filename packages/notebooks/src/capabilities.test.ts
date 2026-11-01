@@ -134,6 +134,7 @@ const userContext = {
   user,
   locale: "en",
   requestId: "req-test",
+  target: { type: "notebooks.notebook", id: "abc123" },
   origin: "app",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
@@ -844,7 +845,7 @@ describe("notebooks capabilities", () => {
     expect(TagListInputSchema.safeParse({ notebookId }).success).toBeFalse();
     expect(TagNotesInputSchema.safeParse({ notebookId: notebook.shortId, tag: "docs" }).success).toBeTrue();
     expect(TagNotesInputSchema.safeParse({ notebookId, tag: "docs" }).success).toBeFalse();
-    expect(NoteCreateInputSchema.safeParse({ notebookId: notebook.shortId, parentId: note.shortId }).success).toBeTrue();
+    expect(NoteCreateInputSchema.safeParse({ parentId: note.shortId }).success).toBeTrue();
     expect(NoteCreateInputSchema.safeParse({ notebookId, parentId: noteId }).success).toBeFalse();
     expect(NoteEditInputSchema.safeParse({ noteId: note.shortId, operations: [{ kind: "append", content: "x" }] }).success).toBeTrue();
     expect(NoteEditInputSchema.safeParse({ noteId, operations: [{ kind: "append", content: "x" }] }).success).toBeFalse();
@@ -1194,10 +1195,7 @@ describe("notebooks capabilities", () => {
         { noteId: note.shortId, content: "A useful observation." },
         userContext,
       ),
-      await notebooksCapabilities.actions["note.create"].review!(
-        { notebookId: notebook.shortId, parentId: note.shortId, content: "# New note" },
-        userContext,
-      ),
+      await notebooksCapabilities.actions["note.create"].review!({ parentId: note.shortId, content: "# New note" }, userContext),
       await notebooksCapabilities.actions["note.edit"].review!(
         { noteId: note.shortId, operations: [{ kind: "append", content: "Update" }] },
         userContext,
@@ -1458,4 +1456,33 @@ test("discussion containers preserve authorized list pagination", async () => {
   });
   const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
   expect(last.ok && last.data.data.next).toBeNull();
+});
+
+test("notebook targets reject a note, parent or annotation from another notebook in review and execution", async () => {
+  const foreignNotebook = { ...notebook, id: otherNotebookId, shortId: otherNotebookShortId };
+  trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(foreignNotebook);
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+  trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue({ ...note, notebookId: otherNotebookId });
+  const edit = trackedSpy(spyOn(noteStore, "editContent"));
+  const create = trackedSpy(spyOn(noteStore, "create"));
+  const context: CapabilityExecutionContext = {
+    ...userContext,
+    target: { type: "notebooks.notebook", id: notebook.shortId },
+    idempotencyKey: "target-check",
+  };
+  const calls: { action: CapabilityActionDefinition; input: unknown }[] = [
+    {
+      action: notebooksCapabilities.actions["note.edit"],
+      input: { noteId: note.shortId, operations: [{ kind: "append" as const, content: "Changed" }] },
+    },
+    { action: notebooksCapabilities.actions["note.create"], input: { parentId: note.shortId, content: "Child" } },
+    { action: notebooksCapabilities.actions["annotation.create"], input: { noteId: note.shortId, quote: "passage", body: "Review" } },
+  ];
+  for (const { action, input } of calls) {
+    expect(await action.review!(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  }
+  expect(edit).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
 });

@@ -431,10 +431,14 @@ test("a hidden navigation is server-rendered without the note tree", async () =>
   expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
   expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
   expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
-  // The graph's own toolbar offers the show control, so the sidebar adds none in a corner.
-  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
-    "Navigation einblenden",
-  ]);
+  // The graph's own toolbar holds the workspace's navigation button, so neither the sidebar nor a head adds one.
+  expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
+  expect(
+    (await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => [
+      button.attributes["aria-label"],
+      button.attributes["data-app-workspace-sidebar-toggle"],
+    ]),
+  ).toEqual([["Navigation", ""]]);
 });
 
 test("a visible navigation is server-rendered with its one sidebar and note tree, also for a former Navigator layout", async () => {
@@ -632,6 +636,8 @@ for (const mode of ["write", "readonly"] as const) {
   test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
+      const [presence] = await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]');
+      expect(islandProps(presence?.attributes["data-props"]).initialNoteId).toBe("note01");
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
@@ -864,3 +870,15 @@ for (const mode of ["write", "book", "graph", "graph&from=readonly"] as const)
     expect(shell.panel.context.scope).toEqual({ type: "notebooks.notebook", id: notebook.shortId });
     expect(shell.panel.context.scope.id).not.toBe(notebook.id);
   });
+
+// Write and Links draw no workspace head: the toolbar holds the navigation and Details buttons (old head button →
+// toolbar button). Read and version history have no toolbar, so they keep the head's buttons.
+test.each([
+  { mode: "write", head: 0, ownDetails: 0 },
+  { mode: "graph", head: 0, ownDetails: 0 },
+  { mode: "readonly", head: 1, ownDetails: 1 },
+] as const)("$mode: the workspace head and its Details button", async ({ mode, head, ownDetails }) => {
+  const html = await renderNotebookWithNotes({}, mode);
+  expect(await select(html, ".k2b-app-workspace__head")).toHaveLength(head);
+  expect(await select(html, ".k2b-app-workspace__detail-toggle")).toHaveLength(mode === "graph" ? 0 : ownDetails);
+});

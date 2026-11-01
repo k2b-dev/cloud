@@ -36,7 +36,7 @@ async function load(source, first = false) {
       cursors.grids = result.page?.hasMore ? result.page.nextCursor : undefined;
     } else {
       const result = await cloud.capabilities.run("filesv2.entry.list", {
-        baseId: sources.filesBaseId,
+        entry: sources.filesRootId,
         path: sources.filesPath ?? "",
         type: "files",
         ...(cursors.files ? { after: cursors.files } : {}),
@@ -72,8 +72,8 @@ async function download() {
   }
 }
 
-if (!sources?.gridsTemplateId || !sources?.filesBaseId) {
-  status.textContent = "Configure sources.gridsTemplateId and sources.filesBaseId first.";
+if (!sources?.gridsTemplateId || !sources?.filesRootId) {
+  status.textContent = "Configure sources.gridsTemplateId and sources.filesRootId first.";
   for (const button of document.querySelectorAll("button")) button.disabled = true;
 } else {
   document.querySelector("#next-grids").addEventListener("click", () => load("grids"));

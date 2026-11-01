@@ -36,5 +36,30 @@ Older Core readers omit operations with target fields they cannot understand.
 They do not invoke those operations after stripping the fields. Other
 operations remain available.
 
+Spaces and Contacts Actions now use fixed `space` and `book` targets.
+Creation inputs omit `spaceId` and `bookId`; contact moves carry their
+destination in `refs.targetBookId`. Upgrade Mail with these providers so its
+calendar, linked-item and contact-creation calls send the new coordinates.
+Directory providers implementing `create` declare a local `book` Type and
+move the selected book out of `ContactDirectoryCreateInputSchema`.
+
+The Spaces invitation preparation and commit Actions declare `code: false`.
+Resource-owned Code must leave them out; person calls keep their service
+permission checks. Stored routine grants and approvals still need the
+coordinated migration before this branch is released.
+
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
+
+## Converted application Actions
+
+Notebooks binds note, comment and annotation Actions to the notebook. Pulse
+binds existing-resource Actions to the Base. Venue binds assignments to the
+venue, Weather binds deletion to the saved location, and Core binds Skill
+changes to the Skill and routine changes to the AI chat. Chat binds message
+changes to the message and notification preferences and follows to the
+conversation. Their primary resource selectors move from `input` to `target`;
+refresh generated clients and the capability catalog together with these apps.
+
+All Chat Actions declare `code: false` for resource Code, including
+personal notification preferences. Calls acting as a person retain their existing permission checks.

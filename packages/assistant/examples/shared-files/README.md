@@ -5,7 +5,7 @@ Save `index.html` and `app.js` as a Studio app. Set shared KV key `sources` to:
 ```json
 {
   "gridsTemplateId": "<ID from grids.document.templates>",
-  "filesBaseId": "<ID from filesv2.bases.list>",
+  "filesRootId": "<data.items[].ref.id from filesv2.bases.list>",
   "filesPath": ""
 }
 ```
