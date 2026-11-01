@@ -17,6 +17,16 @@ export const codeAccessMessages = (locale: string) =>
         rmConfirm: "Zugriff entfernen",
         rmFailed: "Code-Zugriff konnte nicht entfernt werden",
         cancel: "Abbrechen",
+        setInput: {
+          proof: "Kurzlebiger, von Core signierter Aktivierungsnachweis.",
+          target: "Genaues Ziel, an das der Aktivierungsnachweis gebunden ist.",
+          "target.type": "Vollständiger Ressourcentyp oder app für die gesamte empfangende Anwendung.",
+          "target.id": "Ressourcen-ID oder ID der empfangenden Anwendung bei einem App-Ziel.",
+          operations: "Vollständige Liste der an diesem Ziel angeforderten qualifizierten Operationen.",
+          dryRun: "Verfügbarkeit prüfen, ohne Berechtigungsänderungen zu speichern.",
+        },
+        listInput: { principal: "ID des Code-Dienstkontos, dessen ausdrückliche Zugriffe aufgelistet werden." },
+        rmInput: { grantId: "ID des ausdrücklichen Code-Zugriffs, der entfernt werden soll." },
       }
     : {
         setTitle: "Grant Code access",
@@ -34,4 +44,14 @@ export const codeAccessMessages = (locale: string) =>
         rmConfirm: "Remove access",
         rmFailed: "Code access could not be removed",
         cancel: "Cancel",
+        setInput: {
+          proof: "Short-lived Core-signed activation proof.",
+          target: "Exact target bound by the activation proof.",
+          "target.type": "Qualified resource type, or app for the whole receiving application.",
+          "target.id": "Resource ID, or the receiving application ID for an app target.",
+          operations: "Complete set of qualified operations requested at this target.",
+          dryRun: "Check availability without committing any permission changes.",
+        },
+        listInput: { principal: "Code service-account ID whose explicit grants are requested." },
+        rmInput: { grantId: "Explicit Code grant identity to remove." },
       };
