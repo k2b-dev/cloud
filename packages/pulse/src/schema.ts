@@ -109,6 +109,7 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
       accepted_at TIMESTAMPTZ NOT NULL,
       planned_states JSONB,
       response JSONB,
+      reset_generation BIGINT, checkpoint_id UUID, pending_checkpoint_id UUID,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL,
       PRIMARY KEY (source_id, idempotency_key),
@@ -196,6 +197,14 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
     total_bytes BIGINT, measured_at TIMESTAMPTZ, disk_low_at TIMESTAMPTZ,
     outage_started_at TIMESTAMPTZ, last_outage_ended_at TIMESTAMPTZ
   )`.simple();
+};
+
+/** Existing receipts retain their plans; null validity requires replay on their next retry. */
+export const installReceiptCheckpoints = async (sql: TransactionSQL): Promise<void> => {
+  await sql`ALTER TABLE pulse.ingest_idempotency
+    ADD COLUMN IF NOT EXISTS reset_generation BIGINT,
+    ADD COLUMN IF NOT EXISTS checkpoint_id UUID,
+    ADD COLUMN IF NOT EXISTS pending_checkpoint_id UUID`.simple();
 };
 
 /** SQL console control data. migrate() holds the installation transaction lock. */

@@ -2,6 +2,24 @@ import { describe, expect, test } from "bun:test";
 
 const { ingestBatch } = await import("./ingest-writer");
 
+test("completed receipt validity includes generation and both checkpoint phases", async () => {
+  const { completedIngestResponse } = await import("./ingest-writer");
+  const checkpoint = { reset_generation: "9007199254740993", checkpoint_id: "committed", pending_checkpoint_id: "pending" };
+  const receipt = { ...checkpoint, state: "done" as const, response: { metrics: 1, events: 2, states: 3 } };
+  expect(completedIngestResponse(receipt, checkpoint)).toEqual(receipt.response);
+  for (const change of [
+    { reset_generation: "9007199254740992" },
+    { reset_generation: null }, // A receipt written before migration 8 must replay.
+    { checkpoint_id: "older" },
+    { pending_checkpoint_id: null },
+    { state: "pending" as const },
+    { response: null },
+  ])
+    expect(completedIngestResponse({ ...receipt, ...change }, checkpoint)).toBeNull();
+  const empty = { reset_generation: "0", checkpoint_id: null, pending_checkpoint_id: null };
+  expect(completedIngestResponse({ ...receipt, ...empty }, empty)).toEqual(receipt.response);
+});
+
 describe("Pulse ingest writer", () => {
   test("rejects a mixed batch with an invalid later item before opening a transaction", async () => {
     const result = await ingestBatch({

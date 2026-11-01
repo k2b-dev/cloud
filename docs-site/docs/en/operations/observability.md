@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-10-11
+updated: 2026-11-01
 ---
 
 # Observability
@@ -44,6 +44,21 @@ Do not log secrets, session tokens, authorization headers, prompts, or model
 output.
 
 See [Logging](/en/docs/platform/logging) for application APIs.
+
+### Diagnose Mail send attempts
+
+Filter source `mail:commands` for **Mail send attempt finished** and the
+`outboxId` or `commandId`. Each claimed attempt records `outcomeState` and
+millisecond durations for `prepareMs`, `preSendLookupMs`, `smtpMs`,
+`sentCopyMs`, and `totalMs`. Preparation excludes the separately timed Sent
+lookup. A step that did not run is `null`; reconciliation attempts can finish
+without SMTP. `totalMs` also includes pacing, persistence, and lease release.
+
+`leaseAcquireMs` measures this call's lease acquisition. Time spent waiting
+across earlier job retries is unknown and is excluded.
+These entries contain IDs, attempt number, durations, and state, without
+addresses, subjects, or message content. Compare production measurements for
+the same provider and outcome before drawing conclusions about send speed.
 
 ## Trace a request or operation
 

@@ -8,6 +8,8 @@ export const DASHBOARD_MAX_MARKS = 3_840;
 export const DASHBOARD_CACHE_ENTRIES = 500;
 export const DASHBOARD_CACHE_BYTES = 64 * 1024 * 1024;
 export const DASHBOARD_REFRESH_MS = 60_000;
+/** Panels a signed-in viewer reads at once. Below the Cloud's three SQL slots, so other bases keep one. */
+export const DASHBOARD_PANEL_READS = 2;
 
 export const NUMBER_METADATA_COLUMNS = ["unit", "detail", "detailTone"] as const;
 const Column = z.string().min(1).max(120);

@@ -107,7 +107,7 @@ suiteFor(
       await f.cleanup();
     }
   }, 30000);
-  test("#6 two replicas share both buckets; done keys cost nothing; Valkey down fails closed", async () => {
+  test("#6 two replicas share both buckets; valid completed keys cost nothing; Valkey down fails closed", async () => {
     const f = await writeFixture("quota"),
       a = createIngestQuota(() => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 })),
       b = createIngestQuota(() => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 })),
@@ -123,7 +123,7 @@ suiteFor(
         ok: false,
         error: { code: "PULSE_BASE_THROTTLED", status: 429, retryAfter: expect.any(Number) },
       });
-      assertWrite(await two({ ...params, idempotencyKey: "done" }));
+      expect(await two({ ...params, idempotencyKey: "done" })).toEqual({ ok: true, data: { metrics: 1, events: 0, states: 0 } });
       const [source] = await sql`SELECT throttled_at FROM pulse.sources WHERE id=${f.sourceId}::uuid`;
       expect(source?.throttled_at.toISOString()).toBe(f.clock().toISOString());
       const failed = await createIngestWriter({ store: f.store, clock: f.clock, quota: down })(params);
