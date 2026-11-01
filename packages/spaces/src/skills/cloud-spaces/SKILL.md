@@ -42,7 +42,7 @@ Follow the user's request and loaded Skills. Load only needed capabilities; reus
 
 - When the user names a template or the Space has one for the request, find it with `spaces.template.list`; pass the person's IANA timeZone when known. Each template carries its date rule and the next proposed local dates.
 - Create from it with `spaces.task.create` or `spaces.event.create` and `templateId`. Set `date` to the proposal the user means ("next Wednesday" is the matching proposal) or to an explicit date; without `date` the first proposal applies. Give only the fields the user wants to change; the template fills the rest, including its checklist.
-- Never guess a date from a vague request; if the proposals do not settle it, ask. Managing templates (`spaces.template.create`, `spaces.template.update`, `spaces.template.delete`) needs Space admin access.
+- Never guess a date from a vague request; if the proposals do not settle it, ask. Managing templates (`spaces.template.create`, `spaces.template.update`, `spaces.template.delete`) needs Space write access.
 
 ## Calendar mail and cross-app work
 

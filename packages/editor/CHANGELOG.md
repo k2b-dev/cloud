@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.5.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.4.0...npm-editor-v0.5.0) (2026-11-01)
+
+
+### Features
+
+* **notes:** the slash menu and table formulas work as in Notebooks ([#2363](https://github.com/k2b-dev/cloud/issues/2363)) ([a9a277f](https://github.com/k2b-dev/cloud/commit/a9a277ff1136d972d00ae95ec930d18f436a036f))
+
+
+### Bug Fixes
+
+* **editor:** a checked box shows its check under a strict content policy ([#2370](https://github.com/k2b-dev/cloud/issues/2370)) ([0c67781](https://github.com/k2b-dev/cloud/commit/0c67781d3268793a5d4f3027fa814d26acbf6dd9))
+* **notes:** dialogs and block controls look finished ([#2362](https://github.com/k2b-dev/cloud/issues/2362)) ([10c328d](https://github.com/k2b-dev/cloud/commit/10c328daca5b801d75f0227b5441c1c7f3fe4673))
+* **ui:** checked checkboxes keep their rounded corners ([#2360](https://github.com/k2b-dev/cloud/issues/2360)) ([781668c](https://github.com/k2b-dev/cloud/commit/781668c6622074a2b901ffcc42b6b62caa607070))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.41.0 to 0.42.0
+
+## [0.4.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.3.1...npm-editor-v0.4.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.40.0 to 0.41.0
+
+## [0.3.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.3.0...npm-editor-v0.3.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.39.0 to 0.40.0
+
 ## [0.3.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.2.0...npm-editor-v0.3.0) (2026-10-31)
 
 

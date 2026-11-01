@@ -97,7 +97,7 @@ const presentProvider = async (value: Record<string, unknown>, db = sql, credent
   });
 };
 const validateProvider = (provider: z.infer<typeof AiProviderInputSchema>) => {
-  if (provider.type === "openai-compatible" && !provider.baseUrl)
+  if (["openai-compatible", "vllm-realtime"].includes(provider.type) && !provider.baseUrl)
     throw new AiConfigError("invalid_configuration", "OpenAI-compatible providers require a base URL.");
 };
 const sanitizeModel = (model: z.infer<typeof AiModelInputSchema>) => ({
@@ -116,7 +116,20 @@ const validateModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiPr
       "invalid_configuration",
       "Transcription requires an OpenAI-compatible provider and cannot have chat capabilities, parameters or token prices.",
     );
-  if (model.kind === "chat" && model.capabilities.includes("transcription"))
+  if (
+    model.kind === "live-transcription" &&
+    (provider.type !== "vllm-realtime" ||
+      model.pricing ||
+      model.extraBody ||
+      model.capabilities.some((value) => value !== "live-transcription"))
+  )
+    throw new AiConfigError(
+      "invalid_configuration",
+      "Live transcription requires a realtime provider and has no chat parameters or prices.",
+    );
+  if (provider.type === "vllm-realtime" && model.kind !== "live-transcription")
+    throw new AiConfigError("invalid_configuration", "Realtime providers only support live transcription models.");
+  if (model.kind === "chat" && model.capabilities.some((value) => value === "transcription" || value === "live-transcription"))
     throw new AiConfigError("invalid_configuration", "Chat models cannot transcribe audio.");
 };
 export const aiModelCatalog = {
@@ -222,7 +235,7 @@ export const aiModelCatalog = {
       for (const input of inputs) {
         const data = sanitizeModel(AiModelInputSchema.parse(input));
         validateModel(data, provider);
-        if (data.kind === "transcription") data.capabilities = ["transcription"];
+        if (data.kind !== "chat") data.capabilities = [data.kind];
         await write("models", { ...data, providerId }, actorId, db);
         await write(
           "model_variants",
@@ -253,8 +266,8 @@ export const aiModelCatalog = {
       await assertAiRevision(current, revision, db);
       const data = sanitizeModel(AiModelInputSchema.parse({ ...AiModelInputSchema.strip().parse(current), ...patch, id }));
       validateModel(data, await this.provider(current.providerId, db));
-      if (data.kind === "transcription") data.capabilities = ["transcription"];
-      if (data.kind === "transcription" && (await this.variants(db)).some((v) => v.modelId === id && v.slug !== "standard"))
+      if (data.kind !== "chat") data.capabilities = [data.kind];
+      if (data.kind !== "chat" && (await this.variants(db)).some((v) => v.modelId === id && v.slug !== "standard"))
         throw new AiConfigError("invalid_configuration", "Transcription models only have a standard variant.");
       const variantIds = (await this.variants(db)).filter((variant) => variant.modelId === id).map((variant) => variant.id);
       for (const assignment of await this.assignments(db))
@@ -297,7 +310,7 @@ export const aiModelCatalog = {
       await assertAiRevision(current, revision, db);
       const data = AiVariantInputSchema.parse({ ...AiVariantInputSchema.strip().parse(current), ...patch, slug: current.slug });
       const model = await this.model(current.modelId, db);
-      if (model.kind === "transcription" && (data.reasoningEffort || data.extraBody || data.pricing || data.maxOutputTokens))
+      if (model.kind !== "chat" && (data.reasoningEffort || data.extraBody || data.pricing || data.maxOutputTokens))
         throw new AiConfigError("invalid_configuration", "Audio variants do not support chat overrides.");
       await write("model_variants", data, actorId, db, id);
       return this.variant(id, db);

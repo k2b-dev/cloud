@@ -145,6 +145,7 @@ export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
 /** Core-owned internal startup protocol; applications use @k2b/cloud/start. */
 export { createAppBootstrapRoutes } from "./app-bootstrap";
+export { createAppMigrationProbeRoutes } from "./app-migration-probe";
 /** Core-owned app-key request authentication. */
 export { authenticateSignedAppRequest } from "./authenticate-app-request";
 export { type CodeRunnerDispatchDependencies, codeHttpOriginAllowed, createCodeRunnerCallRoutes } from "./capabilities";

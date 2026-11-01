@@ -50,6 +50,7 @@ const setup = async (authenticated = true, state = authorityState()) => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   let authCalls = 0;
   const routes = createIdentityOAuthIssuanceRoutes({
+    recordLegacy: async () => {},
     authenticate: (token) => {
       authCalls += 1;
       expect(token).toBe("broker");
@@ -78,6 +79,7 @@ describe("Core OAuth issuance authority", () => {
     const { privateKey } = await generateKeyPair("RS256");
     let signerCalls = 0;
     const routes = createIdentityOAuthIssuanceRoutes({
+      recordLegacy: async () => {},
       withActiveSigner: async (_purpose, callback) => {
         signerCalls += 1;
         return callback({ kid: "test", key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.test" }, sql);
@@ -418,6 +420,7 @@ describe("Core OAuth issuance authority", () => {
     const { privateKey } = await generateKeyPair("RS256");
     let now = 1_788_220_800;
     const routes = createIdentityOAuthIssuanceRoutes({
+      recordLegacy: async () => {},
       authenticate: () => true,
       issuer: async () => "https://cloud.example.test",
       now: () => now,
@@ -479,6 +482,7 @@ const epochAuthorityFixture = async (notify?: (notice: OAuthNewAccessNotice) => 
       VALUES (${id}, ${id}, ARRAY['https://client.example.test/callback'], ARRAY['openid', 'offline_access'], ARRAY['cloud'])`;
   }
   const routes = createIdentityOAuthIssuanceRoutes({
+    recordLegacy: async () => {},
     authenticate: () => true,
     notifyNewAccess: async (notice) => {
       notices.push(notice);
@@ -870,6 +874,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           ARRAY['cloud', ${clientId}], true, ${authorityNonce}::uuid, 0)
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
+        recordLegacy: async () => {},
         authenticate: () => true,
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
@@ -961,6 +966,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
         VALUES (${grantId}::uuid, ${grantNonce}::uuid, ${clientId}, ARRAY['read'], ARRAY['cloud', ${clientId}])
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
+        recordLegacy: async () => {},
         authenticate: () => true,
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
@@ -1061,6 +1067,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
         )
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
+        recordLegacy: async () => {},
         authenticate: () => true,
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
@@ -1131,6 +1138,7 @@ withDatabase("Core terminal approval issuance boundary", () => {
     let issuancePid: number | undefined;
     let issuance: Promise<Response> | undefined;
     const routes = createIdentityOAuthIssuanceRoutes({
+      recordLegacy: async () => {},
       authenticate: () => true,
       withActiveSigner: async (_purpose, callback) =>
         sql.begin(async (db) => {
@@ -1238,6 +1246,7 @@ withDatabase("Core terminal approval issuance boundary", () => {
   ] as const)("rechecks terminal approval authority before issuance: %s", async (scenario) => {
     const { privateKey } = await generateKeyPair("RS256");
     const routes = createIdentityOAuthIssuanceRoutes({
+      recordLegacy: async () => {},
       authenticate: () => true,
       withActiveSigner: async (_purpose, callback) =>
         sql.begin(async (db) => {

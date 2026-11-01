@@ -120,6 +120,23 @@ describe("root test orchestration", () => {
     expect(run.stdout.toString()).not.toContain("passed");
   });
 
+  test("a failed browser warm-up stops the run before any suite starts", () => {
+    const run = Bun.spawnSync(
+      ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--browser", "--filter", "touch-targets"],
+      {
+        cwd: workspaceRoot,
+        // An unknown engine makes the warm-up's launcher throw before it starts a browser.
+        env: { ...process.env, CLOUD_HEAVY_LOCK: "held", TEST_BROWSER: "no-such-engine" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stdout.toString()).toContain("=== browser warm-up ===");
+    expect(run.stdout.toString()).not.toContain("touch-targets");
+    expect(run.stderr.toString()).toContain("browser warm-up failed");
+  });
+
   const makeSuites = (names: string[]): TestSuite[] =>
     names.map((name) => ({
       name,

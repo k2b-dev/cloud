@@ -71,6 +71,7 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
   const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockImplementation(async () => pendingGenerations);
   // Only the metadata enumeration is stubbed; native storage belongs to the browser suite.
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {} });
+  let afterSnapshot: (() => Promise<void>) | undefined;
   let saveFails = false,
     revision = 1,
     durable = initial;
@@ -150,7 +151,9 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
         if (saveFails) return Response.json({ message: "durable storage failed" }, { status: 503 });
         durable = Y.encodeStateAsUpdate(document);
         revision++;
-        return Response.json({ generation, status: "saved", revision, durable: snapshot(durable) });
+        const response = Response.json({ generation, status: "saved", revision, durable: snapshot(durable) });
+        await afterSnapshot?.();
+        return response;
       }
       if (parsed.pathname.endsWith("/rest")) {
         if (restFailsOnce) {
@@ -216,6 +219,9 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
         socket.readyState = 3;
         socket.onclose?.({ code: 1012, reason: "offline" });
       }
+    },
+    afterSnapshot: (callback: () => Promise<void>) => {
+      afterSnapshot = callback;
     },
     failSave: () => {
       saveFails = true;
@@ -353,6 +359,27 @@ test.each(["closed", "replaced"])("disconnected retry recovers a %s draft withou
     expect(client.content().body).toBe("Pending disconnected input");
     expect(client.state()).toMatchObject({ connected: false, ready: false, dirty: true });
     expect(f.authenticationRequests()).toBe(0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("typing after a snapshot starts keeps newer input pending without reporting a failed save", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    client.edit({ ...client.content(), body: "Snapshot input" });
+    await Bun.sleep(0);
+    f.afterSnapshot(async () => {
+      client.edit({ ...client.content(), body: "New typing during the request", subject: "New header" });
+      await Bun.sleep(0);
+    });
+    await client.save();
+    expect(client.state()).toMatchObject({ dirty: true, error: false });
+    expect(client.content()).toMatchObject({ body: "New typing during the request", subject: "New header" });
+    f.afterSnapshot(async () => {});
+    await client.save();
+    expect(client.state()).toMatchObject({ dirty: false, error: false });
   } finally {
     await f.cleanup();
   }

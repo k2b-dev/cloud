@@ -1,4 +1,11 @@
-import { aiConversations, aiProjects, assistantAiSettingsState, getAiChatQuotas, loadAiStreamState } from "@k2b/cloud/ai";
+import {
+  aiConversations,
+  aiProjects,
+  assistantAiSettingsState,
+  getAiChatQuotas,
+  getLiveDictationStatus,
+  loadAiStreamState,
+} from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
 import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { AuthContext } from "@k2b/cloud/server";
@@ -77,9 +84,10 @@ export default ssr<AuthContext>(async (c) => {
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await aiLive.cursor();
   const catalog = catalogPerApp(locale, auth.getAuthority(c));
-  const [status, sidebar, appUrl, initialQuotas, approvals, codeList, codeExists, codeBlockPage, codeDetail, runsToday, attention] =
+  const [settings, liveDictation, sidebar, appUrl, initialQuotas, approvals, codeList, codeExists, codeBlockPage, codeDetail, runsToday, attention] =
     await Promise.all([
       assistantAiSettingsState(subject),
+      getLiveDictationStatus(c.get("accessSubject")),
       loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
       coreSettings.get<string>("app.url"),
       getAiChatQuotas(subject).catch(() => null),
@@ -101,6 +109,7 @@ export default ssr<AuthContext>(async (c) => {
   const codePlace = panelScope && codeBlockPage !== undefined ? await loadCodePlace(panelScope, invokeCode, catalog) : undefined;
   // An unknown answer keeps "My apps & automations" in the sidebar, so a failure never hides the person's Code.
   const hasCode = codeList !== undefined ? codeList === null || codeList.items.length > 0 : codeExists !== false;
+  const status = { ...settings, liveDictationAvailable: liveDictation.available };
   const { conversations } = sidebar;
   const activeProjectRecord = requestedProjectId
     ? await aiProjects.getByShortId(requestedProjectId, { actor: c.get("actor"), accessSubject: c.get("accessSubject") })

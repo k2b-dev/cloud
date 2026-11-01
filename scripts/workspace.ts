@@ -57,6 +57,7 @@ export const releaseImages = (): ReleaseImage[] => [
   })),
   { image: "cloud-website", dockerfile: "docs-site/Dockerfile" },
   { image: "cloud-pwa-auth", dockerfile: "pwas/pwa-auth/Dockerfile" },
+  { image: "cloud-notes", dockerfile: "pwas/notes/Dockerfile" },
 ];
 
 if (import.meta.main) {

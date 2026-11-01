@@ -25,7 +25,12 @@ An all-day deadline becomes overdue on the following day in your timezone. It st
 
 ## Start from a template {icon="template"}
 
-When a Space has templates, the dialog for a new task or event shows a **Template** row. The row offers **Blank** and the templates for that kind of item. With more than six templates, the row becomes a searchable list.
+Every **+** opens the same menu: the one in the head, the round button on a phone, **+ Task** below a column, **New task** in an empty list, and **New event** in the calendar. **Blank task** or **Blank event** comes first. Below it are the templates, each with its icon and a short line about what it proposes. **Create template…** comes last.
+
+- Press Enter on **+**, then Enter again, to create a blank item. The N key creates a blank task at once, and a blank event in the calendar.
+- From eight templates on, the menu has a search field. When no template matches, Enter creates a blank item with the typed text as its title.
+- A template in the menu opens the dialog with that template. The **Template** row in the dialog changes it. A task from **+ Task** below a column goes to that column.
+- In the calendar, the quick create offers **Template**. The selected time stays, and the template fills in the rest. A day's menu shows the templates too.
 
 A template fills in the title, description, priority, tags, and assignees. For a task, it also fills in the checklist. For an event, it fills in the location, time, and duration. A line below the description sums up what the template adds. Every field stays editable before you save, and **More options** shows all of them. When you already typed something, Spaces asks before a template replaces it.
 
@@ -37,7 +42,9 @@ A template can propose dates:
 - Proposals use your time zone. With a weekday rule, an all-day task keeps today available for its whole day. A template with a time offers today only while that time still lies ahead.
 - The placeholders `{{date}}`, `{{weekday}}`, and `{{week}}` in the title and description follow the chosen date until you edit the text. This also applies to **No date** and to a date from the picker.
 
-With **Manage** access, you set up templates in the Space settings under **Templates**: a name, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates.
+**Create template…** opens the form for a new template. **Save as template** in an item's **…** menu fills the form from the item. It leaves out the date, comments, attachments, links, and checked boxes. When the title names a week such as "CW 44" or a date, the form suggests a placeholder. It replaces the text only when you choose **Replace**.
+
+With **Edit** access, you also create, change, and delete templates in the Space settings under **Templates**: a name, an optional icon, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates. Without an icon, the template uses the default for tasks or events.
 
 ## Structure an item {icon="point"}
 

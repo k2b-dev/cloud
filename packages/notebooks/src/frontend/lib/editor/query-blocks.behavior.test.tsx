@@ -89,7 +89,7 @@ describe("query block previews", () => {
       const previous = app.view().state.selection.main.anchor;
       anchor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
       expect(app.view().state.selection.main.anchor).toBe(previous);
-      const button = Array.from(app.dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Quelltext"))!;
+      const button = app.dom.root.querySelector<HTMLButtonElement>('button[aria-label="Quelltext anzeigen"]')!;
       button.click();
       expect(app.view().state.selection.main.anchor).toBe(DOCUMENT.indexOf(":::query"));
       expect(app.dom.root.querySelectorAll(".cm-query-block-widget").length).toBe(1);
@@ -176,12 +176,14 @@ describe("query block previews", () => {
     }, markdown);
     try {
       // Wait for the preview response instead of a fixed time: the widget draws once the debounced request resolves.
-      for (let wait = 0; wait < 200 && !app.dom.root.querySelector(".notebook-book-chart__actions button"); wait++) await Bun.sleep(10);
+      for (let wait = 0; wait < 200 && !app.dom.root.querySelector('[aria-label="Daten kopieren"]'); wait++) await Bun.sleep(10);
       const widget = app.dom.root.querySelector<HTMLElement>(".cm-query-block-widget")!;
       const preview = widget.querySelector<HTMLElement>(".cm-query-block-preview")!;
       const original = document.createElement("div");
       original.innerHTML = serverHtml;
-      expect(widget.querySelectorAll(".notebook-book-chart__actions button")).toHaveLength(2);
+      expect(
+        [...widget.querySelectorAll(".notebook-book-chart__actions button")].map((button) => button.getAttribute("aria-label")),
+      ).toEqual(["Daten kopieren", "Als Tabelle", "Quelltext anzeigen"]);
       expect(widget.querySelector('[aria-label="Daten kopieren"]')).not.toBeNull();
       const toggle = widget.querySelector<HTMLButtonElement>('[aria-label="Als Tabelle"]')!;
       toggle.click();

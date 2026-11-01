@@ -53,18 +53,14 @@ rejects a bootstrap request signed by any `runner` key with
 `connections_not_permitted`, even if the key's connection grant is enabled.
 The same key can still sign runner requests.
 
-For development, first start Core, sign in with the workspace CLI, then enroll
-and write the key through that CLI (use the development profile explicitly):
-
-```sh
-bun run dev:cld -- --profile dev admin apps keys create runner --out-dir ./.local/app-keys
-```
+For development, the runner uses its public fixture key from
+`./.local/dev-app-keys/runner.key`, like every other application.
 
 For production, use your explicit administrator profile with
 `cld --profile operator admin apps keys create runner --out-dir ./secrets`.
 Keep the file produced by enrollment; no host `chown` or `chmod` is needed.
 
-The development template reads `./.local/app-keys/runner.key`; production reads
+The development template reads `./.local/dev-app-keys/runner.key`; production reads
 `./secrets/runner.key`. Neither file belongs in Git. Both templates mount it at
 `/run/runner-key/source`, inside an image-owned directory with UID 0 and mode
 `0700`. Use this same target for a custom read-only bind mount. Do not mount the

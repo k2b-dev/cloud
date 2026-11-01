@@ -2201,19 +2201,19 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Create template",
-      description: `Create a task or event template. Requires admin access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
+      description: `Create a task or event template. Requires write access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemTemplateSchema, "Created template"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Space or tag not found"),
         409: jsonResponse(ErrorResponseSchema, "Name taken or template limit reached"),
       },
     }),
     v("json", CreateItemTemplateSchema),
     async (c) => {
-      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const data = await resolveTemplateTags(spaceId!, c.req.valid("json"));
       if (!data.ok) return respond(c, data);
@@ -2256,19 +2256,19 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Update template",
       description:
-        "Change template fields; tag and assignee lists are replaced. Requires admin access. Items already created stay as they are.",
+        "Change template fields; tag and assignee lists are replaced. Requires write access. Items already created stay as they are.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemTemplateSchema, "Updated template"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Template or tag not found"),
         409: jsonResponse(ErrorResponseSchema, "Name taken"),
       },
     }),
     v("json", UpdateItemTemplateSchema),
     async (c) => {
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
       if (!template.ok) return respond(c, template);
@@ -2283,16 +2283,16 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Delete template",
-      description: "Delete a template. Requires admin access. Items created from it stay.",
+      description: "Delete a template. Requires write access. Items created from it stay.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Template deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Template not found"),
       },
     }),
     async (c) => {
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
       if (!template.ok) return respond(c, template);

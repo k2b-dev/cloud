@@ -41,6 +41,7 @@ export const MAIL_CONTACT_DIRECTORY_SETTING_KEYS = {
 
 const capabilitySetting = (label: string, labelDe: string, fallback: string, optional: boolean) => ({
   kind: "string" as const,
+  adminWrite: "application" as const,
   label,
   description: optional
     ? "Capability ID in the contact directory app. Empty hides the Mail features that need it. Change it under Administration → Mail → Contact directory."
@@ -61,6 +62,7 @@ const capabilitySetting = (label: string, labelDe: string, fallback: string, opt
 export const MAIL_CONTACT_DIRECTORY_SETTINGS = {
   [MAIL_CONTACT_DIRECTORY_SETTING_KEYS.appId]: {
     kind: "string",
+    adminWrite: "application",
     label: "Contact directory app",
     description:
       "Application that Mail uses for recipient suggestions and contact context. Change it under Administration → Mail → Contact directory.",

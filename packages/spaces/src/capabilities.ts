@@ -1914,6 +1914,7 @@ const mapTemplateSummary = (template: SpaceItemTemplate, timeZone: string, conte
   spaceId: template.spaceId,
   kind: template.kind,
   name: template.name,
+  icon: template.icon,
   dateRule: template.dateRule,
   timeOfDay: template.timeOfDay,
   rule: describeTemplateDateRule(template, context.locale),
@@ -2001,7 +2002,7 @@ const templateInputTags = async (internalSpaceId: string, tagIds: string[] | und
 
 const runTemplateCreate = async (input: z.infer<typeof TemplateCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "template.create", "space", context.target?.id ?? ""), async () => {
-    const access = await requireSpace(context.target?.id ?? "", context, "admin");
+    const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
     const data = input;
     const tagIds = await templateInputTags(access.data.internalId, data.tagIds, context);
@@ -2019,7 +2020,7 @@ const runTemplateCreate = async (input: z.infer<typeof TemplateCreateInputSchema
 
 const runTemplateUpdate = async (input: z.infer<typeof TemplateUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "template.update", "space_template", input.templateId), async () => {
-    const resolved = await requireTemplate(input.templateId, context, "admin");
+    const resolved = await requireTemplate(input.templateId, context, "write");
     if (!resolved.ok) return resolved;
     const { templateId, ...data } = input;
     const tagIds = await templateInputTags(resolved.data.internalSpaceId, data.tagIds, context);
@@ -2033,7 +2034,7 @@ const runTemplateUpdate = async (input: z.infer<typeof TemplateUpdateInputSchema
 
 const runTemplateDelete = async (input: z.infer<typeof TemplateDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "template.delete", "space_template", input.templateId), async () => {
-    const resolved = await requireTemplate(input.templateId, context, "admin");
+    const resolved = await requireTemplate(input.templateId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.template.remove({ id: resolved.data.internal.id });
     if (!result.ok) return mutationError(result, context);
@@ -2052,8 +2053,8 @@ const reviewTemplate = async (
 ) => {
   const t = spacesMessages(context.locale);
   const target = input.templateId
-    ? await requireTemplate(input.templateId, context, "admin")
-    : await requireSpace(context.target?.id ?? "", context, "admin");
+    ? await requireTemplate(input.templateId, context, "write")
+    : await requireSpace(context.target?.id ?? "", context, "write");
   if (!target.ok) return target;
   const space = target.data.space;
   const existing = "template" in target.data ? target.data.template : null;
@@ -3097,7 +3098,7 @@ export const spacesCapabilities = defineCapabilities({
       target: "space",
       title: "Create template",
       description:
-        "Create a template for new tasks or events in a Space the actor administers. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
+        "Create a template for new tasks or events in a Space the actor can write to. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
       input: TemplateCreateInputSchema,
       data: TemplateDataSchema,
       destructive: false,
@@ -3111,7 +3112,7 @@ export const spacesCapabilities = defineCapabilities({
       target: "space",
       title: "Update template",
       description:
-        "Change selected fields of a template returned by template.list; tag and assignee lists are replaced. Items created earlier stay unchanged. Requires Space admin access.",
+        "Change selected fields of a template returned by template.list; tag and assignee lists are replaced. Items created earlier stay unchanged. Requires Space write access.",
       input: TemplateUpdateInputSchema,
       data: TemplateDataSchema,
       destructive: false,
@@ -3124,7 +3125,7 @@ export const spacesCapabilities = defineCapabilities({
     "template.delete": {
       target: "space",
       title: "Delete template",
-      description: "Delete one template. Items created from it stay. Requires Space admin access.",
+      description: "Delete one template. Items created from it stay. Requires Space write access.",
       input: TemplateDeleteInputSchema,
       data: TemplateDeleteDataSchema,
       destructive: true,

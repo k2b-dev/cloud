@@ -46,6 +46,20 @@ export type {
   DurationPreset,
 } from "./DatePicker";
 export { DatePicker, DateRangePicker, DateTimePicker } from "./DatePicker";
+export type { DictationController, DictationNotice, DictationOptions, DictationStatus } from "./dictation/create-dictation";
+export { createDictation } from "./dictation/create-dictation";
+export type { DictationBarProps, DictationButtonProps } from "./dictation/Dictation";
+export { DictationBar, DictationButton, dictationBarShown } from "./dictation/Dictation";
+export type {
+  DictationAlternative,
+  DictationDevice,
+  DictationEndReason,
+  DictationErrorCode,
+  DictationEvent,
+  DictationSession,
+  DictationSource,
+  DictationTarget,
+} from "./dictation/types";
 export type { EmojiPickerPopoverProps, EmojiPickerProps } from "./emoji/EmojiPicker";
 export { EmojiPicker } from "./emoji/EmojiPicker";
 export type { EmojiSkinTone } from "./emoji/emoji-index";
@@ -55,6 +69,8 @@ export { FileDropTarget, fileDropTarget } from "./FileDropTarget";
 export type { FileDropzoneProps, ImageCropperProps, ImageInputProps } from "./FileInputs";
 export { FileDropzone, ImageCropper, ImageInput } from "./FileInputs";
 export type { DateContext, FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
+export type { IconChoiceOption, IconChoicesProps } from "./IconChoices";
+export { IconChoices } from "./IconChoices";
 export { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
 export type {
   ImageCropAspect,

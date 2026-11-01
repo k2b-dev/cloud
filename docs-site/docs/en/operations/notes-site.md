@@ -13,6 +13,15 @@ updated: 2026-10-30
 The Notes website is a standalone service under `pwas/notes`. It uses a
 dedicated Postgres database. It does not connect to a Cloud installation.
 
+The `cloud-notes` image contains the SPA, API, WebSocket and admin view. It runs
+as an unprivileged user on port 3000 and is built for each release architecture.
+For a source checkout, build the UI package and Notes SPA before starting:
+
+```bash
+bun run --cwd packages/ui build
+bun run --cwd pwas/notes build
+```
+
 Set `DATABASE_URL` to that database and start the server:
 
 ```bash
@@ -61,10 +70,22 @@ Backup retention can outlast deletion from the running database. Keep capability
 paths out of access, error, tracing, and telemetry logs at every proxy layer;
 the application emits only fixed diagnostic codes.
 
+The Notes process serves the SPA, API and WebSocket together. Shared HTML carries
+escaped Open Graph metadata; both capabilities use the same read-link preview
+image. PNG rendering uses a bundled font and local numeric chart data without
+network requests. The in-memory image cache is bounded by the configured open
+note budget and expires when content changes. GET and HEAD never write durable
+data; HEAD does not invoke the rasterizer. Preserve the no-referrer, noindex and
+no-store response headers for note data at the proxy, and disable path logging
+for this host. The service worker revalidates (`no-cache`); hashed static build
+assets use a one-year immutable cache. The read-only `POST /api/presence` polls
+existing editor awareness without opening notes, writing data, or extending
+retention; it accepts 200 read links and 50 requests per minute per IP.
 ## Moderation duty
 
 Administration is disabled until `NOTES_ADMIN_PASSWORD_HASH` contains an
-Argon2id password hash. Serve `/admin` through the same HTTPS origin as the SPA.
+Argon2id password hash. Without it, `/admin` and its APIs return 404.
+Serve `/admin` through the same HTTPS origin as the SPA.
 Sessions expire after 12 hours; changing the hash invalidates them all. Every
 mutation checks Origin and CSRF, including login. Never cache admin responses.
 
@@ -76,3 +97,4 @@ This explicit delivery step needs no additional Notes mail configuration.
 Storage and automatic-maintenance failures remain visible in the admin view
 and fixed-code application logs. Reserve Postgres disk outside the application
 budget for WAL, indexes, backups and transaction/compaction headroom.
+

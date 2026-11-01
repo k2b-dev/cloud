@@ -2,12 +2,13 @@ import { commandPath } from "@k2b/cloud/contracts/commands";
 import { AppWorkspace, LocaleProvider, ViewTabs } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { Match, Show, Switch } from "solid-js";
-import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceTag } from "@/contracts";
+import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import SpacesOverview from "../../../SpacesOverview.island";
 import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { parseFilterFromUrl } from "../filter/types";
 import type { KanbanBucketInitial } from "../kanban/types";
 import SpacesSidebarList from "../sidebar/SpacesSidebarList.island";
+import SpaceCreateMenu from "./SpaceCreateMenu.island";
 import SpaceHeadActions from "./SpaceHeadActions.island";
 import SpacesKanbanRoute from "./SpacesKanbanRoute.island";
 import SpacesListRoute from "./SpacesListRoute.island";
@@ -26,6 +27,8 @@ type Props = {
   locale?: "en" | "de";
   /** An open task detail, as when a task is selected. */
   detail?: boolean;
+  /** The Space's templates, which the "+" menus offer. */
+  templates?: SpaceItemTemplate[];
 };
 
 /** The production head islands and shared sidebar, with real list and board route islands. */
@@ -33,6 +36,16 @@ export default function SpaceHeadFixture(props: Props) {
   const source = new URL(props.source, "http://spaces.local");
   return (
     <LocaleProvider locale={props.locale ?? "en"}>
+      <Show when={!props.overview}>
+        <SpaceCreateMenu
+          spaceId="Space1"
+          spaceName="Planning"
+          columns={props.columns}
+          tags={props.tags}
+          templates={props.templates ?? []}
+          calendar={props.view === "calendar"}
+        />
+      </Show>
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
         <AppWorkspace.Sidebar label="Spaces" collapsible>
           <AppWorkspace.SidebarDesktop>
@@ -111,6 +124,7 @@ export default function SpaceHeadFixture(props: Props) {
             href: commandPath(props.source, props.view === "calendar" ? "spaces.event.compose" : "spaces.task.compose", {
               spaceId: "Space1",
             }),
+            popup: "menu",
           }}
         />
         <AppWorkspace.Content>
@@ -140,6 +154,7 @@ export default function SpaceHeadFixture(props: Props) {
                   canWrite
                   baseUrl={props.source}
                   wormholes={[]}
+                  templates={props.templates}
                   initialBuckets={props.buckets}
                   foldedColumns={[]}
                   selectedItemId=""

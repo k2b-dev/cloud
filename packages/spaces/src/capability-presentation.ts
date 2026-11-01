@@ -438,10 +438,11 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "template.create": {
           title: "Vorlage anlegen",
           description:
-            "Eine Aufgaben- oder Terminvorlage in einem Space anlegen, den der Akteur verwaltet. Namen sind je Space und Art eindeutig.",
+            "Eine Aufgaben- oder Terminvorlage in einem Space anlegen, in den der Akteur schreiben darf. Namen sind je Space und Art eindeutig.",
           input: {
             kind: "Ob die Vorlage Aufgaben oder Termine anlegt.",
             name: "Name der Vorlage, je Space und Art eindeutig.",
+            icon: "Tabler-Symbolklasse neben dem Namen, zum Beispiel ti ti-report; null nimmt das Standardsymbol der Art.",
             title: "Vorgabetitel; darf {{date}}, {{weekday}} und {{week}} enthalten.",
             description: "Vorgabebeschreibung (Markdown); darf dieselben Platzhalter enthalten.",
             priority: "Vorgabepriorität.",
@@ -467,6 +468,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             templateId: "ID der Vorlage aus template.list.",
             name: "Name der Vorlage, je Space und Art eindeutig.",
+            icon: "Tabler-Symbolklasse neben dem Namen, zum Beispiel ti ti-report; null nimmt das Standardsymbol der Art.",
             title: "Vorgabetitel; darf {{date}}, {{weekday}} und {{week}} enthalten.",
             description: "Vorgabebeschreibung (Markdown); darf dieselben Platzhalter enthalten.",
             priority: "Vorgabepriorität.",

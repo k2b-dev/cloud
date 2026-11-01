@@ -26,7 +26,7 @@ export class AiBackgroundAdmissionError extends Error {
 }
 
 export type AiCallContext = {
-  kind: "chat" | "background";
+  kind: "chat" | "background" | "live-transcription";
   task: string;
   modelRef?: import("../shared/ai-models").AiResolvedModelRef;
   subject?: AccessSubject | null;
@@ -154,7 +154,8 @@ export async function beginAiCall(
         ${serviceId}::uuid,${context.credentialId ?? null}::uuid,${profile.id},${profile.modelId},${context.modelRef?.requestedClass ?? null},${context.modelRef?.class ?? null},${profile.model},${context.kind},${context.task},${context.turnId ?? null}::uuid,
         (SELECT attempt FROM ai.turns WHERE id=${context.turnId ?? null}::uuid),${context.conversationId ?? null}::uuid,
         ${context.workflowRunId ?? null}::uuid,${context.stepKey ?? null},${context.traceId ?? null},COALESCE(${workflow?.app ?? context.appId ?? null},(SELECT launched_by_app_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid),'core'),${workflow?.id ?? null}::uuid,${workflow?.name ?? null},${workflow?.revision ?? null},
-        (${profile.pricing ? JSON.stringify(profile.pricing) : null}::text)::jsonb,${reserved}::numeric,now()+interval '2 minutes')`;
+        (${profile.pricing ? JSON.stringify(profile.pricing) : null}::text)::jsonb,${reserved}::numeric,
+        now()+CASE WHEN ${context.kind}='live-transcription' THEN interval '10 minutes 10 seconds' ELSE interval '2 minutes' END)`;
     return { id, maxOutputTokens };
   });
   if (result.error) throw result.error;
@@ -165,6 +166,7 @@ export type AiCallStatus = "ok" | "failed" | "aborted";
 
 /** Bounded diagnostics per provider request: milestones relative to the request, never content or credentials. */
 export type AiCallDetails = {
+  audioMs?: number;
   /** Redacted provider or transport error; `aborted` calls keep no error. */
   error?: string | null;
   /** The caller's signal was aborted (user stop or run budget), so the provider was not at fault. */
@@ -199,7 +201,7 @@ export async function finishAiCall(
           ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output))
           : null;
     await db`UPDATE ai.inference_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},estimated=${usage?.estimated ?? false},
-      cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
+      audio_ms=${ms(details.audioMs)},cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
       error=${status === "failed" && details.error ? redactAiCallError(details.error) : null},cancelled=${details.cancelled ?? false},
       request_started_at=${details.requestStartedAt === undefined ? null : new Date(details.requestStartedAt)},
       headers_ms=${ms(details.headersMs)},first_byte_ms=${ms(details.firstByteMs)},first_block_ms=${ms(details.firstBlockMs)} WHERE id=${id}::uuid`;

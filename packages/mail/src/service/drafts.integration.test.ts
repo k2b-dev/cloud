@@ -7,10 +7,18 @@ import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { sha256Json } from "./canonical";
 import { reviewDraftComposeSafety, validateDraftComposeSafety } from "./compose-safety";
 import { acquireDraftLease, heartbeatDraftLease, releaseDraftLease, withOwnedDraftLease } from "./draft-leases";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
-import { createDraft, prepareDraftSeed, updateDraft } from "./drafts";
+import {
+  createDraft,
+  listDraftRecoveryCopies,
+  prepareDraftSeed,
+  removeDraftAttachment,
+  restoreDraftRecoveryCopy,
+  updateDraft,
+} from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
 
@@ -606,5 +614,121 @@ suite("mail draft limits", () => {
     expect(draft.ok).toBe(true);
     if (!draft.ok) return;
     expect(draft.data.attachments.map(({ filename, position }) => ({ filename, position }))).toEqual(expected);
+  });
+  test("lock draft no-op saves and a lost-response retry keep the confirmed revision", async () => {
+    const created = await createDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        senderIdentityId: identityId,
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Autosave",
+        body: "Initial",
+        format: "plain",
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const target = { context: owner, mailboxId, draftId: created.data.id };
+    const {
+      senderIdentityId,
+      signatureTemplateId,
+      to,
+      cc,
+      bcc,
+      subject,
+      body,
+      format,
+      priority,
+      requestDeliveryReceipt,
+      requestReadReceipt,
+    } = created.data;
+    const initialContent = {
+      senderIdentityId,
+      signatureTemplateId,
+      to,
+      cc,
+      bcc,
+      subject,
+      body,
+      format,
+      priority,
+      requestDeliveryReceipt,
+      requestReadReceipt,
+    };
+    const unchanged = await updateDraft({ ...target, expectedRevision: created.data.revision, input: initialContent });
+    if (!unchanged.ok) throw new Error(JSON.stringify(unchanged.error));
+    expect(unchanged.ok).toBe(true);
+    expect(unchanged.data.revision).toBe(created.data.revision);
+    const input = { ...initialContent, body: "Saved before timeout" };
+    const saved = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
+    if (!saved.ok) throw new Error(saved.error.message);
+    const retried = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
+    expect(retried.ok).toBe(true);
+    if (!retried.ok) throw new Error(retried.error.message);
+    expect(retried.data.revision).toBe(saved.data.revision);
+    expect(retried.data.recoveryCopyCount).toBe(0);
+    const later = await updateDraft({ ...target, expectedRevision: retried.data.revision, input: { ...input, body: "Latest typing" } });
+    expect(later.ok).toBe(true);
+    if (!later.ok) throw new Error(later.error.message);
+    expect(later.data.body).toBe("Latest typing");
+    const stale = await updateDraft({ ...target, expectedRevision: created.data.revision, input });
+    expect(stale.ok).toBe(false);
+    expect(!stale.ok && stale.error.code).toBe("CONFLICT");
+    const copies = await listDraftRecoveryCopies(target);
+    if (!copies.ok || !copies.data[0]) throw new Error("Missing conflicting input copy");
+    const bytes = Buffer.from(`Recovery attachment ${suffix}`);
+    const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+    blobIds.push(blob.id);
+    await sql`
+      INSERT INTO mail.draft_attachments (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position)
+      VALUES (${newShortId()}, ${created.data.id}::uuid, ${blob.id}::uuid, 'peer.txt', 'text/plain', ${bytes.length}, ${blob.contentHash}, 0)
+    `;
+    // A prior rejected write can have retained this exact version without an
+    // attachment snapshot. Restore must upgrade that copy instead of skipping it.
+    const peerContent = { ...initialContent, body: "Latest typing" };
+    if (owner.actor.kind !== "user") throw new Error("Expected a user actor");
+    await sql`
+      INSERT INTO mail.draft_recovery_copies (draft_id, base_revision, content, content_hash, creator_kind, creator_id)
+      VALUES (${created.data.id}::uuid, ${later.data.revision}, ${peerContent}::jsonb, ${sha256Json(peerContent)}, 'user', ${owner.actor.user.id}::uuid)
+    `;
+    const lease = await acquireDraftLease(target);
+    if (!lease.ok) throw new Error(lease.error.message);
+    try {
+      const restored = await restoreDraftRecoveryCopy({
+        ...target,
+        recoveryCopyId: copies.data[0].id,
+        expectedRevision: later.data.revision,
+        leaseToken: lease.data.token,
+      });
+      if (!restored.ok) throw new Error(restored.error.message);
+      expect(restored.data.body).toBe("Saved before timeout");
+      const retained = await listDraftRecoveryCopies(target);
+      if (!retained.ok) throw new Error(retained.error.message);
+      const previous = retained.data.find((copy) => !copy.restoredAt && copy.content.body === "Latest typing");
+      expect(previous).toBeDefined();
+      const [snapshot] = await sql<
+        { has_attachment_snapshot: boolean }[]
+      >`SELECT has_attachment_snapshot FROM mail.draft_recovery_copies WHERE id = ${previous!.id}::uuid`;
+      expect(snapshot?.has_attachment_snapshot).toBe(true);
+      const removed = await removeDraftAttachment({
+        ...target,
+        attachmentId: restored.data.attachments[0]!.id,
+        expectedRevision: restored.data.revision,
+      });
+      if (!removed.ok) throw new Error(removed.error.message);
+      const recoveredPeer = await restoreDraftRecoveryCopy({
+        ...target,
+        recoveryCopyId: previous!.id,
+        expectedRevision: removed.data.revision,
+        leaseToken: lease.data.token,
+      });
+      if (!recoveredPeer.ok) throw new Error(recoveredPeer.error.message);
+      expect(recoveredPeer.data.body).toBe("Latest typing");
+      expect(recoveredPeer.data.attachments.map((attachment) => attachment.filename)).toEqual(["peer.txt"]);
+    } finally {
+      await releaseDraftLease({ ...target, token: lease.data.token });
+    }
   });
 });

@@ -1,7 +1,7 @@
 import { fadeScrollPadding } from "@k2b/editor/markdown/fade-scroll-margins";
 import { notebookChartFrameHtml } from "@k2b/editor/markdown/lib/chart-blocks";
 import { highlight } from "@k2b/stdlib";
-import { Button, NoticeCard, personColor, ScrollArea, useLocale } from "@k2b/ui";
+import { NoticeCard, personColor, ScrollArea, useLocale } from "@k2b/ui";
 import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { changesBetween } from "../../../lib/yjs/lazy-collab";
@@ -120,11 +120,6 @@ export default function NotePreview(props: Props) {
               {chart && (
                 // The editor's chart widget while its drawing loads (query-blocks.tsx), inert until the editor runs.
                 <div class="cm-query-block-widget" role="group" aria-label={blocks().chart} inert>
-                  <div class="flex justify-end gap-1 mb-1">
-                    <Button size="xs" variant="ghost">
-                      {blocks().showSource}
-                    </Button>
-                  </div>
                   <div
                     class="cm-query-block-preview notebook-book-content"
                     innerHTML={notebookChartFrameHtml(

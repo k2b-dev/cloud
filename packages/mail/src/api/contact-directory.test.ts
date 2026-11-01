@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { redis } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
+import { auth } from "@k2b/cloud/server";
 import * as platformServices from "@k2b/cloud/services";
-import { oauthTokens } from "@k2b/cloud/services";
+import { oauthTokens, settingsService } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { requestContactDirectoryConfig, resolveMailContactDirectory } from "../contact-directory-settings";
@@ -150,7 +151,15 @@ describe("Mail contact directory routes", () => {
     };
     const load = spyOn(contactDirectory, "loadContactDirectoryAdmin").mockResolvedValue({ ok: true, data: view });
 
+    const original = auth.getAuthority;
+    const authorities: ReturnType<typeof auth.getAuthority>[] = [];
+    spyOn(auth, "getAuthority").mockImplementation((c) => {
+      const authority = original(c);
+      authorities.push(authority);
+      return authority;
+    });
     const response = await withSettings(crmSettings).request("/admin/contact-directory", { headers });
+    expect(authorities.some((authority) => authority === load.mock.calls[0]?.[0].authority)).toBe(true);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(view);
@@ -190,4 +199,56 @@ describe("Mail contact directory routes", () => {
     expect(response.status).toBe(403);
     expect(save).not.toHaveBeenCalled();
   });
+});
+
+test("single directory setting writes use the same validated mapping service", async () => {
+  spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+    kind: "user",
+    payload: {},
+    user: user(["admin", "user"]),
+    scopes: ["read", "write"],
+  });
+  const save = spyOn(contactDirectory, "saveContactDirectory").mockResolvedValue({
+    ok: true,
+    config: { appId: "crm", suggest: "contact.suggest", resolve: "contact.resolve", read: "", listWritableBooks: "", create: "" },
+  });
+  const write = (value: unknown, tokenHeaders = headers) =>
+    api.request("/admin/settings/mail.contact_directory.app", {
+      method: "PUT",
+      headers: { ...tokenHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ value, replaceUnreadable: true }),
+    });
+  expect((await write("crm")).status).toBe(200);
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({ authority: expect.objectContaining({ credentialKind: "oauth", scopes: ["read", "write"] }) }),
+    { appId: "crm", replaceUnreadable: ["mail.contact_directory.app"] },
+    "en",
+  );
+  expect((await write(123)).status).toBe(400);
+  save.mockResolvedValue({ ok: false, status: 400, issues: [{ field: "appId", code: "app_missing", message: "Unavailable" }] });
+  const invalid = await write("unavailable");
+  expect(invalid.status).toBe(400);
+  expect(await invalid.json()).toMatchObject({ message: expect.stringContaining("cld mail admin contact-directory set") });
+  spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user: user(["user"]), scopes: ["read", "write"] });
+  expect((await write("crm")).status).toBe(403);
+  expect(save).toHaveBeenCalledTimes(2);
+});
+
+test("the Mail settings route preserves ordinary setting writes and rejects unknown keys", async () => {
+  spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+    kind: "user",
+    payload: {},
+    user: user(["admin", "user"]),
+    scopes: ["read", "write"],
+  });
+  const update = spyOn(settingsService.entry, "update").mockResolvedValue({ ok: true, data: undefined });
+  const write = (key: string) =>
+    api.request(`/admin/settings/${key}`, {
+      method: "PUT",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ value: 12000 }),
+    });
+  expect((await write("mail.workflow_ai_body_max_chars")).status).toBe(200);
+  expect((await write("mail.unknown")).status).toBe(400);
+  expect(update).toHaveBeenCalledTimes(1);
 });

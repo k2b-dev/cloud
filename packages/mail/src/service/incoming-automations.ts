@@ -1357,7 +1357,6 @@ export const updateIncomingAutomation = async (params: {
       );
       const actions = incomingAutomationActions(steps);
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
-      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       unwrap(
         await rejectOwnSenderTargets({
           mailboxId: params.mailboxId,
@@ -1377,9 +1376,10 @@ export const updateIncomingAutomation = async (params: {
       const enabledChanged = current.enabled !== parsed.data.enabled;
       const reconfirm = current.authorizationState === "needs_attention";
       const changed = current.name !== name || definitionChanged || enabledChanged || reconfirm;
-      if (!changed) {
+      if (!changed && parsed.data.expectedRevision <= current.revision) {
         return { automation: current, activityId: null as string | null };
       }
+      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       if (definitionChanged && current.mandateId && !userBackedActor(params.context)) {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
@@ -1515,10 +1515,10 @@ export const setIncomingAutomationEnabled = async (params: {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
-      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
-      if (current.enabled === parsed.data.enabled) {
+      if (current.enabled === parsed.data.enabled && parsed.data.expectedRevision <= current.revision) {
         return { automation: current, activityId: null as string | null };
       }
+      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       unwrap(await rejectActiveBackfillMutation(current));
       if (parsed.data.enabled && current.authorizationState === "needs_attention") {
         unwrap(fail(err.badInput("Open Edit automation, choose its Spaces destinations again, and save to confirm before enabling.")));

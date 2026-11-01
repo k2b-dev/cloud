@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.42.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.41.0...npm-ui-v0.42.0) (2026-11-01)
+
+
+### Features
+
+* **notes:** the slash menu and table formulas work as in Notebooks ([#2363](https://github.com/k2b-dev/cloud/issues/2363)) ([a9a277f](https://github.com/k2b-dev/cloud/commit/a9a277ff1136d972d00ae95ec930d18f436a036f))
+* **spaces:** every + opens one menu with the Space's templates ([#2329](https://github.com/k2b-dev/cloud/issues/2329)) ([967d59a](https://github.com/k2b-dev/cloud/commit/967d59a5284ee3814a3f8da27669db01801a94a0))
+* **ui:** menus can search their entries and open from a server-rendered link ([#2320](https://github.com/k2b-dev/cloud/issues/2320)) ([98c50d2](https://github.com/k2b-dev/cloud/commit/98c50d2767588c608b7db6b126f65968d4483965))
+
+
+### Bug Fixes
+
+* **editor:** a checked box shows its check under a strict content policy ([#2370](https://github.com/k2b-dev/cloud/issues/2370)) ([0c67781](https://github.com/k2b-dev/cloud/commit/0c67781d3268793a5d4f3027fa814d26acbf6dd9))
+* **mail:** stop disposed test windows from querying file providers ([#2356](https://github.com/k2b-dev/cloud/issues/2356)) ([40ce1af](https://github.com/k2b-dev/cloud/commit/40ce1af8af7a8323cf32b236da1e693a5eab1c20))
+* **test:** no unit shard runs into its time limit ([#2381](https://github.com/k2b-dev/cloud/issues/2381)) ([3ec64b1](https://github.com/k2b-dev/cloud/commit/3ec64b120f330318e8239bd625a8172ae391e99e))
+* **test:** the first browser test no longer pays the engine's warm-up ([#2365](https://github.com/k2b-dev/cloud/issues/2365)) ([0decf0e](https://github.com/k2b-dev/cloud/commit/0decf0e581af9f036c3d15937a97c3283102815c)), closes [#2149](https://github.com/k2b-dev/cloud/issues/2149) [#2073](https://github.com/k2b-dev/cloud/issues/2073)
+* **ui:** a long task no longer stops the dayHours week's reveal short of a drawer ([#2379](https://github.com/k2b-dev/cloud/issues/2379)) ([c217a52](https://github.com/k2b-dev/cloud/commit/c217a52696a7791a00497f89677938affcb0c057)), closes [#2199](https://github.com/k2b-dev/cloud/issues/2199)
+* **ui:** checked checkboxes keep their rounded corners ([#2360](https://github.com/k2b-dev/cloud/issues/2360)) ([781668c](https://github.com/k2b-dev/cloud/commit/781668c6622074a2b901ffcc42b6b62caa607070))
+* **ui:** settings categories and toolbars separate groups with space, not lines ([#2309](https://github.com/k2b-dev/cloud/issues/2309)) ([c2b1435](https://github.com/k2b-dev/cloud/commit/c2b14356c146df0b9139479f2f74b4c22d3b7c02))
+* **ui:** text no longer jumps when someone types below a table ([#2380](https://github.com/k2b-dev/cloud/issues/2380)) ([814c4fe](https://github.com/k2b-dev/cloud/commit/814c4fe85b66a994c1f14bec80dfa9695f51f476))
+
+## [0.41.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.40.0...npm-ui-v0.41.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Bug Fixes
+
+* **mail:** the composer always edits formatted, with the toolbar right under the subject ([#2294](https://github.com/k2b-dev/cloud/issues/2294)) ([196a753](https://github.com/k2b-dev/cloud/commit/196a75306c9a4f19b8b3a61498c87755cab60711))
+* **ui:** settings dialogs show every allowed section, so mailbox admins can rename again ([#2299](https://github.com/k2b-dev/cloud/issues/2299)) ([2d0a790](https://github.com/k2b-dev/cloud/commit/2d0a790efd19cb8b7e1592798083ea1e190e38bc))
+* **ui:** the icon picker opens wide enough, searches every group strictly, and speaks German ([#2255](https://github.com/k2b-dev/cloud/issues/2255)) ([8f0d4c5](https://github.com/k2b-dev/cloud/commit/8f0d4c534b90cf73a84287a6a919de3a0f42ea84))
+* **ui:** the StatGrid header sets itself apart by its surface, not a line ([#2315](https://github.com/k2b-dev/cloud/issues/2315)) ([1196746](https://github.com/k2b-dev/cloud/commit/11967464506569bd6ba2199477ff7b42e2d61609))
+* **ui:** the workspace drawer marks its edge with one shade, not a line ([#2321](https://github.com/k2b-dev/cloud/issues/2321)) ([a9188da](https://github.com/k2b-dev/cloud/commit/a9188dad5780f0c678beed1d8c4a5ebee774ca8b))
+
+## [0.40.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.39.0...npm-ui-v0.40.0) (2026-11-01)
+
+
+### Features
+
+* **notebooks:** drop the head above notes; navigation and Details move to the note toolbar ([#2261](https://github.com/k2b-dev/cloud/issues/2261)) ([328ffb8](https://github.com/k2b-dev/cloud/commit/328ffb88daef3bc53ab8cd1595ab37aad53d68c3))
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+
 ## [0.39.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.1...npm-ui-v0.39.0) (2026-10-31)
 
 

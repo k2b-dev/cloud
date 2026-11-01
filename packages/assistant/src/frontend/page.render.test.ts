@@ -85,6 +85,7 @@ beforeEach(() => {
     }),
   );
   spies.push(spyOn(ai, "listAssistantAiModels").mockResolvedValue([]));
+  spies.push(spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
   spies.push(spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 }));
   spies.push(
     spyOn(ai.aiUserPrefs, "get").mockResolvedValue({
@@ -609,4 +610,21 @@ test("Waiting for you lists Code of a place the person administers when it needs
   expect(html).toContain("Code of info@example.test: last run failed, access missing");
   expect(html).toContain("“Deliveries” · you administer info@example.test");
   expect(html).toContain('href="/app/mail/m/info"');
+});
+
+test("live dictation availability reaches the composer only when the platform allows it for this person", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [],
+    }),
+  );
+  const status = spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: true });
+  spies.push(status);
+  const html = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(status).toHaveBeenCalledWith({ type: "user", userId: user.id });
+  // The island props carry the flag; the status asks for this person's own access subject.
+  expect(html).toContain("liveDictationAvailable&quot;");
 });

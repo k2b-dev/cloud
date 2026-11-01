@@ -3,7 +3,8 @@
 This standalone Bun/Hono service uses its own Postgres database. It does not
 register with Cloud and needs no Core, gateway, NATS, or Valkey.
 
-Run `bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
+Build the SPA with `bun run --cwd pwas/notes build` first, then run
+`bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
 database. Startup applies the versioned SQL migrations in one transaction.
 Port 3000 serves `/healthz` for process liveness and `/readyz` for database and
 schema readiness. A readiness failure returns 503 without database details.
@@ -20,9 +21,9 @@ and `migrations/`; the SPA owns `src/`, `index.html`, and its build script.
 - [x] Text, state, connection, rate, and total storage limits.
 - [x] Checked image/PDF files in Postgres.
 - [x] Explicit human-open signal and six-month expiry.
-- [ ] Reports, password-protected moderation, and decision log.
-- [ ] Escaped link metadata and a network-free 1200 × 630 preview.
-- [ ] SPA/API/WebSocket image and graceful shutdown.
+- [x] Reports, password-protected moderation, and decision log.
+- [x] Escaped link metadata and a network-free 1200 × 630 preview.
+- [x] SPA/API/WebSocket image and graceful shutdown.
 
 Run the integration files through the repository test runner with
 `CLOUD_TEST_DATABASE_URL`. The shared fixture refuses databases whose names
@@ -53,6 +54,13 @@ limit, the GET snapshot remains available. Server-owned awareness identities,
 clocks, colors, and unverified names prevent impersonating another socket.
 Readers publish presence without cursors.
 
+`POST /api/presence` accepts `{readIds:string[]}` with at most 200 valid read
+capabilities and returns `{[readId]:[{name,color}]}`. Only connected editors
+with published, sanitized awareness appear; names remain unverified. Unknown,
+closed or inactive rooms return an empty list. Polling creates no room, presence,
+or human-open signal and writes nothing to Postgres. Origin is required; the
+independent IP limit is 50 requests per minute. Split larger lists into batches.
+
 Updates, compaction, deletion, and expiry serialize per note. A database
 advisory lock admits one server instance; each mutation also checks its owner
 fence. An update becomes visible only after its log row commits. Snapshot and
@@ -64,7 +72,7 @@ The process counts rate limits locally. `NOTES_PUBLIC_ORIGIN`,
 required admission budgets; select process limits with the pre-launch load test.
 `NOTES_TRUSTED_PROXY` optionally trusts one immediate peer and its last forwarded
 address. Without it, forwarding headers are ignored. The optional
-`NOTES_ADMIN_PASSWORD_HASH` is reserved for moderation; without it admin is off.
+`NOTES_ADMIN_PASSWORD_HASH` enables moderation; without it admin is off.
 
 Storage accounting reserves payload bytes, UTF-8 snapshot text, and fixed row
 costs before committing. A fenced single writer maintains the counter in memory,
@@ -77,6 +85,9 @@ state; `/readyz` fails when the budget is full.
 Focused integration tests cover real WebSockets, concurrent offline edits,
 read-only rejection, awareness identity, storage/connection/document limits,
 failed persistence, and SIGKILL during compaction and after commit before ACK.
+The browser-provider integration connects independent real browsers to the
+Postgres-backed server, merges offline edits, restarts the server while the
+browsers stay open, and verifies that a read link cannot persist changes.
 
 ## Files
 
@@ -138,3 +149,37 @@ Administrative sessions, decisions and removal audits remain available when the
 application budget is full. Their bounded records are still accounted for and
 may exceed the application threshold so the operator can free storage. Public
 note creation, uploads, reports and updates remain subject to their thresholds.
+
+## Website and link previews
+
+The production entrypoint serves the built SPA from `dist/`, alongside the API
+and WebSocket. Build outputs are enumerated at startup; source maps are not
+served. The service worker uses `Cache-Control: no-cache`; existing hashed
+build assets under `/assets/` use a one-year immutable cache. HTML, API,
+previews and note files retain `private, no-store`. Unknown API or asset paths
+return 404. Shared pages insert escaped
+Open Graph text into the `<!--og-->` marker of the same index file. The
+canonical URL remains the requested link; the image URL always uses the read
+link. Inactive notes serve the SPA error state without stale metadata.
+
+`GET /p/:readId/preview.png` produces a 1200 × 630 PNG from local text and
+numeric chart data from the first 64 KiB of Markdown. The renderer never receives note URLs, HTML, SVG, or image
+bytes. At most one render runs at a time; other notes receive the retryable
+`preview_busy` state. A process cache holds at most `NOTES_MAX_OPEN_PADS` images,
+keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
+dates. HEAD validates access but does not render. Cache hits still check the
+current note status, including deletion and blocking.
+
+The CSP permits the editor's runtime styles and local inline font subsets.
+Scripts remain restricted to the same origin; inline scripts remain blocked.
+WebSockets may connect only to the configured Notes origin.
+
+## Image
+
+`docker build -f pwas/notes/Dockerfile -t cloud-notes .` builds the SPA and server
+for the target architecture. The runtime contains only built assets, a bundled
+server, its font and the native canvas package. It runs as the unprivileged Bun
+user and listens on port 3000. It needs only its dedicated Postgres database
+and the Notes configuration above. CI boots it against a fresh database, checks
+readiness and SPA delivery, then creates a note and verifies its 1200 × 630 PNG.
+The release image is `cloud-notes`; this image does not join the Cloud app set.

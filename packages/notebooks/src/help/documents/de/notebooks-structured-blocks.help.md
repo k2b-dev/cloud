@@ -188,7 +188,7 @@ Die Buchansicht verlinkt auch Überschriften in Listen, Zitaten und Hinweisen. D
 
 ## Blöcke in der Vorschau sehen und aktualisieren {icon="refresh"}
 
-Der Rich-Modus zeigt Vorschauen für Abfragen, Inhaltsverzeichnisse und Diagramme, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle **Quelltext anzeigen**. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
+Der Rich-Modus zeigt Vorschauen für Abfragen, Inhaltsverzeichnisse und Diagramme, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle das Code-Symbol (**Quelltext anzeigen**) in seiner Ecke. Dasselbe Symbol bringt die Vorschau zurück. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
 
 Eine Entwurfsvorschau nutzt die Abfrageeinstellungen und Überschriften deines Entwurfs. Abfragen lesen trotzdem gespeicherte Daten, auch für die aktuelle Notiz. Die Vorschau speichert den Entwurf nicht und ändert keine passenden Notizen.
 

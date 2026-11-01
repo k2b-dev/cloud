@@ -9,6 +9,19 @@
   }
 }
 
+/* The dictation bar's controls match the toolbar's own, so the row keeps its height when the bar stands in. */
+[data-k2b-editor-toolbar] .k2b-dictation-bar {
+  --k2b-dictation-control: 1.75rem;
+}
+
+/* While dictating, the bar stands in for the action row. On a phone it fills the whole toolbar line; the host's start
+   and end controls come back when dictation ended. */
+@media (max-width: 47.999rem) {
+  [data-k2b-editor-toolbar][data-dictating] > :not(.k2b-dictation-bar) {
+    display: none;
+  }
+}
+
 /* ── Slash-command autocomplete palette ─────────────────────────────────
    The CodeMirror autocomplete tooltip is portaled outside the editor
    surface AND its theme is injected as a runtime `<style>` after this file
@@ -34,6 +47,9 @@
   font-family: inherit !important;
   font-size: 0.75rem !important;
   overflow: hidden;
+  /* CodeMirror shortens the popup when the screen has less room than the list; the list then scrolls inside it. */
+  display: flex;
+  flex-direction: column;
 }
 .dark .cm-tooltip.cm-tooltip-autocomplete {
   background-color: rgb(24 24 27) !important;
@@ -43,6 +59,9 @@
 .cm-tooltip-autocomplete > ul {
   font-family: inherit !important;
   max-height: 28rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
   padding: 0 !important;
   margin: 0;
   list-style: none;
@@ -285,6 +304,19 @@
   border-radius: var(--k2b-radius-control);
   pointer-events: none;
 }
+/* The way back from a block's source rests on its first line and takes no room from the text. */
+.cm-block-source-line {
+  position: relative;
+}
+.cm-block-source-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.cm-block-source-toggle .k2b-button[aria-pressed="true"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
 .cm-query-block-preview.notebook-book-content {
   max-width: none;
   margin: 0;
@@ -304,6 +336,10 @@
   min-width: 0;
   margin: 1.25rem 0;
 }
+/* In the editor the block's own padding is the space around the chart; a margin would add to it unmeasured. */
+.cm-query-block-preview.notebook-book-content .notebook-book-chart {
+  margin-block: 0;
+}
 .notebook-book-chart__header {
   display: flex;
   flex-direction: column;
@@ -316,6 +352,13 @@
   gap: 0.25rem;
   width: 3.75rem;
   height: 1.75rem;
+}
+/* In the editor the source switch joins them at the right end, so it stays put while the other two arrive. A failed
+   chart's Retry or Reload stands before it and takes the room it needs. */
+.cm-query-block-widget .notebook-book-chart__actions {
+  justify-content: flex-end;
+  width: auto;
+  min-width: 5.75rem;
 }
 /* The table takes the drawing's place inside the same fixed frame and scrolls there. */
 .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport > :not(.notebook-book-chart__table) {
