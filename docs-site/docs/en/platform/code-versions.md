@@ -60,8 +60,11 @@ copies these fields unchanged from the checker's `checkCode` result:
 The host adds `entry` from the original `CodeCheckRequest.entry` and
 unique `policyRows` from operation metadata, including every used classification
 and any AI or internet use. Core resolves each declared operation in the current
-catalog and refuses missing classifications or operations unavailable to Code. Keep the checker's permission rows and entrypoints
-unchanged; locations are one-based. Core validates their source locations.
+catalog and refuses missing classifications or operations unavailable to Code.
+`code: false` actions remain available to personal Code acting with person
+authority; resource-owned and app-owned Code cannot use them. Keep the checker's
+permission rows and entrypoints unchanged; locations are one-based. Core validates
+their source locations.
 
 Source hashing matches the checker: SHA-256 over UTF-8
 `JSON.stringify({ entry, files })`, where `files` contains sorted `[path, content]`
@@ -101,7 +104,7 @@ chunks of the complete `CodeDiffFile[]` JSON. Follow `nextOffset` until null and
 parse the concatenated text before rendering. Changed files use full replacement
 rows in this reader, making chunks deterministic; unchanged files retain `same`
 rows. No source row or file is omitted. `length` defaults to and is at most
-16,384. Readers need the same Code read permission as source inspection.
+65,536. Readers need the same Code read permission as source inspection.
 
 A binding contains `codeId`, `versionId`, `sourceHash`, `bundleHash`,
 `manifestHash`, `comparisonVersionId`, `comparisonSourceHash` and
@@ -175,8 +178,9 @@ Every push caller uses `submitCodeVersion`; `createCodeVersion` is an internal
 storage primitive and does not implement submission or approval lifecycle.
 `packages/core/src/code/index.ts` exports:
 
-- `codeVersionContracts`, `CodeVersionBinding`, `CodeVersionSubmission`,
-  `CodeVersionDecision`, `CodeVersionDiffFile` and their schemas;
+- `codeVersionContracts` and `CodeVersionSubmission`;
+- `CodeVersionBinding`, `CodeVersionDecision`, `CodeVersionDiffFile` and their
+  schemas;
 - `submitCodeVersion`, `diffCodeVersion`, `listCodeVersions`,
   `decideCodeVersion`, `readCodeVersionDiff` and `setCodePaused` for permission-aware callers;
 - `startCodeVersionApprovals` and `applyCodeVersionDecision` for the lifecycle

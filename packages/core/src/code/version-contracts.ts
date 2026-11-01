@@ -61,7 +61,7 @@ const submission = z
   .strict();
 /** Submission metadata consumed by version lists, activation, CLI and approval UI. */
 export type CodeVersionSubmission = z.infer<typeof submission>;
-/** C8 capability schemas. A base conflict returns code_version_conflict with latestVersionId and full files in error.details. */
+/** C8 capability schemas. Base conflicts carry latestVersionId and diffRead in error.details; rows are included when the transport budget permits. */
 export const codeVersionContracts = {
   submit: {
     input: z
@@ -96,7 +96,8 @@ export const codeVersionContracts = {
         versionId: z.uuid().describe("Immutable version UUID returned by submission or version history."),
         comparisonVersionId: z.uuid().nullable().describe("Exact previous version UUID, or null for an empty comparison."),
         offset: z.number().int().nonnegative().default(0).describe("UTF-16 offset returned by the previous content chunk; start at zero."),
-        length: z.number().int().min(1).max(16_384).default(16_384).describe("Maximum UTF-16 characters in this chunk, up to 16384."),
+        // At most 3 UTF-8 bytes per UTF-16 character (JSON escaping costs at most 2), leaving room under 256 KiB.
+        length: z.number().int().min(1).max(65_536).default(65_536).describe("Maximum UTF-16 characters in this chunk, up to 65536."),
       })
       .strict(),
     data: z.object({ content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).strict() }).strict(),

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
 import type { CodeDiffFile } from "@k2b/ui";
 import { aiCapabilities } from "../capabilities";
 import { codeBundleHash, codeSourceHash } from "./store";
@@ -63,6 +63,21 @@ describe("C8 complete CodeDiff and submission contracts", () => {
     expect(join(files[0]!.lines, "old")).toBe(before["a.ts"]);
     expect(join(files[0]!.lines, "new")).toBe(after["a.ts"]);
   });
+  test("complete comparison chunks fit the capability transport for Unicode and escaped JSON", () => {
+    const input = codeVersionContracts.diffRead.input.parse({
+      codeId: "c_test",
+      versionId: "11111111-1111-4111-8111-111111111111",
+      comparisonVersionId: null,
+    });
+    expect(input.length).toBe(65_536);
+    for (const character of ["\uE000", "\\", '"']) {
+      const text = character.repeat(input.length);
+      expect(Buffer.byteLength(JSON.stringify({ ok: true, data: { content: { text, nextOffset: input.length } } }))).toBeLessThan(
+        CAPABILITY_MAX_RESULT_BYTES,
+      );
+    }
+    expect(codeVersionContracts.diffRead.input.safeParse({ ...input, length: 65_537 }).success).toBe(false);
+  });
   test("checked manifest requires exact hashes, classifications, targets and source evidence", () => {
     const sourceFiles = { "a.ts": "hello" },
       bundle = "bundle";
@@ -97,7 +112,7 @@ describe("C8 complete CodeDiff and submission contracts", () => {
     ).toBe(true);
     expect(codeVersionContracts.submit.input.safeParse({ codeId: "c_test", sourceFiles, bundle, manifest }).success).toBe(false);
   });
-  test("submission and decisions cannot be invoked by Code; policy reasons stay explicit", () => {
+  test("submission and decisions are excluded from resource-owned Code; policy reasons stay explicit", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     const actions = manifest.actions.filter((action) =>
       ["code.version.submit", "code.version.approve", "code.version.reject", "code.pause", "code.resume"].includes(action.localId),

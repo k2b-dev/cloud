@@ -22,7 +22,7 @@ import {
 } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import type { z } from "zod";
-import { type CodeContext, CodeDataError, CodeOwnerUnavailableError, codePerson, requireCodePermission } from "./access";
+import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
@@ -134,19 +134,23 @@ function reviewFor(
     },
   };
 }
-async function validateOperationRows(manifest: z.infer<typeof CodeCheckedVersionManifestSchema>, context: CodeContext) {
+async function validateOperationRows(
+  manifest: z.infer<typeof CodeCheckedVersionManifestSchema>,
+  context: CodeContext,
+  ownerKind: Code["owner"]["kind"],
+) {
   if (Buffer.byteLength(JSON.stringify(manifest)) > (await codeSettings.get("core.code.manifest_bytes")))
     throw new CodeDataError("BAD_INPUT", "Code manifest exceeds storage limits.");
   for (const appId of new Set(manifest.permissions.map((permission) => permission.operation.split(".")[0]!))) {
     context.signal?.throwIfAborted();
     const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
-    if (!catalog.ok) throw new CodeOwnerUnavailableError("Operation catalog is unavailable. Retry submission.");
+    if (!catalog.ok) throw new CodeVersionError("code_version_unavailable", "Operation catalog is unavailable. Retry submission.");
     if (!catalog.data) throw new CodeVersionError("code_manifest_invalid", "Operation catalog is unavailable.");
     for (const permission of manifest.permissions.filter((permission) => permission.operation.startsWith(`${appId}.`))) {
       const localId = permission.operation.slice(appId.length + 1);
       const query = catalog.data.manifest.queries.find((operation) => operation.localId === localId);
       const action = catalog.data.manifest.actions.find((operation) => operation.localId === localId);
-      if ((!query && !action) || query?.stream || action?.stream || action?.code === false)
+      if ((!query && !action) || query?.stream || action?.stream || (action?.code === false && ownerKind !== "person"))
         throw new CodeVersionError("code_manifest_invalid", "Manifest operation is unavailable to Code.");
       const row = codePolicyRow(query ? "query" : "action", capabilityActionPolicy(catalog.data.manifest, localId));
       if (row === "ask_sends") throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
@@ -177,8 +181,8 @@ export async function submitCodeVersion(
     if (!Object.hasOwn(input.sourceFiles, permission.file) || source === undefined || permission.line > source.split("\n").length)
       throw new CodeVersionError("code_manifest_invalid", "Permission source location does not exist.");
   }
-  await readCode(input.codeId, context);
-  await validateOperationRows(input.manifest, context);
+  const { code: authorizedCode } = await readCode(input.codeId, context);
+  await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r

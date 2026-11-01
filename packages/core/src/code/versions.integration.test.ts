@@ -48,6 +48,7 @@ const catalog = compileCapabilityManifest("example", {
   queries: { "item.read": operation },
   actions: {
     "item.change": { ...operation, destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    "item.person_only": { ...operation, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
     "item.delete": { ...operation, destructive: true, idempotency: "none", policy: { ask: "deletes" } },
     "item.send": { ...operation, destructive: false, idempotency: "none", policy: { ask: "sends" } },
   },
@@ -418,7 +419,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     let offset = 0;
     for (;;) {
       const result = await readCodeVersionDiff(
-        { codeId: code.id, versionId: next.version.id, comparisonVersionId: first.version.id, offset, length: 16_384 },
+        { codeId: code.id, versionId: next.version.id, comparisonVersionId: first.version.id, offset, length: 65_536 },
         author,
       );
       expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
@@ -454,6 +455,19 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     );
     const following = await listCodeVersions({ codeId: code.id, limit: 50, before: page.nextBefore! }, author);
     expect([...page.items, ...following.items].map((item) => item.version.number)).toEqual([8, 7, 6, 5, 4, 3, 2, 1]);
+  });
+  test("code:false retains personal authority but excludes resource-owned Code", async () => {
+    const code = await newCode(),
+      draft = input(code, "personal");
+    draft.manifest.permissions[0]!.operation = "example.item.person_only";
+    const personal = await submitCodeVersion(draft, author);
+    expect(personal.status).toBe("pending");
+    await addCodeShare(code.id, { type: "user", userId: authorId }, "editor", author);
+    await sql`UPDATE code.codes SET owner_kind='resource',owner_user_id=NULL,owner_type='example.item',owner_id='item' WHERE id=${code.id}`;
+    const resource = input(code, "resource", personal.version.id);
+    resource.manifest.permissions[0]!.operation = "example.item.person_only";
+    await expect(submitCodeVersion(resource, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
+    expect(await approvals.get(personal.approvalId!)).toMatchObject({ status: "pending" });
   });
   test("catalog classifications cannot be understated and sends remain refused when omitted from policyRows", async () => {
     const code = await newCode();
