@@ -3,7 +3,7 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { User } from "@k2b/cloud/contracts";
-import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
@@ -30,7 +30,9 @@ import {
   readCodeVersionDiff,
   recordCodeVersionBaseline,
   requireCodeVersionApproval,
+  reviewCodeExecutionChange,
   reviewCodeVersionDecision,
+  reviewCodeVersionSubmission,
   setCodePaused,
   startCodeVersionApprovals,
   submitCodeVersion,
@@ -44,14 +46,25 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
   queries: { "item.read": operation },
   actions: {
-    "item.change": { ...operation, destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    "item.person_only": { ...operation, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
-    "item.delete": { ...operation, destructive: true, idempotency: "none", policy: { ask: "deletes" } },
-    "item.send": { ...operation, destructive: false, idempotency: "none", policy: { ask: "sends" } },
+    "item.change": { ...action, destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    "item.person_only": { ...action, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
+    "item.delete": { ...action, destructive: true, idempotency: "required", policy: { ask: "deletes" } },
+    "item.send": { ...action, destructive: false, idempotency: "required", policy: { ask: "sends" } },
   },
 });
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -186,6 +199,66 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await migrateVersions();
     expect(await sql`SELECT * FROM code.version_submissions WHERE version_id=${submission.version.id}::uuid`).toEqual(before);
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${machineId}::uuid`).toHaveLength(1);
+  });
+  test("submission, execution and decision reviews identify exact targets without mutating state", async () => {
+    const code = await newCode();
+    await sql`UPDATE code.codes SET title=${"🧑‍💻 Weekly\nreport\u00ad"} WHERE id=${code.id}`;
+    const reviewTitle = "🧑 💻 Weekly report";
+    const draft = input(code, "review source", null, ["read"]);
+    for (const locale of ["en", "de"]) {
+      const ctx = { ...author, locale };
+      const review = await reviewCodeVersionSubmission(draft, ctx);
+      expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+      expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
+      expect(review).toEqual(await reviewCodeVersionSubmission(draft, ctx));
+      expect(review.content?.kind).toBe("page");
+      if (review.content?.kind === "page")
+        expect(JSON.parse(review.content.body)).toMatchObject({ codeId: code.id, manifest: draft.manifest, bundle: draft.bundle });
+    }
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+    const submitted = await submitCodeVersion(draft, author);
+    await activate(code, submitted);
+    const active = await findCode(code.id);
+    for (const locale of ["en", "de"]) {
+      for (const paused of [true, false]) {
+        const ctx = { ...author, locale };
+        const review = await reviewCodeExecutionChange(code.id, paused, ctx);
+        expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+        expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
+        expect(review).toEqual(await reviewCodeExecutionChange(code.id, paused, ctx));
+        expect(review.content?.kind).toBe("page");
+        if (review.content?.kind === "page")
+          expect(JSON.parse(review.content.body)).toMatchObject({
+            activeVersionId: submitted.version.id,
+            after: paused ? "paused" : "active",
+          });
+      }
+    }
+    expect(await findCode(code.id)).toEqual(active);
+    const pending = await submitCodeVersion(input(code, "second", submitted.version.id), author);
+    for (const approved of [true, false]) {
+      const review = await reviewCodeVersionDecision(pending.binding, approved, reviewer);
+      expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+      expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
+      expect(review.slots.version).toEqual({ kind: "text", value: pending.version.id });
+    }
+    expect(await approvals.get(pending.approvalId!)).toMatchObject({ status: "pending" });
+    const reader = { ...author, authority: { ...author.authority, credentialKind: "oauth" as const, scopes: ["core:read"] } };
+    await expect(reviewCodeVersionSubmission(input(code, "third", pending.version.id), reader)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(reviewCodeExecutionChange(code.id, true, reader)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  test("submission and decision bindings remain JSON objects in durable storage", async () => {
+    const code = await newCode();
+    const pending = await submitCodeVersion(input(code, "binding"), author);
+    const [submission] =
+      await sql`SELECT jsonb_typeof(binding) AS kind,binding FROM code.version_submissions WHERE version_id=${pending.version.id}::uuid`;
+    expect(submission).toEqual({ kind: "object", binding: pending.binding });
+    await decideCodeVersion(pending.binding, true, reviewer);
+    const [decision] =
+      await sql`SELECT jsonb_typeof(binding) AS kind,binding FROM code.version_decisions WHERE version_id=${pending.version.id}::uuid`;
+    expect(decision).toEqual({ kind: "object", binding: pending.binding });
   });
   test("pending approval leaves the old approved version running and the diff retains unchanged rows/files", async () => {
     const code = await newCode(),

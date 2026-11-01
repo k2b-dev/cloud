@@ -109,7 +109,18 @@ function bindingFor(codeId: string, version: Snapshot, comparison: Snapshot | nu
 }
 const sameBinding = (a: CodeVersionBinding, b: CodeVersionBinding) => approvalArgsDigest(a) === approvalArgsDigest(b);
 const messages = (context: Pick<CodeContext, "locale">) => codeVersionMessages.resolve(context.locale ? [context.locale] : []);
+const codeReviewSlot = (code: Code) => ({
+  kind: "object" as const,
+  title:
+    code.title
+      .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200)
+      .toWellFormed() || "—",
+});
 function reviewFor(
+  code: Code,
   binding: CodeVersionBinding,
   version: Snapshot,
   comparison: Snapshot | null,
@@ -119,7 +130,7 @@ function reviewFor(
   return {
     locale,
     sentence: { action: t.action, running: t.running, done: t.done, confirm: t.confirm, decline: t.decline, rejected: t.declined },
-    slots: {},
+    slots: { code: codeReviewSlot(code), version: { kind: "text", value: version.id } },
     ask: "changes_access",
     // Plain JSON is a passive complete snapshot, readable in every existing approval surface.
     // C22 additionally renders these same full rows through CodeDiff.
@@ -160,13 +171,9 @@ async function validateOperationRows(
     }
   }
 }
-/** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
-export async function submitCodeVersion(
-  raw: z.input<typeof codeVersionContracts.submit.input>,
-  context: CodeContext,
-): Promise<CodeVersionSubmission> {
+function checkedSubmission(raw: z.input<typeof codeVersionContracts.submit.input>, context: CodeContext) {
   const input = codeVersionContracts.submit.input.parse(raw);
-  const author = codePerson(context, true);
+  codePerson(context, true);
   if (isAppSessionActor(context.authority.actor)) throw new CodeDataError("FORBIDDEN", "Phone sessions cannot submit Code authority.");
   if (
     input.manifest.hashes.source !== codeSourceHash(input.sourceFiles, input.manifest.entry) ||
@@ -182,6 +189,49 @@ export async function submitCodeVersion(
     if (!Object.hasOwn(input.sourceFiles, permission.file) || source === undefined || permission.line > source.split("\n").length)
       throw new CodeVersionError("code_manifest_invalid", "Permission source location does not exist.");
   }
+  return input;
+}
+/** Read-only submission preview: exact proposed content, owning Code and current saved base. */
+export async function reviewCodeVersionSubmission(
+  raw: z.input<typeof codeVersionContracts.submit.input>,
+  context: CodeContext,
+): Promise<CapabilityActionCallReview> {
+  const input = checkedSubmission(raw, context);
+  const { code } = await readCode(input.codeId, context);
+  await requireCodePermission(code, context, true);
+  await validateOperationRows(input.manifest, context, code.owner.kind);
+  const comparison = input.baseVersionId ? await versionSnapshot(code.id, input.baseVersionId, sql) : null;
+  const { t, locale } = messages(context);
+  const review: CapabilityActionCallReview = {
+    locale,
+    slots: { code: codeReviewSlot(code) },
+    sentence: { action: t.submitAction, running: t.submitRunning, done: t.submitDone, confirm: t.submitConfirm, decline: t.cancel },
+    consequences: [{ text: t.submitEffect }],
+    content: {
+      kind: "page",
+      title: t.content,
+      format: "plain",
+      body: JSON.stringify({
+        codeId: code.id,
+        baseVersionId: input.baseVersionId,
+        activeVersionId: code.activeVersionId,
+        manifest: input.manifest,
+        bundle: input.bundle,
+        files: codeVersionDiff(comparison?.source_files ?? {}, input.sourceFiles, "replacement"),
+      }),
+    },
+  };
+  if (!CapabilityActionCallReviewSchema.safeParse(review).success)
+    throw new CodeDataError("BAD_INPUT", "The complete submission review exceeds the approval content budget.");
+  return review;
+}
+/** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
+export async function submitCodeVersion(
+  raw: z.input<typeof codeVersionContracts.submit.input>,
+  context: CodeContext,
+): Promise<CodeVersionSubmission> {
+  const input = checkedSubmission(raw, context);
+  const author = codePerson(context, true);
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
   await verifyCodeSubmission(input, context);
@@ -222,7 +272,7 @@ export async function submitCodeVersion(
     let approvalId: string | null = null;
     let reviewDigest: string | null = null;
     if (rows.some((row) => row.value === "admin")) {
-      const review = reviewFor(binding, snapshot, comparison, context);
+      const review = reviewFor(code, binding, snapshot, comparison, context);
       if (!CapabilityActionCallReviewSchema.safeParse(review).success)
         throw new CodeDataError("BAD_INPUT", "The complete version review exceeds the approval content budget.");
       const asked = await approvals.request(
@@ -245,7 +295,7 @@ export async function submitCodeVersion(
       reviewDigest = approvalReviewDigest(review);
     }
     await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest)
-      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::jsonb,${approvalId}::uuid,${reviewDigest})`;
+      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest})`;
     await audit.record(
       {
         action: "core.code.version.submitted",
@@ -413,7 +463,7 @@ export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest
     throw new CodeVersionError("code_comparison_stale", "The reviewed version snapshot changed.");
   if (!request.decidedByUserId || !request.approverAuthEpoch) throw new CodeDataError("FORBIDDEN", "Decision evidence is missing.");
   await tx`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,decided_device_id,auth_epoch)
-    VALUES(${version.id}::uuid,${JSON.stringify(binding)}::jsonb,${request.status === "approved"},${request.soleAdmin},${request.decidedByUserId}::uuid,${request.decidedVia},${request.decidedDeviceId}::uuid,${request.approverAuthEpoch}::bigint)`;
+    VALUES(${version.id}::uuid,${JSON.stringify(binding)}::text::jsonb,${request.status === "approved"},${request.soleAdmin},${request.decidedByUserId}::uuid,${request.decidedVia},${request.decidedDeviceId}::uuid,${request.approverAuthEpoch}::bigint)`;
   await replaceCodePolicyCoverage(version.id, request.status === "approved" ? manifest.policyRows : [], tx);
   if (request.status === "approved") await recordCodeVersionBaseline(code.id, version.id, tx);
   await audit.record(
@@ -507,6 +557,59 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
     throw new CodeVersionError("code_approval_required", "Cloud-admin version approval is required.");
   return { policyRevision: policy.revision };
 }
+async function requireExecutionEditor(code: Code, context: CodeContext, tx: SQL) {
+  const person = codePerson(context, true);
+  if (isAppSessionActor(context.authority.actor))
+    throw new CodeDataError("FORBIDDEN", "Phone sessions cannot change Code execution authority.");
+  if (person.roles.includes("admin") && canRepairAppAccess(context.authority)) requireCodePolicyAdmin(context, true);
+  else await requireCodePermission(code, context, true, tx);
+  return person;
+}
+/** Read-only pause/resume preview, naming the exact active version and its future execution effects. */
+export async function reviewCodeExecutionChange(
+  codeId: string,
+  paused: boolean,
+  context: CodeContext,
+): Promise<CapabilityActionCallReview> {
+  await readCode(codeId, context);
+  return sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+    const code = await findCode(codeId, tx);
+    if (!code || code.state === "deleting") throw new CodeDataError("NOT_FOUND", "Code not found.");
+    await requireExecutionEditor(code, context, tx);
+    if (!code.activeVersionId) throw new CodeDataError("CONFLICT", "Activate a version before pausing or resuming it.");
+    const version = await versionSnapshot(codeId, code.activeVersionId, tx);
+    const approval = paused ? null : await requireCodeVersionApproval(code, code.activeVersionId, tx);
+    const { t, locale } = messages(context);
+    return {
+      locale,
+      slots: { code: codeReviewSlot(code) },
+      sentence: {
+        action: paused ? t.pauseAction : t.resumeAction,
+        running: paused ? t.pauseRunning : t.resumeRunning,
+        done: paused ? t.pauseDone : t.resumeDone,
+        confirm: paused ? t.pauseConfirm : t.resumeConfirm,
+        decline: t.cancel,
+      },
+      ...(paused ? {} : { ask: "keeps_working" as const }),
+      consequences: [{ text: paused ? t.pauseEffect : t.resumeEffect }],
+      content: {
+        kind: "page",
+        title: code.title,
+        format: "plain",
+        body: JSON.stringify({
+          codeId,
+          activeVersionId: code.activeVersionId,
+          sourceHash: version.source_hash,
+          bundleHash: version.bundle_hash,
+          before: code.state,
+          after: paused ? "paused" : "active",
+          approval,
+        }),
+      },
+    };
+  });
+}
 /** Pause/resume admissions immediately; events arriving while paused are not replayed. Pending newer versions stay pending. */
 export function setCodePaused(codeId: string, paused: true, context: CodeContext): Promise<{ state: "paused" }>;
 export function setCodePaused(codeId: string, paused: false, context: CodeContext): Promise<{ state: "active" }>;
@@ -519,8 +622,7 @@ export async function setCodePaused(codeId: string, paused: boolean, context: Co
     await tx`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
     const code = await findCode(codeId, tx);
     if (!code || code.state === "deleting") throw new CodeDataError("NOT_FOUND", "Code not found.");
-    if (person.roles.includes("admin") && canRepairAppAccess(context.authority)) requireCodePolicyAdmin(context, true);
-    else await requireCodePermission(code, context, true, tx);
+    await requireExecutionEditor(code, context, tx);
     if (!code.activeVersionId) throw new CodeDataError("CONFLICT", "Activate a version before pausing or resuming it.");
     if (!paused) await requireCodeVersionApproval(code, code.activeVersionId, tx);
     const state = paused ? ("paused" as const) : ("active" as const);
@@ -558,8 +660,10 @@ export async function reviewCodeVersionDecision(
   const details = notice ? { ...request.details, consequences: [{ text: notice }] } : request.details;
   if (approved) return details;
   const { t, locale } = messages(context);
+  const { code } = await readCode(input.codeId, context);
   return {
     ...details,
+    slots: { code: codeReviewSlot(code), version: { kind: "text", value: input.versionId } },
     locale,
     sentence: { action: t.rejectAction, running: t.rejectRunning, done: t.rejectDone, confirm: t.decline, decline: t.keepPending },
   };
