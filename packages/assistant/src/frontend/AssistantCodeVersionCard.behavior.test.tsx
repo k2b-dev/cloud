@@ -15,6 +15,7 @@ const row = (patch: Partial<CodeVersionPreviewRow>): CodeVersionPreviewRow => ({
   check: "manages",
   title: "Logistics",
   typeTitle: "Space",
+  icon: "ti ti-layout-kanban",
   managers: [],
   ...patch,
 });
@@ -92,7 +93,7 @@ test("someone who cannot switch on learns why and who can, and copies a link for
   const blocked = row({ check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] });
   const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ rows: [own, blocked] }) } }) });
   const text = dom.root.textContent ?? "";
-  expect(text).toContain("needs the Space's admin");
+  expect(text).toContain("needs the admin of Logistics");
   expect(text).toContain("Only someone who manages mailbox and Space can switch this on: Ben Schulz.");
   expect(text).toContain("Until then version 4 keeps running.");
   expect(button(dom.root, "Switch on")).toBeUndefined();

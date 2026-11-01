@@ -9,6 +9,7 @@ const RowSchema = z.object({
   check: z.enum(["manages", "blocked", "has", "unknown"]),
   title: z.string().nullable(),
   typeTitle: z.string().nullable(),
+  icon: z.string().nullable(),
   managers: z.array(z.object({ name: z.string(), firstName: z.string().nullable() })),
 });
 const PreviewSchema = z.object({

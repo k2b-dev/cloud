@@ -105,6 +105,8 @@ export const CodeActivationPreviewRowSchema = z
     /** Only after the target's own reader check; otherwise null and the row shows its ID. */
     title: z.string().nullable(),
     typeTitle: z.string().nullable(),
+    /** The target type's icon, with its title. */
+    icon: z.string().nullable(),
     /** Who manages a refusing target, only for a person who may read it. */
     managers: z.array(z.object({ name: z.string(), firstName: z.string().nullable() }).strict()).max(CODE_ACTIVATION_MANAGER_NAMES),
   })

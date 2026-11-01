@@ -213,7 +213,7 @@ export default function AssistantCodeView(props: {
                             <a class="assistant-code__name truncate font-medium text-primary" href={`/app/assistant/code/${code.id}`}>
                               {code.title}
                             </a>
-                            <span class="truncate text-sm text-secondary">{codeScheduleLine(code, locale(), props.timeZone)}</span>
+                            <span class="text-sm text-secondary">{codeScheduleLine(code, locale(), props.timeZone)}</span>
                             <span class="assistant-code__narrow">
                               <CodeStatusBadge code={code} />
                             </span>

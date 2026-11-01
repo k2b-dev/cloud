@@ -259,10 +259,11 @@ const previewPlace = async (code: Code, context: CodeContext): Promise<CodeActiv
     return null;
   }
 };
-const previewTypeTitle = async (type: string, context: CodeContext): Promise<string | null> => {
+const previewType = async (type: string, context: CodeContext): Promise<{ typeTitle: string | null; icon: string | null }> => {
   const appId = type.split(".")[0]!;
   const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority).catch(() => null);
-  return catalog?.ok ? (catalog.data?.manifest.types.find((item) => `${appId}.${item.localId}` === type)?.title ?? null) : null;
+  const found = catalog?.ok ? catalog.data?.manifest.types.find((item) => `${appId}.${item.localId}` === type) : undefined;
+  return { typeTitle: found?.title ?? null, icon: found?.icon ?? null };
 };
 /**
  * What switching on this version would do for this person, before they click. Every check is the target's own dry run,
@@ -347,7 +348,14 @@ export async function previewCodeActivation(
   }
   const check = async (item: CodeActivationTarget, index: number): Promise<CodeActivationPreviewRow> => {
     const row = { target: item.target, operations: item.operations, own: item.owner, isNew: !item.reused && item.operations.length > 0 };
-    const unknown = { ...row, check: item.reused ? ("has" as const) : ("unknown" as const), title: null, typeTitle: null, managers: [] };
+    const unknown = {
+      ...row,
+      check: item.reused ? ("has" as const) : ("unknown" as const),
+      title: null,
+      typeTitle: null,
+      icon: null,
+      managers: [],
+    };
     // A phone or other credential cannot act at a target; asking it would only say so.
     if (!allowed.allowed || !code.serviceAccountId || index >= PREVIEW_TARGETS) return unknown;
     if (!item.owner && unavailable.has(targetApp(item.target))) return unknown;
@@ -370,7 +378,7 @@ export async function previewCodeActivation(
         // The owner is checked on every switch-on, also when its grant stays.
         check: !decision.granted && (item.owner || !item.reused) ? "blocked" : item.reused ? "has" : "manages",
         title: readable ? (decision.title ?? null) : null,
-        typeTitle: readable && item.target.type !== "app" ? await previewTypeTitle(item.target.type, context) : null,
+        ...(readable && item.target.type !== "app" ? await previewType(item.target.type, context) : { typeTitle: null, icon: null }),
         managers: readable && !decision.granted ? await visibleManagers(decision.managerUserIds ?? [], person) : [],
       };
     } catch {

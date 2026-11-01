@@ -323,7 +323,7 @@ databaseSuite()("durable Code activation", () => {
     targetReadable = false;
     try {
       const unreadable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-      expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, managers: [] });
+      expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, icon: null, managers: [] });
     } finally {
       targetReadable = true;
       await sql`UPDATE auth.users SET display_name='', given_name='' WHERE id=${nextOwnerId}::uuid`;
@@ -354,16 +354,19 @@ databaseSuite()("durable Code activation", () => {
   test("an application that cannot list its grants leaves its targets unchecked, not the whole preview", async () => {
     const code = await newCode(),
       submitted = await version(code);
-    listDown = true;
-    try {
-      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-      expect(preview.rows.filter((row) => !row.own).map((row) => [row.target.id, row.check])).toEqual([
-        ["A", "unknown"],
-        ["B", "unknown"],
-      ]);
-    } finally {
-      listDown = false;
-    }
+    const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        list: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(preview.rows.filter((row) => !row.own).map((row) => [row.target.id, row.check])).toEqual([
+      ["A", "unknown"],
+      ["B", "unknown"],
+    ]);
   });
   test("the preview refuses someone who may not edit the Code", async () => {
     const code = await newCode(),

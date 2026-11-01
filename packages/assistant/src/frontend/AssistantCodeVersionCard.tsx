@@ -183,7 +183,7 @@ export default function AssistantCodeVersionCard(props: {
     if (row.check === "blocked")
       return (
         <span class="text-danger">
-          <i class="ti ti-lock" aria-hidden="true" /> {t().codeVersionNeedsAdmin({ type: row.title ? row.typeTitle : null })}
+          <i class="ti ti-lock" aria-hidden="true" /> {t().codeVersionNeedsAdmin({ name: row.title })}
         </span>
       );
     if (row.own) return <span class="text-secondary">{t().codeVersionBelongsTo({ name: preview()?.place?.title ?? "" })}</span>;
@@ -307,7 +307,7 @@ export default function AssistantCodeVersionCard(props: {
                 <For each={current().rows}>
                   {(row) => (
                     <li class="assistant-code-version__row" data-check={row.check}>
-                      <i class={row.own ? "ti ti-home" : "ti ti-target-arrow"} aria-hidden="true" />
+                      <i class={row.icon ?? (row.own ? "ti ti-home" : "ti ti-target-arrow")} aria-hidden="true" />
                       <span class="flex min-w-0 flex-col">
                         <Show when={row.operations.length > 0}>
                           <span class="assistant-code-version__ops">

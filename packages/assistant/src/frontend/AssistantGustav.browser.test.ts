@@ -17,12 +17,19 @@ const fakeLive = resolve(import.meta.dir, "AssistantGustav.browser-live.ts");
 const entrySource = `
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
 
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
-      <AssistantWorkspace {...window.harness.props} />
+      {window.harness.card ? (
+        <div style="width:100%;padding:1rem">
+          <AssistantCodeVersionCard {...window.harness.card} timeZone="Europe/Berlin" />
+        </div>
+      ) : (
+        <AssistantWorkspace {...window.harness.props} />
+      )}
     </LocaleProvider>
   ),
   document.getElementById("root"),
@@ -152,6 +159,8 @@ type Scenario = {
   /** The panel's place can own Code but has none. */
   panelEmpty?: boolean;
   panelAccessMissing?: boolean;
+  /** What Core answers for a version card, which then renders alone in the panel's width. */
+  cardPreview?: unknown;
   /** One personal Code with the shared Code page. */
   detail?: boolean;
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
@@ -384,7 +393,11 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     const url = new URL(route.request().url());
     if (url.pathname === "/harness.js" || url.pathname === "/harness.css" || url.pathname.startsWith("/ui/")) return route.continue();
     if (url.pathname === "/app/assistant" || url.pathname === "/app/assistant/panel" || url.pathname.startsWith("/app/assistant/code/")) {
-      const harness = { locale: "de", props: propsOf(scenario, url) };
+      const harness = {
+        locale: "de",
+        props: propsOf(scenario, url),
+        ...(scenario.cardPreview ? { card: { codeId: "c_info01", versionId: cardVersionId, number: 5 } } : {}),
+      };
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
         ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
@@ -403,6 +416,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
           `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script><script type="module" src="/harness.js"></script></body></html>`,
       });
     }
+    if (url.pathname === "/api/code/activation/preview" && scenario.cardPreview)
+      return route.fulfill({ json: { data: scenario.cardPreview } });
     const capability = /^\/api\/capabilities\/v1\/queries\/(\w+)\/([\w.]+)$/.exec(url.pathname);
     if (capability) {
       const [, appId, capabilityId] = capability;
@@ -446,6 +461,45 @@ const personalCodePage = () => ({
   ...codePageFixture("overview", "de"),
   owner: { kind: "person" as const, ref: null, title: "Wochenbericht Vertrieb", typeTitle: null },
   href: "/app/assistant/code/c_woche1",
+});
+
+const cardVersionId = "66666666-6666-4666-8666-666666666666";
+const cardRow = (patch: Record<string, unknown>) => ({
+  target: { type: "spaces.space", id: "sp_2lg8" },
+  operations: ["spaces.task.create"],
+  own: false,
+  isNew: true,
+  check: "manages",
+  title: "Logistik",
+  typeTitle: "Space",
+  icon: "ti ti-layout-kanban",
+  managers: [],
+  ...patch,
+});
+const cardPreview = (patch: Record<string, unknown> = {}) => ({
+  codeId: "c_info01",
+  title: "Code von info@",
+  ownerKind: "resource",
+  versionId: cardVersionId,
+  number: 5,
+  running: 4,
+  latest: 5,
+  activated: null,
+  allowed: { allowed: true },
+  readiness: { state: "ready" },
+  place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m/info" },
+  rows: [
+    cardRow({
+      target: { type: "mail.mailbox", id: "m_info" },
+      operations: ["mail.conversation.move"],
+      own: true,
+      title: "info@moebel-beispiel.de",
+      typeTitle: "Postfach",
+      icon: "ti ti-mail",
+    }),
+    cardRow({}),
+  ],
+  ...patch,
 });
 
 const shot = async (page: Page, name: string) => {
@@ -558,6 +612,44 @@ describe("Gustav", () => {
       await h.close();
     }
   }, 60_000);
+
+  test("the version card fits the panel and says who can switch on, for each person", async () => {
+    const lea = cardPreview();
+    const blocked = (lea.rows as ReturnType<typeof cardRow>[]).map((row) =>
+      row.own ? row : { ...row, check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] },
+    );
+    const states = [
+      { name: "ben", preview: lea, expected: "du verwaltest ihn", button: "Einschalten" },
+      {
+        name: "lea",
+        preview: cardPreview({ rows: blocked }),
+        expected: "Einschalten kann nur, wer Postfach und Space verwaltet: Ben Schulz.",
+        button: "Link für Ben kopieren",
+      },
+      {
+        name: "an",
+        preview: cardPreview({ running: 5, rows: [], activated: { at: at(5), byYou: true, byName: null } }),
+        expected: "Version 5 eingeschaltet",
+        button: null,
+      },
+    ];
+    for (const state of states)
+      for (const view of [panel, phone]) {
+        const h = await open(view, { cardPreview: state.preview }, { path: "/app/assistant/panel" });
+        try {
+          await h.page.getByText(state.expected).waitFor();
+          if (state.button) expect(await h.page.getByRole("button", { name: state.button }).count()).toBe(1);
+          const overflow = await h.page.evaluate(() => {
+            const card = document.querySelector(".assistant-code-version, .assistant-code-version__line")!;
+            return card.scrollWidth - card.clientWidth;
+          });
+          expect(overflow).toBeLessThanOrEqual(0);
+          await shot(h.page, `b-karte-${state.name}-${view.name}-light`);
+        } finally {
+          await h.close();
+        }
+      }
+  }, 120_000);
 
   test("a personal Code opens on the shared Code page, runs as its person, and keeps My apps & automations marked", async () => {
     for (const view of [desktop, phone]) {
