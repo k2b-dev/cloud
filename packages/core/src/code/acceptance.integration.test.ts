@@ -330,7 +330,7 @@ suiteFor(
         if (String(input.url).endsWith("/public")) {
           expect(input.headers.authorization).toBeUndefined();
           sentHttp.push(String(input.url));
-          return { status: 200, headers: {}, body: Buffer.from("public result") };
+          return { status: 200, headers: { etag: "public" }, body: Buffer.from("public result") };
         }
         expect(input.headers.authorization).toBe("Bearer " + secretValue);
         sentHttp.push(String(input.url));
