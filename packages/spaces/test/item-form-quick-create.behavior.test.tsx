@@ -248,9 +248,11 @@ describe("Spaces item quick create", () => {
         }),
       dom.root,
     );
-    for (let turn = 0; turn < 10; turn++) await Bun.sleep(0);
+    // The template applies once the form mounted; the test's timeout bounds the wait.
+    const chosen = () => Boolean(dom.root.querySelector("[data-testid='template-summary']"));
+    while (!chosen()) await Bun.sleep(0);
     dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    for (let turn = 0; turn < 10 && !submitted; turn++) await Bun.sleep(0);
+    while (!submitted) await Bun.sleep(0);
 
     expect(submitted).toMatchObject({
       title: "Wareneingang Spedition Nord",

@@ -208,6 +208,8 @@ export default function ItemForm(props: ItemFormProps) {
         (template.kind === "event" && !startsAt() ? defaultTemplateDate(template, { now: new Date(), timeZone: timeZone() }) : null));
     const draft = draftFromTemplate(templateDraftSource(template), { date, timeZone: timeZone(), locale: locale() });
     fillText(date);
+    // A title the opener carried, such as one typed in the calendar's quick create, stays.
+    if (opening && props.defaults?.title) setTitle(props.defaults.title);
     setPriority(draft.priority ?? "");
     // Tags the opener gave, such as a calendar filter's, stay beside the template's, so the item shows where it was made.
     setSelectedTags(opening ? [...new Set([...(props.defaults?.tagIds ?? []), ...draft.tagIds])] : draft.tagIds);
@@ -224,12 +226,7 @@ export default function ItemForm(props: ItemFormProps) {
   // A "+" that chose a template opens the dialog with it chosen; the chips still switch.
   onMount(() => {
     const id = props.defaults?.templateId;
-    if (!id || !kindTemplates().some((template) => template.id === id)) return;
-    // A title the opener carried, such as one typed in the calendar's quick create, stays.
-    const carried = props.defaults?.title;
-    void chooseTemplate(id, true).then(() => {
-      if (carried) setTitle(carried);
-    });
+    if (id && kindTemplates().some((template) => template.id === id)) void chooseTemplate(id, true);
   });
   /** The column a "+" of a column gave the new task, said quietly, since the short form shows no status. */
   const plusColumn = () =>
