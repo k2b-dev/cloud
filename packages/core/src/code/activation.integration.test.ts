@@ -192,7 +192,14 @@ databaseSuite()("durable Code activation", () => {
       entrypoints: [{ kind: "manual", entrypoint: "run", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
-      permissions: targets.map((id) => ({ operation: `example.${op}`, target: { type: "example.item", id }, file: "code.ts", line: 1 })),
+      // The checker could place the call at A in the run entrypoint, not the one at B.
+      permissions: targets.map((id) => ({
+        operation: `example.${op}`,
+        target: { type: "example.item", id },
+        file: "code.ts",
+        line: 1,
+        ...(id === "A" ? { entrypoints: ["run"] } : {}),
+      })),
     };
     return submitCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest, baseVersionId }, owner);
   }
@@ -477,17 +484,36 @@ databaseSuite()("durable Code activation", () => {
     const next = await start(code, submitted.version.id);
     await run(next.id);
     const active = [...live.keys()][0]!;
+    const removedGrant = live.get(active)!;
     live.delete(active);
     tombstones.add(active);
     sets.length = 0;
+    // Without an audit event of the removal, who removed it stays unknown.
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({ grantId: active, state: "removed", removedBy: null, removedAt: null }),
+    );
+    // The platform's code.access.rm audits each removal; events for another account or target never answer.
+    const audit = (principal: string, target: { type: string; id: string }, at: string) =>
+      sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+        VALUES('code.access.rm','allowed',${ownerId}::uuid,${target.type},${target.id},
+          ${JSON.stringify({ appId: "example", grantId: active, principal })}::text::jsonb,${at}::timestamptz)`;
+    await audit(crypto.randomUUID(), removedGrant.target, "2026-10-31T11:30:00.000Z");
+    await audit(removedGrant.principal, { type: removedGrant.target.type, id: "elsewhere" }, "2026-10-31T11:40:00.000Z");
+    await audit(removedGrant.principal, removedGrant.target, "2026-10-31T11:20:00.000Z");
+    // An event that names another app for this target is not this removal either.
+    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+      VALUES('code.access.rm','allowed',${nextOwnerId}::uuid,${removedGrant.target.type},${removedGrant.target.id},
+        ${JSON.stringify({ appId: "other", grantId: active, principal: removedGrant.principal })}::text::jsonb,'2026-10-31T11:50:00.000Z'::timestamptz)`;
+    expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
+      // The Code page names who confirmed the grant and when, and who removed it at the target and when.
       expect.objectContaining({
         grantId: active,
         state: "removed",
         activatedBy: expect.any(String),
         activatedAt: expect.any(String),
         activatedVersionId: expect.any(String),
+        removedBy: ownerId,
+        removedAt: "2026-10-31T11:20:00.000Z",
       }),
     );
     expect(sets).toHaveLength(0);
@@ -971,11 +997,16 @@ databaseSuite()("durable Code activation", () => {
       {
         grantId: atA.grantId,
         operations: ["example.item.change"],
+        automations: ["run"],
         activatedBy: { id: ownerId, name: "Ben Schulz" },
         activatedAt: activatedAt.toISOString(),
       },
     ]);
     expect(listed).toEqual([{ appId: "example", operation: "list", input: { principal } }]);
+    // The automation comes from the running version's checker evidence; a call it could not place names none.
+    expect(await readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: [atB] }) })).toEqual([
+      expect.objectContaining({ grantId: atB.grantId, automations: [] }),
+    ]);
     // A guest sees when, but not another person's name.
     const guest: CodeContext = {
       ...owner,

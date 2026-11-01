@@ -297,7 +297,8 @@ returns a durable receipt, not completion of background work.
 
 Check embeds `CodeCheckResultSchema`; `manifest` is complete C8 submission
 evidence or null on failure. Permission rows carry operation, target, nullable
-title/typeTitle, own, needsTargetAdmin, file, line and new/existing status.
+title/typeTitle, own, needsTargetAdmin, file, line, optional `entrypoints`
+(the schedules whose handler makes the call) and new/existing status.
 Test and simulation reuse `CodeTestResultSchema` unchanged. Output adds no elapsed times, process
 IDs or local absolute paths. Stateful operations return durable IDs and times.
 JSON keys and enum values remain untranslated.

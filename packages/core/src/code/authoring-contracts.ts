@@ -39,6 +39,8 @@ export const CodeAuthoringPermissionSchema = z
     needsTargetAdmin: z.boolean(),
     file: z.string(),
     line: z.number().int().positive(),
+    /** Sorted entrypoints whose handler makes this call, as the checker placed it; absent when it could not. */
+    entrypoints: z.array(z.string().min(1)).min(1).optional(),
     status: z.enum(["new", "existing"]),
   })
   .strict();

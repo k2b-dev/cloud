@@ -388,7 +388,7 @@ const loadReady = async (
       ...receipts.flatMap((receipt) => [receipt.version.createdBy, receipt.decision?.decidedBy]),
       olderActive?.createdBy,
       olderSelected?.createdBy,
-      ...(access ?? []).map((row) => row.activatedBy),
+      ...(access ?? []).flatMap((row) => [row.activatedBy, row.removedBy]),
     ],
     viewer,
   ).catch(() => new Map<string, CodePagePerson>());
@@ -405,6 +405,8 @@ const loadReady = async (
             activatedBy: row.activatedBy ? (people.get(row.activatedBy) ?? null) : null,
             activatedAt: row.activatedAt ?? null,
             activatedVersionId: row.activatedVersionId ?? null,
+            removedBy: row.state === "removed" && row.removedBy ? (people.get(row.removedBy) ?? null) : null,
+            removedAt: row.state === "removed" ? (row.removedAt ?? null) : null,
           };
         }),
         ...[...waitingByTarget.values()]
@@ -417,6 +419,8 @@ const loadReady = async (
             activatedBy: null,
             activatedAt: null,
             activatedVersionId: null,
+            removedBy: null,
+            removedAt: null,
           })),
       ]
     : null;
