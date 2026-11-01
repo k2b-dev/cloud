@@ -1,4 +1,4 @@
-### `cld admin settings test storage` printed `{"saved":true}` although nothing was saved
+### The storage settings test reported a save although nothing was saved
 
 - **What happened:** The storage connection test printed `{"saved":true}`, so an operator could not see that a test ran and passed (#2364). The PDF and FreeIPA tests and `ai enrichment run` printed the same.
 - **Root cause:** All non-GET entries in the administration operation table share one success output for configuration changes, whatever the operation does.
