@@ -312,7 +312,7 @@ databaseSuite()("durable Code activation", () => {
       expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, managers: [] });
     } finally {
       targetReadable = true;
-      await sql`UPDATE auth.users SET display_name=NULL, given_name='' WHERE id=${nextOwnerId}::uuid`;
+      await sql`UPDATE auth.users SET display_name='', given_name='' WHERE id=${nextOwnerId}::uuid`;
     }
   });
   test("the preview of a running or replaced version asks no target; a credential that cannot switch on is told and asks none", async () => {
