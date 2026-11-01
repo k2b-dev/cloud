@@ -5,6 +5,8 @@ import { type CodeContext, CodeDataError } from "../code/access";
 import { activateCodeVersion, cancelCodeActivation, readCodeActivation } from "../code/activation";
 import { codeActivationContracts } from "../code/activation-contracts";
 import { reconcileCodeAccess } from "../code/activation-maintenance";
+import { listCodeCleanupJobs } from "../code/lifecycle";
+import { codeLifecycleContracts } from "../code/lifecycle-contracts";
 import { CodeVersionError } from "../code/versions";
 
 /** Interactive credentials enter only Core. Invocation, sandbox, API-key and phone identities cannot activate. */
@@ -32,6 +34,13 @@ export const createCodeActivationRoutes = () => {
     signal: c.req.raw.signal,
   });
   return router
+    .post(
+      "/cleanup",
+      auth.readOnly,
+      middleware.openapi({ tags: ["Code"], summary: "Read pending Code cleanup jobs as a Cloud administrator" }),
+      v("json", codeLifecycleContracts.cleanup.input),
+      (c) => run(context(c), (ctx) => listCodeCleanupJobs(c.req.valid("json"), ctx)),
+    )
     .post(
       "/activate",
       auth.requireOAuthScope("write", "admin"),

@@ -1037,6 +1037,15 @@ export type CapabilityQueryDefinition<
   Input extends z.ZodType = z.ZodType<any>,
   Data extends z.ZodType = z.ZodType<any>,
 > = CapabilityTargetDefinition & {
+  /**
+   * Title-only projection of a resource reader for Code owner/target checks.
+   * Required for Code owners and resource targets. Use the supplied read-only
+   * transaction and return null for a deleted resource. The framework exposes
+   * only this title to Core with account-bound authority, never reader data or
+   * a person's authority. It also distinguishes deleted normalized targets from
+   * access refusals before Code calls run.
+   */
+  codeResourceTitle?: (tx: import("bun").SQL, id: string) => string | null | Promise<string | null>;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
