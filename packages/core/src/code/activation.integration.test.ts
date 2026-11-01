@@ -847,6 +847,13 @@ databaseSuite()("durable Code activation", () => {
     expect(JSON.stringify(hidden)).not.toContain("Fixture target");
     expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
     expect((await status(code, activation.id)).failure).toEqual({ ...failure, managerNames: [nextOwnerId] });
+    // A guest who may read the target learns no other person's name, as in directory search.
+    const guest = {
+      ...owner,
+      authority: { ...owner.authority, actor: { kind: "user" as const, user: { ...person(ownerId), roles: ["guest" as const] } } },
+    };
+    const asGuest = await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest);
+    expect(asGuest.failure).not.toHaveProperty("managerNames");
   });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;
