@@ -27,6 +27,8 @@ const codeVersionDecisionInput = {
   comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionSubmissionInput = {
+  tests:
+    "Deklarative test/**/*.json-Fälle. Core führt sie beim Einreichen mit Testdaten aus und zeigt das Ergebnis den Prüfenden; ein fehlgeschlagener Test lehnt die Version nicht ab.",
   sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
   bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
   manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
