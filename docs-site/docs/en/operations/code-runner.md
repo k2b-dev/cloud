@@ -285,3 +285,10 @@ installation ingress setting and the telemetry cleanup budget (at most 20 per
 second). Existing identities continue polling and heartbeating independently
 of this registration budget. A burst of new replicas retries registration;
 inactive telemetry is removed after its poll-plus-lease freshness window.
+## Run tests without effects
+
+The same runner image includes a separate `code-test.js` stdin/stdout role.
+It uses the production workerd engine with a fake-only bridge and no app key
+or Core connection. Core checks the source first and sends the immutable
+bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
+for the request, result schema, and isolation requirements.

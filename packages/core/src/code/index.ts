@@ -11,6 +11,8 @@ export { processCodeScheduleTick, readCodeRunnerMetrics, startCodeRun } from "./
 export * from "./scheduling-contracts";
 export { CODE_SETTINGS, codeSettings } from "./settings";
 export * from "./store";
+export type { CodeSimulateRequest, CodeTestingHost, CodeTestRequest } from "./testing";
+export { simulateCode, testCode } from "./testing";
 export * from "./version-contracts";
 export * from "./version-diff";
 export * from "./versions";
