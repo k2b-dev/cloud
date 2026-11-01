@@ -39,7 +39,6 @@ const codeVersionSubmissionInput = {
   "manifest.secrets[].headers": "Erlaubte Kopfzeilen der Bindung.",
   "manifest.secrets[].name": "Name des gebundenen Secrets.",
   "manifest.secrets[].binding_revision": "Unveränderliche Bindungsrevision.",
-  "manifest.internet": "Ob diese Version das Internet nutzt.",
   "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
   "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
   "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
@@ -359,16 +358,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
-        "code.secret.set": {
-          title: "Code-Secret setzen",
-          description:
-            "Bearbeiter hinterlegen einen Zugangswert über eine private Eingabe. Neue Ziele gelten erst für neu eingereichte Versionen.",
-        },
-        "code.secret.delete": {
-          title: "Code-Secret-Wert löschen",
-          description:
-            "Bearbeiter löschen den aktuellen Wert für alle Versionen. Die unveränderlichen Zielbindungen bleiben für die Versionsprüfung erhalten.",
-        },
         "code.run": {
           title: "Code ausführen",
           description:

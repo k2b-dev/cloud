@@ -71,9 +71,9 @@ const destination = { origin: "https://api.example:8443", pathPrefix: "/v1", hea
 databaseSuite()("C11 version-bound write-only secrets", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let ownOrigins: ReturnType<typeof spyOn<typeof origins, "readCodeOwnOrigins">>;
   let app: ReturnType<typeof spyOn<typeof registry, "getApp">>;
-  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let stopApprovals: (() => void) | undefined;
   let ordinal = 0;
   beforeAll(async () => {
