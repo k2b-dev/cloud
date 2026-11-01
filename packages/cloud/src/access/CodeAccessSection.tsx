@@ -1,8 +1,13 @@
 import { announce, Button, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { navigationApps } from "../browser/navigation-apps";
-import { type CodeAccessAccount, CodeAccessAccountsDataSchema, CodeAccessRemoveDataSchema } from "../contracts/code-access";
+import {
+  CODE_ACCESS_ACCOUNTS_MAX,
+  type CodeAccessAccount,
+  CodeAccessAccountsDataSchema,
+  CodeAccessRemoveDataSchema,
+} from "../contracts/code-access";
 import type { AccessEntry } from "../contracts/shared";
 import { accessMessages } from "./messages";
 
@@ -38,6 +43,22 @@ export default function CodeAccessSection(props: {
   const [removing, setRemoving] = createSignal<string | null>(null);
   const [failures, setFailures] = createStore<Record<string, string | undefined>>({});
   const headingId = createUniqueId();
+  // The share dialog belongs to the target application: the shell names it, and every Cloud layout marks its
+  // canvas with it. Without either, the section stays read-only instead of offering a removal that cannot run.
+  const [targetAppId, setTargetAppId] = createSignal<string>();
+  onMount(() => {
+    setTargetAppId(navigationApps().currentAppId ?? document.querySelector("[data-app-id]")?.getAttribute("data-app-id") ?? undefined);
+  });
+  const canRemove = (entry: AccessEntry) => props.canEdit && Boolean(entry.grantId) && targetAppId() !== undefined;
+  // A failed removal and its retry leave with editing, like the editor's own rows.
+  createEffect(
+    on(
+      () => props.canEdit,
+      (editable) => {
+        if (!editable) for (const id of Object.keys(failures)) setFailures(id, undefined);
+      },
+    ),
+  );
   let controller: AbortController | undefined;
   let disposed = false;
   onCleanup(() => {
@@ -53,18 +74,21 @@ export default function CodeAccessSection(props: {
     setLoading(true);
     setLoadError(false);
     try {
-      const response = await fetch("/api/resources/code-access/accounts", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ids }),
-        signal: current.signal,
-      });
-      if (!response.ok) throw new Error(response.statusText);
-      const data = CodeAccessAccountsDataSchema.parse(await response.json());
+      const found = new Map<string, CodeAccessAccount>();
+      // Within the route's public bound per request; a long share list takes several.
+      for (let start = 0; start < ids.length; start += CODE_ACCESS_ACCOUNTS_MAX) {
+        const response = await fetch("/api/resources/code-access/accounts", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(start, start + CODE_ACCESS_ACCOUNTS_MAX) }),
+          signal: current.signal,
+        });
+        if (!response.ok) throw new Error(response.statusText);
+        for (const item of CodeAccessAccountsDataSchema.parse(await response.json()).items) found.set(item.id, item);
+      }
       if (disposed || current.signal.aborted) return;
       // One write for the whole answer, and every requested account settles, so nothing is requested twice.
-      const found = new Map(data.items.map((item) => [item.id, item]));
       setAccounts(
         Object.fromEntries(
           ids.map((id) => [id, found.get(id) ?? { id, ownerTitle: null, appId: null, icon: null, accent: null }] as const),
@@ -90,8 +114,8 @@ export default function CodeAccessSection(props: {
   };
 
   const remove = async (entry: AccessEntry) => {
-    const appId = navigationApps().currentAppId;
-    if (!entry.grantId || !appId || removing() !== null || !props.canEdit) return;
+    const appId = targetAppId();
+    if (!canRemove(entry) || !appId || removing() !== null) return;
     const name = nameOf(entry);
     const owner = accounts[accountId(entry)]?.ownerTitle;
     const confirmed = await prompts.confirm(
@@ -103,7 +127,7 @@ export default function CodeAccessSection(props: {
       </>,
       { title: t().codeRemoveTitle({ name }), confirmText: t().removeAccess, variant: "danger" },
     );
-    if (!confirmed || disposed || !props.canEdit) return;
+    if (!confirmed || disposed || !canRemove(entry)) return;
     setRemoving(entry.id);
     setFailures(entry.id, undefined);
     try {
@@ -209,7 +233,7 @@ export default function CodeAccessSection(props: {
                       </span>
                     </span>
                   </Show>
-                  <Show when={props.canEdit && entry.grantId}>
+                  <Show when={canRemove(entry)}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -223,7 +247,7 @@ export default function CodeAccessSection(props: {
                     </Button>
                   </Show>
                 </div>
-                <Show when={failures[entry.id]}>
+                <Show when={props.canEdit && failures[entry.id]}>
                   {(message) => (
                     <div role="alert" class={`text-[13px] text-danger ${props.expanded ? "pl-11 sm:pl-13" : "pl-10"}`}>
                       {message()}{" "}

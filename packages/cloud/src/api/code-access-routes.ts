@@ -1,10 +1,11 @@
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 import { describeRoute, resolver } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
-import { getCapability } from "../_internal/registry";
+import { getApp, getCapability } from "../_internal/registry";
 import { invokeCodeAccess } from "../code/access-core";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -23,6 +24,7 @@ import {
 } from "../contracts/code-access";
 import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, type RequestAuthority } from "../server";
+import { canUseApp } from "../services/app-access";
 import { toPgUuidArray } from "../services/postgres";
 import { dispatchCapability } from "./capabilities";
 
@@ -42,8 +44,15 @@ type Context = { request: Request; authority: RequestAuthority; locale?: string 
 export type CodeAccessRouteDependencies = {
   accounts?: (ids: string[]) => Promise<{ id: string; name: string }[]>;
   getCapability?: typeof getCapability;
+  /** Whether the person may use an application that owns Code as a whole. */
+  appUsable?: (appId: string, authority: RequestAuthority) => Promise<boolean>;
   dispatch?: typeof dispatchCapability;
   invoke?: typeof invokeCodeAccess;
+};
+
+const appUsable = async (appId: string, authority: RequestAuthority) => {
+  const app = await getApp(appId);
+  return app !== null && (await canUseApp(authority, app));
 };
 
 const codeAccounts = async (ids: string[]) =>
@@ -53,7 +62,8 @@ const codeAccounts = async (ids: string[]) =>
 type OwnerApp = NonNullable<Awaited<ReturnType<typeof getCapability>>>;
 /** The owner's current title through its canonical reader, under the person's own authority; never cached. */
 const readOwnerTitle = async (owner: Owner, app: OwnerApp, context: Context, dependencies: CodeAccessRouteDependencies) => {
-  if (owner.kind === "app") return app.appName;
+  // An application that owns Code is named only to people who may use it.
+  if (owner.kind === "app") return (await (dependencies.appUsable ?? appUsable)(owner.appId, context.authority)) ? app.appName : null;
   const manifest = context.locale ? resolveCapabilityManifestPresentation(app.manifest, app.presentation, context.locale) : app.manifest;
   const reader = resolveCapabilityResourceReader(manifest, owner.ref);
   if (!reader) return null;
@@ -97,8 +107,10 @@ export const describeCodeAccessAccounts = async (
           const appId = owner.kind === "app" ? owner.appId : cloudResourceRefAppId(owner.ref);
           const app = await (dependencies.getCapability ?? getCapability)(appId).catch(() => null);
           if (!app || app.appId !== appId) return { id, ownerTitle: null, appId: null, icon: null, accent: null };
-          const ownerTitle = await readOwnerTitle(owner, app, context, dependencies).catch(() => null);
-          return { id, ownerTitle: ownerTitle?.slice(0, 500) || null, appId, icon: app.appIcon || null, accent: app.appAccent ?? null };
+          const ownerTitle = (await readOwnerTitle(owner, app, context, dependencies).catch(() => null))?.slice(0, 500);
+          // An owner the person cannot read reveals nothing, not even its application.
+          if (!ownerTitle) return { id, ownerTitle: null, appId: null, icon: null, accent: null };
+          return { id, ownerTitle, appId, icon: app.appIcon || null, accent: app.appAccent ?? null };
         }),
       )),
     );
@@ -107,6 +119,22 @@ export const describeCodeAccessAccounts = async (
 };
 
 const ErrorBody = z.object({ code: z.string(), message: z.string() });
+const passedStatuses = [400, 403, 404, 409, 429, 502, 503, 504] as const;
+type PassedStatus = (typeof passedStatuses)[number];
+const passedStatus = (status: number): PassedStatus => passedStatuses.find((candidate) => candidate === status) ?? 502;
+
+/**
+ * Session cookies are SameSite=Lax, so a sibling site could still send a credentialed simple POST. Require
+ * the JSON content type, which a cross-origin page can only send after a CORS preflight, and refuse
+ * requests the browser marks as coming from another site.
+ */
+const sameOriginJson = createMiddleware(async (c, next) => {
+  const type = c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase();
+  const site = c.req.header("sec-fetch-site");
+  if (type !== "application/json" || site === "cross-site" || site === "same-site")
+    return c.json({ code: "FORBIDDEN", message: "Same-origin JSON request required" }, 403);
+  await next();
+});
 // Bound malformed JSON before parsing: UUIDs and their separators, with room for whitespace.
 const ACCOUNTS_MAX_BYTES = 64 * 1024;
 const REMOVE_MAX_BYTES = 1024;
@@ -126,6 +154,7 @@ export const createCodeAccessRoutes = (dependencies: CodeAccessRouteDependencies
       "/accounts",
       auth.readOnly,
       auth.requireRole("authenticated"),
+      sameOriginJson,
       describeRoute({
         tags: ["Resources"],
         summary: "Present Code accounts from a share list with their owners' current titles",
@@ -152,6 +181,7 @@ export const createCodeAccessRoutes = (dependencies: CodeAccessRouteDependencies
     .post(
       "/remove",
       auth.requireRole("authenticated"),
+      sameOriginJson,
       describeRoute({
         tags: ["Resources"],
         summary: "Remove one Code grant at its target through the target's code.access.rm",
@@ -166,27 +196,29 @@ export const createCodeAccessRoutes = (dependencies: CodeAccessRouteDependencies
         const body = await readBoundedJson(c.req.raw, REMOVE_MAX_BYTES, c.req.raw.signal);
         const input = body.ok ? CodeAccessRemoveRequestSchema.safeParse(body.data) : null;
         if (!input?.success) return c.json({ code: "VALIDATION_FAILED", message: "Invalid Code access removal" }, 400);
-        const response = await (dependencies.invoke ?? invokeCodeAccess)({
-          request: c.req.raw,
-          appId: input.data.appId,
-          operation: "rm",
-          input: { grantId: input.data.grantId },
-          authority: auth.getAuthority(c),
-          locale: getLocale(c),
+        // The target may wait on its own locks; keep the response within the action budget.
+        const { response, result } = await withCapabilityRequestTimeout(c, "action", async () => {
+          const response = await (dependencies.invoke ?? invokeCodeAccess)({
+            request: c.req.raw,
+            appId: input.data.appId,
+            operation: "rm",
+            input: { grantId: input.data.grantId },
+            authority: auth.getAuthority(c),
+            locale: getLocale(c),
+          });
+          return { response, result: await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES, c.req.raw.signal) };
         });
-        const result = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES, c.req.raw.signal);
         if (response.ok) {
           const parsed = result.ok ? capabilityResultSchema(CodeAccessRemoveDataSchema, { consumer: true }).safeParse(result.data) : null;
           if (parsed?.success) return c.json(parsed.data.data, 200);
           return c.json({ code: "INVALID_APP_RESPONSE", message: "The application returned an invalid removal result" }, 502);
         }
         const error = result.ok ? ErrorBody.safeParse(result.data) : null;
-        const status = [400, 403, 404, 409, 429, 502, 503, 504].includes(response.status) ? response.status : 502;
         return c.json(
           error?.success
             ? { code: error.data.code, message: error.data.message }
             : { code: "UNAVAILABLE", message: "Code access removal failed" },
-          status as 400 | 403 | 404 | 409 | 429 | 502 | 503 | 504,
+          passedStatus(response.status),
         );
       },
     );

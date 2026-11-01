@@ -88,6 +88,10 @@ describe("POST /api/resources/code-access/accounts", () => {
           { id: ids.app, name: "code:app:mail" },
         ].filter((row) => requested.includes(row.id)),
       getCapability: async (appId) => (appId === "mail" ? mail : null),
+      appUsable: async (appId, authority) => {
+        expect(authority.accessSubject).toEqual({ type: "user", userId: user.id });
+        return appId === "mail";
+      },
       dispatch: async (params) => {
         calls.push(params);
         return params.input && (params.input as { id: string }).id === "mb_info"
@@ -100,7 +104,8 @@ describe("POST /api/resources/code-access/accounts", () => {
     expect(await response.json()).toEqual({
       items: [
         { id: ids.mailbox, ownerTitle: "info@moebel-beispiel.de", appId: "mail", icon: "ti ti-mail", accent: "#0f766e" },
-        { id: ids.hidden, ownerTitle: null, appId: "mail", icon: "ti ti-mail", accent: "#0f766e" },
+        // An owner the person cannot read looks exactly like an unknown account.
+        { id: ids.hidden, ownerTitle: null, appId: null, icon: null, accent: null },
         { id: ids.app, ownerTitle: "Mail", appId: "mail", icon: "ti ti-mail", accent: "#0f766e" },
         // Not a Code account: the same shape as an owner the person cannot read.
         { id: ids.agent, ownerTitle: null, appId: null, icon: null, accent: null },
@@ -110,7 +115,16 @@ describe("POST /api/resources/code-access/accounts", () => {
       ["mail", "queries", "mailbox.get", { id: "mb_info" }],
       ["mail", "queries", "mailbox.get", { id: "mb_private" }],
     ]);
-    for (const call of calls) expect(call.authority.accessSubject).toEqual({ type: "user", userId: user.id });
+    for (const call of calls) expect(call.authority?.accessSubject).toEqual({ type: "user", userId: user.id });
+  });
+
+  test("names an application that owns Code only to people who may use it", async () => {
+    const response = await routes({
+      accounts: async () => [{ id: ids.app, name: "code:app:mail" }],
+      getCapability: async () => mail,
+      appUsable: async () => false,
+    }).request("/api/resources/code-access/accounts", post({ ids: [ids.app] }));
+    expect(await response.json()).toEqual({ items: [{ id: ids.app, ownerTitle: null, appId: null, icon: null, accent: null }] });
   });
 
   test("refuses lists that are empty, too long or not account IDs", async () => {
@@ -158,6 +172,37 @@ describe("POST /api/resources/code-access/remove", () => {
       post({ appId: "spaces", grantId }),
     );
     expect(malformed.status).toBe(502);
+  });
+
+  test("refuses requests a page on another site could send with the person's cookie", async () => {
+    let invoked = false;
+    const app = routes({
+      accounts: async () => [],
+      invoke: async () => {
+        invoked = true;
+        return Response.json({ data: { removed: true } });
+      },
+    });
+    const body = JSON.stringify({ appId: "spaces", grantId });
+    for (const path of ["remove", "accounts"]) {
+      const refused: Record<string, string>[] = [
+        { "content-type": "text/plain" },
+        {},
+        { "content-type": "application/json", "sec-fetch-site": "cross-site" },
+        { "content-type": "application/json", "sec-fetch-site": "same-site" },
+      ];
+      for (const headers of refused) {
+        const response = await app.request(`/api/resources/code-access/${path}`, { method: "POST", headers, body });
+        expect(response.status).toBe(403);
+      }
+    }
+    expect(invoked).toBe(false);
+    const sameOrigin = await app.request("/api/resources/code-access/remove", {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8", "sec-fetch-site": "same-origin" },
+      body,
+    });
+    expect(sameOrigin.status).toBe(200);
   });
 
   test("refuses anything but one app and one grant", async () => {

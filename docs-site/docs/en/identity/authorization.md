@@ -657,8 +657,9 @@ application that mounts the editor gets the section; it needs no props.
 
 - Each row names the Code after its owner, such as "Code of info@". Core reads
   the owner's current title through the owner's reader under the viewer's own
-  authority, so a renamed owner shows its new title. An owner the viewer cannot
-  read appears as "Code whose owner you can't see".
+  authority, so a renamed owner shows its new title. Code owned by a whole
+  application shows that application's name to people who may use it. An owner
+  the viewer cannot read appears as "Code whose owner you can't see".
 - The row shows the entry's level in the editor's own vocabulary.
 - "Remove" asks for confirmation, then Core calls the application's generated
   `code.access.rm` with the entry's `grantId`. The application checks that the
@@ -667,8 +668,8 @@ application that mounts the editor gets the section; it needs no props.
 - The section stays hidden when there is no Code entry. While owners load, it
   holds one row per entry. A failed load leaves the people list usable and
   offers a retry; a failed removal stays on its row with a retry.
-- Without `canEdit`, or for an entry without `grantId`, the row has no
-  "Remove" button.
+- Without `canEdit`, for an entry without `grantId`, or on a page that does not
+  name its application, the row has no "Remove" button.
 
 The application includes Code entries in the normal share list with
 `serviceAccountKind: "code"` and `grantId`, as the
@@ -676,7 +677,8 @@ The application includes Code entries in the normal share list with
 requires. Its ordinary update and revoke endpoints refuse Code entries. The
 editor reads owner titles from Core at `POST /api/resources/code-access/accounts`
 and removes through `POST /api/resources/code-access/remove`. It sends the
-current application's ID with each removal. Apps do not call these routes
+current application's ID with each removal. Both routes accept only
+same-origin `application/json` requests. Apps do not call these routes
 themselves.
 
 To share a Code itself with its editors and readers, spread

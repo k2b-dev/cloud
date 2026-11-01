@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry } from "../contracts/shared";
@@ -65,7 +66,9 @@ type Call = { url: string; body: unknown };
 const setup = async (options: {
   respond: (call: Call) => Response | Promise<Response>;
   initialEntries?: AccessEntry[];
-  canEdit?: boolean;
+  canEdit?: boolean | (() => boolean);
+  /** Where the page names its application: the shell's data (default), only the layout canvas, or nowhere. */
+  appContext?: "shell" | "canvas" | "none";
   expanded?: boolean;
   confirm?: boolean;
 }) => {
@@ -73,11 +76,15 @@ const setup = async (options: {
   installPopoverApi(dom);
   dom.document.documentElement.lang = "de";
   // The share dialog belongs to the target application; Core removes the grant there.
-  const shell = dom.document.createElement("script");
-  shell.id = "cloud-shell-data";
-  shell.type = "application/json";
-  shell.textContent = JSON.stringify({ appId: "spaces", apps: [] });
-  dom.document.body.append(shell);
+  if ((options.appContext ?? "shell") === "shell") {
+    const shell = dom.document.createElement("script");
+    shell.id = "cloud-shell-data";
+    shell.type = "application/json";
+    shell.textContent = JSON.stringify({ appId: "spaces", apps: [] });
+    dom.document.body.append(shell);
+  }
+  // Focus-mode pages carry no app in their shell data, only on the canvas around the page.
+  if (options.appContext === "canvas") dom.root.setAttribute("data-app-id", "spaces");
   const calls: Call[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
@@ -107,7 +114,7 @@ const setup = async (options: {
       <LocaleProvider locale="de">
         <PermissionEditor
           expanded={options.expanded}
-          canEdit={options.canEdit}
+          canEdit={typeof options.canEdit === "function" ? options.canEdit() : options.canEdit}
           initialEntries={options.initialEntries ?? entries}
           grantAccess={async () => {
             throw new Error("Not used");
@@ -335,6 +342,69 @@ describe("Code with access in the shared rights editor", () => {
       expect(withoutGrant.codeRows()[0]!.querySelector("button")).toBeNull();
     } finally {
       withoutGrant.cleanup();
+    }
+  });
+
+  test("the target application comes from the layout canvas when the shell does not name it, and without either nothing offers removal", async () => {
+    const canvas = await setup({
+      respond: ({ url }) => (url.endsWith("/accounts") ? accountsResponse() : Response.json({ removed: true })),
+      appContext: "canvas",
+    });
+    try {
+      await waitFor(() => canvas.codeRows()[0]?.querySelector("button")?.disabled === false, "an enabled removal");
+      canvas.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
+      await waitFor(() => canvas.calls.length === 2, "the removal request");
+      expect(canvas.calls[1]!.body).toEqual({ appId: "spaces", grantId: ids.grantInfo });
+    } finally {
+      canvas.cleanup();
+    }
+    const none = await setup({ respond: accountsResponse, appContext: "none" });
+    try {
+      await waitFor(() => none.codeRows()[0]?.textContent?.includes("info@") === true, "owner titles");
+      expect(none.section()!.querySelectorAll("button")).toHaveLength(0);
+    } finally {
+      none.cleanup();
+    }
+  });
+
+  test("a long share list loads its owners in requests within the route's bound", async () => {
+    const many = Array.from({ length: 501 }, (_, index) =>
+      code(`access-${index}`, `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, undefined, "read"),
+    );
+    const view = await setup({
+      respond: ({ body }) => {
+        const requested = (body as { ids: string[] }).ids;
+        return Response.json({ items: requested.map((id) => ({ id, ownerTitle: "Einkauf", appId: null, icon: null, accent: null })) });
+      },
+      initialEntries: [person, ...many],
+    });
+    try {
+      await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
+      expect(view.calls.map((call) => (call.body as { ids: string[] }).ids.length)).toEqual([500, 1]);
+      expect(view.codeRows()).toHaveLength(501);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a failed removal's retry leaves when editing stops", async () => {
+    const [editable, setEditable] = createSignal(true);
+    const view = await setup({
+      canEdit: editable,
+      respond: ({ url }) => (url.endsWith("/accounts") ? accountsResponse() : Response.json({ removed: false })),
+    });
+    try {
+      await waitFor(() => view.codeRows()[0]?.textContent?.includes("info@") === true, "owner titles");
+      view.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
+      await waitFor(() => view.section()!.querySelector("[role=alert]") !== null, "the failure");
+      setEditable(false);
+      await waitFor(() => view.section()!.querySelector("[role=alert]") === null, "the cleared failure");
+      expect(view.section()!.querySelectorAll("button")).toHaveLength(0);
+      setEditable(true);
+      await Bun.sleep(20);
+      expect(view.section()!.querySelector("[role=alert]")).toBeNull();
+    } finally {
+      view.cleanup();
     }
   });
 
