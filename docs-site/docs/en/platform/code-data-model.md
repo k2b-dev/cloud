@@ -10,6 +10,9 @@ updated: 2026-10-31
 
 # Code data model
 
+A Code exposes `pauseReason`, `pauseRows` and `pausePolicyRevision` alongside its
+state so people can identify a policy pause.
+
 A Code has one owner and a fixed `codeId`, such as `c_8hw2`. Saving a new
 version preserves that identity. Core stores Code, its versions and its runs
 in the Postgres schema `code`.
@@ -143,9 +146,13 @@ fallback. Administrators edit them through Core's settings API using
 | `core.code.bundle_bytes` | 4 MiB | 16 MiB |
 | `core.code.manifest_bytes` | 1 MiB of JSON | 4 MiB |
 | `core.code.payload_bytes` | 32 KiB per run input or normalized call input | 32 KiB |
-| `core.code.calls_per_run` | 1,000 | 1,000 |
+| `core.code.calls_per_run` | 200 | 1,000 |
 
-All settings require positive integers. New versions use current limits; a
+The [Code policy](/en/docs/platform/code-policy) controls which classifications
+can run. [Code policy operations](/en/docs/operations/code-policy) lists the
+registered execution, AI, database and concurrency budgets.
+
+All storage settings require positive integers. New versions use current limits; a
 run pins its call and payload limits at creation. Smaller settings do not
 rewrite existing versions or active runs. Transport budgets bound the file
 count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
