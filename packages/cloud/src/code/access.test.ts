@@ -7,7 +7,7 @@ import * as resourcePrincipals from "../_internal/resource-principals";
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import { CODE_ACCESS_MAX_MANAGER_USER_IDS, type CodeAccessAdapter, CodeAccessDecisionSchema } from "../contracts/code-access";
 import type { User } from "../contracts/shared";
-import * as accountUsers from "../services/accounts/users";
+import * as installationAdmin from "../services/accounts/installation-admin";
 import { audit } from "../services/audit";
 import * as accessService from "./access";
 import { type CodeAccessDependencies, codeAccessPersonAllowed, listCodeAccess, removeCodeAccess, setCodeAccess } from "./access";
@@ -88,7 +88,7 @@ let writes: number;
 let canManage: boolean;
 let activeCode: boolean;
 let auditSpy: ReturnType<typeof spyOn<typeof audit, "record">>;
-let adminSpy: ReturnType<typeof spyOn<typeof accountUsers, "hasInstallationAdminInTransaction">>;
+let adminSpy: ReturnType<typeof spyOn<typeof installationAdmin, "hasInstallationAdminInTransaction">>;
 let beforeTransaction: (() => void) | undefined;
 let adapter: CodeAccessAdapter;
 let deps: CodeAccessDependencies;
@@ -102,7 +102,7 @@ beforeEach(() => {
   activeCode = true;
   beforeTransaction = undefined;
   auditSpy = spyOn(audit, "record").mockResolvedValue(undefined);
-  adminSpy = spyOn(accountUsers, "hasInstallationAdminInTransaction").mockResolvedValue(true);
+  adminSpy = spyOn(installationAdmin, "hasInstallationAdminInTransaction").mockResolvedValue(true);
   const query = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const statement = strings.join("?");
     if (statement.includes("auth.service_accounts")) return activeCode || values[1] === false ? [{ id: principal }] : [];

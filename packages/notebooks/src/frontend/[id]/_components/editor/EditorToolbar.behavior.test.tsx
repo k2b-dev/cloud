@@ -58,7 +58,6 @@ describe("editor toolbar phone viewport and menus", () => {
             editor={editorFor(view)}
             notebookId="Book01"
             noteId="Note01"
-            initialPanelOpen={false}
             format={caretFormat(view.state)}
             onUndo={() => {}}
             onRedo={() => {}}
@@ -255,7 +254,6 @@ describe("editor toolbar pointer and keyboard focus", () => {
             editor={editorFor()}
             notebookId="notebook-1"
             noteId="note-1"
-            initialPanelOpen={false}
             format={{
               bold: false,
               italic: false,
@@ -305,14 +303,10 @@ describe("editor toolbar navigation toggle", () => {
     return;
   }
 
-  test("hides and shows the navigation from the first toolbar button without taking focus from the note", async () => {
+  test("the first toolbar button is the workspace's navigation button and keeps focus in the note", async () => {
     const dom = createDomTestHarness();
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: EditorToolbar } = await import("./EditorToolbar");
-    const { NAVIGATION_VISIBILITY_EVENT } = await import("../sidebar/navigation-visibility");
-    const changes: boolean[] = [];
-    const onChange = (event: Event) => void changes.push((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
-    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
     const dispose = render(
       () => (
         <LocaleProvider locale="de">
@@ -321,7 +315,6 @@ describe("editor toolbar navigation toggle", () => {
             editor={editorFor()}
             notebookId="notebook-1"
             noteId="note-1"
-            initialPanelOpen={false}
             format={{
               bold: false,
               italic: false,
@@ -343,25 +336,17 @@ describe("editor toolbar navigation toggle", () => {
     try {
       const buttons = Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".notebooks-editor-toolbar .k2b-icon-button"));
       const toggle = buttons[0]!;
-      // Navigation stays outside the formatting toolbar.
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
-      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      // Navigation stays outside the formatting toolbar. The shared workspace controller shows, hides or opens the
+      // navigation and states it in aria-expanded (packages/ui workspace-app-toggles.browser.test.ts).
+      expect(toggle.getAttribute("aria-label")).toBe("Navigation");
       expect(toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
+      expect(toggle.hasAttribute("data-app-workspace-sidebar-toggle")).toBe(true);
       expect(toggle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }))).toBe(false);
-
-      toggle.click();
-      expect(changes).toEqual([true]);
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation einblenden");
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-      expect(decodeURIComponent(dom.document.cookie)).toContain('"navigationHidden":true');
-
-      toggle.click();
-      expect(changes).toEqual([true, false]);
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
-      // A default value stays out of the cookie.
-      expect(decodeURIComponent(dom.document.cookie)).not.toContain('"navigationHidden"');
+      // The Details button belongs to the workspace in the same way.
+      const details = buttons.find((button) => button.getAttribute("aria-label") === "Detailbereich")!;
+      expect(details.getAttribute("aria-controls")).toBe("k2b-workspace-detail-notebook-detail");
+      expect(details.hasAttribute("data-app-workspace-detail-toggle")).toBe(true);
     } finally {
-      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
       dispose();
       dom.cleanup();
     }
@@ -407,7 +392,6 @@ describe("editor toolbar formats and shortcuts", () => {
             editor={editorFor(view)}
             notebookId="Book01"
             noteId="Note01"
-            initialPanelOpen={false}
             format={format()}
             onUndo={() => {}}
             onRedo={() => {}}

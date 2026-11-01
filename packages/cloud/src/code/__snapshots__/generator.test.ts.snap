@@ -33,22 +33,6 @@ export type CodeNavigationItem = { title: string; path: string };
 /** A synchronous or asynchronous schedule callback, also used for a manual start. */
 export type CodeScheduleHandler = () => void | Promise<void>;
 
-/** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
-declare const __codeSecret: unique symbol;
-export type CodeSecret = string & { readonly [__codeSecret]: true };
-/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
-export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
-export type CodeHttp = {
-  fetch(
-    url: string,
-    options?: {
-      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
-      headers?: Record<string, string>;
-      body?: string;
-    },
-  ): Promise<CodeHttpResult>;
-};
-
 type Input0 = (Record<string, never>);
 
 type Data0 = (Array<(string)>);
@@ -59,7 +43,7 @@ type Data1 = ({ "next": ((string | null)); "rows": (Array<({ "id": (string); "st
 
 type Input2 = ({ "id": (string) });
 
-type Data2 = ({ "view": ({ "permission": (("read" | "write" | "admin")) & (string); "title": (string) }) });
+type Data2 = ({ "view": ({ "container"?: ({ "ref": ({ "id": (string); "type": (string) }); "title": (string) }); "context"?: (string); "done"?: (boolean); "permission": (("read" | "write" | "admin")) & (string); "status"?: (string); "title": (string) }) });
 
 type Input3 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
 
@@ -103,10 +87,6 @@ export type CodeApp = {
 };
 
 export declare const app: CodeApp;
-
-export declare const secrets: Readonly<Record<string, CodeSecret>>;
-
-export declare const http: CodeHttp;
 "
 `;
 
@@ -206,22 +186,8 @@ app.schedule = (cron, fn, options) => {
 };
 for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
 Object.freeze(app);
-const secrets = new Proxy(node(), {
-  get(_target, name) {
-    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new Error("code_sdk_invalid_secret_name");
-    return "[secret:" + name + "]";
-  },
-  set() { throw new Error("code_sdk_readonly_secrets"); },
-});
-const http = Object.freeze({
-  async fetch(url, options = {}) {
-    if (!bridge) throw new Error("code_sdk_bridge_unbound");
-    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");
-    return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
-  },
-});
 const __codeSdk = Object.freeze({
-  namespaces, owner, app, secrets, http,
+  namespaces, owner, app,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
@@ -237,8 +203,6 @@ const __codeSdk = Object.freeze({
 
 return __codeSdk;
 })();
-export const secrets = __codeSdk.secrets;
-export const http = __codeSdk.http;
 export { __codeSdk };
 export const work_shop = __codeSdk.namespaces["work_shop"];
 export const owner = __codeSdk.owner;
@@ -264,7 +228,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
     {
       "appId": "work-shop",
       "exportName": "work_shop",
-      "manifestHash": "4510bf0e2c83810f8cccbe2a3ed845c18ede4c1ecb2f636f89f9edeb8539e005",
+      "manifestHash": "97cf292ad856c6e86625040fb6cfd242bcf032c004242fca1482e7dd3c9c2402",
     },
   ],
   "events": [
@@ -432,12 +396,65 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
           "view": {
             "additionalProperties": false,
             "properties": {
+              "container": {
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "description": "Stable app-owned resource identifier.",
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "type": {
+                        "description": "Namespaced resource type declared by the owning app.",
+                        "maxLength": 180,
+                        "minLength": 3,
+                        "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                    ],
+                    "type": "object",
+                  },
+                  "title": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "ref",
+                  "title",
+                ],
+                "type": "object",
+              },
+              "context": {
+                "description": "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string",
+              },
+              "done": {
+                "type": "boolean",
+              },
               "permission": {
                 "enum": [
                   "read",
                   "write",
                   "admin",
                 ],
+                "type": "string",
+              },
+              "status": {
+                "description": "The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'.",
+                "maxLength": 60,
+                "minLength": 1,
                 "type": "string",
               },
               "title": {
@@ -480,7 +497,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
         "read",
       ],
       "refs": {},
-      "schemaHash": "8dec5022589421f2f1ce24ee68cbf0e7fff1cf9f71ee4b5c5968d45b3f5589e6",
+      "schemaHash": "1d03d78ea64e14fc900bef9e296a9d36917625d1fb428db438acd6c3c8bff729",
       "target": null,
     },
     {

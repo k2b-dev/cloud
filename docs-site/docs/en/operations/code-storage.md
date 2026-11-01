@@ -5,7 +5,7 @@ section: Operations
 order: 1254
 description: Back up Code versions and understand run retention and storage budgets.
 tags: [operations, code, postgres]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Code storage
@@ -20,6 +20,29 @@ They are not container files or runner caches. Configure their admission
 budgets through the `core.code.*` administrator settings documented in the
 [Code data model](/en/docs/platform/code-data-model#storage-limits-and-retention).
 No Code storage environment variables are required.
+
+Administrators can change any of the six budgets with
+`cld admin settings apply --from ./code-limits.json --yes`. For example, this
+file sets the source budget to 2 MiB:
+
+```json
+{
+  "updates": {
+    "core.code.source_bytes": 2097152
+  }
+}
+```
+
+The command uses Core's settings API, which validates the declared integer
+ranges, saves the update transactionally, records the change and invalidates
+cached values. Omitted settings retain their values. Use
+`cld admin settings reset core.code.source_bytes --yes` to restore its default.
+To explicitly replace an unreadable stored value, add
+`"replaceUnreadable": ["core.code.source_bytes"]` alongside `updates` in the
+JSON file. This replaces that whole value; include its new value in `updates`.
+The Code keys use `settings apply`; `settings list`, `show` and `set` currently
+filter Core's catalog to platform-declared settings and exclude these keys.
+See [CLI administration](/en/docs/operations/cli-administration) for login.
 
 Core sweeps at most 1,000 terminal runs per minute per replica, starting at
 30 days after the run ends. It deletes their capability-call records with

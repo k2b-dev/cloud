@@ -670,7 +670,9 @@ Readers and discovery Queries retain their existing inputs.
 
 Chat and MCP tools keep flat arguments: use `space` for the target alongside
 fields such as `itemId`, `columnId`, and `title`. For example, `task.create`
-takes `{ space, columnId, title }`.
+takes `{ space, title }`. Without `columnId`, it uses the first open column
+in board order (numeric rank, then public ID). Pass `columnId` only for an
+explicit column choice; no prior Space read is needed for the default.
 
 `event.invitation.prepare`, `event.invitation.commit`, and
 `calendar-invitation.response.commit` declare `code: false` for their Mail

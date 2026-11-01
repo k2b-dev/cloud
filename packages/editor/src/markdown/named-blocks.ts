@@ -82,8 +82,12 @@ export const namedBlocksExtension = (): Extension => {
     stateField,
     blockWidgetLineNavigationExtension(stateField, (value) => value.atomicDecorations),
     EditorView.theme({
+      // A block of the editor, measured without margins: an inline label would sit in a taller line box than the
+      // editor measures, and every line after it would drift from where the editor places it.
       ".cm-named-block-handle": {
+        display: "flex",
         margin: "0 !important",
+        padding: "0.35rem 0 0.15rem",
       },
     }),
   ];
