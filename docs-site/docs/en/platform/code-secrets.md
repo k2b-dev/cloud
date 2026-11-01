@@ -2,7 +2,7 @@
 title: Code secrets
 navTitle: Code secrets
 section: Platform services
-order: 967
+order: 968
 description: Store write-only credentials per Code and approve their HTTP destinations with each version.
 tags: [code, secrets, runner, security]
 updated: 2026-11-01
