@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok } from "@k2b/cloud/server";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import {
   DASHBOARD_REFRESH_MS,
   DashboardDefinitionSchema,

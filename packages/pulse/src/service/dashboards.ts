@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, encryptSecret, isUniqueViolation } from "@k2b/cloud/services";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import {
   type Dashboard,

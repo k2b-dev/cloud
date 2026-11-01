@@ -9,8 +9,9 @@ suiteFor("valkey")("bounded dashboard result cache", () => {
   let a: ReturnType<typeof createDashboardCache>;
   let b: ReturnType<typeof createDashboardCache>;
   beforeAll(() => {
-    a = createDashboardCache({ url: requireInfraUrl("valkey"), namespace });
-    b = createDashboardCache({ url: requireInfraUrl("valkey"), namespace });
+    const createClient = () => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 });
+    a = createDashboardCache({ createClient, namespace });
+    b = createDashboardCache({ createClient, namespace });
   });
   const snapshot: DashboardSnapshot = {
     at: "2026-10-22T12:00:00Z",

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { DashboardDefinitionSchema } from "../dashboard-contracts";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";

@@ -1,5 +1,5 @@
-import { env } from "@k2b/cloud/config";
-import { RedisClient } from "bun";
+import { createRedis } from "@k2b/cloud";
+import type { RedisClient } from "bun";
 import { z } from "zod";
 import { DASHBOARD_CACHE_BYTES, DASHBOARD_CACHE_ENTRIES } from "../dashboard-contracts";
 
@@ -35,7 +35,7 @@ for _,oldKey in ipairs(redis.call('ZRANGE',KEYS[2],0,-1)) do
 end
 redis.call('SET',KEYS[3],total)
 return redis.call('HEXISTS',KEYS[1],key)`;
-export const createDashboardCache = (options: { url?: string; namespace?: string } = {}) => {
+export const createDashboardCache = (options: { createClient?: () => RedisClient; namespace?: string } = {}) => {
   let client: RedisClient | undefined;
   let connecting: Promise<void> | undefined;
   const prefix = options.namespace ?? "pulse:dashboards:v2";
@@ -47,7 +47,7 @@ export const createDashboardCache = (options: { url?: string; namespace?: string
   const send = async (command: string, args: string[]) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      client ??= new RedisClient(options.url ?? env.REDIS_URL, { enableOfflineQueue: false, connectionTimeout: 1000 });
+      client ??= (options.createClient ?? (() => createRedis({ enableOfflineQueue: false, connectionTimeout: 1000 })))();
       const connection = client;
       const work = async () => {
         if (!connection.connected) {

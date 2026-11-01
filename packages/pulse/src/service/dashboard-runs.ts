@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { DASHBOARD_REFRESH_MS } from "../dashboard-contracts";
 
 // A calculation gets one durable receipt per revision/range/interval. Keeping
