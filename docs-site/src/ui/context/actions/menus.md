@@ -1,4 +1,4 @@
-# Dropdown and ContextMenu
+# Dropdown, ContextMenu, and ListContextMenu
 
 `Dropdown` opens actions from a visible trigger. `ContextMenu` opens the same item model at the pointer position on right-click or beside its trigger from the keyboard. The parent supplies actions, links, and state changes.
 
@@ -229,6 +229,25 @@ something else:
 `disabled`, `onOpen`, `onClose`, an optional stable `id`, and an accessible
 `label`.
 
+### Row menus in a list
+
+A list whose rows have a "…" menu uses one `ListContextMenu` around the list,
+so right-click on a row and the Context Menu key or Shift+F10 on its focused
+row open the same entries. `row` selects one row element, and `items` returns
+that row's menu, usually from the same function its "…" `Dropdown` uses. A
+right-click outside a row, or on a row without entries, keeps the browser's own
+menu, and a `ContextMenu` nested in a row keeps its own. The open row carries
+`data-context-menu-open`, so it can keep its hover look; `onOpen(row)` and
+`onClose()` let the list hide the row's native `title` while the menu is open,
+so the tooltip never covers it. The menu closes when its row leaves the list or
+loses its entries, and focus then returns to the list.
+
+```tsx
+<ListContextMenu row="[data-note-id]" label="Note actions" items={(row) => noteMenu(row.dataset.noteId!)}>
+  <For each={notes()}>{(note) => <NoteRow note={note} menu={noteMenu(note.id)} />}</For>
+</ListContextMenu>
+```
+
 ## API reference
 
 ```ts
@@ -298,6 +317,11 @@ type ContextMenuProps = {
   tabIndex?: number; disabled?: boolean; onClose?: () => void; onOpen?: () => void; id?: string;
   label?: string;
 };
+
+type ListContextMenuProps = {
+  row: string; items: (row: HTMLElement) => readonly DropdownItem[]; label?: string;
+  onOpen?: (row: HTMLElement) => void; onClose?: () => void; class?: string; children: JSX.Element;
+};
 ```
 
 `DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. Actions and choices close on activation unless `closeOnSelect: false`. A section contains actions/choices, not nested sections.
@@ -328,7 +352,7 @@ Labels must describe the action without relying on their icons. External links o
 
 Both menus require browser code. `Dropdown` uses the native Popover API, measures the trigger and menu, and clamps every supported position to an eight-pixel viewport inset. It repositions on viewport resize and ancestor scrolling.
 
-`ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, a change of the viewport's size, or scrolling outside the menu. A resize event that leaves the viewport's size unchanged keeps it open. Closing with Escape restores focus to the element inside it that had focus as the menu opened, such as a row or a day of a composite widget, and otherwise to the wrapper.
+`ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, a change of the viewport's size, or scrolling outside the menu. A resize event that leaves the viewport's size unchanged keeps it open. Closing with Escape or by choosing an entry restores focus to the element inside it that had focus as the menu opened, such as a row or a day of a composite widget, and otherwise to the wrapper.
 
 ## Example
 

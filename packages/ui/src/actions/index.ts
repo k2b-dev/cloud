@@ -26,6 +26,8 @@ export type { FilterChipOption, FilterChipProps, FilterChipSection, FilterToggle
 export { FilterChip, FilterToggle } from "./FilterChip";
 export type { GestureKind, GestureMenuAction, GestureMenuItem, GestureMenuProps, GestureMenuSection } from "./GestureMenu";
 export { GestureMenu } from "./GestureMenu";
+export type { ListContextMenuProps } from "./ListContextMenu";
+export { ListContextMenu } from "./ListContextMenu";
 export type { RemoveButtonProps } from "./RemoveButton";
 export { RemoveButton } from "./RemoveButton";
 export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";
