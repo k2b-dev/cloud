@@ -260,10 +260,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
             </h3>
             <span class="text-xs text-(--k2b-text-muted)">{t().internetSub}</span>
           </div>
-          <Show
-            when={props.internet.length}
-            fallback={<p class="text-sm text-(--k2b-text-muted)">{t().internetNone}</p>}
-          >
+          <Show when={props.internet.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().internetNone}</p>}>
             <ul class="grid gap-1">
               <For each={props.internet}>
                 {(target) => (

@@ -145,8 +145,7 @@ export const codePageMessages = i18n.define({
       unavailable: "Not reachable right now",
       pagesAndRoutes: "Pages and routes",
       internet: "Internet",
-      internetDescription: "Origins the Code may call with its credentials, read from the bindings reviewed with the version.",
-      internetUnbound: "Calls the internet without a fixed origin; it gets no credentials.",
+      internetDescription: "Exact HTTPS origins declared and reviewed with this version.",
       pagesNone: "None. That is why this Code has no address, only automations.",
       // Runs
       runs: "Runs",
@@ -353,9 +352,7 @@ export const codePageMessages = i18n.define({
       unavailable: "Gerade nicht erreichbar",
       pagesAndRoutes: "Seiten und Routen",
       internet: "Internet",
-      internetDescription:
-        "Adressen, die der Code mit seinen Zugangsdaten aufrufen darf, gelesen aus den mit der Version geprüften Bindungen.",
-      internetUnbound: "Ruft das Internet ohne feste Adresse auf; Zugangsdaten bekommt er dabei nicht.",
+      internetDescription: "Genaue HTTPS-Ursprünge, die mit dieser Version deklariert und geprüft wurden.",
       pagesNone: "Keine. Darum hat dieser Code keine Adresse, nur Automationen.",
       runs: "Läufe",
       runsEmpty: "Noch keine Läufe.",
