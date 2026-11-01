@@ -1,8 +1,8 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { decryptValue } from "@k2b/cloud/services/settings/crypto";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 
 const log = logger("core:outgoing-mail");
 

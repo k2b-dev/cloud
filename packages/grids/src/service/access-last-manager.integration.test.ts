@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { PermissionLevel, Principal } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { type PrecedenceScenario, precedenceScenarios } from "../access-precedence.test-fixture";
 import { testShortId } from "../integration-test-utils";

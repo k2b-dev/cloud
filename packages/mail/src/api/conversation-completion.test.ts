@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import * as platformServices from "@k2b/cloud/services";
 import { oauthTokens } from "@k2b/cloud/services";
-import { redis } from "bun";
 import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { collaboration, publicResources } from "../service";
 import app, { type ApiType } from ".";
+
+useUnitClients();
 
 const base = "/mailboxes/{mailboxId}/conversations/completion";
 const user = {
@@ -60,7 +63,7 @@ describe("Mail batch conversation completion route", () => {
   });
   test("passes the internal mailbox id and public conversation ids through the typed client", async () => {
     const mailboxId = "22222222-2222-4222-8222-222222222222";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     const conversationResolver = spyOn(publicResources, "resolveMailboxPublicId");
     const data = {
@@ -92,7 +95,7 @@ describe("Mail batch conversation completion route", () => {
     expect(conversationResolver).not.toHaveBeenCalled();
   });
   test("rejects empty, oversized, duplicate, unknown and non-strict inputs before calling the service", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue("22222222-2222-4222-8222-222222222222");
     const complete = spyOn(collaboration, "applyConversationCompletions");
     for (const input of [

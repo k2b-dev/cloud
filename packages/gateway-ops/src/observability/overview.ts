@@ -49,7 +49,7 @@ export const buildOverviewSignals = (input: OverviewSignalInput, locale = "en"):
       icon: "ti ti-plug-connected-x",
       title: t.appsOfflineTitle({ count: input.offlineApps.length }),
       detail: summarizeApps(input.offlineApps, locale),
-      href: "/admin/gateway/apps",
+      href: "/admin/apps",
     });
   }
   if (input.serverErrors > 0) {
@@ -74,7 +74,7 @@ export const buildOverviewSignals = (input: OverviewSignalInput, locale = "en"):
   }
 
   const unavailableSignals = [
-    ["apps", t.appHealthUnavailable, "/admin/gateway/apps"],
+    ["apps", t.appHealthUnavailable, "/admin/apps"],
     ["telemetry", t.trafficSignalsUnavailable, `/admin/observability/telemetry?range=${input.range}`],
     ["runs", t.runSignalsUnavailable, `/admin/observability/jobs?window=${input.jobsWindow}`],
     ["logs", t.logSignalsUnavailable, "/admin/observability/logs"],

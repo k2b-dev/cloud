@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
+import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiChatTasks,
@@ -21,8 +22,8 @@ import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
 import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import * as settingsService from "@k2b/cloud/services/settings";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
@@ -46,6 +47,7 @@ import { CHECK_LIMITS, type CheckReport, checkHash } from "./html/check-contract
 import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
+import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
@@ -77,34 +79,31 @@ function checkConversation(conversationId: string, userId: string) {
 }
 
 databaseSuite()("Assistant artifacts in disposable Postgres", () => {
-  let originalTargets: string | undefined;
+  let targets: string[];
+  let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+  const readSetting = settingsStore.readKey;
   beforeEach(() => {
-    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = [
-      "127.0.0.1",
-      "localhost",
-      ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : []),
-    ].join(",");
+    targets = ["127.0.0.1", "localhost", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])];
+    policy = spyOn(settingsStore, "readKey").mockImplementation((key) =>
+      key === "assistant.rsql_allowed_targets" ? Promise.resolve(targets) : readSetting(key),
+    );
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => policy.mockRestore());
 
   const owner = testIdentity("00000000-0000-4000-8000-000000000001");
   const reader = testIdentity("00000000-0000-4000-8000-000000000002");
   const editor = testIdentity("00000000-0000-4000-8000-000000000003");
   const stranger = testIdentity("00000000-0000-4000-8000-000000000004");
   const source = { entry: "main.js", files: [{ path: "main.js", content: "export default () => 1" }] };
+  machineIntegrationCases(owner);
   let id = "";
   afterAll(async () => {
     await sql.close();
   });
   beforeAll(async () => {
     // scripts/test-artifacts.ts provides an empty database in a disposable
-    // container. database.ts binds its own pool to DATABASE_URL at import
-    // time, so this suite cannot move to a fresh database in beforeAll; it
-    // builds the stand-in schema in the runner's database instead.
+    // container. Build this suite's stand-in schema only in that isolated
+    // target; a production migration template has different table contracts.
     const [existing] = await sql<
       { name: string }[]
     >`SELECT nspname AS name FROM pg_namespace WHERE nspname IN ('ai','auth','settings','assistant') LIMIT 1`;
@@ -113,7 +112,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text,updated_at timestamptz DEFAULT now())`;
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
-    await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model_profile_id text,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
+    await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model jsonb,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
     await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text,conversation_id uuid,run_config jsonb)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
@@ -137,6 +136,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE audit.events(id bigserial PRIMARY KEY,created_at timestamptz DEFAULT now(),action text,outcome text,
       actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,
       target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`;
+    await machineFixtureSchema();
     await migrateArtifacts();
     await migrateArtifacts();
     id = (await artifacts.create({ title: "Analysis", source }, owner)).id;
@@ -369,13 +369,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     let total = 1,
       single = 1;
     let cleanup = "";
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": total,
           "assistant.storage_file_mib": single,
           "assistant.rsql_url": "",
           "assistant.rsql_api_token": "",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -579,7 +580,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   test("context titles expose only currently accessible apps", async () => {
-    const described = await artifacts.describe([id, "invalid"], owner.user.id);
+    const described = await artifacts.describe([id, "invalid"], owner);
     expect(described).toHaveLength(1);
     expect(described[0]).toMatchObject({
       id,
@@ -592,14 +593,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       permission: "admin",
       publishedRevision: null,
     });
-    expect(await artifacts.describe([id], stranger.user.id)).toEqual([]);
+    expect(await artifacts.describe([id], stranger)).toEqual([]);
   });
   test("descriptions round-trip without source writes erasing them", async () => {
     const app = await artifacts.create({ title: "Described", description: "Calculate a tip.", source }, owner);
     expect(app.description).toBe("Calculate a tip.");
     const saved = await artifacts.writeFile(app.id, "main.js", "export default () => 2", owner);
     expect(saved.description).toBe("Calculate a tip.");
-    expect((await artifacts.describe([app.id], owner.user!.id))[0]?.description).toBe("Calculate a tip.");
+    expect((await artifacts.describe([app.id], owner))[0]?.description).toBe("Calculate a tip.");
     const updated = await artifacts.update(
       app.id,
       { title: app.title, description: "Updated description.", expectedRevision: saved.revision, source },
@@ -610,7 +611,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   test("only admins see unpublished drafts; users can use a published version", async () => {
     await expect(artifacts.get(id, reader)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect((await artifacts.list(reader)).items).toHaveLength(0);
-    expect(await artifacts.describe([id], reader.user.id)).toEqual([]);
+    expect(await artifacts.describe([id], reader)).toEqual([]);
     await artifacts.publish(id, 1, owner, "Test publication");
     expect((await artifacts.get(id, reader)).source).toEqual(source);
     expect((await artifacts.list(stranger)).items).toHaveLength(0);
@@ -995,7 +996,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         conversationId,
         status: "waiting_for_action",
         attempt: 1,
-        modelProfileId: null,
+        modelId: null,
         createdAt: new Date().toISOString(),
         completedAt: null,
         error: null,
@@ -1784,7 +1785,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const rejectId = "00000000-0000-4000-8000-000000000095";
     const request = (id: string, name: string, reference = conversationId) => ({ id, name, input: {}, conversationId: reference });
     try {
-      expect((await aiProjects.get(projectId, owner.accessSubject, "read"))?.permission).toBe("read");
+      expect((await aiProjects.get(projectId, owner, "read"))?.permission).toBe("read");
       expect((await post("/runtime/capabilities", request(readId, "access.read"))).status).toBe(200);
       for (const id of [pendingId, rejectId]) {
         expect(await (await post("/runtime/capabilities", request(id, "access.write"))).json()).toMatchObject({
@@ -1839,7 +1840,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         }
         // Revoke the real Project grant while keeping ownership, tool scope and call records intact.
         await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid`;
-        expect(await aiProjects.get(projectId, owner.accessSubject, "read")).toBeNull();
+        expect(await aiProjects.get(projectId, owner, "read")).toBeNull();
         catalog.mockClear();
         execute.mockClear();
         transfer.mockClear();
@@ -2056,13 +2057,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     let url = "",
       token = "",
       creates = 0;
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": url,
           "assistant.rsql_api_token": token,
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const upstream = Bun.serve({
@@ -2146,6 +2148,75 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await expect(artifacts.storage(resource.id, { ...request, userId: owner.user.id }, reader)).rejects.toBeInstanceOf(Error);
   });
 
+  test("file quota accounts for stored keys and metadata, replacement and deletion while payload sizes stay truthful", async () => {
+    const resource = await artifacts.create({ title: "File quota accounting", source }, owner);
+    await artifacts.publish(resource.id, 1, owner, "Initial release");
+    const mediaType = "application/octet-stream";
+    const [metadata] = await sql<{ bytes: number }[]>`SELECT pg_column_size(ROW('é-1'::text,${mediaType}::text)) AS bytes`;
+    const metadataBytes = Number(metadata!.bytes);
+    let totalBytes = 2 * metadataBytes;
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
+      async (key) =>
+        ({
+          "assistant.storage_total_mib": totalBytes / (1024 * 1024),
+          "assistant.storage_file_mib": 50,
+          "assistant.rsql_url": requireInfraUrl("rsql"),
+          "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
+        })[key],
+    );
+    const write = (key: string, data = new Uint8Array(), type = mediaType) =>
+      artifacts.storage(resource.id, { area: "files", operation: "write", key, mediaType: type }, owner, false, data);
+    const remove = (key: string) => artifacts.storage(resource.id, { area: "files", operation: "delete", key }, owner);
+    const usage = async () => {
+      const [row] = await sql<{ charge: number; payload: number }[]>`SELECT
+        coalesce(sum(bytes + pg_column_size(ROW(key,media_type))),0)::int AS charge,
+        coalesce(sum(bytes),0)::int AS payload FROM assistant.artifact_storage
+        WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}) AND area='files' AND user_id IS NULL`;
+      return row!;
+    };
+    try {
+      await write("é-1");
+      expect(await usage()).toEqual({ charge: metadataBytes, payload: 0 });
+      await write("é-2");
+      expect(await usage()).toEqual({ charge: 2 * metadataBytes, payload: 0 });
+      await expect(write("é-3")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await write("é-1");
+      const atLimit = await artifacts.storageState(resource.id, owner);
+      await expect(write("é-1", new Uint8Array([1]))).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await expect(write("é-1", new Uint8Array(), mediaType + ";charset=utf-8")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      expect((await artifacts.storageState(resource.id, owner)).storageRevision).toBe(atLimit.storageRevision);
+      const listed = await artifacts.storage(resource.id, { area: "files", operation: "list" }, owner);
+      expect(listed).toMatchObject({
+        items: [
+          { key: "é-1", bytes: 0 },
+          { key: "é-2", bytes: 0 },
+        ],
+      });
+      const empty = await artifacts.storage(resource.id, { area: "files", operation: "read", key: "é-1" }, owner);
+      expect(empty.item?.data).toHaveLength(0);
+      await remove("é-2");
+      expect(await usage()).toEqual({ charge: metadataBytes, payload: 0 });
+      await expect(write("é-3-longer-key")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await write("é-3", new Uint8Array([1]), "");
+      const [shorter] = await sql<{ bytes: number }[]>`SELECT pg_column_size(ROW('é-3'::text,''::text)) AS bytes`;
+      expect(await usage()).toEqual({ charge: metadataBytes + Number(shorter!.bytes) + 1, payload: 1 });
+      totalBytes = 1;
+      await write("é-1");
+      await write("é-3", new Uint8Array(), "");
+      await write("é-1", new Uint8Array(), "");
+      expect(await usage()).toEqual({ charge: 2 * Number(shorter!.bytes), payload: 0 });
+      await expect(write("é-4")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await remove("é-1");
+      expect(await usage()).toEqual({ charge: Number(shorter!.bytes), payload: 0 });
+      await remove("é-3");
+      expect(await usage()).toEqual({ charge: 0, payload: 0 });
+    } finally {
+      settings.mockRestore();
+      await artifacts.remove(resource.id, owner);
+    }
+  });
+
   test("KV scopes retain independent 16 MiB budgets and 1 MiB values", async () => {
     const resource = await artifacts.create({ title: "KV budgets", source }, owner);
     await artifacts.publish(resource.id, 1, owner, "Initial release");
@@ -2220,13 +2291,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
-      const settings = spyOn(app.settings, "get").mockImplementation(
+      const settings = spyOn(settingsStore, "readKey").mockImplementation(
         async (key) =>
           ({
             "assistant.storage_total_mib": 250,
             "assistant.storage_file_mib": 50,
             "assistant.rsql_url": requireInfraUrl("rsql"),
             "assistant.rsql_api_token": "artifact-test-only",
+            "assistant.rsql_allowed_targets": targets,
           })[key],
       );
       const real = await artifacts.create(
@@ -2376,13 +2448,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
     const anonymous = { ...owner };
     Reflect.deleteProperty(anonymous, "actor");
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2510,13 +2583,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   testFor("rsql")("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
     const resource = await artifacts.create({ title: "Excel import", kind: "app", source }, owner);
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2562,13 +2636,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   testFor("rsql")("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const resource = await artifacts.create({ title: "Clear rows", source }, owner);
@@ -2659,13 +2734,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         return fetch(new Request(target, request));
       },
     });
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": proxy.url.toString(),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const resource = await artifacts.create({ title: "Partial clear", source }, owner);
@@ -2720,13 +2796,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   test("database connection errors distinguish invalid credentials from an unavailable server", async () => {
     const applet = await artifacts.create({ title: "Database errors", source }, owner);
     const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json({ error: "unauthorized" }, { status: 401 }) });
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": upstream.url.origin,
           "assistant.rsql_api_token": "private-fixture-token",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2773,13 +2850,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   testFor("rsql")("Studio database backup and reset preserve source and rotate namespace generations", async () => {
     const resource = await artifacts.create({ title: "Reset lifecycle", source }, owner);
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2887,12 +2965,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       },
     });
     try {
-      delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+      targets = [];
       await expect(
         artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true),
       ).rejects.toMatchObject({ code: "DB_TARGET_BLOCKED", status: 502 });
       expect(received).toBe(0);
-      process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = "127.0.0.1";
+      targets = ["127.0.0.1"];
       expect(await artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true)).toEqual({
         connected: true,
       });
@@ -2919,6 +2997,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         "assistant.storage_file_mib": 50,
         "assistant.rsql_url": upstream.url.origin,
         "assistant.rsql_api_token": "secret-fixture",
+        "assistant.rsql_allowed_targets": targets,
       }[key],
     }));
     const writes = spyOn(settingsService, "set").mockResolvedValue();
@@ -2927,7 +3006,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.settings(administrator)).toEqual({
         url: upstream.url.origin,
         tokenSet: true,
-        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false },
+        allowedTargets: targets,
+        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false, "assistant.rsql_allowed_targets": false },
       });
       expect(await artifactDatabase.configure({ url: upstream.url.origin }, administrator, true)).toEqual({ connected: true });
       expect(writes).not.toHaveBeenCalled();
@@ -3000,8 +3080,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   test("project app selection only exposes manageable candidates and linking requires both admin grants", async () => {
     const projectId = crypto.randomUUID();
     const project = spyOn(aiProjects, "get").mockImplementation(async (id, subject, permission) => {
-      const projectAdmin = subject?.type === "user" && [owner.user.id, reader.user.id].includes(subject.userId);
-      const projectReader = subject?.type === "user" && subject.userId === stranger.user.id;
+      const projectAdmin = subject?.accessSubject.type === "user" && [owner.user.id, reader.user.id].includes(subject.accessSubject.userId);
+      const projectReader = subject?.accessSubject.type === "user" && subject.accessSubject.userId === stranger.user.id;
       return id === projectId && (projectAdmin || (projectReader && permission === "read"))
         ? {
             id,
@@ -3010,7 +3090,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             description: "",
             icon: "",
             instructions: "",
-            defaultModelProfileId: null,
+            defaultModel: null,
             permission: projectAdmin ? "admin" : "read",
             revision: 1,
             createdAt: "",
@@ -3068,7 +3148,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await artifacts.publish(script.id, 1, owner, "Initial release");
       expect((await artifacts.get(script.id, stranger)).permission).toBe("read");
       expect((await artifacts.get(script.id, contextual)).permission).toBe("read");
-      expect(await artifacts.describe([script.id], stranger.user.id)).toHaveLength(1);
+      expect(await artifacts.describe([script.id], stranger)).toHaveLength(1);
       expect((await artifacts.list(stranger, 1, "Shared calculation")).items).toMatchObject([{ id: script.id, permission: "read" }]);
       expect(await artifacts.runner(script.id, stranger)).toMatchObject({ serverAccess: true, canManage: false });
       await expect(artifacts.runner(script.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -3109,7 +3189,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await expect(artifacts.storage(script.id, { area: "kv", operation: "read", key: "shared" }, stranger)).rejects.toMatchObject({
         code: "ACCESS_DENIED",
       });
-      expect(await artifacts.describe([script.id], stranger.user.id)).toEqual([]);
+      expect(await artifacts.describe([script.id], stranger)).toEqual([]);
       expect((await artifacts.list(stranger, 1, "Shared calculation")).items.some((item) => item.id === script.id)).toBe(false);
       await sql`INSERT INTO auth.user_groups_v2 VALUES(${stranger.user.id}::uuid,${groupId}::uuid)`;
       await artifacts.linkProject(script.id, projectId, false, owner);
@@ -3205,7 +3285,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
               conversationId,
               status: "running" as const,
               attempt: 1,
-              modelProfileId: null,
+              modelId: null,
               createdAt: new Date().toISOString(),
               completedAt: null,
               error: null,
@@ -3226,13 +3306,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         }),
         spyOn(aiConversations, "getTurn").mockImplementation(async (request) => turnOf(request.conversationId)),
         spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Eval", toolSource: { kind: "none" } }),
-        spyOn(app.settings, "get").mockImplementation(
+        spyOn(settingsStore, "readKey").mockImplementation(
           async (key) =>
             ({
               "assistant.storage_total_mib": 250,
               "assistant.storage_file_mib": 50,
               "assistant.rsql_url": requireInfraUrl("rsql"),
               "assistant.rsql_api_token": "artifact-test-only",
+              "assistant.rsql_allowed_targets": targets,
             })[key],
         ),
       ];
@@ -3394,7 +3475,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       conversationId,
       status: "running" as const,
       attempt: 1,
-      modelProfileId: null,
+      modelId: null,
       createdAt: new Date().toISOString(),
       completedAt: null,
       error: null,
@@ -3479,13 +3560,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await expect(agentHost.call(call, { ...context, ...stranger })).rejects.toThrow();
       const inspect = { ...call, name: "code_inspect" as const, callId: "server-inspect", args: { runId: call.callId } };
       expect(await wait(inspect)).toMatchObject({ status: "done", result: { runId: call.callId, status: "ready" } });
-      const exampleSettings = spyOn(app.settings, "get").mockImplementation(
+      const exampleSettings = spyOn(settingsStore, "readKey").mockImplementation(
         async (key) =>
           ({
             "assistant.storage_total_mib": 250,
             "assistant.storage_file_mib": 50,
             "assistant.rsql_url": requireInfraUrl("rsql"),
             "assistant.rsql_api_token": "artifact-test-only",
+            "assistant.rsql_allowed_targets": targets,
           })[key],
       );
       try {
@@ -3705,18 +3787,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         VALUES (${conversationId}::uuid,'/kunden.csv','a'::bytea,1,'text/csv','user')`;
       try {
         const options = { timeZone: "Europe/Berlin" };
-        const snapshot = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        const snapshot = await loadAssistantChatContextSnapshot(owner, "abc234", options);
         expect(snapshot?.results.map((result) => result.key)).toEqual([`assistant.artifact:${resource.id}`]);
         // The result shows the app under its current title, with the state of its last run of this revision.
         expect(snapshot?.results[0]).toMatchObject({ kind: "app", title: resource.title, messageSeq: 3 });
         expect(snapshot?.results[0]?.app).toMatchObject({ id: resource.id, href: `/app/assistant/apps/${resource.id}`, lastRun: "ready" });
         expect(snapshot?.runs.some((run) => run.id === call.callId && run.status === "ready")).toBe(true);
         await artifacts.writeFile(resource.id, "main.ts", "export default()=>43", owner);
-        expect((await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
-        expect(await loadAssistantChatContextSnapshot(stranger.user.id, "abc234", options)).toBeNull();
+        expect((await loadAssistantChatContextSnapshot(owner, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
+        expect(await loadAssistantChatContextSnapshot(stranger, "abc234", options)).toBeNull();
         // An app the chat built but never opened is no result, and the Studio overview still lists it.
         delivered = false;
-        const built = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        const built = await loadAssistantChatContextSnapshot(owner, "abc234", options);
         expect(built?.results).toEqual([]);
         expect(built?.apps.map((app) => app.id)).toEqual([resource.id]);
       } finally {

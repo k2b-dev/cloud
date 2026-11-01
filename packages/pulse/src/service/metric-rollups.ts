@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { assertStoreName } from "../store/base-schema";
 import { baseStore, loadStoreRow } from "../store/base-store";
 import { admitBaseWrite, sameCheckpoint } from "../store/maintenance";
@@ -51,8 +51,17 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
     FROM pairs p INNER JOIN ${db}.series s ON s.series_id=p.series_id GROUP BY p.series_id`;
 };
 export const createHourlyRollup =
-  ({ store = baseStore, database = sql, clock = store.clock }: { store?: IngestStore; database?: typeof sql; clock?: () => Date } = {}) =>
+  ({
+    store = baseStore,
+    database: injectedDatabase,
+    clock = store.clock,
+  }: {
+    store?: IngestStore;
+    database?: typeof sql;
+    clock?: () => Date;
+  } = {}) =>
   async (baseId?: string): Promise<{ buckets: number; done: boolean; retryAfterMs?: number }> => {
+    const database = injectedDatabase ?? sql;
     const connectedStore = { ...store, query: await store.prepare() };
     let failedHour: { baseId: string; hour: Date; now: Date; generation: string; revision: string } | undefined;
     try {

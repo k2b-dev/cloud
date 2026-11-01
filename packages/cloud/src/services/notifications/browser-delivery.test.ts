@@ -32,7 +32,7 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     globalThis.notificationBrowserSql = sql;
     Bun.plugin({ name: "notification-browser-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/](?:browser|platform)\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
       }));
     }});
     mock.module("web-push", () => ({ default: { setVapidDetails: () => {} } }));
@@ -116,6 +116,14 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     assert.ok(maxGroup.createdAt >= beforeGroup && maxGroup.createdAt <= Date.now());
     assert.equal(maxGroup.group, "inventory:" + "g".repeat(128));
     await driver.deliver(maxGroup);
+    const quiet = driver.createPayload({ ...input, presentation: { title: "Ready", group: "stock:one", alert: false } });
+    assert.equal(quiet.alert, false);
+    await driver.deliver(quiet);
+    assert.equal(JSON.parse(sent.at(-1).payload).alert, false);
+    const loud = driver.createPayload({ ...input, presentation: { title: "Ready", group: "stock:one" } });
+    assert.equal("alert" in loud, false);
+    await driver.deliver(loud);
+    assert.equal("alert" in JSON.parse(sent.at(-1).payload), false);
     const beforeBadge = Date.now();
     const badgeOnly = driver.createPayload({ ...input, presentation: { title: "Ready", badge: 0 } });
     assert.ok(Number.isSafeInteger(badgeOnly.createdAt));

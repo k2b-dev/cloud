@@ -1,20 +1,23 @@
 import { expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import { invokeCapabilityStream } from "../_internal/capability-streams";
-import { env } from "../config/env";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import type { RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import type { CapabilityDispatchDependencies } from "./capabilities";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
-Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only", configurable: true });
+useUnitClients();
+
+stubConnections({ appSecret: { current: "capability-stream-tests-only" } });
 
 const authority: RequestAuthority = {
   actor: {

@@ -13,8 +13,20 @@ Der Workflow-Quelltext ist auf 200.000 Zeichen begrenzt.
 :::reference
 - **Name:** 1–160 Zeichen.
 - **Beschreibung:** Optional, höchstens 2.000 Zeichen.
-- **Priorität:** Eine ganze Zahl von -1.000 bis 1.000, Standard 100. Nehmen mehrere Mail-Workflows dasselbe Ereignis an, laufen niedrigere Werte zuerst.
+- **Priorität:** Eine ganze Zahl von -1.000 bis 1.000, Standard 100. Für dasselbe Ereignis einer empfangenen Nachricht kommen kleinere Werte zuerst; bei Gleichstand entscheidet die Workflow-UUID aufsteigend. Die Reihenfolge steht bei Annahme des Ereignisses fest.
 :::
+
+## Zuweisung und konkurrierende Regeln {icon="list-numbers"}
+
+Für eine empfangene Nachricht gewinnt die erste Regel in der Prioritätsreihenfolge des Postfachs, die Zuweisung, Ablage oder Status beansprucht, für diese Art von Änderung. Untere Regeln warten auf die Entscheidungen der oberen, auch auf KI-Schritte. Endet eine obere Regel ohne diese Änderung, bleibt sie für untere Regeln verfügbar. Tags, Kommentare und Zusammenfassungen dürfen aus allen Regeln kommen.
+
+Nach 24 Stunden darf eine untere Regel eine offene Entscheidung übernehmen. Danach kann die obere Regel keine exklusive Änderung mehr nachholen; eine bereits beanspruchte Änderung behält Vorrang.
+
+`assignConversation` überspringt die Zuweisung, sobald der Unterhaltung jemand zugewiesen ist (`already_assigned`), auch bei einer Zuweisung von Hand. Es überspringt sie auch, wenn eine Zuweisung dieses Workflows für diese Unterhaltung rückgängig gemacht wurde (`undone_before`), selbst bei späteren Antworten und nach dem 30-Tage-Protokollfenster. Nur unmittelbares **Wiederholen** durch dieselbe Person entfernt diese Sperre. Eine Zuweisung von Hand zu ändern, ändert den Workflow nie. `user: null` lässt bestehende Zuständigkeiten stehen. Entferne die Zuweisung von Hand oder mache den Regeleintrag rückgängig.
+
+Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) prüfst du die Entscheidungskette und machst eine aktuelle Regelzuweisung rückgängig. Dafür brauchst du denselben Zugriff wie zum Zuweisen von Hand; spätere manuelle Änderungen werden nicht überschrieben.
+
+Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) kannst du aktuelle Regeländerungen rückgängig machen, wenn du das ganze Postfach bearbeiten darfst. Spätere persönliche Änderungen bleiben erhalten. Die Regel überspringt danach die zurückgenommenen Änderungsarten mit `undone_before`, auch Tags, Ablage, Status, Markierungen und Schlüsselwörter bei späteren Antworten. Kommentare und Zusammenfassungen werden hier nicht zurückgenommen.
 
 ## Mit einem Workflow für empfangene Nachrichten beginnen {icon="route"}
 
@@ -48,6 +60,28 @@ steps:
 ```
 
 Wähle vor dem Speichern **Prüfen**. Die Validierung prüft striktes YAML, das Mail-Vokabular, Wertepfade, zugängliche Katalognamen und unvereinbare Aktionskombinationen.
+
+## Probelauf ohne KI {icon="player-play"}
+
+Wähle **Probelauf**. Er prüft die letzten 50 Mails, die neueste zuerst.
+Du kannst bis zu 100 Mails prüfen. Der Probelauf ändert keine Mail.
+Er sendet nichts, erstellt keine Entwürfe und ruft keine KI auf.
+Mit **Abbrechen** stoppst du weitere Prüfschritte.
+
+Du siehst die Werte aus den Bedingungen und die vorgesehenen Aktionen.
+**Übersprungen** bedeutet: Ein ausdrücklicher Ausschluss greift.
+Das kann etwa ein Newsletter sein, den die Regel mit `not` ausschließt.
+**Nicht** bedeutet: Die Bedingungen treffen nicht zu.
+
+Bei KI-Schritten siehst du nur, dass sie starten würden.
+KI-Ergebnisse und davon abhängige Zweige bleiben offen.
+Die Spanne der KI-Aufrufe zeigt sichere und höchstens mögliche Aufrufe.
+Ziele werden vorab geprüft. Fehlende Ziele und fehlender Postfachzugriff
+erscheinen als Probleme.
+
+Wer eine gespeicherte Regel ansehen darf, kann ihre aktuelle Version prüfen.
+Für ungespeichertes YAML brauchst du wie beim Speichern die Administration
+des Postfachs.
 
 ## Eingaben deklarieren {icon="point"}
 
@@ -119,17 +153,26 @@ Nachrichtenpfade:
 
 - `inputs.message.id`, `conversationId`, `subject`, `body`, `bodyText`, `bodyHtml`
 - `inputs.message.fromAddress`, `fromDomain`
+- `inputs.message.textLength`, `attachmentCount`, `isBulk`
 - `inputs.message.sender.0.role`, `name` oder `email`
 - `inputs.message.recipients.0.role`, `name` oder `email`
 - `inputs.message.attachments.0.id`, `filename`, `contentType`, `disposition`, `contentId` oder `sizeBytes`
 - `inputs.message.hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, `receivedAt`
+
+`textLength` zählt Unicode-Zeichen im Klartext der Nachricht. Zitierte Zeilen mit `>` und ihre Einleitung zählen nicht. Der Verlauf ab einem Originalnachricht-Trenner oder Outlook-Kopfblock zählt auch nicht. Signaturen ab einer Zeile, die genau aus `-- ` besteht, werden entfernt. Das sind zwei Bindestriche und ein Leerzeichen. Unmarkierte Signaturen bleiben erhalten. Zeilenenden werden zu `\n`. Leerraum am Anfang und Ende fällt weg. Zeilenumbrüche innerhalb der Antwort zählen mit. Bei reinen HTML-Nachrichten zählt der beim Import erzeugte Klartext.
+
+Mail lädt `textLength` bei Bedarf wie `bodyText`. Der geladene Text bleibt für Wiederholungen gleich. `attachmentCount` wartet auf die Anhangsdaten. Es zählt dieselben gespeicherten Anhänge wie `hasAttachments`. Als Anhang gespeicherte Inline-Bilder zählen mit. `hasAttachments` behält den Wert vom Empfang. Es wartet nicht auf die Anhangsdaten. Existiert die Nachricht nicht mehr, ergibt ein Zahlvergleich mit `textLength` oder `attachmentCount` den Wert `false`.
+
+`isBulk` erkennt einen gefüllten Header `List-Id`, `Precedence` mit `bulk`, `list` oder `junk` oder `Auto-Submitted` mit einem anderen Wert als `no`. Großschreibung und äußerer Leerraum spielen keine Rolle. Fehlende Header ergeben `false`.
+
+`conversation.messageCount` zählt alle verknüpften Nachrichten im eingefrorenen Ausgangsstand. Die Gesprächsliste zählt genauso. Kopien beim Anbieter zählen nicht zusätzlich. Binde `trigger.message` und `trigger.conversation` an Eingaben. So stehen die Felder in Schritten bereit. Zeitgesteuerte Workflows liefern kein Gespräch.
 
 Mail liest `body`, `bodyText` und `bodyHtml`, wenn ein Schritt sie benötigt. Der Schritt wartet, bis Mail die Nachricht geladen hat, und schlägt fehl, wenn die Nachricht nicht mehr existiert. Ein vollständiger Nachrichtenwert wie `inputs.message` enthält den Text nur, wenn Mail ihn bereits geladen hat; lies den Text über `body`, `bodyText` oder `bodyHtml`, wenn ein Schritt ihn benötigt. Die Ausführungsdetails zeigen keine Nachrichtentexte mehr in den Ereignisdaten.
 
 Unterhaltungspfade:
 
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
-- `inputs.conversation.workStatus`, `latestMessageAt`
+- `inputs.conversation.workStatus`, `latestMessageAt`, `messageCount`
 
 Ressourcen-IDs von Mail in einem Workflow sind dieselben stabilen sechsstelligen IDs wie in Mail-URLs und Capabilities. Anbieterreferenzen und Datenbank-UUIDs sind intern und keine Workflow-Felder.
 
@@ -178,7 +221,7 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `trashMessage` | `message` | Verschiebt die Nachricht in den Papierkorbordner des Postfachs |
 | `junkMessage` | `message` | Verschiebt die Nachricht in den Spamordner des Postfachs |
 | `addFlag` / `removeFlag` | `message`, `flag` | Ändert `seen`, `answered`, `flagged` oder `draft` über das Befehlsjournal des Anbieters |
-| `assignConversation` | `conversation`, `user` | Ersetzt die zugewiesenen Personen durch eine Person, die zugewiesen werden kann, anhand ihres Namens oder ihrer ID; `null` entfernt alle Zuweisungen |
+| `assignConversation` | `conversation`, `user` | Weist eine berechtigte Person, einen Agenten oder ein eigenständiges Dienstkonto anhand des exakten Namens oder der UUID nur zu, wenn niemand zuständig ist; `null` lässt eine unzugewiesene Unterhaltung unzugewiesen |
 | `setConversationStatus` | `conversation`, `status` | Setzt `needs_action`, `waiting` oder `done` |
 | `setConversationSummary` | `conversation`, `summary` | Ersetzt die bearbeitbare Zusammenfassung der Unterhaltung |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Vergibt die permanente Postfachreferenz oder verwendet sie erneut und speichert optional das Ergebnis |
@@ -227,7 +270,7 @@ Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen r
 | `setVariable` | beliebiger JSON-kompatibler `value` | `name` erhält `core.value` | keine |
 | `succeed`, `fail` | Meldung für Betriebspersonal: höchstens 1.000 Zeichen | Endzustand | keine |
 
-`createDraft.to` ist erforderlich. `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das Feld `model` akzeptiert die ID eines aktivierten KI-Modellprofils mit höchstens 120 Zeichen. KI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
+`createDraft.to` ist erforderlich. `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das optionale Feld `model` akzeptiert `{ class: balanced }` oder `{ id: "model:variant" }`. Die Klassen heißen `fast`, `balanced`, `thorough` und `maximum`; eine explizite Varianten-ID darf höchstens 241 Zeichen haben. KI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
 
 Auf einem erreichbaren Pfad können beliebig viele Änderungen mit `addFlag`, `removeFlag`, `addKeyword` und `removeKeyword` vor höchstens einem `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage` oder `junkMessage` für dieselbe Nachricht stehen. Nach diesem Verschieben oder Kopieren kann keine Anbieteraktion mehr folgen; Mail lehnt eine solche Definition mit `action.sequence` ab. Die erste Anbieteraktion prüft den Zustand der Nachricht beim Start des Laufs. Spätere erwarten zusätzlich die bestätigten Änderungen dieses Laufs, sodass ein Flag, das der Workflow selbst gesetzt hat, sein Verschieben nicht verhindert. Behalte diese Änderungen in einem Workflow: Ändern zwei Workflows dieselbe Nachricht, kann einer davon scheitern. Ein Schritt deines Workflows zum Verschieben, Archivieren, Löschen oder Verschieben in Spam wird nicht übersprungen: Er scheitert, wenn die Nachricht ihren Ordner bereits verlassen hat oder gerade durch eine andere Änderung verschoben wird.
 
@@ -237,7 +280,7 @@ Auf einem erreichbaren Pfad können beliebig viele Änderungen mit `addFlag`, `r
 
 ## E-Mails mit KI klassifizieren und Entwürfe erstellen {icon="sparkles"}
 
-Mail aktiviert die gemeinsamen KI-Aktionen ausdrücklich. KI erzeugt nur einen Wert. Tags, Zuweisung, Ordner, Entwürfe und Versand bleiben Effekte von Mail-Aktionen, mit dem normalen Zugriff auf das Postfach und den Ausführungslimits.
+Mail aktiviert die gemeinsamen KI-Aktionen für Klassifizierung, Tags, Zuweisung, Zusammenfassungen und Entwürfe, mit dem normalen Zugriff auf das Postfach und den Ausführungslimits. Workflows mit einer KI-Aktion dürfen weder `automaticReply` noch `scheduleDraftSend` nutzen. Das gilt auch, wenn die KI-Aktion in einem anderen Zweig steht oder nur zwischen festen Antworten auswählt. Eine Person muss den entstandenen Entwurf prüfen und senden. Die Versandprüfung bindet den vollständigen Inhalt, Empfänger, Anhänge und Versandzeitpunkt.
 
 Dieses Beispiel ordnet eine Nachricht mehreren Labels zu. Es nutzt die exakte Array-Zugehörigkeit, um die Unterhaltung zu taggen und zuzuweisen, und erstellt einen Entwurf, ohne ihn zu senden:
 
@@ -334,11 +377,11 @@ steps:
 
 Die allgemeinen Feldtypen sind `text`, `number`, `boolean`, `date_time` und `enum`. Optionale Felder dürfen fehlen. Die Ausgabe lehnt nicht deklarierte Felder ab. Der geführte Editor für eingehende E-Mails stellt automatisch bereit: den festen Vertrag für Terminfelder, eine ausdrückliche IANA-Zeitzone, die Empfangszeit der Nachricht und die Schutzbedingung gegen erfundene Angaben.
 
-Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Andernfalls verwendet Mail zuerst das Workflow-Modell der Plattform, dann das Hintergrundmodell und anschließend den Plattformstandard. Jede neu erstellte KI-Aufgabe zählt einmal gegen das Limit `maxAiCalls`. Standardmäßig liegt dieses Limit bei 10 pro Ausführung.
+Ohne `model` wird die Klasse `balanced` angefragt. Nur leere Klassenzuweisungen weichen auf eine andere Klasse aus; fehlender Zugriff, ausgeschöpfte Budgets, deaktivierte Modelle und fehlende Fähigkeiten stoppen die Aktion. Eine explizite Varianten-ID weicht nie auf ein anderes Modell aus. Jede neu erstellte KI-Aufgabe zählt einmal gegen das Limit `maxAiCalls`. Standardmäßig liegt dieses Limit bei 10 pro Ausführung.
 
 KI-Aufgaben überstehen Neustarts von Workern. Brichst du die Mail-Ausführung ab, stoppt sie die laufende Inferenz, wo das möglich ist, und verwirft verspätete Ausgaben. Eine Testausführung kann die KI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
-Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der Versand ohne Prüfung bewusst genehmigt ist.
+Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die benötigten Nachrichtenfelder auf. Erstelle erzeugte Nachrichten mit `createDraft` oder `createReplyDraft` und lass eine Person den Entwurf prüfen und senden. Automatische Sendungen dürfen auch keine Zusammenfassungen von Unterhaltungen lesen oder ganze Unterhaltungen in Werte kopieren: Ein anderer KI-Workflow kann die Zusammenfassung geschrieben haben. Diese Regeln gelten für die gesamte Definition, einschließlich ungenutzter Zweige. Mail prüft ältere gespeicherte Versionen und wartende Sendungen erneut vor dem Versand. Ein verweigerter Versand scheitert mit `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED`.
 
 Ein Workflow mit dem Trigger `messageReceived` kann `scheduleDraftSend` gar nicht nutzen. Antworten auf eingehende E-Mails müssen über `automaticReply` und dessen Schleifenschutz laufen.
 
@@ -403,7 +446,7 @@ Du kannst die Aktion gefahrlos wiederholen. Sie vergibt für dieselbe Unterhaltu
 
 ## Eine geschützte automatische Antwort senden {icon="send"}
 
-`automaticReply` ist nur gültig, wenn jeder Trigger im Workflow `messageReceived` ist.
+`automaticReply` ist nur gültig, wenn jeder Trigger im Workflow `messageReceived` ist. Nutze eine vom Betreiber freigegebene Vorlage in einem Workflow ohne KI-Aktionen und ohne Zugriff auf Zusammenfassungen von Unterhaltungen. Solche Vorlagen können weiterhin Nachrichtenfelder wie den eingegangenen Betreff verwenden. Erzeugte Antworten müssen als Entwürfe auf eine menschliche Prüfung warten.
 
 ```yaml
 inputs:
@@ -478,11 +521,36 @@ Ein `if`-Schritt nimmt eine Bedingung und eine nicht leere `then`-Liste an. `els
 
 Unterstützte Vergleiche:
 
+- `greaterThan` (`>`), `lessThan` (`<`), `atLeast` (`>=`) und `atMost` (`<=`) vergleichen zwei Zahlen.
 - `equals` und `notEquals`
 - `textEquals`, `contains`, `startsWith` und `endsWith` für normalisierten Text ohne Beachtung der Groß-/Kleinschreibung
 - `includes` für die exakte Zugehörigkeit zu einem Array wie der Ausgabe von `aiClassifyMany`
 - `exists` für eine rohe Referenz
 - rekursive `all`, `any` und `not`
+
+Zahlvergleiche brauchen genau zwei endliche JSON-Zahlen. Zahlen als Text werden nicht umgewandelt. Fehlende Werte und andere Typen ergeben `false`. Auf noch nicht geladene Nachrichtendaten wartet der Schritt. Bekannte falsche Typen werden beim Prüfen an ihrer Quellposition gemeldet.
+
+Dieses Beispiel setzt das vorhandene lokale Tag `Lang`. Die Nachricht darf keine Serienmail sein. Dazu muss ihre Antwort länger als 150 Zeichen sein oder das Gespräch mehr als drei Nachrichten enthalten:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+```
 
 `equals`, `notEquals` und `includes` vergleichen exakte Werte. `textEquals`, `contains`, `startsWith` und `endsWith` normalisieren Unicode-Text und ignorieren die Groß-/Kleinschreibung.
 
@@ -588,3 +656,36 @@ cld admin workflows events --app mail
 `cld admin workflows cancel <run-id> --yes` verhindert spätere Effekte, macht abgeschlossene Arbeit aber nicht rückgängig. Kläre ein ungewisses externes Ergebnis erst, nachdem du es beim Anbieter geprüft hast. Halte diese Entscheidung anschließend mit `cld admin workflows resolve` fest.
 
 Einrichtungsaufgaben und betriebliche Auswirkungen beschreibt [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation).
+
+## Eine KI-Zusammenfassung im Leser anfordern
+
+Im Leser kannst du eine Zusammenfassung fortschreiben oder neu schreiben
+lassen. Dafür gilt dein eigenes Assistant-Kontingent. Das Tageslimit einer
+Regel gilt dabei nicht. Du brauchst Bearbeiten für die Zusammenfassung.
+Ist dein Kontingent aufgebraucht, bleibt die Unterhaltung unverändert.
+
+Die Zusammenfassung zeigt ihren Autor. KI-Text ist gekennzeichnet. Er kann
+einen nächsten Schritt und ein in der Mail genanntes Datum enthalten.
+Wenn du den Text bearbeitest, verschwindet dieser Vorschlag. Regeln dürfen
+deinen Text danach nicht mehr überschreiben. Auch eine geleerte Zusammenfassung
+bleibt geschützt, bis du wieder ausdrücklich KI anforderst. Sie überspringen ihn mit dem
+Code `edited_by_person`. Du kannst die KI ausdrücklich wieder um eine
+Fortschreibung oder eine neue Fassung bitten.
+
+Der Dienst bündelt automatische Anfragen derselben Unterhaltung. Er wartet
+60 Sekunden nach der letzten Anfrage. Der Auftrag bleibt bei einem Neustart
+erhalten. Während die KI schreibt, nutzt eine weitere Anfrage denselben
+Auftrag. Neue Antworten können eine weitere gebündelte Fassung auslösen.
+Der Leser zeigt Warten, Schreiben, Fehler und Tageslimits. Nach einem Fehler
+kannst du es erneut versuchen.
+
+Die KI erhält höchstens 20.000 Zeichen aus den Nachrichten. Eine niedrigere
+Grenze des Betreibers gilt weiter. Zitate und Signaturen werden entfernt.
+Bei langen Unterhaltungen nutzt die KI die neuesten passenden Nachrichten.
+Der Leser zeigt ihre Anzahl und weist auf neuere Nachrichten hin.
+
+Automatische Anfragen reservieren ihren KI-Aufruf vor dem Schreiben.
+Ein Tageslimit der Quelle oder des Postfachs pausiert neue Arbeit bis
+Mitternacht in der Zeitzone der Installation. Text und Revision bleiben
+erhalten. Die Kosten zählt Cloud zentral. Dieser Dienst führt keinen neuen
+YAML-Schritt und kein neues YAML-Budget ein.

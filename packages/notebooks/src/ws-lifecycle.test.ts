@@ -21,11 +21,17 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const queued = Promise.withResolvers<void>();
   const queueEntered = Promise.withResolvers<void>();
   const replayReady = Promise.withResolvers<void>();
+  const liveSubscribed = Promise.withResolvers<void>();
   const snapshots: unknown[] = [];
   const subscribedAfter: string[] = [];
   const adoptions: unknown[] = [];
   const replayGap = { head: null as string | null, gapBelow: null as string | null, failure: null as Error | null };
   let events: WSEvents | undefined;
+  let missingFirstNote = false;
+  let holdFirstLeave = false;
+  const readerLeaveEntered = Promise.withResolvers<void>();
+  const readerLeaveReleased = Promise.withResolvers<void>();
+  const leftNotes: string[] = [];
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
     if (!config.signal?.aborted)
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
@@ -54,8 +60,19 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   mock.module("./service", () => ({
     notebooksService: {
       note: {
-        getByShortId: async () => note,
-        get: async () => note,
+        acceptYjsUpdate: async (input: { validate: () => Promise<boolean> }) => {
+          if (!(await input.validate())) return { status: "recoveryRequired" };
+          publishEntered.resolve();
+          const result = await published.promise;
+          return { status: "accepted", cursor: result.cursor };
+        },
+        getByShortId: async ({ shortId }: { shortId: string }) => ({ ...note, id: shortId === "ghijkl" ? "second-note" : note.id }),
+        get: async ({ id }: { id: string }) => (id === note.id && missingFirstNote ? null : { ...note, id }),
+        getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
+        deliverAtRestoreRevision: async (input: { deliver: () => undefined }) => {
+          input.deliver();
+          return "delivered";
+        },
         getAnchoredYjsState: async () => ({
           yjsState: new Uint8Array([0, 0]),
           streamCursor: "s6t.fixture.9",
@@ -67,13 +84,24 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
           return { cursor: "s6t.fixture.20" };
         },
       },
-      notebook: { permission: { get: async () => "write" } },
+      notebook: {
+        getByShortId: async () => ({ id: note.notebookId }),
+        get: async () => ({ id: note.notebookId }),
+        permission: { get: async () => "write" },
+      },
       workspaceEvents: { live: waitUntilAborted },
       presence: {
         snapshot: async () => ({ participants: [], cursor: "0" }),
         watch: waitUntilAborted,
         join: async () => {},
-        leave: async () => {},
+        leave: async ({ noteId }: { noteId: string }) => {
+          if (holdFirstLeave && noteId === note.id) {
+            holdFirstLeave = false;
+            readerLeaveEntered.resolve();
+            await readerLeaveReleased.promise;
+          }
+          leftNotes.push(noteId);
+        },
       },
     },
   }));
@@ -94,6 +122,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       hub: () => ({
         subscribe: (config: { after: string; signal?: AbortSignal }) => {
           subscribedAfter.push(config.after);
+          liveSubscribed.resolve();
           return waitUntilAborted(config);
         },
       }),
@@ -120,7 +149,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const openSocket = async () => {
     await app.request("/");
     const handlers = events!;
-    const sent: Array<{ type: string; payload: { code?: string } }> = [];
+    const sent: Array<{ type: string; payload: { code?: string; reopen?: boolean } }> = [];
     const closed = Promise.withResolvers<number>();
     const raw = {
       send: (data: string) => sent.push(JSON.parse(data)),
@@ -134,7 +163,10 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     const request = (fromCursor?: string) =>
       handlers.onMessage?.(
         new MessageEvent("message", {
-          data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef", fromCursor } }),
+          data: JSON.stringify({
+            type: "notes.yjs.replay.request",
+            payload: { noteId: "abcdef", fromCursor, restoreRevision: fromCursor ? "0" : null },
+          }),
         }),
         socket,
       );
@@ -158,6 +190,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
       "RESYNC_REQUIRED",
     ]);
+    expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
   }, 10_000);
 
   test("a client cursor below retention resyncs from the stored snapshot without re-anchoring", async () => {
@@ -170,6 +203,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
       "RESYNC_REQUIRED",
     ]);
+    expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
     expect(adoptions).toEqual([]);
   }, 10_000);
 
@@ -201,6 +235,55 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(adoptions).toEqual([]);
   }, 10_000);
 
+  test("reader expiry racing a new watch cannot overwrite that note or leak its lease", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    let refreshWorkspace: (() => Promise<void>) | undefined;
+    globalThis.setTimeout = ((callback: () => Promise<void>, delay: number, ...args: unknown[]) => {
+      if (delay === 10_000) refreshWorkspace = callback;
+      return originalSetTimeout(callback, delay, ...args);
+    }) as typeof setTimeout;
+    await app.request("/");
+    const handlers = events!;
+    const sent: Array<{ type: string; payload: { noteId?: string } }> = [];
+    const socket = new WSContext({
+      raw: { send: (data: string) => sent.push(JSON.parse(data)), close() {} },
+      readyState: 1,
+      send() {},
+      close() {},
+    });
+    handlers.onOpen?.(new Event("open"), socket);
+    const send = (type: string, payload: object) =>
+      handlers.onMessage?.(new MessageEvent("message", { data: JSON.stringify({ type, payload }) }), socket);
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+    const peer = "11111111-1111-4111-8111-111111111111";
+    try {
+      await send("notes.workspace.subscribe", { notebookId: "book01" });
+      await flush();
+      await send("notes.workspace.presence.watch", { noteId: "abcdef", presencePeerId: peer });
+      await flush();
+      expect(sent.some((m) => m.type === "notes.presence.snapshot" && m.payload.noteId === "abcdef")).toBe(true);
+      missingFirstNote = true;
+      holdFirstLeave = true;
+      const expiring = refreshWorkspace!();
+      await readerLeaveEntered.promise;
+      await send("notes.workspace.presence.watch", { noteId: "ghijkl", presencePeerId: peer });
+      // All unblocked mock I/O completes before releasing the old note's removal.
+      await flush();
+      readerLeaveReleased.resolve();
+      await expiring;
+      await flush();
+      expect(sent.some((m) => m.type === "notes.presence.snapshot" && m.payload.noteId === "ghijkl")).toBe(true);
+      await handlers.onClose?.(new CloseEvent("close"), socket);
+      expect(leftNotes).toContain("second-note");
+    } finally {
+      readerLeaveReleased.resolve();
+      missingFirstNote = false;
+      holdFirstLeave = false;
+      globalThis.setTimeout = originalSetTimeout;
+      await handlers.onClose?.(new CloseEvent("close"), socket);
+    }
+  });
+
   test("shutdown waits for accepted edits and unload snapshots even after remote close begins", async () => {
     replayGap.head = null;
     replayGap.gapBelow = null;
@@ -221,14 +304,17 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     const socket = new WSContext({ raw, readyState: 1, send: () => {}, close: () => {} });
     handlers.onOpen?.(new Event("open"), socket);
     handlers.onMessage?.(
-      new MessageEvent("message", { data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef" } }) }),
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef", restoreRevision: null } }),
+      }),
       socket,
     );
     await replayReady.promise;
+    await liveSubscribed.promise;
     expect(subscribedAfter).toEqual(["s6t.fixture.9"]);
     handlers.onMessage?.(
       new MessageEvent("message", {
-        data: JSON.stringify({ type: "notes.yjs.sync.publish", payload: { noteId: "abcdef", payload: "AAA=" } }),
+        data: JSON.stringify({ type: "notes.yjs.sync.publish", payload: { noteId: "abcdef", payload: "AAA=", restoreRevision: "0" } }),
       }),
       socket,
     );

@@ -8,6 +8,7 @@ export type { PosixCandidate } from "./accounts/posix";
 export { accountIdentities, AccountIdentityError } from "./accounts/identities";
 export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
+export { getAppWorkloadCredential } from "../_internal/workload-credential";
 export { providers } from "./providers";
 export { createAllowedNetworkFetch } from "./allowed-network-fetch";
 export { requestPublicHttps, type PublicHttpInput } from "./public-http";
@@ -104,7 +105,7 @@ export type {
   ServiceAccountCredentialOwner,
   ServiceAccountCredentialStatus,
 } from "./service-account-credentials";
-export { oauthTokens } from "./oauth-tokens";
+export { isServiceAccountOAuthAuthorityCurrent, oauthTokens } from "./oauth-tokens";
 export type { AuthenticatedOAuthToken } from "./oauth-tokens";
 export { webauthn } from "./webauthn";
 export type { WebAuthnRp } from "./webauthn";
@@ -251,6 +252,8 @@ export {
 export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
 
 export { geoip } from "./geoip";
+export { appDetails } from "./app-details";
+export { appAdminFacts, type AppAdminFacts } from "./app-admin-facts";
 export {
   knownBrowsers,
   KNOWN_BROWSER_LIMITS,
@@ -276,6 +279,23 @@ export {
   readAppAccess,
   changeAppAccess,
   canRepairAppAccess,
+  canReadAppAdministration,
   requireAppAccessManager,
   type AppAccessSnapshot,
 } from "./app-access-management";
+
+import { storage as platformStorage } from "./object-store";
+/** @deprecated Import storage from @k2b/cloud. */
+export const storage = platformStorage;
+export type {
+  ObjectStoreFile,
+  ObjectVisibility,
+  ObjectWriteData,
+  ObjectWriteOptions,
+  ObjectPresignOptions,
+  ObjectListOptions,
+  ObjectListResult,
+} from "./object-store";
+
+export { links } from "./links";
+export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";

@@ -10,7 +10,7 @@ export const approvalMessages = i18n.define({
       rejectAllTitle: "Reject all open approvals?",
       rejectAllBody: ({ count }: { count: number }) =>
         `${count === 1 ? "The open Action does not run." : `None of the ${count.toLocaleString("en")} open Actions runs.`} Where Cloud asked, it continues with your rejection.`,
-      emptyTitle: "Nothing is waiting for you.",
+      emptyTitle: "You're all set.",
       emptyBody: "When an Action needs your approval, it appears here and in the chat it comes from.",
       loading: "Loading approvals…",
       loadFailed: "Approvals could not be loaded.",
@@ -48,7 +48,7 @@ export const approvalMessages = i18n.define({
       rejectAllTitle: "Alle offenen Freigaben ablehnen?",
       rejectAllBody: ({ count }) =>
         `${count === 1 ? "Die offene Aktion läuft nicht." : `Keine der ${count.toLocaleString("de")} offenen Aktionen läuft.`} Wo Cloud gefragt hat, geht es mit deiner Ablehnung weiter.`,
-      emptyTitle: "Nichts wartet auf dich.",
+      emptyTitle: "Alles erledigt.",
       emptyBody: "Wenn eine Aktion deine Freigabe braucht, erscheint sie hier und im Chat, aus dem sie kommt.",
       loading: "Freigaben werden geladen …",
       loadFailed: "Die Freigaben konnten nicht geladen werden.",

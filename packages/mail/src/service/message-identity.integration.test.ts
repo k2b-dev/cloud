@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import type { ConnectorEnvelope } from "./connectors";
 import { createMailbox } from "./mailboxes";
@@ -137,7 +136,6 @@ suite("mail message identity and threading on generic IMAP", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const [user] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-identity-${suffix}`}, 'local', 'user', 'Mail identity', false)

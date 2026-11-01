@@ -1,8 +1,8 @@
 import type { AppRegistryDetail } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { PlatformPermissionSchema } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { sql } from "bun";
 
 type DbRegisteredAppRow = {
   id: string;

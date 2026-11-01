@@ -33,7 +33,7 @@ test("source tabs preserve drafts and history, guard closing, and fill the works
           },
         });
       return new Response(
-        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -104,7 +104,7 @@ test("a read-only source tab scrolls its whole file on the tab surface and keeps
           },
         });
       return new Response(
-        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

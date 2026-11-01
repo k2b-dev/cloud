@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { crypto, err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { AI_INFERENCE_SCOPE, type User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { isUniqueViolation, toPgTextArray } from "./postgres";
@@ -221,10 +222,10 @@ const verifyApiTokenSecret = async (secret: string, storedHash: string, scopes: 
   }
 };
 
-const generateUniqueTokenParts = async (): Promise<{ tokenPrefix: string; secret: string; token: string }> => {
+const generateUniqueTokenParts = async (db: SqlRunner): Promise<{ tokenPrefix: string; secret: string; token: string }> => {
   for (let i = 0; i < 5; i += 1) {
     const parts = generateTokenParts();
-    const [row] = await sql<{ exists: boolean }[]>`
+    const [row] = await db<{ exists: boolean }[]>`
       SELECT EXISTS(
         SELECT 1 FROM auth.service_account_credentials WHERE token_prefix = ${parts.tokenPrefix}
       ) AS exists
@@ -342,7 +343,7 @@ const insertApiToken = async (
     if (expiresAt.getTime() <= Date.now()) return fail(err.badInput("Expiry must be in the future"));
   }
 
-  const parts = await generateUniqueTokenParts();
+  const parts = await generateUniqueTokenParts(db);
   const secretHash = hashApiTokenSecret(parts.secret, params.scopes ?? []);
 
   try {
@@ -376,15 +377,18 @@ const insertApiToken = async (
   }
 };
 
-export const createApiToken = async (params: {
-  serviceAccountId: string;
-  name: string;
-  createdBy?: string | null;
-  expiresAt?: string | null;
-  scopes?: string[];
-}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+export const createApiToken = async (
+  params: {
+    serviceAccountId: string;
+    name: string;
+    createdBy?: string | null;
+    expiresAt?: string | null;
+    scopes?: string[];
+  },
+  options: { db?: SQL } = {},
+): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
   if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
-  return insertApiToken(sql, params);
+  return insertApiToken(options.db ?? sql, params);
 };
 
 export const createUserApiToken = async (params: {
@@ -491,8 +495,10 @@ export const createStandaloneApiToken = async (params: {
   name: string;
   expiresAt?: string | null;
   scopes?: string[];
+  access?: "full" | "models";
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
-  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE) || (params.access === "models" && params.scopes?.length))
+    return fail(err.badInput("Models-only access cannot be combined with general credential scopes"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || !isStandaloneServiceAccountKind(serviceAccount.kind)) return fail(err.notFound("Service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Service account is disabled"));
@@ -503,7 +509,7 @@ export const createStandaloneApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.actor.id,
-      scopes: params.scopes,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : params.scopes,
     });
 
     return audit.recordResult({
@@ -514,6 +520,7 @@ export const createStandaloneApiToken = async (params: {
         serviceAccountId: serviceAccount.id,
         kind: "api_token",
         serviceAccountKind: serviceAccount.kind,
+        access: params.access ?? "full",
         expiresAt: params.expiresAt ?? null,
       },
       result,
@@ -528,7 +535,7 @@ export const listForDelegatedUser = async (params: { userId: string }): Promise<
       c.last_used_at, c.created_by, c.created_at, c.revoked_at, c.revoked_by
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
-    WHERE sa.kind = 'user_delegated'
+    WHERE c.kind = 'api_token' AND sa.kind = 'user_delegated'
       AND sa.delegated_user_id = ${params.userId}::uuid
       AND c.status = 'active'
     ORDER BY c.created_at DESC
@@ -566,7 +573,7 @@ export const listOverview = async (config?: {
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
+    WHERE c.kind = 'api_token' AND (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
       AND (${credentialStatus}::text IS NULL OR c.status = ${credentialStatus})
       AND (${userId}::uuid IS NULL OR sa.delegated_user_id = ${userId}::uuid)
       AND (${serviceAccountId}::uuid IS NULL OR sa.id = ${serviceAccountId}::uuid)
@@ -618,7 +625,7 @@ export const listOverview = async (config?: {
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
+    WHERE c.kind = 'api_token' AND (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
       AND (${credentialStatus}::text IS NULL OR c.status = ${credentialStatus})
       AND (${userId}::uuid IS NULL OR sa.delegated_user_id = ${userId}::uuid)
       AND (${serviceAccountId}::uuid IS NULL OR sa.id = ${serviceAccountId}::uuid)
@@ -685,7 +692,7 @@ export const getOverview = async (params: { id: string }): Promise<ServiceAccoun
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE c.id = ${params.id}::uuid
+    WHERE c.kind = 'api_token' AND c.id = ${params.id}::uuid
     LIMIT 1
   `;
   return row ? mapCredentialOverview(row) : null;
@@ -729,14 +736,14 @@ type RevokeCredentialInput =
 export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL } = {}): Promise<Result<void>> => {
   if (!UUID_PATTERN.test(params.credentialId)) return fail(err.notFound("API key"));
 
-  const run = async (db: SQL): Promise<Result<void>> => {
+  const run = async (db: SQL, credentialId = params.credentialId): Promise<Result<void>> => {
     const [row] = await db<DbCredentialRow[]>`
       UPDATE auth.service_account_credentials
       SET status = 'revoked',
         revoked_at = now(),
         revoked_by = ${params.actor?.id ?? null}::uuid
-      WHERE id = ${params.credentialId}::uuid
-        AND status = 'active'
+      WHERE id = ${credentialId}::uuid
+        AND status = 'active' AND kind = 'api_token'
       RETURNING id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
         last_used_at, created_by, created_at, revoked_at, revoked_by
     `;
@@ -747,14 +754,14 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
           SELECT id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
             last_used_at, created_by, created_at, revoked_at, revoked_by
           FROM auth.service_account_credentials
-          WHERE id = ${params.credentialId}::uuid
+          WHERE id = ${credentialId}::uuid AND kind = 'api_token'
           LIMIT 1
         `;
     const result = row || existing?.status === "revoked" ? ok() : fail(err.notFound("API key"));
     return audit.recordResult({
       action: "service_account_credential.revoke",
       actor: params.actor ? actorForUser(params.actor) : null,
-      target: { type: "service_account_credential", id: params.credentialId, label: row?.name ?? existing?.name ?? null },
+      target: { type: "service_account_credential", id: credentialId, label: row?.name ?? existing?.name ?? null },
       metadata: {
         serviceAccountId: row?.service_account_id ?? existing?.service_account_id ?? null,
         ...(params.actor ? { adminAction: true } : { provenance: "system", service: params.system.service, reason: params.system.reason }),
@@ -763,7 +770,46 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
       db,
     });
   };
-  return options.db ? run(options.db) : sql.begin(run);
+  const revokeWithWorkload = async (db: SQL): Promise<Result<void>> => {
+    if (params.actor) {
+      const [instance] = await db<{ app_id: string; instance_id: string; service_account_id: string }[]>`
+        SELECT i.app_id, i.instance_id, c.service_account_id FROM auth.app_workload_instances i
+        JOIN auth.service_account_credentials c ON c.id = i.credential_id
+        WHERE i.credential_id = ${params.credentialId}::uuid OR i.previous_credential_id = ${params.credentialId}::uuid
+      `;
+      if (instance) {
+        // Same lock order as Core rotation. Resolve the latest generation *after* waiting,
+        // so an admin revoking the displayed token also revokes an overlapping rotation.
+        await db`SELECT id FROM auth.service_accounts WHERE id = ${instance.service_account_id}::uuid FOR UPDATE`;
+        // The account is the durable app-wide off switch, including future process instances.
+        await db`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${instance.service_account_id}::uuid`;
+        await audit.record(
+          {
+            action: "service_account.disable",
+            outcome: "allowed",
+            actor: actorForUser(params.actor),
+            target: { type: "service_account", id: instance.service_account_id },
+            metadata: { appId: instance.app_id, serviceAccountId: instance.service_account_id, status: "disabled" },
+          },
+          db,
+        );
+        const [current] = await db<{ credential_id: string; previous_credential_id: string | null }[]>`
+          SELECT credential_id, previous_credential_id FROM auth.app_workload_instances
+          WHERE app_id = ${instance.app_id} AND instance_id = ${instance.instance_id}
+        `;
+        if (current) {
+          for (const credentialId of [current.credential_id, current.previous_credential_id]) {
+            if (!credentialId) continue;
+            const result = await run(db, credentialId);
+            if (!result.ok) return result;
+          }
+          return ok();
+        }
+      }
+    }
+    return run(db);
+  };
+  return options.db ? revokeWithWorkload(options.db) : sql.begin(revokeWithWorkload);
 };
 
 const findActiveByTokenPrefix = async (tokenPrefix: string): Promise<DbCredentialWithSecretRow | null> => {

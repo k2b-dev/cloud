@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type BackgroundFailureContext, backgroundFailureMessage } from "../custom-apps/background-failure";
 import type { BackgroundDocumentState } from "../custom-apps/background-state";
 import type { CustomAppCapabilities, CustomAppDefinition, CustomAppPage } from "../custom-apps/contracts";

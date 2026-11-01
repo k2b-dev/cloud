@@ -24,7 +24,12 @@ Eine ganztägige Fälligkeit wird erst am Folgetag in deiner Zeitzone überfäll
 
 ## Mit einer Vorlage beginnen {icon="template"}
 
-Hat ein Space Vorlagen, zeigt der Dialog für eine neue Aufgabe oder einen neuen Termin die Zeile **Vorlage**. Die Zeile bietet **Leer** und die Vorlagen für diese Art von Eintrag. Bei mehr als sechs Vorlagen wird die Zeile zu einer durchsuchbaren Liste.
+Jedes **+** öffnet dasselbe Menü: oben im Kopf, der runde Knopf auf dem Telefon, **+ Aufgabe** unter einer Spalte, **Neue Aufgabe** in einer leeren Liste und **Neuer Termin** im Kalender. Oben steht **Leere Aufgabe** oder **Leerer Termin**, darunter stehen die Vorlagen mit Symbol und einer kurzen Zeile, was sie vorschlagen. Am Ende steht **Vorlage erstellen …**.
+
+- Drücke Enter auf **+**, dann noch einmal Enter. So legst du einen leeren Eintrag an. Die Taste N legt eine leere Aufgabe direkt an, im Kalender einen leeren Termin.
+- Ab acht Vorlagen hat das Menü ein Suchfeld. Passt keine Vorlage, legt Enter einen leeren Eintrag mit dem eingegebenen Text als Titel an.
+- Eine Vorlage im Menü öffnet den Dialog mit dieser Vorlage. Die Zeile **Vorlage** im Dialog wechselt sie. Eine Aufgabe aus **+ Aufgabe** einer Spalte kommt in diese Spalte.
+- Im Kalender bietet das Schnellanlegen **Vorlage**. Die gewählte Zeit bleibt, die Vorlage füllt den Rest. Das Menü eines Tages zeigt die Vorlagen auch.
 
 Eine Vorlage füllt Titel, Beschreibung, Priorität, Tags und Zuständige aus. Bei Aufgaben füllt sie auch die Checkliste aus, bei Terminen Ort, Uhrzeit und Dauer. Eine Zeile unter der Beschreibung fasst zusammen, was die Vorlage ergänzt. Jedes Feld bleibt vor dem Speichern änderbar, und **Weitere Optionen** zeigt alle Felder. Hast du schon etwas eingegeben, fragt Spaces, bevor eine Vorlage es ersetzt.
 
@@ -36,7 +41,9 @@ Eine Vorlage kann Daten vorschlagen:
 - Die Vorschläge richten sich nach deiner Zeitzone. Bei einer Wochentagsregel bleibt heute für eine ganztägige Aufgabe den ganzen Tag verfügbar. Eine Vorlage mit Uhrzeit bietet heute nur an, solange diese Uhrzeit noch bevorsteht.
 - Die Platzhalter `{{date}}`, `{{weekday}}` und `{{week}}` in Titel und Beschreibung folgen dem gewählten Datum, bis du den Text änderst. Das gilt auch bei **Kein Datum** und bei einer Auswahl im Kalender.
 
-Mit Zugriff **Verwalten** richtest du Vorlagen in den Space-Einstellungen unter **Vorlagen** ein: Name, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen.
+**Vorlage erstellen …** öffnet das Formular für eine neue Vorlage. **Als Vorlage speichern** im Menü **…** eines Eintrags füllt das Formular aus dem Eintrag. Datum, Kommentare, Anhänge, Verknüpfungen und erledigte Haken übernimmt es nicht. Steht im Titel eine Woche wie „KW 44“ oder ein Datum, schlägt das Formular einen Platzhalter vor. Es ersetzt den Text erst, wenn du **Ersetzen** wählst.
+
+Mit Zugriff **Bearbeiten** erstellst, änderst und löschst du Vorlagen auch in den Space-Einstellungen unter **Vorlagen**: Name, optionales Symbol, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen. Ohne eigenes Symbol verwendet die Vorlage das Standardsymbol für Aufgaben oder Termine.
 
 ## Eintrag strukturieren {icon="point"}
 
@@ -120,7 +127,7 @@ Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kür
 
 ## Aufgabe übernehmen und übergeben {icon="notes"}
 
-Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten. Die Aufgabendetails zeigen beides als **Letzter Stand** und **Letztes Ergebnis** unter der Liste **Zuständig**. Beim Wiederöffnen bleibt das letzte Ergebnis erhalten.
+Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten. Die Aufgabendetails zeigen beides als **Letzter Stand** und **Letztes Ergebnis** unter der Checkliste. Beim Wiederöffnen bleibt das letzte Ergebnis erhalten.
 
 Wähle **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails, um eine Aufgabe zu übernehmen. Wähle **Freigeben**, um die Übernahme freizugeben. In den Details kannst du dabei eine kurze Übergabenotiz hinterlassen.
 
@@ -128,7 +135,7 @@ Solange eine Aufgabe übernommen ist, sehen andere, wer daran arbeitet:
 
 - Board-Karten, Listenzeilen und Tabellenzellen zeigen die arbeitende Person zuerst im Avatar-Stapel mit einem grünen Ring. Sie erscheint einmal und nie im `+N`-Überlauf.
 - Der Filter **In Arbeit** listet übernommene Aufgaben.
-- In den Details ist **Zuständig** eine gemeinsame Liste. Die Zeile der arbeitenden Person steht zuerst und zeigt den grünen Ring, **arbeitet daran** und seit wann sie daran arbeitet.
+- In den Details zeigt die Zeile **Zugewiesen** unter **Eigenschaften** alle Zuständigen. Die arbeitende Person steht zuerst und zeigt den grünen Ring, **arbeitet daran** und seit wann sie daran arbeitet.
 
 Gehört die Übernahme zu keinem der Zuständigen, etwa bei einem persönlichen Automatisierungsschlüssel oder einem gelöschten Konto, zeigt die Liste dieses Konto trotzdem zuerst mit seinem Arbeitsstatus. Diese Zeile kannst du nicht entfernen.
 
@@ -136,7 +143,7 @@ Wenn du eine Aufgabe übernimmst, wirst du ihr auch zugewiesen. Die Übernahme z
 
 **Übernehmen** verschiebt die Übernahme und die Zuständigkeit zu dir. Im CLI entfernt `release --force` auch die Zuweisung des bisherigen Kontos. War es allein zuständig, ist die Aufgabe danach nicht zugewiesen.
 
-Entfernst du eine arbeitende Person oder ein Dienstkonto aus **Zuständig**, endet die Übernahme. Bei einem anderen Konto bestätigst du das einmal. Hat jemand die Aufgabe inzwischen übernommen, lehnt Spaces eine Liste ohne dieses Konto ab. Lies die Aufgabe erneut. Gib im CLI die Übernahme frei, bevor du das Konto mit `assign` oder `set` entfernst.
+Entfernst du eine arbeitende Person oder ein Dienstkonto aus **Zugewiesen**, endet die Übernahme. Bei einem anderen Konto bestätigst du das einmal. Hat jemand die Aufgabe inzwischen übernommen, lehnt Spaces eine Liste ohne dieses Konto ab. Lies die Aufgabe erneut. Gib im CLI die Übernahme frei, bevor du das Konto mit `assign` oder `set` entfernst.
 
 Übernahmen laufen nicht ab. Sie koordinieren die Arbeit, sperren sie aber nicht: Mit Zugriff **Bearbeiten** kannst du eine übernommene Aufgabe zwischen offenen Spalten verschieben, und gewöhnliche gemeinsame Bearbeitungen bleiben möglich. Erledigst du deine eigene übernommene Aufgabe, auch per Ziehen in eine Erledigt-Spalte, wird die Übernahme freigegeben. Mit Zugriff **Bearbeiten** siehst du bei der Übernahme eines anderen Kontos **Übernehmen**. Du bestätigst das in einem Dialog, der das bisherige Konto nennt. Erledigst du eine Aufgabe, die jemand anderes übernommen hat, etwa per Ziehen in eine Erledigt-Spalte, fragt Spaces einmal nach, zum Beispiel „Von Jana Berger übernommen – übernehmen und abschließen?“. Danach übernimmt und erledigt Spaces die Aufgabe in einem Schritt. Die Zuweisungen ändern sich nicht. **Abbrechen** lässt die Karte an ihrem Platz. Schickst du eine Aufgabe durch ein Wormhole in einen anderen Space, endet die Übernahme auf dieselbe Weise: Deine eigene Übernahme endet ohne Nachfrage, eine fremde übernimmst du nach einer Bestätigung. Die Aktivität zeigt, wer eine Aufgabe von wem übernommen hat.
 

@@ -36,6 +36,7 @@ import type { AppCliModules } from "../src/contracts/app";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
 import { buildCanvasWorkers, CANVAS_WORKER_DEFINES } from "./build-canvas-workers";
+import { writeInstallableIcons } from "./installable-assets";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
@@ -115,9 +116,13 @@ const { app, plugin } = await import(configPath);
 // every production app without requiring app-owned bootstrap imports.
 const serverEntry = resolve(dist, ".server-entry.ts");
 const reflectMetadata = Bun.resolveSync("reflect-metadata", frameworkDir);
+const platformStart = resolve(frameworkDir, "src/start.ts");
+const declaredAppId = app?.meta.id ?? appId;
+if (declaredAppId !== appId)
+  throw new Error(`APP_ID ${JSON.stringify(appId)} does not match declared app ${JSON.stringify(declaredAppId)}`);
 await writeFile(
   serverEntry,
-  `import ${JSON.stringify(reflectMetadata)};\nexport { default } from ${JSON.stringify(resolve(appDir, "src/index.ts"))};\n`,
+  `import ${JSON.stringify(reflectMetadata)};\nimport { startPlatform } from ${JSON.stringify(platformStart)};\nconst application = await startPlatform({ appId: ${JSON.stringify(declaredAppId)}, load: () => import(${JSON.stringify(resolve(appDir, "src/index.ts"))}) });\nexport default application.default;\n`,
 );
 let server: Awaited<ReturnType<typeof Bun.build>>;
 try {
@@ -184,6 +189,8 @@ for (const [name, declaration] of Object.entries(cliModules)) {
   const plugin = await buildCliPlugin({ appDir, appId, name, declaration, version });
   await writeCliPlugin(resolve(dist, "cli", name), plugin);
 }
+
+if (app?.meta.installable) await writeInstallableIcons(distPublic, appId, app.meta.installable);
 
 if (appId !== "core" && app) {
   await writeAppFavicon({

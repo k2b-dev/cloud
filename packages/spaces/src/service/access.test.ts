@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { serviceAccounts } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
@@ -164,12 +164,12 @@ databaseTest("Space access mutations preserve an administrator and can recover a
       permission: "write",
     });
     expect(lastAdmin.ok).toBe(false);
-    if (!lastAdmin.ok) expect(lastAdmin.error.message).toBe("Cannot remove the last admin");
+    if (!lastAdmin.ok) expect(lastAdmin.error).toMatchObject({ code: "LAST_MANAGER", status: 409 });
 
     expect(await revokeSpaceAccess({ spaceId: space!.id, accessId: accessEntries[0]!.id })).toEqual({ ok: true, data: undefined });
     const lastEntry = await revokeSpaceAccess({ spaceId: space!.id, accessId: accessEntries[1]!.id });
     expect(lastEntry.ok).toBe(false);
-    if (!lastEntry.ok) expect(lastEntry.error.message).toBe("Cannot remove the last access entry");
+    if (!lastEntry.ok) expect(lastEntry.error).toMatchObject({ code: "LAST_MANAGER", status: 409 });
 
     const recovered = await grantSpaceAccess({
       spaceId: orphaned!.id,

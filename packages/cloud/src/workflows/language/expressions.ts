@@ -1,5 +1,6 @@
-const EXACT_EXPRESSION = /^\$\{\{\s*([^{}]+?)\s*\}\}$/;
-const EMBEDDED_EXPRESSION = /\$\{\{\s*([^{}]+?)\s*\}\}/g;
+// Callers trim the captured text; no `\s*` around the group keeps matching linear.
+const EXACT_EXPRESSION = /^\$\{\{([^{}]+)\}\}$/;
+const EMBEDDED_EXPRESSION = /\$\{\{([^{}]+)\}\}/g;
 const REFERENCE = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[^{}]+)?$/;
 
 export type WorkflowValueExpression = { kind: "now" } | { kind: "reference"; reference: string };

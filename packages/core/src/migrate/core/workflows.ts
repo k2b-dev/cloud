@@ -19,7 +19,9 @@
  * `mail.mailboxes` without inverting the dependency. Apps drop their own
  * workflows when a scope goes away.
  */
-import { type SQL, sql } from "bun";
+
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 /**
  * The state vocabularies below are inlined as literal SQL rather than shared

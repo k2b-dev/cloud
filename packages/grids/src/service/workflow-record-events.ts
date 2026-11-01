@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeLocale, normalizeTimeZone } from "@k2b/cloud/shared";
@@ -6,7 +7,6 @@ import { workflowPathKey } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import type { Result } from "@k2b/stdlib";
 import type { QueueMessage, Worker } from "@k2b/sync";
-import { sql } from "bun";
 import type { FilterTree } from "../contracts";
 import type { GridsWorkflow } from "../workflows/contracts";
 import { listByTable as listFields } from "./fields";
@@ -24,6 +24,7 @@ import {
   requeueRecordEventWork,
 } from "./record-events";
 import { listRecordEventWorkflows } from "./workflow-definitions";
+import { machineWorkflowOwnerPrincipal } from "./workflow-machine-authority";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
 const log = logger("grids:workflow-record-events");
@@ -163,11 +164,12 @@ const loadSnapshot = async (workflow: GridsWorkflow, event: GridsRecordEvent): P
   return { data: row.data, matched: Boolean(row.matched) };
 };
 
-const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPrincipal> => ({
-  userId: workflow.ownerUserId,
-  groupIds: await loadWorkflowUserGroupIds(workflow.ownerUserId),
-  serviceAccountId: null,
-});
+const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPrincipal> =>
+  (await machineWorkflowOwnerPrincipal(workflow.id)) ?? {
+    userId: workflow.ownerUserId,
+    groupIds: await loadWorkflowUserGroupIds(workflow.ownerUserId),
+    serviceAccountId: null,
+  };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 

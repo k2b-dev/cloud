@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { createTestAppSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -9,7 +9,7 @@ import api from ".";
 const suite = suiteFor("database", "nats", "valkey");
 const users: string[] = [];
 
-suite("Notebooks API keys and the mobile app", () => {
+suite("Notebooks API keys and the Cloud app", () => {
   afterAll(async () => {
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });

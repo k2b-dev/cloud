@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
@@ -44,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={data.notebook.name}
           notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={data.bookTree}
+          navigation={data.bookNavigation}
           tags={data.ctx.tags}
           currentHref={
             data.selectedNote
@@ -85,7 +86,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={data.notebook.name}
           notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={data.bookTree}
+          navigation={data.bookNavigation}
           tags={data.ctx.tags}
           html={data.bookHtml}
           noteTitle={data.selectedNote?.title ?? null}
@@ -97,6 +98,7 @@ export default ssr<AuthContext>(async (c) => {
           cursor={data.ctx.workspaceCursor}
           navigationHidden={data.ctx.navigationHidden}
           fullWidth={data.ctx.fullWidth}
+          openComments={data.bookOpenComments}
         />
       </Layout>
     );
@@ -105,7 +107,6 @@ export default ssr<AuthContext>(async (c) => {
   const {
     user,
     notebook,
-    tree,
     isVersionsMode,
     isGraphMode,
     canWrite,
@@ -125,9 +126,12 @@ export default ssr<AuthContext>(async (c) => {
     panelAttachments,
     backlinks,
     initialCommentsPage,
+    initialAnnotations,
     dateConfig,
   } = data;
-  const editorOwnsWorkspaceSocket = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
+  const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
+  // The microphone shows only where dictation can start: a live model is set up and this person may use it.
+  const liveDictation = showsEditorToolbar && (await getLiveDictationStatus(c.get("accessSubject"))).available;
   return () => (
     <Layout
       context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
@@ -143,21 +147,31 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
+      {/* Write and Links draw no workspace head: their toolbar holds the navigation and Details buttons, and the note's
+          title is in the navigation. Read and version history have no toolbar and keep the head's buttons. */}
+      <AppWorkspace
+        mobileSurface="flush"
+        class="notebooks-workspace flex-1 min-h-0"
+        head={showsEditorToolbar || isGraphMode ? false : undefined}
+      >
         <NotebookCommands
           notebookId={notebook.id}
           notebookName={notebook.name}
           canWrite={canWrite}
           ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
         />
-        {!editorOwnsWorkspaceSocket && (
-          <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
-        )}
+        {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
+        <WorkspaceEventBridge
+          notebookId={notebook.id}
+          appUrl={appUrl}
+          initialCursor={ctx.workspaceCursor}
+          initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
+        />
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
         <NotebookSidebar
           ctx={ctx}
-          editorToolbar={editorOwnsWorkspaceSocket}
+          editorToolbar={showsEditorToolbar}
           current={isGraphMode ? "graph" : undefined}
           // Version history loads as a whole page, so its address is where Links returns to.
           graphBack={isVersionsMode ? c.req.path + new URL(c.req.url).search : data.graphBack}
@@ -187,10 +201,14 @@ export default ssr<AuthContext>(async (c) => {
                 view={data.graphView}
                 now={data.now}
                 timeZone={data.dateConfig.timeZone ?? "UTC"}
-                navigationHidden={ctx.navigationHidden}
               />
             ) : selectedNote ? (
-              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
+              <div
+                class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
+                data-full-width={ctx.fullWidth ? "" : undefined}
+                data-comments=""
+                data-detail-open={showDetailPanel && (readonlyMode || detailPanelOpen) ? "" : undefined}
+              >
                 {readonlyMode && (
                   <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
                 )}
@@ -202,14 +220,15 @@ export default ssr<AuthContext>(async (c) => {
                   historyIncomplete={selectedNote.historyIncomplete}
                   notebookName={notebook.name}
                   appUrl={appUrl}
-                  workspaceCursor={ctx.workspaceCursor}
                   userId={user.id}
                   displayName={user.displayName}
-                  initialSnapshot={selectedNote.yjsSnapshot}
-                  initialContent={readonlyMode && !selectedNote.yjsSnapshot ? selectedNote.contentMd : null}
+                  initialContent={selectedNote.contentMd}
                   initialPanelOpen={detailPanelOpen}
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
+                  canWrite={canWrite}
+                  liveDictation={liveDictation}
+                  initialAnnotations={initialAnnotations}
                   initialHref={currentHref}
                   initialDetail={{
                     noteAuthors: selectedRouteState?.noteAuthors ?? { createdBy: null, lastEditedBy: null },
@@ -229,7 +248,9 @@ export default ssr<AuthContext>(async (c) => {
                   }}
                 />
                 <NotePreview
-                  text={selectedNote.yjsSnapshot || readonlyMode ? (selectedNote.contentMd ?? "") : ""}
+                  text={selectedNote.contentMd ?? ""}
+                  annotations={initialAnnotations}
+                  me={user.id}
                   mode={ctx.settings.richMode}
                   historyIncomplete={selectedNote.historyIncomplete}
                 />
@@ -239,7 +260,7 @@ export default ssr<AuthContext>(async (c) => {
                 class="flex-1"
                 variant="panel"
                 icon="ti ti-file-text"
-                description={tree.length === 0 ? t.noNotes : t.selectNote}
+                description={ctx.sidebarTree.total === 0 ? t.noNotes : t.selectNote}
               />
             )}
           </AppWorkspace.Main>

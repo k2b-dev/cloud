@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { pulseCapabilities } from "./capabilities";
 import { newShortId } from "./lib/short-id";

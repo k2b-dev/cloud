@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { trustState } from "@k2b/cloud/services/known-browsers";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./device-trust";
 

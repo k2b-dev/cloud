@@ -19,6 +19,19 @@ const subject = { type: "user" as const, userId };
 
 const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
 const authority: RequestAuthority = { actor: { kind: "user", user }, accessSubject: subject, credentialKind: "session", scopes: [] };
+const authorization = { actor: authority.actor, accessSubject: subject };
+// Management reauthenticates through requireUser; its full authority retains the
+// resolved session proof for resource-derived discovery and invocation issuance.
+const sessionAuthority: RequestAuthority = {
+  ...authority,
+  credentialProof: {
+    kind: "session",
+    userId,
+    sid: "skill-user-session",
+    authEpoch: 0,
+    expiresAt: "2099-01-01T00:00:00Z",
+  },
+};
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
   spyOn(session, "getToken").mockReturnValue("skill-user-session");
   c.set("actor", { kind: "user", user });
@@ -130,10 +143,15 @@ describe("AI Skill routes", () => {
         const response = await routes.request(`/api/ai/skills${suffix}`);
         expect(response.status).toBe(200);
       }
-      expect(list).toHaveBeenCalledWith(resolved.accessSubject, { authority: resolved });
-      expect(list).toHaveBeenCalledWith(resolved.accessSubject, { name: "weekly-status", authority: resolved });
-      expect(search).toHaveBeenCalledWith(resolved.accessSubject, "weekly", 30, { authority: resolved });
-      expect(get).toHaveBeenCalledWith(skillShortId, resolved.accessSubject, "read", resolved);
+      expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { authority: resolved });
+      expect(list).toHaveBeenCalledWith(
+        { actor: resolved.actor, accessSubject: resolved.accessSubject },
+        { name: "weekly-status", authority: resolved },
+      );
+      expect(search).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, "weekly", 30, {
+        authority: resolved,
+      });
+      expect(get).toHaveBeenCalledWith(skillShortId, { actor: resolved.actor, accessSubject: resolved.accessSubject }, "read", resolved);
     }
     // Broker reads rely on the owning-app/resource decision, not Core's registry entry.
     expect(registry.getApp).not.toHaveBeenCalled();
@@ -146,8 +164,8 @@ describe("AI Skill routes", () => {
     const routes = broker(resolved);
     expect(await (await routes.request("/api/ai/skills")).json()).toEqual({ skills: [] });
     expect((await routes.request(`/api/ai/skills/${skillShortId}`)).status).toBe(404);
-    expect(list).toHaveBeenCalledWith(resolved.accessSubject, { authority: resolved });
-    expect(get).toHaveBeenCalledWith(skillShortId, resolved.accessSubject, "read", resolved);
+    expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { authority: resolved });
+    expect(get).toHaveBeenCalledWith(skillShortId, { actor: resolved.actor, accessSubject: resolved.accessSubject }, "read", resolved);
   });
 
   test("every management route retains Core entry even when its path is exempt at the outer gate", async () => {
@@ -262,7 +280,7 @@ describe("AI Skill routes", () => {
       description: "",
       icon: "",
       instructions: "",
-      defaultModelProfileId: null,
+      defaultModel: null,
       revision: 1,
       createdAt: "",
       updatedAt: "",
@@ -273,8 +291,13 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/project-links/proj12?q=finance&available=true&page=2");
     expect(response.status).toBe(200);
-    expect(project).toHaveBeenCalledWith("proj12", subject, "admin");
-    expect(list).toHaveBeenCalledWith(projectId, subject, { query: "finance", available: true, page: 2, authority });
+    expect(project).toHaveBeenCalledWith("proj12", authorization, "admin");
+    expect(list).toHaveBeenCalledWith(projectId, authorization, {
+      query: "finance",
+      available: true,
+      page: 2,
+      authority: sessionAuthority,
+    });
     expect(await response.json()).toMatchObject({ items: [{ id: skillShortId }], page: 2, hasNext: true });
     const request = () =>
       routes.request(`/${skillShortId}/projects/proj12`, {
@@ -283,7 +306,7 @@ describe("AI Skill routes", () => {
         body: JSON.stringify({ linked: true }),
       });
     expect((await request()).status).toBe(200);
-    expect(link).toHaveBeenCalledWith(skillId, projectId, true, subject, authority);
+    expect(link).toHaveBeenCalledWith(skillId, projectId, true, authorization, sessionAuthority);
     project.mockResolvedValue(null);
     link.mockClear();
     expect((await request()).status).toBe(404);
@@ -296,7 +319,7 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/?q=reciepts");
     expect(response.status).toBe(200);
-    expect(search).toHaveBeenCalledWith(subject, "reciepts", 30, { authority });
+    expect(search).toHaveBeenCalledWith(authorization, "reciepts", 30, { authority });
     expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, manualOnly: true });
     expect((await routes.request("/?q=" + "x".repeat(201))).status).toBe(400);
   });
@@ -307,7 +330,7 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/?name=%20weekly-status%20");
     expect(response.status).toBe(200);
-    expect(list).toHaveBeenCalledWith(subject, { name: "weekly-status", authority });
+    expect(list).toHaveBeenCalledWith(authorization, { name: "weekly-status", authority });
     expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, enabled: false });
     list.mockClear();
     expect((await routes.request("/?q=a&name=b")).status).toBe(400);
@@ -353,7 +376,7 @@ describe("AI Skill routes", () => {
       });
     expect((await request()).status).toBe(200);
     const content = proposal;
-    expect(update).toHaveBeenCalledWith(skillId, subject, content, authority);
+    expect(update).toHaveBeenCalledWith(skillId, authorization, content, sessionAuthority);
     expect(access).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(enabled).not.toHaveBeenCalled();
@@ -378,14 +401,14 @@ describe("AI Skill routes", () => {
     expect(response.status).toBe(201);
     expect(aiSkills.create).toHaveBeenCalledWith(
       {
-        subject,
+        subject: authorization,
         name: "weekly-status",
         description: "Summarize recent work.",
         instructions: "List wins and blockers.",
         extraFrontmatter: {},
         references: [{ path: "references/style.md", content: "Be concise." }],
       },
-      authority,
+      sessionAuthority,
     );
     expect((await response.json()).skill).toMatchObject({ id: skillShortId, shortId: skillShortId, permission: "admin" });
   });
@@ -409,8 +432,8 @@ describe("AI Skill routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "write", authority);
-    expect(aiSkills.update).toHaveBeenCalledWith(skillId, subject, update, authority);
+    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, authorization, "write", sessionAuthority);
+    expect(aiSkills.update).toHaveBeenCalledWith(skillId, authorization, update, sessionAuthority);
   });
 
   test("keeps access management and deletion behind admin permission", async () => {
@@ -418,7 +441,7 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     expect((await routes.request(`/${skillShortId}/access`)).status).toBe(404);
     expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(404);
-    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "admin", authority);
+    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, authorization, "admin", sessionAuthority);
   });
 
   test("passes request authority through grant changes and deletion", async () => {
@@ -445,7 +468,7 @@ describe("AI Skill routes", () => {
         })
       ).status,
     ).toBe(201);
-    expect(add).toHaveBeenCalledWith(skillId, subject, input, undefined, authority);
+    expect(add).toHaveBeenCalledWith(skillId, authorization, input, undefined, sessionAuthority);
     expect(
       (
         await routes.request(`/${skillShortId}/access/${grant.shortId}`, {
@@ -455,11 +478,11 @@ describe("AI Skill routes", () => {
         })
       ).status,
     ).toBe(200);
-    expect(update).toHaveBeenCalledWith(skillId, grant.shortId, subject, "write", undefined, authority);
+    expect(update).toHaveBeenCalledWith(skillId, grant.shortId, authorization, "write", undefined, sessionAuthority);
     expect((await routes.request(`/${skillShortId}/access/${grant.shortId}`, { method: "DELETE" })).status).toBe(200);
-    expect(revoke).toHaveBeenCalledWith(skillId, grant.shortId, subject, undefined, authority);
+    expect(revoke).toHaveBeenCalledWith(skillId, grant.shortId, authorization, undefined, sessionAuthority);
     expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(200);
-    expect(remove).toHaveBeenCalledWith(skillId, subject, authority);
+    expect(remove).toHaveBeenCalledWith(skillId, authorization, sessionAuthority);
   });
 
   test("updates only the current user's Skill preference", async () => {
@@ -474,7 +497,7 @@ describe("AI Skill routes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ enabled: false });
-    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, subject, false, authority);
+    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, authorization, false, sessionAuthority);
   });
 
   test("rejects anonymous Skill reads and creation before invoking the service", async () => {

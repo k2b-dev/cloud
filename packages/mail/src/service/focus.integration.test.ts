@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { writeConversationAssignees } from "./collaboration";
@@ -119,7 +118,6 @@ suite("cross-mailbox focus", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     outsider = await createUser("outsider");
     ownerContext = contextFor(owner);

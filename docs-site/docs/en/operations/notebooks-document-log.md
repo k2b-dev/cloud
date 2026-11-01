@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-10-19
+updated: 2026-10-31
 ---
 
 # Size and migrate the Notebook document log
@@ -106,6 +106,21 @@ When an installation is stopped longer than the age limit, positions can fall
 out of the window before the reconcile runs again. The next edit to such a note
 reports a gap and marks its history incomplete, even though no update was lost.
 
+## Upgrade readers before enabling table history
+
+Collaborative table actions now retain their structural history and restored
+document revision in log events. Upgrade every Notebook log reader and browser
+transport before enabling those actions. Older readers cannot enforce the
+revision and original-target checks; this requires no change to the stored
+Markdown format.
+
+Admission checks delayed browser updates against their original log position
+before acknowledging them. If the required history is missing or a moved cell
+cannot be targeted safely, the editor preserves unconfirmed input for visible
+recovery. The same recovery applies when concurrent edits would exceed the
+existing document text limit. See [Shared text documents](../data/shared-text-documents)
+for the admission and transport contract.
+
 ## Retire per-note topics from older releases
 
 The `notebooks:yjs-legacy-migration` schedule runs every five minutes.
@@ -179,3 +194,63 @@ on screen read-only. The bar says storage is full and whether changes are saved,
 and offers **Copy text** and **Reload**. Changes typed during the outage are
 resent on each retry, so they are saved if the broker accepts updates again
 within that minute. After the retries stop, they stay only in the open tab.
+
+## Versioned server edits
+
+Shared-text table actions and automatic repair include a snapshot restore revision. Update every log reader and WebSocket transport before enabling them. Older readers do not filter these events by revision. Notebook table activation also requires the merge and browser gates; the optional platform repair planner alone does not enable editable Notebook tables.
+
+## Recover a suggestion operation
+
+Passage comments, replies, and suggestion operations live in the Notebooks
+Postgres schema and follow the note's backup lifecycle. Startup creates their
+tables without rewriting existing page comments. No Chat service is required.
+
+Accept and undo store a prepared Yjs transaction before publication. A marker
+in that same transaction lets a retry recognize an edit already in the log,
+including when the Postgres snapshot write failed. A failed or uncertain
+request returns `ANNOTATION_OPERATION_PENDING` and `details.operationId`. Retry
+the same operation ID; creating a new one while an operation is pending
+returns 409. Completion updates the Markdown projection, saved history, and
+comment state and anchor. An accepted comment points to the inserted text;
+undo points it back to the restored passage. Restore and locking rules still
+apply to retries.
+
+Comment reads do not take the write lock. Writes wait for the same note's
+current write for up to five seconds, half the normal request idle budget.
+A lock timeout returns 409 with `details.retryable: true`; retry the unchanged
+request with its original identifiers. Different notes can progress concurrently.
+Annotation writes use a dedicated pool of up to ten Postgres connections per
+replica, matching Bun SQL's default pool size. Reserve those connections in
+addition to the normal application pool used by the shared text store.
+Shutdown closes the annotation pool after the workers drain.
+
+Soft-deleted comments and replies remain restorable during their author's
+original ten-minute mutation window. Later writes purge expired deleted rows
+in bounded batches for that note or thread.
+
+For device storage failures and explicit tab-only editing, see
+[Keep unconfirmed input on the device](../data/shared-text-documents#keep-unconfirmed-input-on-the-device).
+
+## Recover workspace updates after a broker outage
+
+Notebooks saves workspace hints in `notebooks.workspace_outbox` in the same
+Postgres transaction as the change. Every replica starts a dispatcher that
+publishes pending hints to the existing `cloud:notebooks:events:workspace`
+topic. A restart resumes committed rows. A failed publication keeps its row
+and retries until the broker accepts it, using the platform outbox's default
+batch size, claim timeout and backoff. See [Deliver an outbox](/en/docs/data/migrations-and-transactions#deliver-an-outbox).
+Each workspace write wakes the dispatcher after its transaction commits, so
+healthy delivery starts immediately. The dispatcher also checks every second
+to recover pending hints after a crash or failed wake.
+
+When open notes or sidebars lag behind saved changes, inspect the pending
+rows' `attempts`, `next_attempt_at` and `last_error`, and the
+`notebooks:workspace-events` log. Delivered rows are deleted. Pending deletion
+hints remain even after their notebook is removed.
+
+Delivery is at least once. Each row's ID is the broker idempotency key;
+retries within the broker's default two-minute window produce one retained
+event. Later repeats are safe: hints carry references or absolute favorite
+state, and readers reload canonical state. Topic cursors and the existing
+24-hour replay window remain unchanged. When a socket cannot replay its
+cursor, it still sends `workspace.invalidated` so the reader reloads.

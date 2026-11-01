@@ -1,7 +1,7 @@
-import { sql } from "bun";
 import type { ZodType } from "zod";
 import type { BoundNotificationDefinition, NotificationRecipientKind, NotificationSendInput } from "../../contracts/notification-types";
 import type { PaginationParams } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { logger } from "../logging";
 import { escapeLikePattern } from "../postgres";
 import { notificationMailOutcome, sendNotificationMail } from "./email-mail";

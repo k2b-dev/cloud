@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { type AiUsageQuery, AiUsageQuerySchema } from "../shared/ai-usage";
 import { aiQuotas } from "./quotas";
 
@@ -6,13 +7,13 @@ export { AI_USAGE_RANGES, type AiUsageRange } from "../shared/ai-usage";
 
 export type AiUsageRun = {
   id: string;
-  kind: "chat" | "background";
+  kind: "chat" | "background" | "live-transcription";
   task: string;
   status: string;
   createdAt: string;
   userId: string | null;
   userLabel: string | null;
-  modelProfileId: string | null;
+  modelId: string | null;
   providerModel: string | null;
   appId: string | null;
   conversationId: string | null;
@@ -25,6 +26,7 @@ export type AiUsageRun = {
   tokens: number | null;
   cost: number | null;
   durationMs: number | null;
+  audioMs: number | null;
   errorCode: string | null;
   error: string | null;
   attempts: number | null;
@@ -42,7 +44,7 @@ export type AiUsageFeedback = {
   conversationTitle: string;
   userId: string | null;
   userLabel: string | null;
-  modelProfileId: string | null;
+  modelId: string | null;
   providerModel: string | null;
   rating: "up" | "down";
   reasons: string[];
@@ -51,6 +53,7 @@ export type AiUsageFeedback = {
   updatedAt: string;
 };
 export type AiUsageStats = {
+  dictationMinutes: number;
   runs: number;
   failed: number;
   tokens: number | null;
@@ -114,7 +117,7 @@ const events = (since: Date, until: Date) => sql`
   SELECT c.id::text,c.kind,c.task,CASE WHEN c.status='ok' THEN 'completed' WHEN c.status='running' AND c.lease_expires_at<=now() THEN 'failed' ELSE c.status END AS status,
     c.started_at AS created_at,COALESCE(c.user_id,c.service_account_id) AS user_id,c.conversation_id,c.turn_id,c.workflow_run_id,c.trace_id,
     c.model_profile_id,c.provider_model,c.app_id,(c.input+c.output)::float8 AS tokens,c.cost AS cost,
-    extract(epoch FROM (c.finished_at-c.started_at))*1000 AS duration_ms,c.error_code,c.error,1 AS attempts,
+    c.audio_ms,extract(epoch FROM (c.finished_at-c.started_at))*1000 AS duration_ms,c.error_code,c.error,1 AS attempts,
     c.request_started_at,(extract(epoch FROM (c.finished_at-c.request_started_at))*1000)::float8 AS generation_ms,
     c.headers_ms,c.first_byte_ms,c.first_block_ms,c.cancelled,
     CASE WHEN c.id=first_call.id THEN f.messages ELSE 0 END AS assistant_messages,
@@ -137,7 +140,7 @@ const events = (since: Date, until: Date) => sql`
 `;
 const globalFilter = (q: AiUsageQuery) => sql`
   (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND e.user_id IS NULL) OR e.user_id::text=${q.userId ?? null})
-  AND (${q.modelProfileId ?? null}::text IS NULL OR e.model_profile_id=${q.modelProfileId ?? null})
+  AND (${q.modelId ?? null}::text IS NULL OR e.model_profile_id=${q.modelId ?? null})
   AND (${q.providerModel ?? null}::text IS NULL OR e.provider_model=${q.providerModel ?? null})
   AND (${q.workflowId ?? null}::uuid IS NULL OR e.workflow_id=${q.workflowId ?? null}::uuid)
   AND (${q.workflowRunId ?? null}::uuid IS NULL OR e.workflow_run_id=${q.workflowRunId ?? null}::uuid)
@@ -151,6 +154,7 @@ const runFilter = (q: AiUsageQuery) => sql`
   AND (${q.search ?? ""}='' OR position(lower(${q.search ?? ""}) in lower(concat_ws(' ',e.task,e.error_code,e.error)))>0)
 `;
 const stats = () => sql`
+  COALESCE(sum(e.audio_ms) FILTER(WHERE e.kind='live-transcription'),0)::double precision/60000 AS "dictationMinutes",
   count(*)::int AS runs, count(*) FILTER (WHERE e.status='failed')::int AS failed,
   sum(e.tokens)::double precision AS tokens, sum(e.cost)::double precision AS cost,
   COALESCE(count(e.tokens)::double precision/NULLIF(count(*),0),0) AS "tokenCoverage",
@@ -187,9 +191,9 @@ const pageOf = async <T>(projection: ReturnType<typeof events>, q: AiUsageQuery)
   return { items, total, page, perPage: q.perPage };
 };
 const runColumns = () => sql`e.id, e.kind, e.task, e.status, e.created_at::text AS "createdAt", e.user_id::text AS "userId",
-  COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
+  COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",e.model_profile_id AS "modelId",e.provider_model AS "providerModel",
   e.app_id AS "appId",e.conversation_id::text AS "conversationId",e.turn_id::text AS "turnId",e.workflow_run_id::text AS "workflowRunId",
-  e.workflow_id::text AS "workflowId",e.workflow_name AS "workflowName",e.estimated,e.trace_id AS "traceId",e.tokens,e.cost::float8 AS cost,e.duration_ms AS "durationMs",e.error_code AS "errorCode",e.error,e.attempts,
+  e.workflow_id::text AS "workflowId",e.workflow_name AS "workflowName",e.estimated,e.trace_id AS "traceId",e.tokens,e.cost::float8 AS cost,e.duration_ms AS "durationMs",e.audio_ms AS "audioMs",e.error_code AS "errorCode",e.error,e.attempts,
   e.request_started_at::text AS "requestStartedAt",e.generation_ms AS "generationMs",e.headers_ms AS "headersMs",e.first_byte_ms AS "firstByteMs",
   e.first_block_ms AS "firstBlockMs",e.cancelled`;
 
@@ -235,7 +239,7 @@ export const aiUsage = {
     // The response period is authoritative for both summary and feedback. Editing a rating never moves its response into a different period.
     const feedbackRows = sql`SELECT m.id::text AS id,c.id::text AS "conversationId",c.title AS "conversationTitle",
       e.user_id::text AS "userId",COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",
-      e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
+      e.model_profile_id AS "modelId",e.provider_model AS "providerModel",
       CASE WHEN m.feedback_rating=1 THEN 'up' ELSE 'down' END AS rating,
       m.feedback_reasons AS reasons,m.feedback_comment AS comment,m.created_at::text AS "createdAt",m.feedback_updated_at::text AS "updatedAt"
       FROM (${filtered}) e JOIN ai.messages m ON m.loop_id=e.turn_id::text AND m.conversation_id=e.conversation_id
@@ -257,7 +261,7 @@ export const aiUsage = {
       sql<
         AiUsagePoint[]
       >`SELECT date_trunc(${q.range === "24h" ? "hour" : "day"},created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
-        count(*)::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(cost)::double precision AS cost
+        count(*) FILTER (WHERE kind<>'live-transcription')::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(cost)::double precision AS cost
         FROM (${inference}) e GROUP BY 1 ORDER BY 1`,
       sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
         AND ${globalFilter({ ...q, userId: undefined })}`,
@@ -266,7 +270,7 @@ export const aiUsage = {
         FROM ai.conversations c WHERE c.created_at >= ${since} AND c.created_at <= ${until} AND c.launched_by_app_id IS NOT NULL
         AND (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND c.created_by_user_id IS NULL) OR c.created_by_user_id::text=${q.userId ?? null})
         AND (${q.appId ?? null}::text IS NULL OR c.launched_by_app_id=${q.appId ?? null})
-        AND ((${q.modelProfileId ?? null}::text IS NULL AND ${q.providerModel ?? null}::text IS NULL) OR EXISTS (
+        AND ((${q.modelId ?? null}::text IS NULL AND ${q.providerModel ?? null}::text IS NULL) OR EXISTS (
           SELECT 1 FROM (${filtered}) e WHERE e.kind='chat' AND e.conversation_id=c.id
         )) GROUP BY c.launched_by_app_id ORDER BY chats DESC,c.launched_by_app_id`,
         q,
@@ -305,12 +309,12 @@ export const aiUsage = {
       LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id WHERE e.kind=${kind} AND e.id=${id}`;
     return row ?? null;
   },
-  facets: async (field: "userId" | "modelProfileId" | "providerModel" | "appId" | "task", search: string, input: Partial<AiUsageQuery>) => {
+  facets: async (field: "userId" | "modelId" | "providerModel" | "appId" | "task", search: string, input: Partial<AiUsageQuery>) => {
     const { query, since, until } = period(input);
     const key =
       field === "userId"
         ? sql`e.user_id::text`
-        : field === "modelProfileId"
+        : field === "modelId"
           ? sql`e.model_profile_id`
           : field === "providerModel"
             ? sql`e.provider_model`

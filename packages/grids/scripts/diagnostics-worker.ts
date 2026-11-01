@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { loadavg } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { bindProcessSync, connections, sql, unbindProcessSync } from "@k2b/cloud";
 import { set as setSetting } from "@k2b/cloud/services/settings";
 import { createSync } from "@k2b/sync";
-import { connect, credsAuthenticator } from "@nats-io/transport-node";
-import { sql } from "bun";
+import { connectNats } from "../../../scripts/fixtures/platform";
 import type { GqlRuntimeTraceEnd } from "../src/api/gql-observability";
 import { executeGqlSourceForContext } from "../src/api/gql-runtime";
 import { app } from "../src/config";
@@ -31,7 +29,9 @@ if (options.help) {
   console.log("Internal worker of diagnostics.ts; run `bun packages/grids/scripts/diagnostics.ts --help` instead.");
   process.exit(0);
 }
-const db = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
+const { initializeTestPlatform } = await import("../../../scripts/fixtures/platform");
+await initializeTestPlatform("grids");
+const db = localVerificationUrl("PostgreSQL", connections().database.url);
 assert.match(db.pathname, /^\/grids_verify_[a-f0-9]{32}$/);
 const directory = options.report;
 assert(directory, "Run diagnostics.ts, not its worker directly");
@@ -48,11 +48,8 @@ const must = <T>(result: { ok: true; data: T } | { ok: false; error: { message: 
 };
 const namespace = options.namespace;
 assert(namespace && namespace.startsWith("grids-diagnostics-"));
-const connection = await connect({
-  servers: localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS).toString(),
-  ignoreClusterUpdates: true,
-  ...(process.env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(process.env.NATS_CREDS_FILE)) } : {}),
-});
+localVerificationUrl("NATS", connections().nats.servers[0]);
+const connection = await connectNats({ name: "grids-diagnostics" });
 const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
 bindProcessSync(sync);
 let started = 0;

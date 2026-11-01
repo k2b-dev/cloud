@@ -1,0 +1,1 @@
+| Partial references used to delete shared storage | One CLI config deletes bundles still locked by another config, including byte-identical package bundles. | Tests: `served-plugins.test.ts` updates and removes a profile in a second config; `plugins.test.ts` replaces and removes a package whose digest another config locks. Keep shared bundles unless all owners are known. |

@@ -1,21 +1,23 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
-import { env } from "../config/env";
+import { stubConnections } from "../runtime/connections.test-fixture";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
+import * as workload from "./workload-credential";
 
 describe("application startup readiness", () => {
-  for (const mode of ["setup", "start", "ready", "advertise", null, "skip"] as const) {
+  for (const mode of ["package", "links", "setup", "start", "ready", "advertise", "workload", "calendar", null, "skip"] as const) {
     const skipSetup = mode === "skip";
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
       const events: string[] = [];
-      const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-      Object.defineProperty(env, "APP_SECRET", { value: "startup-test-only", configurable: true });
+
       const signals = ["SIGTERM", "SIGINT"] as const;
       const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
       const step = async (name: string) => {
@@ -36,6 +38,21 @@ describe("application startup readiness", () => {
         }),
       } as unknown as Sync;
       const spies = [
+        spyOn(workload, "createAppWorkloadCredential").mockImplementation(() => ({
+          start: () => step("workload"),
+          refresh: async () => {},
+          stop: async () => {
+            events.push("stop-workload");
+          },
+        })),
+        stubConnections(),
+        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async () => {
+          await step("links");
+          return async () => {
+            events.push("stop-links");
+          };
+        }),
+        spyOn(applicationPackage, "registerApplicationPackage").mockImplementation(() => step("package")),
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
           events.push("connect");
@@ -46,6 +63,15 @@ describe("application startup readiness", () => {
               processSync.unbindProcessSync();
             },
           };
+        }),
+        spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+          instanceId: "0123456789abcdef",
+          register: () => step("register-instance"),
+          leave: () => step("leave-instance"),
+          join: async () => {},
+          publish: async () => {},
+          adopt: async () => {},
+          renew: async () => {},
         }),
         spyOn(heartbeat, "createHeartbeat").mockReturnValue({
           start: () => step("advertise"),
@@ -76,6 +102,9 @@ describe("application startup readiness", () => {
         const started = app.start({
           fetch: () => new Response("application"),
           skipSetup,
+          ...(mode === "calendar"
+            ? { capabilities: { protocolVersion: 2 as const, calendarSource: { calendars: "missing", events: "missing" } } }
+            : {}),
           lifecycle: {
             setup: async () => {
               expect(events).toContain("setup-lock-acquire");
@@ -89,15 +118,23 @@ describe("application startup readiness", () => {
             },
           },
         });
-        if (failure) {
+        if (failure === "calendar" || failure === "package") {
+          await expect(started).rejects.toThrow(failure === "package" ? "failed:package" : "calendarSource does not match");
+          expect(events).toEqual(["connect", "package", "disconnect"]);
+          expect(() => processSync.getProcessSync()).toThrow("not available");
+        } else if (failure) {
           await expect(started).rejects.toThrow(`failed:${failure}`);
-          expect(events).toContain("setup-lock-release");
+          if (failure !== "links") expect(events).toContain("setup-lock-release");
           expect(events.at(-1)).toBe("disconnect");
           expect(events).toContain("stop-lifecycle");
           expect(events).toContain("stop-watch");
           expect(events).toContain("unregister");
-          if (failure !== "setup") expect(events).toContain("stop-notifications");
-          if (failure !== "advertise") expect(events).not.toContain("advertise");
+          if (failure !== "setup" && failure !== "links") expect(events).toContain("stop-notifications");
+          if (failure !== "advertise" && failure !== "workload") expect(events).not.toContain("advertise");
+          if (failure === "workload") {
+            expect(events.indexOf("stop-lifecycle")).toBeLessThan(events.indexOf("stop-workload"));
+            expect(events.indexOf("stop-workload")).toBeLessThan(events.indexOf("disconnect"));
+          }
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else {
           const server = await started;
@@ -110,6 +147,8 @@ describe("application startup readiness", () => {
           }
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("start"));
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("ready"));
+          expect(events.indexOf("workload")).toBeLessThan(events.indexOf("start"));
+          expect(events.indexOf("register-instance")).toBeLessThan(events.indexOf("workload"));
           expect(await (await server.fetch(new Request("http://startup-test/_cloud/ready"))).json()).toEqual({
             status: "ready",
             appId: "startup-test",
@@ -125,7 +164,6 @@ describe("application startup readiness", () => {
         }
         processSync.unbindProcessSync();
         for (const spy of spies.toReversed()) spy.mockRestore();
-        Object.defineProperty(env, "APP_SECRET", originalSecret);
       }
     });
   }

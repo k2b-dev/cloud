@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateAppRegistryEntry } from "./registry-validation";
+import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
 
 const valid = {
   id: "core",
@@ -13,6 +13,12 @@ const valid = {
 
 describe("validateAppRegistryEntry", () => {
   test("accepts a valid entry", () => expect(validateAppRegistryEntry(valid)).toBeNull());
+  test("accepts a package declaration and rejects unsafe package metadata", () => {
+    expect(validateAppRegistryEntry({ ...valid, package: "warenfluss" })).toBeNull();
+    for (const packageName of ["../mail", "a/b", "", "Mail", 42, "a".repeat(81)]) {
+      expect(validateAppRegistryEntry({ ...valid, package: packageName })).toContain("package");
+    }
+  });
   test("rejects a scalar entry", () => expect(validateAppRegistryEntry("broken")).toBe("entry must be an object"));
   test("rejects invalid routes", () => expect(validateAppRegistryEntry({ ...valid, routes: ["auth"] })).toContain("routes"));
   test("rejects a non-HTTP or credential-bearing base URL", () => {
@@ -38,13 +44,20 @@ describe("validateAppRegistryEntry", () => {
         },
       }),
     ).toBeNull());
-  test("accepts a mobile app part only at /pwa/<id>", () => {
+  test("accepts a Cloud app part only at /pwa/<id>", () => {
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core" } })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: ["user"] } })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/spaces" } })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/app/core" } })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: "/pwa/core" })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: "user" } })).toContain("pwa.requiresRoles");
+    const routes = ["/api/core", "/pwa/core"];
+    expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", badge: "/api/core/count" } })).toBeNull();
+    for (const badge of [3, "https://elsewhere.test/count", "//elsewhere.test/count", "/api/other/count"])
+      expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", badge } })).toContain("pwa.badge");
+    expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", summary: "/api/core/summary" } })).toBeNull();
+    for (const summary of [3, "https://elsewhere.test/summary", "/api/other/summary"])
+      expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", summary } })).toContain("pwa.summary");
   });
   test("accepts a navigation badge only as a same-origin path below the entry's own routes", () => {
     const nav = { href: "/", section: "primary" };
@@ -80,7 +93,7 @@ describe("validateAppRegistryEntry", () => {
 test("validates optional outgoing mail permission declarations", () => {
   expect(validateAppRegistryEntry({ ...valid, platformPermissions: ["mail:send"] })).toBeNull();
   expect(validateAppRegistryEntry({ ...valid, platformPermissions: [] })).toBeNull();
-  for (const platformPermissions of ["mail:send", ["unknown"], [1]])
+  for (const platformPermissions of ["mail:send", [1], null])
     expect(validateAppRegistryEntry({ ...valid, platformPermissions })).toContain("platformPermissions");
 });
 
@@ -104,4 +117,12 @@ test("validates panel shape, owned href, presentation and role array", () => {
   expect(
     validateAppRegistryEntry({ ...entry, panel, presentation: { ...presentation, translations: { de: { panelLabel: 1 } } } }),
   ).toContain("panelLabel");
+});
+
+test("registry readers drop unknown permissions without dropping routes or granting them", () => {
+  const entry = { ...valid, platformPermissions: ["mail:send", "future:permission", "resources:readers"] };
+  expect(validateAppRegistryEntry(entry)).toBeNull();
+  expect(asAppRegistryEntry(entry)).toEqual({ ...entry, platformPermissions: ["mail:send", "resources:readers"] });
+  expect(asAppRegistryEntry({ ...valid, platformPermissions: ["future:permission"] })).toEqual({ ...valid, platformPermissions: [] });
+  expect(entry.platformPermissions).toContain("future:permission");
 });

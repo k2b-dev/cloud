@@ -13,23 +13,22 @@ const messages = i18n.define({
     },
     de: {
       viewAssigned: "Nur zugewiesene ansehen",
-      viewAssignedDescription: "Sieht nur die Unterhaltungen, die der Person zugewiesen sind.",
+      viewAssignedDescription: "Sieht nur die Unterhaltungen, die dem Konto zugewiesen sind.",
       editAssigned: "Nur zugewiesene bearbeiten",
-      editAssignedDescription:
-        "Sieht nur die Unterhaltungen, die der Person zugewiesen sind, und kann darauf antworten und sie bearbeiten.",
+      editAssignedDescription: "Sieht nur die Unterhaltungen, die dem Konto zugewiesen sind, und kann darauf antworten und sie bearbeiten.",
     },
   },
 });
 
 /**
- * The levels of a mailbox grant: the mailbox-wide View, Edit and Manage, and, for people and groups,
+ * The levels of a mailbox grant: the mailbox-wide View, Edit and Manage, and, for people, groups and independent machine accounts,
  * View or Edit of only the conversations assigned to them. The service enforces the same rule.
  */
 export const mailboxAccessLevels =
   (locale: string) =>
   (principal: Principal): AllowedLevel[] => {
     const mailboxWide: AllowedLevel[] = ["read", "write", "admin"];
-    if (principal.type !== "user" && principal.type !== "group") return mailboxWide;
+    if (principal.type !== "user" && principal.type !== "group" && principal.type !== "service_account") return mailboxWide;
     const t = messages.resolve([locale]).t;
     return [
       ...mailboxWide,

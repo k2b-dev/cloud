@@ -1334,8 +1334,9 @@ test("assign resolves me, usernames, and none and reports missing conversations"
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/api/me") return api({ id: USER_ID, uid: "ada" });
+
     if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/assignable-users`) {
+      if (url.searchParams.get("self") === "true") return api([{ id: USER_ID, uid: "ada", displayName: "Ada" }]);
       expect(url.searchParams.get("search")).toBe("Grace");
       return api([
         { id: USER_ID, uid: "ada", displayName: "Ada", avatarHash: null, permission: "write", description: "ada" },
@@ -1384,8 +1385,12 @@ test("assign adds several users, replaces, removes, and rejects conflicting flag
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
-    if (url.pathname === "/api/me") return api({ id: USER_ID });
-    if (url.pathname.endsWith("/assignable-users")) return api([{ id: COMMAND_ID, uid: "grace", displayName: "Grace", scope: "assigned" }]);
+    if (url.pathname.endsWith("/assignable-users"))
+      return api(
+        url.searchParams.get("self") === "true"
+          ? [{ id: USER_ID, uid: "ada", displayName: "Ada" }]
+          : [{ id: COMMAND_ID, uid: "grace", displayName: "Grace", scope: "assigned" }],
+      );
     if (request.method === "POST" && url.pathname.endsWith("/conversations/assign")) {
       const body = await request.json();
       bodies.push(body);
@@ -1415,6 +1420,61 @@ test("assign adds several users, replaces, removes, and rejects conflicting flag
   expect((await assign("--to", "me", "--remove", "me")).exitCode).not.toBe(0);
   expect((await assign("--remove", "me", "--replace")).exitCode).not.toBe(0);
   expect((await assign("--to", "none,me")).exitCode).not.toBe(0);
+  expect(bodies).toHaveLength(3);
+});
+
+test("assign resolves agent and standalone display names and refuses ambiguous principals", async () => {
+  const bodies: unknown[] = [];
+  let ambiguous = false;
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    const name = url.searchParams.get("search") ?? "";
+    if (url.pathname.endsWith("/assignable-users"))
+      return api([
+        {
+          id: COMMAND_ID,
+          uid: name,
+          displayName: name,
+          avatarHash: null,
+          type: "service_account",
+          serviceAccountKind: name.includes("Agent") ? "agent" : "standalone",
+          scope: "assigned",
+        },
+        ...(ambiguous ? [{ id: USER_ID, uid: name, displayName: name, avatarHash: null }] : []),
+      ]);
+    if (request.method === "POST" && url.pathname.endsWith("/conversations/assign")) {
+      bodies.push(await request.json());
+      return api({
+        assignees: [
+          {
+            id: COMMAND_ID,
+            uid: "Mail Agent",
+            displayName: "Mail Agent",
+            avatarHash: null,
+            type: "service_account",
+            serviceAccountKind: "agent",
+          },
+        ],
+        results: [{ conversationId: CONVERSATION_ID, status: "ok" }],
+      });
+    }
+    return api({}, { status: 500 });
+  });
+  servers.push(server);
+  const assign = (name: string) =>
+    runCli(`http://127.0.0.1:${server.port}`, ["mail", "assign", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", name]);
+  for (const name of ["Mail Agent", "Mail Service", "me"]) {
+    const result = await assign(name);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Mail Agent");
+  }
+  expect(bodies).toEqual(
+    Array.from({ length: 3 }, () => ({ conversationIds: [CONVERSATION_ID], assigneeUserIds: [COMMAND_ID], mode: "add" })),
+  );
+  ambiguous = true;
+  const conflict = await assign("Mail Agent");
+  expect(conflict.exitCode).not.toBe(0);
+  expect(conflict.stderr).toContain("Ambiguous assignee");
   expect(bodies).toHaveLength(3);
 });
 
@@ -2941,7 +3001,7 @@ const sourceMessageFixture = {
   folderId: FOLDER_ID,
   plainText: "Original text",
   forwardText: "Original text",
-  attachments: [{ id: ATTACHMENT_ID, filename: "a.pdf", contentType: "application/pdf", sizeBytes: 3, contentId: null }],
+  attachments: [{ id: ATTACHMENT_ID, filename: "a.pdf", contentType: "application/pdf", sizeBytes: 3, contentId: null, checksum: null }],
 };
 
 /** A mailbox with one conversation, its latest message, a default identity, and a send pipeline. */
@@ -5468,6 +5528,22 @@ test("sender commands cover preview and durable existing-message backfills", asy
   expect(requests[4]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true });
   expect(retried.stdout).toContain("Started retry backfill ");
   expect(retried.stdout).toContain("for 6 messages whose last run failed or was canceled.");
+  const recomputed = await runCli(origin, [
+    "mail",
+    "automation",
+    "backfill",
+    "start",
+    INCOMING_AUTOMATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--revision",
+    "3",
+    "--retry-failed",
+    "--recompute-ai",
+    "--yes",
+  ]);
+  expect(recomputed.exitCode).toBe(0);
+  expect(requests[5]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true, recomputeAi: true });
   for (const state of ["limited", "completed"] as const) {
     retryStatus = state;
     const retry = await runCli(origin, [
@@ -5977,4 +6053,112 @@ test("compose logo get/set/remove support structured output and require confirma
   const summary = await runCli(origin, ["mail", "compose", "logo", "get", "--mailbox", MAILBOX_ID]);
   expect(summary.exitCode).toBe(0);
   for (const text of ["image/png", "1x1", "250", "Team", "aaaaaaaaaaaa"]) expect(summary.stdout).toContain(text);
+});
+
+test("mailbox view get and set resolve a mailbox and preserve omitted device classes", async () => {
+  const requests: { method: string; path: string; body?: unknown }[] = [];
+  const view = { large: "auto", phone: "compact" };
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path !== `/api/mail/mailboxes/${MAILBOX_ID}/view`) return api({ error: "Unexpected route" }, { status: 404 });
+    if (request.method === "PATCH") {
+      const body = await request.json();
+      requests.push({ method: request.method, path, body });
+      Object.assign(view, body);
+    } else requests.push({ method: request.method, path });
+    return api(view);
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const get = await runCli(origin, ["--json", "mail", "view", "get", "Support"]);
+  expect(get.exitCode).toBe(0);
+  expect(JSON.parse(get.stdout)).toEqual({ large: "auto", phone: "compact" });
+  const large = await runCli(origin, ["--json", "mail", "view", "set", MAILBOX_ID, "--large", "split"]);
+  expect(large.exitCode).toBe(0);
+  expect(JSON.parse(large.stdout)).toEqual({ large: "split", phone: "compact" });
+  const phone = await runCli(origin, ["--json", "mail", "view", "set", "Support", "--phone", "detailed"]);
+  expect(phone.exitCode).toBe(0);
+  expect(JSON.parse(phone.stdout)).toEqual({ large: "split", phone: "detailed" });
+  expect(requests).toEqual([
+    { method: "GET", path: `/api/mail/mailboxes/${MAILBOX_ID}/view` },
+    { method: "PATCH", path: `/api/mail/mailboxes/${MAILBOX_ID}/view`, body: { large: "split" } },
+    { method: "PATCH", path: `/api/mail/mailboxes/${MAILBOX_ID}/view`, body: { phone: "detailed" } },
+  ]);
+  const before = requests.length;
+  for (const flags of [[], ["--large", "compact"], ["--phone", "auto"]]) {
+    const invalid = await runCli(origin, ["--json", "mail", "view", "set", "Support", ...flags]);
+    expect(invalid.exitCode).not.toBe(0);
+  }
+  expect(requests).toHaveLength(before);
+});
+
+test("workflow try follows cursors, merges AI ranges and supports unsaved YAML files", async () => {
+  const requests: unknown[] = [];
+  const fixture = (checked: number) => ({
+    window: { last: 2, total: 2 },
+    checked,
+    cursor: checked === 1 ? "next-preview" : null,
+    items: [
+      {
+        messageId: checked === 1 ? "Messg1" : "Messg2",
+        conversationId: "Convo1",
+        from: { name: "Mara", email: "mara@example.test" },
+        subject: `Offer ${checked}`,
+        receivedAt: "2026-10-20T12:00:00.000Z",
+        outcome: checked === 1 ? "match" : "none",
+        reason: null,
+        facts: [],
+        effects: [],
+        stoppedAtAi: checked === 1,
+        problems: [],
+        aiCalls: { min: checked === 1 ? 1 : 0, max: checked === 1 ? 2 : 0 },
+      },
+    ],
+    aiCalls: { min: checked === 1 ? 1 : 0, max: checked === 1 ? 2 : 0 },
+    maxAiCallsPerDay: null,
+    preflight: { targets: [], sends: false, writesDrafts: false, aiSteps: 2 },
+  });
+  const server = withMailbox(async (request) => {
+    if (new URL(request.url).pathname.endsWith("/workflows/try")) {
+      const body = await request.json();
+      requests.push(body);
+      return api(fixture(body.cursor ? 2 : 1));
+    }
+    return api({}, { status: 404 });
+  });
+  servers.push(server);
+  const text = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--mailbox", MAILBOX_ID, "--last", "2"]);
+  expect(text.exitCode).toBe(0);
+  expect(text.stdout).toContain("1 match · 0 skipped · 1 none · 1–2 AI calls would be needed, none made");
+  expect(text.stdout).toContain("match · Mara · Offer 1 · Messg1");
+  expect(requests.slice(0, 2)).toEqual([
+    { workflowId: WORKFLOW_ID, last: 2, cursor: null, batch: 25 },
+    { workflowId: WORKFLOW_ID, last: 2, cursor: "next-preview", batch: 25 },
+  ]);
+  const structured = await runCli(server.url.origin, [
+    "--json",
+    "mail",
+    "workflow",
+    "try",
+    WORKFLOW_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--last",
+    "2",
+  ]);
+  expect(structured.exitCode).toBe(0);
+  expect(JSON.parse(structured.stdout)).toMatchObject({
+    checked: 2,
+    cursor: null,
+    items: [fixture(1).items[0], fixture(2).items[0]],
+    aiCalls: { min: 1, max: 2 },
+  });
+  const path = join(tmpdir(), `workflow-try-${crypto.randomUUID()}.yaml`);
+  temporaryFiles.push(path);
+  await writeFile(path, "steps:\n  - succeed: { message: Done }\n");
+  const unsaved = await runCli(server.url.origin, ["mail", "workflow", "try", "--file", path, "--mailbox", MAILBOX_ID, "--last", "2"]);
+  expect(unsaved.exitCode).toBe(0);
+  expect(requests.at(-1)).toMatchObject({ source: "steps:\n  - succeed: { message: Done }\n", last: 2 });
+  const invalid = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--file", path, "--mailbox", MAILBOX_ID]);
+  expect(invalid.exitCode).not.toBe(0);
 });

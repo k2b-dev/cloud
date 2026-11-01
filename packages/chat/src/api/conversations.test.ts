@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import { ServiceAccountCredentialSchema, ServiceAccountSchema, UserSchema } from "@k2b/cloud/contracts";
 import * as platform from "@k2b/cloud/services";
-import { redis } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { chatService } from "../service";
-import { ConversationSchema } from "../service/contracts";
+import { ConversationSchema, ReadAllSchema } from "../service/contracts";
 import { chatLive } from "../service/live";
 import chatApi from ".";
+
+useUnitClients();
 
 const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
@@ -75,11 +78,32 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
-test("admits a service account to the service and returns the localized people-only error", async () => {
+test("notification preferences and follows require authentication before reaching a service", async () => {
+  const read = spyOn(chatService.notificationPreferences, "get");
+  const write = spyOn(chatService.notificationPreferences, "set");
+  const follow = spyOn(chatService.threadFollows, "set");
+  for (const [path, method, body] of [
+    ["/conversations/abcdef/notifications", "GET", undefined],
+    ["/conversations/abcdef/notifications", "PUT", { level: "all" }],
+    ["/conversations/abcdef/threads/ghijkl/follow", "PUT", undefined],
+    ["/conversations/abcdef/threads/ghijkl/follow", "DELETE", undefined],
+  ] as const) {
+    const response = await chatApi.request(path, {
+      method,
+      ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
+    });
+    expect(response.status).toBe(401);
+  }
+  expect(read).not.toHaveBeenCalled();
+  expect(write).not.toHaveBeenCalled();
+  expect(follow).not.toHaveBeenCalled();
+});
+
+test("admits a service account to the service and returns the localized personal-account creation requirement", async () => {
   authenticate();
   const response = await post("/conversations", {}, "de-DE");
   expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Nur Personen und Gruppen können Chat-Mitglieder sein." });
+  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Erstelle Chats mit einem persönlichen Konto." });
 });
 test("forwards the acting account, delegated subject, and request locale to member mutations", async () => {
   authenticate(true);
@@ -106,7 +130,11 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
     data: {
       outcome: "created",
       conversation: {
+        notifications: null,
+        mentionsUnread: 0,
         threads: 0,
+        channel: false,
+        member: true,
         id: "abcdef",
         name: null,
         icon: null,
@@ -115,6 +143,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         memberCount: 1,
         unread: 0,
         read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+        archived: false,
+        pinnedRank: null,
         withGuests: false,
         peerDeactivated: false,
         lastMessage: null,
@@ -155,6 +185,10 @@ test("requires authentication for all conversation routes", async () => {
 });
 
 const textMessage = {
+  reactions: [],
+  mentions: [],
+  refs: [],
+  attachments: [],
   thread: null,
   replyTo: null,
   id: "0123456789",
@@ -215,7 +249,11 @@ test("rejects invalid message body and conflicting history cursors before the se
 test("snapshot reads the cursor before history and tolerates invalid message links", async () => {
   authenticate(true);
   const conversation = ConversationSchema.parse({
+    notifications: null,
+    mentionsUnread: 0,
     threads: 0,
+    channel: false,
+    member: true,
     id: "abcdef",
     name: null,
     title: "You",
@@ -224,6 +262,8 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     memberCount: 1,
     unread: 0,
     read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+    archived: false,
+    pinnedRank: null,
     withGuests: false,
     peerDeactivated: false,
     lastMessage: null,
@@ -288,5 +328,142 @@ test("people forwards trimmed search and a re-encoded strict cursor to the servi
   expect(response.status).toBe(200);
   expect(people).toHaveBeenCalledWith(
     expect.objectContaining({ accessSubject: { type: "user", userId }, query: { search: "Lea", cursor } }),
+  );
+});
+
+test("account preferences require a readable account-wide credential", async () => {
+  for (const serviceAccount of [
+    { ...account, kind: "resource_bound" as const, appId: "chat", resourceType: "conversation", resourceId: "abcdef" },
+    account,
+  ]) {
+    spyOn(platform.serviceAccountCredentials, "authenticateApiToken").mockResolvedValue({
+      credential: { ...credential, scopes: serviceAccount.kind === "resource_bound" ? ["openid", "read"] : ["openid"] },
+      serviceAccount,
+      delegatedUser: null,
+    });
+    for (const method of ["GET", "PUT"]) {
+      const response = await chatApi.request("/preferences", {
+        method,
+        headers: { authorization: "Bearer test-key", "content-type": "application/json" },
+        ...(method === "PUT" ? { body: JSON.stringify({ collapsed: ["pinned"] }) } : {}),
+      });
+      expect(response.status).toBe(403);
+    }
+    const personal = await chatApi.request("/conversations/abcdef/personal", {
+      method: "PUT",
+      headers: { authorization: "Bearer test-key", "content-type": "application/json" },
+      body: JSON.stringify({ pinned: true }),
+    });
+    expect(personal.status).toBe(403);
+  }
+});
+
+test("passes the authenticated caller credential into system chat discovery", async () => {
+  authenticate();
+  const list = spyOn(chatService.systemChats, "list").mockResolvedValue({
+    ok: true,
+    data: { items: [], cursors: {}, skipped: [] },
+  });
+  const response = await chatApi.request("/system-chats?cursors=%7B%22inventory.collection%22%3A%22next%22%7D", {
+    headers: { authorization: "Bearer test-key" },
+  });
+  expect(response.status).toBe(200);
+  expect(list).toHaveBeenCalledWith(
+    expect.objectContaining({
+      caller: expect.objectContaining({ authorization: "Bearer test-key" }),
+      query: { cursors: '{"inventory.collection":"next"}' },
+    }),
+  );
+});
+
+test("read-all continuation survives HTTP validation and the service's second parse", async () => {
+  authenticate(true);
+  const cursor = JSON.stringify({ at: "2026-10-01T00:00:00.000123Z", id: "abcdef", thread: "" });
+  const read = spyOn(chatService.readState, "readAll").mockImplementation(async ({ input }) => {
+    expect(ReadAllSchema.parse(input)).toEqual({ confirmed: true, cursor: JSON.parse(cursor) });
+    return { ok: true, data: { outcome: "done", marked: 0, more: true, nextCursor: cursor } };
+  });
+  const response = await post("/conversations/read-all", { confirmed: true, cursor });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ outcome: "done", marked: 0, more: true, nextCursor: cursor });
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
+const attachment = {
+  id: "att001",
+  name: "picture.png",
+  mimeType: "image/png",
+  size: 3,
+  kind: "image" as const,
+  width: 1,
+  height: 1,
+  href: "/api/chat/conversations/abcdef/attachments/att001",
+};
+test("multipart upload forwards file bytes, thread, delegated subject and locale to the same service", async () => {
+  authenticate(true);
+  const upload = spyOn(chatService.attachments, "upload").mockResolvedValue({ ok: true, data: attachment });
+  const form = new FormData();
+  form.append("file", new File([new Uint8Array([1, 2, 3])], "picture.png", { type: "image/png" }));
+  form.append("thread", "thread");
+  const response = await chatApi.request("/conversations/abcdef/attachments", {
+    method: "POST",
+    headers: { authorization: "Bearer test-key", "accept-language": "de-DE" },
+    body: form,
+  });
+  expect(response.status).toBe(201);
+  expect(await response.json()).toEqual(attachment);
+  expect(upload).toHaveBeenCalledWith(
+    expect.objectContaining({
+      actor: expect.objectContaining({ kind: "service_account", delegatedUser: person }),
+      accessSubject: { type: "user", userId },
+      locale: "de-DE",
+      conversationId: "abcdef",
+      thread: "thread",
+      filename: "picture.png",
+      mimeType: "image/png",
+      content: new Uint8Array([1, 2, 3]),
+    }),
+  );
+});
+test("oversized multipart content length fails before the upload service", async () => {
+  authenticate();
+  const upload = spyOn(chatService.attachments, "upload");
+  const response = await chatApi.request("/conversations/abcdef/attachments", {
+    method: "POST",
+    headers: { authorization: "Bearer test-key", "content-length": String(10 * 1024 * 1024 + 65537) },
+    body: "x",
+  });
+  expect(response.status).toBe(413);
+  expect(await response.json()).toMatchObject({ code: "ATTACHMENT_TOO_LARGE" });
+  expect(upload).not.toHaveBeenCalled();
+});
+test("download forwards access context and streams the authorized bytes with restrictive headers", async () => {
+  authenticate();
+  const download = spyOn(chatService.attachments, "download").mockResolvedValue({
+    ok: true,
+    data: {
+      attachment,
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.close();
+        },
+      }),
+    },
+  });
+  const response = await chatApi.request("/conversations/abcdef/attachments/att001", { headers: { authorization: "Bearer test-key" } });
+  expect(response.status).toBe(200);
+  expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  expect(response.headers.get("content-type")).toBe("image/png");
+  expect(response.headers.get("content-disposition")).toStartWith("inline;");
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(response.headers.get("content-security-policy")).toContain("sandbox");
+  expect(download).toHaveBeenCalledWith(
+    expect.objectContaining({
+      conversationId: "abcdef",
+      attachmentId: "att001",
+      accessSubject: { type: "service_account", serviceAccountId: account.id },
+    }),
   );
 });

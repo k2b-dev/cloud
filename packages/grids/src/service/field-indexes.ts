@@ -1,6 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { isMultiSelectField } from "./field-storage";
 import { withMaintenanceLease } from "./maintenance-lease";
 

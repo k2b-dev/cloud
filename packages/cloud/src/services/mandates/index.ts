@@ -1,8 +1,9 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import type { CapabilityActionPolicy } from "../../contracts/capabilities";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { audit } from "../audit";
 import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
@@ -207,7 +208,7 @@ const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> 
     SELECT EXISTS (
       SELECT 1 FROM auth.service_accounts
       WHERE id = ${subject.id}::uuid
-        AND kind = 'resource_bound'
+        AND kind IN ('resource_bound', 'standalone', 'agent')
         AND status = 'active'
     ) AS active
   `;
@@ -687,7 +688,7 @@ export const validateMandateIssueAuthority = async (
         WHEN 'user' THEN user_account.id IS NOT NULL
           AND (user_account.account_expires IS NULL OR user_account.account_expires > now())
         WHEN 'service_account' THEN service_account.id IS NOT NULL
-          AND service_account.kind = 'resource_bound'
+          AND service_account.kind IN ('resource_bound', 'standalone', 'agent')
           AND service_account.status = 'active'
         ELSE false
       END AS subject_active

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -10,6 +10,7 @@ import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import * as cloudSsr from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
+import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
@@ -30,7 +31,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 // the rail and header, which have tests of their own, and measure what the pages put into it.
 const CORE_CANVAS = appAppearanceStyle({
   accent: "#0284c7",
-  background: { from: "#38bdf8", via: "#ffffff", to: "#60a5fa", angle: 135, strength: 20 },
+  background: { from: "#3b82f6", via: "#ffffff", to: "#60a5fa", angle: 135, strength: 20 },
 });
 
 const pages = {
@@ -96,18 +97,27 @@ let freeIpaEnabled = false;
 let requestsEnabled = false;
 
 const spies: Array<{ mockRestore(): void }> = [];
+/** The title array the page last gave the shell's layout. */
+let layoutTitle: Parameters<typeof derivePageTrail>[0];
 beforeEach(() => {
+  setSystemTime(new Date(now));
   user = localUser;
   freeIpaEnabled = false;
   requestsEnabled = false;
   spies.push(
-    spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) =>
-      createComponent(LocaleProvider, {
+    spyOn(cloudSsr, "Layout").mockImplementation(((props: {
+      c: Parameters<typeof server.getLocale>[0];
+      title?: Parameters<typeof derivePageTrail>[0];
+      children: JSX.Element;
+    }) => {
+      layoutTitle = props.title;
+      return createComponent(LocaleProvider, {
         locale: server.getLocale(props.c),
         get children() {
           return props.children;
         },
-      })) as never),
+      });
+    }) as never),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
@@ -123,6 +133,11 @@ beforeEach(() => {
     ),
     spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
     spyOn(services.accountsAppService.accountRequest, "isEnabled").mockImplementation(async () => requestsEnabled),
+    spyOn(services.accountsAppService.user.group, "list").mockImplementation(async ({ recursive }) => {
+      const direct = user.memberofGroup.filter((name) => name !== "internal-fixture-group");
+      const items = recursive ? [...direct, "inherited-fixture-team"] : direct;
+      return { items, total: items.length, page: 1, perPage: items.length, hasNext: false };
+    }),
     spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue([
       {
         id: "00000000-0000-4000-8000-000000000101",
@@ -191,6 +206,8 @@ beforeEach(() => {
           description: "Before your account expires.",
           recommendedChannels: ["inbox", "email"],
           requiredChannels: [],
+          excludedChannels: [],
+          excludedReason: null,
           selectedChannels: ["inbox", "email"],
           effectiveChannels: ["inbox", "email"],
           customized: false,
@@ -236,6 +253,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
+  setSystemTime();
 });
 
 let browser: Browser;
@@ -256,7 +274,7 @@ afterAll(async () => {
 });
 
 /** The server-rendered content of one account page. */
-const content = async (path: Path, locale: "en" | "de") => {
+const content = async (path: Path, locale: "en" | "de", query = "") => {
   const app = new Hono()
     .use("*", async (c, next) => {
       c.set("user" as never, user as never);
@@ -264,7 +282,7 @@ const content = async (path: Path, locale: "en" | "de") => {
       await next();
     })
     .get(path, ...pages[path]);
-  const response = await app.request(`${origin}${path}`, { headers: { Cookie: `cloud.locale=${locale}` } });
+  const response = await app.request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
   expect(response.status).toBe(200);
   return /<body[^>]*>([\s\S]*)<\/body>/.exec(await response.text())![1]!;
 };
@@ -354,6 +372,31 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
 };
 
 describe("account pages in a browser", () => {
+  test("access memberships omit internal groups from the session projection", async () => {
+    user = { ...localUser, memberofGroup: [...localUser.memberofGroup, "internal-fixture-group"] };
+    const html = await content("/me/access", "en");
+    expect(html).not.toContain(">internal-fixture-group<");
+    expect(html).not.toContain("search=internal-fixture-group");
+    expect(html).toContain("team-design");
+    expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({
+      userId: user.id,
+      recursive: false,
+    });
+  });
+
+  test("inherited memberships remain reachable when all direct groups are internal", async () => {
+    user = { ...localUser, memberofGroup: ["internal-fixture-group"] };
+    const direct = await content("/me/access", "en");
+    expect(direct).toContain('href="/me/access?groups=all"');
+    expect(direct).not.toContain(">internal-fixture-group<");
+    expect(direct).not.toContain(">inherited-fixture-team<");
+
+    const inherited = await content("/me/access", "en", "?groups=all");
+    expect(inherited).toContain(">inherited-fixture-team<");
+    expect(inherited).not.toContain(">internal-fixture-group<");
+    expect(inherited).toContain('href="/me/access"');
+  });
+
   test("mark the current account section with Core's navigation fill and ink, in light and dark", async () => {
     for (const dark of [false, true])
       for (const path of tabs) {
@@ -462,6 +505,51 @@ describe("account pages in a browser", () => {
       }
   }, 120_000);
 
+  test("show registered excluded channels disabled and unchecked with the app reason", async () => {
+    const reason = "Nicht verfügbar: Jede Nachricht als E-Mail wäre zu viel.";
+    spies.unshift(
+      spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
+        availableChannels: ["browser", "email"],
+        definitions: [
+          {
+            id: "demo.newUpdates",
+            appId: "demo",
+            kind: "newUpdates",
+            label: "Neue Meldungen",
+            description: "Wenn eine Meldung eingeht.",
+            recommendedChannels: ["browser"],
+            requiredChannels: [],
+            excludedChannels: ["email"],
+            excludedReason: reason,
+            selectedChannels: ["browser", "email"],
+            effectiveChannels: ["browser"],
+            customized: true,
+          },
+        ],
+      }),
+    );
+    for (const view of [desktop, phone]) {
+      for (const dark of [false, true]) {
+        const tab = await open(view, "/me/notifications", "de", dark);
+        try {
+          const email = tab.getByRole("checkbox", { name: "E-Mail", exact: true });
+          expect(await email.isDisabled()).toBe(true);
+          expect(await email.isChecked()).toBe(false);
+          expect(await tab.getByText(reason, { exact: true }).isVisible()).toBe(true);
+          const reasonId = await email.getAttribute("aria-describedby");
+          expect(reasonId).toBeTruthy();
+          expect(await tab.locator(`[id="${reasonId}"]`).textContent()).toBe(reason);
+          expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+          const shots = process.env.CORE_ACCOUNT_SHOTS;
+          if (shots)
+            await tab.screenshot({ path: `${shots}/notification-excluded-${dark ? "dark" : "light"}-${view.width}.png`, fullPage: true });
+        } finally {
+          await tab.close();
+        }
+      }
+    }
+  }, 60_000);
+
   test("reserve the browser notification button's height before the island hydrates", async () => {
     const tab = await open(phone, "/me/notifications", "en");
     try {
@@ -541,6 +629,12 @@ describe("account pages in a browser", () => {
     } finally {
       await tab.close();
     }
+  }, 30_000);
+
+  test("the delivery history shows no way up above the account tabs, which lead back to the notification preferences", async () => {
+    const html = await content("/me/notifications/history", "en");
+    expect(derivePageTrail(layoutTitle, "/me", "Cloud", "/me/notifications/history")).toEqual({ title: "Delivery history", ancestors: [] });
+    expect(html).toMatch(/<a [^>]*href="\/me\/notifications"/);
   }, 30_000);
 
   test("warn about the account expiry only when it is close", async () => {

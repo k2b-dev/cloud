@@ -400,6 +400,139 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("a free-text Combobox keeps the typed text, waits for enough characters, and shows host states", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const [text, setText] = createSignal("");
+    const [quota, setQuota] = createSignal(false);
+    const queries: string[] = [];
+    const picks: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Street",
+          freeText: true,
+          minQueryLength: 3,
+          autoHighlight: 0,
+          debounceMs: 0,
+          query: text,
+          onQueryChange: setText,
+          get status() {
+            return quota() ? "Quota used up" : undefined;
+          },
+          empty: "Nothing matched",
+          footer: "Source line",
+          fetchData: async (query) => {
+            queries.push(query);
+            return query === "zzz"
+              ? []
+              : [
+                  { id: "a", label: "Main Street 1" },
+                  { id: "b", label: "Main Street 2" },
+                ];
+          },
+          onSelect: (option) => {
+            picks.push(option.id);
+            setText(option.label);
+          },
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+      const key = (name: string) => {
+        const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      const type = async (value: string) => {
+        input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await Bun.sleep(0);
+      };
+      expect(input.getAttribute("autocomplete")).toBe("off");
+
+      await type("Ma");
+      expect(queries).toEqual([]);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      input.click();
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+
+      await type("Mai");
+      expect(queries).toEqual(["Mai"]);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      // The first result is active, the source line sits under the list.
+      expect(dom.document.getElementById(input.getAttribute("aria-activedescendant") ?? "")?.textContent).toContain("Main Street 1");
+      expect(dom.root.querySelector(".k2b-choice-footer")?.textContent).toBe("Source line");
+
+      // Escape closes and the own text stays.
+      expect(key("Escape")).toBe(true);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(input.value).toBe("Mai");
+      expect(text()).toBe("Mai");
+
+      // Enter takes the highlighted result; the host decides the text.
+      await type("Main");
+      expect(key("Enter")).toBe(true);
+      expect(picks).toEqual(["a"]);
+      expect(input.value).toBe("Main Street 1");
+
+      // Enter without an active option only closes; the own text stays.
+      await type("zzz");
+      expect(dom.root.querySelector(".k2b-choice-status")?.textContent).toBe("Nothing matched");
+      expect(key("Enter")).toBe(true);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(input.value).toBe("zzz");
+
+      // A host notice replaces the results and nothing loads.
+      setQuota(true);
+      const before = queries.length;
+      await type("Quota");
+      expect(queries.length).toBe(before);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      expect(dom.root.querySelector(".k2b-choice-status")?.textContent).toBe("Quota used up");
+      expect(dom.root.querySelectorAll('[role="option"]')).toHaveLength(0);
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("the first Combobox search waits in rows instead of claiming no results", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    let finish: (value: { id: string; label: string }[]) => void = () => {};
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Street",
+          debounceMs: 0,
+          fetchData: () => new Promise((resolve) => (finish = resolve)),
+          onSelect: () => {},
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+      input.value = "Main";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await Bun.sleep(0);
+      expect(dom.root.querySelectorAll(".k2b-choice-loading__row")).toHaveLength(3);
+      expect(dom.root.textContent).not.toContain("No results");
+      finish([{ id: "a", label: "Main Street 1" }]);
+      await Bun.sleep(0);
+      expect(dom.root.querySelector(".k2b-choice-loading")).toBeNull();
+      expect(dom.root.querySelectorAll('[role="option"]')).toHaveLength(1);
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
   test("hides a Select listbox before publishing the selected value", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
@@ -555,6 +688,13 @@ describe("@k2b/ui choice and date browser behavior", () => {
     setSolidInputValue(search, "ops");
     await Bun.sleep(0);
     expect(calls.at(-1)).toEqual({ query: "ops", group: "group" });
+
+    // A remote filter the person chose survives closing and reopening.
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")!;
+    trigger.click();
+    trigger.click();
+    await Bun.sleep(0);
+    expect(calls.at(-1)).toEqual({ query: "", group: "group" });
 
     dispose();
     popover.restore();
@@ -785,7 +925,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
-  test("keeps IconInput fuzzy search inside the active default group", async () => {
+  test("searches IconInput across every group unless a group was chosen", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { IconInput } = await import("../src/inputs/SpecialInputs");
@@ -799,14 +939,36 @@ describe("@k2b/ui choice and date browser behavior", () => {
     );
 
     dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")?.click();
-    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"))
-      .find((radio) => radio.textContent === "Food")
-      ?.click();
+    const optionLabels = () => Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent);
+    const chip = (label: string) =>
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']")).find((radio) => radio.textContent === label)!;
+    expect(chip("Recommended").getAttribute("aria-checked")).toBe("true");
 
+    // "Truck" is not recommended; the search still finds it.
     const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "truck");
+    expect(optionLabels()).toEqual(["Truck"]);
+    expect(chip("All").getAttribute("aria-checked")).toBe("true");
+
+    // No loose subsequence hits such as "warninG eRrOr" for "gro".
+    setSolidInputValue(search, "gro");
+    expect(optionLabels()).toEqual(["Friends"]);
+
+    setSolidInputValue(search, "start");
+    chip("Media").click();
+    expect(optionLabels()).toEqual(["Play"]);
+
+    // A group chosen before searching keeps narrowing the results, also the
+    // default group clicked on purpose.
+    setSolidInputValue(search, "");
+    chip("Recommended").click();
+    setSolidInputValue(search, "truck");
+    expect(optionLabels()).toEqual([]);
+    chip("Food").click();
     setSolidInputValue(search, "piz");
-    const optionLabels = Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent);
-    expect(optionLabels).toEqual(["Pizza"]);
+    expect(optionLabels()).toEqual(["Pizza"]);
+    setSolidInputValue(search, "truck");
+    expect(optionLabels()).toEqual([]);
 
     dispose();
     popover.restore();

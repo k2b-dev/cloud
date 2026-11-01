@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { toPublicRecordRevisions } from "../api/durable-history";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";

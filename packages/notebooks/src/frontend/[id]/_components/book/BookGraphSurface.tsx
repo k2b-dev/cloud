@@ -20,14 +20,15 @@ type Props = BookNavigatorProps & {
 export default function BookGraphSurface(props: Props) {
   return (
     <div class="notebook-book-shell">
-      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace">
+      {/* As in Write's Links, the graph's toolbar holds the navigation button, so the workspace draws no head. */}
+      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace" head={false}>
         <BookNavigator
           userId={props.userId}
           notebookId={props.notebookId}
           notebookName={props.notebookName}
           notebookIcon={props.notebookIcon}
           selectedNoteId={props.selectedNoteId}
-          tree={props.tree}
+          navigation={props.navigation}
           tags={props.tags}
           currentHref={props.currentHref}
           canWrite={props.canWrite}
@@ -51,7 +52,6 @@ export default function BookGraphSurface(props: Props) {
               view={props.graphView}
               now={props.now}
               timeZone={props.timeZone}
-              navigationHidden={props.navigationHidden}
             />
           </AppWorkspace.Main>
         </AppWorkspace.Content>

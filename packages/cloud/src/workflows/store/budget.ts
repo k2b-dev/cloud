@@ -16,7 +16,8 @@
  * rather than something a hash has to detect — whatever the plan turns out to
  * do, it still cannot exceed what was approved.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import { withTransaction } from "./transaction";
 
 /** Caps keyed by dimension — `{ emails: 100, httpRequests: 50 }`. */

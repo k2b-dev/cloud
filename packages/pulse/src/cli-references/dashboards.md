@@ -68,7 +68,8 @@ result remains visible with its timestamp when available.
 
 Anyone with the public link can read every listed output column. Review the
 SQL and columns first. Publication includes results and presentation, with no
-SQL or parameters in the public document.
+SQL or parameters in the public document. Public links read the preset ranges
+only.
 
 ```sh
 cld pulse dashboards publish <dashboard-id> --base <base-id> \

@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
-import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { aiFileStore } from "./files-store";
 import {
   drainQueuedMessages,
@@ -39,7 +39,7 @@ integration(
       if (!draft.ok) throw new Error("fixture draft failed");
       const input: Parameters<AiConversationService["submitChatTurn"]>[0] = {
         conversationId: chat.id,
-        modelProfileId: "fixture",
+        modelId: "fixture",
         runConfig: {
           kind: "chat",
           input: text,

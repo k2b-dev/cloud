@@ -5,7 +5,7 @@ section: Build an app
 order: 100
 description: Build an independently released application against Cloud's public runtime contract.
 tags: [applications, architecture, deployment]
-updated: 2026-10-09
+updated: 2026-10-31
 ---
 
 # Build an application
@@ -39,6 +39,7 @@ to ship as part of Cloud itself; see
 | Look up every `defineApp()` option | [Define an application](/en/docs/build/define-app) |
 | Prepare data and manage process work | [Application lifecycle](/en/docs/build/lifecycle) |
 | Publish routes through the gateway | [Routes and discovery](/en/docs/build/routing) |
+| Serve an app-owned website on assigned domains | [Public site](/en/docs/build/public-surface) |
 | Add middleware and HTTP APIs | [Server requests](/en/docs/server) |
 | Add translations and locale-aware formatting | [Internationalization](/en/docs/build/internationalization) |
 | Write labels, feedback, errors, notifications, and Help | [Product language and tone](/en/docs/build/product-language-and-tone) |

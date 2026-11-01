@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractDataBlocks, extractNamedBlocks, extractNamedDataProperties } from "./named-blocks";
+import { extractDataBlocks, extractNamedBlocks, extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { parseNotebookQueryBlocks } from "./query-blocks";
 
 describe("epic data review regressions", () => {

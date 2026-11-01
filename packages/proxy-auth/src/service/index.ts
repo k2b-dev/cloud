@@ -1,6 +1,6 @@
-import { toPgUuidArray } from "@k2b/cloud/services";
+import { sql } from "@k2b/cloud";
+import { audit, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { CreateProxyAuthClient, ProxyAuthAllowedGroup, ProxyAuthClient, UpdateProxyAuthClient } from "@/contracts";
 
 type Db = typeof sql;
@@ -199,6 +199,15 @@ const create = async (config: { data: CreateProxyAuthClient; createdBy: string }
       `;
       }
 
+      await audit.record(
+        {
+          action: "proxy_auth.client.create",
+          outcome: "allowed",
+          actor: { userId: createdBy },
+          target: { type: "proxy_auth_client", id: String(client.id) },
+        },
+        tx,
+      );
       return ok(client.id as string);
     });
     if (!result.ok) return result;
@@ -218,7 +227,7 @@ const create = async (config: { data: CreateProxyAuthClient; createdBy: string }
 /**
  * Updates mutable client fields and replaces allowed-group links when provided.
  */
-const update = async (config: { id: string; data: UpdateProxyAuthClient }) => {
+const update = async (config: { id: string; data: UpdateProxyAuthClient; actorId?: string }) => {
   const { id, data } = config;
 
   try {
@@ -237,6 +246,16 @@ const update = async (config: { id: string; data: UpdateProxyAuthClient }) => {
         await tx`UPDATE proxy_auth.clients SET description = ${data.description} WHERE id = ${id}::uuid`;
       }
 
+      if (config.actorId)
+        await audit.record(
+          {
+            action: "proxy_auth.client.update",
+            outcome: "allowed",
+            actor: { userId: config.actorId },
+            target: { type: "proxy_auth_client", id },
+          },
+          tx,
+        );
       return ok();
     });
   } catch (error: unknown) {
@@ -247,13 +266,23 @@ const update = async (config: { id: string; data: UpdateProxyAuthClient }) => {
 /**
  * Deletes one proxy-auth client by UUID and returns `NOT_FOUND` when missing.
  */
-const remove = async (config: { id: string }) => {
+const remove = async (config: { id: string; actorId?: string }) => {
   try {
-    const rows = await sql`DELETE FROM proxy_auth.clients WHERE id = ${config.id}::uuid RETURNING id`;
-    if (rows.length === 0) {
-      return fail(err.notFound("Client"));
-    }
-    return ok();
+    return await sql.begin(async (tx) => {
+      const rows = await tx`DELETE FROM proxy_auth.clients WHERE id = ${config.id}::uuid RETURNING id`;
+      if (rows.length === 0) return fail(err.notFound("Client"));
+      if (config.actorId)
+        await audit.record(
+          {
+            action: "proxy_auth.client.delete",
+            outcome: "allowed",
+            actor: { userId: config.actorId },
+            target: { type: "proxy_auth_client", id: config.id },
+          },
+          tx,
+        );
+      return ok();
+    });
   } catch (error: unknown) {
     return fail(err.internal(toErrorMessage(error, "Failed to delete client.")));
   }

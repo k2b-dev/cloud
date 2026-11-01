@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { app } from "../config";
 import {
   buildNotebookBackupPaths,
   checkSnapshotTarget,
@@ -10,6 +11,12 @@ import {
   validateSnapshotEndpoint,
 } from "./backup";
 import type { NotebookExport } from "./export";
+
+let settings: ReturnType<typeof spyOn<typeof app.settings, "get">>;
+beforeEach(() => {
+  settings = spyOn(app.settings, "get").mockResolvedValue([]);
+});
+afterEach(() => settings.mockRestore());
 
 const config: NotebookBackupConfig = {
   enabled: true,
@@ -97,6 +104,17 @@ describe("notebook S3 backup", () => {
     expect(describeSnapshotError(error)).toBe("HTTP 403 403 - Forbidden (S3Error)");
   });
 
+  test("provider text never keeps markup, script bodies or tags joined by removal", () => {
+    const page = (body: string) => Object.assign(new Error(`<html><body>${body}</body></html>`), { name: "S3Error" });
+    for (const end of ["</script>", "</script >", "</SCRIPT\t\n>", "</script foo>"]) {
+      const text = describeSnapshotError(page(`<script>alert(1)${end}Bucket missing`));
+      expect(text).toBe("Bucket missing (S3Error)");
+    }
+    expect(describeSnapshotError(page("<style>p{}</style >Denied"))).toBe("Denied (S3Error)");
+    expect(describeSnapshotError(page("<script>never closed"))).toBe("Provider returned no error details.");
+    expect(describeSnapshotError(page("<scr<script>ipt>x</script>Gone"))).not.toContain("<");
+  });
+
   test("rejects Hetzner endpoints without location subdomain", () => {
     const invalid = validateSnapshotEndpoint("https://your-objectstorage.com", "nbg1");
     const valid = validateSnapshotEndpoint("https://nbg1.your-objectstorage.com", "nbg1");
@@ -150,15 +168,10 @@ test("snapshot save checks refuse known internal targets with a stable code", as
   expect(checked).toBe(false);
 });
 
-test("snapshot allowlist validates operator configuration with its variable name", () => {
-  const original = process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-  try {
-    process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = "0.0.0.0/0";
-    expect(snapshotAllowlist).toThrow("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: Invalid network allowlist entry");
-  } finally {
-    if (original === undefined) delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-    else process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = original;
-  }
+test("snapshot allowlist validates current admin settings", async () => {
+  settings.mockResolvedValue(["0.0.0.0/0"]);
+  await expect(snapshotAllowlist()).rejects.toThrow("notebooks.snapshot_allowed_targets");
+  expect(settings).toHaveBeenCalledWith("notebooks.snapshot_allowed_targets");
 });
 
 test("save checks use the signed URL hostname, including the default AWS region", async () => {

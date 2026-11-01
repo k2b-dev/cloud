@@ -1,9 +1,11 @@
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
-import { env } from "../config/env";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { stubConnections } from "../runtime/connections.test-fixture";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId, getProcessPlatformPermissions } from "./process-identity";
@@ -11,17 +13,27 @@ import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 test("declared CLI modules are advertised, routed, and served behind authentication", async () => {
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "cli-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "cli-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   const entries: unknown[] = [];
   // Only the methods used by startup are implemented; heartbeat transport is stubbed.
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
+    }),
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
     }),
     spyOn(heartbeat, "createHeartbeat").mockImplementation((_id, entry) => {
       entries.push(entry);
@@ -68,7 +80,7 @@ test("declared CLI modules are advertised, routed, and served behind authenticat
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
   }
 });
 

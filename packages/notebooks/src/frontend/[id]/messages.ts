@@ -5,6 +5,22 @@ export const notebookWorkspaceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      deviceAccessChanged: "Your account or access changed. Reopen the note or sign in again.",
+      deviceOffline:
+        "The server is unreachable. Retry, or edit in this tab only. Closing this tab loses changes that have not reached the server.",
+      deviceOpeningFailed:
+        "Device storage could not be opened. Retry, or edit in this tab only. Closing this tab loses changes that have not reached the server.",
+      deviceCopyLabel: "Pending text on this device",
+      deviceFailed: "This device could not save your changes. Keep the note open and retry, or copy your text.",
+      deviceRecovery: "This copy stays on this device. Copy the text, then discard this copy to edit the current note.",
+      deviceKept: "Pending text kept on this device. This copy remains read-only until you discard it.",
+      deviceTabRetryFailed: "The connection could not be restored. Your text is still in this tab. Try again when the server is available.",
+      deviceEditInTab: "Edit in this tab only",
+      deviceTabOnly: "Editing in this tab only. Closing this tab loses changes that have not reached the server.",
+      deviceRetry: "Retry saving",
+      deviceKeep: "Keep on this device",
+      deviceDiscard: "Discard device changes",
+      deviceDiscardConfirm: "Discard the pending text on this device? This cannot be undone.",
       failedCreateNote: "Failed to create note",
       failedMoveNote: "Failed to move note",
       failedSortNotes: "Failed to sort notes",
@@ -22,6 +38,14 @@ export const notebookWorkspaceMessages = i18n.define({
       moveNote: "Move note",
       moveTo: ({ title }: { title: string }) => `Move ${title} to:`,
       rootLevel: "Root level",
+      moveTarget: "New place",
+      searchMoveTarget: "Search notes by title",
+      moreNotes: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `1 more note`, other: `${count.toLocaleString("en")} more notes` }),
+      earlierNotes: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `1 earlier note`, other: `${count.toLocaleString("en")} earlier notes` }),
+      loadingNotes: "Loading notes…",
+      failedLoadNotes: "Notes could not be loaded.",
       move: "Move",
       moveUp: "Move up",
       moveDown: "Move down",
@@ -151,6 +175,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Only unlinked",
       graphAreas: "Areas",
       graphTopLevel: "Top level",
+      graphScope: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
+        `This notebook has ${total.toLocaleString("en")} pages. The graph shows the ${shown.toLocaleString("en")} around “${title}”: its links, their links, its sub-pages and their places in the notebook. To see the pages around another page, move it to the center in Neighborhood or open the graph from there.`,
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
         `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
       graphLinkCounts: ({ out, incoming }: { out: number; incoming: number }) => `links to ${out} · linked from ${incoming}`,
@@ -275,10 +301,14 @@ export const notebookWorkspaceMessages = i18n.define({
       copyText: "Copy text",
       discardUnsavedConfirm: "Reload the note? Changes that are not saved will be lost.",
       leaveUnsavedConfirm: "Leave the note? Changes that are not saved will be lost.",
+      firstEditsNotMerged:
+        "Someone rewrote this note while you started typing. The note shows their version; your first changes were not added.",
+      copyFirstEdits: "Copy my version",
       leaveNote: "Leave",
       signInAgain: "Sign in again",
       storageFull: "Storage is full",
       connectionClosed: "Connection closed",
+      documentReopen: "Reopen this note",
       liveUpdatesStopped: "Live updates stopped. Reload the page to see the latest changes.",
       reload: "Reload",
       storageExhaustedTitle: "Live editing is unavailable",
@@ -299,6 +329,7 @@ export const notebookWorkspaceMessages = i18n.define({
       collapseDetails: "Collapse detail panel",
       expandDetails: "Expand detail panel",
       navigation: "Navigation",
+      detailPanel: "Detail panel",
       view: "View",
       fullWidth: "Full width",
       fullWidthHint: "Only for you in this browser",
@@ -313,6 +344,12 @@ export const notebookWorkspaceMessages = i18n.define({
       contentCopyFailed: "Could not copy note content",
       copied: "Copied",
       loadActivityFailed: "Failed to load note activity",
+      tableActionUnknownTitle: "Table change not confirmed yet",
+      tableActionUnknownDetail:
+        "The server may have applied it. The table updates when the change arrives. Check the table before you change its rows or columns again.",
+      tableActionStopWaiting: "Stop waiting",
+      tableActionFailed: "The table change could not be applied. Check the table before trying again.",
+      tableColumnRetained: "Column kept because someone else wrote in it",
       historyIncompleteTitle: "Some note changes could not be recovered",
       historyIncompleteDetail:
         "This note may be incomplete. Available changes and the previous saved version were preserved. Contact your administrator before relying on this content.",
@@ -394,6 +431,10 @@ export const notebookWorkspaceMessages = i18n.define({
       contents: "Contents",
       references: "References",
       attachments: "Attachments",
+      noteKind: "Note",
+      moreAboutNote: "More about this note",
+      attachmentFiles: "Files",
+      attachmentImages: "Images",
       tabs: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} tab`, other: `${count} tabs` }),
       created: "Created",
       updated: "Updated",
@@ -477,6 +518,25 @@ export const notebookWorkspaceMessages = i18n.define({
       close: "Close",
     },
     de: {
+      deviceAccessChanged: "Dein Konto oder Zugriff hat sich geändert. Öffne die Notiz erneut oder melde dich wieder an.",
+      deviceOffline:
+        "Der Server ist nicht erreichbar. Versuche es erneut oder bearbeite die Notiz nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
+      deviceOpeningFailed:
+        "Der Gerätespeicher konnte nicht geöffnet werden. Versuche es erneut oder bearbeite die Notiz nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
+      deviceCopyLabel: "Ausstehender Text auf diesem Gerät",
+      deviceFailed:
+        "Dieses Gerät konnte deine Änderungen nicht speichern. Lass die Notiz geöffnet und versuche es erneut oder kopiere deinen Text.",
+      deviceRecovery: "Diese Kopie bleibt auf diesem Gerät. Kopiere den Text und verwirf diese Kopie, um die aktuelle Notiz zu bearbeiten.",
+      deviceKept: "Ausstehender Text bleibt auf diesem Gerät. Diese Kopie bleibt bis zum Verwerfen schreibgeschützt.",
+      deviceTabRetryFailed:
+        "Die Verbindung konnte nicht wiederhergestellt werden. Dein Text ist weiterhin in diesem Tab. Versuche es erneut, wenn der Server wieder erreichbar ist.",
+      deviceEditInTab: "Nur in diesem Tab bearbeiten",
+      deviceTabOnly:
+        "Du bearbeitest nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
+      deviceRetry: "Speichern erneut versuchen",
+      deviceKeep: "Auf diesem Gerät behalten",
+      deviceDiscard: "Geräteänderungen verwerfen",
+      deviceDiscardConfirm: "Den ausstehenden Text auf diesem Gerät verwerfen? Das kann nicht rückgängig gemacht werden.",
       failedCreateNote: "Die Notiz konnte nicht erstellt werden",
       failedMoveNote: "Die Notiz konnte nicht verschoben werden",
       failedSortNotes: "Die Notizen konnten nicht sortiert werden",
@@ -494,6 +554,14 @@ export const notebookWorkspaceMessages = i18n.define({
       moveNote: "Notiz verschieben",
       moveTo: ({ title }) => `${title} verschieben nach:`,
       rootLevel: "Oberste Ebene",
+      moveTarget: "Neuer Ort",
+      searchMoveTarget: "Notizen nach Titel suchen",
+      moreNotes: ({ count }) =>
+        i18n.plural(count, "de", { one: `1 weitere Notiz`, other: `${count.toLocaleString("de")} weitere Notizen` }),
+      earlierNotes: ({ count }) =>
+        i18n.plural(count, "de", { one: `1 vorherige Notiz`, other: `${count.toLocaleString("de")} vorherige Notizen` }),
+      loadingNotes: "Notizen werden geladen…",
+      failedLoadNotes: "Die Notizen konnten nicht geladen werden.",
       move: "Verschieben",
       moveUp: "Nach oben verschieben",
       moveDown: "Nach unten verschieben",
@@ -622,6 +690,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Nur ohne Verknüpfung",
       graphAreas: "Bereiche",
       graphTopLevel: "Oberste Ebene",
+      graphScope: ({ shown, total, title }) =>
+        `Dieses Notizbuch hat ${total.toLocaleString("de")} Seiten. Der Graph zeigt die ${shown.toLocaleString("de")} rund um „${title}“: ihre Links, deren Links, ihre Unterseiten und deren Orte im Notizbuch. Um die Seiten um eine andere Seite zu sehen, bringe sie in Umgebung in die Mitte oder öffne den Graphen von dort.`,
       graphNoteCount: ({ notes, links }) =>
         `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
       graphLinkCounts: ({ out, incoming }) => `verweist auf ${out} · verwiesen von ${incoming}`,
@@ -732,10 +802,14 @@ export const notebookWorkspaceMessages = i18n.define({
       copyText: "Text kopieren",
       discardUnsavedConfirm: "Notiz neu laden? Nicht gespeicherte Änderungen gehen verloren.",
       leaveUnsavedConfirm: "Notiz verlassen? Nicht gespeicherte Änderungen gehen verloren.",
+      firstEditsNotMerged:
+        "Jemand hat diese Notiz umgeschrieben, während du zu tippen begonnen hast. Die Notiz zeigt diese Fassung; deine ersten Änderungen wurden nicht eingefügt.",
+      copyFirstEdits: "Meine Fassung kopieren",
       leaveNote: "Verlassen",
       signInAgain: "Erneut anmelden",
       storageFull: "Speicher ist voll",
       connectionClosed: "Verbindung geschlossen",
+      documentReopen: "Notiz erneut öffnen",
       liveUpdatesStopped: "Live-Aktualisierungen wurden beendet. Lade die Seite neu, um die neuesten Änderungen zu sehen.",
       reload: "Neu laden",
       storageExhaustedTitle: "Live-Bearbeitung nicht verfügbar",
@@ -756,6 +830,7 @@ export const notebookWorkspaceMessages = i18n.define({
       collapseDetails: "Detailbereich einklappen",
       expandDetails: "Detailbereich ausklappen",
       navigation: "Navigation",
+      detailPanel: "Detailbereich",
       view: "Ansicht",
       fullWidth: "Volle Breite",
       fullWidthHint: "Nur für dich in diesem Browser",
@@ -770,6 +845,12 @@ export const notebookWorkspaceMessages = i18n.define({
       contentCopyFailed: "Der Inhalt der Notiz konnte nicht kopiert werden",
       copied: "Kopiert",
       loadActivityFailed: "Die Aktivitäten der Notiz konnten nicht geladen werden",
+      tableActionUnknownTitle: "Tabellenänderung noch nicht bestätigt",
+      tableActionUnknownDetail:
+        "Der Server hat sie möglicherweise ausgeführt. Die Tabelle aktualisiert sich, sobald die Änderung eintrifft. Prüfe die Tabelle, bevor du wieder Zeilen oder Spalten änderst.",
+      tableActionStopWaiting: "Nicht mehr warten",
+      tableActionFailed: "Die Tabellenänderung konnte nicht ausgeführt werden. Prüfe die Tabelle, bevor du es erneut versuchst.",
+      tableColumnRetained: "Spalte bleibt, weil andere darin geschrieben haben",
       historyIncompleteTitle: "Einige Änderungen der Notiz konnten nicht wiederhergestellt werden",
       historyIncompleteDetail:
         "Diese Notiz ist möglicherweise unvollständig. Verfügbare Änderungen und die zuvor gespeicherte Version wurden erhalten. Wende dich an deine Administration, bevor du dich auf diesen Inhalt verlässt.",
@@ -852,6 +933,10 @@ export const notebookWorkspaceMessages = i18n.define({
       contents: "Inhalt",
       references: "Referenzen",
       attachments: "Anhänge",
+      noteKind: "Notiz",
+      moreAboutNote: "Mehr zu dieser Notiz",
+      attachmentFiles: "Dateien",
+      attachmentImages: "Bilder",
       tabs: ({ count }) => i18n.plural(count, "de", { one: `${count} Tab`, other: `${count} Tabs` }),
       created: "Erstellt",
       updated: "Aktualisiert",

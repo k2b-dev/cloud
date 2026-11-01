@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { decryptSecret, encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { PULSE_INTERNAL_INGEST_BATCH_LIMIT } from "../ingest-limits";
 import { BASE_STORE_OPERATIONS, BASE_STORE_STATES, READ_PROFILE_NAMES } from "./admin-contracts";

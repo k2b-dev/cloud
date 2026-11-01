@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { CreateItemTemplateSchema, ItemFilterSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -152,7 +152,7 @@ suite("Spaces service-account assignees", () => {
       const claimId = await f.claim(itemId);
       expect(await change({ ...f.context(itemId), operation: "claim", claimId })).toMatchObject({ ok: true });
       expect((await get({ id: itemId }))?.assignees).toEqual([
-        { id: f.agent.id, kind: "service_account", displayName: f.agent.name, avatarHash: null },
+        { id: f.agent.id, kind: "service_account", serviceAccountKind: "agent", displayName: f.agent.name, avatarHash: null },
       ]);
       const filtered = async (values: Record<string, unknown>) =>
         (

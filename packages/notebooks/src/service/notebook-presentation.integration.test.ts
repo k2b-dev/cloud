@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { PRESENTATION_MODES } from "../lib/presentation-mode";
@@ -12,7 +12,7 @@ const notebookId = crypto.randomUUID();
 const accessId = crypto.randomUUID();
 const shortId = testShortId();
 const name = `Presentation test ${shortId}`;
-let published: ReturnType<typeof spyOn<typeof workspaceEvents, "notebookUpdated">> | undefined;
+let deliveryWake: ReturnType<typeof spyOn<typeof workspaceEvents.workspaceOutbox, "notify">> | undefined;
 
 beforeAll(async () => {
   if (!testInfra.database) return;
@@ -20,12 +20,13 @@ beforeAll(async () => {
   await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${shortId}, ${name})`;
   await sql`INSERT INTO auth.access (id, permission) VALUES (${accessId}::uuid, 'read')`;
   await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${accessId}::uuid)`;
-  published = spyOn(workspaceEvents, "notebookUpdated").mockResolvedValue(undefined);
+  deliveryWake = spyOn(workspaceEvents.workspaceOutbox, "notify").mockResolvedValue(undefined);
 }, 30_000);
 
 afterAll(async () => {
-  published?.mockRestore();
+  deliveryWake?.mockRestore();
   if (!testInfra.database) return;
+  await sql`DELETE FROM notebooks.workspace_outbox WHERE notebook_id = ${notebookId}::uuid`;
   await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookId}::uuid`;
   await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
 }, 30_000);
@@ -46,6 +47,7 @@ describe("notebook default presentation persistence", () => {
 
   postgresTest("persists all supported defaults and preserves the choice on unrelated settings changes", async () => {
     for (const defaultPresentationMode of PRESENTATION_MODES) {
+      deliveryWake?.mockClear();
       const result = await notebooks.update({
         id: notebookId,
         data: { defaultPresentationMode },
@@ -54,7 +56,11 @@ describe("notebook default presentation persistence", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error(result.error);
       expect(result.data.defaultPresentationMode).toBe(defaultPresentationMode);
-      expect(published).toHaveBeenLastCalledWith(expect.objectContaining({ id: notebookId, defaultPresentationMode }));
+      expect((await notebooks.get({ id: notebookId }))?.defaultPresentationMode).toBe(defaultPresentationMode);
+      const [hint] = await sql<{ payload: unknown }[]>`
+        SELECT payload FROM notebooks.workspace_outbox WHERE notebook_id = ${notebookId}::uuid ORDER BY seq DESC LIMIT 1`;
+      expect(hint?.payload).toEqual({ v: 1, type: "notebook.updated", notebookId, notebook: {} });
+      expect(deliveryWake).toHaveBeenCalledTimes(1);
       await notebooks.update({ id: notebookId, data: { description: "Unrelated change" }, dateConfig: { locale: "en", timeZone: "UTC" } });
       expect((await notebooks.get({ id: notebookId }))?.defaultPresentationMode).toBe(defaultPresentationMode);
     }

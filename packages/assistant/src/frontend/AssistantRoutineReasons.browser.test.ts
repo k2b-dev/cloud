@@ -109,7 +109,7 @@ beforeAll(async () => {
       if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
       const lang = url.searchParams.get("lang") ?? "en";
       return new Response(
-        `<!doctype html><html lang="${lang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><script src="/bundle.js"></script></body></html>`,
+        `<!doctype html><html lang="${lang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><script type="module" src="/bundle.js"></script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );
     },

@@ -11,7 +11,7 @@ if (unknown.length) throw new Error(`Unknown argument(s): ${unknown.join(", ")}.
 if (args.includes("--help")) {
   console.log(`Usage: bun scripts/check-cloud-packed-consumer.ts [--release] [--help]
 
-Pack @k2b/cloud, @k2b/ui and @k2b/ssr with npm, then install, typecheck,
+Pack @k2b/cloud, @k2b/ui, @k2b/ssr and @k2b/editor with npm, then install, typecheck,
 build an island page and run it against disposable services outside the workspace.
 Build UI first: bun run --cwd packages/ui build. Requires npm and Docker.
 
@@ -54,6 +54,7 @@ const consumer = join(temporaryRoot, "consumer");
 const cloudRoot = join(root, "packages/cloud");
 const uiRoot = join(root, "packages/ui");
 const ssrRoot = join(root, "packages/ssr");
+const editorRoot = join(root, "packages/editor");
 const cleanEnv = {
   PATH: process.env.PATH,
   HOME: process.env.HOME,
@@ -77,9 +78,9 @@ const releaseAgePolicy = async (): Promise<string> => {
   return `[install]\n${policy.join("\n")}\n`;
 };
 
-const run = async (label: string, cmd: string[], cwd: string): Promise<string> => {
+const run = async (label: string, cmd: string[], cwd: string, env: Record<string, string | undefined> = cleanEnv): Promise<string> => {
   console.log(label);
-  const child = Bun.spawn(cmd, { cwd, env: cleanEnv, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(cmd, { cwd, env, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => child.kill(), 300_000);
   try {
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
@@ -93,13 +94,14 @@ const run = async (label: string, cmd: string[], cwd: string): Promise<string> =
 try {
   const cloudManifest = z
     .object({
-      dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion }),
+      dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion, "@k2b/editor": exactVersion }),
       peerDependencies: z.record(z.string(), z.string()),
       devDependencies: z.object({ "@types/bun": z.string(), typescript: z.string() }),
     })
     .parse(await Bun.file(join(cloudRoot, "package.json")).json());
   const uiManifest = versionManifest.parse(await Bun.file(join(uiRoot, "package.json")).json());
   const ssrManifest = versionManifest.parse(await Bun.file(join(ssrRoot, "package.json")).json());
+  const editorManifest = versionManifest.parse(await Bun.file(join(editorRoot, "package.json")).json());
   await mkdir(join(consumer, "src"), { recursive: true });
   // The caller builds UI first. Never silently rebuild a shared local dist tree.
   if (!(await Bun.file(join(uiRoot, "dist/.build-complete")).exists())) {
@@ -119,13 +121,14 @@ try {
   const cloudArchive = await pack("Cloud", cloudRoot);
   const uiArchive = await pack("UI", uiRoot);
   const ssrArchive = await pack("SSR", ssrRoot);
+  const editorArchive = await pack("Editor", editorRoot);
   if ((await stat(join(uiRoot, "dist/.build-complete"))).mtimeMs !== uiBuildTime) {
     throw new Error("UI was rebuilt while packing; rerun after the build finishes");
   }
   const pins = await resolvePackedConsumerPins({
     pins: cloudManifest.dependencies,
-    workspaceVersions: { "@k2b/ui": uiManifest.version, "@k2b/ssr": ssrManifest.version },
-    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive },
+    workspaceVersions: { "@k2b/ui": uiManifest.version, "@k2b/ssr": ssrManifest.version, "@k2b/editor": editorManifest.version },
+    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive, "@k2b/editor": editorArchive },
     mode,
     isPublished,
   });
@@ -137,7 +140,7 @@ try {
         : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
     console.log(`${name}@${pin.pin} from ${origin}`);
   }
-  const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec };
+  const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec, "@k2b/editor": pins["@k2b/editor"].spec };
   await Bun.write(
     join(consumer, "package.json"),
     JSON.stringify(
@@ -268,7 +271,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
   );
   for (const name of ["@k2b/cloud", ...packedSiblings]) {
     const installed = await realpath(join(consumer, "node_modules", name));
-    const pin = name === "@k2b/ui" || name === "@k2b/ssr" ? pins[name] : undefined;
+    const pin = name === "@k2b/ui" || name === "@k2b/ssr" || name === "@k2b/editor" ? pins[name] : undefined;
     const isolatedRoot = pin?.source === "npm" ? join(consumer, "node_modules") : temporaryRoot;
     if (!installed.startsWith(`${await realpath(isolatedRoot)}${sep}`)) {
       throw new Error(`${name} resolved outside the isolated consumer: ${installed}`);
@@ -291,6 +294,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load the minimal app through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
   await run("Build with the installed Cloud production script", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   // SSR names island entries with the first 12 hex digits of the relative path's MD5.
@@ -311,6 +315,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load plugin-only config through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
   await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Plugin-only server bundle is empty");

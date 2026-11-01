@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
+import { appStatusIssues } from "../contracts/app-status";
+import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
+import { discussionsIssues } from "../contracts/discussions";
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { resourcePageIssue } from "../contracts/resource-pages";
 import { type Role, RoleSchema } from "../contracts/shared";
 import {
   type DashboardWidgetPresentation,
@@ -13,10 +17,11 @@ import {
   WIDGET_TITLE_MAX_LENGTH,
   type WidgetSettingsDeclaration,
 } from "../contracts/widgets";
+import type { PlatformBootstrapMetadata } from "../runtime/connections";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
-import { validateAppRegistryEntry } from "./registry-validation";
+import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
 import { watchRegistryChanges } from "./registry-watch";
 import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
@@ -60,6 +65,10 @@ export type AppInstanceRecord = {
   hostname: string;
   startedAt: number;
   entries: Record<string, string>;
+  /** Missing on older instances means unknown, never env or successful bootstrap. */
+  bootstrap?: PlatformBootstrapMetadata;
+  /** Core can durably observe both accepted legacy identity paths. */
+  legacyEvidence?: 1;
 };
 
 // The id and owner are a cross-version contract: all replicas must use the same lock.
@@ -100,6 +109,8 @@ export type AppRegistryDetail = AppRegistryEntry & {
   updatedAt: number;
   expiresAt: number;
   version: string;
+  /** Per-process startup metadata for admin readers. null means an older/unknown producer. */
+  instances?: { instanceId: string; hostname: string; startedAt: number; bootstrap: PlatformBootstrapMetadata | null }[];
 };
 
 export type AppRegistryIssue = {
@@ -148,7 +159,7 @@ export const readAppRegistrySnapshot = async (): Promise<AppRegistrySnapshot> =>
       continue;
     }
     loggedInvalidReasons.delete(entry.key);
-    const value = entry.value as AppRegistryEntry;
+    const value = asAppRegistryEntry(entry.value)!;
     const updatedAt = entry.updatedAt.getTime();
     apps.push({
       ...value,
@@ -192,7 +203,7 @@ export const getApp = async (appId: string): Promise<AppRegistryEntry | null> =>
       : validateAppRegistryEntry(entry.value);
   if (!reason) {
     loggedInvalidReasons.delete(key);
-    return entry.value;
+    return asAppRegistryEntry(entry.value);
   }
   reportInvalidEntry({ key, version: entry.revision, reason });
   return null;
@@ -233,7 +244,10 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
       return typeof localId === "string" && !kept.has(localId) ? [`${group}/${localId}`] : [];
     });
   });
+  if (groups.calendarSource !== undefined && !manifest.calendarSource) leftOut.push("calendarSource");
   if (groups.fileProvider !== undefined && !manifest.fileProvider) leftOut.push("fileProvider");
+  if (groups.appStatus !== undefined && !manifest.appStatus) leftOut.push("appStatus");
+  if (groups.discussions !== undefined && !manifest.discussions) leftOut.push("discussions");
   if (leftOut.length === 0) return;
   console.warn(
     JSON.stringify({
@@ -283,6 +297,92 @@ const withValidFileProvider = (manifest: CapabilityManifest): CapabilityManifest
   return rest;
 };
 
+const checkedCalendarSources = new Map<string, { manifestHash: string; valid: boolean }>();
+
+/**
+ * Ignores a calendar source that does not match the contract, logging once per manifest; the app's other
+ * capabilities stay available. The delivered `manifestHash` stays, because it identifies what the app registered.
+ */
+const withValidCalendarSource = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.calendarSource) return manifest;
+  const checked = checkedCalendarSources.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = calendarSourceIssues(manifest);
+    valid = issues.length === 0;
+    checkedCalendarSources.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored a calendar source that does not match the calendar-source contract",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues: issues
+            .slice(0, 10)
+            .map(({ function: name, localId, code, path, message }) => ({ function: name, localId, code, path, message })),
+        }),
+      );
+    }
+  }
+  if (valid) return manifest;
+  const { calendarSource: _ignored, ...rest } = manifest;
+  return rest;
+};
+
+const checkedDiscussions = new Map<string, { manifestHash: string; valid: boolean }>();
+const withValidDiscussions = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.discussions) return manifest;
+  const checked = checkedDiscussions.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = discussionsIssues(manifest);
+    valid = issues.length === 0;
+    checkedDiscussions.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid)
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored an incompatible discussions provider",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues,
+        }),
+      );
+  }
+  if (valid) return manifest;
+  const { discussions: _ignored, ...rest } = manifest;
+  return rest;
+};
+
+const checkedAppStatus = new Map<string, { manifestHash: string; valid: boolean }>();
+const withValidAppStatus = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.appStatus) return manifest;
+  const checked = checkedAppStatus.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = appStatusIssues(manifest);
+    valid = issues.length === 0;
+    checkedAppStatus.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid)
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored an incompatible appStatus provider",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues,
+        }),
+      );
+  }
+  if (valid) return manifest;
+  const { appStatus: _ignored, ...rest } = manifest;
+  return rest;
+};
+
 /** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
@@ -297,7 +397,13 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const read = parseCapabilityManifest(record.manifest, app.id);
-    const manifest = withValidFileProvider(read);
+    const supported = withValidAppStatus(withValidDiscussions(withValidCalendarSource(withValidFileProvider(read))));
+    const manifest = supported.resourcePages
+      ? {
+          ...supported,
+          resourcePages: supported.resourcePages.filter((page) => !resourcePageIssue(page.path, app.routes, app.id)),
+        }
+      : supported;
     const presentation = compileCapabilityPresentation(manifest, record.presentation, "reader");
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;
@@ -340,8 +446,21 @@ export const getCapability = async (appId: string): Promise<CapabilityRegistryEn
  * Same as `listApps` but returns registry metadata for admin observability.
  */
 export const listAppsDetailed = async (): Promise<AppRegistryDetail[]> => {
-  const snapshot = await readAppRegistrySnapshot();
-  return snapshot.apps;
+  const [snapshot, instances] = await Promise.all([
+    readAppRegistrySnapshot(),
+    appInstanceRegistry().snapshot({ prefix: APP_INSTANCE_PREFIX }),
+  ]);
+  return snapshot.apps.map((app) => ({
+    ...app,
+    instances: instances.entries
+      .filter(({ value }) => value.appId === app.id)
+      .map(({ value }) => ({
+        instanceId: value.instanceId,
+        hostname: value.hostname,
+        startedAt: value.startedAt,
+        bootstrap: value.bootstrap ?? null,
+      })),
+  }));
 };
 
 /**

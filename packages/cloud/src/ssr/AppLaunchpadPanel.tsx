@@ -29,7 +29,7 @@ export type AppLaunchpadLegalLink = {
 };
 
 export type AppLaunchpadContext = {
-  profile?: { name: string; theme: CloudThemePreference; appHref?: string };
+  profile?: { userId?: string; name: string; theme: CloudThemePreference; appHref?: string };
   apps: AppLaunchpadApp[];
   legalLinks: AppLaunchpadLegalLink[];
 };
@@ -42,7 +42,7 @@ const appIconPalette: readonly [AppIconPaletteEntry, ...AppIconPaletteEntry[]] =
   { from: "#7c3aed" },
   { from: "#d97706" },
   { from: "#e11d48" },
-  { from: "#0891b2" },
+  { from: "#c026d3" },
   { from: "#52525b" },
 ];
 

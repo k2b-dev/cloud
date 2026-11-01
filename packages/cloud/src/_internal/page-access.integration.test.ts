@@ -13,7 +13,7 @@ const request = (path: string, authenticated = false) =>
 
 const protectedPages = [
   "/admin",
-  "/admin/places-and-maps",
+  "/admin/base/places",
   "/admin/faq",
   "/admin/contacts",
   "/admin/grids",
@@ -25,7 +25,7 @@ const protectedPages = [
   "/admin/ipa-hosts",
   "/admin/proxy-auth",
   "/admin/oauth",
-  "/admin/gateway/apps",
+  "/admin/observability/gateway",
   "/admin/observability",
   "/me",
   ...[

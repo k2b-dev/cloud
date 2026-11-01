@@ -1,8 +1,10 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { markHintSeen } from "@k2b/cloud/browser/hints";
 import type { DateContext } from "@k2b/stdlib";
 import { Dropdown, type DropdownItem, MovedHint, toast, watchAppHostWidth } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
+import { assigneeIcon } from "@/presentation/assignees";
 import { useSpaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
@@ -47,6 +49,7 @@ export default function SpaceHeadActions(props: Props) {
   };
   onCleanup(() => stopWidthWatch?.());
 
+  const cloudId = useCloudIdCopy();
   const items = (): DropdownItem[] => [
     { label: t.spaceSettings, icon: "ti ti-settings", action: () => void settings.openDialog() },
     ...(props.icalToken
@@ -60,13 +63,14 @@ export default function SpaceHeadActions(props: Props) {
         ]
       : []),
     ...(props.currentView === "kanban" ? [{ label: t.keyboardShortcuts, icon: "ti ti-keyboard", action: () => void shortcuts() }] : []),
+    ...cloudId.section({ type: "spaces.space", id: props.spaceId }),
     ...(includePeople() && props.people.length > 0
       ? [
           {
             sectionLabel: t.headPeople,
             items: props.people.map((person) => ({
               label: person.displayName,
-              icon: person.kind === "service_account" ? "ti ti-api" : "ti ti-user",
+              icon: person.kind === "service_account" ? assigneeIcon(person.serviceAccountKind) : "ti ti-user",
               disabled: true as const,
             })),
           },

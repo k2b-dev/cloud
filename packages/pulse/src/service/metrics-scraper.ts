@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import type { MetricType, PulseMetric } from "../contracts";
 import { metricFamilyIncluded } from "../metric-filters";
 import { requireBaseActive, requireBaseWritable } from "./access-control";

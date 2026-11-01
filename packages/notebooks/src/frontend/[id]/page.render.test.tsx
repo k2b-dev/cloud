@@ -11,6 +11,7 @@ import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
 import * as routeState from "../../service/route-state";
+import { mockNoteTree } from "./page-tree.test-fixture";
 import "./_components/detail/ssr-test-plugin";
 
 const islandProps = (attribute: string | undefined) =>
@@ -78,11 +79,11 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([]));
+  spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
-  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -190,6 +191,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
     yjsSnapshotAt: null,
     contentMd: `# ${title}`,
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -204,7 +206,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(
-    spyOn(notebooksService.note, "getTree").mockResolvedValue([
+    ...mockNoteTree([
       { ...page("note02", "Kapitel 10"), children: [] },
       { ...page("note03", "Kapitel 2"), hasChildren: true, children: [{ ...home, children: [] }] },
       { ...page("note01", "Anhang"), children: [] },
@@ -284,7 +286,7 @@ test.each([
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([]));
+  spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.tag, "listNotesForTag").mockResolvedValue({ items: [], total: 0 }));
   spies.push(spyOn(notebooksService.tag, "countNotesForTag").mockResolvedValue(0));
@@ -332,6 +334,7 @@ const renderNotebookWithNotes = async (
     yjsSnapshotAt: null,
     contentMd: `# ${title}`,
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -343,9 +346,9 @@ const renderNotebookWithNotes = async (
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([note("note01", "Private folder"), note("note02", "Team notes")]));
+  spies.push(...mockNoteTree([note("note01", "Private folder"), note("note02", "Team notes")]));
   spies.push(
-    spyOn(notebooksService.notebook, "graph").mockResolvedValue(
+    spyOn(notebooksService.notebook, "graphView").mockResolvedValue(
       query
         ? {
             nodes: ["note01", "note02"].map((id, position) => ({
@@ -386,7 +389,7 @@ const renderNotebookWithNotes = async (
   if (mode !== "graph") {
     spies.push(
       spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
-        note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null },
+        note: { ...note("note01", "Private folder"), id: "note01" },
         noteAuthors,
         readonlyMode: mode === "readonly",
         tocItems: [],
@@ -428,10 +431,14 @@ test("a hidden navigation is server-rendered without the note tree", async () =>
   expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
   expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
   expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
-  // The graph's own toolbar offers the show control, so the sidebar adds none in a corner.
-  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
-    "Navigation einblenden",
-  ]);
+  // The graph's own toolbar holds the workspace's navigation button, so neither the sidebar nor a head adds one.
+  expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
+  expect(
+    (await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => [
+      button.attributes["aria-label"],
+      button.attributes["data-app-workspace-sidebar-toggle"],
+    ]),
+  ).toEqual([["Navigation", ""]]);
 });
 
 test("a visible navigation is server-rendered with its one sidebar and note tree, also for a former Navigator layout", async () => {
@@ -472,6 +479,7 @@ const renderEditorPage = async (
     yjsSnapshotAt: timestamp,
     contentMd: options.markdown === undefined ? previewMarkdown : options.markdown,
     yjsSnapshot: options.snapshot === undefined ? "c25hcHNob3Q=" : options.snapshot,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -482,12 +490,12 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
+  spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
-  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
   spies.push(spyOn(notebooksService.note.versions, "list").mockRejectedValue(new Error("No saved versions in this fixture")));
   spies.push(
     spyOn(notebooksService.note.comments, "listPage").mockResolvedValue({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
@@ -574,10 +582,11 @@ test("source preview escapes HTML as readable text instead of creating elements"
   expect(await select(html, "#notebook-note-preview script, #notebook-note-preview img")).toEqual([]);
 });
 
-test("write mode without a snapshot starts with an empty preview, matching the editor", async () => {
-  const html = await renderEditorPage({ snapshot: null });
-  expect((await select(html, "#notebook-note-preview .notebook-note-preview__line")).map((row) => row.text)).toEqual([""]);
-  expect(await select(html, "#notebook-note-preview .notebook-note-preview__line br")).toHaveLength(1);
+test("write mode opens with the saved Markdown in the preview, as the editor opens with it", async () => {
+  for (const snapshot of [null, undefined]) {
+    const html = await renderEditorPage(snapshot === null ? { snapshot: null } : {});
+    expect((await select(html, "#notebook-note-preview"))[0]?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
+  }
 });
 
 test("read-only without a snapshot starts from the saved Markdown", async () => {
@@ -587,11 +596,15 @@ test("read-only without a snapshot starts from the saved Markdown", async () => 
   expect(islandProps(editor?.attributes["data-props"]).initialContent).toStartWith("# Wochenplan");
 });
 
-test("write mode sends no duplicate initialContent in the editor props", async () => {
-  const [editor] = await select(await renderEditorPage(), 'solid-client[data-file="NoteEditor.client.tsx"]');
+test("write mode sends the saved Markdown and no collaboration state, which loads only on the first edit", async () => {
+  const html = await renderEditorPage();
+  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
   const props = islandProps(editor?.attributes["data-props"]);
-  expect(props.initialContent).toBeNull();
+  expect(props.initialContent).toStartWith("# Wochenplan");
   expect(props.initialDetail).toHaveProperty("contentMd");
+  expect(props.initialDetail).toMatchObject({ contentMd: props.initialContent });
+  expect(props).not.toHaveProperty("initialSnapshot");
+  expect(html).not.toMatch(/yjsSnapshot(?!At)/);
 });
 
 test("the preview shares the incomplete-history notice with the editor", async () => {
@@ -623,6 +636,8 @@ for (const mode of ["write", "readonly"] as const) {
   test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
+      const [presence] = await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]');
+      expect(islandProps(presence?.attributes["data-props"]).initialNoteId).toBe("note01");
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
@@ -647,6 +662,7 @@ const renderLinkedNotebook = async (
   query: string,
   locale = "en",
   defaultPresentationMode: PresentationMode = "write",
+  scope?: { around: string; total: number },
 ) => {
   const linkedNotebook = { ...notebook, defaultPresentationMode };
   const note = {
@@ -671,16 +687,17 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue(permission));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
+  spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
-  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null }));
+  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" }));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(
-    spyOn(notebooksService.notebook, "graph").mockResolvedValue({
+    spyOn(notebooksService.notebook, "graphView").mockResolvedValue({
       nodes: [{ id: "note01", title: "Welcome", inDegree: 0, parentId: null, position: 0, updatedAt: timestamp }],
       edges: [],
+      ...(scope ? { scope } : {}),
     }),
   );
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -697,6 +714,19 @@ const renderLinkedNotebook = async (
   expect(response.status).toBe(200);
   return response.text();
 };
+
+for (const [locale, line] of [
+  ["en", "This notebook has 20,000 pages. The graph shows the 1 around “Welcome”"],
+  ["de", "Dieses Notizbuch hat 20.000 Seiten. Der Graph zeigt die 1 rund um „Welcome“"],
+]) {
+  test(`a large notebook's graph says from its first paint that it shows the pages around one page (${locale})`, async () => {
+    const html = await renderLinkedNotebook("write", "graph", locale, "write", { around: "note01", total: 20_000 });
+    const [scope] = await select(html, ".notebook-graph__scope");
+    expect(scope?.attributes.role).toBe("note");
+    expect(scope?.text).toContain(line);
+    expect(await select(await renderLinkedNotebook("write", "graph", locale), ".notebook-graph__scope")).toHaveLength(0);
+  });
+}
 
 for (const [locale, label] of [
   ["en", "Links"],
@@ -840,3 +870,15 @@ for (const mode of ["write", "book", "graph", "graph&from=readonly"] as const)
     expect(shell.panel.context.scope).toEqual({ type: "notebooks.notebook", id: notebook.shortId });
     expect(shell.panel.context.scope.id).not.toBe(notebook.id);
   });
+
+// Write and Links draw no workspace head: the toolbar holds the navigation and Details buttons (old head button →
+// toolbar button). Read and version history have no toolbar, so they keep the head's buttons.
+test.each([
+  { mode: "write", head: 0, ownDetails: 0 },
+  { mode: "graph", head: 0, ownDetails: 0 },
+  { mode: "readonly", head: 1, ownDetails: 1 },
+] as const)("$mode: the workspace head and its Details button", async ({ mode, head, ownDetails }) => {
+  const html = await renderNotebookWithNotes({}, mode);
+  expect(await select(html, ".k2b-app-workspace__head")).toHaveLength(head);
+  expect(await select(html, ".k2b-app-workspace__detail-toggle")).toHaveLength(mode === "graph" ? 0 : ownDetails);
+});

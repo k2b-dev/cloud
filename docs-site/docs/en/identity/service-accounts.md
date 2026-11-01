@@ -5,7 +5,7 @@ section: Identity and access
 order: 352
 description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-09-30
+updated: 2026-10-23
 ---
 
 # Standalone service accounts and agents
@@ -21,12 +21,15 @@ Every service account has one `kind`:
 | --- | --- | --- |
 | `user_delegated` | A credential acting for one user | The delegated user's live grants |
 | `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
-| `standalone` | An integration with its own identity | Explicit grants on the account |
-| `agent` | A standalone account that surfaces as an agent | Explicit grants on the account |
+| `standalone` | An integration with its own identity | Direct and local group grants |
+| `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
 
-`agent` changes presentation only: pickers, entity search, permission editor
-rows, and the Accounts app show a robot icon and the label "Agent" instead of a
-key. It carries no extra permission and no different token rules. Use it for
+`agent` changes presentation only: pickers and the Accounts app show the label
+"Agent" instead of a key. It carries no extra permission and no different token
+rules. Every service account shows a picture, never a bare icon: a robot drawn
+from its account ID, or a photo. Administrators change a standalone account's
+picture on its page under **Accounts → Agents** or with `cld admin agents
+avatar`; see [Profile pictures](/en/docs/identity/profile-pictures). Use it for
 coding agents and other automated workers that people should recognize in
 assignee lists, activity, and audit trails.
 
@@ -37,6 +40,9 @@ The request contract does not change. A standalone account authenticates as a
 `serviceAccount.kind === "resource_bound"` before reading `appId`,
 `resourceType`, or `resourceId`. See
 [Request identity](/en/docs/identity/authentication).
+
+For Studio execution and its separate effect rights, see
+[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
 
 ## Create the account
 
@@ -58,8 +64,8 @@ user or application.
 
 ## Choose the credential
 
-A standalone account can hold both credential forms at once. Agents always use
-the OAuth client; integrations choose.
+A standalone account or agent can hold both credential forms at once. The
+agent CLI creates an OAuth client; administrators can also issue an API key.
 
 | Credential | Lifetime | Revocation | Create with |
 | --- | --- | --- | --- |
@@ -82,6 +88,11 @@ The access token carries `principal_type: "service_account"`,
 API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
 Accounts app and through `cld accounts service-accounts`.
+
+For an external model client, choose **AI models only** when creating a key
+in **Accounts → Service accounts → Create API key**. Grant model access to the
+machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
+for purpose, model grants, usage limits, and revocation.
 
 ## Revoke centrally
 
@@ -123,10 +134,20 @@ editor shows next to the name, and `cld spaces access list "Roadmap"` shows its
 grant with type `agent` or `service account`; see
 [Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
+A human group manager or installation administrator can also add an active
+standalone or agent account to a local Cloud group through Accounts, its API,
+or `cld accounts groups members add <group> --service-account <id-or-name> --yes`.
+The account inherits resource grants through the group and its local ancestors;
+removing membership or disabling the account ends that inherited access.
+This creates no Unix or FreeIPA identity. IPA groups keep their directory
+policy, and machine membership does not grant directory visibility, group
+management authority, or an installation role. See
+[Local group recipients](/en/docs/identity/authorization#local-group-recipients).
+
 Two limits apply to every request, and the lower one wins:
 
 - the account's grant on the resource, resolved through the same shared
-  resolver as for a user (direct grant, authenticated, and public grants);
+  resolver as for a user (direct grant, local group grants, authenticated, and public grants);
 - the scopes of the credential it presents. A token with only `read` cannot
   write, even with a `write` grant; a token without `read` reaches nothing.
 
@@ -155,8 +176,9 @@ In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal
 views such as favorites and the Spaces work overview, editing or deleting
 comments (and, in Notebooks, writing comments), writing contact notes, and
-signing up for or cancelling Venue shifts. Managing access and listing API keys
-stay user-only in Spaces, Notebooks, and Contacts.
+signing up for or cancelling Venue shifts. Managing access in Spaces, Notebooks, and Contacts follows the admin grant
+and credential scope, including for agents and standalone accounts. Listing
+API keys stays user-only in those applications.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
 contact book, renaming, importing, or exporting a contact book, administering a
 mailbox (its settings, access, sender identities, automations, and restoring it
@@ -191,6 +213,21 @@ before it expires, and obtains a new one after a `401`. Nothing else changes:
 the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
+
+## Automatic machine workflows
+
+Grids can run scheduled and record-event workflows under a named machine account
+with its own base grant and an exact-workflow, revocable mandate. See
+[Machine workflow mandates](./machine-workflow-mandates.md).
+
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).
+
+## Local group management by machines
+
+Standalone and agent accounts can receive a direct, revocable local group
+management grant, separate from membership. A matching token scope is also
+required. See [Machine group management](./machine-group-management.md).
 
 ## Find names through a directory share
 

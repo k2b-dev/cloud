@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { refreshAppBadges } from "../browser/app-badges";
 import { APPROVAL_COUNTS_PATH } from "../contracts/approvals";
-import { APP_BADGE_INTERVAL_MS, appBadgeCount, approvalCount, watchAppBadges } from "./app-badges";
+import { APP_BADGE_INTERVAL_MS, appBadgeCount, appPartSummaryText, approvalCount, watchAppBadges } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
 import type { ShellData } from "./shell-data";
 
@@ -442,5 +442,62 @@ test("a disposed watcher cannot clear new counts when its error cleanup rejects 
   } finally {
     stop();
     for (const reject of rejectCleanup) reject();
+  }
+});
+
+test("a Cloud app part's summary keeps its one-line text beside its count; a missing or invalid text clears it", async () => {
+  responses["/api/spaces/summary"] = () => Response.json({ count: 5, text: "5 tasks for you · 1 today" });
+  const stop = watchAppBadges(["/api/spaces/summary"]);
+  try {
+    await settle();
+    expect(appBadgeCount({ endpoint: "/api/spaces/summary" })).toBe(5);
+    expect(appPartSummaryText("/api/spaces/summary")).toBe("5 tasks for you · 1 today");
+    for (const text of [undefined, "", "two\nlines", "x".repeat(201), 3]) {
+      responses["/api/spaces/summary"] = () => Response.json({ count: 2, text });
+      refreshAppBadges();
+      await settle();
+      expect(appBadgeCount({ endpoint: "/api/spaces/summary" })).toBe(2);
+      expect(appPartSummaryText("/api/spaces/summary")).toBeUndefined();
+    }
+  } finally {
+    stop();
+  }
+});
+
+test("the phone bar shows the rail's count on its app and names it after the label", async () => {
+  const { default: CloudShell } = await import("./CloudShell.island");
+  const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
+  const script = document.createElement("script");
+  script.id = "cloud-shell-data";
+  script.type = "application/json";
+  script.textContent = JSON.stringify(data);
+  const bar = document.createElement("div");
+  bar.className = "cloud-tab-bar__row";
+  // The server's bar, with a focused link that the live bar takes over.
+  bar.innerHTML = '<nav class="k2b-tab-bar"><ul><li><a href="/" data-tab="home">Home</a></li></ul></nav>';
+  const mount = document.createElement("div");
+  dom.root.append(script, bar, mount);
+  bar.querySelector<HTMLAnchorElement>('a[data-tab="home"]')!.focus();
+  const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
+  try {
+    await settle();
+    expect(document.activeElement).toBe(bar.querySelector('.cloud-tab-bar__live a[data-tab="home"]'));
+    const chat = bar.querySelector<HTMLAnchorElement>('.cloud-tab-bar__live a[href="/app/chat"]')!;
+    expect(chat.querySelector(".k2b-tab-bar__badge .cloud-app-badge")?.textContent).toBe("3");
+    expect(chat.textContent).toBe("Chat3, 3 new");
+    expect(chat.querySelector(".cloud-app-badge")?.getAttribute("aria-hidden")).toBe("true");
+    // A failing app and an app without a badge show no mark.
+    expect(bar.querySelector('.cloud-tab-bar__live a[href="/app/notes"] .cloud-app-badge')).toBeNull();
+    expect(bar.querySelector('.cloud-tab-bar__live a[href="/app/mail"] .cloud-app-badge')).toBeNull();
+    const home = bar.querySelector<HTMLAnchorElement>('.cloud-tab-bar__live a[data-tab="home"]')!;
+    home.focus();
+    responses["/api/chat/badge"] = () => Response.json({ count: 0 });
+    refreshAppBadges();
+    await settle();
+    // Without a count the server's bar is current again, and the focused destination stays focused there.
+    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
+    expect(document.activeElement).toBe(bar.querySelector('a[data-tab="home"]'));
+  } finally {
+    dispose();
   }
 });

@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
-import { sql } from "bun";
 
 export const migrate = async (db: typeof sql = sql): Promise<void> => {
   await db.begin(async (tx) => {
@@ -17,6 +17,7 @@ export const migrate = async (db: typeof sql = sql): Promise<void> => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
+    await tx`ALTER TABLE settings.entries ADD COLUMN IF NOT EXISTS updated_by UUID`;
     console.log("  ✓ settings.entries table");
     await tx`CREATE TABLE IF NOT EXISTS settings.migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
     const applied =

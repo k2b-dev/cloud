@@ -70,6 +70,7 @@ sidebar row also turns semibold; its label reserves that width in advance.
 | Selected sidebar row, object chip, or sidebar icon action | `AppWorkspace.SidebarItem` | `k2b-app-workspace` |
 | Selected navigation row | `Navigation` | `k2b-navigation` |
 | Selected settings category | `SettingsModal` | `k2b-settings` |
+| Open page in a touch app's sidebar, and the one that is loading | `MobileShell.Sidebar` | `k2b-mobile-shell` |
 
 ### Selected tabs, segments, and filters
 
@@ -115,6 +116,9 @@ and checked cards.
 | Checked card | `CheckboxCard` | `k2b-checkbox-card` |
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
+| Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
+| Chosen row with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
@@ -122,6 +126,12 @@ and checked cards.
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
+| Selected table size | `TableSizePicker` | `k2b-ste-size-row` |
+| Enabled table header | `TextEditor` | `k2b-ste-header-choice` |
+
+`TextEditor` and `TableSizePicker` use the optional `@k2b/ui/text-editor`
+entry point. The header switch is a checked menu control; it is not a drop
+target.
 
 An application's main action may deliberately use its app accent through
 `--k2b-action-solid` and `--k2b-action-solid-hover`, scoped to that action.
@@ -165,6 +175,16 @@ panel dialogs take the selection ink `--k2b-app-workspace-active`, so in a
 Cloud app they carry the app color. Sizes, fill shares, and states are in
 [Icon tile](/en/ui/surfaces/utilities#icon-tile).
 
+## One color per person
+
+A person has one color wherever they appear: the tint behind their avatar
+initials, their cursor in a shared text, and the passages they comment on.
+`personColor(name)` returns it from the display name, and `Avatar` uses the
+same palette (`PERSON_COLORS`), so build person colors from it instead of a
+second palette. The palette has no cyan, which means AI, and no yellow, which
+reads as a text highlight. Two people can share a color, so the name always
+appears next to it.
+
 ## App color in Cloud
 
 A Cloud app declares one six-digit `accent`. Cloud derives the app ink and
@@ -174,6 +194,13 @@ light accent, such as yellow `#eab308`, is darkened only as far as needed. Any
 six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
+
+Cyan means AI. `--k2b-ai-accent` marks AI surfaces, which also carry ✦ or the
+word "KI", so no app color may look like it: keep the accent and every
+background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
+colors carry no hue and are fine. Only the Assistant, the AI app itself, may
+use cyan. In the Cloud repository the `ai-color` check enforces this for every
+built-in app and for the launchpad's fallback tile colors.
 
 ## Import
 

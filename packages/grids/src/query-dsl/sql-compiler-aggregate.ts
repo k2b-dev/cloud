@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { aggregateOutputKey } from "../service/aggregate-capabilities";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import { compileRecordScopeFilter } from "../service/record-metadata";

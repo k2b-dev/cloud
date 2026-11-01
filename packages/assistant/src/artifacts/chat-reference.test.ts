@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
+import { sql as platformSql } from "@k2b/cloud";
 import type { AiConversation } from "@k2b/cloud/ai";
 import * as ai from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
-import type { AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import * as bun from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
 import { requireToolChat } from "./chat-access";
@@ -19,6 +21,8 @@ import * as frameAssets from "./html/assets";
 import { appChecks } from "./html/check-service";
 import * as service from "./service";
 import { testIdentity } from "./test-identity";
+
+useUnitClients();
 
 const identity = testIdentity("00000000-0000-4000-8000-000000000001");
 const conversation: AiConversation = {
@@ -83,7 +87,9 @@ const request = (path: string, body?: unknown) =>
 
 function setup() {
   // Stub requireInvocation's registered middleware, leaving the actual tool handler and errors intact.
-  const invocation = codeToolRoutes.routes.find((route) => route.path === "/code_list" && route.method === "POST");
+  const invocation = codeToolRoutes.routes.find(
+    (route) => route.path === "/code_list" && route.method === "POST" && route.handler !== auth.readOnly,
+  );
   if (!invocation) throw new Error("Missing code_list invocation middleware");
   const transport = spyOn(invocation, "handler").mockImplementation(async (_c, next) => next());
   const queries: { query: string; values: unknown[] }[] = [];
@@ -113,7 +119,7 @@ function setup() {
       throw new Error(`Unexpected SQL: ${query}`);
     },
   });
-  const begin = spyOn(bun.sql, "begin").mockImplementation(async (run) => {
+  const begin = spyOn(platformSql, "begin").mockImplementation(async (run) => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     return run(db);
   });
@@ -306,7 +312,12 @@ for (const reference of [conversation.shortId, conversation.id]) {
         expect(response.status).toBe(403);
         if (path.includes("/tools/"))
           expect(await response.json()).toEqual({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } });
-        if (denied?.projectId) expect(state.project).toHaveBeenCalledWith("project", identity.accessSubject, "read");
+        if (denied?.projectId)
+          expect(state.project).toHaveBeenCalledWith(
+            "project",
+            expect.objectContaining({ actor: identity.actor, accessSubject: identity.accessSubject }),
+            "read",
+          );
         expect(state.queries).toHaveLength(0);
         expect(state.list).not.toHaveBeenCalled();
       });

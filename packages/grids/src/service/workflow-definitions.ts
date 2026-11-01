@@ -1,3 +1,5 @@
+import { getWorkflowMachineAuthority } from "./workflow-machine-authority";
+
 /**
  * Grids workflow definitions, stored by the kernel.
  *
@@ -20,6 +22,7 @@
  * has no activation to carry it.
  */
 
+import { sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@k2b/cloud/workflows";
 import type { WorkflowActivationInput } from "@k2b/cloud/workflows/store";
 import {
@@ -29,7 +32,7 @@ import {
   setWorkflowEnabled,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type {
   CreateGridsWorkflowInput,
@@ -144,6 +147,9 @@ export const createWorkflow = async (
   const plan = await compileAndBind(baseId, input.source);
   if (!plan.ok) return plan;
   const enabled = input.enabled ?? false;
+  if (enabled && !actorId && plan.data.plan.triggers.some((trigger) => trigger.kind === "schedule" || trigger.kind === "recordEvent")) {
+    return fail(err.forbidden(workflowServiceText(locale).automaticOwnerRequired));
+  }
 
   const created = await sql.begin(async (tx): Promise<Result<string>> => {
     await lockWorkflowCatalogMutation(baseId, tx);
@@ -239,6 +245,16 @@ export const updateWorkflow = async (
     const compiled =
       input.source === undefined && !activating ? ok({ plan: current.plan, source }) : await compileAndBind(current.baseId, source, tx);
     if (!compiled.ok) return compiled;
+    // Automatic execution reconstructs the stored user owner, never the
+    // editor's transient credential. A missing owner cannot authorize it.
+    if (
+      enabled &&
+      !current.ownerUserId &&
+      !(await getWorkflowMachineAuthority(current.id, tx))?.serviceAccountId &&
+      compiled.data.plan.triggers.some((trigger) => trigger.kind === "schedule" || trigger.kind === "recordEvent")
+    ) {
+      return fail(err.forbidden(workflowServiceText(locale).automaticOwnerRequired));
+    }
     const recordEventsEnabled = enabled && hasRecordEventTrigger(compiled.data.plan);
     const recordEventActivationChanged =
       !current.enabled || JSON.stringify(recordEventTriggers(current.plan)) !== JSON.stringify(recordEventTriggers(compiled.data.plan));

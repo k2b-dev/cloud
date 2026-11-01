@@ -1,10 +1,11 @@
 import { type Job, type JobConfig, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
 import * as Y from "yjs";
 import { logger } from "../services/logging";
+import { validateChanges } from "./changes";
 import { compareStreamCursor } from "./cursor";
 import { createDoc } from "./documents";
-import { applySharedTextEvent, MalformedSharedTextEventError, SHARED_TEXT_NAME, sharedTextNodeId } from "./events";
-import type { SharedTextContributor, SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
+import { applySharedTextEvent, MalformedSharedTextEventError, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
+import type { SharedTextChange, SharedTextContributor, SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const ACK_WAIT_MS = 120_000;
 const RECONCILE_LIMIT = 5_000;
@@ -69,10 +70,20 @@ export type SharedTextSnapshotBacklog = {
 };
 type SnapshotLog = {
   id: string;
-  topic(): Pick<Topic<SharedTextSyncEvent>, "head" | "latestCursor" | "cursorSequence" | "cursorAt" | "replay">;
+  topic(): Pick<Topic<SharedTextSyncEvent>, "head" | "latestCursor" | "cursorSequence" | "cursorAt" | "replay" | "publish">;
   firstSequence(): Promise<number>;
 };
-type SnapshotOptions = { log: SnapshotLog; store: SharedTextSnapshotStore; logger?: ReturnType<typeof logger> };
+export type SharedTextSnapshotRepair = {
+  /** Application-owned, insertion-only repair in original UTF-16 coordinates. */
+  plan(text: string): readonly SharedTextChange[];
+  maxLength: number;
+};
+type SnapshotOptions = {
+  log: SnapshotLog;
+  store: SharedTextSnapshotStore;
+  logger?: ReturnType<typeof logger>;
+  repair?: SharedTextSnapshotRepair;
+};
 type InputCodec<Input> = { encode(request: SharedTextSnapshotRequest): Input; decode(input: Input): SharedTextSnapshotRequest };
 type SnapshotJob<Input> = () => Pick<Job<Input>, "submit" | "process">;
 
@@ -91,10 +102,12 @@ export function snapshots<Input>(
 }
 
 const createSnapshots = <Input>(
-  { log, store, logger: suppliedLogger }: SnapshotOptions,
+  { log, store, repair, logger: suppliedLogger }: SnapshotOptions,
   job: SnapshotJob<Input>,
   input: InputCodec<Input>,
 ) => {
+  if (repair && (!Number.isSafeInteger(repair.maxLength) || repair.maxLength < 0))
+    throw new RangeError("Repair maxLength must be a nonnegative safe integer");
   const output = suppliedLogger ?? logger("shared-text-snapshots");
   let worker: Promise<Worker> | null = null;
   let lastBacklog: SharedTextSnapshotBacklog | null = null;
@@ -147,31 +160,34 @@ const createSnapshots = <Input>(
           const head = await topic.head();
           // Cover queued older cursors in one replay; later jobs skip already saved state.
           const target = await topic.latestCursor({ tenantId: docId });
-          if (!target) {
+          if (!target && !repair) {
             output.warn("Snapshot skipped: no retained events for the note", { docId, requestedCursor: request.targetCursor });
             return;
           }
           const requestedAt = Date.now();
-          if (!initial || (initial.cursor && compareStreamCursor(initial.cursor, target) >= 0)) return;
+          if (!initial) return;
+          const covered = !target || !!(initial.cursor && compareStreamCursor(initial.cursor, target) >= 0);
+          if (covered && !repair) return;
           const doc = createDoc(initial);
           const contributors = new Map<string, SharedTextContributor>();
           try {
-            let reachedTarget = false;
+            let reachedTarget = covered;
             try {
-              for await (const event of topic.replay({
-                tenantId: docId,
-                after: initial.cursor ?? topic.cursorAt(0),
-                until: target,
-                signal: context.signal,
-              })) {
-                applySharedTextEvent(doc, event, docId);
-                if (event.data.actor)
-                  contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
-                    ...event.data.actor,
-                    lastContributedAt: event.publishedAt,
-                  });
-                reachedTarget = event.cursor === target;
-              }
+              if (!covered && target)
+                for await (const event of topic.replay({
+                  tenantId: docId,
+                  after: initial.cursor ?? topic.cursorAt(0),
+                  until: target,
+                  signal: context.signal,
+                })) {
+                  const applied = applySharedTextEvent(doc, event, docId, initial.restoreRevision);
+                  if (applied && event.data.actor)
+                    contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
+                      ...event.data.actor,
+                      lastContributedAt: event.publishedAt,
+                    });
+                  reachedTarget = event.cursor === target;
+                }
             } catch (error) {
               // Preserve all valid retained updates and unresolved dependencies;
               // record the missing/invalid history once in the DLQ after recovery.
@@ -184,10 +200,40 @@ const createSnapshots = <Input>(
             if (!reachedTarget) throw new Error("Snapshot replay did not reach its target");
             await context.heartbeat();
             context.signal.throwIfAborted();
+            let cursor = target && compareStreamCursor(target, head) > 0 ? target : head;
+            if (repair && !doc.store.pendingStructs && !doc.store.pendingDs) {
+              const text = doc.getText(SHARED_TEXT_NAME);
+              const planned = repair.plan(text.toString());
+              if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
+              const changes = planned.length ? validateChanges(text.toString(), planned, repair.maxLength) : [];
+              if (changes.length) {
+                const before = Y.encodeStateVector(doc);
+                doc.transact(() => {
+                  for (const change of [...changes].reverse()) text.insert(change.from, change.insert);
+                }, "snapshot-repair");
+                context.signal.throwIfAborted();
+                if (heartbeatError) throw heartbeatError;
+                // A conflict retries the whole ordered job from the current store
+                // and tenant head; never publish a plan over a newer document.
+                const published = await topic.publish({
+                  tenantId: docId,
+                  expectedAfter: target,
+                  data: {
+                    kind: "sync",
+                    payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
+                    originNodeId: sharedTextNodeId,
+                    originPeerId: null,
+                    restoreRevision: initial.restoreRevision,
+                  },
+                });
+                cursor = published.cursor;
+              } else if (covered) return;
+            } else if (covered) return;
+            context.signal.throwIfAborted();
             await store.save(docId, {
               state: Y.encodeStateAsUpdate(doc),
               text: doc.getText(SHARED_TEXT_NAME).toString(),
-              cursor: compareStreamCursor(head, target) > 0 ? head : target,
+              cursor,
               restoreRevision: initial.restoreRevision,
               requestedAt,
               actor: null,

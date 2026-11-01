@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { Headers } from "@zone-eu/mailsplit";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
 import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";

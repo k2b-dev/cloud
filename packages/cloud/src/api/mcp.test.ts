@@ -3,15 +3,16 @@ import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
 import { appAccess } from "../contracts/app-access";
 import { CAPABILITY_MAX_RESULT_BYTES, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, type RequestActor, type RequestAuthority } from "../server";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -20,6 +21,8 @@ import { buildProjectedUser } from "../services/session/user";
 import { createCapabilityRoutes } from "./capabilities";
 import { createHelpRoutes } from "./help";
 import { cloudMcpResourceUri, createMcpProtectedResourceRoutes, createMcpRoutes as createMcpRoutesBase } from "./mcp";
+
+useUnitClients();
 
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
@@ -407,6 +410,33 @@ describe("capability MCP projection", () => {
     expect(await response.json()).toMatchObject({ error: { code: -32600, message: "MCP request is too large" } });
   });
 
+  test("tools/list omits every query marked app-only", async () => {
+    const restricted: CapabilityRegistryEntry = {
+      ...app,
+      manifest: {
+        ...app.manifest,
+        queries: [
+          ...app.manifest.queries,
+          { ...app.manifest.queries[0]!, localId: "readable", appOnly: true as const },
+          { ...app.manifest.queries[0]!, localId: "disabled", appOnly: true as const },
+        ],
+      },
+    };
+    const routes = createMcpRoutes({
+      listApps: async () => [summary(restricted)],
+      getCapability: async () => restricted,
+      authenticate: authenticated,
+    });
+    const response = await rpc(routes, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    expect(response.status).toBe(200);
+    const result = z.object({ result: z.object({ tools: z.array(z.object({ name: z.string() })) }) }).parse(await response.json());
+    const names = result.result.tools.map((tool) => tool.name);
+    expect(names).toContain("demo__query__get");
+    expect(names).toContain("demo__action__create");
+    expect(names).not.toContain("demo__query__readable");
+    expect(names).not.toContain("demo__query__disabled");
+  });
+
   test("lists live queries and actions with schemas and safety annotations", async () => {
     const routes = createMcpRoutes({
       listApps: async () => [summary(app)],
@@ -429,11 +459,17 @@ describe("capability MCP projection", () => {
       "cloud__resource__read",
       "cloud__help__search",
       "cloud__help__read",
+      "cloud__events__list",
+      "cloud__events__read",
       "demo__action__create",
       "demo__action__remove",
       "demo__action__update",
       "demo__query__get",
     ]);
+    for (const name of ["cloud__events__list", "cloud__events__read"]) {
+      const tool = result.tools.find((entry) => entry.name === name)!;
+      expect(tool.annotations.title).toBe(tool.title);
+    }
     const create = result.tools.find((tool) => tool.name === "demo__action__create")!;
     const update = result.tools.find((tool) => tool.name === "demo__action__update")!;
     const remove = result.tools.find((tool) => tool.name === "demo__action__remove")!;
@@ -633,7 +669,7 @@ describe("capability MCP projection", () => {
     ).result;
     expect(first.tools).toHaveLength(100);
     expect(first.nextCursor).toBe(first.tools.at(-1)?.name);
-    expect(lookups).toBe(98);
+    expect(lookups).toBe(96);
 
     lookups = 0;
     const secondResponse = await rpc(routes, {
@@ -647,9 +683,9 @@ describe("capability MCP projection", () => {
         result: { tools: Tool[]; nextCursor?: string };
       }
     ).result;
-    expect(second.tools).toHaveLength(53);
+    expect(second.tools).toHaveLength(55);
     expect(second.nextCursor).toBeUndefined();
-    expect(lookups).toBe(54);
+    expect(lookups).toBe(56);
 
     const afterHelpResponse = await rpc(routes, {
       jsonrpc: "2.0",
@@ -1069,7 +1105,10 @@ describe("capability MCP projection", () => {
       fetch: async (input, init) => {
         requestedUrl = String(input);
         requestedBody = JSON.parse(String(init?.body));
-        return Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] });
+        return Response.json({
+          data: { id: "one" },
+          refs: [{ type: "demo.item", id: "one", context: "Task in Planning", status: "Open" }],
+        });
       },
     });
     const response = await rpc(routes, {
@@ -1078,7 +1117,13 @@ describe("capability MCP projection", () => {
       method: "tools/call",
       params: {
         name: "cloud__resource__read",
-        arguments: { type: "demo.item", id: "one", ...(enriched ? { title: "One", href: "https://cloud.test/open/demo.item/~one" } : {}) },
+        arguments: {
+          type: "demo.item",
+          id: "one",
+          ...(enriched
+            ? { title: "One", context: "Task in Planning", status: "Open", href: "https://cloud.test/open/demo.item/~one" }
+            : {}),
+        },
       },
     });
 
@@ -1086,7 +1131,15 @@ describe("capability MCP projection", () => {
       result: {
         structuredContent: {
           data: { id: "one" },
-          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/~one" }],
+          refs: [
+            {
+              type: "demo.item",
+              id: "one",
+              context: "Task in Planning",
+              status: "Open",
+              href: "https://cloud.example/open/demo.item/~one",
+            },
+          ],
         },
       },
     });
@@ -1388,4 +1441,266 @@ test("MCP keeps its JSON socket raised until a tool response or error and resets
     expect((await response.json()).result.isError ?? false).toBe(fail);
     expect(calls).toEqual([55, 10]);
   }
+});
+
+const eventApp = (id: string, count = 2, description = "A declared item fact."): CapabilityRegistryEntry => ({
+  ...app,
+  appId: id,
+  manifest: compileCapabilities(
+    id,
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { item: { title: "Item", description: "One item.", reader: "get" } },
+      queries: {
+        get: {
+          title: "Read item",
+          description: "Read one item.",
+          input: z.strictObject({ id: z.string().describe("Stable item id.") }),
+          data: z.strictObject({ id: z.string() }),
+          openWorld: false,
+          run: async ({ id }) => ok({ data: { id } }),
+        },
+      },
+      events: Object.fromEntries(
+        Array.from({ length: count }, (_, index) => [
+          `item.fact_${String(index).padStart(3, "0")}`,
+          {
+            version: 1,
+            title: `Item fact ${index}`,
+            description,
+            subject: "item",
+            ...(index % 2 === 0 ? { place: "item" } : {}),
+            ...(index % 2 === 1 ? { automation: false as const } : {}),
+            schema: z.strictObject({ id: z.string().max(80) }),
+          },
+        ]),
+      ),
+    }),
+  ).manifest,
+});
+const callEventTool = async (routes: ReturnType<typeof createMcpRoutes>, name: "list" | "read", args: Record<string, unknown> = {}) => {
+  const response = await rpc(routes, {
+    jsonrpc: "2.0",
+    id: 90,
+    method: "tools/call",
+    params: { name: `cloud__events__${name}`, arguments: args },
+  });
+  expect(response.status).toBe(200);
+  return (await response.json()).result;
+};
+
+test("MCP event list/read use the capability catalog projection and exclude undiscoverable apps and subscribers", async () => {
+  const publisher = eventApp("demo");
+  const hidden = eventApp("hidden");
+  const subscriptions = ["demo", "hidden"].map((appId) => ({
+    appId,
+    subscriptionId: `${appId}:demo.item.fact_000@1`,
+    eventType: "demo.item.fact_000",
+    version: 1,
+    state: "blocked" as const,
+    reason: "resource_events_unsupported",
+    firstSeenAt: "2026-01-01T00:00:00.000Z",
+  }));
+  const dependencies = {
+    listApps: async () => [summary(publisher), { ...summary(hidden), access: appAccess.roles(["admin"]) }],
+    getCapability: async (id: string) => (id === "demo" ? publisher : hidden),
+    eventSubscriptions: async () => subscriptions,
+  };
+  const routes = createMcpRoutes(dependencies);
+  const listed = await callEventTool(routes, "list");
+  expect(listed.structuredContent.events).toEqual([
+    {
+      appId: "demo",
+      type: "demo.item.fact_000",
+      version: 1,
+      title: "Item fact 0",
+      description: "A declared item fact.",
+      subject: "demo.item",
+      place: "demo.item",
+      automation: true,
+    },
+    {
+      appId: "demo",
+      type: "demo.item.fact_001",
+      version: 1,
+      title: "Item fact 1",
+      description: "A declared item fact.",
+      subject: "demo.item",
+      place: null,
+      automation: false,
+    },
+  ]);
+  const read = await callEventTool(routes, "read", { type: "demo.item.fact_000", version: 1 });
+  const catalogRoutes = createCapabilityRoutes({ ...dependencies, authenticate: authenticated });
+  const catalog = await (await catalogRoutes.request("/capabilities/v1/catalog")).json();
+  expect(read.structuredContent.event).toEqual({ appId: "demo", ...catalog.apps[0].events[0] });
+  expect(read.structuredContent.event.dataSchema).toEqual(publisher.manifest.events?.[0]?.dataSchema);
+  expect(read.structuredContent.event.subscribers).toEqual(subscriptions.slice(0, 1).map(({ eventType, version, ...row }) => row));
+  expect((await callEventTool(routes, "list", { appId: "hidden" })).structuredContent.events).toEqual([]);
+  for (const args of [
+    { type: "hidden.item.fact_000", version: 1 },
+    { type: "demo.item.fact_000", version: 2 },
+  ]) {
+    expect(await callEventTool(routes, "read", args)).toMatchObject({ isError: true, structuredContent: { code: "EVENT_NOT_FOUND" } });
+  }
+  const admin = createMcpRoutes({
+    ...dependencies,
+    authenticate: async (c, next) => {
+      setTestAuthority(c);
+      c.set("actor", { kind: "user", user: { ...user, roles: ["admin"] } });
+      await next();
+    },
+  });
+  expect((await callEventTool(admin, "list", { appId: "hidden" })).structuredContent.events).toHaveLength(2);
+  expect((await callEventTool(admin, "read", { type: "hidden.item.fact_000", version: 1 })).structuredContent.event.appId).toBe("hidden");
+});
+
+test("MCP event pages filter automation, validate arguments and bound counts and bytes", async () => {
+  const publisher = eventApp("demo", 101);
+  const routes = createMcpRoutes({ getCapability: async () => publisher, listApps: async () => [summary(publisher)] });
+  const first = (await callEventTool(routes, "list")).structuredContent;
+  expect(first.events).toHaveLength(100);
+  expect(first.nextCursor).toBe("demo.item.fact_099@1");
+  expect((await callEventTool(routes, "list", { cursor: first.nextCursor })).structuredContent).toMatchObject({
+    events: [expect.objectContaining({ type: "demo.item.fact_100" })],
+  });
+  expect((await callEventTool(routes, "list", { cursor: first.nextCursor })).structuredContent.nextCursor).toBeUndefined();
+  for (const automation of [true, false]) {
+    const filtered = (await callEventTool(routes, "list", { automation, appId: "demo", limit: 1 })).structuredContent;
+    expect(filtered.events).toHaveLength(1);
+    expect(filtered.events[0].automation).toBe(automation);
+    expect(filtered.nextCursor).toBeDefined();
+  }
+  for (const args of [
+    { limit: 101 },
+    { limit: 0 },
+    { automation: "false" },
+    { cursor: "invalid" },
+    { unknown: true },
+    { appId: "demo", cursor: "other.item.fact_000@1" },
+  ]) {
+    expect(await callEventTool(routes, "list", args)).toMatchObject({ isError: true, structuredContent: { code: "VALIDATION_FAILED" } });
+  }
+  expect(await callEventTool(routes, "read", { type: "demo.item.fact_000" })).toMatchObject({
+    isError: true,
+    structuredContent: { code: "VALIDATION_FAILED", message: expect.stringContaining("version:") },
+  });
+  expect((await callEventTool(routes, "list", { limit: 0 })).structuredContent.message).toContain("limit:");
+  const large = eventApp("demo", 101, 'ü"\\\n'.repeat(250));
+  const largeRoutes = createMcpRoutes({ getCapability: async () => large, listApps: async () => [summary(large)] });
+  let cursor: string | undefined;
+  let total = 0;
+  do {
+    const result = await callEventTool(largeRoutes, "list", cursor ? { cursor } : {});
+    expect(result.isError).toBeUndefined();
+    expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+    expect(result.structuredContent.events.length).toBeGreaterThan(0);
+    total += result.structuredContent.events.length;
+    cursor = result.structuredContent.nextCursor;
+  } while (cursor && total <= 101);
+  expect(total).toBe(101);
+  expect(cursor).toBeUndefined();
+});
+
+test("MCP event discovery requires OAuth read and rejects stale manifests", async () => {
+  const publisher = eventApp("demo");
+  const routes = createMcpRoutes({
+    listApps: async () => [summary(publisher)],
+    getCapability: async () => publisher,
+    authenticate: async (c, next) => {
+      setTestAuthority(c);
+      c.set("oauthScopes", ["write"]);
+      await next();
+    },
+  });
+  const tools = await (await rpc(routes, { jsonrpc: "2.0", id: 91, method: "tools/list", params: {} })).json();
+  expect(tools.result.tools.some((tool: Tool) => tool.name.startsWith("cloud__events__"))).toBe(false);
+  for (const name of ["list", "read"] as const) {
+    expect(await callEventTool(routes, name, { type: "demo.item.fact_000", version: 1 })).toMatchObject({
+      isError: true,
+      structuredContent: { code: "FORBIDDEN" },
+    });
+  }
+  const stale = createMcpRoutes({ listApps: async () => [summary(publisher)], getCapability: async () => app });
+  expect((await callEventTool(stale, "list")).structuredContent.events).toEqual([]);
+  expect(await callEventTool(stale, "read", { type: "demo.item.fact_000", version: 1 })).toMatchObject({
+    isError: true,
+    structuredContent: { code: "EVENT_NOT_FOUND" },
+  });
+});
+
+test("MCP event cursors traverse publisher prefixes and underscore event IDs without skipping", async () => {
+  const apps = ["a", "a-b"].map((id) => eventApp(id, 1));
+  const routes = createMcpRoutes({
+    listApps: async () => apps.map(summary),
+    getCapability: async (id) => apps.find((entry) => entry.appId === id) ?? null,
+  });
+  const first = (await callEventTool(routes, "list", { limit: 1 })).structuredContent;
+  expect(first.events[0].appId).toBe("a");
+  const second = (await callEventTool(routes, "list", { limit: 1, cursor: first.nextCursor })).structuredContent;
+  expect(second.events[0].appId).toBe("a-b");
+  expect(second.nextCursor).toBeUndefined();
+});
+
+test("MCP event reads request only matching subscriptions and skip storage for unknown declarations", async () => {
+  const publisher = eventApp("demo");
+  const subscriptions = mock(async (_type: string, _version: number) => []);
+  const routes = createMcpRoutes({
+    listApps: async () => [summary(publisher)],
+    getCapability: async () => publisher,
+    eventSubscriptions: subscriptions,
+  });
+  await callEventTool(routes, "list");
+  await callEventTool(routes, "read", { type: "demo.item.fact_000", version: 2 });
+  expect(subscriptions).not.toHaveBeenCalled();
+  expect((await callEventTool(routes, "read", { type: "demo.item.fact_000", version: 1 })).isError).toBeUndefined();
+  expect(subscriptions.mock.calls).toEqual([["demo.item.fact_000", 1]]);
+});
+
+test("MCP event catalog failures return APP_UNAVAILABLE for both tools", async () => {
+  const publisher = eventApp("demo");
+  const unavailable = async () => {
+    throw new Error("Catalog unavailable");
+  };
+  const routes = createMcpRoutes({ listApps: unavailable });
+  for (const name of ["list", "read"] as const) {
+    const args = name === "read" ? { type: "demo.item.fact_000", version: 1 } : {};
+    expect(await callEventTool(routes, name, args)).toMatchObject({
+      isError: true,
+      structuredContent: { code: "APP_UNAVAILABLE" },
+    });
+  }
+  const failedRead = createMcpRoutes({
+    listApps: async () => [summary(publisher)],
+    getCapability: async () => publisher,
+    eventSubscriptions: unavailable,
+  });
+  expect(await callEventTool(failedRead, "read", { type: "demo.item.fact_000", version: 1 })).toMatchObject({
+    isError: true,
+    structuredContent: { code: "APP_UNAVAILABLE" },
+  });
+});
+
+test("MCP oversized event reads explain the schema and subscriber limit", async () => {
+  const publisher = eventApp("demo");
+  const routes = createMcpRoutes({
+    listApps: async () => [summary(publisher)],
+    getCapability: async () => publisher,
+    eventSubscriptions: async () =>
+      Array.from({ length: 2000 }, (_, index) => ({
+        appId: "demo",
+        subscriptionId: `demo:demo.item.fact_000@1:${index}`,
+        eventType: "demo.item.fact_000",
+        version: 1,
+        state: "active" as const,
+        reason: null,
+        firstSeenAt: "2026-01-01T00:00:00.000Z",
+      })),
+  });
+  const result = await callEventTool(routes, "read", { type: "demo.item.fact_000", version: 1 });
+  expect(result).toMatchObject({
+    isError: true,
+    structuredContent: { code: "RESPONSE_TOO_LARGE", message: "Event schema and subscriber list exceed the MCP response size limit" },
+  });
+  expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
 });

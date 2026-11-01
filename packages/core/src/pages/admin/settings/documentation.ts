@@ -1,5 +1,6 @@
 /** Article paths are independent of the deployment's documentation website. */
 export const settingsDocumentation: Readonly<Record<string, string>> = {
+  storage: "operations/object-store",
   general: "accounts/documentation",
   places: "platform/places-and-maps",
   user: "operations/account-categories",
@@ -8,6 +9,9 @@ export const settingsDocumentation: Readonly<Record<string, string>> = {
   linux: "operations/linux-identities",
   "account-operations": "accounts/lifecycle",
   cli: "operations/runtime-configuration#control-cli-plugin-access",
+  "app-keys": "operations/app-keys",
+  "app-keys-recover": "operations/app-keys#rotate-or-recover-a-key",
+  "app-keys-start": "operations/app-keys#use-the-key-at-start",
   "app.identity": "accounts/documentation",
   "user.login": "operations/account-categories",
   "user.registration": "accounts/registration",

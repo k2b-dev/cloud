@@ -15,7 +15,7 @@ Die Einstellungen sind nach Zweck gruppiert:
 - **Lesen** steht allen zur Verfügung, die das Postfach lesen. Es legt fest, ob dieser Browser sicheres HTML oder reinen Text zeigt oder sich an das aktuelle Farbschema anpasst.
 - **Organisation** steht mit Zugriff **Ansehen** für private gespeicherte Ansichten zur Verfügung. Mit Zugriff **Bearbeiten** erstellst du auch geteilte Ansichten und Tags des Postfachs.
 - **Schreiben** steht mit Zugriff **Bearbeiten** oder **Verwalten** zur Verfügung. Es enthält persönliche Schreibeinstellungen, Vorlagen, Standardsignaturen und den Editor für das E-Mail-Design. Inhalte und Design für das ganze Postfach brauchen Zugriff **Verwalten**.
-- **Allgemein** ist der erste Bereich, der Zugriff **Verwalten** braucht. Er legt die gemeinsame Identität und die Schutzregeln für den Versand fest.
+- **Allgemein** ist der erste Bereich, der Zugriff **Verwalten** braucht. Er legt den Namen des Postfachs, seine Beschreibung und die Schutzregeln für den Versand fest. Ein neuer Name ändert keine Adresse, keine Absenderidentität und keine Zustellung.
 - **Allgemein**, **Konten und Identitäten**, **Kalendereinladungen**, **Ordner**, **Zugriff** und **Gefahrenbereich** brauchen Zugriff **Verwalten**.
 
 Wähle unter **… → Einstellungen → Kalendereinladungen** einen Space, in dem du Zugriff **Bearbeiten** hast, als vorgeschlagenes Ziel für importierte Einladungen. Mail speichert diese Einstellung für das ganze Postfach. Spaces bietet jeder Person nur Ziele an, in denen sie Zugriff **Bearbeiten** hat.
@@ -182,7 +182,7 @@ Agenten ändern Abonnements beim Anbieter mit `cld mail folder subscribe` und `c
 - **Ansehen** zum Lesen, Suchen, Kommentieren und für persönliche Erinnerungen.
 - **Bearbeiten** für den Versand, Vorgänge an E-Mails beim Anbieter und Änderungen an der Zusammenarbeit.
 - **Verwalten** für Transport, Freigabe, Regeln, Workflows und den Lebenszyklus des Postfachs.
-- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen und Gruppen, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
+- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen, Gruppen, Agenten und eigenständige Dienstkonten, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
 
 **Verwaltungszugriff für automatische Antworten** ist eine Einstellung des Postfachs über der Zugriffsliste:
 
@@ -213,7 +213,9 @@ Nur die Cloud-Administration kann **Administration → Mail** öffnen. Zugriff *
 
 Öffne auf dieser Seite **Sicherheit**, um gemeldete verdächtige Nachrichten zu prüfen und genaue organisationsweite Schutzregeln zu pflegen. Was Nutzer sehen und wie sichere Regeln aussehen, steht unter [Verdächtige E-Mails erkennen und melden](/app/mail/help/mail-security).
 
-Nutze **Berechtigungen verwalten** an einem Postfach, um ein Postfach ohne verwaltende Person wiederherzustellen oder einen versehentlichen Zugriffseintrag zu korrigieren. Das ist eine ausdrückliche, protokollierte Änderung des Zugriffs. Die Cloud-Administration erhält nicht automatisch Zugriff auf Inhalte des Postfachs. Füge eine neue verwaltende Person hinzu, bevor du die letzte Person mit Zugriff **Verwalten** entfernst.
+Unter **Aufbewahrt** stehen alle aufbewahrten Unterhaltungen aller Postfächer, auch gelöschter Postfächer, mit Postfach, Betreff, Absender, Datum, wer sie aufbewahrt hat und seit wann. Die Suche findet Betreff, Absender und Postfach. Öffnest du eine Unterhaltung, siehst du ihre Nachrichten, die Namen der Anhänge und ihren Verlauf: wer sie aufbewahrt hat, wer sie hier geöffnet oder heruntergeladen hat und wer die Aufbewahrung aufheben wollte. **Als JSON herunterladen** speichert die Unterhaltung im dokumentierten Exportformat; wählst du mehrere Unterhaltungen aus, kommen sie in eine Datei. Der Export enthält Kopfzeilen, Text, bereinigtes HTML und Angaben zu Anhängen, aber keine Anhangsdateien. **Aufbewahrung aufheben** hebt den Schutz nach deiner Bestätigung auf, mit optionaler Begründung. Nur Cloud-Admins können eine Aufbewahrung aufheben, auch im Postfach selbst. Öffnen, Herunterladen und Aufheben werden im Cloud-Audit-Log festgehalten.
+
+Nutze **Berechtigungen verwalten** an einem Postfach, um ein Postfach ohne verwaltende Person wiederherzustellen oder einen versehentlichen Zugriffseintrag zu korrigieren. Das ist eine ausdrückliche, protokollierte Änderung des Zugriffs. Die Cloud-Administration erhält nicht automatisch Zugriff auf Inhalte des Postfachs; die einzige Ausnahme sind aufbewahrte Unterhaltungen unter **Aufbewahrt**, und jedes Öffnen dort wird protokolliert. Füge eine neue verwaltende Person hinzu, bevor du die letzte Person mit Zugriff **Verwalten** entfernst.
 
 Die CLI bietet dieselben Werkzeuge zur Wiederherstellung:
 

@@ -397,6 +397,22 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).not.toContain("<button");
   });
 
+  test("a lazy dropdown renders its trigger and an empty menu, not its entries", () => {
+    const html = renderToString(() =>
+      createComponent(Dropdown.Root, {
+        lazy: true,
+        items: [{ label: "Rename", icon: "ti ti-pencil", action: () => {} }],
+        get children() {
+          return createComponent(Dropdown.Trigger, { label: "Row actions", children: "More" });
+        },
+      }),
+    );
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('role="menu"');
+    expect(html).not.toContain("Rename");
+    expect(html).not.toContain('role="menuitem"');
+  });
+
   test("renders an explicit SSR trigger with declarative sections, links, and actions", () => {
     const elements: PublicDropdownItem[] = [
       { label: "Rename", icon: "ti ti-pencil", action: () => {} },
@@ -1148,7 +1164,7 @@ describe("workspace head navigation", () => {
       expect(html.match(/class="k2b-app-workspace__head"/g)).toHaveLength(1);
     }
   });
-  const workspace = (filtered: boolean, head = true) =>
+  const workspace = (filtered: boolean, head = true, popup?: "menu" | "dialog") =>
     renderToString(() =>
       createComponent(PageTrailProvider, {
         trail: { title: "Project", ancestors: [{ title: "Projects", href: "/projects" }] },
@@ -1169,7 +1185,7 @@ describe("workspace head navigation", () => {
                       resetHref: "?view=list",
                       count: "12 results",
                       actions: "SECONDARY",
-                      primary: { label: "New task", icon: "ti ti-plus", href: "/new" },
+                      primary: { label: "New task", icon: "ti ti-plus", href: "/new", popup },
                     })
                   : null,
               ];
@@ -1205,6 +1221,14 @@ describe("workspace head navigation", () => {
     expect(unfiltered).not.toContain("12 results");
     expect(workspace(false, false)).toContain("k2b-app-workspace__head-lead");
     expect(workspace(false, false)).not.toContain("data-row");
+  });
+  test("a primary that opens a menu says so in server HTML and keeps its link", () => {
+    const html = workspace(false, true, "menu");
+    expect(html).toMatch(/<a [^>]*data-workspace-primary=""[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"[^>]*href="\/new"/);
+    expect(html).toContain("k2b-app-workspace__head-primary-chevron");
+    const plain = workspace(false);
+    expect(plain).not.toContain("aria-haspopup");
+    expect(plain).not.toContain("k2b-app-workspace__head-primary-chevron");
   });
   test("shows a zero result count while filtered", () => {
     const html = renderToString(() =>

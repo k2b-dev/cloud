@@ -2,14 +2,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAX_MAILBOX_PREFERENCES } from "../contracts";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { importBrowserMailboxPreferences, listMailboxPreferences, setMailboxPreference } from "./mailbox-preferences";
 import { createMailbox } from "./mailboxes";
@@ -98,7 +97,6 @@ suite("mailbox preferences per person", () => {
   const clearPreferences = (person: Person) => sql`DELETE FROM mail.personal_mailbox_preferences WHERE user_id = ${person.id}::uuid`;
 
   beforeAll(async () => {
-    await migrate();
     ada = await createUser("ada");
     grace = await createUser("grace");
     lin = await createUser("lin");

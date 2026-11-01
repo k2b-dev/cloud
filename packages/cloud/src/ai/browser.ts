@@ -200,6 +200,14 @@ export {
   chatTaskStopSentence,
 } from "./chat-task-reasons";
 export {
+  createLiveDictationSource,
+  type DictationDevice,
+  type DictationErrorCode,
+  type DictationEvent,
+  type DictationSession,
+  type DictationSource,
+} from "./live-dictation-browser";
+export {
   CLOUD_AI_STATS_MAX_ITEMS,
   CLOUD_AI_TABLE_MAX_COLUMNS,
   CLOUD_AI_TABLE_MAX_ROWS,

@@ -18,7 +18,11 @@ const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
+  notifications: null,
+  mentionsUnread: 0,
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Delivery board",
   title: "Delivery board",
@@ -27,6 +31,8 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   memberCount: 3,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
   withGuests: false,
   peerDeactivated: false,
   permission: "write",
@@ -67,6 +73,21 @@ describe("ChatWorkspace server render", () => {
       expect(html).toContain(t.noChatsTitle);
       expect(html).toContain(t.noChatsDescription);
     });
+    test(`channel discovery renders its authorized initial page and membership in ${locale}`, () => {
+      const channel = { ...conversation, channel: true, purpose: "Decisions for the studio" };
+      const html = render(locale, {
+        ...props(),
+        channelsPage: true,
+        channelQuery: "studio",
+        channelPage: { items: [channel], nextCursor: null },
+      });
+      expect(html).toContain(t.browseChannels);
+      expect(html).toContain(t.discoverSubtitle);
+      expect(html).toContain(channel.purpose);
+      expect(html).toContain(t.subscribed);
+      expect(html).toContain('value="studio"');
+      expect(html).not.toContain(t.noChatsTitle);
+    });
     test(`list titles, sender previews, times and selection placeholder in ${locale}`, () => {
       const rows: ChatWorkspaceProps["sidebar"]["items"] = [
         {
@@ -86,6 +107,8 @@ describe("ChatWorkspace server render", () => {
           id: "Chat02",
           title: "Two people",
           memberCount: 2,
+          archived: false,
+          pinnedRank: null,
           withGuests: false,
           peerDeactivated: false,
           lastMessage: {
@@ -149,12 +172,39 @@ describe("ChatWorkspace server render", () => {
     }
     test(`no access reveals neither chat title nor address identifier in ${locale}`, () => {
       const html = render(locale, { ...props(), chatId: "Secret", open: null });
-      expect(html).toContain(t.noAccessTitle);
+      expect(html).toContain(t.threadUnavailable);
       expect(html).toContain(t.noAccessDescription);
       expect(html).not.toContain("Secret board");
       expect(html).not.toContain("Secret");
     });
   }
+});
+
+test("SSR retains personal archive and Unread navigation and saved collapsed state", () => {
+  const html = render("en", {
+    ...props(),
+    archived: true,
+    filter: "unread",
+    collapsed: ["pinned", "chats"],
+    chatId: conversation.id,
+    open: {
+      conversation: { ...conversation, archived: true },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+      focus: null,
+    },
+    sidebar: { items: [{ ...conversation, archived: true }], nextCursor: null },
+  });
+  expect(html).toContain(`/app/chat/archive?filter=unread`);
+  expect(html).toContain('aria-pressed="true"');
+  const collapsed = render("en", {
+    ...props(),
+    collapsed: ["pinned"],
+    sidebar: { items: [{ ...conversation, pinnedRank: 0 }], nextCursor: null },
+  });
+  expect(collapsed.replaceAll(/<!--.*?-->/g, "")).toMatch(
+    /<button[^>]*class="k2b-app-workspace__sidebar-section-toggle"[^>]*aria-expanded="false"[^>]*>Pinned/,
+  );
 });
 
 test("the panel renders the same authorized chat with internal links and an explicit full-view link", () => {
@@ -178,6 +228,27 @@ test("the panel renders the same authorized chat with internal links and an expl
   expect(html).toContain(conversation.title);
 });
 
+test("panel personal navigation retains archive and unread context when opening the full view", () => {
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    archived: true,
+    filter: "unread",
+    chatId: conversation.id,
+    open: {
+      conversation: { ...conversation, archived: true, unread: 2 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+      focus: null,
+    },
+    sidebar: { items: [{ ...conversation, archived: true, unread: 2 }], nextCursor: null },
+  });
+  expect(html).toContain('href="/app/chat/panel/archive?filter=unread"');
+  expect(html).toContain('href="/app/chat/panel/c/Chat01?filter=unread&amp;list=archive"');
+  expect(html).toContain('href="/app/chat/c/Chat01?filter=unread&amp;list=archive"');
+  expect(html).toContain("Open full view");
+});
+
 test("the panel keeps a chat's threads below the panel route; the full view opens the same thread", () => {
   const html = render("en", {
     ...props(),
@@ -195,4 +266,231 @@ test("the panel keeps a chat's threads below the panel route; the full view open
   expect(html).toContain('href="/app/chat/panel/c/Chat01/threads"');
   expect(html).toContain('href="/app/chat/c/Chat01/t/general"');
   expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
+});
+
+for (const locale of ["en", "de"])
+  for (const type of ["spaces.space", "notebooks.notebook"]) {
+    test(`system membership has no invented count in the list, header, overview and info: ${locale}, ${type}`, () => {
+      const system = { ...conversation, kind: "system" as const, resource: { type, id: "Space1" }, memberCount: 0 };
+      const data: ChatWorkspaceProps = {
+        ...props(),
+        chatId: system.id,
+        panel: "info",
+        sidebar: { items: [system], nextCursor: null },
+        open: {
+          conversation: system,
+          page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        },
+      };
+      for (const threadsPage of [false, true]) {
+        const html = render(locale, { ...data, threadsPage });
+        expect(html.match(/.{0,100}0 (?:members|Mitglieder).{0,100}/g)).toBeNull();
+        expect(html).toContain(locale === "de" ? "Mitglieder: alle mit Zugriff" : "Members: everyone with access");
+      }
+    });
+  }
+
+const { default: ThreadMetadata } = await import("./ThreadMetadata");
+const { default: ChatList } = await import("./ChatList");
+const { default: ChatSystemChats } = await import("./ChatSystemChats");
+const renderChild = (locale: string, child: () => ReturnType<typeof createComponent>) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return child();
+      },
+    }),
+  );
+
+for (const locale of ["en", "de"]) {
+  for (const summaryCursor of ["", "Page02", null]) {
+    test(`partial sidebar summaries stay visibly unknown in ${locale}, cursor ${JSON.stringify(summaryCursor)}`, () => {
+      const row = {
+        ...conversation,
+        kind: "system" as const,
+        summaryCursor,
+        ...(summaryCursor === null ? { incomplete: true as const } : {}),
+        unread: 0,
+      };
+      const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
+      expect(html).toContain(locale === "de" ? "Ungelesene Nachrichten noch nicht vollständig gezählt" : "Unread count is incomplete");
+      expect(html).not.toContain("chat-system-chats--read");
+      expect(html).toContain("…");
+    });
+  }
+  test(`partial positive counts are lower bounds, including in an active chat in ${locale}`, () => {
+    const row = { ...conversation, kind: "system" as const, summaryCursor: "Page02", unread: 3 };
+    const list = {
+      href: (id: string) => `/app/chat/c/${id}`,
+      onPersonal: () => {},
+      pending: false,
+      activeId: row.id,
+      viewerId,
+      dateConfig: props().dateConfig,
+      now: () => new Date(now),
+      onOpen: () => {},
+      onMarkRead: () => {},
+      onMarkUnread: () => {},
+    };
+    const html = renderChild(locale, () =>
+      createComponent(ChatList, {
+        ...list,
+        rows: [row],
+        system: true,
+        hasMore: false,
+        onMore: () => {},
+      }),
+    );
+    expect(html).toContain("3+");
+    const section = renderChild(locale, () =>
+      createComponent(ChatSystemChats, {
+        list,
+        current: null,
+        updates: [row],
+        unavailableId: null,
+        expanded: false,
+        onExpanded: () => {},
+        onOpen: () => {},
+        state: { page: () => undefined, status: () => "ready", more: () => false, load: async () => {} },
+      }),
+    );
+    expect(section).toContain("3+");
+    expect(section).not.toContain("chat-system-chats--read");
+  });
+  test(`completed zero summaries keep the read section in ${locale}`, () => {
+    const row = { ...conversation, kind: "system" as const, summaryCursor: null, unread: 0 };
+    const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
+    expect(html).toContain("chat-system-chats--read");
+  });
+}
+
+test("thread metadata renders the provider's localized context without interpreting dates", () => {
+  const html = renderChild("de", () =>
+    createComponent(ThreadMetadata, {
+      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      resource: {
+        ref: { type: "inventory.item", id: "uuid" },
+        title: "Item",
+        permission: "read",
+        typeTitle: "Inventory item",
+        icon: "ti ti-package",
+        context: "Lieferung am 30. Oktober",
+        href: "/app/inventory/item",
+      },
+    }),
+  );
+  expect(html).toContain("Lieferung am 30. Oktober");
+});
+
+test("system chat links keep personal Unread separate from the thread directory filter", () => {
+  const system = { ...conversation, kind: "system" as const, member: false, unread: 2, resource: { type: "spaces.space", id: "Space1" } };
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    filter: "unread",
+    chatId: system.id,
+    open: {
+      conversation: system,
+      threads: { general: { unread: 2, lastMessage: null }, items: [] },
+      page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+      focus: null,
+    },
+  });
+  expect(html).toContain("/app/chat/panel/c/Chat01?panel=info&amp;listFilter=unread");
+  expect(html).not.toContain("/app/chat/panel/c/Chat01?panel=info&amp;filter=unread");
+});
+
+test("a skipped discussion provider leaves a visible notice with retry, not a silent gap", () => {
+  const list = {
+    href: (id: string) => `/app/chat/c/${id}`,
+    onPersonal: () => {},
+    pending: false,
+    activeId: null,
+    viewerId,
+    dateConfig: props().dateConfig,
+    now: () => new Date(now),
+    onOpen: () => {},
+    onMarkRead: () => {},
+    onMarkUnread: () => {},
+  };
+  const html = renderChild("de", () =>
+    createComponent(ChatSystemChats, {
+      list,
+      current: null,
+      updates: [],
+      unavailableId: null,
+      expanded: true,
+      onExpanded: () => {},
+      onOpen: () => {},
+      state: {
+        page: () => ({ items: [], cursors: {}, skipped: ["inventory.shelf"] }),
+        status: () => "ready",
+        more: () => false,
+        load: async () => {},
+      },
+    }),
+  );
+  expect(html).toContain("Einige Orte konnten gerade nicht geladen werden.");
+  expect(html).toContain("Erneut versuchen");
+});
+
+for (const href of [undefined, "/app/inventory/item"])
+  test(`system item SSR ${href ? "offers" : "hides"} every open-resource control`, () => {
+    const system = {
+      ...conversation,
+      kind: "system" as const,
+      resource: { type: "inventory.collection", id: "Warehouse" },
+      threads: 1,
+      incomplete: true as const,
+    };
+    const html = render("en", {
+      ...props(),
+      chatId: system.id,
+      view: "Item01",
+      open: {
+        conversation: system,
+        threads: {
+          general: { unread: 0, lastMessage: null },
+          items: [
+            {
+              id: "Item01",
+              name: "Box",
+              description: null,
+              archived: false,
+              unread: 0,
+              read: null,
+              lastMessage: null,
+              createdAt: now,
+              lastActivityAt: now,
+              resource: {
+                ref: { type: "inventory.item", id: "Box" },
+                title: "Box",
+                permission: "read",
+                typeTitle: "Inventory item",
+                icon: "ti ti-box",
+                ...(href ? { href } : {}),
+              },
+            },
+          ],
+        },
+        page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+        focus: null,
+      },
+    });
+    if (href) expect(html.match(/href="\/app\/inventory\/item"/g)).toHaveLength(3);
+    else {
+      expect(html).not.toContain("chat-resource-head__link");
+      expect(html).not.toContain("chat-resource-head__icon");
+    }
+    expect(html).toContain("Some discussions could not be checked.");
+  });
+
+test("a partial For you page offers Retry and does not claim the list is empty", () => {
+  const html = render("en", { ...props(), forYouPage: true, forYouInitial: { items: [], nextCursor: "", incomplete: true } });
+  expect(html).toContain("Some discussions could not be checked.");
+  expect(html).toContain(chatMessages.resolve(["en"]).t.retry);
+  expect(html).not.toContain(chatMessages.resolve(["en"]).t.forYouEmpty);
 });

@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";
 import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
@@ -7,7 +7,7 @@ import { isAggregatedListing } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { conversationVisibleTo, draftVisibleTo, messageVisibleTo, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
-import { type MailRequestContext, userBackedActor } from "./auth";
+import { type MailRequestContext, personalPrincipal } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
 import { isKeptConversation, isKeptMessage } from "./conversation-keep-rules";
@@ -295,7 +295,7 @@ export const listConversations = async (params: {
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
-  const currentUserId = userBackedActor(params.context)?.id ?? null;
+  const currentUserId = personalPrincipal(params.context).id;
   const view = params.view ?? null;
   const folderId = params.folderId ?? null;
   const excludedFolderIds = view === "kept" ? [] : [...new Set(params.excludedFolderIds ?? [])].sort();
@@ -317,7 +317,112 @@ export const listConversations = async (params: {
   if (!cursor.ok) return cursor;
   const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
+  // Bound all access, placement, view and cursor filters before enriching the selected page.
   const rows = await sql<(DbConversation & { cursor_at: string })[]>`
+    WITH candidates AS MATERIALIZED (
+      SELECT c.*, unread_state.folder_ids AS unread_folder_ids,
+        CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END AS sort_date
+      FROM mail.conversations c
+      LEFT JOIN LATERAL (
+        SELECT ARRAY(
+          SELECT DISTINCT unread_mp.folder_id::text
+          FROM mail.conversation_messages unread_cm
+          JOIN mail.message_placements unread_mp ON unread_mp.message_id = unread_cm.message_id
+          WHERE unread_cm.conversation_id = c.id
+            AND unread_mp.deleted_at IS NULL
+            AND ${includedPlacement(sql`unread_mp.folder_id`)}
+            AND NOT ('\\Seen' = ANY(unread_mp.flags))
+            AND (${folderId}::uuid IS NULL OR unread_mp.folder_id = ${folderId}::uuid)
+          ORDER BY unread_mp.folder_id::text
+        ) AS folder_ids
+      ) unread_state ON true
+      WHERE c.mailbox_id = ${params.mailboxId}::uuid
+        AND ${conversationVisibleTo(visibility, sql`c.id`)}
+        AND (${params.status ?? null}::text IS NULL OR c.work_status = ${params.status ?? null})
+        AND (
+          ${view}::text IS NULL
+          OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
+          OR (
+            ${view} = 'mine'
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.principal_id = ${currentUserId}::uuid)
+            AND c.work_status <> 'done'
+            AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
+          )
+          OR (
+            ${view} = 'unassigned'
+            AND ${isUnassignedConversation(lapsedAssignees)}
+            AND c.work_status <> 'done'
+            AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
+          )
+          OR (${view} = 'waiting' AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
+          OR (${view} = 'done' AND c.work_status = 'done')
+          OR (${view} = 'snoozed' AND c.snoozed_until > now())
+          OR (
+            ${view} = 'send_problems'
+            AND EXISTS (
+              SELECT 1
+              FROM mail.conversation_messages problem_cm
+              WHERE problem_cm.conversation_id = c.id
+                AND ${hasSendProblem(sql`problem_cm.message_id`)}
+            )
+          )
+          OR (${view} = 'kept' AND ${isKeptConversation(sql`c.id`)})
+          OR ${view} = 'recently_active'
+        )
+        AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
+        AND ${aggregatedScope ? staysInAggregatedViews(sql`c.id`, aggregatedScope) : sql`true`}
+        AND (
+          ${folderId}::uuid IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages folder_cm
+            JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
+            WHERE folder_cm.conversation_id = c.id
+              AND folder_mp.folder_id = ${folderId}::uuid
+              AND folder_mp.deleted_at IS NULL
+          )
+        )
+        AND (
+          ${params.unread ?? null}::boolean IS NULL
+          OR (cardinality(unread_state.folder_ids) > 0) = ${params.unread ?? null}
+        )
+        AND ((${view} = 'kept' AND ${isKeptConversation(sql`c.id`)}) OR EXISTS (
+          SELECT 1
+          FROM mail.conversation_messages visible_cm
+          JOIN mail.conversations visible_conversation
+            ON visible_conversation.id = visible_cm.conversation_id
+           AND visible_conversation.mailbox_id = ${params.mailboxId}::uuid
+          LEFT JOIN mail.message_placements visible_mp
+            ON visible_mp.message_id = visible_cm.message_id
+           AND visible_mp.deleted_at IS NULL
+           AND ${includedPlacement(sql`visible_mp.folder_id`)}
+          LEFT JOIN mail.outbox_submissions visible_outbox
+            ON visible_outbox.message_id = visible_cm.message_id
+           AND visible_outbox.state <> 'cancelled'
+          WHERE visible_cm.conversation_id = c.id
+            AND (
+              visible_mp.message_id IS NOT NULL
+              OR (
+                visible_outbox.id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM mail.message_placements any_visible_mp
+                  WHERE any_visible_mp.message_id = visible_cm.message_id
+                    AND any_visible_mp.deleted_at IS NULL
+                )
+              )
+            )
+        ))
+        AND (
+          ${cursor.data?.id ?? null}::uuid IS NULL
+          OR (
+            CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END,
+            c.id
+          ) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
+        )
+      ORDER BY sort_date DESC, c.id DESC
+      LIMIT ${limit + 1}
+    )
     SELECT
       c.id,
       ${isKeptConversation(sql`c.id`)} AS kept,
@@ -327,32 +432,18 @@ export const listConversations = async (params: {
       participant_state.labels AS participant_labels,
       c.latest_message_at,
       c.work_status,
-      COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
+      COALESCE((SELECT array_agg(a.principal_id::text ORDER BY a.assigned_at, a.principal_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
       c.snoozed_until,
       c.revision,
       c.updated_at,
       CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END AS sort_date,
       to_char((CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END)
         AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
-      cardinality(unread_state.folder_ids) > 0 AS unread,
-      unread_state.folder_ids AS unread_folder_ids,
+      cardinality(c.unread_folder_ids) > 0 AS unread,
+      c.unread_folder_ids AS unread_folder_ids,
       active_state.folder_ids AS active_folder_ids,
-      EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages flagged_cm
-        JOIN mail.message_placements flagged_mp ON flagged_mp.message_id = flagged_cm.message_id
-        WHERE flagged_cm.conversation_id = c.id
-          AND flagged_mp.deleted_at IS NULL
-          AND ${includedPlacement(sql`flagged_mp.folder_id`)}
-          AND '\\Flagged' = ANY(flagged_mp.flags)
-          AND (${folderId}::uuid IS NULL OR flagged_mp.folder_id = ${folderId}::uuid)
-      ) AS flagged,
-      EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages attachment_cm
-        JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
-        WHERE attachment_cm.conversation_id = c.id
-      ) AS has_attachments,
+      COALESCE(flagged_state.present, false) AS flagged,
+      COALESCE(attachment_state.present, false) AS has_attachments,
       (
         SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id
       ) AS message_count,
@@ -365,7 +456,7 @@ export const listConversations = async (params: {
         WHEN cardinality(active_state.folder_ids) = 1 THEN active_state.folder_ids[1]::uuid
         ELSE NULL
       END AS folder_id
-    FROM mail.conversations c
+    FROM candidates c
     LEFT JOIN LATERAL (
       SELECT reference.value
       FROM mail.conversation_references reference
@@ -373,19 +464,6 @@ export const listConversations = async (params: {
       ORDER BY reference.allocated_at, reference.id
       LIMIT 1
     ) primary_reference ON true
-    LEFT JOIN LATERAL (
-      SELECT ARRAY(
-        SELECT DISTINCT unread_mp.folder_id::text
-        FROM mail.conversation_messages unread_cm
-        JOIN mail.message_placements unread_mp ON unread_mp.message_id = unread_cm.message_id
-        WHERE unread_cm.conversation_id = c.id
-          AND unread_mp.deleted_at IS NULL
-          AND ${includedPlacement(sql`unread_mp.folder_id`)}
-          AND NOT ('\\Seen' = ANY(unread_mp.flags))
-          AND (${folderId}::uuid IS NULL OR unread_mp.folder_id = ${folderId}::uuid)
-        ORDER BY unread_mp.folder_id::text
-      ) AS folder_ids
-    ) unread_state ON true
     LEFT JOIN LATERAL (
       SELECT ARRAY(
         SELECT DISTINCT active_mp.folder_id::text
@@ -437,89 +515,25 @@ export const listConversations = async (params: {
         ORDER BY participant.role_order, participant.position, participant.normalized_email
       ) AS labels
     ) participant_state ON true
-    WHERE c.mailbox_id = ${params.mailboxId}::uuid
-      AND ${conversationVisibleTo(visibility, sql`c.id`)}
-      AND (${params.status ?? null}::text IS NULL OR c.work_status = ${params.status ?? null})
-      AND (
-        ${view}::text IS NULL
-        OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
-        OR (
-          ${view} = 'mine'
-          AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${currentUserId}::uuid)
-          AND c.work_status <> 'done'
-          AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-        )
-        OR (
-          ${view} = 'unassigned'
-          AND ${isUnassignedConversation(lapsedAssignees)}
-          AND c.work_status <> 'done'
-          AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-        )
-        OR (${view} = 'waiting' AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
-        OR (${view} = 'done' AND c.work_status = 'done')
-        OR (${view} = 'snoozed' AND c.snoozed_until > now())
-        OR (
-          ${view} = 'send_problems'
-          AND EXISTS (
-            SELECT 1
-            FROM mail.conversation_messages problem_cm
-            WHERE problem_cm.conversation_id = c.id
-              AND ${hasSendProblem(sql`problem_cm.message_id`)}
-          )
-        )
-        OR (${view} = 'kept' AND ${isKeptConversation(sql`c.id`)})
-        OR ${view} = 'recently_active'
-      )
-      AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
-      AND ${aggregatedScope ? staysInAggregatedViews(sql`c.id`, aggregatedScope) : sql`true`}
-      AND (
-        ${folderId}::uuid IS NULL
-        OR EXISTS (
-          SELECT 1
-          FROM mail.conversation_messages folder_cm
-          JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
-          WHERE folder_cm.conversation_id = c.id
-            AND folder_mp.folder_id = ${folderId}::uuid
-            AND folder_mp.deleted_at IS NULL
-        )
-      )
-      AND (
-        ${params.unread ?? null}::boolean IS NULL
-        OR (cardinality(unread_state.folder_ids) > 0) = ${params.unread ?? null}
-      )
-      AND ((${view} = 'kept' AND ${isKeptConversation(sql`c.id`)}) OR EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages visible_cm
-        LEFT JOIN mail.message_placements visible_mp
-          ON visible_mp.message_id = visible_cm.message_id
-         AND visible_mp.deleted_at IS NULL
-         AND ${includedPlacement(sql`visible_mp.folder_id`)}
-        LEFT JOIN mail.outbox_submissions visible_outbox
-          ON visible_outbox.message_id = visible_cm.message_id
-         AND visible_outbox.state <> 'cancelled'
-        WHERE visible_cm.conversation_id = c.id
-          AND (
-            visible_mp.message_id IS NOT NULL
-            OR (
-              visible_outbox.id IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1
-                FROM mail.message_placements any_visible_mp
-                WHERE any_visible_mp.message_id = visible_cm.message_id
-                  AND any_visible_mp.deleted_at IS NULL
-              )
-            )
-          )
-      ))
-      AND (
-        ${cursor.data?.id ?? null}::uuid IS NULL
-        OR (
-          CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END,
-          c.id
-        ) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
-      )
-    ORDER BY sort_date DESC, c.id DESC
-    LIMIT ${limit + 1}
+    LEFT JOIN LATERAL (
+      SELECT true AS present
+      FROM mail.conversation_messages flagged_cm
+      JOIN mail.message_placements flagged_mp ON flagged_mp.message_id = flagged_cm.message_id
+      WHERE flagged_cm.conversation_id = c.id
+        AND flagged_mp.deleted_at IS NULL
+        AND ${includedPlacement(sql`flagged_mp.folder_id`)}
+        AND '\\Flagged' = ANY(flagged_mp.flags)
+        AND (${folderId}::uuid IS NULL OR flagged_mp.folder_id = ${folderId}::uuid)
+      LIMIT 1
+    ) flagged_state ON true
+    LEFT JOIN LATERAL (
+      SELECT true AS present
+      FROM mail.conversation_messages attachment_cm
+      JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
+      WHERE attachment_cm.conversation_id = c.id
+      LIMIT 1
+    ) attachment_state ON true
+    ORDER BY c.sort_date DESC, c.id DESC
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
@@ -626,7 +640,7 @@ export const getConversationViewCounts = async (params: {
   if (!access.ok) return access;
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
-  const currentUserId = userBackedActor(params.context)?.id ?? null;
+  const currentUserId = personalPrincipal(params.context).id;
   const [lapsedAssignees, aggregatedScope] = await Promise.all([
     listLapsedAssignees({ mailboxIds: [params.mailboxId] }),
     loadAggregatedViewScope([params.mailboxId]),
@@ -658,7 +672,7 @@ export const getConversationViewCounts = async (params: {
         )::int AS needs_action,
         COUNT(*) FILTER (
           WHERE scope.follow_up
-            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.user_id = ${currentUserId}::uuid)
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.principal_id = ${currentUserId}::uuid)
             AND scope.work_status <> 'done'
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS mine,
@@ -771,7 +785,7 @@ const mapMessageSummary = (row: DbMessageSummary): MessageSummary => ({
   folderId: row.folder_id,
 });
 
-const messageSummarySelect = sql`
+const messageSummarySelect = () => sql`
   mc.id,
   mc.subject,
   NULLIF(LEFT(COALESCE(mc.plain_text, ''), 240), '') AS preview,
@@ -841,7 +855,7 @@ export const listConversationMessages = async (params: {
   if (!conversation) return fail(err.notFound("Conversation"));
   const rows = params.latest
     ? await sql<DbMessageSummary[]>`
-        SELECT ${messageSummarySelect}
+        SELECT ${messageSummarySelect()}
         FROM mail.conversation_messages cm
         JOIN mail.message_contents mc ON mc.id = cm.message_id
         ${messageSummaryJoins()}
@@ -851,7 +865,7 @@ export const listConversationMessages = async (params: {
         LIMIT ${limit + 1}
       `
     : await sql<DbMessageSummary[]>`
-        SELECT ${messageSummarySelect}
+        SELECT ${messageSummarySelect()}
         FROM mail.conversation_messages cm
         JOIN mail.message_contents mc ON mc.id = cm.message_id
         ${messageSummaryJoins()}
@@ -918,6 +932,7 @@ export type MessageDetail = MessageSummary & {
     contentType: string;
     sizeBytes: number;
     contentId: string | null;
+    checksum: string | null;
   }>;
 };
 
@@ -942,7 +957,7 @@ type DbMessageDetail = DbMessageSummary & {
   delivery_error_code: string | null;
   delivery_error_message: string | null;
   delivery_provider_response: Record<string, unknown> | string | null;
-  attachments: Array<{ id: string; filename: string | null; contentType: string; sizeBytes: number; contentId: string | null }> | string;
+  attachments: MessageDetail["attachments"] | string;
 };
 
 export const messageForwardText = (plainText: string | null, sanitizedHtml: string | null): string => {
@@ -958,7 +973,7 @@ export const messageForwardText = (plainText: string | null, sanitizedHtml: stri
   }
 };
 
-const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
+export const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
   ...mapMessageSummary(row),
   deletedOnServer: row.deleted_on_server,
   contentType: row.content_type,
@@ -1039,8 +1054,8 @@ const attachMessageMetadata = async (
   return remote.ok ? attachSecurity(mailboxId, remote.data) : remote;
 };
 
-const messageDetailSelect = sql`
-  ${messageSummarySelect},
+const messageDetailSelect = () => sql`
+  ${messageSummarySelect()},
   (${isKeptMessage(sql`mc.id`)}
     AND NOT EXISTS (SELECT 1 FROM mail.remote_message_refs live_ref WHERE live_ref.message_id = mc.id AND live_ref.stale_at IS NULL)
     AND EXISTS (SELECT 1 FROM mail.message_placements kept_placement WHERE kept_placement.message_id = mc.id AND kept_placement.deleted_at IS NULL)
@@ -1075,7 +1090,7 @@ const messageDetailSelect = sql`
   COALESCE(attachment_rows.items, '[]'::jsonb) AS attachments
 `;
 
-const messageDetailAddressJoin = sql`
+const messageDetailAddressJoin = () => sql`
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(jsonb_build_object('name', ma.display_name, 'address', ma.email) ORDER BY ma.position) AS addresses
     FROM mail.message_addresses ma
@@ -1088,7 +1103,7 @@ const messageDetailAddressJoin = sql`
   ) cc_rows ON true
 `;
 
-const messageDetailAttachmentJoin = sql`
+const messageDetailAttachmentJoin = () => sql`
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(
       jsonb_build_object(
@@ -1096,8 +1111,9 @@ const messageDetailAttachmentJoin = sql`
         'filename', attachment.filename,
         'contentType', attachment.content_type,
         'sizeBytes', attachment.size_bytes,
-        'contentId', attachment.content_id
-      ) ORDER BY ${attachmentMimeOrder}
+        'contentId', attachment.content_id,
+        'checksum', attachment.checksum
+      ) ORDER BY ${attachmentMimeOrder()}
     ) AS items
     FROM mail.attachments attachment
     JOIN mail.message_parts part ON part.id = attachment.part_id
@@ -1105,7 +1121,7 @@ const messageDetailAttachmentJoin = sql`
   ) attachment_rows ON true
 `;
 
-const messageDetailDeliveryJoin = sql`
+const messageDetailDeliveryJoin = () => sql`
   LEFT JOIN mail.outbox_submissions delivery ON delivery.message_id = mc.id
 `;
 
@@ -1138,13 +1154,13 @@ export const listConversationMessageDetails = async (params: {
       ORDER BY content.internal_date DESC, content.id DESC
       LIMIT ${limit}
     )
-    SELECT ${messageDetailSelect}
+    SELECT ${messageDetailSelect()}
     FROM selected_messages selected_message
     JOIN mail.message_contents mc ON mc.id = selected_message.message_id
     ${messageSummaryJoins(params.preferredFolderId)}
-    ${messageDetailAddressJoin}
-    ${messageDetailAttachmentJoin}
-    ${messageDetailDeliveryJoin}
+    ${messageDetailAddressJoin()}
+    ${messageDetailAttachmentJoin()}
+    ${messageDetailDeliveryJoin()}
     ORDER BY mc.internal_date, mc.id
   `;
   return attachMessageMetadata(params.context, params.mailboxId, rows.map(mapMessageDetail));
@@ -1165,12 +1181,12 @@ export const getMessage = async (params: {
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
   const [row] = await sql<DbMessageDetail[]>`
-    SELECT ${messageDetailSelect}
+    SELECT ${messageDetailSelect()}
     FROM mail.message_contents mc
     ${messageSummaryJoins()}
-    ${messageDetailAddressJoin}
-    ${messageDetailAttachmentJoin}
-    ${messageDetailDeliveryJoin}
+    ${messageDetailAddressJoin()}
+    ${messageDetailAttachmentJoin()}
+    ${messageDetailDeliveryJoin()}
     WHERE mc.id = ${params.messageId}::uuid AND mc.mailbox_id = ${params.mailboxId}::uuid
       AND ${messageVisibleTo(visibility, sql`mc.id`)}
   `;

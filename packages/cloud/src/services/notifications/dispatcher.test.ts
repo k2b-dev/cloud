@@ -30,7 +30,7 @@ test("dispatcher persists mail outcomes, preserves attempts while pending, and s
     globalThis.notificationDispatcherSql = sql;
     Bun.plugin({ name: "notification-dispatcher-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/]dispatcher\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationDispatcherSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationDispatcherSql;'), loader: "ts",
       }));
     }});
     mock.module(${JSON.stringify(new URL("../secrets.ts", import.meta.url).pathname)}, () => ({ decryptSecret: async () => ({ to: "reader@example.org" }) }));

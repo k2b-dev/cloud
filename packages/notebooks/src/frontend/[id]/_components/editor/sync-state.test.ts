@@ -20,6 +20,9 @@ test("sync snapshots debounce offline, confirm drained saves, answer late panels
   let unsent = false;
   setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
   const bridge = createSyncStateBridge({ hasUnsentChanges: () => unsent, emit: (state) => states.push(state) });
+  // A note connects with its first edit; until then it waits with no timer.
+  expect(delays).toEqual([]);
+  bridge.start();
   try {
     expect(delays).toEqual([CONNECT_SETTLE_MS]);
     expect(states).toEqual([]);
@@ -89,6 +92,9 @@ test("first connections get the full connect grace and connecting within it neve
   const states: SyncStateEventDetail[] = [];
   const options = { hasUnsentChanges: () => false, emit: (state: SyncStateEventDetail) => states.push(state) };
   const bridge = createSyncStateBridge(options);
+  // A note connects with its first edit; until then it waits with no timer.
+  expect(timers.size).toBe(0);
+  bridge.start();
   try {
     advance(CONNECT_SETTLE_MS - 1);
     expect(states).toEqual([]);

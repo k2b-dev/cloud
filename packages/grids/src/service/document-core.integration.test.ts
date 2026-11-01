@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";

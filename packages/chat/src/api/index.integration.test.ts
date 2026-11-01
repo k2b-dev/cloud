@@ -1,19 +1,20 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { redis, sql } from "@k2b/cloud";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { createConfig } from "@k2b/ssr";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrate } from "../migrate";
 import { ChatHealthSchema, chatService } from "../service";
+import { SYSTEM_READER_HEALTH_KEY } from "../service/system-notification-access";
 import chatApi from ".";
 
 const root = mkdtempSync(join(tmpdir(), "chat-api-integration-"));
@@ -40,6 +41,10 @@ const request = (path: string, headers: Record<string, string> = {}) =>
 suite("chat skeleton", () => {
   const accountIds: string[] = [];
   const userIds: string[] = [];
+
+  afterEach(async () => {
+    await redis.del(SYSTEM_READER_HEALTH_KEY);
+  });
 
   beforeAll(async () => {
     // Setup runs on every start; a second run must change nothing.
@@ -83,6 +88,7 @@ suite("chat skeleton", () => {
     userIds.push(admin!.id);
     const cookie = `session_token=${await createTestSession(admin!.id)}`;
 
+    await redis.del(SYSTEM_READER_HEALTH_KEY);
     const response = await request("/api/chat/admin/health", { cookie });
     expect(response.status).toBe(200);
     const health = ChatHealthSchema.parse(await response.json());
@@ -94,12 +100,49 @@ suite("chat skeleton", () => {
     expect(englishHtml).toContain("Operations");
     expect(englishHtml).toContain("Healthy");
     expect(englishHtml).toContain("Checked at");
+    expect(englishHtml).toContain("Not checked yet");
 
+    await redis.send("HSET", [
+      SYSTEM_READER_HEALTH_KEY,
+      "inventory.item",
+      JSON.stringify({
+        status: "not_configured",
+        reason: "not_admitted",
+        resourceType: "inventory.item",
+        checkedAt: "2026-10-29T12:00:00Z",
+      }),
+    ]);
+    const checked = await request("/api/chat/admin/health", { cookie });
+    expect(ChatHealthSchema.parse(await checked.json()).systemNotifications).toEqual({
+      providers: [{ status: "not_configured", reason: "not_admitted", resourceType: "inventory.item", checkedAt: "2026-10-29T12:00:00Z" }],
+      status: "not_configured",
+      reason: "not_admitted",
+      resourceType: "inventory.item",
+      checkedAt: "2026-10-29T12:00:00Z",
+    });
     const german = await request("/admin/chat", { cookie, "accept-language": "de-DE" });
     expect(german.status).toBe(200);
     const germanHtml = await german.text();
     expect(germanHtml).toContain("Betrieb");
     expect(germanHtml).toContain("Geprüft um");
     expect(germanHtml).not.toContain("Operations");
+    expect(germanHtml).toContain("Nicht eingerichtet");
+    expect(germanHtml).toContain("Core hat Chats Plattformrecht");
+    expect(germanHtml).toContain("inventory.item");
+    for (const check of [
+      { resourceType: "archive.record", status: "not_configured", reason: "no_credential" },
+      { resourceType: "healthy.entry", status: "ok", reason: null },
+    ])
+      await redis.send("HSET", [
+        SYSTEM_READER_HEALTH_KEY,
+        check.resourceType,
+        JSON.stringify({ ...check, checkedAt: "2026-10-29T12:00:00Z" }),
+      ]);
+    const providersHtml = await (await request("/admin/chat", { cookie, "accept-language": "en" })).text();
+    expect(providersHtml).toContain("inventory.item");
+    expect(providersHtml).toContain("archive.record");
+    expect(providersHtml).toContain("Core has not admitted");
+    expect(providersHtml).toContain("app credential is unavailable");
+    expect(providersHtml).not.toContain("Reader checks working");
   });
 });

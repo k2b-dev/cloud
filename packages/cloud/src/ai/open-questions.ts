@@ -1,7 +1,7 @@
-import { sql } from "bun";
 import { z } from "zod";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { openRequests } from "../services/approvals/content";
 import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";

@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { RecordQuery } from "../contracts";
 import type { Field } from "../service/types";
 import { canonicalizeDslQuery } from "./canonical";
 import { parseGridsQueryDsl } from "./parser";
 import { simpleQueryToGqlSource } from "./record-query-source";
 import type { DslResolverContext } from "./resolver";
+
+useUnitClients();
 
 const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" | "name" | "type" | "tableId">): Field => ({
   id: overrides.id,

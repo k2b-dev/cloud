@@ -18,6 +18,7 @@ export const DashboardPanelResultSchema = z.object({
   error: z.string().nullable(),
   nextRefreshAt: z.string(),
   lastGood: DashboardSnapshotSchema.nullable(),
+  variant: z.string(),
 });
 export const PublicDashboardSchema = z.object({
   id: z.string(),

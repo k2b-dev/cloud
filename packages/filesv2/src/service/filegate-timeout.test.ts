@@ -57,3 +57,69 @@ test("the real SDK commit uses the slow budget and the wrapper preserves explici
     timeout.mockRestore();
   }
 });
+
+test("history request cancellation reaches info/stat/ACL/resolve on derived SDK clients", async () => {
+  const { connectFilegate } = await import("./filegate-facade");
+  const controller = new AbortController();
+  const seen: AbortSignal[] = [];
+  const transport: typeof fetch = Object.assign(
+    async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (!init?.signal) throw new Error("Missing request cancellation");
+      seen.push(init.signal);
+      return Response.json({ entries: [] });
+    },
+    { preconnect: fetch.preconnect },
+  );
+  const root = connectFilegate({ url: "https://filegate.test", token: "test" }, transport, controller.signal)
+    .as({ uid: 1000, gid: 1000 })
+    .root("freeipa")
+    .as({ uid: 1000, gid: 1000 });
+  await root.info();
+  await root.stat("private.txt");
+  await root.getACL("private.txt", "access");
+  await root.resolve("stable-id");
+  expect(seen).toHaveLength(4);
+  controller.abort(new Error("history canceled"));
+  expect(seen.every((signal) => signal.aborted)).toBe(true);
+  await expect(root.stat("must-not-start")).rejects.toThrow("history canceled");
+  expect(seen).toHaveLength(4);
+});
+
+test("aborting an in-flight history SDK read rejects its transport rather than leaving a background request", async () => {
+  const { connectFilegate } = await import("./filegate-facade");
+  const controller = new AbortController();
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let active = 0;
+  const transport: typeof fetch = Object.assign(
+    (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        if (!init?.signal) throw new Error("Missing request signal");
+        active++;
+        init.signal.addEventListener(
+          "abort",
+          () => {
+            active--;
+            reject(init.signal!.reason);
+          },
+          { once: true },
+        );
+        started();
+      }),
+    { preconnect: fetch.preconnect },
+  );
+  const pending = connectFilegate({ url: "https://filegate.test", token: "test" }, transport, controller.signal)
+    .root("cloud")
+    .stat("file.txt");
+  const outcome = pending.then(
+    () => null,
+    (error: unknown) => error,
+  );
+  await ready;
+  expect(active).toBe(1);
+  controller.abort(new Error("read canceled"));
+  expect(await outcome).toMatchObject({ message: "read canceled" });
+  expect(active).toBe(0);
+});

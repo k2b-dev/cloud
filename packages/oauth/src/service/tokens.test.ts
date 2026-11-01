@@ -1,11 +1,12 @@
 import { beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { createMcpRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
-import { sql } from "bun";
+import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
 import { Hono } from "hono";
 import * as jose from "jose";
 import { z } from "zod";
@@ -149,6 +150,7 @@ const consentActionRoutes = () =>
   );
 
 suite("OAuth resource access tokens", () => {
+  useTestSettings({ "app.url": "http://localhost:3000" });
   beforeAll(async () => {
     await migrate();
   });
@@ -1349,7 +1351,7 @@ suite("OAuth resource access tokens", () => {
       expect(restored).toMatchObject({
         name: "Cloud CLI",
         redirectUris: ["http://127.0.0.1/callback", "http://[::1]/callback"],
-        scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+        scopes: ["openid", "profile", "email", "offline_access", "read", "write", "admin"],
         audiences: ["cloud"],
         serviceAccountId: null,
         allowedProfiles: ["user", "guest"],
@@ -2506,6 +2508,7 @@ const epochFixture = async (kind: "cli" | "managed" | "dynamic" = "managed") => 
 };
 
 suite("OAuth account epochs", () => {
+  useTestSettings({ "app.url": "http://localhost:3000" });
   beforeAll(async () => {
     await migrate();
   });
@@ -2554,10 +2557,10 @@ suite("OAuth account epochs", () => {
           let familyId: string | undefined;
           const observed: { grants: unknown[]; reservation: unknown; authEpoch: number }[] = [];
           globalThis.fetch = Object.assign(
-            async (_input: RequestInfo | URL, init?: RequestInit) => {
+            async (input: RequestInfo | URL, init?: RequestInit) => {
               const body = z
                 .object({ tokens: z.array(z.object({ grant: z.object({ familyId: z.uuid() }).passthrough() })).length(2) })
-                .parse(JSON.parse(String(init?.body)));
+                .parse(await new Request(input, init).json());
               familyId = body.tokens[0]!.grant.familyId;
               const [reserved] = await sql<{ status: string; auth_epoch: string | number; generation: number; token_status: string }[]>`
                 SELECT family.status, family.auth_epoch, token.generation, token.status AS token_status

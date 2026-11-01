@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { defineTool, type InboundEvent, nessi, type Provider, type StoreEntry } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as registry from "../_internal/registry";
+import { sql } from "../runtime/clients";
 import { IDENTITY_REFRESH_TIMEOUT_MS } from "../services/identity/constants";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
@@ -12,6 +13,8 @@ import { CODE_CAPABILITY_TOKEN_HEADER } from "./code-capability-transport";
 import * as codeExecution from "./code-execution";
 import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
 import { aiConversations } from "./store";
+
+useUnitClients();
 
 // Broker authorization is covered at its own seam; these tests exercise host protocol and retries.
 beforeEach(() => {
@@ -301,7 +304,7 @@ const stubManagedCodeTurn = async () => {
       conversationId: "chat-test",
       status: "running",
       attempt: 1,
-      modelProfileId: null,
+      modelId: null,
       createdAt: "2026-10-07",
       completedAt: null,
       error: null,

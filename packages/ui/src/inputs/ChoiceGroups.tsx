@@ -35,6 +35,12 @@ export function ChoiceGroups(props: {
     setScrollbar({ overflow: true, left, width });
   };
 
+  const overflowEdges = () => {
+    const { overflow, left, width } = scrollbar();
+    if (!overflow || !viewport) return undefined;
+    const edges = [left > 0.5 ? "start" : "", left + width < viewport.clientWidth - 0.5 ? "end" : ""].filter(Boolean).join(" ");
+    return edges || undefined;
+  };
   // With no matching choice the first chip takes the tab stop, so the group stays reachable by keyboard.
   const tabStop = (value: string | null, index: number) =>
     props.value === value || (index === 0 && !props.choices.some((choice) => choice.value === props.value));
@@ -88,7 +94,7 @@ export function ChoiceGroups(props: {
   });
 
   return (
-    <div class="k2b-choice-groups-shell" onPointerEnter={syncScrollbar} onFocusIn={syncScrollbar}>
+    <div class="k2b-choice-groups-shell" data-overflow={overflowEdges()} onPointerEnter={syncScrollbar} onFocusIn={syncScrollbar}>
       <div
         ref={viewport}
         class="k2b-choice-groups"

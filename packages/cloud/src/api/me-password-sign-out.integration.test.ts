@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { decodeJwt, SignJWT } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { freeipa } from "../server/services";
 import { accounts } from "../services/accounts";
 import { audit } from "../services/audit";
+import * as freeIpaConfig from "../services/freeipa-config";
 import * as keyRing from "../services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
 import * as sessionTokens from "../services/identity/session-token";
@@ -82,6 +83,21 @@ suite("password changes end other sign-ins", () => {
     "freeipa.groups.base_sync": ["fixture"],
     "freeipa.groups.base_ipa_realm": ["fixture"],
   };
+  const ipaConfig: freeIpaConfig.FreeIpaConfig = {
+    enabled: true,
+    configured: true,
+    missingSettings: [],
+    url: "https://ipa.example.test",
+    serviceUser: "fixture",
+    servicePassword: "fixture-only",
+    groupsAdmin: ["admins"],
+    groupsBaseSync: ["fixture"],
+    groupsBaseIpaRealm: ["fixture"],
+    groupsExcluded: ["editors", "trust admins", "admins"],
+    caCert: "",
+    allowInsecure: false,
+    syncGuard: { maxUserChanges: 10, maxUserChangePercent: 20, maxGroupDeletions: 5, maxGroupDeletionPercent: 20 },
+  };
   let userId: string;
   let uid: string;
   let a: string;
@@ -112,6 +128,9 @@ suite("password changes end other sign-ins", () => {
     epoch = Number(decodeJwt(a).auth_epoch);
     watch(spyOn(providers.ipa.auth, "login").mockResolvedValue({ status: "success", session: "fixture" }));
     watch(spyOn(providers.ipa.auth, "changePassword").mockResolvedValue({ ok: true, data: undefined }));
+    // Every integration process on a host shares the Valkey settings cache, so another file's database
+    // could replace this file's cached FreeIPA settings; the flows under test need only a configured FreeIPA.
+    watch(spyOn(freeIpaConfig, "getFreeIpaConfig").mockResolvedValue(ipaConfig));
   });
   afterEach(async () => {
     for (const undo of restore.reverse()) undo();

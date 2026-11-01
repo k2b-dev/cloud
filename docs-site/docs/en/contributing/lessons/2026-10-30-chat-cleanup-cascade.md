@@ -1,0 +1,6 @@
+### A timed-out fixture cleanup retried the same bulk rows in every later test
+
+- **What happened:** The 5,000-member Chat integration case and six following cases timed out in their hooks; the next file exhausted the suite budget.
+- **Root cause:** The cleanup cleared its tracking arrays only after every delete succeeded. A rejected or timed-out operation retained the entire batch, so later hooks retried it and an older hook could clear newer fixtures. Suspected trigger of the first timeout: stale planner statistics after bulk loading; the PostgreSQL auto_explain output in both job logs estimated one service account despite 4,998 inserted rows. The logs do not identify the unfinished statement.
+- **Error class:** Shared mutable fixture state surviving asynchronous cleanup failure.
+- **Guard:** `a failed cleanup releases its fixtures before the next test starts` injects a database deletion failure and verifies that another fixture can be cleaned while the failed row still refuses deletion. Cleanup takes and clears all tracked lists before its first await and deletes bulk access entries and principals in batches of 500. The bulk fixture analyzes the tables used by permission and membership queries before exercising them. Bulk cleanup logs long-running SQL and blockers before deleting, so another timeout exposes the unfinished statement.

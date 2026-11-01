@@ -447,6 +447,24 @@
     margin: 0;
   }
 
+  /* Not the native box: it ignores border-radius, so it could not match the
+     @k2b/ui checkbox. Radio buttons stay native; they are round anyway. */
+  input[type="checkbox"] {
+    box-sizing: border-box;
+    appearance: none;
+    border: 1px solid var(--k2b-border-strong);
+    border-radius: 0.25rem;
+    background: var(--k2b-surface);
+    cursor: pointer;
+  }
+
+  input[type="checkbox"]:checked {
+    border-color: var(--k2b-action-solid);
+    background: var(--k2b-action-solid) center / 100% 100% no-repeat
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E");
+    forced-color-adjust: none;
+  }
+
   input[type="range"] {
     width: 100%;
   }
@@ -967,8 +985,21 @@
   }
 
   .stdlib-chart :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value, .stdlib-chart-axis-label) {
-    font-family: var(--k2b-font-mono);
     font-variant-numeric: tabular-nums;
+  }
+
+  .stdlib-chart .stdlib-chart-category-label { font-size: 11px; opacity: 0.8; }
+  .stdlib-chart .stdlib-chart-bar-value { font-size: 11px; opacity: 0.9; }
+  .stdlib-chart .stdlib-chart-axis-label { font-weight: 500; }
+
+  /* Horizontal bar rows keep their own height; a shorter box scrolls. */
+  .k2b-chart:has(> .k2b-chart__svg > svg[data-bar-layout="rows"]) {
+    overflow-y: auto;
+  }
+
+  .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
+    flex: none;
+    height: var(--k2b-chart-height);
   }
 
   .stdlib-chart-series-0 { fill: var(--stdlib-chart-c1); stroke: var(--stdlib-chart-c1); }

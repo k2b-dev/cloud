@@ -19,11 +19,28 @@ Use **Comments** in the note details for questions, feedback, and decisions. Com
 - **Add:** With **Edit** access, you can post Markdown comments. Other people who have the detail panel open see new comments immediately.
 - **Correct:** You can edit or delete your own comment for ten minutes after you post it.
 - **Locked notes:** A lock freezes the note text, not its discussion. With **Edit** access, you can still comment on a locked note.
+- **Terminal:** `cld notebooks discussion` reads and writes this page discussion. `cld notebooks comments` works with comments on the text.
 :::
 
 Keep lasting handbook content in the note itself. Use comments to discuss that content before or after it changes.
 
 **Edit with AI** opens Assistant with the page and its discussion. After a review, Assistant can also correct or delete your recent comments. The same author and ten-minute rules apply. Assistant can check query and contents drafts without saving them. This check does not cover every Markdown feature or table formula.
+
+## Comment on the text {icon="message-plus"}
+
+Select a passage in the text. A small bar with **Bold**, **Italic**, **Link** and **Comment** appears above the selection. On a phone it appears below the selection. You can also press ⌘⌥M (Windows and Linux: Ctrl+Alt+M). Without a selection, you comment on the word at the cursor.
+
+:::reference
+- **Margin:** The comment stands to the right of the text, level with its passage. The passage stays marked in your color. When there is too little room or the detail panel is open, a colored dot stands next to the line. Choose it to open the comment. On a phone, choose the passage; the comment opens at the bottom of the screen.
+- **Suggestion:** **Suggest a change** opens a field with the selected text. Below it you see the difference. **Accept** changes the text for everyone, like a normal edit in the versions. **Undo** works while nobody has changed the new text.
+- **Reply and resolve:** Choose the passage or the comment to open it. There you reply or mark it as resolved. At the top of the margin, **n resolved** shows the resolved comments again.
+- **Correct:** You can edit or delete your own comment for ten minutes. You can delete it only while it has no replies.
+- **Deleted passage:** When someone deletes the marked text, the comment stays with a dot at that place. It shows the old text struck through.
+- **Keyboard:** Alt+Enter goes from a marked passage to its comment. Escape goes back. The arrow keys move between the comments in the margin.
+- **Who can do what:** With **Edit** access, you comment, suggest, accept and resolve. With **View** access, you read the comments in **Read-only**.
+- **Where comments show:** In **Write** and **Read-only**. **Book**, print, PDF and Markdown export show no comments. In **Book**, **n comments** at the top opens the note in **Read-only** at the first comment.
+- **Chat:** The page's chat shows a quiet line with a link to the passage for each new comment.
+:::
 
 ## Restore a saved version {icon="history"}
 
@@ -85,7 +102,8 @@ The heading and list shortcuts use the physical digit keys on every keyboard lay
 
 :::reference
 - `/` at a line start or after whitespace opens the insert menu. Type a command name to filter it.
-- `[[` opens note suggestions. Choosing a note replaces the typed brackets with a Markdown link to it.
+- `[[` opens note suggestions. Type part of a title to find any note of the notebook; a note with exactly that title comes first. Choosing a note replaces the typed brackets with a Markdown link to it.
+- Pasting a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**, turns it into a link with its title once it is recognized; a note becomes a note link. Links you may not open, links in code, and pastes with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac) stay as pasted. Undo brings back the plain link.
 - `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
 - `==text==` highlights text. Highlight stays within one line.
 - On touch screens, **Undo** and **Redo** sit at the start of the toolbar.
@@ -116,7 +134,9 @@ Lists in the note editor follow their structure. The keys work the same for bull
 - **Move list items:** On a Mac, use **Option+Up/Down**. On Windows and Linux, **Ctrl+Shift+Up/Down** does the same. On a Mac, **⌘+Shift+Up/Down** keeps selecting to the start or end of the note. If your selection covers more than one item, the selected lines move instead.
 - **Numbered lists:** When you add, remove, indent or move items, the list you changed is numbered again in the Markdown. It keeps its first number, also when you remove the first item. Other lists keep their numbers. One undo restores the change and its previous numbers.
 - **Toolbar:** Bullet list, Numbered list, and Checklist are directly in the toolbar, also on phones.
-- **Tables:** **Tab** selects the next cell, **Shift+Tab** the previous cell.
+- **Tables:** In **Formatted**, type directly in a table cell. **Tab** selects the next cell, **Shift+Tab** the previous cell. **Tab** in the last cell adds a row. **Enter** moves to the cell below, adds a row from a filled last row, or leaves an empty last row.
+- **Table menu:** To insert, delete or align rows and columns, right-click a cell, choose its row or column grip or the table button in the toolbar, or press **Shift+F10** in a cell. These changes need a connection. Without a connection, only **Row below** at the end of the table works.
+- **Formulas in cells:** Edit the formula directly in the cell, with function and column suggestions and a live result. The cell shows the result after you leave it.
 - **Suggestions:** If a suggestion list is open, **Tab** and **Enter** accept the highlighted suggestion.
 - **Leave the editor:** Press **Esc**, then **Tab** to move to the next control. Press **Esc**, then **Shift+Tab** to move back.
 - **Keep Tab for focus:** Open **Settings → Notebook → View & behavior** and turn on **Tab moves focus instead of indenting**. This browser stores the choice, and it applies immediately.
@@ -129,6 +149,7 @@ The sidebar shows the notebook's notes as a tree, with the homepage first. Filte
 :::reference
 - **Notebook name:** Choose the name at the top to switch to another notebook or to open **All notebooks**.
 - **Search and new notes:** Choose **Search notes**, or press **Cmd/Ctrl+Shift+K**. With **Edit** or **Manage** access, choose the pencil next to the name, or press **Cmd/Ctrl+Alt+N**, to create a note. The last word you type also matches the start of a word: *meet* finds *meetings*. Notes whose title is or starts with what you typed come first.
+- **Large notebooks:** In a notebook with more than 100 notes, the tree opens only the way to the open note. Open a note with sub-notes to load them. Around the open note, a level first shows 20 notes. Choose **… more notes** at its end or **… earlier notes** at its start to show up to 100 more.
 - **Favorites, Recent, and Tags:** These filters show a list instead of the tree, with the most recently changed note first. **Recent** shows the 12 most recently changed notes. Each note shows when it changed and its first two tags. Choose the filter again, or **×** above the list, to see the tree again.
 - **The list stays in place:** While the list is open, changes from you or others do not move its notes. A note that starts to match the filter comes at the end. To sort the list again, choose the filter two times.
 - **Your favorites:** In the menu of a note, choose **Add favorite**. Only you see your favorites.
@@ -247,6 +268,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **Timeline:** Notes are rows, with the last change first. Groups start with **Today**, **Yesterday**, **This week**, and **Last week**, then months and years. Links are arcs on the left, in the color of the area they start from. Point at a row or focus it to see its links. Incoming links are dashed. This display scrolls instead of zooming. It opens at the open note.
 - **Depth:** Choose **1 step** or **2 steps** in **Neighborhood**.
 - **Move to center:** Focus a note and press **Space**. On a touchscreen, select a note and choose **Move to center**. This note becomes the middle.
+- **Large notebooks:** In a notebook with more than 500 pages, the graph shows the pages around the open page: its links, their links, its sub-pages, and the pages above them. A line above the graph says how many pages it shows. To see the pages around another page, move it to the center in **Neighborhood**, or open the graph from that page.
 - **On a phone:** Links opens in **Neighborhood** unless you choose another display. Your choice stays in the address.
 - **No links here:** Choose **Show whole notebook** to see **Network**. If filters hide all links of the current note, choose **Reset filters**.
 - **Areas:** Each top-level page with sub-pages is an area with its own color. The other top-level pages are in **Top level**. The network does not move by itself. You can drag a note, and its neighbors follow a little.

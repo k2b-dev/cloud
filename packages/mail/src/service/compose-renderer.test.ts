@@ -95,6 +95,104 @@ describe("Markdown tables", () => {
   });
 });
 
+describe("Mail output formatting", () => {
+  const table = "| Left | Center | Right |\n| :--- | :---: | ---: |\n| ~~old~~ | =1+2 | =SUM(Left) |";
+  const body = `Before\n\n---\n\n${table}\n\n$2^3+4^5$`;
+
+  test("keeps dividers, strike and column alignment through the final HTML policy without computing formulas", () => {
+    const result = renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: false });
+    if (!result.ok || !result.data.html) throw new Error("The formatted message did not render");
+    const { html, text } = result.data;
+    expect(html).toMatch(/<hr\b[^>]*style="[^"]*border-top:1px solid #d4d4d8/);
+    expect(html).toContain("<del>old</del>");
+    const cells = Array.from(html.matchAll(/<(th|td)\b([^>]*)>/g), (match) => match[2]!);
+    expect(cells).toHaveLength(6);
+    for (const [index, cell] of cells.entries()) {
+      const align = ["left", "center", "right"][index % 3];
+      expect(cell).toContain(`align="${align}"`);
+      expect(cell).toContain(`text-align:${align}`);
+    }
+    for (const literal of ["=1+2", "=SUM(Left)", "$2^3+4^5$"]) {
+      expect(html).toContain(literal);
+      expect(text).toContain(literal);
+    }
+    expect(html).not.toMatch(/md-formula|ti-math-function|katex|<sup/);
+    expect(text).toContain("old");
+    expect(text).toContain("-".repeat(40));
+    expect(previewFormattingWarnings([], body, "markdown")).toEqual([]);
+  });
+
+  test("keeps literal formula strings and escapes HTML and Markdown inside formula cells", () => {
+    const formula = '=IF(1<2,"<img src=x onerror=alert(1)>","**x**")';
+    const result = renderComposeContent({
+      body: `| Formula |\n| --- |\n| ${formula} |`,
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: false,
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data.text).toContain(formula);
+    expect(result.data.html).toContain("&lt;img");
+    expect(result.data.html).not.toMatch(/<img|<strong|md-formula/);
+  });
+
+  test.each(["$2^3+4^5$", "$$\n2^3+4^5\n$$", "```math\n  2^3+4^5  \n```"])("keeps math source literal without evaluating %j", (source) => {
+    const result = renderComposeContent({ body: source, format: "markdown", customCss: "", context, renderLiquid: false });
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data.html).not.toMatch(/katex|<sup|<math/);
+    expect(result.data.text).toContain("2^3+4^5");
+    if (source.startsWith("$")) expect(result.data.text).toContain("$");
+  });
+
+  test("lets mailbox CSS override default column alignment and style strikethrough", () => {
+    const customCss = "th, td { text-align: center; } del { color: #123456; text-decoration: line-through; }";
+    expect(validateComposeCss(customCss).ok).toBe(true);
+    const result = renderComposeContent({ body: table, format: "markdown", customCss, context, renderLiquid: false });
+    if (!result.ok || !result.data.html) throw new Error("The styled table did not render");
+    const cells = result.data.html.match(/<(?:th|td)\b[^>]*>/g) ?? [];
+    expect(cells).toHaveLength(6);
+    for (const cell of cells) expect(cell).toContain("text-align:center");
+    expect(result.data.html).toMatch(/<del style="[^"]*color:#123456[^"]*">old<\/del>/);
+    expect(result.data.formattingWarnings).toEqual([]);
+  });
+
+  test.each(["selected", "legacy", "snippet"])("uses the same output for a %s signature or template", (kind) => {
+    const template = `Regards **{{ actor.display_name }}**\n\n${body}`;
+    const snippet = renderComposeTemplateSource(template, context, "markdown");
+    if (!snippet.ok) throw new Error(snippet.error.message);
+    const result = renderComposeContent({
+      body: kind === "selected" ? "Hello" : kind === "legacy" ? markComposeTemplateSegment(template) : snippet.data,
+      signature: kind === "selected" ? template : null,
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: true,
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data.html).toContain("Regards <strong>Ada Lovelace</strong>");
+    expect(result.data.html).toContain("<del>old</del>");
+    expect(result.data.html).toContain('align="right"');
+    expect(result.data.html).toContain("<hr");
+    expect(result.data.text).toContain("=SUM(Left)");
+    if (kind === "selected") expect(result.data.html).toContain('class="mail-signature"');
+  });
+
+  test("keeps plain bodies byte-for-byte and resolves a plain signature as before", () => {
+    const plain = renderComposeContent({ body, format: "plain", customCss: "", context, renderLiquid: false });
+    expect(plain).toMatchObject({ ok: true, data: { html: null, text: body } });
+    const signed = renderComposeContent({
+      body,
+      signature: "Regards **{{ actor.display_name }}**",
+      format: "plain",
+      customCss: "",
+      context,
+      renderLiquid: true,
+    });
+    expect(signed).toMatchObject({ ok: true, data: { html: null, text: `${body}\n\nRegards Ada Lovelace` } });
+  });
+});
+
 describe("Markdown dividers", () => {
   const content = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) => {
     const result = renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: false, ...options });
@@ -244,7 +342,7 @@ describe("Markdown dividers", () => {
     const platform = elements(markdown.renderSync(source, { links: "plain" }));
     const email = elements(content(source).html);
     // img/figure/figcaption: body images; input: task checkbox; aside/svg/path: info block shell and icon.
-    // Email keeps their text only. Strikethrough is already removed by the platform Markdown sanitizer.
+    // Email keeps their text only. The email output also keeps GFM strikethrough.
     expect([...platform].filter((tag) => !email.has(tag)).sort()).toEqual(["aside", "figcaption", "figure", "img", "input", "path", "svg"]);
   });
 
@@ -421,7 +519,7 @@ describe("Markdown blank lines", () => {
     try {
       content(body);
       expect(renderMarkdown).toHaveBeenCalledTimes(1);
-      expect(renderMarkdown).toHaveBeenCalledWith(body, { links: "plain" });
+      expect(renderMarkdown).toHaveBeenCalledWith(body, { links: "plain", output: "email" });
     } finally {
       renderMarkdown.mockRestore();
     }
@@ -474,7 +572,7 @@ describe("Markdown blank lines", () => {
       expect(result).toEqual(expected);
       expect(result.html).not.toContain("MAILBLANKLINE");
       expect(result.text).not.toContain("MAILBLANKLINE");
-      expect(renderMarkdown).toHaveBeenLastCalledWith(body, { links: "plain" });
+      expect(renderMarkdown).toHaveBeenLastCalledWith(body, { links: "plain", output: "email" });
     } finally {
       renderMarkdown.mockRestore();
     }
@@ -600,6 +698,24 @@ describe("Markdown blank lines", () => {
 });
 
 describe("compose renderer", () => {
+  test("rejects input beyond the draft body budget before Markdown rendering", () => {
+    const render = spyOn(markdown, "renderSync");
+    try {
+      expect(
+        renderComposeContent({
+          body: "x".repeat(2 * 1024 * 1024 + 1),
+          format: "markdown",
+          customCss: "",
+          context,
+          renderLiquid: false,
+        }),
+      ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooLarge" } } });
+      expect(render).not.toHaveBeenCalled();
+    } finally {
+      render.mockRestore();
+    }
+  });
+
   test("merges preview warnings design first and caps the combined list", () => {
     const design = storedComposeCss(".mail-content { color: #123456; font-family: var(--font); }");
     expect(design.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
@@ -1428,8 +1544,9 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
   }, 30_000);
 
   test("keeps the built-in stylesheet valid", () => {
-    // Mailbox CSS may not use pseudo-classes; the built-in design uses `:where()` only to lower its specificity.
-    expect(validateComposeCss(DEFAULT_MAIL_CSS.replace(/:where\((\.[a-z-]+)\)/g, "$1")).ok).toBe(true);
+    // Only the built-in design uses zero-specificity selectors and generated alignment attributes.
+    const elementSelectors = DEFAULT_MAIL_CSS.replace(/:where\(([^()]*)\)/g, "$1").replace(/\[align="(?:center|right)"\]/g, "");
+    expect(validateComposeCss(elementSelectors).ok).toBe(true);
   });
 
   test("keeps plain text plain while resolving Liquid", () => {

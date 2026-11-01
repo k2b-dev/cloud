@@ -1,11 +1,10 @@
 import { expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { notifications, settings } from "@k2b/cloud/services";
 import { createSync, type ScheduleDefinition, type Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
-import { connectTestNats, testFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
-import { migrate } from "../migrate";
 import { AlertNoticeSchema, SourceStaleNoticeSchema } from "../notifications";
 import { registerAlertSchedules } from "./alert-runtime";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
@@ -14,7 +13,7 @@ import * as sqlService from "./sql-service";
 testFor("database", "nats")(
   "scheduled checks persist installation locale across fanout and failed delivery retries",
   async () => {
-    const database = await useFreshDatabase("pulse_alert_schedule");
+    const database = await useMigratedDatabase("pulse_alert_schedule");
     // Outbox construction creates SQL fragments and binds Bun's default client.
     // Select the fixture database before loading that runtime dependency.
     const { notificationOutbox } = await import("./store-health").catch(async (error) => {
@@ -61,9 +60,6 @@ testFor("database", "nats")(
         }),
       );
     try {
-      const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-      await runCoreSetup();
-      await migrate("Europe/Berlin");
       getSetting.mockClear();
       getSetting.mockResolvedValue("de");
       await sql`INSERT INTO pulse.bases(id,short_id,name,timezone) VALUES(${baseId}::uuid,'Sched5','Scheduled','Europe/Berlin')`;

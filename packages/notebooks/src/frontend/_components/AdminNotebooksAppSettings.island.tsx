@@ -21,11 +21,12 @@ import {
   PanelDialog,
   Placeholder,
   panelDialogOptions,
+  TagsInput,
   TextInput,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
 import { apiClient } from "../../api/client";
 import { notebooksAdminMessages } from "../admin-messages";
 
@@ -85,6 +86,7 @@ const unitSuffixForKey = (key: string): string | null => {
  *
  *  - `number` (incl. `_mb` / `_px` suffix keys) → `<input type="number">`
  *    with optional unit pill on the right edge.
+ *  - `string_list` → tags input; the value round-trips as a list.
  *  - everything else → text input, value round-trips as a string and
  *    the API validates per the registered SettingDef.
  *
@@ -92,7 +94,7 @@ const unitSuffixForKey = (key: string): string | null => {
  * `defaults.ts` doesn't crash the modal — the value still flows
  * through the backend validator.
  */
-const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => void }) => {
+const SettingRow = (props: { entry: SettingEntry; error?: string; onChange: (value: unknown) => void }) => {
   const locale = useLocale();
   const t = () => notebooksAdminMessages.resolve([locale()]).t;
   const entryValue = () => props.entry.value ?? props.entry.default ?? "";
@@ -104,6 +106,8 @@ const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => 
 
   const isNumber = props.entry.kind === "number";
   const suffix = unitSuffixForKey(props.entry.key);
+  const label = () => t().settingLabel({ key: props.entry.key, label: props.entry.label });
+  const description = () => t().settingDescription({ key: props.entry.key, description: props.entry.description });
 
   const handleValue = (raw: string) => {
     setValue(raw);
@@ -120,28 +124,41 @@ const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => 
 
   return (
     <div class="flex flex-col gap-1.5">
-      <Show
-        when={isNumber}
+      <Switch
         fallback={
           <TextInput
             id={`setting-${props.entry.key}`}
-            label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
-            description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
+            label={label()}
+            description={description()}
             value={value}
             onValueChange={handleValue}
             placeholder={typeof props.entry.default === "string" ? props.entry.default : String(props.entry.default ?? "")}
+            error={() => props.error}
           />
         }
       >
-        <NumberInput
-          id={`setting-${props.entry.key}`}
-          label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
-          description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
-          value={() => (value().trim() === "" ? null : Number(value()))}
-          onValueChange={(next) => handleValue(next === null ? "" : String(next))}
-          suffix={suffix ? <span class="font-mono text-[11px]">{suffix}</span> : undefined}
-        />
-      </Show>
+        <Match when={isNumber}>
+          <NumberInput
+            id={`setting-${props.entry.key}`}
+            label={label()}
+            description={description()}
+            value={() => (value().trim() === "" ? null : Number(value()))}
+            onValueChange={(next) => handleValue(next === null ? "" : String(next))}
+            suffix={suffix ? <span class="font-mono text-[11px]">{suffix}</span> : undefined}
+            error={() => props.error}
+          />
+        </Match>
+        <Match when={props.entry.kind === "string_list"}>
+          <TagsInput
+            id={`setting-${props.entry.key}`}
+            label={label()}
+            description={description()}
+            value={() => (Array.isArray(entryValue()) ? (entryValue() as unknown[]).map(String) : [])}
+            onValueChange={props.onChange}
+            error={() => props.error}
+          />
+        </Match>
+      </Switch>
       <Show when={props.entry.unreadable}>
         <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
           {t().settingUnreadable}
@@ -159,7 +176,9 @@ const SettingsBody = (props: { close: () => void }) => {
     load: (_source, { abortSignal }) => fetchSettings(abortSignal, locale()),
   });
   const [pending, setPending] = createSignal<ReadonlyMap<string, unknown>>(new Map());
-  const [saveOutcome, setSaveOutcome] = createSignal<{ applied: number; failed?: string; warning?: string } | null>(null);
+  const [saveOutcome, setSaveOutcome] = createSignal<{ applied: number; failed?: string; failedKey?: string; warning?: string } | null>(
+    null,
+  );
   const [reconciling, setReconciling] = createSignal(false);
   const removePending = (keys: Iterable<string>) => {
     setPending((current) => {
@@ -169,7 +188,7 @@ const SettingsBody = (props: { close: () => void }) => {
     });
   };
   const save = mutation.create<
-    { attempted: ReadonlyArray<readonly [string, unknown]>; appliedKeys: string[]; failed?: string },
+    { attempted: ReadonlyArray<readonly [string, unknown]>; appliedKeys: string[]; failed?: string; failedKey?: string },
     ReadonlyArray<readonly [string, unknown]>
   >({
     mutation: async (changes, { abortSignal }) => {
@@ -181,7 +200,12 @@ const SettingsBody = (props: { close: () => void }) => {
           appliedKeys.push(key);
         } catch (error) {
           if (abortSignal.aborted) throw error;
-          return { attempted: changes, appliedKeys, failed: error instanceof Error ? error.message : t().updateSettingFailed({ key }) };
+          return {
+            attempted: changes,
+            appliedKeys,
+            failed: error instanceof Error ? error.message : t().updateSettingFailed({ key }),
+            failedKey: key,
+          };
         }
       }
       return { attempted: changes, appliedKeys };
@@ -198,13 +222,14 @@ const SettingsBody = (props: { close: () => void }) => {
               if (Object.is(canonical.get(key), value)) appliedKeys.add(key);
             }
             removePending(appliedKeys);
-            setSaveOutcome({ applied: appliedKeys.size, failed: outcome.failed });
+            setSaveOutcome({ applied: appliedKeys.size, failed: outcome.failed, failedKey: outcome.failedKey });
           })
           .catch(() => {
             removePending(outcome.appliedKeys);
             setSaveOutcome({
               applied: outcome.appliedKeys.length,
               failed: outcome.failed,
+              failedKey: outcome.failedKey,
               warning: t().settingsReloadWarning,
             });
           })
@@ -267,6 +292,7 @@ const SettingsBody = (props: { close: () => void }) => {
                     {(entry) => (
                       <SettingRow
                         entry={pending().has(entry.key) ? { ...entry, value: pending().get(entry.key) } : entry}
+                        error={saveOutcome()?.failedKey === entry.key ? saveOutcome()?.failed : undefined}
                         onChange={(value) => onChange(entry.key, value)}
                       />
                     )}
@@ -280,7 +306,7 @@ const SettingsBody = (props: { close: () => void }) => {
             {(outcome) => (
               <p class={outcome().failed ? "text-xs text-red-600 dark:text-red-400" : "text-xs text-amber-700 dark:text-amber-300"}>
                 {outcome().applied > 0 ? `${t().savedCount({ count: outcome().applied })} ` : ""}
-                {outcome().failed} {outcome().warning}
+                {outcome().failedKey ? t().checkMarkedField : outcome().failed} {outcome().warning}
               </p>
             )}
           </Show>

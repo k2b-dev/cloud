@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { redis, type Server, sql } from "bun";
+import type { Server } from "bun";
 import { Hono } from "hono";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminSettings from "../api/admin-core-settings";
 import { createAuthRoutes } from "../api/auth";
@@ -23,6 +24,7 @@ import { session } from "./session";
 import { createTestBrowserSignIn, createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 import { encryptValue } from "./settings/crypto";
+import { preserveTestSettings } from "./settings/settings.test-fixture";
 
 const suite = suiteFor("database", "valkey");
 const policyKeys = ["guest", "login", "freeipa"]
@@ -45,6 +47,7 @@ const sender: AuthNotificationSender = {
 };
 
 suite("isolated account category policy", () => {
+  preserveTestSettings(["app.url", "user.allow_self_registration", ...policyKeys]);
   useTestAppRegistry(["mail", "spaces"]);
   let server: Server<unknown>;
   const user = async (provider = "local", profile = "user") => {

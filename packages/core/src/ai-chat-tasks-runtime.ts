@@ -80,7 +80,9 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     });
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
-  const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
+  const project = conversation.projectId
+    ? await aiProjects.snapshot(conversation.projectId, { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } })
+    : null;
   if (conversation.projectId && !project) {
     const status = await aiChatTasks.failOccurrence({
       occurrenceId: occurrence.id,
@@ -107,14 +109,14 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     fileSnapshot: { attached: [], ...aiConversationFileManifest(files) },
     actor: { kind: "user", user },
     modelPolicy: personalAiModelPolicy,
-    requestedModelId: project?.defaultModelProfileId ?? undefined,
+    model: project?.defaultModel ?? undefined,
     project: project ?? undefined,
     toolSource: { kind: "default", appTools: true },
     toolApprovalContext: { actorUserId: user.id },
   });
   const delivered = await aiChatTasks.deliverOccurrence({
     occurrenceId: occurrence.id,
-    modelProfileId: prepared.modelProfileId,
+    modelId: prepared.modelId,
     runConfig: { ...prepared.runConfig, mandate: taskMandate(task) },
     userMessage: prepared.userMessage,
     expectedRevision: task.revision,

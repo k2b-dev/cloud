@@ -1,7 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { env } from "@k2b/cloud/config";
+import { connections, sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import type { SqlClient } from "./audit";
@@ -63,7 +62,7 @@ type LinkRow = {
 };
 
 const signingKey = (): string => {
-  const key = env.APP_SECRET;
+  const key = connections().appSecret.current;
   if (!key) throw new Error("APP_SECRET is required for referenced-by pagination");
   return key;
 };

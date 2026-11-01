@@ -32,3 +32,11 @@ Use JSON output for automation. Table output is for a quick look in the terminal
 `cld admin linux` holds the global configuration and a paginated preview. Export the configuration with `config get --json`. Apply an enabled configuration with `config set --config-file ./linux.json --range-reserved --yes`. Preparing an identity does not enable computer sign-in, sudo, or shared storage.
 
 To create a local group with a GID in one step, run `cld accounts groups create team --provider local --posix`. Without `--posix`, the group stays a logical group. Creating or converting a local POSIX group needs enabled local Linux identities. If either fails, no partly created group stays behind.
+
+## Add a machine account to a local group {icon="users-group"}
+
+A group manager or administrator can add an active standalone or agent account to a local group. Open the group's **Members** section, select **Add**, and search for the account by name. Enable the **Service accounts** filter to see machine members and remove a direct membership. The account's name and kind distinguish it from people and groups.
+
+From the CLI, use `cld accounts groups members add <group> --service-account <name-or-id> --yes`. Use `remove` in place of `add` to revoke membership; `list --type service_account --recursive` includes inherited membership. Names must match exactly and be unique; use an ID when a name is ambiguous.
+
+The account inherits resource access through local parent groups, limited by its credential scopes. Membership creates no Linux or IPA identity and provides no installation role. IPA groups keep their directory membership rules. Managing groups still requires a full user account with manager or administrator authority.

@@ -16,7 +16,7 @@ Settings are grouped by purpose:
 - **Reading** is available to every mailbox reader. It sets whether this browser shows safe HTML or plain text, or adapts to the current theme.
 - **Organization** is available with **View** access for private saved views. With **Edit** access, you can also create shared views and mailbox tags.
 - **Writing** is available with **Edit** or **Manage** access. It contains personal writing preferences, templates, signature defaults, and the email design editor. Content and design for the whole mailbox require **Manage** access.
-- **General** is the first category that requires **Manage** access. It sets the shared identity and the sending safeguards.
+- **General** is the first category that requires **Manage** access. It sets the mailbox name, its description, and the sending safeguards. A new name changes no address, sender identity, or routing.
 - **General**, **Accounts & identities**, **Calendar invitations**, **Folders**, **Access**, and **Danger zone** require **Manage** access.
 
 In **… → Settings → Calendar invitations**, choose one Space where you have **Edit** access as the suggested destination for imported invitations. Mail stores this preference for the whole mailbox. Spaces offers each person only destinations where they have **Edit** access.
@@ -183,7 +183,7 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 - **View** for reading, search, comments, and personal reminders.
 - **Edit** for sending, provider mail operations, and collaboration changes.
 - **Manage** for transport, sharing, rules, workflows, and the mailbox lifecycle.
-- **View assigned only** or **Edit assigned only** for people and groups who work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
+- **View assigned only** or **Edit assigned only** for people, groups, agents, and standalone service accounts that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
 
 **Automatic reply management access** is a mailbox setting above the access list:
 
@@ -214,7 +214,9 @@ Only Cloud administrators can open **Admin → Mail**. **Manage** access to a ma
 
 Open **Security** from this page to review reported suspicious messages and keep exact organization-wide protection rules. For what users see and safe rules, see [Recognize and report suspicious mail](/app/mail/help/mail-security).
 
-Use **Manage permissions** on a mailbox to recover a mailbox without a manager or to correct an accidental access entry. This is an explicit, audited access change. Cloud administrators do not get access to mailbox content implicitly. Add a replacement manager before you remove the last person with **Manage** access.
+Open **Kept** to see every kept conversation of every mailbox, including deleted mailboxes, with mailbox, subject, sender, date, who kept it, and since when. Search finds subject, sender, and mailbox. Open a conversation to read its messages, attachment names, and its history: who kept it, who opened or downloaded it here, and who tried to stop keeping it. **Download as JSON** saves the conversation in the documented export format, and selecting several conversations downloads them in one file. The export holds headers, text, sanitized HTML, and attachment details, but no attachment files. **Stop keeping** lifts the protection after you confirm, with an optional reason. Only Cloud administrators can stop keeping a conversation, also in the mailbox itself. Opening, downloading, and stopping are recorded in the Cloud audit log.
+
+Use **Manage permissions** on a mailbox to recover a mailbox without a manager or to correct an accidental access entry. This is an explicit, audited access change. Cloud administrators do not get access to mailbox content implicitly; the one exception is kept conversations under **Kept**, and each opening there is logged. Add a replacement manager before you remove the last person with **Manage** access.
 
 The CLI offers the same recovery tools:
 

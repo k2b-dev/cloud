@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { type Result, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
@@ -13,7 +13,6 @@ import { ConversationSearchInputSchema, MailboxListInputSchema } from "../capabi
 import { app } from "../config";
 import { conversationViewSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { createMailNotificationService, type MailNotificationSendInput } from "../notifications";
 import { grantMailboxAccess, updateMailboxAccess } from "./access";
 import { resolveMailAddress } from "./addresses";
@@ -257,7 +256,6 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
   });
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     readerA = await createUser("A");
     writerB = await createUser("B");

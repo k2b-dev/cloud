@@ -35,6 +35,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | --- | --- |
 | Write a note with callouts, tasks, tables, formulas, charts, or data | `cld notebooks reference markdown.md`, then `cld notebooks write "<notebook>:<path>" --from note.md` |
 | Change part of an existing note | `cld notebooks reference`, then `cld notebooks cat <note> --json` and `cld notebooks edit` |
+| Review comments on a note's text, reply with suggestions, or accept them | `cld notebooks reference comments.md`, then `cld notebooks comments list <note> --state open`; the page discussion is `cld notebooks discussion` |
 | Upload a local file, create folders, or replace a file in Files | `cld filesv2 reference`, then `cld filesv2 put <local> <area>:/<folder>/ --parents` |
 | Find a file when you do not know its area | `cld filesv2 reference`, section "Find a file in every area" |
 | Put a spreadsheet or document (`.ods`, `.xlsx`, `.odt`, `.docx`) with content into Files | Build it locally first with LibreOffice; without it, build `.xlsx` and `.docx` with Python. `cld filesv2 reference` shows both. Then `cld filesv2 put` |
@@ -80,6 +81,10 @@ app's additional restriction, and never select administrator repair. After an
 uncertain write, read `access list` before retrying. Fixed-rule apps have no
 editable list; all built-ins keep fixed rules in the first rollout.
 
+## Admin diagnostics and configuration
+
+An agent using an administrator person's normal `cld login` profile can read admin diagnostics and configure routine admin settings with the default `read write` scopes. The person must still be an administrator on every request; a standalone client's scopes do not supply that role. Start with `cld admin reference`. Read [Administrator operations](references/administration.md) for setting discovery, protected secret input, app-owned commands and short-lived approval for dangerous actions.
+
 ## Installed modules
 
 `cld` keeps this table current after every plugin install, update, and removal. The columns are Profile (`*` for package plugins), Module, Version, Summary, and Start. Open the Start file for the module and profile you operate. Package plugins carry references too; `cld <module> reference [file]` prints the same files for every installed module.
@@ -87,3 +92,18 @@ editable list; all built-ins keep fixed rules in the first rollout.
 <!-- cld:modules -->
 No module is installed for any profile yet. `cld plugins install --all` installs the modules of the current profile's Cloud and fills this table.
 <!-- /cld:modules -->
+
+## Configure AI models
+
+Use `cld admin ai providers list|show|add|update|delete|test|key|models`,
+`cld admin ai models list|show|add|update|delete`,
+`cld admin ai variants add|update|delete` and
+`cld admin ai classes show|set <slot> <variant-id|none>`.
+Slots are fast, balanced, thorough, maximum, vision and audio. Mutations require
+`--yes`. Pass JSON through `--input-file` or stdin, keys through `--key-file`.
+Read current revisions before changes; HTTP 409 requires reconciling the current
+object. Delete JSON must include revision, assignment replacements, retarget
+and retargetTo. Preserve data boundaries and inspect usage first. Assistant
+project `--model` accepts a class or variant ID. The old model pricing/settings
+commands are removed. Read the model-class upgrade guide before upgrading an
+installation with profile configuration.

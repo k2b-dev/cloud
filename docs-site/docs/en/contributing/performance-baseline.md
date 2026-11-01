@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Measure production page performance
@@ -121,7 +121,7 @@ Select `pwa` to measure the installable app at `/pwa/`:
 bun --no-env-file scripts/perf-baseline.ts --pages pwa --runs 3
 ```
 
-Local mode builds and starts Core, the mobile app, Spaces, and the gateway.
+Local mode builds and starts Core, the Cloud app, Spaces, and the gateway.
 Through the public Spaces API it creates one Space with 12 open tasks assigned
 to the administrator, titled `Perf task 01` through `Perf task 12`. It verifies
 that all 12 appear in `GET /api/spaces/overview/work?view=mine` before measuring.
@@ -289,7 +289,7 @@ acceptance. This mode builds nothing and starts only
 the browser server on its own labelled network, with its port bound to host
 loopback. The host resolver supplies the origin's address through Docker's
 `--add-host`, so private DNS names do not depend on the bridge's resolver.
-The existing installation must serve the mobile app and Spaces.
+The existing installation must serve the Cloud app and Spaces.
 
 Remote mode seeds nothing and skips check-off, with a note explaining that it
 would change real tasks. The only measurement writes are the throwaway phone's
@@ -897,7 +897,7 @@ The Document transfer column shows the HTML body download time
 (`responseEnd - responseStart`), its transferred bytes, and its content
 encoding. An absent `content-encoding` header is recorded as `identity`.
 
-Eight interactions share one definition for both engines and both profiles.
+Nine interactions share one definition for both engines and both profiles.
 Each sample opens its start page in its own fresh page, waits for TTI, and
 then times one action:
 
@@ -905,6 +905,7 @@ then times one action:
 | --- | --- | --- |
 | `mailbox-switch` | From A's Inbox, click B in the sidebar; on the phone, open the app navigation sheet first | B's first Inbox row from workspace-route page 1 is on screen, the pathname is `/app/mail/<B>`, the workspace island containing the row has mounted, and the list/main pane is not busy |
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
+| `folder-switch-full` | From A's medium folder, click A's Inbox in the sidebar; on the phone, in the opened app menu. Before each sample, require the Inbox and B's default workspace-route page 1 to each contain 50 rows; fail if they differ | The heading names Inbox, its first workspace-route page 1 row is on screen, and the list is not busy |
 | `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
 | `conversation-open-large` | Start with a mailbox-wide exact subject search for conversation 0 (`Project correspondence 0`, newest first), then click its conversation row. This isolates `plan.shape.largestThreadId` on page 1 without scrolling; live arrivals have different subjects. Before each sample, the workspace API must return that row on page 1 or the sample fails with the start href | The reader loads the newest 100 messages of the thread (180 messages by default). The newest message's body is on screen, with a body-format marker; an HTML body also needs its frame to report its laid-out height. A missing newest body fails the sample |
 | `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
@@ -952,8 +953,9 @@ response. That sample still counts: `encodedBytes` is omitted, and request
 totals include only the known nonnegative body and header sizes. They are a
 lower bound when a size is unavailable.
 
-Definitions with `trace: true` (`mailbox-switch` and `folder-switch`) add one
-extra traced Chromium sample per profile, excluded from timing samples.
+Definitions with `trace: true` (`mailbox-switch`, `folder-switch`, and
+`folder-switch-full`) add one extra traced Chromium sample per profile,
+excluded from timing samples.
 The **Interaction breakdown** table shows elapsed total, main-request server
 and transfer time, and main-thread task time split into JavaScript execution,
 parse/compile, island render, style/layout, and other, with shares of busy
@@ -1092,6 +1094,162 @@ a delayed response followed by rapid Back/Forward reversal and Reload.
 Server, hydrated, and settled geometry agree. The existing guards also cover
 retained document/sidebar identity and mailbox URL parity. These correctness
 checks do not change the measured checkpoint or remove its timing limitations.
+
+### Recorded retained-workspace results (22–24 October 2026)
+
+The exact compact-head base `3a471767b` was measured first. Every run used
+Chromium desktop and throttled phone, five samples per interaction/profile,
+`--interactions mailbox-switch,folder-switch --loads none`, and three warm
+server requests. All completed 20 server scenarios and 20 browser samples
+without reported errors. Four extra trace samples per run are excluded.
+
+Each pair is mailbox / folder median in milliseconds; ratios are within-run.
+
+| Stage | Desktop, ms | Ratio | Phone, ms | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Exact base | 884.6 / 477.8 | 1.85 | 3,190.0 / 1,578.9 | 2.02 |
+| Retained presentation, initial | 1,255.2 / 461.8 | 2.72 | 3,387.1 / 1,778.9 | 1.90 |
+| Retained presentation, repeat | 1,123.9 / 508.4 | 2.21 | 2,855.9 / 1,720.4 | 1.66 |
+| Frame-batched fades | 818.6 / 475.5 | 1.72 | 3,114.1 / 1,677.9 | 1.86 |
+| Overlapped metadata | 700.0 / 523.2 | 1.34 | 2,876.1 / 1,799.8 | 1.60 |
+| Bounded candidate enrichment | 692.5 / 429.7 | 1.61 | 3,146.2 / 1,551.0 | 2.03 |
+| Positional row reuse, discarded | 771.1 / 662.0 | 1.16 | 3,996.7 / 1,733.5 | 2.31 |
+| Four-step repeat | 582.5 / 412.5 | 1.41 | 2,650.4 / 1,808.2 | 1.47 |
+| Shared row context | 543.0 / 415.7 | 1.31 | 2,408.9 / 1,586.6 | 1.52 |
+
+These are mixed observations on a shared host with 24 logical CPUs. Boundary
+one-minute loads ranged from 23.48 to 58.40; an intervening base observation
+exceeded 70.
+Fixture digests match; the destinations remain 50 mailbox rows versus 37 folder
+rows, with about 119 ms more phone transfer for the mailbox. No isolated causal
+estimate follows from these runs. Retaining presentation and batching fades
+had profile regressions. Row reuse was discarded because both mailbox medians
+regressed; its desktop ratio passed while the folder median slowed.
+
+Sharing the row context avoids repeating folder resolution for each state
+field read. Its mailbox medians improved 38.6% desktop and 24.5% phone against
+base, with a closer phone ratio. Desktop still exceeds the 1.20 ratio target
+by 44.2 ms and the preferred 300 ms absolute target. Warm mailbox-route medians
+changed from 224.0 ms at base to 154.3 ms after metadata overlap and 79.7 ms
+after candidate enrichment. The diagnostic list plan fell from 126.3 to 65.4 ms:
+flags and attachments enrich 51 selected candidates. Visibility joins the target
+mailbox but still scans shared conversation-message rows. Response bodies stay
+56,775 / 32,591 B. The server gain did not consistently improve browser ratios. The row-context
+run observed a 181.2 ms warm route despite unchanged server code.
+
+Outputs under `.local/mail-perf/`: `mail-switch-base-3a471767b`,
+`mail-switch-step1-retained`, `mail-switch-step1-retained-repeat`,
+`mail-switch-step2-fades`, `mail-switch-step3-overlap`,
+`mail-switch-step4-candidates`, `mail-switch-step1-row-slots`,
+`mail-switch-final-profile` and `mail-switch-step1-row-context`. Only
+`mail-switch-final-profile`'s four excluded traces also
+capture CPU profiles and scripts. They identify repeated row-state getter
+work and closed-menu construction; inclusive sampled costs overlap.
+
+A further repeat stopped during fixture seeding: PostgreSQL reported
+`No space left on device`. It produced no browser samples and is excluded.
+Its runtime was removed. The recorded results above remain valid.
+
+After the reboot, merged head `fb3ab2052` was measured once, followed by a
+lazy row menu candidate. Both used the same command and completed
+20 server scenarios and 20 browser samples without reported errors; each
+run's four trace samples are excluded. Both mailbox fixture digests match
+across runs. Both runs reported 32 logical CPUs. Harness one-minute load
+averages were 62.71 → 57.20 for merged head and 31.02 → 59.81 for the
+candidate; a periodic observation during its phone mailbox samples reached 153.28.
+
+| Stage | Desktop, ms | Ratio | Phone, ms | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Current merged head | 815.5 / 573.9 | 1.42 | 2,338.9 / 1,895.3 | 1.23 |
+| Lazy row menus, discarded | 727.6 / 471.1 | 1.54 | 2,645.7 / 1,586.7 | 1.67 |
+
+The candidate preserved the trigger's exact SSR HTML and passed focused
+keyboard opening, focus return and layout guards. It was discarded because
+the phone mailbox median increased 13.1%, despite a 10.8% desktop reduction.
+Neither ratio meets 1.20. The differing host load prevents isolating the menu cost;
+these observations do not establish that laziness caused the phone regression.
+The full Mail check reported two Chromium SSR shell timeout failures despite
+passing the focused menu checks.
+Outputs: `.local/mail-perf/mail-switch-current-20261023` and
+`.local/mail-perf/mail-switch-lazy-menus-20261023`; the latter also preserves
+the discarded candidate for a future controlled comparison.
+
+The frame-batched fades were removed again before merging. They left the
+bottom fade drawn for one frame after the note editor scrolled to its end, so
+its fade-aware scroll margins failed in both engines. All rows from "Frame-batched
+fades" onward still include that change; no run without it was repeated.
+
+**Fair comparison (24 October 2026).** Fresh branch `6566d4d2f` and main
+`11f3adb1b` builds used Chromium desktop and throttled phone, five timing
+samples per interaction/profile, three warm server requests, and
+`--interactions mailbox-switch,folder-switch,folder-switch-full --loads none`.
+Both destinations passed the 50-row guard; the original folder switch still
+lands on 37 rows. Each run passed all 20 server scenarios and 30 browser
+samples; six extra traces are excluded. The branch meets 1.20 on desktop but
+misses it on phone. The 32-CPU VM remained busy: one-minute boundary loads
+were 64.00 → 61.51 for the branch and 53.85 → 87.89 for main. These are
+shared-host observations, not a calm-VM confirmation. Values are medians in
+milliseconds; the ratio is mailbox / full folder.
+
+| Revision | Profile | Mailbox | Full folder | Medium folder | Ratio |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Branch | Desktop | 646.0 | 628.4 | 806.7 | 1.028 |
+| Branch | Phone | 2,706.9 | 2,068.5 | 1,905.0 | 1.309 |
+| Main | Desktop | 1,444.2 | 672.8 | 538.0 | 2.147 |
+| Main | Phone | 3,557.1 | 2,259.2 | 2,076.9 | 1.574 |
+
+Outputs: `.local/mail-perf/fair-20261024-branch` and
+`.local/mail-perf/fair-20261024-main` (copied before removing the temporary
+baseline worktree). Both mailbox fixture digests match across runs.
+
+#### Phone continuation comparison (24 October 2026)
+
+Fresh builds compared clean merged HEAD `bdd738e11` with three candidate
+fixes: stable row-menu dependencies, a shared Sidebar projection, and no
+departure scroll snapshot for same-address history traversal. Both runs used
+Chromium desktop and throttled phone, three warm server requests, five timing
+samples per interaction/profile, and this command:
+
+```bash
+export CLOUD_HEAVY_SLOTS=3
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 3 --browser chromium --browser-runs 5 --interactions mailbox-switch,folder-switch-full,folder-switch --loads none --out .local/mail-perf/fair-calm-base
+```
+
+Repeat with `--out .local/mail-perf/fair-calm-fixes` after applying the fixes.
+Both runs passed 20 server scenarios and 30 timing samples without reported
+errors; six extra traces per run are excluded. Fixture digests match. Mailbox
+and full-folder destinations each have 50 rows; the medium folder has 37.
+Values are medians in milliseconds; ratios divide mailbox by full folder.
+
+| Stage | Profile | Mailbox | Full folder | Medium folder | Ratio |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Base | Desktop | 810.3 | 398.0 | 499.0 | 2.036 |
+| Base | Phone | 2,715.5 | 1,769.0 | 1,671.0 | 1.535 |
+| Three fixes | Desktop | 566.5 | 395.2 | 427.3 | 1.433 |
+| Three fixes | Phone | 1,992.4 | 1,545.6 | 1,442.1 | 1.289 |
+
+The combined candidate reduces the observed mailbox median by 30.1% on
+desktop and 26.6% on phone, so all three fixes are retained together. Individual
+fix effects were not remeasured. Both profiles still miss the 1.20 ratio target;
+desktop also misses the preferred 300 ms absolute target.
+
+Despite their output names, neither run was calm. On 32 logical CPUs,
+ten-second observations of one-minute load ranged from 27.68 to 64.98 at base
+(19:01–19:17 UTC) and 13.14 to 34.81 with fixes (19:18–19:32 UTC). Harness
+start → end loads were 27.69 → 28.98 and 27.70 → 23.60. The fixes ran under
+lighter competing load. These sequential observations support the retention
+decision under the median criterion, but do not isolate a causal improvement
+or confirm performance on a calm VM or real phone.
+
+Earlier CPU profiles identified repeated closed-menu construction and forced
+scroll geometry reads during same-address sheet history. Regression guards
+retain menu nodes while invoking current callbacks, share the Sidebar getter,
+and skip redundant snapshots while preserving real-departure capture. No
+response fields or authorization checks were removed.
+
+Outputs: `.local/mail-perf/fair-calm-base` and
+`.local/mail-perf/fair-calm-fixes`. The reviewed candidate patch and ten-second
+load logs are retained with the local measurement report.
 
 ### Rank bottlenecks
 

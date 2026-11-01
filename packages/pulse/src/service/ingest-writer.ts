@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import type { ServiceAccount } from "@k2b/cloud/contracts";
 import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { PulseEvent, PulseIngestBatch, PulseMetric, PulseState } from "../contracts";
 import {
   PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH,
@@ -200,7 +200,7 @@ export type IngestParams = {
 
 export const createIngestWriter = ({
   store = baseStore,
-  database = sql,
+  database: injectedDatabase,
   clock = store.clock,
   quota = ingestQuota,
 }: {
@@ -210,6 +210,7 @@ export const createIngestWriter = ({
   quota?: IngestQuota;
 } = {}) => {
   const ingest = async (params: IngestParams): Promise<IngestResult> => {
+    const database = injectedDatabase ?? sql;
     const count = countBatchItems(params.batch),
       now = clock(),
       key = params.idempotencyKey?.trim() || null;

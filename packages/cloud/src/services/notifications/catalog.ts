@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { AnyBoundNotificationDefinition } from "../../contracts/notification-types";
+import { sql } from "../../runtime/clients";
 import { logger } from "../logging";
 import { toPgTextArray } from "../postgres";
 
@@ -17,15 +17,16 @@ const isSchemaUnavailable = (error: unknown): boolean => {
 const upsertDefinition = async (definition: AnyBoundNotificationDefinition, db: typeof sql = sql): Promise<void> => {
   const recommended = toPgTextArray([...(definition.delivery?.recommended ?? [])]);
   const required = toPgTextArray([...(definition.delivery?.required ?? [])]);
+  const excluded = toPgTextArray([...(definition.delivery?.excluded ?? [])]);
   await db`
     INSERT INTO notifications.definitions (
       id, app_id, kind, label, description, presentation, recipient_kind,
-      recommended_channels, required_channels, active, last_seen_at, updated_at
+      recommended_channels, required_channels, excluded_channels, excluded_reason, active, last_seen_at, updated_at
     ) VALUES (
       ${definition.id}, ${definition.appId}, ${definition.key}, ${definition.label},
       ${definition.description}, (${definition.presentation ? JSON.stringify(definition.presentation) : null}::text)::jsonb,
       ${definition.recipient}, ${recommended}::text[],
-      ${required}::text[], true, now(), now()
+      ${required}::text[], ${excluded}::text[], ${definition.excludedReason ?? null}, true, now(), now()
     )
     ON CONFLICT (id) DO UPDATE SET
       app_id = EXCLUDED.app_id,
@@ -36,6 +37,8 @@ const upsertDefinition = async (definition: AnyBoundNotificationDefinition, db: 
       recipient_kind = EXCLUDED.recipient_kind,
       recommended_channels = EXCLUDED.recommended_channels,
       required_channels = EXCLUDED.required_channels,
+      excluded_channels = EXCLUDED.excluded_channels,
+      excluded_reason = EXCLUDED.excluded_reason,
       active = true,
       last_seen_at = now(),
       updated_at = now()

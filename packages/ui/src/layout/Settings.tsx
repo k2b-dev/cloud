@@ -8,6 +8,8 @@ const read = <T,>(value: MaybeAccessor<T>): T => (typeof value === "function" ? 
 
 export type SettingsPageProps = {
   title: JSX.Element;
+  /** False when a surrounding head already shows the title, such as a workspace level; the actions move to the footer. */
+  header?: boolean;
   subtitle?: JSX.Element;
   icon?: string;
   actions?: JSX.Element;
@@ -20,19 +22,25 @@ export type SettingsPageProps = {
 
 export function SettingsPage(props: SettingsPageProps): JSX.Element {
   return (
-    <section class={`k2b-settings-page${props.class ? ` ${props.class}` : ""}`} style={props.style}>
-      <header class="k2b-settings-page__header">
-        <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <div class="k2b-settings-page__heading">
-          <h1>{props.title}</h1>
-          <Show when={props.subtitle}>
-            <p>{props.subtitle}</p>
+    <section
+      class={`k2b-settings-page${props.class ? ` ${props.class}` : ""}`}
+      style={props.style}
+      aria-label={props.header === false && typeof props.title === "string" ? props.title : undefined}
+    >
+      <Show when={props.header !== false}>
+        <header class="k2b-settings-page__header">
+          <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          <div class="k2b-settings-page__heading">
+            <h1>{props.title}</h1>
+            <Show when={props.subtitle}>
+              <p>{props.subtitle}</p>
+            </Show>
+          </div>
+          <Show when={props.actions}>
+            <div class="k2b-settings-page__actions">{props.actions}</div>
           </Show>
-        </div>
-        <Show when={props.actions}>
-          <div class="k2b-settings-page__actions">{props.actions}</div>
-        </Show>
-      </header>
+        </header>
+      </Show>
       <div class="k2b-settings-page__body" data-scroll-preserve={props.scrollPreserveKey}>
         {props.children}
       </div>
@@ -266,5 +274,85 @@ export function SettingsPanelFooter(props: SettingsPanelFooterProps): JSX.Elemen
       </p>
       <SettingsActions {...props} disableWithoutChanges />
     </>
+  );
+}
+
+export type SaveStatusState = "saved" | "draft" | "saving" | "failed" | "invalid" | "unknown" | "readonly";
+
+export type SaveStatusProps = {
+  /** What the person's values are now: saved, a draft with changes, being saved, or a problem that kept them unsaved. */
+  state: MaybeAccessor<SaveStatusState>;
+  /** Formatted time of the last save, shown with `saved`. */
+  savedAt?: MaybeAccessor<string | undefined>;
+  /** Fields to check, shown with `invalid`. Default 1. */
+  invalidCount?: MaybeAccessor<number>;
+  /** With both handlers, Discard and Save follow the status while there is something to save. */
+  onDiscard?: () => void;
+  onSave?: () => void;
+  saveLabel?: string;
+  saveDisabled?: MaybeAccessor<boolean>;
+  class?: string;
+};
+
+const SAVE_STATUS_ICON: Record<SaveStatusState, string> = {
+  saved: "ti ti-check",
+  draft: "ti ti-pencil",
+  saving: "ti ti-loader-2",
+  failed: "ti ti-alert-triangle",
+  invalid: "ti ti-alert-triangle",
+  unknown: "ti ti-help-circle",
+  readonly: "ti ti-lock",
+};
+
+/**
+ * The save status of a settings form at one fixed place, usually the head of its column. It reserves its width, so
+ * a change of state never moves the title or the buttons beside it. Problems with one field stay at that field.
+ */
+export function SaveStatus(props: SaveStatusProps): JSX.Element {
+  const settingsMessages = useSettingsMessages();
+  const state = () => read(props.state);
+  const text = () => {
+    const t = settingsMessages();
+    switch (state()) {
+      case "saved": {
+        const at = props.savedAt === undefined ? undefined : read(props.savedAt);
+        return at ? t.statusSavedAt({ time: at }) : t.statusSaved;
+      }
+      case "draft":
+        return t.statusDraft;
+      case "saving":
+        return t.saving;
+      case "failed":
+        return t.statusFailed;
+      case "invalid":
+        return t.statusInvalid({ count: props.invalidCount === undefined ? 1 : read(props.invalidCount) });
+      case "unknown":
+        return t.statusUnknown;
+      case "readonly":
+        return t.statusReadOnly;
+    }
+  };
+  const hasActions = () => Boolean(props.onSave && props.onDiscard) && state() !== "readonly";
+  const pending = () => state() === "draft" || state() === "failed" || state() === "invalid" || state() === "saving";
+  return (
+    <div class={`k2b-save-status ${props.class ?? ""}`}>
+      <span class="k2b-save-status__slot">
+        <span class="k2b-save-status__state" data-state={state()} role="status" aria-live="polite">
+          <i class={`${SAVE_STATUS_ICON[state()]}${state() === "saving" ? " k2b-spin" : ""}`} aria-hidden="true" />
+          {text()}
+        </span>
+      </span>
+      <Show when={hasActions()}>
+        <SettingsActions
+          changeCount={() => (pending() ? 1 : 0)}
+          loading={() => state() === "saving"}
+          saveDisabled={() => state() === "invalid" || Boolean(props.saveDisabled !== undefined && read(props.saveDisabled))}
+          onDiscard={props.onDiscard!}
+          onSave={props.onSave!}
+          saveLabel={props.saveLabel ?? settingsMessages().save}
+          disableWithoutChanges
+        />
+      </Show>
+    </div>
   );
 }

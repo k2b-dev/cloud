@@ -93,7 +93,7 @@ describe("client address", () => {
 
   test("rejects malformed trusted-proxy entries", () => {
     for (const entry of ["10.0.0.0/33", "fd00::/129", "10.0.0.0/8/8", "10.0.0.0/x", "proxy", "fe80::1%eth0", "10.0.0.0/"]) {
-      expect(() => trustedProxySet([entry])).toThrow("GATEWAY_TRUSTED_PROXIES");
+      expect(() => trustedProxySet([entry])).toThrow("Trusted prox");
     }
     const exact = trustedProxySet(["172.18.0.2", "2001:db8::/32"]);
     expect(resolveClientAddress("203.0.113.10", "172.18.0.2", exact)?.address).toBe("203.0.113.10");

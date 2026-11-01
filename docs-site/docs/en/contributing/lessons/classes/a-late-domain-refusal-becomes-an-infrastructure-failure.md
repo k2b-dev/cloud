@@ -1,0 +1,1 @@
+| A late domain refusal becomes an infrastructure failure | An ingest reservation commits, then T2 returns a service conflict that a catch-all replaces with 503. | Test: Pulse `service/ingest-controls.integration.test.ts` raises a T2 service refusal after a keyed T1 and expects its own 409. |

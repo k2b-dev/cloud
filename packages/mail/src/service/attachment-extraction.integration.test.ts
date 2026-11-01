@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import {
   enqueueAttachmentExtraction,
   extractMailAttachmentBlob,
@@ -58,7 +57,6 @@ suite("Mail attachment document extraction", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     await sql`
       INSERT INTO mail.mailboxes (id, short_id, name)
       VALUES (${mailboxId}::uuid, ${newShortId()}, 'Attachment extraction tests')

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { validateFieldConfig } from "./field-validation";
+
+useUnitClients();
 
 test("rejects list calculations that cannot be read through the canonical SQL compiler", () => {
   for (const column of [

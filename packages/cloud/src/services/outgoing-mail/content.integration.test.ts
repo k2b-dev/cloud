@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
 import { migrate } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
 import * as registry from "../../_internal/registry";
 import type { MailContentContext, PlatformPermission } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { buildProjectedUser } from "../session/user";
 import { mail } from "./index";

@@ -1,12 +1,17 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { estimateTokens, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
+import type { AiResolvedModelRef } from "../shared/ai-models";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
 import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 import type { AiModelProfile } from "./types";
+
+/** A dispatch guard refused the call before any provider request could leave. */
+export class AiProviderAdmissionError extends Error {}
 
 const log = logger("ai:quotas");
 
@@ -25,6 +30,8 @@ export function inferenceProvider(
   completeContext = context,
   lifecycle = callLifecycle,
 ): Provider {
+  // createAiProvider normalizes adapter diagnostics before trusted dispatch guards wrap it.
+  // Accounting must preserve those guards' error identity and zero-usage semantics.
   const begin = async (request: Parameters<Provider["complete"]>[0], ctx: AiCallContext) => {
     const messages = request.messages.map((message) =>
       message.role === "user"
@@ -108,6 +115,7 @@ export function inferenceProvider(
         if (status === "failed") error = `The provider finished with ${result.finishReason}.`;
         return result;
       } catch (thrown) {
+        if (thrown instanceof AiProviderAdmissionError) usage = { input: 0, output: 0 };
         error = thrown instanceof Error ? thrown.message : String(thrown);
         throw thrown;
       } finally {
@@ -183,6 +191,7 @@ export function inferenceProvider(
         }
         completed = true;
       } catch (thrown) {
+        if (thrown instanceof AiProviderAdmissionError) usage = { input: 0, output: 0 };
         error ??= thrown instanceof Error ? thrown.message : String(thrown);
         throw thrown;
       } finally {
@@ -223,7 +232,7 @@ export function inferenceProvider(
               firstByteMs: marks.firstByteAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
               firstBlockMs: marks.firstBlockAt === undefined ? undefined : marks.firstBlockAt - requestStartedAt,
             });
-          } catch (error) {
+          } catch {
             log.warn("Chat usage booking failed", { code: "quota_booking_failed", turnId: context.turnId, callId: id });
           }
         }
@@ -239,8 +248,9 @@ export function assistantQuotaProvider(
   profile: AiModelProfile,
   turnId: string,
   conversationId: string,
+  modelRef: AiResolvedModelRef,
 ) {
-  const common = { subject, turnId, conversationId };
+  const common = { subject, turnId, conversationId, modelRef };
   return inferenceProvider(
     provider,
     profile,

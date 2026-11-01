@@ -18,6 +18,20 @@ describe("personal app rail", () => {
     expect(sortRailApps([app("z", "Same"), app("a", "Same")], "en").map((x) => x.id)).toEqual(["a", "z"]);
     expect(sortRailApps(apps, "sv").map((x) => x.id)).toEqual(["b", "z", "a"]);
   });
+  test("moving an app out of the default rail preserves explicit visibility and pins", () => {
+    const catalog = [app("telemetry", "Telemetry", false)];
+    const defaults = defaultRailPreferences();
+    expect(projectRailNavigation(catalog, defaults, "en").apps).toEqual([]);
+    expect(projectRailNavigation(catalog, { ...defaults, visibility: { telemetry: true } }, "en").apps.map((item) => item.id)).toEqual([
+      "telemetry",
+    ]);
+    expect(projectRailNavigation(catalog, { ...defaults, visibility: { telemetry: false } }, "en").apps).toEqual([]);
+    const pinned = { ...defaults, shortcuts: [{ id: "pin", kind: "app" as const, appId: "telemetry" }] };
+    const navigation = projectRailNavigation(catalog, pinned, "en");
+    expect(navigation.shortcuts.map((item) => item.appId)).toEqual(["telemetry"]);
+    expect(navigation.apps).toEqual([]);
+    expect(pinned.shortcuts).toEqual([{ id: "pin", kind: "app", appId: "telemetry" }]);
+  });
   test("visibility overrides neither restore unavailable apps nor change the catalog", () => {
     const settings = { ...defaultRailPreferences(), visibility: { a: false, b: true, forbidden: true } };
     expect(projectRailNavigation(apps, settings, "de").apps.map((x) => x.id)).toEqual(["b", "z"]);

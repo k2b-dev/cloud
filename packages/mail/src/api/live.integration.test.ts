@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
 import type { RequestActor } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { getMailboxPermission } from "../service/access";
 import { mailLiveChannels } from "../service/live-channels";
 import api from ".";
@@ -30,7 +29,6 @@ const grants: string[] = [];
 
 beforeAll(async () => {
   if (!testInfra.database || !testInfra.nats || !testInfra.valkey) return;
-  await migrate();
   server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/api/mail", api).fetch, websocket });
 });
 

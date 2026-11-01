@@ -5,9 +5,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { SaveServiceAccountAvatarSchema } from "../contracts/profile";
 import { AI_INFERENCE_SCOPE } from "../contracts/shared";
 import { type AuthContext, auth, err, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
+import { clearServiceAccountAvatar, getServiceAccountAvatarState, updateServiceAccountAvatar } from "../services/accounts/avatar";
 import { audit } from "../services/audit";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
 import { WORKLOAD_SCOPES } from "../services/identity/workload-auth";
@@ -65,27 +67,40 @@ const ServiceAccountStatusInputSchema = z.object({ status: z.enum(["active", "di
 const ServiceAccountApiKeyInputSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
+    access: z.enum(["full", "models"]).default("full"),
     scopes: z
       .array(z.string().trim().min(1).max(64))
       .max(20)
       .default([])
-      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "ai:inference is reserved for models-only personal API keys"),
+      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "Use access: models to create a models-only key"),
     expiresAt: z.iso.datetime().nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) => input.access !== "models" || input.scopes.length === 0,
+    "Models-only access cannot be combined with general credential scopes",
+  );
 
 type IdentityAdminDependencies = {
   apps: () => Promise<Array<{ id: string; name: string }>>;
   status: typeof getIdentitySigningKeyStatus;
   rewrap: typeof rewrapIdentitySigningKeys;
   revoke: typeof revokeIdentitySigningKey;
-  serviceAccounts: Pick<typeof serviceAccounts, "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus">;
+  serviceAccounts: Pick<
+    typeof serviceAccounts,
+    "getByResource" | "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus"
+  >;
   credentials: Pick<
     typeof serviceAccountCredentials,
     "createResourceApiToken" | "createStandaloneApiToken" | "getOverview" | "listOverview" | "revoke"
   >;
   mandates: Pick<typeof mandates, "list">;
   audit: Pick<typeof audit, "record">;
+  avatars: {
+    state: typeof getServiceAccountAvatarState;
+    update: typeof updateServiceAccountAvatar;
+    clear: typeof clearServiceAccountAvatar;
+  };
 };
 
 const dependencies: IdentityAdminDependencies = {
@@ -97,6 +112,7 @@ const dependencies: IdentityAdminDependencies = {
   credentials: serviceAccountCredentials,
   mandates,
   audit,
+  avatars: { state: getServiceAccountAvatarState, update: updateServiceAccountAvatar, clear: clearServiceAccountAvatar },
 };
 
 const auditActor = (user: AuthContext["Variables"]["user"]) => ({
@@ -114,6 +130,9 @@ export const createAdminIdentityRoutes = (
     // Mandate lists hold every user's grant inputs, which users write at will and which can carry private text.
     .use("*", noTransform())
     .use(authenticate)
+    .use("*", (c, next) =>
+      ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) ? auth.requireOAuthScope("write", "admin")(c, next) : next(),
+    )
     .use("*", async (c, next) => {
       c.header("Cache-Control", "no-store");
       await next();
@@ -134,6 +153,29 @@ export const createAdminIdentityRoutes = (
             filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
           }),
         ),
+    )
+    .patch(
+      "/workloads/:appId",
+      describeRoute({ tags: ["App credentials"], summary: "Enable or disable app workload issuance and calls across all instances" }),
+      v("param", WorkloadAppParamsSchema),
+      v("json", ServiceAccountStatusInputSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { appId } = c.req.valid("param");
+          const { status } = c.req.valid("json");
+          const account = await service.serviceAccounts.getByResource({ appId, resourceType: "cloud.app", resourceId: appId });
+          if (!account) return fail(err.notFound("Workload service account"));
+          const updated = await service.serviceAccounts.setStatus({ id: account.id, status });
+          if (!updated.ok) return updated;
+          await service.audit.record({
+            action: status === "disabled" ? "service_account.disable" : "service_account.enable",
+            outcome: "allowed",
+            actor: auditActor(c.get("user")),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { appId, serviceAccountId: account.id, status },
+          });
+          return ok({ appId, status });
+        }),
     )
     .post(
       "/workloads/:appId/credentials",
@@ -274,6 +316,69 @@ export const createAdminIdentityRoutes = (
             metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind, status },
           });
           return ok({ ...account, status });
+        }),
+    )
+    // Every service account shows a robot drawn from its id until someone customises it or sets a photo.
+    .get(
+      "/service-accounts/:id/avatar",
+      describeRoute({ tags: ["Service accounts"], summary: "Read a standalone service account's picture: its robot or photo" }),
+      v("param", ServiceAccountParamsSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const state = await service.avatars.state({ id });
+          return state ? ok(state) : fail(err.notFound("Service account"));
+        }),
+    )
+    .put(
+      "/service-accounts/:id/avatar",
+      describeRoute({
+        tags: ["Service accounts"],
+        summary: "Set a standalone service account's picture: a photo, a customised robot, or which of them shows",
+      }),
+      v("param", ServiceAccountParamsSchema),
+      v("json", SaveServiceAccountAvatarSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const actor = c.get("user");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const updated = await service.avatars.update({ id, change: c.req.valid("json") });
+          if (!updated.ok)
+            return fail(updated.status === 409 ? { ...err.conflict("Picture"), message: updated.error } : err.badInput(updated.error));
+          await service.audit.record({
+            action: "service_account.avatar.update",
+            outcome: "allowed",
+            actor: auditActor(actor),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind, kind: updated.data.kind },
+          });
+          return ok(updated.data);
+        }),
+    )
+    .delete(
+      "/service-accounts/:id/avatar",
+      describeRoute({ tags: ["Service accounts"], summary: "Delete a standalone service account's photo; its robot shows again" }),
+      v("param", ServiceAccountParamsSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const actor = c.get("user");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const cleared = await service.avatars.clear({ id });
+          if (!cleared.ok) return fail(err.notFound("Service account"));
+          await service.audit.record({
+            action: "service_account.avatar.clear",
+            outcome: "allowed",
+            actor: auditActor(actor),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind },
+          });
+          return ok(cleared.data);
         }),
     )
     .post(

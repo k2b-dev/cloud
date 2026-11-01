@@ -1,4 +1,5 @@
 import type { AuthContext } from "@k2b/cloud/server";
+import { auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 
 // Web Crypto caps getRandomValues at 65536 bytes per call, so the chunk
@@ -52,7 +53,7 @@ export default new Hono<AuthContext>()
       },
     });
   })
-  .post("/upload", async (c) => {
+  .post("/upload", auth.readOnly, async (c) => {
     const body = c.req.raw.body;
     if (!body) return c.json({ ok: true, bytes: 0 });
     const reader = body.getReader();

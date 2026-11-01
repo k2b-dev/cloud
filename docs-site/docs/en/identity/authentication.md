@@ -42,7 +42,7 @@ invalid explicit bearer does not silently fall back to the cookie.
 | Credential | Typical caller | Actor |
 | --- | --- | --- |
 | Session cookie | Browser | User |
-| App session cookie (preview) | The installed [mobile app](#app-sessions-preview) | User |
+| App session cookie (preview) | The installed [Cloud app](#app-sessions-preview) | User |
 | Personal API key | CLI or personal automation | Service account with delegated user |
 | Resource API key | Integration bound to one resource | Resource-bound service account |
 | Standalone API key | Integration or agent with its own identity | Standalone service account |
@@ -64,10 +64,16 @@ principal, and exposes the same `actor` and `accessSubject` values to the
 provider. Optional `actor.delegation` records the calling app, original
 credential kind, and invocation ID for audit context; it grants no permission.
 
+App-owned platform capability calls use a separate authority through
+[`appCaller()`](/en/docs/platform/capabilities#call-as-the-application).
+Their app/key actor has no grant-bearing access subject and never enters the
+ordinary person-authentication middleware. Use it for app-paid operations;
+use the person's credentials or a mandate for their resources.
+
 ### Which session a request uses
 
-A browser can hold the web session (`session_token`) and, on a paired phone,
-the mobile app's session (`pwa_session`). Cloud picks one per request:
+A browser can hold the web session (`session_token`) and, on a paired device,
+the Cloud app's session (`pwa_session`). Cloud picks one per request:
 
 | Request | Credential |
 | --- | --- |
@@ -98,7 +104,7 @@ type RequestActor =
   | {
       kind: "user";
       user: User;
-      sessionKind?: "app"; // the mobile app's session, see below
+      sessionKind?: "app"; // the Cloud app's session, see below
     }
   | {
       kind: "service_account";
@@ -106,6 +112,7 @@ type RequestActor =
       delegatedUser: User | null;
       scopes: string[];
       credentialId?: string | null;
+      oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
     };
 ```
@@ -138,6 +145,25 @@ service-account grants.
 A standalone service account has no user and no resource binding. Read
 `serviceAccount.kind` before treating a userless actor as resource-bound; see
 [Standalone service accounts and agents](/en/docs/identity/service-accounts).
+
+## Retain service-account authority
+
+An application that issues its own transfer or editor capability can retain
+`credentialId` for an API key, or `oauthClientId` for OAuth, together with
+`credentialExpiresAt`, the service-account ID and the captured scopes. These
+identifiers contain no bearer secret. Protect their provenance in server-side
+storage or an application-signed payload; never retain the original credential.
+Cloud forwards these references through internal invocations too.
+
+For an OAuth reference, call `isServiceAccountOAuthAuthorityCurrent` from
+`@k2b/cloud/services` with `{ serviceAccountId, clientId, expiresAt }` before
+each authorized operation. It checks expiry and the same live client, account
+and delegated-user policy as OAuth authentication. It grants no domain access:
+reload resource permissions and keep the captured scopes as an upper bound.
+Inside a SQL transaction, pass its connection as `{ query }` in the optional
+second argument so revalidation uses that transaction's current client and policy state.
+For an API key, also check the current credential's status, account binding,
+expiry and scope cap through `serviceAccountCredentials.getOverview`.
 
 ## Get a user only when required
 
@@ -186,6 +212,21 @@ Successful browser sign-ins also set a separate 90-day
 [browser cookie](/en/docs/operations/sign-in-locations#browser-cookie) that is
 kept on sign-out; it does not authenticate requests.
 
+Custom browser sign-out controls use `signOutBrowserSession(userId, errorMessage)`
+from `@k2b/cloud/browser/session` to clear that user's local draft storage as well
+as their credential. Keep failures visible until the user can retry. Its
+`POST /api/auth/logout` request supplies `X-Cloud-Logout-User` with the rendered
+user UUID, or `none` for an anonymous page. A changed account answers `409`;
+the page must refresh before retrying. Without this optional header, the API
+retains its idempotent current-credential logout behavior.
+
+Server handlers can pass the same expectation to
+`auth.session.delete(c, expectedUserId)`: it returns `false` on an account
+mismatch and `true` after revoking the matching or absent credential. Bound
+logout leaves the cookie unchanged; the revoked token no longer authenticates.
+This lets a newer sign-in in another tab keep its cookie when responses arrive
+out of order. Unbound calls retain cookie deletion.
+
 Signing out of one browser ends only that session. Signing an account out
 everywhere with `auth.session.revokeAllForUser` invalidates every older session,
 ends its OAuth sign-ins and access tokens at the next request, and revokes its
@@ -196,7 +237,7 @@ Changing a FreeIPA password in Cloud ends the person's other sign-ins. This
 applies to profile password changes, administrator resets, reset links, and
 expired or temporary password changes at sign-in. Browser sessions, OAuth
 sign-ins (including the command line, MCP and connected apps), pending sign-in
-completions, and mobile app phones end. API keys, passkeys and background
+completions, and Cloud app devices end. API keys, passkeys and background
 mandates stay valid.
 
 A password sign-in is bound to the account's authentication epoch read before
@@ -212,12 +253,12 @@ sign in with the new password and keeps where to go afterwards.
 The platform operation `auth.session.endOtherSignIns(userId, { keep, reason })`
 owns this behavior. `reason` is `password_change`, `password_reset` or
 `sign_out_others`. It advances the account's authentication
-epoch and revokes its mobile app phones, with an audit entry per phone. Cloud
-Login phones stay paired. A reset link calls `revokeAllForUser` before the
-password changes, so that flow also unpairs Cloud Login phones. If that fails,
+epoch and revokes its Cloud app devices, with an audit entry per device. Cloud
+Login devices stay paired. A reset link calls `revokeAllForUser` before the
+password changes, so that flow also unpairs Cloud Login devices. If that fails,
 the password stays unchanged and the person requests a new reset link. Because
 the old password works until FreeIPA has changed it, the flow calls
-`revokeAllForUser` again after the change; that also ends a sign-in or phone
+`revokeAllForUser` again after the change; that also ends a sign-in or device
 added in the meantime. If that second call fails, the flow issues no browser
 session and answers `500`: the password changed, and the person requests a new
 reset link to finish. Every attempt uses up the reset link, so Core's reset form
@@ -257,7 +298,7 @@ administrator reset returns no temporary password when ending the sign-ins
 fails, so the administrator resets again.
 Retry with `POST /api/me/sign-ins/sign-out-others`, which uses the same operation
 and rotates the current browser cookie. It requires a web browser session:
-OAuth and API keys receive `403 BROWSER_SIGN_IN_REQUIRED`, and mobile app
+OAuth and API keys receive `403 BROWSER_SIGN_IN_REQUIRED`, and Cloud app
 sessions receive `403 FORBIDDEN`. Core's profile dialog and both sign-in page
 forms offer this retry and keep it in the address (`signOutOthers=retry`,
 without a used reset token) until it succeeds; the profile page also drops it
@@ -292,7 +333,7 @@ New passkeys and personal API keys require a browser sign-in from the last ten
 minutes. Cloud checks the session again in the transaction that stores the key
 or passkey, so starting registration before the window ends is not enough.
 
-OAuth access tokens, personal API keys, background mandates, and mobile app
+OAuth access tokens, personal API keys, background mandates, and Cloud app
 sessions cannot create these credentials. The account API answers `403` with
 `BROWSER_SIGN_IN_REQUIRED`. Create API keys in **Developer → API keys**
 (`/me/developer`) and passkeys in **Sign-in → Passkeys** using a browser.
@@ -307,15 +348,15 @@ refresh token does not require another browser sign-in.
 
 ## App sessions (preview)
 
-> **Preview:** the mobile app is not released yet. This contract may still
+> **Preview:** the Cloud app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-A phone pairs with the [mobile app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
-through `/me/app`; it never sees a password. A paired phone holds two
+A device pairs with the [Cloud app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
+through `/me/app`; it never sees a password. A paired device holds two
 credentials:
 
 - a **device key** in the HTTP-only `pwa_device` cookie with the path
-  `/pwa/_auth`, so only Core receives it. It stays valid while the phone is used
+  `/pwa/_auth`, so only Core receives it. It stays valid while the device is used
   at least every 150 days and changes on every renewal;
 - an **app session** in the HTTP-only `pwa_session` cookie with the path `/`,
   valid for 24 hours. It is an ordinary Cloud session, validated by every
@@ -328,13 +369,13 @@ An app session resolves to the same `accessSubject` and
 not from the cookie name. Invocations made for an app session keep the marker,
 also from Assistant turns started in the app. The marker travels in the
 invocation token, and an application built on an older `@k2b/cloud` rejects
-such tokens, so update applications before people use the mobile app.
+such tokens, so update applications before people use the Cloud app.
 
 App sessions never carry the installation `admin` role, also not in calls to
 other applications. A service that reloads the user to confirm the role must
 treat the request actor's roles as the upper bound and never add `admin` back.
 
-The mobile app cannot create access that would keep working after the phone
+The Cloud app cannot create access that would keep working after the device
 is removed:
 
 - passkeys and personal API keys follow the
@@ -349,7 +390,7 @@ is removed:
   Spaces steps answer the same `403`;
 - OAuth treats an app session as no session: `/oauth/authorize` leads to
   sign-in, and the consent and device pages ask the person to use the web;
-- Cloud Login pairing management and pairing another phone answer
+- Cloud Login pairing management and pairing another device answer
   `FORBIDDEN` in their own error format.
 
 Ordinary work stays available, including profile changes, sharing, and
@@ -358,11 +399,11 @@ creates such authority with `auth.rejectAppSession`, which answers the `403`
 above. In services and capabilities, check `isAppSessionActor(actor)` from
 `@k2b/cloud/server`.
 
-A phone's sessions end when the person removes it in `/me/app` or signs out of
+A device's sessions end when the person removes it in `/me/app` or signs out of
 the app, when an administrator removes it, when a password changes or
 `revokeAllForUser` runs, when the account expires or is deleted, and after 150
 days without use. A disabled
-account category pauses the phone until it is enabled again. Signing out of the
+account category pauses the device until it is enabled again. Signing out of the
 web does not end the app.
 
 On Android, Chrome and the installed app share cookies. Web pages in Chrome

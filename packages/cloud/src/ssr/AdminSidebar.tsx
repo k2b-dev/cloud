@@ -1,15 +1,15 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
-import { activeAdminHref } from "./admin-active-link";
+import { activeAdminLink } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
 import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 import WorkspaceNavigation from "./WorkspaceNavigation.island";
 
 const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof buildAdminGroups> }) => {
-  const activeHref = activeAdminHref(
+  const activeHref = activeAdminLink(
     props.currentPath,
-    props.groups.flatMap((group) => group.links.map((link: AdminLink) => link.href)),
-  );
+    props.groups.flatMap((group) => group.links),
+  )?.href;
   return (
     <>
       {props.groups.map((group) => (
@@ -45,14 +45,14 @@ export default function AdminSidebar({ currentPath, apps }: { currentPath: strin
             icon: `ti ${link.icon}`,
             active:
               link.href ===
-              activeAdminHref(
+              activeAdminLink(
                 currentPath,
-                groups().flatMap((entry) => entry.links.map((entry) => entry.href)),
-              ),
+                groups().flatMap((entry) => entry.links),
+              )?.href,
           })),
         }))}
       />
-      <AppWorkspace.Sidebar resizable={false}>
+      <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="admin-sidebar">
             <AdminNavigation currentPath={currentPath} groups={groups()} />

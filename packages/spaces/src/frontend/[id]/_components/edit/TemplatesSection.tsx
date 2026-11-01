@@ -3,8 +3,10 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
   IconButton,
+  IconChoices,
   MultiSelectInput,
   NumberInput,
+  PanelDialog,
   prompts,
   SegmentedControl,
   Select,
@@ -30,13 +32,33 @@ import type {
 import { describeTemplateDateRule, formatTemplateDate, proposeTemplateDates } from "@/presentation/item-templates";
 import { weekdayOptions } from "@/presentation/recurrence";
 import { useSpaceMessages } from "../../messages";
+import { templateIcon } from "../shared/create-menu";
 import { priorityOptions } from "../shared/item-form/options";
 import { browserTimeZone } from "../shared/item-form/templates";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import { readErrorMessage } from "./utils";
 
-type TemplateValue = Omit<CreateItemTemplate, "kind"> & { kind: ItemTemplateKind };
+export type TemplateValue = Omit<CreateItemTemplate, "kind"> & { kind: ItemTemplateKind };
 type Editing = { kind: ItemTemplateKind; template?: SpaceItemTemplate };
+
+/** A few icons that fit most templates; the kind's default comes first. */
+const ICONS: Record<ItemTemplateKind, readonly string[]> = {
+  task: ["ti ti-checkbox", "ti ti-report", "ti ti-package", "ti ti-alert-triangle", "ti ti-truck", "ti ti-users", "ti ti-receipt"],
+  event: ["ti ti-calendar-event", "ti ti-users", "ti ti-coffee", "ti ti-truck", "ti ti-presentation", "ti ti-phone", "ti ti-video"],
+};
+
+/** What a new template proposes, such as a text in its title that a placeholder could replace. */
+export type TemplateSuggestions = {
+  /**
+   * Text in the title that names one week or date, such as "KW 44", and what would make it fit every one, such as
+   * "KW {{week}}"; the template only suggests it, the person decides.
+   */
+  title?: { text: string; replacement: string; token: "week" | "date" };
+  /** The weekday the item was due on, offered as a weekdays rule. */
+  weekday?: TemplateWeekday;
+  /** Shows what a template made from an item leaves out, and who dropped out for lack of access. */
+  fromItem?: { dropped: string[] };
+};
 
 /** Quarter hours for the time Select; an empty choice keeps the default time. */
 const TIMES = Array.from(
@@ -44,21 +66,39 @@ const TIMES = Array.from(
   (_, index) => `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`,
 );
 
-function TemplateForm(props: {
+export function TemplateForm(props: {
   spaceId: string;
   kind: ItemTemplateKind;
+  /** The template being edited; without it the form creates one. */
   initial?: SpaceItemTemplate;
+  /** Values a new template starts with, such as those of an item saved as a template. */
+  draft?: Omit<SpaceItemTemplate, "id" | "spaceId" | "createdAt" | "updatedAt">;
+  suggestions?: TemplateSuggestions;
   tags: SpaceTag[];
   timeZone: string;
   loading: boolean;
+  /** A save error that keeps the input, such as a lost connection; the button then offers to try again. */
+  saveError?: string;
+  /** The name is taken; the field says so and stays editable. */
+  nameTaken?: boolean;
+  onNameInput?: () => void;
+  /** In a dialog the actions sit in a footer with a pointer to the settings. */
+  variant?: "settings" | "dialog";
   onCancel: () => void;
   onSave: (value: TemplateValue) => void;
 }) {
   const t = useSpaceMessages();
   const locale = useLocale();
-  const initial = props.initial;
+  const initial = props.initial ?? props.draft;
   const isEvent = props.kind === "event";
   const [name, setName] = createSignal(initial?.name ?? "");
+  const [icon, setIcon] = createSignal<string>(initial?.icon ?? ICONS[props.kind][0]!);
+  const iconOptions = () =>
+    [...new Set([...(initial?.icon ? [initial.icon] : []), ...ICONS[props.kind]])].map((value) => ({
+      value,
+      label: value.replace(/^ti ti-/, "").replaceAll("-", " "),
+      icon: value,
+    }));
   const [title, setTitle] = createSignal(initial?.title ?? "");
   const [description, setDescription] = createSignal(initial?.description ?? "");
   const [priority, setPriority] = createSignal<string>(initial?.priority ?? "");
@@ -76,6 +116,29 @@ function TemplateForm(props: {
   const [weekdays, setWeekdays] = createSignal<TemplateWeekday[]>(initial?.dateRule.type === "weekdays" ? initial.dateRule.weekdays : []);
   const [offsetDays, setOffsetDays] = createSignal<number | null>(initial?.dateRule.type === "offset" ? initial.dateRule.days : 1);
   const [error, setError] = createSignal("");
+  const suggested = props.suggestions?.title;
+  /** `offered` until the person answers, then whether the placeholder replaced the text. */
+  const [titleSuggestion, setTitleSuggestion] = createSignal<"offered" | "replaced" | "kept">("offered");
+  const replaceInTitle = () => {
+    if (!suggested) return;
+    setTitle((value) => value.replace(suggested.text, suggested.replacement));
+    setTitleSuggestion("replaced");
+  };
+  const undoTitle = () => {
+    if (!suggested) return;
+    setTitle((value) => value.replace(suggested.replacement, suggested.text));
+    setTitleSuggestion("kept");
+  };
+  const suggestedWeekday = props.suggestions?.weekday;
+  const [weekdayTaken, setWeekdayTaken] = createSignal(false);
+  const weekdayName = () =>
+    suggestedWeekday ? (weekdayOptions({ locale: locale() }).find((day) => day.id === suggestedWeekday)?.fullLabel ?? "") : "";
+  const takeWeekday = () => {
+    if (!suggestedWeekday) return;
+    setRuleType("weekdays");
+    setWeekdays([suggestedWeekday]);
+    setWeekdayTaken(true);
+  };
   /** The text field a placeholder button writes into: the one focused last. */
   let placeholderTarget: "title" | "description" = "title";
 
@@ -114,6 +177,7 @@ function TemplateForm(props: {
     props.onSave({
       kind: props.kind,
       name: name().trim(),
+      icon: icon(),
       title: title(),
       description: description().trim() || null,
       priority: (priority() || null) as Priority | null,
@@ -136,16 +200,23 @@ function TemplateForm(props: {
     });
   };
 
-  return (
-    <form onSubmit={submit} class="spaces-template-form flex flex-col gap-4 py-2">
-      <TextInput
-        label={t.templateName}
-        description={t.templateNameDescription}
-        value={name}
-        onValueChange={setName}
-        maxLength={100}
-        required
-      />
+  const fields = () => (
+    <>
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <TextInput
+          label={t.templateName}
+          description={t.templateNameDescription}
+          value={name}
+          onValueChange={(value) => {
+            setName(value);
+            props.onNameInput?.();
+          }}
+          error={props.nameTaken ? t.templateNameTaken : undefined}
+          maxLength={100}
+          required
+        />
+        <IconChoices label={t.templateIcon} value={icon} onValueChange={setIcon} options={iconOptions()} />
+      </div>
       <div class="flex flex-col gap-4">
         <div onFocusIn={() => (placeholderTarget = "title")}>
           <TextInput
@@ -156,6 +227,34 @@ function TemplateForm(props: {
             onValueChange={setTitle}
             maxLength={200}
           />
+          <Show when={suggested}>
+            {(found) => (
+              <p class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-dimmed" aria-live="polite">
+                <Show
+                  when={titleSuggestion() === "offered"}
+                  fallback={
+                    <Show when={titleSuggestion() === "replaced"} fallback={<span>{t.templateSuggestKept({ text: found().text })}</span>}>
+                      <i class="ti ti-check text-[var(--k2b-action)]" aria-hidden="true" />
+                      <span>{t.templateSuggestReplaced}</span>
+                      <Button type="button" variant="text" size="xs" onClick={undoTitle}>
+                        {t.templateSuggestUndo}
+                      </Button>
+                    </Show>
+                  }
+                >
+                  <i class="ti ti-sparkles text-[var(--k2b-action)]" aria-hidden="true" />
+                  <span>
+                    {found().token === "week"
+                      ? t.templateSuggestWeek({ text: found().text })
+                      : t.templateSuggestDate({ text: found().text })}
+                  </span>
+                  <Button type="button" variant="text" size="xs" onClick={replaceInTitle}>
+                    {t.templateSuggestReplace}
+                  </Button>
+                </Show>
+              </p>
+            )}
+          </Show>
         </div>
         <div onFocusIn={() => (placeholderTarget = "description")}>
           <TextInput label={t.description} value={description} onValueChange={setDescription} multiline lines={3} />
@@ -199,6 +298,25 @@ function TemplateForm(props: {
             { value: "offset" as const, label: t.dateRuleOffset },
           ]}
         />
+        <Show when={suggestedWeekday && weekdayName()}>
+          <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-dimmed" aria-live="polite">
+            <Show
+              when={!weekdayTaken()}
+              fallback={
+                <>
+                  <i class="ti ti-check text-[var(--k2b-action)]" aria-hidden="true" />
+                  <span>{t.templateSuggestWeekdayDone({ day: weekdayName() })}</span>
+                </>
+              }
+            >
+              <i class="ti ti-sparkles text-[var(--k2b-action)]" aria-hidden="true" />
+              <span>{t.templateSuggestWeekday({ day: weekdayName() })}</span>
+              <Button type="button" variant="text" size="xs" onClick={takeWeekday}>
+                {t.templateSuggestYes}
+              </Button>
+            </Show>
+          </p>
+        </Show>
         <Show when={ruleType() === "weekdays"}>
           <div class="grid grid-cols-7 gap-1" role="group" aria-label={t.dateRuleWeekdays}>
             <For each={weekdayOptions({ locale: locale() })}>
@@ -331,16 +449,54 @@ function TemplateForm(props: {
         <Switch label={t.assignMe} description={t.assignMeDescription} value={assignCreator} onValueChange={setAssignCreator} />
       </div>
 
-      <Show when={error()}>
+      <Show when={props.suggestions?.fromItem}>
+        {(fromItem) => (
+          <div class="flex flex-col gap-1 text-xs text-dimmed">
+            <p>{t.templateNotCopied}</p>
+            <Show when={fromItem().dropped.length}>
+              <p>{t.templateAssigneesDropped({ names: fromItem().dropped.join(", ") })}</p>
+            </Show>
+          </div>
+        )}
+      </Show>
+
+      <Show when={error() || props.saveError}>
         <p class="flex items-center gap-1 text-sm text-red-500" role="alert">
           <i class="ti ti-alert-circle" aria-hidden="true" />
-          {error()}
+          {error() || props.saveError}
         </p>
       </Show>
+    </>
+  );
+
+  // In a dialog the actions stay in its footer while the fields scroll.
+  if (props.variant === "dialog")
+    return (
+      <form onSubmit={submit} class="spaces-template-form flex min-h-0 flex-1 flex-col overflow-hidden">
+        <PanelDialog.Body>
+          <div class="flex flex-col gap-4 py-2">{fields()}</div>
+        </PanelDialog.Body>
+        <PanelDialog.Footer>
+          <div class="flex w-full flex-wrap items-center gap-2">
+            <span class="mr-auto text-xs text-dimmed">{t.templateManageInSettings}</span>
+            <Button type="button" variant="secondary" size="sm" class="max-sm:hidden" onClick={props.onCancel} disabled={props.loading}>
+              {t.cancel}
+            </Button>
+            {/* A fixed width keeps the footer still while the label changes to Saving or Try again. */}
+            <Button type="submit" size="sm" loading={props.loading} loadingLabel={t.savingTemplate} class="min-w-[9.5rem]">
+              {props.loading ? t.savingTemplate : props.saveError ? t.retry : t.saveTemplate}
+            </Button>
+          </div>
+        </PanelDialog.Footer>
+      </form>
+    );
+  return (
+    <form onSubmit={submit} class="spaces-template-form flex flex-col gap-4 py-2">
+      {fields()}
       <div class="flex items-center gap-2">
         <Button type="submit" size="sm" loading={props.loading}>
           <i class="ti ti-check" aria-hidden="true" />
-          {initial ? t.save : t.createTemplate}
+          {props.initial ? t.save : t.createTemplate}
         </Button>
         <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={props.loading}>
           {t.cancel}
@@ -350,7 +506,7 @@ function TemplateForm(props: {
   );
 }
 
-/** Admin tab for the task and event templates of a Space. */
+/** Settings tab for the task and event templates of a Space; everyone who writes may change them. */
 export function TemplatesSection(props: {
   spaceId: string;
   templates: SpaceItemTemplate[];
@@ -441,7 +597,7 @@ export function TemplatesSection(props: {
           <SettingsCollection.Item
             title={template.name}
             description={describeTemplateDateRule(template, locale())}
-            icon={<i class="ti ti-template text-base text-dimmed" aria-hidden="true" />}
+            icon={<i class={`${templateIcon(template)} text-base text-dimmed`} aria-hidden="true" />}
           >
             <SettingsCollection.Item.Actions>
               <IconButton

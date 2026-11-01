@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import { type AuthContext, getDateConfig, getLocale, loadPendingApprovals } from "@k2b/cloud/server";
 import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
@@ -17,7 +18,7 @@ import MailComposerPage from "../../../_components/MailComposerPage.island";
 import { mailDraftReturnHref } from "../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader, reconcileMailComposerPanes } from "../../../_components/mail-composer-panes";
 import { mailPageMessages } from "../../../pages-messages";
-import { projectComposeData, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
+import { pageReadStatus, projectComposeData, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = mailPageMessages.resolve([getLocale(c)]);
@@ -39,21 +40,32 @@ export default ssr<AuthContext>(async (c) => {
       : { kind: "service_account" as const, id: context.actor.serviceAccount.id };
   // The same href the draft's send review links to, so the page shows the approvals that would send this draft.
   const draftLink = `/app/mail/${encodeURIComponent(mailboxShortId)}/compose/${encodeURIComponent(draftShortId)}`;
-  const [mailbox, access, identities, draft, uploads, calendarIntegrationAvailable, approvals, signatures, signatureDefaults] =
-    await Promise.all([
-      mailboxes.getMailbox(context, mailboxId),
-      // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
-      mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
-      senderIdentities.listSenderIdentities(context, mailboxId),
-      drafts.getDraft(context, mailboxId, draftId),
-      draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
-      calendarInvitations.composerIntegrationAvailable(appAccessAuthority(c)),
-      loadPendingApprovals(c, { app: "mail", link: draftLink }),
-      composeTemplates.listComposeTemplates(context, mailboxId),
-      composeTemplates.listComposeSignatureDefaults(context, mailboxId),
-    ]);
-  if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
-  if (!draft.ok) return ssr.error(c, draft.error.status);
+  const [
+    mailbox,
+    access,
+    identities,
+    draft,
+    uploads,
+    calendarIntegrationAvailable,
+    approvals,
+    signatures,
+    signatureDefaults,
+    liveDictation,
+  ] = await Promise.all([
+    mailboxes.getMailbox(context, mailboxId),
+    // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
+    mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
+    senderIdentities.listSenderIdentities(context, mailboxId),
+    drafts.getDraft(context, mailboxId, draftId),
+    draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
+    calendarInvitations.composerIntegrationAvailable(appAccessAuthority(c)),
+    loadPendingApprovals(c, { app: "mail", link: draftLink }),
+    composeTemplates.listComposeTemplates(context, mailboxId),
+    composeTemplates.listComposeSignatureDefaults(context, mailboxId),
+    getLiveDictationStatus(c.get("accessSubject")),
+  ]);
+  if (!mailbox.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, mailbox.error.status));
+  if (!draft.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, draft.error.status));
   if (!access.ok) return ssr.error(c, 403);
   const publicData = await projectComposeData({
     mailbox: mailbox.data,
@@ -106,6 +118,7 @@ export default ssr<AuthContext>(async (c) => {
         canManageMailbox={access.data.permission === "admin"}
         currentUserEmail={currentUserEmail}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
+        liveDictation={liveDictation.available}
         contactDirectory={directory}
         approvals={{ link: draftLink, page: approvals }}
       />

@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { MAIL_PROCESSING_MEMORY_BUDGET_BYTES, processingMemoryState, withProcessingMemory } from "./processing-memory-budget";
 
@@ -27,7 +26,6 @@ suite("Mail hydration memory admission", () => {
   const mailboxId = crypto.randomUUID();
 
   beforeAll(async () => {
-    await migrate();
     await sql`
       INSERT INTO mail.mailboxes (id, short_id, name)
       VALUES (${mailboxId}::uuid, ${newShortId()}, 'Hydration admission tests')

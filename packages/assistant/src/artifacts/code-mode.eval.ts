@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import {
   type AiRuntimeTool,
   CloudAiViewImageInputSchema,
@@ -11,7 +12,6 @@ import {
 } from "@k2b/cloud/ai";
 import { createCloudAiCodeTools, createConfiguredDefaultCloudAiTools } from "@k2b/cloud/ai/tools";
 import { type NessiIssue, nessi, type OutboundEvent, type Provider, type StoreEntry } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
 import { aiAttachmentMarker } from "../../../cloud/src/ai/attachments";
 import { CodeToolFailure } from "../../../cloud/src/ai/browser-code-contracts";
@@ -426,7 +426,7 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
     }),
   );
   const skillFiles = new Map<string, AiSkillFileToolContent>();
-  const loadSkill = createCloudAiLoadSkillTool(context.accessSubject);
+  const loadSkill = createCloudAiLoadSkillTool(context);
   const builtIns = [
     ...(await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: null, accessSubject: context.accessSubject })),
     ...createCloudAiCodeTools(),

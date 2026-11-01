@@ -1,13 +1,17 @@
-import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import type { CapabilityAppExecutionContext, CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { GeoError } from "@k2b/cloud/services/geo/errors";
 import { geoCapabilityMessages } from "./geo-capability-messages";
 
-export const runGeoQuery = async <T>(context: CapabilityExecutionContext, call: () => Promise<T>) => {
+export const runGeoQuery = async <T>(context: CapabilityExecutionContext | CapabilityAppExecutionContext, call: () => Promise<T>) => {
   try {
     return { ok: true as const, data: { data: await call() } };
   } catch (cause) {
     const error =
       cause instanceof GeoError ? cause : new GeoError("GEO_PROVIDER_FAILED", { costs: { settledCredits: 0, unknownCredits: 0 } });
+    if (error.status === 429) {
+      const reset = typeof error.details.resetsAt === "string" ? Math.ceil((Date.parse(error.details.resetsAt) - Date.now()) / 1000) : 1;
+      error.details.retryAfter = Math.max(1, typeof error.details.retryAfterSeconds === "number" ? error.details.retryAfterSeconds : reset);
+    }
     const messages = geoCapabilityMessages(context.locale);
     const { requiredCredits, availableCredits, shortfallCredits, actual, max } = error.details;
     const required = error.code === "GEO_LIMIT_EXCEEDED" && error.details.limit === "reservationCredits" ? actual : requiredCredits;

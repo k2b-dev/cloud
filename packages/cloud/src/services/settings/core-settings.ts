@@ -1,5 +1,7 @@
 import { env } from "../../config/env";
+import { DEFAULT_WORKFLOW_AI_BUDGET, validateWorkflowAiBudget } from "../../config/workflow-ai";
 import { GEO_MAX_CREDITS, GEO_MAX_RPS } from "../../contracts/geo-admin";
+import { DEFAULT_TRUSTED_PROXIES, validateNetworkAllowlist, validateTrustedProxies } from "./validation";
 
 /**
  * Platform-owned settings, declared in the `defineApp({ settings: ... })` shape.
@@ -30,6 +32,191 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "outgoing_mail.allowed_targets": {
+    kind: "string_list",
+    default: [],
+    label: "Outgoing mail allowed targets",
+    description: "Exact internal SMTP and IMAP hosts, IPs or CIDRs. Changes apply to new connections.",
+    envVariable: "OUTGOING_MAIL_ALLOWED_TARGETS",
+    envBootstrap: () => env.$readPresent("OUTGOING_MAIL_ALLOWED_TARGETS"),
+    validate: validateNetworkAllowlist,
+    presentation: {
+      translations: {
+        de: {
+          label: "Erlaubte Ziele für ausgehende E-Mails",
+          description: "Exakte interne SMTP- und IMAP-Hosts, IPs oder CIDRs. Änderungen gelten für neue Verbindungen.",
+        },
+      },
+    },
+  },
+  "gateway.ingress_cert_resolver": {
+    kind: "string",
+    default: "le",
+    label: "App domain certificate resolver",
+    description:
+      "Traefik certificate resolver used by app domain routers. Must name a configured ACME resolver; changes apply within five seconds.",
+    validate: (value: unknown) =>
+      typeof value === "string" && /^[a-zA-Z0-9_-]+$/.test(value)
+        ? undefined
+        : "Use a Traefik certificate resolver name (letters, digits, underscores or hyphens).",
+    presentation: {
+      translations: {
+        de: {
+          label: "Zertifikatsresolver für App-Domains",
+          description:
+            "Traefik-Zertifikatsresolver der App-Domains. Muss einen konfigurierten ACME-Resolver benennen; Änderungen wirken innerhalb von fünf Sekunden.",
+        },
+      },
+    },
+  },
+  "gateway.trusted_proxies": {
+    kind: "string_list",
+    default: DEFAULT_TRUSTED_PROXIES,
+    label: "Trusted gateway proxies",
+    description: "IP addresses or CIDRs allowed to supply forwarded client addresses. Changes take effect after gateway restart.",
+    envVariable: "GATEWAY_TRUSTED_PROXIES",
+    envBootstrap: () => env.$readPresent("GATEWAY_TRUSTED_PROXIES"),
+    validate: validateTrustedProxies,
+    presentation: {
+      translations: {
+        de: {
+          label: "Vertrauenswürdige Gateway-Proxys",
+          description:
+            "IP-Adressen oder CIDRs, die weitergeleitete Client-Adressen liefern dürfen. Änderungen wirken nach einem Gateway-Neustart.",
+        },
+      },
+    },
+  },
+  "ai.workflow_budget": {
+    kind: "text",
+    default: JSON.stringify(DEFAULT_WORKFLOW_AI_BUDGET),
+    label: "Workflow AI budget",
+    description:
+      "JSON limits for source, rate and concurrency admission. Changes apply to new work; globalConcurrent also sets worker capacity and requires restarting all AI workers.",
+    envVariable: "WORKFLOW_AI_BUDGET",
+    envBootstrap: () => {
+      const value = env.$readPresent("WORKFLOW_AI_BUDGET");
+      return value === undefined ? undefined : JSON.stringify(value);
+    },
+    validate: validateWorkflowAiBudget,
+    presentation: {
+      translations: {
+        de: {
+          label: "KI-Workflow-Budget",
+          description:
+            "JSON-Grenzen für Quellen, Rate und gleichzeitige Arbeit. Änderungen gelten für neue Arbeit; globalConcurrent bestimmt auch die Worker-Kapazität und erfordert den Neustart aller KI-Worker.",
+        },
+      },
+    },
+  },
+  "ai.workflow_attempt_timeout_ms": {
+    kind: "number",
+    default: 60000,
+    label: "Workflow AI attempt timeout (ms)",
+    description: "Absolute attempt deadline including admission and repair. Changes apply to new attempts.",
+    envVariable: "WORKFLOW_AI_ATTEMPT_TIMEOUT_MS",
+    envBootstrap: () => env.$readPresent("WORKFLOW_AI_ATTEMPT_TIMEOUT_MS"),
+    integer: true,
+    min: 1,
+    presentation: {
+      translations: {
+        de: {
+          label: "Zeitlimit je KI-Workflow-Versuch (ms)",
+          description: "Absolute Frist einschließlich Zulassung und Reparatur. Änderungen gelten für neue Versuche.",
+        },
+      },
+    },
+  },
+  "ai.workflow_queue_timeout_ms": {
+    kind: "number",
+    default: 60000,
+    label: "Workflow AI queue timeout (ms)",
+    description: "Maximum queue wait before visible failure. Changes apply to new requests and the next recovery scan.",
+    envVariable: "WORKFLOW_AI_QUEUE_TIMEOUT_MS",
+    envBootstrap: () => env.$readPresent("WORKFLOW_AI_QUEUE_TIMEOUT_MS"),
+    integer: true,
+    min: 1,
+    presentation: {
+      translations: {
+        de: {
+          label: "Wartezeitlimit für KI-Workflows (ms)",
+          description:
+            "Maximale Wartezeit bis zum sichtbaren Fehler. Änderungen gelten für neue Anfragen und den nächsten Wiederherstellungslauf.",
+        },
+      },
+    },
+  },
+
+  "storage.endpoint": {
+    kind: "url",
+    label: "Garage S3 endpoint",
+    description: "Garage S3 API origin, such as https://s3.example.org.",
+    default: "",
+    presentation: {
+      translations: { de: { label: "Garage-S3-Endpunkt", description: "Origin der Garage-S3-API, etwa https://s3.example.org." } },
+    },
+  },
+  "storage.region": {
+    kind: "string",
+    label: "Signing region",
+    description: "Must match the Garage S3 region.",
+    default: "garage",
+    presentation: { translations: { de: { label: "Signaturregion", description: "Muss der S3-Region von Garage entsprechen." } } },
+  },
+  "storage.bucket": {
+    kind: "string",
+    label: "Bucket",
+    description: "One private Garage bucket for application objects; keep website mode disabled.",
+    default: "",
+    presentation: {
+      translations: {
+        de: { label: "Bucket", description: "Ein privater Garage-Bucket für App-Dateien; Website-Modus ausgeschaltet lassen." },
+      },
+    },
+  },
+  "storage.access_key_id": {
+    kind: "secret",
+    label: "Access key ID",
+    description: "Installation-wide key with read and write access to the configured bucket.",
+    default: "",
+    presentation: {
+      translations: {
+        de: {
+          label: "Access-Key-ID",
+          description: "Installationsweiter Schlüssel mit Lese- und Schreibzugriff auf den eingetragenen Bucket.",
+        },
+      },
+    },
+  },
+  "storage.secret_access_key": {
+    kind: "secret",
+    label: "Secret access key",
+    description: "Secret belonging to the installation-wide Garage key.",
+    default: "",
+    presentation: {
+      translations: {
+        de: { label: "Geheimer Zugriffsschlüssel", description: "Geheimer Teil des installationsweiten Garage-Schlüssels." },
+      },
+    },
+  },
+  "storage.max_object_bytes": {
+    kind: "number",
+    label: "Maximum object size (bytes)",
+    description: "Default 32 MiB covers 25 MB documents and 1–5 MB images. Budget memory for concurrent operations.",
+    default: 32 * 1024 ** 2,
+    min: 1,
+    max: 5 * 1024 ** 3,
+    integer: true,
+    presentation: {
+      translations: {
+        de: {
+          label: "Maximale Objektgröße (Bytes)",
+          description: "32 MiB reichen für Dokumente bis 25 MB und Bilder von 1–5 MB. Speicher für gleichzeitige Vorgänge einplanen.",
+        },
+      },
+    },
+  },
+
   "outgoing_mail.content_retention_days": {
     kind: "number",
     label: "Mail content retention (days)",
@@ -68,6 +255,22 @@ export const CORE_SETTINGS = {
     description:
       "Trusted HTTPS origin of the authenticator, used for app installation and pairing links. Changing this origin requires reviewing existing devices; never use a wildcard.",
     default: "https://cloud-login.pwa.k2b.dev",
+  },
+  "user.app_approval.label": {
+    kind: "string",
+    label: "Name in Cloud Login",
+    description:
+      "Suggested label for new Cloud Login connections. Empty uses the application display name. People can change it; existing connections keep their names.",
+    default: "",
+    presentation: {
+      translations: {
+        de: {
+          label: "Name in Cloud Login",
+          description:
+            "Namensvorschlag für neue Cloud-Login-Verbindungen. Leer übernimmt den Anzeigenamen der Anwendung. Bestehende Verbindungen behalten ihren Namen; Nutzer können den Vorschlag ändern.",
+        },
+      },
+    },
   },
   "user.app_approval.admin_pairing": {
     kind: "boolean",
@@ -142,6 +345,7 @@ export const CORE_SETTINGS = {
     placeholder: "e.g. https://cloud.example.org",
     envFallback: () => env.APP_URL,
     envBootstrap: () => env.APP_URL,
+    envVariable: "APP_URL",
   },
   "app.home_path": {
     kind: "string",
@@ -299,47 +503,42 @@ export const CORE_SETTINGS = {
     default: false,
     description: "Enable Cloud AI features including personal conversations, Assistant, and app Capabilities.",
   },
-  "ai.default_model_id": {
-    kind: "string",
-    label: "Default Model ID",
-    default: "",
-    description: "Model profile id used when an app asks for the platform default AI model.",
-    placeholder: "e.g. openrouter-fast",
+  "ai.live_dictation_concurrency": {
+    kind: "number",
+    integer: true,
+    default: 4,
+    min: 1,
+    max: 1024,
+    label: "Concurrent live dictations",
+    description:
+      "Installation-wide live model capacity. Each session uses one model connection; load-test before increasing (maximum 1024 connections).",
+    presentation: {
+      translations: {
+        de: {
+          label: "Gleichzeitige Live-Diktate",
+          description:
+            "Modellkapazität der Installation. Jede Sitzung belegt eine Modellverbindung; vor Erhöhungen einen Lasttest durchführen (höchstens 1024 Verbindungen).",
+        },
+      },
+    },
   },
-  "ai.model_profiles_json": {
-    kind: "text",
-    label: "Model Profiles",
-    default: "[]",
-    description: "JSON array of model profiles. Provider API keys are stored on the profile they belong to.",
-    placeholder:
-      '[{"id":"openrouter-fast","label":"OpenRouter Fast","provider":"openrouter","model":"openai/gpt-4.1-mini","enabled":true,"dataBoundary":"hosted","capabilities":["streaming"],"apiKey":"sk-or-..."}]',
-  },
-  "ai.background_model_id": {
-    kind: "string",
-    label: "Background Model ID",
-    default: "",
-    description: "Model profile id used for background AI jobs. Empty = platform default model.",
-    placeholder: "e.g. openrouter-fast",
-  },
-  "ai.audio_model_id": {
-    kind: "string",
-    label: "Audio Model ID",
-    default: "",
-    description: "Audio transcription model profile for dictation and audio files. Empty disables transcription.",
-  },
-  "ai.vision_model_id": {
-    kind: "string",
-    label: "Vision Model ID",
-    default: "",
-    description: "Vision-capable model profile used by the view_image tool. Empty disables the tool fallback.",
-    placeholder: "e.g. openrouter-vision",
-  },
-  "ai.workflow_model_id": {
-    kind: "string",
-    label: "Workflow Model ID",
-    default: "",
-    description: "Model profile id used for AI workflow actions. Empty = background model, then platform default.",
-    placeholder: "e.g. openrouter-fast",
+  "ai.live_dictation_minutes_per_day": {
+    kind: "number",
+    integer: true,
+    default: 60,
+    min: 1,
+    max: 1440,
+    label: "Live dictation minutes per person per day",
+    description: "Resets at the installation's local midnight. At most 1440 minutes (24 hours). Separate from chat allowances.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Live-Diktat-Minuten pro Person und Tag",
+          description:
+            "Zurücksetzen um Mitternacht in der Zeitzone der Installation. Höchstens 1440 Minuten (24 Stunden). Unabhängig vom Chatkontingent.",
+        },
+      },
+    },
   },
   "ai.enrich_cron": {
     kind: "cron",
@@ -428,20 +627,20 @@ export const CORE_SETTINGS = {
     label: "OpenAI-compatible API",
     default: false,
     description:
-      "Let people create API keys with the access “AI models only” and call the Assistant models they may use. Checked on every request: turning this off stops existing keys too. Models without reference prices have no usage limit; only the rate limit and the concurrent request limit protect them.",
+      "Let people create personal models-only API keys and administrators issue them to standalone accounts and agents. Keys use only models granted to their account. Checked on every request: turning this off stops existing keys too. Models without reference prices have no usage limit; only the rate limit and the concurrent request limit protect them.",
   },
   // Default 4: one process runs at most 8 chat turns at once (AI_TURN_WORKER_CONCURRENCY in ai/runtime.ts), and this
-  // synchronous API bypasses that queue, so one person may hold at most half of it. Typical clients need 1-2 (one
+  // synchronous API bypasses that queue, so one account may hold at most half of it. Typical clients need 1-2 (one
   // request after another plus a connection test); 4 leaves room for a second client without letting a script in a
   // loop crowd out everyone else. Operators with more provider capacity raise it.
   "ai.openai_api_max_concurrent_requests": {
     kind: "number",
-    label: "OpenAI API concurrent requests per person",
+    label: "OpenAI API concurrent requests per account",
     integer: true,
     min: 1,
     max: 64,
     default: 4,
-    description: "Maximum simultaneous OpenAI-compatible API requests per person across all Cloud instances.",
+    description: "Maximum simultaneous OpenAI-compatible API requests per account across all Cloud instances.",
   },
   // ── PDF rendering ─────────────────────────────────────────────────────
   "gotenberg.url": {
@@ -450,8 +649,8 @@ export const CORE_SETTINGS = {
     default: "",
     description: "Internal base URL of the Gotenberg service used for HTML-to-PDF rendering.",
     placeholder: "e.g. http://gotenberg:3000",
-    envFallback: () => env.GOTENBERG_URL,
     envBootstrap: () => env.GOTENBERG_URL,
+    envVariable: "GOTENBERG_URL",
   },
   "gotenberg.username": {
     kind: "string",
@@ -812,7 +1011,7 @@ export const CORE_SETTINGS = {
     label: "Requests Per Second",
     default: 60,
     min: 1,
-    description: "Maximum API requests per second per IP address",
+    description: "Maximum API and public storage requests per second per IP address, with separate budgets",
   },
 
   // ── Command line ────────────────────────────────────────────────────────

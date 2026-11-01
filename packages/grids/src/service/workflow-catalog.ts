@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { parseJsonbRow } from "./jsonb";
 import { SHORT_ID_REGEX } from "./short-id";

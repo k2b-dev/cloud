@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type { ContactResolveDataSchema, ContactResolveInputSchema, ContactResolveMatchDataSchema } from "../capability-contracts";
 

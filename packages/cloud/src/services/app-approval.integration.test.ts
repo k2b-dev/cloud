@@ -1,9 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { type Server, sql } from "bun";
+import type { Server } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -61,6 +62,7 @@ import { requestCacheRedis } from "./request-cache-redis";
 import { SessionAppDeviceInactiveError, session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
+import { preserveTestSettings } from "./settings/settings.test-fixture";
 
 const deviceActions = createDeviceActions((id, _locale) => id);
 
@@ -129,6 +131,15 @@ const OldPendingLoginSchema = z
   .strict();
 
 suite("isolated app approval protocol", () => {
+  preserveTestSettings([
+    "app.name",
+    "app.url",
+    "user.app_approval.label",
+    "security.rate_limit_per_second",
+    "user.app_approval.enabled",
+    "user.app_approval.origin",
+    ...["guest", "login", "freeipa"].map((category) => `user.category.${category}.enabled`),
+  ]);
   let server: Server<unknown>;
   let cfg: AppApprovalConfig;
   // In-process stand-in for the Sync broadcast between replicas.
@@ -893,6 +904,27 @@ suite("isolated app approval protocol", () => {
     await server?.stop(true);
   });
 
+  test("Cloud Login label uses the display name by default and reaches new pairing payloads", async () => {
+    try {
+      await settings.set("user.app_approval.enabled", true);
+      await settings.set("app.name", "Hoffmann Druck");
+      await settings.remove("user.app_approval.label");
+      expect((await readAppApprovalConfig()).label).toBe("Hoffmann Druck");
+      await settings.set("user.app_approval.label", "  Arbeit  ");
+      expect((await readAppApprovalConfig()).label).toBe("Arbeit");
+      const owner = await account();
+      const labeled = createAppApprovalService(sql, async () => ({ ...cfg, label: (await readAppApprovalConfig()).label }), hints);
+      const payload = AppPairingPayloadSchema.parse(await labeled.startPairing(owner.actor));
+      expect(payload.label).toBe("Arbeit");
+      await settings.set("user.app_approval.label", " ");
+      expect((await readAppApprovalConfig()).label).toBe("Hoffmann Druck");
+      await settings.set("user.app_approval.label", "x".repeat(100));
+      expect((await readAppApprovalConfig()).label).toHaveLength(80);
+    } finally {
+      await settings.remove("user.app_approval.label");
+      await settings.remove("user.app_approval.enabled");
+    }
+  });
   test("feature defaults off, issuer uses canonical app URL, malformed origins fail closed", async () => {
     expect((await readAppApprovalConfig()).enabled).toBe(false);
     await settings.set("user.app_approval.enabled", true);
@@ -2339,7 +2371,7 @@ suite("isolated app approval protocol", () => {
       const chat = await aiConversations.createConversation({ ownerUserId: owner.id, title: "Send a letter" });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: {
           kind: "chat",
           input: "Send",

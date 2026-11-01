@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { type AuthenticatedServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services/service-account-credentials";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { app as pulse } from "../config";

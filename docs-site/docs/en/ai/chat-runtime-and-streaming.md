@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-21
+updated: 2026-10-31
 ---
 
 # Chat runtime and streaming
@@ -16,7 +16,7 @@ the standard GUI; another application may create a conversation and redirect
 the user there.
 
 Interactive submissions and retries enforce the caller's
-[Assistant model access](/en/docs/ai/models-and-providers#restrict-a-model-in-assistant).
+[Assistant model access](/en/docs/ai/models-and-providers#add-models-and-variants).
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 
@@ -201,8 +201,8 @@ exact public HTTPS source into the conversation, with a readable Markdown copy
 for web pages; it does not browse repositories, authenticate to a website, or
 reach private network targets.
 `calculate` stays loaded because, whenever a turn offers it, the system
-prompt requires it for every amount, sum, or other number the model derives
-itself. A conversation with a fixed tool scope that excludes it, or a model
+prompt requires it for every amount, sum, percentage, or multi-step result the
+model derives itself; simple relative dates such as tomorrow need no call. A conversation with a fixed tool scope that excludes it, or a model
 without tool support, gets neither the tool nor that rule. Surveys, the
 long-form text editor, charts, file writes and presentation, and
 Markdown-to-PDF load on demand. Built-in usage hints remain in the system prompt even while their
@@ -382,6 +382,9 @@ consumers all use `/conversations/:id/stream`. Over HTTP/1.1 each open
 Assistant tab holds one of the browser's six connections to the host; over
 HTTP/2 the streams share one connection. A proxy in front of Cloud must not
 buffer `text/event-stream` responses.
+
+The portable chart helpers come from `@k2b/editor/charts`. Their existing Cloud
+exports remain available; Cloud owns AI validation and size limits.
 
 An open SSE stream re-checks its credential and the conversation every 5
 seconds. A revoked session or API key, an expired account, or a conversation
@@ -826,11 +829,12 @@ message continues the task; a failed compaction holds the reason only. A
 background run that its mandate or the background AI budget blocked keeps
 Cloud's own explanation there. `AiConversation.runTurnId` is the public ID of
 the latest turn, which `runStatus` and `runError` describe; the messages of that
-turn carry it as `loopId`. The raw cause, such as the provider's message,
-goes only to the error log entry `AI turn failed` under `ai:executor`, beside
-the `code`, and a provider call's message also stays on its
-[usage record](/en/docs/ai/usage-and-feedback#read-the-report). A stop records
-no reason.
+turn carry it as `loopId`. Provider failures and loop issues use fixed Cloud
+diagnostics in the error log entry `AI turn failed` under `ai:executor` and in
+[usage records](/en/docs/ai/usage-and-feedback#read-the-report). Provider
+messages, response bodies, and tool-validation payloads do not enter these
+diagnostics. Detailed tool-validation feedback remains in the authorized
+conversation for model repair. A stop records no reason.
 
 Provider history preserves each complete assistant message, including its
 producing `provider` and reasoning blocks' `signature`, `redacted`, and `details`.

@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
 import type { CommandState } from "../contracts";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { listCommands } from "./commands";
@@ -53,7 +52,6 @@ suite("Mail command state filtering and keyset pagination", () => {
   let foreignCommandId = "";
 
   beforeAll(async () => {
-    await migrate();
     for (const name of ["owner", "reader", "outsider", "assigned"]) {
       const [row] = await sql<{ id: string; uid: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, admin)

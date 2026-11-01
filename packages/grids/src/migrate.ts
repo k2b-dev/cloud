@@ -1,4 +1,5 @@
-import { sql as defaultSql, type SQL } from "bun";
+import { sql as defaultSql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 // Current Grids schema plus explicit, one-way upgrades from the preceding schema.
 // IF NOT EXISTS does not reconcile existing columns or constraints. Schema
@@ -827,6 +828,9 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       CONSTRAINT workflow_profile_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text))
     )
   `.simple();
+  await sql`ALTER TABLE grids.workflow_profile
+    ADD COLUMN IF NOT EXISTS owner_service_account_id uuid REFERENCES auth.service_accounts(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS machine_mandate_id uuid REFERENCES auth.mandates(id) ON DELETE SET NULL`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_workflow_profile_base_live ON grids.workflow_profile USING btree (base_id, "position", created_at, id) WHERE (deleted_at IS NULL)
   `.simple();

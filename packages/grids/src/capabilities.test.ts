@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -9,7 +10,6 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { gridsCapabilities } from "./capabilities";
 import {

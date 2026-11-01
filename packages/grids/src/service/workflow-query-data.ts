@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { DslQueryExecuteBodySchema } from "../contracts";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import type { DslQueryContextInput } from "../query-dsl/parameters";
@@ -193,10 +193,11 @@ export const captureWorkflowQueryData = async (
     return ok({ payload: checked.data, sha256: payload.sha256, rowCount: projected.rows.length, capturedAt });
   };
   // Atomic assertions must observe the state after their coordination locks,
-  // on the writer's transaction. Ordinary captures retain a read-only snapshot.
+  // on the writer's transaction. Ordinary captures retain a repeatable snapshot;
+  // it is not READ ONLY because machine authority takes FOR SHARE locks in it.
   if (transactionClient) return capture(transactionClient);
   return sql.begin(async (client) => {
-    await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+    await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
     return capture(client);
   });
 };

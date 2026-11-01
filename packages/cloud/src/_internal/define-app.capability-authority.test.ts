@@ -2,14 +2,16 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { Sync } from "@k2b/sync";
 import { z } from "zod";
-import { env } from "../config/env";
 import { appAccess } from "../contracts/app-access";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import type { RequestActor } from "../server/middleware/auth";
 import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { compileCapabilities } from "./capabilities";
 import { defineApp } from "./define-app";
 import { inventory, person } from "./define-app.test-fixture";
@@ -20,8 +22,7 @@ import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
 
 test("generated capability routes hand resolved invocation authority to execute, review and every stream handler", async () => {
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "authority-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "authority-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   const unused = (): never => {
@@ -45,7 +46,10 @@ test("generated capability routes hand resolved invocation authority to execute,
     scheduler: unused,
   };
   const contexts: { handler: string; context: CapabilityExecutionContext }[] = [];
-  const capture = (handler: string, context: CapabilityExecutionContext) => contexts.push({ handler, context });
+  const capture = (handler: string, context: CapabilityExecutionContext) => {
+    expect(typeof context.query).toBe(handler.startsWith("stream.") ? "undefined" : "function");
+    contexts.push({ handler, context });
+  };
   const capabilities = defineCapabilities({
     protocolVersion: 2,
     queries: {
@@ -176,6 +180,8 @@ test("generated capability routes hand resolved invocation authority to execute,
     resolve,
     spyOn(settingsService, "get").mockResolvedValue("en"),
     spyOn(settingsService, "loadCache").mockResolvedValue(undefined),
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
@@ -196,6 +202,15 @@ test("generated capability routes hand resolved invocation authority to execute,
       snapshot: unused,
       watch: unused,
     }),
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
+    }),
     spyOn(heartbeat, "createHeartbeat").mockReturnValue({ start: async () => {}, stop: async () => {} }),
     spyOn(watcher, "ensureRuntimeWatcher").mockResolvedValue(undefined),
     spyOn(watcher, "stopRuntimeWatcher").mockResolvedValue(undefined),
@@ -206,6 +221,7 @@ test("generated capability routes hand resolved invocation authority to execute,
     setSystemTime(new Date("2026-10-22T12:00:00Z"));
     const app = defineApp({ ...inventory, access: appAccess.signedIn() });
     const started = await app.start({ fetch: () => new Response("not a capability", { status: 404 }), capabilities });
+    let origin: string | undefined;
     const request = (path: string, hash: string, stream?: CapabilityStream) =>
       started.fetch(
         new Request(`http://inventory/api/_internal/capabilities/v1/${path}`, {
@@ -213,66 +229,70 @@ test("generated capability routes hand resolved invocation authority to execute,
           headers: {
             authorization: `Bearer ${candidate}`,
             "x-cloud-capability-schema-hash": hash,
+            ...(origin === undefined ? {} : { "x-cloud-capability-origin": origin }),
             ...(stream ? { "x-cloud-stream-offer": Buffer.from(JSON.stringify(stream)).toString("base64url") } : {}),
           },
           body: path.endsWith("/write") ? "x" : '{"input":{}}',
         }),
       );
     for (const authority of authorities) {
-      resolved = authority;
-      contexts.length = 0;
-      const queryHash = manifest.queries[0]!.schemaHash;
-      const actionHash = manifest.actions.find((action) => action.localId === "update")!.schemaHash;
-      const uploadHash = manifest.actions.find((action) => action.localId === "upload")!.schemaHash;
-      for (const [path, hash] of [
-        ["queries/read", queryHash],
-        ["actions/update", actionHash],
-        ["actions/update/review", actionHash],
-      ]) {
-        const response = await request(path!, hash!);
-        expect(response.status).toBe(200);
-        await response.json();
-      }
-      for (const [kind, id, verb, hash] of [
-        ["queries", "read", "read", queryHash],
-        ["actions", "upload", "write", uploadHash],
-        ["actions", "upload", "status", uploadHash],
-        ["actions", "upload", "abort", uploadHash],
-      ] as const) {
-        const response = await request(`streams/${kind}/${id}/${verb}`, hash, {
-          id: "stream",
-          direction: kind === "queries" ? "read" : "write",
-          mediaType: "text/plain",
-          size: 1,
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        });
-        expect(response.status).toBe(200);
-        await response.text();
-      }
-      expect(contexts.map(({ handler }) => handler)).toEqual([
-        "query",
-        "action",
-        "review",
-        "stream.read",
-        "stream.write",
-        "stream.status",
-        "stream.abort",
-        "stream.status",
-      ]);
-      for (const { context } of contexts) {
-        expect(context.authority).toEqual(authority);
-        expect(context.authority?.actor).toBe(authority.actor);
-        expect(context.authority?.accessSubject).toBe(authority.accessSubject);
-        expect(context.actor).toBe(authority.actor);
-        expect(context.accessSubject).toBe(authority.accessSubject);
+      for (origin of [undefined, "invalid", "mcp", "assistant"]) {
+        resolved = authority;
+        contexts.length = 0;
+        const queryHash = manifest.queries[0]!.schemaHash;
+        const actionHash = manifest.actions.find((action) => action.localId === "update")!.schemaHash;
+        const uploadHash = manifest.actions.find((action) => action.localId === "upload")!.schemaHash;
+        for (const [path, hash] of [
+          ["queries/read", queryHash],
+          ["actions/update", actionHash],
+          ["actions/update/review", actionHash],
+        ]) {
+          const response = await request(path!, hash!);
+          expect(response.status).toBe(200);
+          await response.json();
+        }
+        for (const [kind, id, verb, hash] of [
+          ["queries", "read", "read", queryHash],
+          ["actions", "upload", "write", uploadHash],
+          ["actions", "upload", "status", uploadHash],
+          ["actions", "upload", "abort", uploadHash],
+        ] as const) {
+          const response = await request(`streams/${kind}/${id}/${verb}`, hash, {
+            id: "stream",
+            direction: kind === "queries" ? "read" : "write",
+            mediaType: "text/plain",
+            size: 1,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          });
+          expect(response.status).toBe(200);
+          await response.text();
+        }
+        expect(contexts.map(({ handler }) => handler)).toEqual([
+          "query",
+          "action",
+          "review",
+          "stream.read",
+          "stream.write",
+          "stream.status",
+          "stream.abort",
+          "stream.status",
+        ]);
+        for (const { context } of contexts) {
+          expect(context.via).toBe(origin === "mcp" || origin === "assistant" ? origin : null);
+          expect(context.authority).toEqual(authority);
+          expect(context.authority?.actor).toBe(authority.actor);
+          expect(context.authority?.accessSubject).toBe(authority.accessSubject);
+          expect(context.actor).toBe(authority.actor);
+          expect(context.accessSubject).toBe(authority.accessSubject);
+        }
       }
     }
     resolved = { ...resolved, scopes: ["other:read"] };
     const beforeDenied = contexts.length;
     expect((await request("queries/read", manifest.queries[0]!.schemaHash)).status).toBe(403);
     expect(contexts).toHaveLength(beforeDenied);
-    expect(verify).toHaveBeenCalledTimes(15);
-    expect(resolve).toHaveBeenCalledTimes(15);
+    expect(verify).toHaveBeenCalledTimes(57);
+    expect(resolve).toHaveBeenCalledTimes(57);
   } finally {
     for (const [index, signal] of signals.entries())
       for (const listener of process.listeners(signal)) if (!previousListeners[index]!.has(listener)) process.off(signal, listener);
@@ -280,6 +300,6 @@ test("generated capability routes hand resolved invocation authority to execute,
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
   }
 });

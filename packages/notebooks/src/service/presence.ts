@@ -2,7 +2,7 @@ import { lazySync } from "@k2b/cloud";
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
 import { SnapshotOverflowError } from "@k2b/sync";
-import { getNotebookPresenceColor } from "../lib/yjs";
+import { personColor } from "@k2b/ui";
 import { NODE_ID } from "./yjs-sync";
 
 const log = logger("notebooks:presence");
@@ -19,6 +19,8 @@ type PresenceEntry = {
   avatarHash?: string | null;
   color: string;
   peerId: string;
+  /** Same browser tab across its workspace and collaboration transport leases. */
+  presencePeerId?: string;
   nodeId: string;
   joinedAt: number;
 };
@@ -45,7 +47,7 @@ const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPrese
       displayName: string;
       avatarHash: string | null;
       color: string;
-      peerCount: number;
+      peers: Set<string>;
       joinedAt: number;
       identityJoinedAt: number;
     }
@@ -54,7 +56,7 @@ const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPrese
   for (const entry of entries) {
     const current = deduped.get(entry.value.userId);
     if (current) {
-      current.peerCount += 1;
+      current.peers.add(entry.value.presencePeerId ?? entry.value.peerId);
       current.joinedAt = Math.min(current.joinedAt, entry.value.joinedAt);
       if (entry.value.joinedAt >= current.identityJoinedAt) {
         current.displayName = entry.value.displayName;
@@ -70,7 +72,7 @@ const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPrese
       displayName: entry.value.displayName,
       avatarHash: entry.value.avatarHash ?? null,
       color: entry.value.color,
-      peerCount: 1,
+      peers: new Set([entry.value.presencePeerId ?? entry.value.peerId]),
       joinedAt: entry.value.joinedAt,
       identityJoinedAt: entry.value.joinedAt,
     });
@@ -82,7 +84,7 @@ const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPrese
       displayName: participant.displayName,
       avatarHash: participant.avatarHash,
       color: participant.color,
-      peerCount: participant.peerCount,
+      peerCount: participant.peers.size,
       joinedAt: new Date(participant.joinedAt).toISOString(),
     }))
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
@@ -113,6 +115,7 @@ export const watch = (config: { noteId: string; after?: string; signal?: AbortSi
 export const join = async (config: {
   noteId: string;
   peerId: string;
+  presencePeerId?: string;
   userId: string;
   displayName: string;
   avatarHash: string | null;
@@ -124,8 +127,9 @@ export const join = async (config: {
       userId: config.userId,
       displayName: config.displayName,
       avatarHash: config.avatarHash,
-      color: getNotebookPresenceColor(config.userId),
+      color: personColor(config.displayName),
       peerId: config.peerId,
+      presencePeerId: config.presencePeerId,
       nodeId: NODE_ID,
       joinedAt: Date.now(),
     },

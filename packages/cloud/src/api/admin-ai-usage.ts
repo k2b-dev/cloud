@@ -25,7 +25,7 @@ export const createAdminAiUsageRoutes = (
     .get(
       "/facets",
       describeRoute({ summary: "Find AI usage filter values", tags: ["Admin AI usage"] }),
-      v("query", AiUsageQuerySchema.extend({ field: z.enum(["userId", "modelProfileId", "providerModel", "appId", "task"]) }).strict()),
+      v("query", AiUsageQuerySchema.extend({ field: z.enum(["userId", "modelId", "providerModel", "appId", "task"]) }).strict()),
       async (c) => {
         const q = c.req.valid("query");
         return respond(c, ok({ items: await service.facets(q.field, q.search ?? "", q) }));
@@ -34,7 +34,7 @@ export const createAdminAiUsageRoutes = (
     .get(
       "/runs/:kind/:id",
       describeRoute({ summary: "Read an AI run and its stored error", tags: ["Admin AI usage"] }),
-      v("param", z.object({ kind: z.enum(["chat", "background"]), id: z.uuid() })),
+      v("param", z.object({ kind: z.enum(["chat", "background", "live-transcription"]), id: z.uuid() })),
       async (c) => {
         const { kind, id } = c.req.valid("param");
         const result = await service.detail(kind, id);

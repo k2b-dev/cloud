@@ -290,7 +290,7 @@ describe("@k2b/ui Cloud feedback parity", () => {
 
     const resultsRule = feedbackCss.match(/\.k2b-ui \.k2b-prompt-search__results \{([^}]*)\}/)?.[1] ?? "";
     expect(resultsRule).toContain("padding: 0.5rem");
-    expect(promptsSource).toContain('data-has-description={item.desc ? "true" : undefined}');
+    expect(promptsSource).toContain('data-has-description={item().desc ? "true" : undefined}');
     expect(feedbackCss).toContain('button[data-has-description="true"]');
   });
 

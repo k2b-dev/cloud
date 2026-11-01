@@ -37,6 +37,8 @@ export type MailListHarnessOptions = {
   deletedOnServer?: boolean;
   /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
   plainText?: string;
+  /** Draws the columns view (F2) of a shared or a personal mailbox. */
+  columns?: "shared" | "personal";
 };
 
 declare global {
@@ -168,6 +170,7 @@ window.mountMailList = (options) => {
     return item?.kept && item.conversationId
       ? {
           conversationId: item.conversationId,
+          canLift: false,
           keptAt: "2026-09-30T08:00:00.000Z",
           keptBy: { kind: "user" as const, id: "user-grace", displayName: "Grace Hopper", avatarHash: null },
         }
@@ -304,11 +307,17 @@ window.mountMailList = (options) => {
                   onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
+                  columns={
+                    options.columns
+                      ? { shared: options.columns === "shared", assigneeNames: (ids) => ids.map((id) => id.replace("user-", "")) }
+                      : undefined
+                  }
                 />
               </AppWorkspace.MainPane>
               <div id="reader" class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]">
                 <Show when={options.reader} fallback="Reader">
                   <MailConversationReader
+                    currentUserId="Usr001"
                     mailboxId="Box001"
                     requestUrl={requestUrl()}
                     canWrite
@@ -348,6 +357,10 @@ window.mountMailList = (options) => {
                     onManageTags={noop}
                     onMergeConversation={noop}
                     onReassignMessage={noop}
+                    automationTrace={[]}
+                    onUndoAutomation={noop}
+                    onAssignConversation={noop}
+                    onAssignConversationToMe={noop}
                     onSplitMessage={noop}
                     onKeep={noop}
                     onStopKeeping={noop}

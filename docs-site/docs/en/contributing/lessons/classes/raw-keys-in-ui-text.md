@@ -1,0 +1,1 @@
+| Raw keys in UI text | An open action string falls through a switch and becomes an untranslated label. | Test: Notebooks `activity-messages.test.ts` checks service literals, both actor forms in English/German, and neutral unknown-action labels. Exhaustive catalog records require every typed action. |

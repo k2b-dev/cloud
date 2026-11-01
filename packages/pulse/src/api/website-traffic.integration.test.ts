@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { Hono } from "hono";
-import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sendWebsiteDelivery, WebsiteDeliverySchema } from "../../examples/website-tracking";
 
 let pulseCapabilities: typeof import("../capabilities")["pulseCapabilities"];
@@ -31,10 +31,9 @@ let pulseApi: typeof import(".")["default"];
 // hooks must load at file scope: Bun runs hooks registered inside beforeAll as that
 // hook finishes, which would stop the authority and drop the ClickHouse fixture.
 const database =
-  testInfra.database && testInfra.clickhouse && testInfra.valkey && testInfra.nats ? await useFreshDatabase("pulse_website") : undefined;
+  testInfra.database && testInfra.clickhouse && testInfra.valkey && testInfra.nats ? await useMigratedDatabase("pulse_website") : undefined;
 if (database) {
   await import("../../../../scripts/fixtures/test-clickhouse");
-  await (await import("../../../core/src/runtime-helpers")).runCoreSetup();
   await import("../../../../scripts/fixtures/authorization-preload");
 }
 

@@ -1,6 +1,6 @@
 import type { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import {
   type CreateDraftAttachmentUpload,
   createDraftAttachmentUploadSchema,
@@ -12,6 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
+import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { requireDraftLeaseAvailable } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
@@ -38,7 +39,7 @@ type DbUpload = {
   updated_at: Date | string;
 };
 
-const uploadColumns = sql`
+const uploadColumns = () => sql`
   upload.id,
   upload.draft_id,
   upload.blob_id,
@@ -134,7 +135,7 @@ export const createDraftAttachmentUpload = async (params: {
           ${actor.kind},
           ${actor.id}::uuid
         )
-        RETURNING ${uploadColumns}
+        RETURNING ${uploadColumns()}
       `;
       return upload ? ok(mapUpload(upload)) : fail(err.internal("Attachment upload insert returned no row"));
     });
@@ -152,7 +153,7 @@ export const listDraftAttachmentUploads = async (params: {
   if (!allowed.ok) return allowed;
   const draftId = params.draftId;
   const rows = await sql<DbUpload[]>`
-    SELECT ${uploadColumns}
+    SELECT ${uploadColumns()}
     FROM mail.draft_attachment_uploads upload
     JOIN mail.drafts draft ON draft.id = upload.draft_id
     WHERE upload.draft_id = ${draftId}::uuid
@@ -176,7 +177,7 @@ export const listUnfinishedDraftAttachmentUploads = async (params: {
   const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbUpload[]>`
-    SELECT ${uploadColumns}
+    SELECT ${uploadColumns()}
     FROM mail.draft_attachment_uploads upload
     JOIN mail.drafts draft ON draft.id = upload.draft_id
     WHERE upload.draft_id = ${params.draftId}::uuid
@@ -199,7 +200,7 @@ export const getDraftAttachmentUpload = async (params: {
   if (!allowed.ok) return allowed;
   const draftId = params.draftId;
   const [upload] = await sql<DbUpload[]>`
-    SELECT ${uploadColumns}
+    SELECT ${uploadColumns()}
     FROM mail.draft_attachment_uploads upload
     JOIN mail.drafts draft ON draft.id = upload.draft_id
     WHERE upload.id = ${params.uploadId}::uuid
@@ -228,7 +229,7 @@ export const appendDraftAttachmentUpload = async (params: {
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [upload] = await tx<(DbUpload & { draft_state: string })[]>`
-        SELECT ${uploadColumns}, draft.state AS draft_state
+        SELECT ${uploadColumns()}, draft.state AS draft_state
         FROM mail.draft_attachment_uploads upload
         JOIN mail.drafts draft ON draft.id = upload.draft_id
         WHERE upload.id = ${params.uploadId}::uuid
@@ -261,7 +262,7 @@ export const appendDraftAttachmentUpload = async (params: {
           next_position = next_position + 1,
           state = CASE WHEN ${nextReceived} = byte_length THEN 'uploaded' ELSE 'uploading' END
         WHERE upload.id = ${params.uploadId}::uuid
-        RETURNING ${uploadColumns}
+        RETURNING ${uploadColumns()}
       `;
       await tx`
         UPDATE mail.message_part_blobs
@@ -314,7 +315,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
   if (!lease.ok) return lease;
   const draftId = params.draftId;
   const [candidate] = await sql<(DbUpload & { mailbox_id: string })[]>`
-    SELECT ${uploadColumns}, draft.mailbox_id
+    SELECT ${uploadColumns()}, draft.mailbox_id
     FROM mail.draft_attachment_uploads upload
     JOIN mail.drafts draft ON draft.id = upload.draft_id
     WHERE upload.id = ${params.uploadId}::uuid
@@ -335,7 +336,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
       const [upload] = await tx<
         (DbUpload & { draft_revision: string | number; draft_state: string; draft_conversation_id: string | null })[]
       >`
-        SELECT ${uploadColumns}, draft.revision AS draft_revision, draft.state AS draft_state, draft.conversation_id AS draft_conversation_id
+        SELECT ${uploadColumns()}, draft.revision AS draft_revision, draft.state AS draft_state, draft.conversation_id AS draft_conversation_id
         FROM mail.draft_attachment_uploads upload
         JOIN mail.drafts draft ON draft.id = upload.draft_id
         WHERE upload.id = ${params.uploadId}::uuid
@@ -422,6 +423,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
         RETURNING revision
       `;
       if (!updated) return fail(err.internal("Draft attachment update returned no row"));
+      await recordDraftDocumentRevision({ db: tx, context: params.context, mailboxId: params.mailboxId, draftId });
       await tx`
         UPDATE mail.draft_attachment_uploads
         SET state = 'attached', attachment_id = ${attachment.id}::uuid, finalized_revision = ${Number(updated.revision)}, blob_id = ${blobId}::uuid
@@ -471,7 +473,7 @@ export const cancelDraftAttachmentUpload = async (params: {
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [upload] = await tx<DbUpload[]>`
-        SELECT ${uploadColumns}
+        SELECT ${uploadColumns()}
         FROM mail.draft_attachment_uploads upload
         JOIN mail.drafts draft ON draft.id = upload.draft_id
         WHERE upload.id = ${params.uploadId}::uuid
@@ -488,7 +490,7 @@ export const cancelDraftAttachmentUpload = async (params: {
         UPDATE mail.draft_attachment_uploads upload
         SET state = 'cancelled', blob_id = NULL
         WHERE upload.id = ${upload.id}::uuid
-        RETURNING ${uploadColumns}
+        RETURNING ${uploadColumns()}
       `;
       if (blobId) await tx`DELETE FROM mail.message_part_blobs WHERE id = ${blobId}::uuid AND complete = false`;
       return cancelled ? ok(mapUpload(cancelled)) : fail(err.internal("Attachment upload cancellation returned no row"));

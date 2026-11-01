@@ -70,11 +70,33 @@ const chartMarkdown = [
   "",
   "Danach geht es weiter.",
 ].join("\n");
+// Bar charts of 5, 15 and 30 categories: a few columns, rows of the usual height and rows that make the frame grow.
+const barMarkdown = (count: number) =>
+  [
+    "# Besuche",
+    "",
+    "Wir vergleichen die Besuche aller Standorte im Oktober.",
+    "",
+    ":::chart",
+    "type: bar",
+    "title: Besuche nach Standort",
+    "columns: [Standort, Besuche]",
+    "rows:",
+    ...Array.from({ length: count }, (_, index) => `  - [Standort ${index + 1}, ${(index + 1) * 37}]`),
+    "x: Standort",
+    "y: Besuche",
+    ":::",
+    "",
+    "Danach geht es weiter.",
+  ].join("\n");
 // A note of paragraphs far longer than the editor draws at once, for printing.
 const printMarkdown = `# Feldnotizen\n\n${Array.from({ length: 150 }, (_, index) => `Absatz ${index + 1}: Das Team notiert Beobachtungen für den nächsten Besuch.`).join("\n\n")}`;
 const notes = {
   markdown: { text: markdown, snapshot: snapshot(markdown) },
   chart: { text: chartMarkdown, snapshot: snapshot(chartMarkdown) },
+  bars5: { text: barMarkdown(5), snapshot: snapshot(barMarkdown(5)) },
+  bars15: { text: barMarkdown(15), snapshot: snapshot(barMarkdown(15)) },
+  bars30: { text: barMarkdown(30), snapshot: snapshot(barMarkdown(30)) },
   print: { text: printMarkdown, snapshot: snapshot(printMarkdown) },
   headings: { text: headingMarkdown, snapshot: snapshot(headingMarkdown) },
   long: { text: longMarkdown, snapshot: snapshot(longMarkdown) },
@@ -82,6 +104,8 @@ const notes = {
 };
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
+/** The note of the page served last; its collaboration socket starts from that note's saved state, as Cloud's does. */
+let servedSnapshot = notes.markdown.snapshot;
 
 beforeAll(async () => {
   const ui = `${resolve(import.meta.dir, "../../../../../../ui")}/`;
@@ -97,6 +121,13 @@ beforeAll(async () => {
       {
         name: "solid-note-preview-test",
         setup(builder) {
+          // Exercise the real composition with current UI source, as the shared
+          // editor fixture does; a previous dist build must not mask a handoff.
+          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
+          builder.onResolve({ filter: /^@k2b\/ui\/text-editor$/ }, () => ({ path: resolve(ui, "src/text-editor.ts") }));
+          builder.onResolve({ filter: /^@k2b\/ui\/text-editor\/model$/ }, () => ({
+            path: resolve(ui, "src/text-editor/markdown-table.ts"),
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -121,7 +152,11 @@ beforeAll(async () => {
       },
     ),
   );
-  const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  const css = [
+    "@layer properties, theme, base, components, utilities;",
+    ...outputs,
+    await Bun.file(resolve(ui, "src/styles/text-editor.css")).text(),
+  ].join("\n");
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -129,6 +164,14 @@ beforeAll(async () => {
       const url = new URL(request.url);
       if (url.pathname === "/editor.js") return new Response(bundle, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
+      if (url.pathname === "/api/notebooks/book01/notes/note01/document")
+        return Response.json({
+          generation: "0",
+          mode: "current",
+          historyIncomplete: false,
+          locked: false,
+          durable: { state: servedSnapshot, cursor: null },
+        });
       if (url.pathname.endsWith("/block-preview")) {
         // Book's rendering of the posted draft, as the API returns it; the saved note in read-only mode.
         const body: unknown = await request.json();
@@ -137,8 +180,14 @@ beforeAll(async () => {
         const { blocks } = renderNotebookBook({ markdown: draft, notebookId: "book01", noteId: "note01", locale: "en", linkMode: "write" });
         return Response.json({ markdown: draft, blocks, diagnostics: [], headings: [] });
       }
-      const { text: note, snapshot: initialSnapshot } =
-        notes[(["many", "long", "headings", "chart", "print"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
+      const { text: note, snapshot: served } =
+        notes[
+          (["many", "long", "headings", "chart", "bars5", "bars15", "bars30", "print"] as const).find((name) =>
+            url.searchParams.has(name),
+          ) ?? "markdown"
+        ];
+      // Only the page itself names the note; other requests, such as the icon, fall through to the default one.
+      if (url.pathname === "/") servedSnapshot = served;
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
@@ -151,15 +200,15 @@ beforeAll(async () => {
         notebookName: "Team",
         noteLockedAt: null,
         historyIncomplete,
-        workspaceCursor: null,
         appUrl: url.origin,
         userId: "writer",
         displayName: "Writer",
-        initialSnapshot,
-        initialContent: null,
+        initialContent: note,
         initialPanelOpen: false,
         initialRichMode: mode,
         readOnly,
+        canWrite: !readOnly,
+        initialAnnotations: { text: note, contentHash: "fixture-hash", cursor: null, restoreRevision: "0", items: [], nextCursor: null },
         initialHref: "/app/notebooks/book01/notes/note01",
         initialDetail: {
           noteAuthors: { createdBy: null, lastEditedBy: null },
@@ -199,7 +248,14 @@ beforeAll(async () => {
     },
     websocket: {
       open(socket) {
-        socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01" } }));
+        // The first edit connects; the server sends the note's state before it is ready, as the real one does.
+        const updates = [{ cursor: null, payload: servedSnapshot, originPeerId: null, restoreRevision: "0" }];
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }),
+        );
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01", cursor: null, restoreRevision: "0" } }),
+        );
       },
       message() {},
     },
@@ -246,6 +302,14 @@ const measure = (page: Page, selector: string, count: number) =>
     { selector, count },
   );
 const closeTo = (actual: number, expected: number, context: string) => expect(Math.abs(actual - expected), context).toBeLessThanOrEqual(1);
+const collectErrors = (page: Page) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  return errors;
+};
 
 for (const fixture of [
   { mode: "rich", width: 1280, height: 800, readOnly: false, dark: false, historyIncomplete: false, headings: false },
@@ -263,8 +327,7 @@ for (const fixture of [
       isMobile: fixture.width === 390,
       hasTouch: fixture.width === 390,
     });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -296,6 +359,7 @@ for (const fixture of [
       release?.();
       await page.waitForSelector(".cm-content");
       await preview.waitFor({ state: "detached" });
+      if (!fixture.readOnly) await page.locator('.cm-content[contenteditable="true"]').waitFor();
       await settle(page);
       const after = await measure(page, ".cm-line", count);
       expect(errors).toEqual([]);
@@ -327,8 +391,7 @@ for (const fixture of [
 
 test("a note longer than the preview keeps the editor's gutter and lines: source, 1280px", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = collectErrors(page);
   let release: (() => void) | undefined;
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
@@ -387,8 +450,7 @@ for (const fixture of [
       isMobile: fixture.width === 390,
       hasTouch: fixture.width === 390,
     });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -426,6 +488,7 @@ for (const fixture of [
       release?.();
       await page.waitForSelector(".cm-content");
       await preview.waitFor({ state: "detached" });
+      if (!fixture.readOnly) await page.locator('.cm-content[contenteditable="true"]').waitFor();
       await settle(page);
       const after = await topLine(page, ".cm-line");
       expect(errors).toEqual([]);
@@ -443,12 +506,20 @@ for (const fixture of [
   }, 30_000);
 }
 
-for (const width of [375, 1280]) {
-  test(`a chart keeps the box the preview reserved, while it loads and once it is drawn: ${width}px`, async () => {
-    expect(notePreviewChart(chartMarkdown, notePreviewLines(chartMarkdown, "rich"))).toMatchObject({ kind: "line", area: true });
+for (const [note, width] of [
+  ["chart", 375],
+  ["chart", 1280],
+  ["bars5", 375],
+  ["bars15", 375],
+  ["bars30", 375],
+] as const) {
+  test(`a chart keeps the box the preview reserved, while it loads and once it is drawn: ${note}, ${width}px`, async () => {
+    const text = notes[note].text;
+    expect(notePreviewChart(text, notePreviewLines(text, "rich"), "en")).toMatchObject(
+      note === "chart" ? { kind: "line", area: true } : { kind: "bar" },
+    );
     const page = await browser.newPage({ viewport: { width, height: 900 }, isMobile: width < 600, hasTouch: width < 600 });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     let releaseEditor: (() => void) | undefined;
     let releasePreview: (() => void) | undefined;
     const editorHeld = new Promise<void>((resolve) => {
@@ -475,17 +546,18 @@ for (const width of [375, 1280]) {
         closeTo(actual[property], expected[property], `${context}: ${property}`);
     };
     try {
-      await page.goto(`${server.url}?chart&mode=rich`, { waitUntil: "commit" });
+      await page.goto(`${server.url}?${note}&mode=rich`, { waitUntil: "commit" });
       const preview = page.locator(`#${NOTE_PREVIEW_ID}`);
       await preview.waitFor({ state: "visible" });
       await settle(page);
       const reserved = await box(`#${NOTE_PREVIEW_ID} .cm-query-block-widget`);
       const reservedFrame = await box(`#${NOTE_PREVIEW_ID} .notebook-book-chart`);
-      // Title, subtitle and an 18rem frame: never a one-line placeholder.
-      expect(reservedFrame.height).toBeGreaterThan(320);
+      // Title, subtitle and an 18rem frame: never a one-line placeholder. Thirty bar rows need far more.
+      expect(reservedFrame.height).toBeGreaterThan(note === "bars30" ? 640 : 320);
       releaseEditor?.();
       await page.waitForSelector(".cm-content .cm-query-block-widget .notebook-book-chart");
       await preview.waitFor({ state: "detached" });
+      await page.locator('.cm-content[contenteditable="true"]').waitFor();
       await settle(page);
       same(await box(".cm-content .cm-query-block-widget"), reserved, "Loading widget");
       same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Loading frame");
@@ -494,7 +566,8 @@ for (const width of [375, 1280]) {
       await settle(page);
       same(await box(".cm-content .cm-query-block-widget"), reserved, "Drawn widget");
       same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Drawn frame");
-      expect(await page.locator(".cm-content .k2b-chart-legend li").allTextContents()).toEqual(["Umsatz", "Kosten"]);
+      if (note === "chart") expect(await page.locator(".cm-content .k2b-chart-legend li").allTextContents()).toEqual(["Umsatz", "Kosten"]);
+      else expect(await page.locator(".cm-content .notebook-book-chart svg [data-chart-datum]").count()).toBe(Number(note.slice(4)));
       expect(errors).toEqual([]);
     } finally {
       releaseEditor?.();
@@ -508,8 +581,7 @@ for (const width of [375, 1280]) {
 for (const readOnly of [false, true])
   test(`prints the whole note from its Book copy, with text typed just before: ${readOnly ? "read-only" : "write"}`, async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     try {
       await page.goto(`${server.url}?print${readOnly ? "&readonly" : ""}`);
       await page.waitForSelector(".cm-content");
@@ -517,6 +589,7 @@ for (const readOnly of [false, true])
       await copy.waitFor({ state: "attached" });
       expect(await copy.boundingBox()).toBeNull();
       if (!readOnly) {
+        await page.locator('.cm-content[contenteditable="true"]').waitFor();
         await page.locator(".cm-content").focus();
         await page.keyboard.press("Control+End");
         await page.keyboard.type(" Zuletzt getippt.");

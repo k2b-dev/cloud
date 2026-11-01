@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-10-19
+updated: 2026-10-26
 ---
 
 # Run Cloud Login
@@ -27,7 +27,8 @@ Decide [Action approvals](/en/docs/identity/approvals) in Cloud.
 Cloud Login ships with every Cloud release as `ghcr.io/k2b-dev/cloud-pwa-auth:vX.Y.Z`.
 Pin the digest from the release's `release.json` in your deployment; see
 [Release process](/en/docs/contributing/release-process). The image
-supports AMD64 and ARM64, listens on port 3000, and exposes `/health`.
+supports `linux/amd64` only, listens on port 3000, and exposes `/health`.
+On ARM hosts, [build from source or keep an earlier ARM64 release](./build-and-deploy.md#container-architectures).
 Without push configuration it runs without a database, volume, Cloud
 credentials or runtime dependencies. [Push notifications](#send-push-notifications)
 additionally need Postgres and NATS JetStream.
@@ -63,7 +64,7 @@ Changing either origin requires reviewing the existing pairings.
 
 ## Send push notifications
 
-Push notifications are optional. They only wake the phone: the app still loads
+Push notifications are optional. They only wake the device: the app still loads
 every request through the signed Cloud connection, and approving still needs
 the code comparison. Without push, everything works as before; users open the
 app to see pending requests.
@@ -97,7 +98,7 @@ when the private key does not match the public key. Several replicas can run
 at once: they share the database and the NATS queue. See the
 [configuration reference](./configuration.md#application-pwa-auth).
 
-Changing the private key invalidates every phone's subscription. Users then
+Changing the private key invalidates every device's subscription. Users then
 reconnect under **Notifications**. Back up the key with your other secrets.
 
 ### Network and data
@@ -108,14 +109,14 @@ iPhone, iPad), `updates.push.services.mozilla.com` (Firefox) and
 `*.notify.windows.com`. It only connects to public addresses. Each Cloud needs
 outbound HTTPS to the Cloud Login origin.
 
-`cloud_login.push_subscriptions` stores one row per phone: the push
+`cloud_login.push_subscriptions` stores one row per device: the push
 endpoint and its public encryption keys, a SHA-256 hash of the push token,
 creation time, last successful delivery and a failure count. It stores no
 Cloud, account or request data. `cloud_login.push_rate_limits` holds short-lived
 counters keyed by hashes; old windows are removed every minute.
 
-A notification is encrypted for the phone (RFC 8291) and contains only the
-Cloud origin and an opaque request reference. The phone shows
+A notification is encrypted for the device (RFC 8291) and contains only the
+Cloud origin and an opaque request reference. The device shows
 “Sign-in request for cloud.example.org”; codes, secrets and account names
 never pass through Cloud Login's server or the push service.
 
@@ -128,7 +129,7 @@ seconds; a message that still fails lands in the queue's dead-letter store
 and increments the subscription's failure count. A push service answer of 404
 or 410 deletes the subscription, so the next notification for its token
 answers 410 and the Cloud forgets the token. The same sign-in request wakes a
-phone once, however often a Cloud retries.
+device once, however often a Cloud retries.
 
 | Limit | Value |
 | --- | --- |
@@ -160,7 +161,7 @@ Actions use a separate Web Push topic, so an Action wake-up cannot replace an
 undelivered sign-in wake-up. Bodies without `kind` keep the original sign-in
 message and topic.
 
-Anyone holding a push token can make that phone show a sign-in or Action notification,
+Anyone holding a push token can make that device show a sign-in or Action notification,
 up to its rate limit, but cannot read or approve anything. The app hands its
 token only to the Clouds it is paired with, through each Cloud's signed device
 channel, and again whenever the token changes. Revoking a device in Cloud or
@@ -171,8 +172,8 @@ revoke it there.
 ## Protect the app
 
 Cloud Login opens directly and never asks you to set an app PIN. Anyone who
-can open it on an unlocked phone can approve sign-ins and Actions. Protect the
-phone with its own screen lock.
+can open it on an unlocked device can approve sign-ins and Actions. Protect the
+device with its own screen lock.
 
 Device credentials are encrypted in browser storage, but the key is stored
 alongside them. Copied browser data is a full credential. After suspected
@@ -197,14 +198,17 @@ them. Nothing is deleted automatically.
 
 On your own Cloud profile page, open **Sign-in → Paired devices → Pair a device**.
 Copy the link into **Add Cloud** in Cloud Login, open the link on the same device,
-or choose **Scan QR code** to scan inside Cloud Login. The phone's camera can
+or choose **Scan QR code** to scan inside Cloud Login. The device's camera can
 also open the link. All paths carry the same temporary link.
 
 Invalid pasted links remain editable. The app distinguishes expired links from
 links intended for another app origin. After you trust the Cloud, progress is
 shown while connecting and pairing. Network requests time out after 30 seconds.
-If a claim may already have reached Cloud, the app checks its status without
-resending it. You can use another link after an error.
+If a claim may already have reached Cloud, the app checks its status first.
+It retries the claim with the saved key only when Cloud still reports it as
+pending. **Retry pairing** checks a saved enrollment after an interruption;
+before enrollment starts, choose **Trust Cloud and pair** again. **Use another
+link** starts over after an error.
 The PWA removes its fragment from browser history before contacting the Cloud.
 
 The in-app scanner requests camera access only after a click. Its images stay
@@ -213,15 +217,60 @@ cannot start, the app says why: access is off, no camera was found, or the
 camera is busy, most often because another app uses it. Paste the link instead.
 Scanning never skips issuer consent or confirmation.
 
-Check the Cloud address before trusting it. Choose an account label for this
-device and a device name, compare the code in both windows, and confirm in the
-original Cloud session. Once Cloud confirms, choose **Both codes match** in
-Cloud Login to finish pairing. The local label is user-chosen, not verified account metadata.
+Check the Cloud address before trusting it. Cloud suggests an account label,
+and your browser suggests a device name. Both fields are editable. Compare
+the code in both windows and confirm in the original Cloud session. Once
+Cloud confirms, choose **Both codes match** in Cloud Login to finish pairing.
+The local label is not verified account metadata.
 
-If the pairing dialog closes while you switch to the Cloud window, paste the
-same unexpired link again to reuse the stored key. Pairing links expire after
-five minutes. If the link expires, start again in Cloud and revoke any
-previously confirmed device you can no longer use.
+Only **Close** or the X closes the pairing dialog. Tapping outside, dragging
+down or pressing Escape does not close it. Escape is disabled throughout the
+flow so its meaning does not change between steps. Switching apps pauses
+requests; returning resumes status checks. Connection failures stay visible
+and offer **Retry pairing**. If the page reloads or closes, open **Add Cloud**:
+it reports an unfinished saved pairing. Paste the same link to reuse its key
+and names; the link itself is never stored. Links expire after five minutes;
+a claimed pairing can wait longer for approval on another device. If Cloud
+reports expiry, start again there and revoke any previously confirmed device
+you can no longer use.
+
+### Suggest a Cloud label
+
+In Cloud's administration settings, set **Name in Cloud Login**
+(`user.app_approval.label`). Empty uses the application display name (`app.name`),
+whose default is **My App**. New pairing links carry the suggestion, shortened
+to the label field's 80 characters. People can change it before pairing.
+Changing either setting leaves existing connections and saved enrollments
+unchanged.
+
+**Upgrade:** update the separately hosted Cloud Login app before updating
+Cloud. Close all its tabs and windows so the service worker can activate,
+then reopen it. Older authenticator clients with a strict payload parser must
+accept the optional `label` field before they read new pairing links. The
+updated app also accepts links from earlier Clouds without a label.
+
+### What a browser can suggest about this device
+
+- Android Chromium browsers can return `model` and `platformVersion` through
+  `navigator.userAgentData.getHighEntropyValues()`. A model may be a name such
+  as **Pixel 8**, a manufacturer code such as **SM-S911B**, or empty. Cloud
+  Login uses the reported value without guessing a marketing name. If hints
+  are unavailable or refused, it uses **Android**, with the reported version
+  when available.
+- Safari on iPhone and iPad does not implement User-Agent Client Hints and
+  does not expose the exact hardware model or the personal name from Settings.
+  Cloud Login suggests **iPhone** or **iPad** and adds the iOS/iPadOS version
+  only when the user-agent explicitly reports it. That version may be frozen
+  or reduced by the browser; it is not a verified OS version. A desktop-mode
+  iPad reports a Mac user-agent: the app uses its Mac platform plus multitouch
+  capability as an iPad suggestion and never labels the reported Mac version
+  as iPadOS. This is a heuristic, not proof of the device type.
+- Desktop browsers get a suggestion such as **Firefox on macOS**. All names
+  remain editable. No canvas, WebGL, screen-size model lookup, hardware
+  fingerprinting or external device database is used.
+
+Sources: [MDN: getHighEntropyValues](https://developer.mozilla.org/en-US/docs/Web/API/NavigatorUAData/getHighEntropyValues)
+and [WebKit: desktop-class browsing on iPad](https://webkit.org/blog/9674/new-webkit-features-in-safari-13/#desktop-class-browsing-on-ipad).
 
 ## Manage connected accounts
 
@@ -325,7 +374,7 @@ Approvals need an internet connection. Before making the app available to your
 organization, check camera access, installation, notifications and switching
 between Cloud and the app on the devices and browsers you support.
 
-On Android, tell people to install from Chrome. On Samsung phones, Samsung
+On Android, tell people to install from Chrome. On Samsung devices, Samsung
 Internet builds its own app package, which Android 14 and later may block as
 built for an older Android version. The manifest, icons and headers of this
 origin neither cause nor prevent that warning. The app's installation guide
@@ -354,7 +403,7 @@ Cloud the next time it is open, and to newly paired Clouds right after
 pairing. Clouds without push support keep working without notifications.
 Tapping a notification opens Cloud Login, or focuses it, and shows that
 request first once it appears in the Cloud's inbox. Notifications are not guaranteed:
-the phone, its battery saver or the push service may delay or drop them.
+the device, its battery saver or the push service may delay or drop them.
 
 Action notifications say **Approval requested on cloud.example.org** and
 **Open Cloud Login to review it.** They name only the Cloud host, without app

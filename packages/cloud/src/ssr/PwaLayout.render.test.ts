@@ -8,7 +8,9 @@ import { fromJSON } from "seroval";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import * as watcher from "../_internal/runtime-watcher";
 import type { RuntimeAppMeta } from "../contracts/app";
+import * as builds from "../contracts/pwa-builds";
 import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
@@ -113,6 +115,7 @@ const page = ssr<AuthContext>(
 );
 
 const server = new Hono<AuthContext>()
+  .onError((_, c) => c.text("Render failed", 500))
   .use("*", async (c, next) => {
     c.set("runtime" as never, { apps } satisfies RuntimeContext as never);
     c.set("settings" as never, { app: { name: "Example Cloud" } } as never);
@@ -122,6 +125,13 @@ const server = new Hono<AuthContext>()
   .get("/pwa/inventory/:id", auth.requireRole("user", ssr.pwaAccess), auth.requireUser(ssr.pwaAccess), ...page)
   .get("/pwa/admin-only", auth.requireRole("admin", ssr.pwaAccess), (c) => c.text("admin handler"))
   .get("/pwa/open", auth.requireRole("*"), ...page)
+  .get(
+    "/pwa/render-fails",
+    auth.requireRole("user", ssr.pwaAccess),
+    ...ssr<AuthContext>(() => () => {
+      throw new Error("Render failure fixture");
+    }),
+  )
   .get("/pwa/missing", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "pwa" }));
 
 /** Only for parsing the HTML: the SSR render itself runs without browser globals. */
@@ -196,6 +206,44 @@ describe("ssr.pwaAccess", () => {
 });
 
 describe("PwaLayout", () => {
+  test("compares the renderer's actual build and Core shared assets, including on error pages", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const own = spyOn(builds, "pwaBuild").mockReturnValue("rendered-build");
+    const registered = spyOn(watcher, "registeredPwaBuilds").mockReturnValue({
+      inventory: "registry-can-already-be-newer",
+      core: "core-rendered",
+    });
+    try {
+      for (const path of ["/pwa/inventory", "/pwa/missing"]) {
+        const { document } = await render(path);
+        expect(islandProps(document, "PwaRuntime.island.tsx")).toMatchObject({
+          builds: { inventory: "rendered-build", core: "core-rendered" },
+        });
+      }
+    } finally {
+      own.mockRestore();
+      registered.mockRestore();
+    }
+  });
+  test("remembers only successful signed-in pages, including the query and excluding bounce markers", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const { response } = await render("/pwa/inventory/42?view=mine&pwa_launch=1");
+    const cookie = response.headers.getSetCookie().find((value) => value.startsWith("pwa_last_address="))!;
+    expect(cookie).toContain("pwa_last_address=%2Fpwa%2Finventory%2F42%3Fview%3Dmine;");
+    for (const attribute of ["Path=/pwa/", "Secure", "SameSite=Lax"]) expect(cookie).toContain(attribute);
+    expect(islandProps((await render("/pwa/missing")).document, "PwaRuntime.island.tsx")).toMatchObject({ rememberAddress: undefined });
+    expect((await render("/pwa/missing")).response.headers.getSetCookie().some((value) => value.startsWith("pwa_last_address="))).toBe(
+      false,
+    );
+    const failed = await server.request("/pwa/render-fails", { headers: { Cookie: "pwa_session=test-session" } });
+    expect(failed.status).toBe(500);
+    expect(failed.headers.getSetCookie().some((value) => value.startsWith("pwa_last_address="))).toBe(false);
+    tokenSpy.mockReturnValue(null);
+    sessionSpy.mockResolvedValue(null);
+    expect((await render("/pwa/open")).response.headers.getSetCookie().some((value) => value.startsWith("pwa_last_address="))).toBe(false);
+  });
   test("titles the page and the document, and passes back and actions to the header", async () => {
     signIn("app");
     apps = [shell, part("inventory", "Inventory")];
@@ -220,6 +268,29 @@ describe("PwaLayout", () => {
     ]);
     expect(document.querySelector(".k2b-tab-bar")?.getAttribute("aria-label")).toBe("App");
     expect(document.querySelectorAll(".k2b-tab-bar a > span.k2b-truncate-fade").length).toBe(4);
+  });
+
+  test("a part's badge calls for attention in the sidebar and on its tab; a summary's count stays quiet in the sidebar", async () => {
+    signIn("app");
+    apps = [
+      shell,
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread", summary: "/pwa/alpha/unread" } }),
+      part("beta", "Beta", { pwa: { href: "/pwa/beta", summary: "/pwa/beta/summary" } }),
+      part("inventory", "Inventory"),
+    ];
+    const { document } = await render("/pwa/inventory");
+    const island = (scope: Element | null) => scope?.querySelector('solid-island[data-file="PwaPartCount.island.tsx"]');
+    const props = (scope: Element | null) => island(scope)?.getAttribute("data-props") ?? "";
+    const sidebar = (id: string) => document.querySelector(`.k2b-mobile-shell__sidebar a[data-tab="${id}"]`);
+    const tab = (id: string) => document.querySelector(`.k2b-tab-bar a[data-tab="${id}"]`);
+    expect(props(sidebar("alpha"))).toContain("/pwa/alpha/unread");
+    expect(props(sidebar("alpha"))).toContain("attention");
+    expect(props(tab("alpha")?.querySelector(".k2b-tab-bar__badge") ?? null)).toContain("attention");
+    expect(props(sidebar("beta"))).toContain("/pwa/beta/summary");
+    expect(props(sidebar("beta"))).not.toContain("attention");
+    expect(tab("beta")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
+    expect(island(sidebar("inventory"))).toBeNull();
+    expect(tab("inventory")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
   });
 
   test("marks Start, which lists every part, for a part without its own tab", async () => {

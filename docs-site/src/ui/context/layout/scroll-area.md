@@ -38,6 +38,13 @@ at 60dvh, including any padding. Loading, empty, error, and populated states
 keep the same height; longer content scrolls within it. Sidebar previews expose
 the same setting as `preview.viewportSize`. Omit it for layout-owned sizing.
 
+Set `inset` when the scroll area fills a workspace column with rows, such as a
+message list in a `MainPane`. It then keeps 0.5 rem inside both side edges,
+like a level body: with a mouse, the end space is a fixed 0.5 rem scroll
+track that is there before anything overflows, so a classic scrollbar never
+makes one side wider than the other and nothing moves when the list grows. Do not
+add your own horizontal padding next to it.
+
 Pass `scrollPreserveKey` when enhanced navigation should restore this
 scrollport's position. Use a stable purpose-based key rather than an item id.
 
@@ -53,6 +60,12 @@ cursor into view must keep the cursor line out of them: Notebooks declares
 the fades as `scroll-padding-block` on the scroll area and passes the computed
 padding to CodeMirror's `EditorView.scrollMargins`. Do not add spacer lines or
 scroll manually.
+
+Scrolling updates the fades at once; changes of the content update them once
+per frame, so a list that changes many rows does not lay the page out for each
+one. A reader that needs the current fades in the same frame as a content
+change, such as those scroll margins, calls `measureScrollFade(element)` from
+`@k2b/ui` first.
 
 `DetailPanel` also integrates its gutter with the surrounding workspace inset;
 that panel-specific geometry is not part of `ScrollArea`.

@@ -569,7 +569,7 @@ test("destructive commands require confirmation before any request", async () =>
     ["delete", "wiki01"],
     ["rm", "note01"],
     ["lock", "note01"],
-    ["comments", "delete", "note01", "cmt001"],
+    ["discussion", "delete", "note01", "cmt001"],
     ["attachments", "delete", "wiki01", "att001"],
     ["api-keys", "revoke", "wiki01", "key001"],
   ]) {
@@ -755,7 +755,7 @@ test("adds a comment through resolved public notebook and note ids", async () =>
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "notebooks",
-    "comments",
+    "discussion",
     "add",
     "note01",
     "--content",
@@ -845,7 +845,7 @@ test("a hash conflict explains that the note changed elsewhere", async () => {
 
 test("help lists the new command set in English and German", async () => {
   const english = await runCli("http://127.0.0.1:9", ["notebooks", "help"]);
-  for (const name of ["ls", "tree", "cat", "write", "edit", "mv", "rm", "pull", "attach", "versions", "comments"])
+  for (const name of ["ls", "tree", "cat", "write", "edit", "mv", "rm", "pull", "attach", "versions", "comments", "discussion"])
     expect(english.stdout).toContain(name);
   expect(english.stdout).not.toContain("create-note");
   const german = await runCli("http://127.0.0.1:9", ["--locale", "de", "notebooks", "help"]);
@@ -969,4 +969,177 @@ test("ls and tree display hand order and numeric alphabetical order", async () =
     expect(hand.indexOf('"ten001"')).toBeLessThan(hand.indexOf('"two001"'));
     for (const note of outline.filter((note) => note.parentId === null)) note.position = 0;
   }
+});
+
+test("every annotation command uses the canonical note routes, including reply mutations", async () => {
+  const annotationId = "11111111-1111-4111-8111-111111111111";
+  const replyId = "22222222-2222-4222-8222-222222222222";
+  const operationId = "33333333-3333-4333-8333-333333333333";
+  const requests: Array<{ method: string; path: string; body: unknown }> = [];
+  const base = "/api/notebooks/notes/note01/annotations";
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/notebooks/notes/note01") return Response.json(noteFixture);
+      if (!path.startsWith(base)) return Response.json({ message: `Unexpected route ${path}` }, { status: 500 });
+      requests.push({ method: request.method, path, body: request.headers.has("content-type") ? await request.json() : null });
+      return Response.json(request.method === "GET" ? { items: [], nextCursor: null } : { id: annotationId });
+    },
+  });
+  servers.push(server);
+  const cases: Array<{ args: string[]; method: string; suffix: string; body?: unknown }> = [
+    { args: ["list", "note01"], method: "GET", suffix: "" },
+    { args: ["list", "note01", "--annotation", annotationId], method: "GET", suffix: `/${annotationId}` },
+    { args: ["list", "note01", "--annotation", annotationId, "--replies"], method: "GET", suffix: `/${annotationId}/replies` },
+    {
+      args: ["add", "note01", "--quote", "target", "--content", "Review", "--idempotency-key", "create"],
+      method: "POST",
+      suffix: "",
+      body: { quote: "target", body: "Review", prefix: "", suffix: "", idempotencyKey: "create" },
+    },
+    {
+      args: ["reply", "note01", annotationId, "--content", "Reply", "--idempotency-key", "reply"],
+      method: "POST",
+      suffix: `/${annotationId}/replies`,
+      body: { body: "Reply", idempotencyKey: "reply" },
+    },
+    { args: ["edit", "note01", annotationId, "--content", "Edit"], method: "PATCH", suffix: `/${annotationId}`, body: { body: "Edit" } },
+    {
+      args: ["edit", "note01", annotationId, "--reply", replyId, "--content", "Edit reply"],
+      method: "PATCH",
+      suffix: `/${annotationId}/replies/${replyId}`,
+      body: { body: "Edit reply" },
+    },
+    { args: ["delete", "note01", annotationId, "--yes"], method: "DELETE", suffix: `/${annotationId}` },
+    {
+      args: ["delete", "note01", annotationId, "--reply", replyId, "--yes"],
+      method: "DELETE",
+      suffix: `/${annotationId}/replies/${replyId}`,
+    },
+    { args: ["restore", "note01", annotationId], method: "POST", suffix: `/${annotationId}/restore` },
+    {
+      args: ["restore", "note01", annotationId, "--reply", replyId],
+      method: "POST",
+      suffix: `/${annotationId}/replies/${replyId}/restore`,
+    },
+    { args: ["reject", "note01", annotationId], method: "POST", suffix: `/${annotationId}/reject`, body: { rejected: true } },
+    {
+      args: ["reject", "note01", annotationId, "--reply", replyId, "--undo"],
+      method: "POST",
+      suffix: `/${annotationId}/reject`,
+      body: { replyId, rejected: false },
+    },
+    {
+      args: ["reply", "note01", annotationId, "--suggestion", "replacement", "--idempotency-key", "reply-suggestion"],
+      method: "POST",
+      suffix: `/${annotationId}/replies`,
+      body: { body: "", suggestion: "replacement", idempotencyKey: "reply-suggestion" },
+    },
+    {
+      args: ["add", "note01", "--quote", "target", "--occurrence", "2", "--suggestion", "", "--idempotency-key", "occurrence"],
+      method: "POST",
+      suffix: "",
+      body: { quote: "target", body: "", prefix: "", suffix: "", occurrence: 2, suggestion: "", idempotencyKey: "occurrence" },
+    },
+    {
+      args: ["accept", "note01", annotationId, "--reply", replyId, "--operation-id", operationId, "--yes"],
+      method: "POST",
+      suffix: `/${annotationId}/accept`,
+      body: { replyId, operationId },
+    },
+    { args: ["resolve", "note01", annotationId], method: "POST", suffix: `/${annotationId}/resolve`, body: { resolved: true } },
+    { args: ["reopen", "note01", annotationId], method: "POST", suffix: `/${annotationId}/resolve`, body: { resolved: false } },
+    {
+      args: ["accept", "note01", annotationId, "--operation-id", operationId, "--yes"],
+      method: "POST",
+      suffix: `/${annotationId}/accept`,
+      body: { operationId },
+    },
+    {
+      args: ["undo", "note01", annotationId, "--operation-id", operationId, "--yes"],
+      method: "POST",
+      suffix: `/${annotationId}/undo-accept`,
+      body: { operationId },
+    },
+  ];
+  for (const entry of cases) {
+    const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "comments", ...entry.args]);
+    expect({ command: entry.args[0], code: result.exitCode, error: result.stderr }).toEqual({ command: entry.args[0], code: 0, error: "" });
+  }
+  expect(requests).toEqual(cases.map(({ method, suffix, body }) => ({ method, path: base + suffix, body: body ?? null })));
+}, 60_000);
+
+test("annotation list forwards root filters and reply can read a replacement file", async () => {
+  const list = commandContext(["comments", "list", "note01"], { state: "open", author: "me" });
+  const paths: string[] = [];
+  list.ctx.fetch = async (path) => {
+    paths.push(path);
+    return Response.json(path.includes("/annotations") ? { items: [], nextCursor: null } : noteFixture);
+  };
+  await notebooksCli.run(list.ctx);
+  expect(paths).toContain("/api/notebooks/notes/note01/annotations?state=open&author=me");
+  const file = join(cliHome, "replacement.md");
+  await Bun.write(file, "Replacement\nwith context");
+  const reply = commandContext(["comments", "reply", "note01", "11111111-1111-4111-8111-111111111111"], {
+    "suggestion-from": file,
+    "idempotency-key": "from-file",
+  });
+  await notebooksCli.run(reply.ctx);
+  expect(reply.writes).toEqual([{ body: "", suggestion: "Replacement\nwith context", idempotencyKey: "from-file" }]);
+});
+
+test("annotation help tells agents to propose a reply suggestion and await the person's decision", async () => {
+  const help = await runCli("http://127.0.0.1:9", ["notebooks", "comments", "accept", "--help"]);
+  expect(help.exitCode).toBe(0);
+  expect(help.stdout).toContain("never accept your own suggestion");
+  expect(help.stdout).toContain("--reply");
+});
+
+test("comments add without a quote points to the page discussion and sends nothing", async () => {
+  // A former page discussion call: no --quote and no --idempotency-key.
+  const result = await runCli("http://127.0.0.1:9", ["notebooks", "comments", "add", "note01", "--content", "Looks good"]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("needs --quote");
+  expect(result.stderr).toContain("cld notebooks discussion add note01");
+});
+
+test("human annotation lists print thread blocks in passage order", async () => {
+  const listing = commandContext(["comments", "list", "note01"]);
+  listing.ctx.options.output = "text";
+  const item = {
+    state: "open",
+    author: { name: "Mara Keller" },
+    via: null,
+    createdAt: "2026-10-26T14:02:00.000Z",
+    headingPath: [],
+    quote: "passage",
+    prefix: "Before ",
+    suffix: " after",
+    body: "Comment",
+    suggestion: null,
+    stateBy: null,
+    suggestionStateBy: null,
+    replies: [],
+    repliesNextCursor: null,
+    orphan: false,
+  };
+  listing.ctx.fetch = async (path) =>
+    Response.json(
+      path.includes("/annotations")
+        ? {
+            text: "Before passage after",
+            items: [
+              { ...item, id: "later", from: 10 },
+              { ...item, id: "earlier", from: 1 },
+            ],
+            nextCursor: null,
+          }
+        : noteFixture,
+    );
+  await notebooksCli.run(listing.ctx);
+  expect(listing.lines).toHaveLength(2);
+  expect(listing.lines[0]).toStartWith("earlier  open  Mara Keller");
+  expect(listing.lines[1]).toStartWith("later  open  Mara Keller");
+  expect(listing.lines[0]).toContain("Before [passage] after");
 });

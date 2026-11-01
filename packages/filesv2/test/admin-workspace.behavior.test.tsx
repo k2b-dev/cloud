@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { createComponent, createRoot, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -11,8 +11,10 @@ if (!isServer) {
     new Promise<Response>((resolve) => requests.push({ kind, input: structuredClone(input), signal: options.init.signal, resolve }));
   mock.module("../src/api/client", () => ({
     apiClient: {
+      activity: { $get: request("activity") },
       admin: {
         $get: request("inventory"),
+        activity: { bases: { $get: request("activity-bases") } },
         operations: { ":id": { retry: { $post: request("retry") } } },
         configuration: { $put: request("configuration") },
         root: { refresh: { $post: request("root-refresh") } },
@@ -138,6 +140,59 @@ describe("Filesv2 admin workspace", () => {
     expect(dom.root.textContent).not.toContain("Storage could not be loaded");
   });
 
+  test("Activity opens on the approved range across all storage, keeps its filters in the address, and Back reloads them", async () => {
+    setSystemTime(new Date("2026-10-20T12:30:00.000Z"));
+    try {
+      const { dom, tab } = await setup();
+      tab("Activity").click();
+      await flush();
+      expect(requests.map((request) => request.kind)).toEqual(["inventory"]);
+      requests[0]!.resolve(Response.json(result));
+      await flush();
+      expect(requests[1]!.kind).toBe("activity-bases");
+      requests[1]!.resolve(Response.json({ items: [], next: null }));
+      await flush();
+      expect(dom.window.location.pathname + dom.window.location.search).toBe("/admin/filesv2?view=activity&when=30");
+      expect(requests[2]).toMatchObject({ kind: "activity", input: { query: { from: "2026-09-20T12:30:00.000Z" } } });
+      requests[2]!.resolve(
+        Response.json({
+          items: [],
+          next: null,
+          visibleCount: 0,
+          batches: [],
+          exhausted: true,
+          scanLimitReached: false,
+          searchLimitReached: false,
+        }),
+      );
+      await flush();
+      expect(dom.root.textContent).toContain("No entries for these filters");
+
+      // A search changes only the address and the list; the administration snapshot is not reloaded.
+      const search = dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+      search.value = "Angebote 2025";
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+      search.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event);
+      await flush();
+      expect(dom.window.location.search).toBe("?view=activity&when=30&q=Angebote+2025");
+      expect(requests.slice(3).map((request) => request.kind)).toEqual(["activity"]);
+      expect(requests[3]).toMatchObject({ input: { query: { from: "2026-09-20T12:30:00.000Z", q: "Angebote 2025" } } });
+
+      dom.window.history.replaceState(null, "", "/admin/filesv2?view=activity&when=30");
+      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+      await flush();
+      expect(requests[4]!.kind).toBe("inventory");
+      requests[4]!.resolve(Response.json(result));
+      await flush();
+      requests[5]!.resolve(Response.json({ items: [], next: null }));
+      await flush();
+      expect(dom.root.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("");
+      expect(requests.at(-1)).toMatchObject({ kind: "activity", input: { query: { from: "2026-09-20T12:30:00.000Z" } } });
+    } finally {
+      setSystemTime();
+    }
+  });
+
   test("disabled archives render the area explanation without issuing a forbidden browse request", async () => {
     const { dom, tab } = await setup();
     tab("Archive").click();
@@ -234,11 +289,13 @@ describe("Filesv2 admin workspace", () => {
     expect(dom.window.location.search).toContain("q=alice");
   });
 
-  test("settings have one local automation pair, fixed dirty footer, discard and guarded navigation", async () => {
+  test("settings have the local automation pair and FreeIPA home creation, fixed dirty footer, discard and guarded navigation", async () => {
     const { dom, tab } = await setup("settings");
     await flush();
-    expect(dom.root.querySelectorAll('[role="switch"]').length).toBe(4);
-    expect(dom.root.textContent).toContain("FreeIPA directories are created and archived only through explicit administrative actions");
+    // Two area switches, the local automation pair, and automatic FreeIPA homes.
+    expect(dom.root.querySelectorAll('[role="switch"]').length).toBe(5);
+    expect(dom.root.textContent).toContain("Create FreeIPA homes automatically");
+    expect(dom.root.textContent).toContain("In FreeIPA, group directories and archiving remain explicit administrative actions.");
     const input = dom.root.querySelector<HTMLInputElement>('input[name="filegate-url"]')!;
     input.value = "http://changed:4000";
     input.dispatchEvent(new Event("input", { bubbles: true }));

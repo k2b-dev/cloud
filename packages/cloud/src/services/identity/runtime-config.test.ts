@@ -1,6 +1,13 @@
 import { describe, expect, jest, spyOn, test } from "bun:test";
+import { env } from "../../config/env";
 import * as settings from "../settings";
-import { CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH, IDENTITY_REFRESH_TIMEOUT_MS } from "./constants";
+import {
+  CLOUD_INTERNAL_OAUTH_JWKS_PATH,
+  CLOUD_INVOCATION_JWKS_PATH,
+  CLOUD_OAUTH_JWKS_PATH,
+  CLOUD_SESSION_JWKS_PATH,
+  IDENTITY_REFRESH_TIMEOUT_MS,
+} from "./constants";
 import {
   getIdentityRuntimeConfig,
   invalidateIdentityRuntimeConfig,
@@ -43,12 +50,8 @@ describe("identity JWKS transport", () => {
   });
 
   test("rejects non-HTTP transports", () => {
-    expect(() => resolveSessionJwksUrl("https://cloud.example", "file:///tmp/core")).toThrow(
-      "CLOUD_IDENTITY_JWKS_ORIGIN must use http or https",
-    );
-    expect(() => resolveInvocationJwksUrl("https://cloud.example", "file:///tmp/core")).toThrow(
-      "CLOUD_IDENTITY_JWKS_ORIGIN must use http or https",
-    );
+    expect(() => resolveSessionJwksUrl("https://cloud.example", "file:///tmp/core")).toThrow("Core JWKS origin");
+    expect(() => resolveInvocationJwksUrl("https://cloud.example", "file:///tmp/core")).toThrow("Core JWKS origin");
   });
 });
 
@@ -68,4 +71,35 @@ describe("OAuth JWKS transport", () => {
       "CLOUD_OAUTH_JWKS_ORIGIN must use http or https",
     );
   });
+});
+
+test("Core JWKS derives from Core origin while the deprecated explicit override still wins", () => {
+  const originalCore = Object.getOwnPropertyDescriptor(env, "CLOUD_CORE_INTERNAL_ORIGIN")!;
+  const originalLegacy = Object.getOwnPropertyDescriptor(env, "CLOUD_IDENTITY_JWKS_ORIGIN")!;
+  Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: "http://core:3000", configurable: true });
+  Object.defineProperty(env, "CLOUD_IDENTITY_JWKS_ORIGIN", { value: undefined, configurable: true });
+  try {
+    expect(resolveSessionJwksUrl("https://cloud.example").origin).toBe("http://core:3000");
+    expect(resolveInvocationJwksUrl("https://cloud.example").origin).toBe("http://core:3000");
+    Object.defineProperty(env, "CLOUD_IDENTITY_JWKS_ORIGIN", { value: "http://legacy:3000", configurable: true });
+    expect(resolveSessionJwksUrl("https://cloud.example").origin).toBe("http://legacy:3000");
+  } finally {
+    Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", originalCore);
+    Object.defineProperty(env, "CLOUD_IDENTITY_JWKS_ORIGIN", originalLegacy);
+  }
+});
+
+test("OAuth JWKS uses Core's internal endpoint, honors the deprecated override and keeps the public issuer", () => {
+  const core = Object.getOwnPropertyDescriptor(env, "CLOUD_CORE_INTERNAL_ORIGIN")!;
+  const legacy = Object.getOwnPropertyDescriptor(env, "CLOUD_OAUTH_JWKS_ORIGIN")!;
+  Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: "http://core:3000", configurable: true });
+  Object.defineProperty(env, "CLOUD_OAUTH_JWKS_ORIGIN", { value: undefined, configurable: true });
+  try {
+    expect(resolveOAuthJwksUrl("https://cloud.example").href).toBe(`http://core:3000${CLOUD_INTERNAL_OAUTH_JWKS_PATH}`);
+    Object.defineProperty(env, "CLOUD_OAUTH_JWKS_ORIGIN", { value: "http://legacy-oauth:3000", configurable: true });
+    expect(resolveOAuthJwksUrl("https://cloud.example").href).toBe(`http://legacy-oauth:3000${CLOUD_OAUTH_JWKS_PATH}`);
+  } finally {
+    Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", core);
+    Object.defineProperty(env, "CLOUD_OAUTH_JWKS_ORIGIN", legacy);
+  }
 });

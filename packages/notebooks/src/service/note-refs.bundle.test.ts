@@ -25,10 +25,18 @@ describe("minified notebooks bundle", () => {
   }, 120_000);
 
   test("the minified reindex reaches the database", async () => {
-    const bundle = await Bun.build({ entrypoints: [resolve(import.meta.dir, "note-refs.ts")], outdir, target: "bun", minify: true });
+    // Platform start and the reindex share one bundle, so they share the platform client handles.
+    const source = join(outdir, "reindex-entry.ts");
+    await Bun.write(
+      source,
+      `export { reindexAll } from ${JSON.stringify(resolve(import.meta.dir, "note-refs.ts"))};
+export { initializePlatform } from ${JSON.stringify(Bun.resolveSync("@k2b/cloud/start", import.meta.dir))};`,
+    );
+    const bundle = await Bun.build({ entrypoints: [source], outdir, target: "bun", minify: true });
     expect(bundle.success, bundle.logs.join("\n")).toBe(true);
     const entry = bundle.outputs[0]!.path;
-    const script = `const { reindexAll } = await import(${JSON.stringify(entry)});
+    const script = `const { initializePlatform, reindexAll } = await import(${JSON.stringify(entry)});
+await initializePlatform({ appId: "notebooks", source: "env" });
 const error = await reindexAll().then(() => null, (error) => error);
 console.log(error?.name ?? "none");`;
     // A closed loopback port: the first query must fail to connect, not before it. The environment
@@ -36,7 +44,11 @@ console.log(error?.name ?? "none");`;
     // would replace DATABASE_URL with a configured test database.
     const run = Bun.spawn([process.execPath, "--no-env-file", "-e", script], {
       cwd: root,
-      env: { PATH: process.env.PATH, DATABASE_URL: "postgres://cloud:cloud@127.0.0.1:1/notebooks_bundle_test" },
+      env: {
+        PATH: process.env.PATH,
+        DATABASE_URL: "postgres://cloud:cloud@127.0.0.1:1/notebooks_bundle_test",
+        REDIS_URL: "redis://127.0.0.1:1",
+      },
       stdout: "pipe",
       stderr: "pipe",
     });

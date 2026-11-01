@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import type { RequestActor, ServiceAccount } from "@k2b/cloud/contracts";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { isStandaloneServiceAccountKind } from "@k2b/cloud/services";
-import { sql } from "bun";
 
 export type UserScope = {
   id: string;

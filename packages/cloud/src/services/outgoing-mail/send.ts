@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { MailMessage, MailRecord } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { cancelMailStreams, deleteMailObjects, uploadMailAttachments } from "./attachments";
 import {
   allowedMailProfile,

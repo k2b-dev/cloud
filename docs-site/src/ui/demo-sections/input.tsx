@@ -8,6 +8,10 @@ import {
   Checkbox,
   CheckboxCard,
   ChoiceChips,
+  ChoiceList,
+  ChoiceSlider,
+  ChoiceTiles,
+  ColorChoices,
   ColorInput,
   Combobox,
   type Completion,
@@ -21,6 +25,7 @@ import {
   FileDropzone,
   fileDropTarget,
   highlightSql,
+  IconChoices,
   IconInput,
   ImageCropper,
   type ImageCropState,
@@ -49,8 +54,10 @@ import {
   TagsInput,
   TextInput,
 } from "@k2b/ui";
+import { TextEditor } from "@k2b/ui/text-editor";
 import { createSignal, createUniqueId } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -1102,6 +1109,38 @@ const ComboboxDemo = () => (
   </DemoCard>
 );
 
+const streets = ["Frauenstraße 28", "Frauenstraße 2", "Frauengraben 28", "Münsterplatz 1"];
+const FreeTextComboboxDemo = () => {
+  const [street, setStreet] = createSignal("");
+  return (
+    <DemoCard
+      id="combobox-free-text"
+      chip={{ kind: "component", name: "Combobox", from: "@k2b/ui" }}
+      description="Free text: the query is the field's value. Results start after 3 characters, the first is active, Escape keeps the typed text, and a source line sits under the list."
+      code={`<Combobox freeText minQueryLength={3} autoHighlight={0} query={street} onQueryChange={setStreet} footer="Source" fetchData={searchStreets} onSelect={(o) => setStreet(o.label)} />`}
+    >
+      <Combobox
+        label="Street and number"
+        placeholder="Type a street…"
+        freeText
+        minQueryLength={3}
+        autoHighlight={0}
+        debounceMs={250}
+        query={street}
+        onQueryChange={setStreet}
+        empty="No matching street. Your own text is kept."
+        footer={<span>Example data</span>}
+        fetchData={async (query) =>
+          streets
+            .filter((name) => name.toLowerCase().includes(query.trim().toLowerCase()))
+            .map((name) => ({ id: name, label: name, description: "89073 Ulm", icon: "ti-map-pin" }))
+        }
+        onSelect={(option) => setStreet(option.label)}
+      />
+    </DemoCard>
+  );
+};
+
 const TagEditorDemo = () => {
   const [items, setItems] = createSignal<TagEditorItem[]>([
     { id: "platform", name: "Platform", color: "#0891b2" },
@@ -1185,6 +1224,49 @@ const TagEditorDemo = () => {
           emptyLabel="No tags available"
           noResultsLabel="No matching tags"
           clearable
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const choiceSliderOptions = [
+  { value: "draft", label: "Draft", description: "Quick and rough" },
+  { value: "standard", label: "Standard", description: "For most documents" },
+  { value: "print", label: "Print", disabledReason: "The printer is offline" },
+  { value: "archive", label: "Archive", description: "Highest quality, slowest" },
+];
+
+const ChoiceSliderDemo = () => {
+  const [value, setValue] = createSignal<string | null>("standard");
+  const [active, setActive] = createSignal<string | null>(null);
+  const label = () => choiceSliderOptions.find((option) => option.value === (active() ?? value()))?.label ?? "Custom";
+  return (
+    <DemoCard
+      id="choice-slider"
+      chip={{ kind: "component", name: "ChoiceSlider", from: "@k2b/ui" }}
+      description="A few named stops on one track. The line above it always shows the active stop's description; an unavailable stop stays visible, is skipped by dragging and arrow keys, and explains itself when someone reaches it."
+      code={`<ChoiceSlider
+  aria-label="Export quality"
+  options={[
+    { value: "draft", label: "Draft", description: "Quick and rough" },
+    { value: "standard", label: "Standard", description: "For most documents" },
+    { value: "print", label: "Print", disabledReason: "The printer is offline" },
+    { value: "archive", label: "Archive", description: "Highest quality, slowest" },
+  ]}
+  value={value}
+  onValueChange={setValue}
+  onActiveChange={setActive}
+/>`}
+    >
+      <div class="mx-auto grid w-full max-w-80 gap-1">
+        <p class="text-center text-base font-semibold text-(--k2b-action)">{label()}</p>
+        <ChoiceSlider
+          aria-label="Export quality"
+          options={choiceSliderOptions}
+          value={value}
+          onValueChange={setValue}
+          onActiveChange={setActive}
         />
       </div>
     </DemoCard>
@@ -1585,6 +1667,175 @@ const ChoiceChipsDemo = () => {
   );
 };
 
+const ChoiceListDemo = () => {
+  const [level, setLevel] = createSignal<string | null>("off");
+  const [duration, setDuration] = createSignal<string | null>("8h");
+  return (
+    <DemoCard
+      id="choice-list"
+      chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
+      description="A labeled radio group of rows, each with one sentence on its consequence. A quiet marker names the default, details open under the chosen row, and a save in progress shows a spinner without moving anything."
+      code={`<ChoiceList
+  label="Notifications"
+  value={level}
+  onValueChange={setLevel}
+  options={[
+    { value: "all", label: "All messages", description: "Every new message notifies you.", marker: "Default" },
+    { value: "mentions", label: "Mentions only", description: "Only when someone mentions you or replies to you." },
+    { value: "off", label: "Off", description: "No notifications." },
+  ]}
+  details={level() === "off" ? <ChoiceChips ... /> : undefined}
+/>`}
+    >
+      <div class="max-w-sm">
+        <ChoiceList
+          label="Notifications"
+          value={level}
+          onValueChange={setLevel}
+          options={[
+            { value: "all", label: "All messages", description: "Every new message notifies you.", marker: "Default" },
+            { value: "mentions", label: "Mentions only", description: "Only when someone mentions you or replies to you." },
+            { value: "off", label: "Off", description: "No notifications. Mentions stay in For you." },
+          ]}
+          details={
+            level() === "off" ? (
+              <ChoiceChips
+                aria-label="For how long"
+                value={duration}
+                onValueChange={setDuration}
+                options={[
+                  { value: "1h", label: "1 hour" },
+                  { value: "8h", label: "8 hours" },
+                  { value: "1w", label: "1 week" },
+                  { value: "always", label: "Until I change it" },
+                ]}
+              />
+            ) : undefined
+          }
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const shapePreview = (radius: string, fill: string) => (
+  <span style={{ display: "inline-block", width: "3rem", height: "3rem", "border-radius": radius, background: fill }} />
+);
+
+const ChoiceTilesDemo = () => {
+  const [shape, setShape] = createSignal<string | null>("round");
+  const [kind, setKind] = createSignal<string | null>("drawing");
+  return (
+    <DemoCard
+      id="choice-tiles"
+      chip={{ kind: "component", name: "ChoiceTiles", from: "@k2b/ui" }}
+      description="A labeled radio group of tiles with a preview. Choosing changes only fill and colour, so no tile moves; the row layout keeps a status line under every label and stacks on phones."
+      code={`<ChoiceTiles
+  label="Frame"
+  value={shape}
+  onValueChange={setShape}
+  options={[
+    { value: "round", label: "Round", visual: <RoundPreview /> },
+    { value: "square", label: "Square", visual: <SquarePreview /> },
+  ]}
+/>`}
+    >
+      <div class="flex flex-col gap-4">
+        <ChoiceTiles
+          aria-label="Kind of picture"
+          layout="row"
+          value={kind}
+          onValueChange={setKind}
+          options={[
+            { value: "photo", label: "Photo", visual: shapePreview("9999px", "#a7c7e7") },
+            { value: "drawing", label: "Drawing", visual: shapePreview("9999px", "#f5e6c6"), status: "Active" },
+            { value: "letters", label: "Letters", visual: shapePreview("9999px", "#dbe7fe") },
+          ]}
+        />
+        <ChoiceTiles
+          label="Frame"
+          value={shape}
+          onValueChange={setShape}
+          options={[
+            { value: "round", label: "Round", visual: shapePreview("9999px", "#d3efe1") },
+            { value: "soft", label: "Soft", visual: shapePreview("28%", "#d3efe1") },
+            { value: "square", label: "Square", visual: shapePreview("0.25rem", "#d3efe1") },
+          ]}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const IconChoicesDemo = () => {
+  const [icon, setIcon] = createSignal<string | null>("ti ti-report");
+  return (
+    <DemoCard
+      id="icon-choices"
+      chip={{ kind: "component", name: "IconChoices", from: "@k2b/ui" }}
+      description="A labeled radio group of a few named icons, such as the icon a template shows in a menu. Every icon carries its name; touch screens get 44 px buttons."
+      code={`<IconChoices
+  label="Icon"
+  value={icon}
+  onValueChange={setIcon}
+  options={[
+    { value: "ti ti-report", label: "Report", icon: "ti ti-report" },
+    { value: "ti ti-package", label: "Package", icon: "ti ti-package" },
+  ]}
+/>`}
+    >
+      <IconChoices
+        label="Icon"
+        value={icon}
+        onValueChange={setIcon}
+        options={[
+          { value: "ti ti-report", label: "Report", icon: "ti ti-report" },
+          { value: "ti ti-package", label: "Package", icon: "ti ti-package" },
+          { value: "ti ti-alert-triangle", label: "Warning", icon: "ti ti-alert-triangle" },
+          { value: "ti ti-truck", label: "Truck", icon: "ti ti-truck" },
+          { value: "ti ti-users", label: "People", icon: "ti ti-users" },
+          { value: "ti ti-coffee", label: "Coffee", icon: "ti ti-coffee" },
+          { value: "ti ti-receipt", label: "Receipt", icon: "ti ti-receipt" },
+        ]}
+      />
+    </DemoCard>
+  );
+};
+
+const ColorChoicesDemo = () => {
+  const [color, setColor] = createSignal<string | null>("teal");
+  return (
+    <DemoCard
+      id="color-choices"
+      chip={{ kind: "component", name: "ColorChoices", from: "@k2b/ui" }}
+      description="A labeled radio group of named colour swatches. Every swatch carries its name, so colour is never the only signal; touch screens get 44 px swatches."
+      code={`<ColorChoices
+  label="Background"
+  value={color}
+  onValueChange={setColor}
+  options={[
+    { value: "sky", label: "Sky", color: "#d7e8fb" },
+    { value: "teal", label: "Teal", color: "#15837f" },
+  ]}
+/>`}
+    >
+      <ColorChoices
+        label="Background"
+        value={color}
+        onValueChange={setColor}
+        options={[
+          { value: "sky", label: "Sky", color: "#d7e8fb" },
+          { value: "mint", label: "Mint", color: "#d3efe1" },
+          { value: "sand", label: "Sand", color: "#f5e6c6" },
+          { value: "rose", label: "Rose", color: "#f7dbe1" },
+          { value: "teal", label: "Teal", color: "#15837f" },
+          { value: "stone", label: "Stone", color: "#57534e" },
+        ]}
+      />
+    </DemoCard>
+  );
+};
+
 const EmojiPickerDemo = () => {
   const [recent, setRecent] = createSignal<readonly string[]>(["👍", "🎉", "☕"]);
   const [tone, setTone] = createSignal<EmojiSkinTone>(0);
@@ -1644,10 +1895,54 @@ const demos: DemoSection = {
       <EmojiPickerDemo />
     </DemoGrid>
   ),
+  dictation: () => (
+    <DemoGrid columns="one">
+      <DictationDemo />
+      <DictationHostDemo />
+    </DemoGrid>
+  ),
   "qr-scanner": () => <QrScannerDemo />,
   text: () => (
     <DemoGrid columns="one">
       <TextDemo />
+    </DemoGrid>
+  ),
+  "text-editor": () => (
+    <DemoGrid columns="one">
+      <DemoCard
+        id="text-editor"
+        chip={{ kind: "component", name: "TextEditor", from: "@k2b/ui/text-editor" }}
+        description="Click a cell to type. Tab moves to the next cell; Enter appends a row. This local example does not save text."
+        code={'<TextEditor label="Note" initialValue={markdown} maxLength={2_097_152} />'}
+      >
+        <TextEditor
+          label="Note"
+          initialValue={
+            "An **editable** table.\n\n| Item | Quantity |\n| --- | ---: |\n| Paper | 4 |\n| Ink | 2 |\n\nContinue writing here."
+          }
+          maxLength={2_097_152}
+        />
+      </DemoCard>
+      <DemoCard
+        chip={{ kind: "component", name: "TextEditor", from: "@k2b/ui/text-editor" }}
+        code={'<TextEditor label="Table" initialValue={markdown} maxLength={2_097_152} />'}
+        id="text-editor-check"
+        description="Extra cells remain visible until the header includes them."
+      >
+        <TextEditor
+          label="Table to check"
+          initialValue={"| Item | Quantity |\n| --- | --- |\n| Paper | 4 | Extra detail |"}
+          maxLength={2_097_152}
+        />
+      </DemoCard>
+      <DemoCard
+        chip={{ kind: "component", name: "TextEditor", from: "@k2b/ui/text-editor" }}
+        code={'<TextEditor label="Loading" loading maxLength={2_097_152} />'}
+        id="text-editor-loading"
+        description="Loading keeps the controls and text area in place."
+      >
+        <TextEditor label="Loading note" loading maxLength={2_097_152} />
+      </DemoCard>
     </DemoGrid>
   ),
   "markdown-editor": () => (
@@ -1683,6 +1978,26 @@ const demos: DemoSection = {
       <ChoiceChipsDemo />
     </DemoGrid>
   ),
+  "choice-list": () => (
+    <DemoGrid columns="one">
+      <ChoiceListDemo />
+    </DemoGrid>
+  ),
+  "choice-tiles": () => (
+    <DemoGrid columns="one">
+      <ChoiceTilesDemo />
+    </DemoGrid>
+  ),
+  "color-choices": () => (
+    <DemoGrid columns="one">
+      <ColorChoicesDemo />
+    </DemoGrid>
+  ),
+  "icon-choices": () => (
+    <DemoGrid columns="one">
+      <IconChoicesDemo />
+    </DemoGrid>
+  ),
   "autocomplete-select": () => (
     <DemoGrid columns="one">
       <AutocompleteSelectWorkflowDemo />
@@ -1693,6 +2008,7 @@ const demos: DemoSection = {
   combobox: () => (
     <DemoGrid columns="one">
       <ComboboxDemo />
+      <FreeTextComboboxDemo />
     </DemoGrid>
   ),
   color: () => (
@@ -1748,6 +2064,11 @@ const demos: DemoSection = {
   slider: () => (
     <DemoGrid columns="one">
       <SmallChoicesDemo kind="slider" />
+    </DemoGrid>
+  ),
+  "choice-slider": () => (
+    <DemoGrid columns="one">
+      <ChoiceSliderDemo />
     </DemoGrid>
   ),
   boolean: () => (

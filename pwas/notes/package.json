@@ -1,0 +1,46 @@
+{
+  "name": "@k2b/notes-site",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run scripts/dev.ts",
+    "start": "bun server/start.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*' src server"
+  },
+  "dependencies": {
+    "@k2b/cloud": "workspace:*",
+    "@k2b/editor": "workspace:*",
+    "@k2b/stdlib": "catalog:",
+    "@k2b/ui": "workspace:*",
+    "hono": "catalog:",
+    "lib0": "0.2.117",
+    "solid-js": "catalog:",
+    "y-codemirror.next": "catalog:",
+    "y-protocols": "catalog:",
+    "yjs": "catalog:",
+    "zod": "catalog:",
+    "file-type": "21.3.4",
+    "@napi-rs/canvas": "1.0.9",
+    "@fontsource/ibm-plex-sans": "5.3.0"
+  },
+  "devDependencies": {
+    "@babel/core": "8.0.6",
+    "@babel/preset-typescript": "8.0.1",
+    "@codemirror/autocomplete": "catalog:",
+    "@codemirror/language": "catalog:",
+    "@codemirror/state": "catalog:",
+    "@codemirror/view": "catalog:",
+    "@types/babel__core": "7.20.5",
+    "@types/bun": "catalog:",
+    "@types/subset-font": "2.3.0",
+    "babel-preset-solid": "1.9.15",
+    "bun-plugin-tailwind": "catalog:",
+    "playwright": "catalog:",
+    "subset-font": "2.9.0",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:"
+  }
+}

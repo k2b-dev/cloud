@@ -237,7 +237,7 @@ Abfragen in Grids Apps erhalten automatisch einen typisierten Anfragekontext. Gr
 | Referenz | Wert |
 | --- | --- |
 | `@auth.id` | UUID des aktuellen Kontos oder `null` für anonyme Besucher |
-| `@auth.subjects` | Flache UUID-Liste mit der aktuellen Person und allen wirksamen direkten oder verschachtelten Gruppen; für anonyme Besucher leer |
+| `@auth.subjects` | Flache UUID-Liste mit der aktuellen Person und allen wirksamen direkten oder verschachtelten Gruppen oder der eigenen UUID des eigenständigen Dienstkontos/Agentenkontos; für anonyme Besucher leer |
 | `@params.<name>` | Ein deklarierter und validierter Seitenparameter |
 | `@page.id`, `@page.title`, `@page.url` | Identität und kanonische relative URL der aktuellen Seite |
 | `@app.id`, `@app.name` | Identität der veröffentlichten Grids App |
@@ -246,7 +246,7 @@ Abfragen in Grids Apps erhalten automatisch einen typisierten Anfragekontext. Gr
 
 Nutze `@auth.id != null`, wenn eine Abfrage ein angemeldetes Konto erfordert. Erkenne eine anonyme App-Anfrage ausdrücklich mit `@auth.id = null`. Unbekannte Namensräume und nicht deklarierte Parameter sind Veröffentlichungsfehler.
 
-Nutze `oneof(Participants, @auth.subjects)`, wenn ein Principal-Feld der aktuellen Person oder einer ihrer wirksamen Gruppen Zugriff auf einen Datensatz gibt. Der Server ermittelt die wirksamen Gruppenmitgliedschaften. Die Abfrage erhält nie Gruppenmitglieder oder Gruppennamen. `@auth.subjects` ist eine Liste. Es ist deshalb nur in den Mitgliedschaftsprädikaten `oneof`, `noneof` oder `containsall` gültig.
+Nutze `oneof(Participants, @auth.subjects)`, wenn ein Principal-Feld der aktuellen Person, einer ihrer wirksamen Gruppen oder dem aufrufenden eigenständigen Dienstkonto/Agentenkonto Zugriff auf einen Datensatz gibt. Benutzerattribute wie `@auth.id` bleiben für maschinelle Aufrufer null. Der Server ermittelt die wirksamen Gruppenmitgliedschaften. Die Abfrage erhält nie Gruppenmitglieder oder Gruppennamen. `@auth.subjects` ist eine Liste. Es ist deshalb nur in den Mitgliedschaftsprädikaten `oneof`, `noneof` oder `containsall` gültig.
 
 ```gql
 from table Loans

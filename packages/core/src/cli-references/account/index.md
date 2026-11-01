@@ -17,6 +17,22 @@ cld account activity --days 30 --json
 
 Read `cld account profile set --help` for the available contact and address fields.
 
+## Profile picture
+
+```bash
+cld account avatar show --json
+cld account avatar set hair=curly hairColor=red glasses=round
+cld account avatar random
+cld account avatar photo ./portrait.webp
+cld account avatar use avatar
+cld account avatar delete-photo --yes
+```
+
+The profile picture is a photo, a built avatar, or initials; exactly one shows. `avatar set` changes parts of the built
+avatar and shows it; an unknown part or value lists the choices. `avatar random` keeps the skin tone. `avatar photo`
+takes a square PNG, JPEG, or WebP of at most 48 KiB; the web dialog crops larger images. A stored photo stays until
+`delete-photo`, even while the avatar or initials show, and only the shown picture is visible to others.
+
 ## Personal API keys
 
 ```bash
@@ -59,6 +75,7 @@ Run `cld account <command> --help` for flags and argument order.
 | --- | --- |
 | Current account | `whoami`, `activity`, `extend` |
 | Profile | `profile show`, `profile set` |
+| Profile picture | `avatar show`, `avatar set`, `avatar random`, `avatar photo`, `avatar use`, `avatar delete-photo` |
 | Personal API keys | `api-keys list`, `api-keys create`, `api-keys revoke` |
 | SSH keys | `ssh-keys list`, `ssh-keys add`, `ssh-keys remove` |
 | Password | `password change` |

@@ -126,7 +126,7 @@ export async function unreadableAdminPreview() {
       if (path !== "/") return new Response("Not found", { status: 404 });
       if (url.searchParams.get("late") === "true") reset(true);
       return new Response(
-        `<!doctype html><html class="${url.searchParams.get("theme") === "dark" ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/assets/plex.css"><link rel="stylesheet" href="/assets/tabler.css"></head><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script></body></html>`,
+        `<!doctype html><html class="${url.searchParams.get("theme") === "dark" ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/assets/plex.css"><link rel="stylesheet" href="/assets/tabler.css"></head><body class="k2b-ui"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },

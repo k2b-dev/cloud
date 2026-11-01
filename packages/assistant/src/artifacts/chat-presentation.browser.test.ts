@@ -80,7 +80,7 @@ beforeAll(async () => {
         });
       }
       return new Response(
-        `<!doctype html><html lang="de" class="${url.searchParams.get("theme") ?? "light"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0;padding:1rem"><div id="root"></div><script src="/bundle.js"></script></body></html>`,
+        `<!doctype html><html lang="de" class="${url.searchParams.get("theme") ?? "light"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0;padding:1rem"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },
@@ -145,7 +145,7 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
       const tables = [...snapshot.matchAll(valueTable)];
       expect(tables).toHaveLength(1);
       expect(tables[0]![0]).toContain("<caption>Umsatz</caption>");
-      expect(tables[0]![0]).toContain('<td class="num">1.200,00&nbsp;€</td>');
+      expect(tables[0]![0]).toContain('<td class="num">1.200&nbsp;€</td>');
     }
 
     await card.getByRole("button", { name: "Stoppen", exact: true }).click();

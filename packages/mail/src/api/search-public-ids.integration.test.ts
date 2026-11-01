@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { MAIL_SEARCH_MATCHES_NOTHING, type ResolvedMailSearchRoute, resolveMailSearchRoute } from "../search-state";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
@@ -75,7 +74,6 @@ suite("Mail search by public folder and tag IDs", () => {
   const inFolder = (): MailSearchExpression => ({ type: "folder_id", folderId: folderShortId });
 
   beforeAll(async () => {
-    await migrate();
     const [row] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-search-ids-${suffix}`}, 'local', 'user', 'Search owner', false)
@@ -84,7 +82,7 @@ suite("Mail search by public folder and tag IDs", () => {
     owner = userFor(row!);
     context = { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id }, requestId: null };
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) =>
-      token === "owner" ? { kind: "user", payload: {}, user: owner, scopes: [] } : null,
+      token === "owner" ? { kind: "user", payload: {}, user: owner, scopes: ["read", "write"] } : null,
     );
 
     const mailbox = await createMailbox(context, { name: `Search IDs ${suffix}` });

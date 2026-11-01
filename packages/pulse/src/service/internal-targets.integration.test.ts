@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -43,6 +43,12 @@ databaseSuite()("Pulse per-base internal targets", () => {
         const target = await addInternalTarget(identity, { baseId: shortId, entry });
         expect(target.entry).toBe(entry);
         await removeInternalTarget(identity, target.id);
+        const events = await sql<{ action: string }[]>`
+          SELECT action FROM audit.events WHERE target_type='pulse_target' AND target_id=${target.id}
+            AND actor_user_id=${user!.id}::uuid AND action='pulse.target.delete' AND outcome='allowed'
+        `;
+        expect(events).toHaveLength(1);
+        await expect(removeInternalTarget(identity, target.id)).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
       }
       await expect(addInternalTarget(identity, { baseId: shortId, entry: "0.0.0.0/0" })).rejects.toMatchObject({
         code: "TARGET_TOO_BROAD",

@@ -1,5 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import { SaveFilesButton } from "@k2b/cloud/browser/files";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -9,19 +9,26 @@ import {
   announce,
   Button,
   ButtonLink,
-  CheckboxCard,
   ColorInput,
   DateTimePicker,
   DescriptionList,
   DetailPanel,
   Discussion,
+  Dropdown,
+  type DropdownItem,
+  FileGrid,
+  FileTypeIcon,
+  fileKindLabel,
   formatFileViewSize,
   IconButton,
+  IconButtonLink,
   MarkdownView,
   MultiSelectInput,
   openSpotlightSearch,
   Placeholder,
   prompts,
+  SegmentedControl,
+  Skeleton,
   StatusBadge,
   TextInput,
   Tooltip,
@@ -39,11 +46,14 @@ import type { ConversationPresenceParticipant } from "../../service/presence";
 import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
-import MailConversationContext from "./MailConversationContext";
-import MailRelatedConversations from "./MailRelatedConversations";
+import MailConversationContext, { type MailContextParts } from "./MailConversationContext";
+import { canPreviewAttachment, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
+import { createRelatedConversations, MailRelatedConversationsView } from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
+import { useMailCloudId } from "./mail-cloud-id";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { attachmentsByMessage, isThumbnailImage, type MailDetailFile, mergeMailAttachments } from "./mail-detail-attachments";
 import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import {
   applyMailCollaborationPatch,
@@ -54,6 +64,7 @@ import {
   queuedReminderDueAt,
   queuedTagIds,
 } from "./mail-detail-update-queue";
+import { mailDetailsMessages } from "./mail-details-messages";
 import {
   reconcileAvailableTags,
   reconcileCollaboration,
@@ -62,12 +73,61 @@ import {
   reconcileReminder,
 } from "./mail-details-reconciliation";
 import { createRetryToasts } from "./mail-feedback";
+import { mailMessageMessages } from "./mail-message-messages";
 
 // Local on purpose: `@k2b/cloud/account/ui` would pull Zod into the mailbox's first load (mailbox-first-load.test.ts).
 const cloudAvatarSource = (userId: string | null | undefined, avatarHash: string | null | undefined): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
 type InspectorTab = "headers" | "source";
+
+/** Starts a download of a file the browser cannot preview. */
+const downloadUrl = (href: string, name: string) => {
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = name;
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+};
+
+/**
+ * The details panel while the conversation's details load: the outline's own rows at their real heights, so nothing
+ * moves when the details arrive.
+ */
+export function MailDetailsSkeleton(props: { label: string }) {
+  const rows = (count: number, kind: "property" | "file") => (
+    <For each={Array.from({ length: count }, (_, index) => index)}>
+      {(index) =>
+        kind === "property" ? (
+          <div class="mail-details-skeleton__property">
+            <Skeleton class="mail-details-skeleton__term" />
+            <Skeleton class={`mail-details-skeleton__value mail-details-skeleton__value--${index % 3}`} />
+          </div>
+        ) : (
+          <div class="mail-details-skeleton__file">
+            <Skeleton class="mail-details-skeleton__thumb" />
+            <span class="mail-details-skeleton__lines">
+              <Skeleton class="mail-details-skeleton__name" />
+              <Skeleton class="mail-details-skeleton__meta" />
+            </span>
+          </div>
+        )
+      }
+    </For>
+  );
+  return (
+    <div class="mail-details-skeleton" role="status" aria-live="polite" aria-busy="true" aria-label={props.label}>
+      <Skeleton class="mail-details-skeleton__kind" />
+      <Skeleton class="mail-details-skeleton__title" />
+      <Skeleton class="mail-details-skeleton__subtitle" />
+      <div class="mail-details-skeleton__section">{rows(4, "property")}</div>
+      <div class="mail-details-skeleton__section">{rows(2, "file")}</div>
+      <div class="mail-details-skeleton__section">{rows(3, "file")}</div>
+    </div>
+  );
+}
 
 export default function MailDetailsPanel(props: {
   mailboxId: string;
@@ -108,6 +168,7 @@ export default function MailDetailsPanel(props: {
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const canAssign = () => props.canWrite && props.mailboxWide;
   const retryToast = createRetryToasts();
+  const cloudId = useMailCloudId();
   const [inspectorLoading, setInspectorLoading] = createSignal<InspectorTab | null>(null);
   /** The inspector loads its code on first use; until its modal opens, another activation must not open a second one. */
   const openMessageInspector = async (messageId: string, initialTab: InspectorTab) => {
@@ -115,7 +176,7 @@ export default function MailDetailsPanel(props: {
     setInspectorLoading(initialTab);
     const inspector = await importOnDemand(() => import("./MailMessageInspectorDialog"));
     setInspectorLoading(null);
-    if (!inspector) return;
+    if (!inspector || disposed) return;
     await inspector.openMailMessageInspector({
       mailboxId: props.mailboxId,
       messages: props.messages,
@@ -138,13 +199,8 @@ export default function MailDetailsPanel(props: {
   let commentsHistoryExtended = false;
   let commentsHistoryRequest = 0;
   const latestMessage = () => props.messages.at(-1);
-  const attachments = createMemo(() =>
-    props.messages.flatMap((message) => message.attachments.map((attachment) => ({ ...attachment, messageId: message.id }))),
-  );
-  const attachmentCount = () => attachments().length;
   const activityItems = createMemo(() => presentMailActivity(props.activity, locale()));
   const visibleComments = createMemo(() => comments().filter((comment) => !comment.deletedAt));
-  const unavailableDetails = createMemo(() => describeUnavailableMailDetails(props.detailErrors, locale()));
   const addressList = (addresses: Array<{ name: string | null; address: string }>) =>
     addresses.map((address) => address.name || address.address).join(", ");
 
@@ -377,7 +433,7 @@ export default function MailDetailsPanel(props: {
       },
       { title: t().createTag, icon: "ti ti-tag-plus" },
     );
-    if (values) await createTagMutation.mutate(values);
+    if (values && !disposed) await createTagMutation.mutate(values);
   };
 
   const addComment = mutations.create<ConversationComment, string>({
@@ -602,52 +658,680 @@ export default function MailDetailsPanel(props: {
     detailUpdates.reset();
   });
 
+  const related = createRelatedConversations({
+    mailboxId: () => props.mailboxId,
+    conversationId: () => props.conversationId,
+    enabled: () => props.active && props.mailboxWide,
+    failedLabel: () => t().loadRelatedFailed,
+  });
+  const detailPanelNone = () => details().noneYet;
+  const commentItem = (comment: ConversationComment) => (
+    <Discussion.Item
+      avatar={
+        <Avatar
+          name={comment.author.displayName}
+          src={comment.author.kind === "user" ? cloudAvatarSource(comment.author.id, comment.author.avatarHash) : undefined}
+          icon={comment.author.kind === "workflow" ? "ti ti-route" : undefined}
+          size="xs"
+        />
+      }
+      author={comment.author.displayName}
+      timestamp={
+        <time dateTime={comment.createdAt} title={dates.formatDateTime(comment.createdAt, props.dateConfig)}>
+          {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
+        </time>
+      }
+      actions={
+        <>
+          <Show when={comment.canEdit}>
+            <Tooltip.Anchor content={t().editComment}>
+              <IconButton type="button" label={t().editComment} size="xs" onClick={() => void promptCommentEdit(comment)}>
+                <i class="ti ti-pencil" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </Show>
+          <Show when={comment.canDelete}>
+            <Tooltip.Anchor content={t().deleteComment}>
+              <IconButton type="button" label={t().deleteComment} size="xs" onClick={() => removeComment.mutate(comment)}>
+                <i class="ti ti-trash" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </Show>
+        </>
+      }
+    >
+      <Show when={comment.body}>{(body) => <MarkdownView markdown={body()} headingScale="compact" />}</Show>
+    </Discussion.Item>
+  );
+  const technicalDetails = () => (
+    <>
+      <DescriptionList
+        layout="rows"
+        size="sm"
+        items={[
+          {
+            term: t().subject,
+            description: (
+              <span class="block truncate" title={props.subject}>
+                {props.subject || t().noSubject}
+              </span>
+            ),
+          },
+          {
+            term: t().from,
+            description: (
+              <span class="block truncate" title={addressList(latestMessage()?.from ?? [])}>
+                {addressList(latestMessage()?.from ?? []) || t().unknown}
+              </span>
+            ),
+          },
+          {
+            term: t().toLabel,
+            description: (
+              <span class="block truncate" title={addressList(latestMessage()?.to ?? [])}>
+                {addressList(latestMessage()?.to ?? []) || t().undisclosed}
+              </span>
+            ),
+          },
+          {
+            term: t().thread,
+            description: t().messageCount({ count: props.messages.length }),
+          },
+          ...(attachmentCount() > 0
+            ? [
+                {
+                  term: t().files,
+                  description: t().attachmentCount({ count: attachmentCount() }),
+                },
+              ]
+            : []),
+          ...(latestMessage()?.messageId
+            ? [
+                {
+                  term: t().messageId,
+                  description: <span class="block truncate font-mono text-xs">{latestMessage()?.messageId}</span>,
+                },
+              ]
+            : []),
+          ...(latestMessage()
+            ? [
+                { term: t().size, description: formatFileViewSize(latestMessage()!.sizeBytes) },
+                { term: t().content, description: latestMessage()!.contentType ?? t().unavailable },
+                { term: t().mirror, description: latestMessage()!.hydrationStatus },
+              ]
+            : []),
+        ]}
+      />
+      <Show when={latestMessage()}>
+        {(message) => (
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              aria-busy={inspectorLoading() === "headers" ? "true" : undefined}
+              onClick={() => void openMessageInspector(message().id, "headers")}
+            >
+              <i class={inspectorLoading() === "headers" ? "ti ti-loader-2 animate-spin" : "ti ti-list-details"} aria-hidden="true" />{" "}
+              {t().headers}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              aria-busy={inspectorLoading() === "source" ? "true" : undefined}
+              onClick={() => void openMessageInspector(message().id, "source")}
+            >
+              <i class={inspectorLoading() === "source" ? "ti ti-loader-2 animate-spin" : "ti ti-code"} aria-hidden="true" /> {t().source}
+            </Button>
+            <Show when={cloudId.available()}>
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                data-mail-copy-cloud-id="message"
+                onClick={() => cloudId.copy("message", message().id)}
+              >
+                <i class="ti ti-id" aria-hidden="true" /> {cloudId.t().copyMessage}
+              </Button>
+            </Show>
+            <Show when={message().sourceAvailable}>
+              <ButtonLink
+                variant="secondary"
+                size="sm"
+                href={`/api/mail/mailboxes/${props.mailboxId}/messages/${message().id}/source`}
+                download={`${message().subject.trim() || "message"}.eml`}
+              >
+                <i class="ti ti-download" aria-hidden="true" /> {t().downloadEml}
+              </ButtonLink>
+            </Show>
+          </div>
+        )}
+      </Show>
+    </>
+  );
+  const details = createMemo(() => mailDetailsMessages.resolve([locale()]).t);
+  const merged = createMemo(() => mergeMailAttachments(props.messages));
+  const attachmentCount = () => merged().occurrences;
+  const [arrangement, setArrangement] = createSignal<"files" | "messages">("files");
+  const [packing, setPacking] = createSignal(false);
+  const attachmentHref = (file: MailDetailFile) =>
+    `/api/mail/mailboxes/${props.mailboxId}/messages/${file.messageId}/attachments/${file.attachment.id}`;
+  const fileName = (file: MailDetailFile) => file.attachment.filename ?? t().untitledAttachment;
+  const openFile = (file: MailDetailFile) => {
+    const href = attachmentHref(file);
+    if (canPreviewAttachment(file.attachment)) void openAttachmentPreview(file.attachment, href, `${href}?inline=true`);
+    else downloadUrl(href, fileName(file));
+  };
+  const fileMeta = (file: MailDetailFile) =>
+    [
+      fileKindLabel({ name: fileName(file), mediaType: file.attachment.contentType }, locale()),
+      formatFileViewSize(file.attachment.sizeBytes, locale()),
+      file.from
+        ? details().fromSender({ name: file.from })
+        : file.messageIds.length > 1
+          ? details().inMessages({ count: file.messageIds.length })
+          : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  // Packing belongs to the conversation it started in: leaving it or closing the panel stops the fetches.
+  let packingAbort: AbortController | undefined;
+  const stopPacking = () => {
+    packingAbort?.abort();
+    packingAbort = undefined;
+    setPacking(false);
+  };
+  createEffect(on(() => props.conversationId, stopPacking, { defer: true }));
+  onCleanup(stopPacking);
+  const downloadAll = async () => {
+    if (packing()) return;
+    const controller = new AbortController();
+    packingAbort = controller;
+    setPacking(true);
+    const files = merged().files.map((file) => ({ name: fileName(file), href: attachmentHref(file), size: file.attachment.sizeBytes }));
+    const archiveName = `${props.subject.trim() || t().noSubject}.zip`;
+    try {
+      const zip = await importOnDemand(() => import("./mail-attachments-zip"));
+      if (!zip || controller.signal.aborted) return;
+      await zip.downloadMailAttachments(files, archiveName, controller.signal);
+    } catch {
+      if (!controller.signal.aborted) toast.error(details().downloadAllFailed);
+    } finally {
+      if (packingAbort === controller) {
+        packingAbort = undefined;
+        setPacking(false);
+      }
+    }
+  };
+  const messageLabel = (message: MailWorkspaceMessage) =>
+    `${addressList(message.from) || t().unknownSender} · ${dates.formatDateTimeRelative(message.internalDate, props.dateConfig)}`;
+  const propertyErrors = () =>
+    props.detailErrors.collaboration || props.detailErrors.tags || props.detailErrors.assignableUsers || props.detailErrors.reminder;
+  const done = () => state().workStatus === "done";
+  const metaLine = () => {
+    const latest = latestMessage();
+    const line = details().meta({
+      sender: addressList(latest?.from ?? []) || t().unknownSender,
+      count: props.messages.length,
+      latest: latest ? dates.formatDateTimeRelative(latest.internalDate, props.dateConfig) : "",
+    });
+    return props.canWrite ? line : `${line} · ${details().readOnlyMeta}`;
+  };
+  // Less frequent commands on the conversation; headers and source stay under "Technical details".
+  const headerMenu = (): DropdownItem[] => [
+    ...(props.conversationHref ? [{ label: t().openConversation, icon: "ti ti-arrow-up-right", href: props.conversationHref }] : []),
+    ...(cloudId.available()
+      ? [{ label: cloudId.t().copyConversation, icon: "ti ti-id", action: () => cloudId.copy("conversation", props.conversationId) }]
+      : []),
+  ];
+
+  const attachmentsSection = () => (
+    <DetailPanel.Section title={t().attachments} count={merged().files.length > 0 ? merged().files.length : undefined}>
+      <Show when={merged().files.length > 0} fallback={<p class="mail-details-none">{details().noAttachments}</p>}>
+        <FileGrid
+          rows={merged().files}
+          getRowId={(file) => file.key}
+          label={t().attachments}
+          layout="list"
+          limit={5}
+          actionVisibility="progressive"
+          moreMeta={merged().merged > 0 ? details().duplicatesMerged({ count: merged().merged }) : undefined}
+          toolbar={
+            <>
+              <span class="mail-details-files-info">
+                {details().filesFromAttachments({ files: merged().files.length, attachments: merged().occurrences })}
+                {merged().merged > 0 ? ` · ${details().duplicatesMerged({ count: merged().merged })}` : ""}
+              </span>
+              <SegmentedControl
+                label={details().arrangement}
+                size="sm"
+                class="mail-details-arrangement"
+                value={arrangement()}
+                onValueChange={(value) => setArrangement(value === "messages" ? "messages" : "files")}
+                options={[
+                  { value: "files", label: details().byFile },
+                  { value: "messages", label: details().byMessage },
+                ]}
+              />
+              <span class="mail-details-files-bulk">
+                <Tooltip.Anchor content={details().downloadAll({ count: merged().files.length })}>
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    label={packing() ? details().downloadingAll : details().downloadAll({ count: merged().files.length })}
+                    aria-busy={packing() || undefined}
+                    onClick={() => void downloadAll()}
+                  >
+                    <i class={packing() ? "ti ti-loader-2 animate-spin" : "ti ti-download"} aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+                <SaveFilesButton
+                  all
+                  size="sm"
+                  variant="ghost"
+                  files={() => merged().files.map((file) => saveSource(file.attachment, attachmentHref(file)))}
+                />
+              </span>
+            </>
+          }
+          groups={(rows) =>
+            arrangement() === "messages"
+              ? attachmentsByMessage(props.messages).map(({ message, files }) => ({
+                  id: message.id,
+                  label: messageLabel(message as MailWorkspaceMessage),
+                  rows: files,
+                }))
+              : [
+                  { id: "files", label: details().files, rows: rows.filter((file) => !isThumbnailImage(file.attachment)) },
+                  {
+                    id: "images",
+                    label: details().images,
+                    rows: rows.filter((file) => isThumbnailImage(file.attachment)),
+                    layout: "tiles",
+                  },
+                ]
+          }
+          renderPreview={(file) =>
+            isThumbnailImage(file.attachment) ? (
+              <img src={`${attachmentHref(file)}?inline=true`} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <FileTypeIcon name={fileName(file)} mediaType={file.attachment.contentType} />
+            )
+          }
+          renderLabel={fileName}
+          renderMeta={fileMeta}
+          renderActions={(file) => (
+            <>
+              <Tooltip.Anchor content={mailMessageMessages.resolve([locale()]).t.downloadNamed({ name: fileName(file) })}>
+                <IconButtonLink
+                  size="sm"
+                  variant="ghost"
+                  href={attachmentHref(file)}
+                  download={fileName(file)}
+                  label={mailMessageMessages.resolve([locale()]).t.downloadNamed({ name: fileName(file) })}
+                >
+                  <i class="ti ti-download" aria-hidden="true" />
+                </IconButtonLink>
+              </Tooltip.Anchor>
+              <SaveFilesButton size="sm" variant="ghost" files={() => [saveSource(file.attachment, attachmentHref(file))]} />
+            </>
+          )}
+          onOpen={openFile}
+        />
+      </Show>
+    </DetailPanel.Section>
+  );
+
+  const body = (parts?: MailContextParts) => (
+    <>
+      <Show when={props.conversationSummary?.summary}>
+        {(summary) => (
+          // ✦ and the AI ink only when the AI wrote the text (F3); a person's summary stays neutral.
+          <div class="mail-details-summary" data-ai={props.conversationSummary?.ai ? "true" : undefined}>
+            <Show when={props.conversationSummary?.ai}>
+              <span class="mail-details-summary__origin">✦ {details().ai}</span>
+            </Show>
+            <MarkdownView markdown={summary()} headingScale="compact" class="mail-details-summary__text" />
+          </div>
+        )}
+      </Show>
+
+      <Show
+        when={describeUnavailableMailDetails(
+          {
+            ...props.detailErrors,
+            collaboration: null,
+            tags: null,
+            assignableUsers: null,
+            reminder: null,
+            comments: null,
+            activity: null,
+          },
+          locale(),
+        )}
+      >
+        {(description) => (
+          <Placeholder state="error" variant="compact" align="left" title={description()} onRetry={() => void props.onReconcile()} />
+        )}
+      </Show>
+
+      <Show when={props.canWrite && props.conversationDrafts[0]}>
+        {(draft) => (
+          <DetailPanel.Section
+            title={t().draftsAvailable({ count: props.conversationDrafts.length })}
+            count={props.conversationDrafts.length}
+          >
+            <DetailPanel.Action
+              href={mailDraftHref(props.mailboxId, draft().id, props.requestUrl)}
+              leading={<i class="ti ti-arrow-back-up" aria-hidden="true" />}
+              title={t().continueDraft({ count: props.conversationDrafts.length })}
+              description={t().draftMeta({
+                name: draft().createdByDisplayName,
+                updated: dates.formatDateTimeRelative(draft().updatedAt, props.dateConfig),
+              })}
+            />
+          </DetailPanel.Section>
+        )}
+      </Show>
+
+      <DetailPanel.Section
+        title={details().properties}
+        actions={
+          <Show when={canAssign()}>
+            <Tooltip.Anchor content={t().createTag}>
+              <IconButton type="button" label={t().createTag} size="xs" onClick={() => void createTag()}>
+                <i class="ti ti-tag-plus" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </Show>
+        }
+      >
+        <Show when={propertyErrors()}>
+          <Placeholder
+            state="error"
+            variant="compact"
+            align="left"
+            title={details().propertiesUnavailable}
+            onRetry={() => void props.onReconcile()}
+          />
+        </Show>
+        <DescriptionList
+          layout="rows"
+          size="sm"
+          items={[
+            {
+              term: details().assigned,
+              description: (
+                <MultiSelectInput
+                  aria-label={details().assigned}
+                  appearance="plain"
+                  value={() => state().assignees.map((user) => user.id)}
+                  onValueChange={(userIds) => updateCollaboration({ assigneeUserIds: userIds })}
+                  options={props.assignableUsers.map((user) => ({
+                    id: user.id,
+                    label: user.displayName,
+                    description: user.description,
+                    icon:
+                      user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
+                  }))}
+                  selectedOptions={() =>
+                    state().assignees.map((user) => ({
+                      id: user.id,
+                      label: user.displayName,
+                      icon:
+                        user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
+                    }))
+                  }
+                  placeholder={details().nobody}
+                  disabled={!canAssign() || Boolean(props.detailErrors.assignableUsers)}
+                />
+              ),
+            },
+            {
+              term: t().tags,
+              description: (
+                <MultiSelectInput
+                  aria-label={t().tags}
+                  appearance="plain"
+                  value={() => tagState().tags.map((tag) => tag.id)}
+                  onValueChange={updateConversationTags}
+                  options={availableTags().map((tag) => ({ id: tag.id, label: tag.name, color: tag.color }))}
+                  selectedOptions={() => tagState().tags.map((tag) => ({ id: tag.id, label: tag.name, color: tag.color }))}
+                  placeholder={details().noTags}
+                  disabled={!props.canWrite}
+                />
+              ),
+            },
+            {
+              term: details().showLater,
+              description: (
+                <DateTimePicker
+                  aria-label={details().showLater}
+                  appearance="plain"
+                  placeholder={details().notPlanned}
+                  clearable
+                  value={() => state().snoozedUntil}
+                  onValueChange={(value) => updateCollaboration({ snoozedUntil: value || null })}
+                  dateConfig={props.dateConfig}
+                  disabled={!props.canWrite || done()}
+                />
+              ),
+            },
+            {
+              term: details().reminder,
+              description: (
+                <span class="mail-details-reminder">
+                  <DateTimePicker
+                    aria-label={`${details().reminder}, ${details().onlyForYou}`}
+                    appearance="plain"
+                    placeholder={details().notSet}
+                    clearable
+                    value={reminderDueAt}
+                    onValueChange={(value) => (value ? updateReminder(value) : clearReminder())}
+                    dateConfig={props.dateConfig}
+                    disabled={Boolean(props.detailErrors.reminder)}
+                  />
+                  <span class="mail-details-hint" aria-hidden="true">
+                    {details().onlyForYou}
+                  </span>
+                </span>
+              ),
+            },
+          ]}
+        />
+      </DetailPanel.Section>
+
+      <Show when={parts}>
+        {(context) => (
+          <DetailPanel.Section
+            title={details().linked}
+            count={
+              context().spacesCount() !== undefined && !related.loading() && !related.error()
+                ? (context().spacesCount() ?? 0) + (related.data()?.length ?? 0) || undefined
+                : undefined
+            }
+          >
+            {context().spaces}
+            <MailRelatedConversationsView
+              mailboxId={props.mailboxId}
+              items={related.data()}
+              loading={related.loading()}
+              error={related.error()?.message ?? null}
+              unavailableText={details().relatedUnavailable}
+              dateConfig={props.dateConfig}
+              onRetry={() => void related.refresh()}
+            />
+            <Show
+              when={
+                context().spacesState() === "ready" &&
+                context().spacesCount() === 0 &&
+                !related.loading() &&
+                !related.error() &&
+                (related.data()?.length ?? 0) === 0
+              }
+            >
+              <p class="mail-details-none">{detailPanelNone()}</p>
+            </Show>
+            {context().spacesAdd}
+          </DetailPanel.Section>
+        )}
+      </Show>
+
+      {attachmentsSection()}
+
+      <Show when={props.conversationId} keyed>
+        {(_conversationId) => (
+          <Discussion label={details().teamNotes} count={commentsCursor() ? undefined : visibleComments().length}>
+            <Discussion.List
+              error={props.detailErrors.comments ? details().notesUnavailable : undefined}
+              onRetry={props.onReconcile}
+              fold={3}
+              hasMore={commentsCursor() !== null}
+              loadingMore={loadingOlderComments()}
+              loadingLabel={t().loadingTeamNotes}
+              loadMoreLabel={t().loadEarlierTeamNotes}
+              onLoadMore={loadOlderComments}
+            >
+              <For each={visibleComments()}>{(comment) => commentItem(comment)}</For>
+            </Discussion.List>
+
+            <Show when={!props.detailErrors.comments}>
+              <Discussion.Composer
+                label={t().addInternalComment}
+                placeholder={details().noteForTeam}
+                submitLabel={t().postComment}
+                onSubmit={async (body) => {
+                  await addComment.mutate(body);
+                  const error = addComment.error();
+                  if (error) throw error;
+                }}
+              />
+            </Show>
+          </Discussion>
+        )}
+      </Show>
+
+      <DetailPanel.Group title={details().moreAbout}>
+        <Show when={parts?.showPeople()}>
+          <DetailPanel.Section
+            title={details().people}
+            count={parts?.peopleNames().length || undefined}
+            collapsible
+            summary={parts?.peopleNames().join(" · ")}
+          >
+            {parts?.people}
+          </DetailPanel.Section>
+        </Show>
+        <DetailPanel.Section
+          title={details().activity}
+          count={activityItems().length || undefined}
+          collapsible
+          summary={
+            props.detailErrors.activity
+              ? details().activityUnavailable
+              : activityItems()[0]
+                ? `${activityItems()[0]!.actorLabel} ${activityItems()[0]!.label}`
+                : detailPanelNone()
+          }
+        >
+          <Show
+            when={!props.detailErrors.activity}
+            fallback={
+              <Placeholder
+                state="error"
+                variant="compact"
+                align="left"
+                title={details().activityUnavailable}
+                onRetry={() => void props.onReconcile()}
+              />
+            }
+          >
+            <div class="mail-activity-rows">
+              <For each={activityItems()}>
+                {(event) => (
+                  <div class="mail-activity-row">
+                    <i
+                      class={`ti ${event.outcome === "failed" ? "ti-alert-circle text-red-500" : `${event.icon} text-dimmed`}`}
+                      aria-hidden="true"
+                    />
+                    <span class="min-w-0 flex-1 truncate text-secondary">
+                      <span class="font-medium text-primary">{event.actorLabel}</span> {event.label}
+                      <Show when={event.count > 1}> ({event.count})</Show>
+                    </span>
+                    <time
+                      class="shrink-0 text-xs text-dimmed"
+                      dateTime={event.createdAt}
+                      title={dates.formatDateTime(event.createdAt, props.dateConfig)}
+                    >
+                      {dates.formatDateTimeRelative(event.createdAt, props.dateConfig)}
+                    </time>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </DetailPanel.Section>
+        <DetailPanel.Section title={details().technicalDetails} collapsible summary={details().technicalSummary}>
+          {technicalDetails()}
+        </DetailPanel.Section>
+      </DetailPanel.Group>
+    </>
+  );
+
   return (
     <div class="flex h-full min-h-0 flex-col focus:outline-none" data-mail-details-heading tabIndex={-1}>
       <DetailPanel>
         <DetailPanel.Header
-          icon="ti ti-mail"
-          title={props.subject || t().noSubject}
-          subtitle={addressList(latestMessage()?.from ?? []) || t().unknownSender}
-          meta={
-            <span class="mail-details-meta">
-              <Show when={props.presence.some((participant) => participant.userId !== props.currentUserId)}>
-                <AvatarStack
-                  people={props.presence.map((participant) => ({
-                    id: participant.userId,
-                    name: participant.displayName,
-                    src: cloudAvatarSource(participant.userId, participant.avatarHash),
-                    self: participant.userId === props.currentUserId,
-                    detailIcon: participant.mode === "composing" ? "ti ti-pencil" : "ti ti-eye",
-                    detail: participant.mode === "composing" ? t().composing : t().viewing,
-                  }))}
-                  title={t().activeCollaborators}
-                  label={`${t().activeCollaborators}: ${props.presence
-                    .filter((participant) => participant.userId !== props.currentUserId)
-                    .map((participant) => participant.displayName)
-                    .join(", ")}`}
-                />
-              </Show>
+          kind={
+            <>
+              <span>{details().kind}</span>
               <StatusBadge
-                tone={state().workStatus === "done" ? "ok" : state().workStatus === "waiting" ? "neutral" : "warning"}
-                label={state().workStatus === "done" ? t().done : state().workStatus === "waiting" ? t().waitingForReply : t().needsAction}
-                icon={
-                  state().workStatus === "done"
-                    ? "ti ti-circle-check"
-                    : state().workStatus === "waiting"
-                      ? "ti ti-hourglass"
-                      : "ti ti-message-reply"
-                }
+                tone={done() ? "ok" : state().workStatus === "waiting" ? "neutral" : "warning"}
+                label={done() ? t().done : state().workStatus === "waiting" ? t().waitingForReply : t().needsAction}
+                icon={done() ? "ti ti-circle-check" : state().workStatus === "waiting" ? "ti ti-hourglass" : "ti ti-message-reply"}
               />
-            </span>
+              <Show when={!props.canWrite}>
+                <StatusBadge tone="neutral" icon="ti ti-lock" label={details().readOnly} />
+              </Show>
+            </>
+          }
+          title={props.subject || t().noSubject}
+          subtitle={metaLine()}
+          meta={
+            <Show when={props.presence.some((participant) => participant.userId !== props.currentUserId)}>
+              <AvatarStack
+                people={props.presence.map((participant) => ({
+                  id: participant.userId,
+                  name: participant.displayName,
+                  src: cloudAvatarSource(participant.userId, participant.avatarHash),
+                  self: participant.userId === props.currentUserId,
+                  detailIcon: participant.mode === "composing" ? "ti ti-pencil" : "ti ti-eye",
+                  detail: participant.mode === "composing" ? t().composing : t().viewing,
+                }))}
+                title={t().activeCollaborators}
+                label={`${t().activeCollaborators}: ${props.presence
+                  .filter((participant) => participant.userId !== props.currentUserId)
+                  .map((participant) => participant.displayName)
+                  .join(", ")}`}
+              />
+            </Show>
           }
           primaryActions={
-            props.conversationHref ? (
-              <ButtonLink href={props.conversationHref} size="sm" variant="secondary">
-                {t().openConversation} <i class="ti ti-arrow-up-right" aria-hidden="true" />
-              </ButtonLink>
+            props.canWrite ? (
+              <Button
+                size="sm"
+                variant="subtle"
+                class="mail-details-done"
+                aria-pressed={done()}
+                onClick={() => updateCollaboration({ completion: done() ? "open" : "done" })}
+              >
+                <i class={done() ? "ti ti-arrow-back-up" : "ti ti-circle-check"} aria-hidden="true" />
+                {done() ? details().reopen : t().markDone}
+              </Button>
             ) : undefined
           }
+          menu={headerMenu()}
           actions={
             <Tooltip.Anchor content={t().closeDetails}>
               <IconButton
@@ -663,418 +1347,21 @@ export default function MailDetailsPanel(props: {
         />
 
         <DetailPanel.Body scrollPreserveKey="mail-conversation-detail">
-          <Show when={unavailableDetails()}>
-            {(description) => (
-              <DetailPanel.Section title={t().detailAvailability} icon="ti ti-alert-circle" tone="danger">
-                <Placeholder
-                  state="error"
-                  variant="compact"
-                  align="center"
-                  title={t().detailsTemporarilyUnavailable}
-                  description={description()}
-                  action={
-                    <Button variant="secondary" size="sm" type="button" onClick={() => void props.onReconcile()}>
-                      <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                    </Button>
-                  }
-                />
-              </DetailPanel.Section>
-            )}
-          </Show>
-
-          <Show when={props.conversationSummary?.summary}>
-            {(summary) => (
-              <DetailPanel.Section title={t().conversationSummary} icon="ti ti-sparkles" tone="accent">
-                <MarkdownView markdown={summary()} headingScale="compact" class="text-sm text-primary" />
-              </DetailPanel.Section>
-            )}
-          </Show>
-
-          <CheckboxCard
-            label={t().markDone}
-            description={t().markDoneDescription}
-            icon="ti ti-circle-check"
-            value={() => state().workStatus === "done"}
-            onValueChange={(done) => updateCollaboration({ completion: done ? "done" : "open" })}
-            disabled={!props.canWrite}
-          />
-
-          <Show when={props.canWrite && props.conversationDrafts[0]}>
-            {(draft) => (
-              <DetailPanel.Group label={t().draft}>
-                <DetailPanel.Section
-                  title={t().draftsAvailable({ count: props.conversationDrafts.length })}
-                  icon="ti ti-file-pencil"
-                  tone="accent"
-                  count={props.conversationDrafts.length}
-                >
-                  <DetailPanel.Action
-                    href={mailDraftHref(props.mailboxId, draft().id, props.requestUrl)}
-                    leading={<i class="ti ti-arrow-back-up" aria-hidden="true" />}
-                    title={t().continueDraft({ count: props.conversationDrafts.length })}
-                    description={t().draftMeta({
-                      name: draft().createdByDisplayName,
-                      updated: dates.formatDateTimeRelative(draft().updatedAt, props.dateConfig),
-                    })}
-                    trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                  />
-                </DetailPanel.Section>
-              </DetailPanel.Group>
-            )}
-          </Show>
-
-          <DetailPanel.Group label={t().workflow}>
-            <DetailPanel.Section
-              title={t().workflow}
-              icon="ti ti-adjustments-horizontal"
-              tone="neutral"
-              actions={
-                <Tooltip.Anchor content={t().createTag}>
-                  <IconButton type="button" label={t().createTag} size="xs" disabled={!canAssign()} onClick={() => void createTag()}>
-                    <i class="ti ti-tag-plus" aria-hidden="true" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              }
+          <Show when={props.mailboxWide} fallback={body()}>
+            <MailConversationContext
+              subject={props.subject}
+              mailboxId={props.mailboxId}
+              conversationId={props.conversationId}
+              requestUrl={props.requestUrl}
+              active={props.active}
+              canWrite={props.canWrite}
+              createTaskLabel={details().createTask}
+              moreLinkLabel={details().createTaskMore}
+              unavailableText={details().linkedUnavailable}
             >
-              <div class="flex flex-col gap-2.5">
-                <MultiSelectInput
-                  label={t().tags}
-                  value={() => tagState().tags.map((tag) => tag.id)}
-                  onValueChange={updateConversationTags}
-                  options={availableTags().map((tag) => ({
-                    id: tag.id,
-                    label: tag.name,
-                    icon: "ti ti-tag",
-                    color: tag.color,
-                  }))}
-                  selectedOptions={() =>
-                    tagState().tags.map((tag) => ({
-                      id: tag.id,
-                      label: tag.name,
-                      icon: "ti ti-tag",
-                      color: tag.color,
-                    }))
-                  }
-                  placeholder={t().selectTags}
-                  clearable
-                  disabled={!props.canWrite}
-                />
-                <MultiSelectInput
-                  label={t().assignees}
-                  value={() => state().assignees.map((user) => user.id)}
-                  onValueChange={(userIds) => updateCollaboration({ assigneeUserIds: userIds })}
-                  options={props.assignableUsers.map((user) => ({
-                    id: user.id,
-                    label: user.displayName,
-                    description: user.description,
-                    icon: "ti ti-user",
-                  }))}
-                  selectedOptions={() =>
-                    state().assignees.map((user) => ({
-                      id: user.id,
-                      label: user.displayName,
-                      icon: "ti ti-user",
-                    }))
-                  }
-                  placeholder={t().unassigned}
-                  clearable
-                  disabled={!canAssign() || Boolean(props.detailErrors.assignableUsers)}
-                />
-                <DateTimePicker
-                  label={t().snoozeUntil}
-                  description={snoozeDescription()}
-                  value={() => state().snoozedUntil}
-                  onValueChange={(value) => updateCollaboration({ snoozedUntil: value || null })}
-                  dateConfig={props.dateConfig}
-                  disabled={!props.canWrite || state().workStatus === "done"}
-                />
-                <div class="flex items-end gap-2">
-                  <div class="min-w-0 flex-1">
-                    <DateTimePicker
-                      label={t().personalReminder}
-                      value={reminderDueAt}
-                      onValueChange={(value) => value && updateReminder(value)}
-                      dateConfig={props.dateConfig}
-                      disabled={Boolean(props.detailErrors.reminder)}
-                    />
-                  </div>
-                  <Show when={reminderDueAt()}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      class="mb-0.5"
-                      disabled={Boolean(props.detailErrors.reminder)}
-                      onClick={clearReminder}
-                    >
-                      {t().clear}
-                    </Button>
-                  </Show>
-                </div>
-              </div>
-            </DetailPanel.Section>
-          </DetailPanel.Group>
-
-          <DetailPanel.Group label={t().conversationContext}>
-            <Show when={props.mailboxWide}>
-              <MailConversationContext
-                subject={props.subject}
-                mailboxId={props.mailboxId}
-                conversationId={props.conversationId}
-                requestUrl={props.requestUrl}
-                active={props.active}
-              />
-
-              <MailRelatedConversations
-                mailboxId={props.mailboxId}
-                conversationId={props.conversationId}
-                active={props.active}
-                dateConfig={props.dateConfig}
-              />
-            </Show>
-
-            <Show when={attachments().length > 0}>
-              <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" count={attachments().length}>
-                <div class="flex flex-col gap-1">
-                  <For each={attachments()}>
-                    {(attachment) => {
-                      const href = `/api/mail/mailboxes/${props.mailboxId}/messages/${attachment.messageId}/attachments/${attachment.id}`;
-                      const name = attachment.filename ?? "attachment";
-                      return (
-                        <DetailPanel.Action
-                          href={href}
-                          download={name}
-                          leading={<i class="ti ti-paperclip" aria-hidden="true" />}
-                          title={attachment.filename ?? attachment.contentType}
-                          description={`${attachment.contentType} · ${formatFileViewSize(attachment.sizeBytes)}`}
-                          trailing={<i class="ti ti-download" aria-hidden="true" />}
-                          secondaryAction={{
-                            icon: SAVE_FILES_ICON,
-                            label: saveFilesLabel(locale(), { name }),
-                            onClick: () =>
-                              void saveFiles([{ name, content: href, mediaType: attachment.contentType, size: attachment.sizeBytes }]),
-                          }}
-                        />
-                      );
-                    }}
-                  </For>
-                </div>
-              </DetailPanel.Section>
-            </Show>
-          </DetailPanel.Group>
-
-          <Show when={props.conversationId} keyed>
-            {(_conversationId) => (
-              <Discussion label={t().teamNotes} icon="ti ti-messages" count={commentsCursor() ? undefined : visibleComments().length}>
-                <Discussion.List
-                  error={props.detailErrors.comments}
-                  onRetry={props.onReconcile}
-                  hasMore={commentsCursor() !== null}
-                  loadingMore={loadingOlderComments()}
-                  loadingLabel={t().loadingTeamNotes}
-                  loadMoreLabel={t().loadEarlierTeamNotes}
-                  onLoadMore={loadOlderComments}
-                >
-                  <For each={visibleComments()}>
-                    {(comment) => {
-                      return (
-                        <Discussion.Item
-                          avatar={
-                            <Avatar
-                              name={comment.author.displayName}
-                              src={
-                                comment.author.kind === "user" ? cloudAvatarSource(comment.author.id, comment.author.avatarHash) : undefined
-                              }
-                              icon={comment.author.kind === "workflow" ? "ti ti-route" : undefined}
-                              size="xs"
-                            />
-                          }
-                          author={comment.author.displayName}
-                          timestamp={
-                            <time dateTime={comment.createdAt} title={dates.formatDateTime(comment.createdAt, props.dateConfig)}>
-                              {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
-                            </time>
-                          }
-                          actions={
-                            <>
-                              <Show when={comment.canEdit}>
-                                <Tooltip.Anchor content={t().editComment}>
-                                  <IconButton
-                                    type="button"
-                                    label={t().editComment}
-                                    size="xs"
-                                    onClick={() => void promptCommentEdit(comment)}
-                                  >
-                                    <i class="ti ti-pencil" aria-hidden="true" />
-                                  </IconButton>
-                                </Tooltip.Anchor>
-                              </Show>
-                              <Show when={comment.canDelete}>
-                                <Tooltip.Anchor content={t().deleteComment}>
-                                  <IconButton
-                                    type="button"
-                                    label={t().deleteComment}
-                                    size="xs"
-                                    onClick={() => removeComment.mutate(comment)}
-                                  >
-                                    <i class="ti ti-trash" aria-hidden="true" />
-                                  </IconButton>
-                                </Tooltip.Anchor>
-                              </Show>
-                            </>
-                          }
-                        >
-                          <Show when={comment.body}>{(body) => <MarkdownView markdown={body()} headingScale="compact" />}</Show>
-                        </Discussion.Item>
-                      );
-                    }}
-                  </For>
-                </Discussion.List>
-
-                <Show when={!props.detailErrors.comments}>
-                  <Discussion.Composer
-                    label={t().addInternalComment}
-                    placeholder={t().addInternalComment}
-                    submitLabel={t().postComment}
-                    onSubmit={async (body) => {
-                      await addComment.mutate(body);
-                      const error = addComment.error();
-                      if (error) throw error;
-                    }}
-                  />
-                </Show>
-              </Discussion>
-            )}
+              {(parts) => body(parts)}
+            </MailConversationContext>
           </Show>
-
-          <DetailPanel.Group label={t().conversationHistory}>
-            <Show when={props.activity.length > 0}>
-              <DetailPanel.Section title={t().recentActivity} icon="ti ti-history" tone="neutral" collapsible>
-                <div class="mail-activity-rows">
-                  <For each={activityItems()}>
-                    {(event) => (
-                      <div class="mail-activity-row">
-                        <i
-                          class={`ti ${event.outcome === "failed" ? "ti-alert-circle text-red-500" : `${event.icon} text-dimmed`}`}
-                          aria-hidden="true"
-                        />
-                        <span class="min-w-0 flex-1 truncate text-secondary">
-                          <span class="font-medium text-primary">{event.actorLabel}</span> {event.label}
-                          <Show when={event.count > 1}> ({event.count})</Show>
-                        </span>
-                        <time
-                          class="shrink-0 text-xs text-dimmed"
-                          dateTime={event.createdAt}
-                          title={dates.formatDateTime(event.createdAt, props.dateConfig)}
-                        >
-                          {dates.formatDateTimeRelative(event.createdAt, props.dateConfig)}
-                        </time>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </DetailPanel.Section>
-            </Show>
-
-            <DetailPanel.Section title={t().mailDetails} icon="ti ti-code" tone="neutral" collapsible>
-              <DescriptionList
-                layout="rows"
-                size="sm"
-                items={[
-                  {
-                    term: t().subject,
-                    description: (
-                      <span class="block truncate" title={props.subject}>
-                        {props.subject || t().noSubject}
-                      </span>
-                    ),
-                  },
-                  {
-                    term: t().from,
-                    description: (
-                      <span class="block truncate" title={addressList(latestMessage()?.from ?? [])}>
-                        {addressList(latestMessage()?.from ?? []) || t().unknown}
-                      </span>
-                    ),
-                  },
-                  {
-                    term: t().toLabel,
-                    description: (
-                      <span class="block truncate" title={addressList(latestMessage()?.to ?? [])}>
-                        {addressList(latestMessage()?.to ?? []) || t().undisclosed}
-                      </span>
-                    ),
-                  },
-                  {
-                    term: t().thread,
-                    description: t().messageCount({ count: props.messages.length }),
-                  },
-                  ...(attachmentCount() > 0
-                    ? [
-                        {
-                          term: t().files,
-                          description: t().attachmentCount({ count: attachmentCount() }),
-                        },
-                      ]
-                    : []),
-                  ...(latestMessage()?.messageId
-                    ? [
-                        {
-                          term: t().messageId,
-                          description: <span class="block truncate font-mono text-xs">{latestMessage()?.messageId}</span>,
-                        },
-                      ]
-                    : []),
-                  ...(latestMessage()
-                    ? [
-                        { term: t().size, description: formatFileViewSize(latestMessage()!.sizeBytes) },
-                        { term: t().content, description: latestMessage()!.contentType ?? t().unavailable },
-                        { term: t().mirror, description: latestMessage()!.hydrationStatus },
-                      ]
-                    : []),
-                ]}
-              />
-              <Show when={latestMessage()}>
-                {(message) => (
-                  <div class="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      aria-busy={inspectorLoading() === "headers" ? "true" : undefined}
-                      onClick={() => void openMessageInspector(message().id, "headers")}
-                    >
-                      <i
-                        class={inspectorLoading() === "headers" ? "ti ti-loader-2 animate-spin" : "ti ti-list-details"}
-                        aria-hidden="true"
-                      />{" "}
-                      {t().headers}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      aria-busy={inspectorLoading() === "source" ? "true" : undefined}
-                      onClick={() => void openMessageInspector(message().id, "source")}
-                    >
-                      <i class={inspectorLoading() === "source" ? "ti ti-loader-2 animate-spin" : "ti ti-code"} aria-hidden="true" />{" "}
-                      {t().source}
-                    </Button>
-                    <Show when={message().sourceAvailable}>
-                      <ButtonLink
-                        variant="secondary"
-                        size="sm"
-                        href={`/api/mail/mailboxes/${props.mailboxId}/messages/${message().id}/source`}
-                        download={`${message().subject.trim() || "message"}.eml`}
-                      >
-                        <i class="ti ti-download" aria-hidden="true" /> {t().downloadEml}
-                      </ButtonLink>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </DetailPanel.Section>
-          </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>
     </div>

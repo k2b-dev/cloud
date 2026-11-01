@@ -14,6 +14,7 @@ import type {
 } from "../contracts";
 import type { DefinedWorkflowModule } from "../module";
 import { hashWorkflowJson, hashWorkflowSource, normalizeWorkflowJson } from "./canonical";
+import { parseWorkflowValueString } from "./expressions";
 import { validateWorkflowField, workflowDiagnostic, workflowRecord } from "./schema";
 import { parseWorkflowYaml } from "./strict-yaml";
 
@@ -212,9 +213,23 @@ const compileCondition = (
   const operators = Object.keys(value);
   if (
     operators.length !== 1 ||
-    !["equals", "notEquals", "includes", "textEquals", "contains", "startsWith", "endsWith", "exists", "all", "any", "not"].includes(
-      operators[0]!,
-    )
+    ![
+      "equals",
+      "notEquals",
+      "includes",
+      "textEquals",
+      "contains",
+      "startsWith",
+      "endsWith",
+      "greaterThan",
+      "lessThan",
+      "atLeast",
+      "atMost",
+      "exists",
+      "all",
+      "any",
+      "not",
+    ].includes(operators[0]!)
   ) {
     addDiagnostic(context, "condition.operator", "Condition must contain exactly one supported operator", path);
     return undefined;
@@ -246,6 +261,22 @@ const compileCondition = (
   if (!Array.isArray(operand) || operand.length !== 2) {
     addDiagnostic(context, "condition.operands", `${operator} requires exactly two operands`, [...path, operator]);
     return undefined;
+  }
+  if (operator === "greaterThan" || operator === "lessThan" || operator === "atLeast" || operator === "atMost") {
+    operand.forEach((value, index) => {
+      const expression = typeof value === "string" ? parseWorkflowValueString(value) : undefined;
+      if (
+        (typeof value !== "number" || !Number.isFinite(value)) &&
+        (expression?.kind !== "expression" || expression.expression.kind !== "reference")
+      ) {
+        addDiagnostic(context, "condition.type", `${operator} operand ${index + 1} must be a finite number or reference`, [
+          ...path,
+          operator,
+          index,
+        ]);
+      }
+    });
+    return { operator, operands: [normalizeWorkflowJson(operand[0]!), normalizeWorkflowJson(operand[1]!)] };
   }
   return {
     operator: operator as "equals" | "notEquals" | "includes" | "textEquals" | "contains" | "startsWith" | "endsWith",

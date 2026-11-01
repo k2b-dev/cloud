@@ -3,9 +3,9 @@ title: OpenAI-compatible API
 navTitle: OpenAI-compatible API
 section: AI
 order: 1025
-description: Connect external text clients to your allowed Assistant models with a models-only personal API key.
+description: Connect external text clients to your allowed Assistant models with a models-only API key.
 tags: [ai, models, api, authentication, streaming]
-updated: 2026-10-11
+updated: 2026-10-23
 ---
 
 # OpenAI-compatible API
@@ -20,7 +20,7 @@ projects or global instructions. For Assistant with tools, use the
 
 An administrator must enable **OpenAI-compatible API** in AI settings
 (`ai.openai_api_enabled`, off by default). You also need
-[access to a chat model](/en/docs/ai/models-and-providers#restrict-a-model-in-assistant).
+[access to a chat model](/en/docs/ai/models-and-providers#add-models-and-variants).
 
 In your profile under **Developer → API keys**, create a key with the access
 **AI models only**, or run:
@@ -36,26 +36,55 @@ Configure the client with:
 | Field | Value |
 | --- | --- |
 | Base URL | `https://<your-cloud>/api/ai/openai/v1` |
-| API key | Your models-only personal key |
-| Model | A profile ID from `GET /models` |
+| API key | Your models-only key |
+| Model | A variant ID or `cloud/balanced` from `GET /models` |
 
 Send the key as `Authorization: Bearer <key>`. Full-access personal keys,
 sessions and OAuth tokens are refused here. Listing models returns only allowed
-chat profiles, with `id`, `object: "model"`, `created: 0` and
-`owned_by: "cloud"`. Transcription profiles, prices, provider details and data
+chat variants and assigned classes (`cloud/fast`, `cloud/balanced`,
+`cloud/thorough`, `cloud/maximum`), with `id`, `object: "model"`, `created: 0` and
+`owned_by: "cloud"`. Transcription models, prices, provider details and data
 boundaries are omitted.
 
-Replace `<your-cloud>` and `MODEL_PROFILE_ID`. With the key already loaded
+Replace `<your-cloud>` and `VARIANT_ID`. With the key already loaded
 into `CLOUD_MODELS_KEY` from your secret store:
 
 ```bash
 curl 'https://<your-cloud>/api/ai/openai/v1/chat/completions' \
   -H @- \
   -H "Content-Type: application/json" \
-  -d '{"model":"MODEL_PROFILE_ID","messages":[{"role":"user","content":"Clean up this transcript: um, the meeting starts at ten."}]}' <<EOF
+  -d '{"model":"VARIANT_ID","messages":[{"role":"user","content":"Clean up this transcript: um, the meeting starts at ten."}]}' <<EOF
 Authorization: Bearer $CLOUD_MODELS_KEY
 EOF
 ```
+
+## Connect a machine account
+
+Administrators can create a models-only key for an active standalone account
+or agent in **Accounts → Service accounts → Create API key**. Select the account
+by name, choose **AI models only**, and save the key when it appears. The
+creation dialog also offers **Full access** for ordinary Cloud API clients.
+A full-access key cannot call this Models API.
+
+First create the [service account](/en/docs/identity/service-accounts), then
+grant it access to the model in **AI settings**. A machine uses its own grants,
+including any explicitly configured group or authenticated grants. Its creator's
+permissions do not contribute. An account with no matching model grant sees no
+models and cannot generate a completion.
+
+The administrator API accepts the same purpose:
+
+```http
+POST /api/admin/identity/service-accounts/<id>/api-keys
+Content-Type: application/json
+
+{"name":"Transcript cleanup","access":"models"}
+```
+
+`access` is `full` by default. `models` cannot be combined with ordinary
+credential scopes. The returned token appears only in this creation response;
+metadata and revocation remain in Accounts. Use the same base URL and model
+IDs as for a personal key. OAuth access tokens cannot call this API.
 
 ## Request fields
 
@@ -63,7 +92,7 @@ EOF
 
 | Supported field | Behavior |
 | --- | --- |
-| `model` | Required allowed model profile ID |
+| `model` | Required allowed variant ID or `cloud/<class>` |
 | `messages` | Required non-empty array; text only |
 | `temperature` | 0–2; omitted uses the profile/provider default |
 | `top_p` | 0–1; forwarded in the provider's parameter format |
@@ -131,8 +160,10 @@ normal inference accounting.
 
 ## Limits and usage
 
-Requests use the person's model grants, account category, account expiry and
-chat allowance. The usage report attributes each call to task `openai-api`.
+Requests use the authenticated account's model grants and chat allowance.
+Personal keys also retain account category and expiry checks. Machine usage
+belongs to the service account, across all its keys. The inference ledger
+records the credential ID and attributes each call to task `openai-api`.
 No request or response content is stored in the inference ledger.
 
 - **Output:** the requested output limit is capped by the model profile's
@@ -144,9 +175,9 @@ No request or response content is stored in the inference ledger.
   1,000,000 tokens, the largest supported adapter default.
 - **Rate:** the existing `security.rate_limit_per_second` limit applies per IP.
 - **Concurrency:** `ai.openai_api_max_concurrent_requests` defaults to four
-  simultaneous requests per person across all instances. Typical clients use
+  simultaneous requests per account across all instances. Typical clients use
   one or two connections. Four leaves room for a second client while limiting
-  scripts that would crowd out other people. A Cloud process runs up to eight
+  scripts that would crowd out other accounts. A Cloud process runs up to eight
   queued chat turns; these synchronous requests bypass that queue. Operators
   with more provider capacity can raise the limit to 64.
 
@@ -172,24 +203,25 @@ stable. `param` names the offending field when applicable.
 | --- | --- | --- |
 | 400 | `invalid_request_error` | `invalid_request`, `unsupported_parameter`, `unsupported_content`, `context_length_exceeded` |
 | 401 | `authentication_error` | `invalid_api_key` |
-| 403 | `permission_error` | `openai_api_disabled`, `ai_disabled`, `model_access_denied` |
+| 403 | `permission_error` | `openai_api_disabled`, `ai_disabled` |
 | 404 | `invalid_request_error` | `model_not_found`, `not_found` |
 | 413 | `invalid_request_error` | `request_too_large` |
 | 429 | `insufficient_quota` | `insufficient_quota` |
 | 429 | `rate_limit_error` | `rate_limit_exceeded`, `too_many_concurrent_requests` |
-| 502 | `api_error` | `upstream_error`, `missing_provider_credential` |
+| 502 | `api_error` | `upstream_error` |
 | 500 | `api_error` | `internal_error` |
 
 A request for a model you cannot use returns `404 model_not_found`. This
 covers unknown models, models without your grant, models whose provider has no
-credential, and AI turned off. `ai_disabled`, `model_access_denied` and
-`missing_provider_credential` appear only when an administrator changes these
-settings during the request.
+credential, and AI turned off. `ai_disabled` appears only when an administrator
+turns AI off during the request.
 
 ## Key isolation and revocation
 
-Models-only keys are personal API keys with the reserved `ai:inference` scope.
-Only personal key creation with `access: "models"` can issue that scope.
+Models-only keys carry the reserved `ai:inference` purpose. Personal key
+creation and administrator creation for standalone accounts or agents issue it
+through `access: "models"`. The Models API accepts exactly that purpose, with
+no other scopes. Resource-bound credentials cannot receive it.
 Central authentication rejects it on every other Cloud surface; only this
 endpoint authenticates it directly. Other scopes alongside it do not bypass
 the rejection. Its secret is stored with a separate hash, so applications on
@@ -198,5 +230,11 @@ instead of granting full access.
 
 Revoke the key like any personal key in your profile or with
 `cld account api-keys revoke <id-or-prefix-or-name> --yes`.
+For machines, revoke the key in Accounts or disable its service account.
+Credential revocation, expiry, account disable, and model grant removal affect
+the next request. Cloud rechecks the credential and model grant immediately
+before provider dispatch, after quota admission; rejected dispatch releases
+its reservation without charging inference usage.
+
 Turning off `ai.openai_api_enabled` stops new requests with existing keys too.
 It does not cancel provider calls already running.

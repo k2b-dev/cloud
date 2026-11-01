@@ -19,11 +19,28 @@ Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidunge
 - **Hinzufügen:** Mit Zugriff **Bearbeiten** schreibst du Markdown-Kommentare. Andere Personen mit geöffnetem Detailbereich sehen neue Kommentare sofort.
 - **Korrigieren:** Du kannst deinen eigenen Kommentar zehn Minuten lang nach dem Veröffentlichen bearbeiten oder löschen.
 - **Gesperrte Notizen:** Eine Sperre friert den Notiztext ein, nicht die Diskussion. Mit Zugriff **Bearbeiten** kommentierst du auch eine gesperrte Notiz.
+- **Terminal:** `cld notebooks discussion` liest und schreibt diese Seitendiskussion. `cld notebooks comments` arbeitet mit Kommentaren zum Text.
 :::
 
 Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um diesen Inhalt vor oder nach einer Änderung zu besprechen.
 
 **Mit KI bearbeiten** öffnet Assistant mit der Seite und ihrer Diskussion. Nach einer Prüfung kann Assistant auch deine neuen Kommentare korrigieren oder löschen. Es gelten dieselben Regeln für Autor und zehn Minuten. Assistant kann Entwürfe für Abfragen und Inhaltsverzeichnisse prüfen, ohne sie zu speichern. Diese Prüfung deckt nicht alle Markdown-Funktionen oder Tabellenformeln ab.
+
+## Text direkt kommentieren {icon="message-plus"}
+
+Markiere eine Stelle im Text. Über der Auswahl erscheint eine kleine Leiste mit **Fett**, **Kursiv**, **Link** und **Kommentieren**. Auf dem Telefon erscheint sie unter der Auswahl. Du kannst auch ⌘⌥M drücken (Windows und Linux: Strg+Alt+M). Ohne Auswahl kommentierst du das Wort am Cursor.
+
+:::reference
+- **Rand:** Der Kommentar steht rechts neben dem Text, auf Höhe seiner Stelle. Die Stelle bleibt in deiner Farbe markiert. Ist zu wenig Platz oder der Detailbereich offen, steht ein farbiger Punkt neben der Zeile. Wähle ihn, um den Kommentar zu öffnen. Auf dem Telefon wählst du die Stelle; der Kommentar öffnet sich unten am Bildschirm.
+- **Vorschlag:** **Änderung vorschlagen** öffnet ein Feld mit dem markierten Text. Darunter siehst du den Unterschied. **Übernehmen** ändert den Text für alle, wie eine normale Bearbeitung in den Versionen. **Rückgängig** geht, solange niemand den neuen Text geändert hat.
+- **Antworten und Erledigen:** Wähle die Stelle oder den Kommentar, um ihn ganz zu öffnen. Dort antwortest du oder markierst ihn als erledigt. Oben am Rand zeigt **n erledigt** die erledigten Kommentare wieder.
+- **Korrigieren:** Deinen eigenen Kommentar bearbeitest oder löschst du zehn Minuten lang. Löschen geht nur ohne Antworten.
+- **Gelöschte Stelle:** Löscht jemand den markierten Text, bleibt der Kommentar mit einem Punkt an der Stelle. Er zeigt den alten Text durchgestrichen.
+- **Tastatur:** Alt+Enter springt von einer markierten Stelle zum Kommentar. Escape springt zurück. Die Pfeiltasten wechseln zwischen den Kommentaren am Rand.
+- **Wer was darf:** Mit Zugriff **Bearbeiten** kommentierst, schlägst vor, übernimmst und erledigst du. Mit Zugriff **Ansehen** liest du die Kommentare in **Schreibgeschützt**.
+- **Wo Kommentare erscheinen:** In **Bearbeiten** und **Schreibgeschützt**. **Buch**, Druck, PDF und Markdown-Export zeigen keine Kommentare. Im **Buch** öffnet **n Kommentare** oben die Notiz in **Schreibgeschützt** beim ersten Kommentar.
+- **Chat:** Der Chat der Seite zeigt zu jedem neuen Kommentar eine ruhige Zeile mit Link zur Stelle.
+:::
 
 ## Eine gespeicherte Version wiederherstellen {icon="history"}
 
@@ -85,7 +102,8 @@ Für Überschriften und Listen gelten die Zifferntasten auf jedem Tastaturlayout
 
 :::reference
 - `/` am Zeilenanfang oder nach einem Leerzeichen öffnet das Einfügemenü. Tippe einen Befehlsnamen, um es zu filtern.
-- `[[` öffnet Notizvorschläge. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
+- `[[` öffnet Notizvorschläge. Tippe einen Teil eines Titels, um jede Notiz des Notizbuchs zu finden; eine Notiz mit genau diesem Titel steht oben. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
+- Ein eingefügter Link auf etwas in dieser Cloud, etwa aus der Adressleiste oder über **Cloud-ID kopieren**, wird nach dem Erkennen zu einem Link mit Titel; eine Notiz wird zu einem Notizlink. Links, die du nicht öffnen darfst, Links in Code und Einfügen mit **Strg+Umschalt+V** (**⌘+Umschalt+V** am Mac) bleiben wie eingefügt. Rückgängig holt den ursprünglichen Link zurück.
 - `![[` öffnet Anhangsvorschläge. Die Auswahl bettet ein Bild ein; bei einer anderen Datei fügt sie einen Download-Link ein.
 - `==Text==` markiert Text farbig. Die Markierung bleibt innerhalb einer Zeile.
 - Auf Touchscreens stehen **Rückgängig** und **Wiederholen** am Anfang der Werkzeugleiste.
@@ -116,7 +134,9 @@ Listen im Notizeditor folgen ihrer Struktur. Die Tasten wirken gleich für Aufz�
 - **Listeneinträge verschieben:** Am Mac nutzt du **Wahltaste+Pfeil nach oben/unten**. Unter Windows und Linux geht das auch mit **Strg+Umschalt+Pfeil nach oben/unten**. Am Mac markiert **⌘+Umschalt+Pfeil nach oben/unten** weiterhin bis zum Anfang oder Ende der Notiz. Reicht deine Auswahl über mehr als einen Eintrag, werden die markierten Zeilen verschoben.
 - **Nummerierte Listen:** Wenn du Einträge hinzufügst, entfernst, einrückst oder verschiebst, wird die geänderte Liste im Markdown neu nummeriert. Sie behält ihre erste Nummer, auch wenn du den ersten Eintrag entfernst. Andere Listen behalten ihre Nummern. Einmal Rückgängig stellt die Änderung samt vorherigen Nummern wieder her.
 - **Werkzeugleiste:** Aufzählung, Nummerierte Liste und Checkliste stehen direkt in der Werkzeugleiste, auch am Smartphone.
-- **Tabellen:** **Tab** markiert die nächste Zelle, **Umschalt+Tab** die vorherige.
+- **Tabellen:** In **Formatiert** tippst du direkt in eine Tabellenzelle. **Tab** markiert die nächste Zelle, **Umschalt+Tab** die vorherige. **Tab** in der letzten Zelle fügt eine Zeile an. **Enter** wechselt in die Zelle darunter, hängt von einer gefüllten letzten Zeile eine Zeile an oder verlässt eine leere letzte Zeile.
+- **Tabellenmenü:** Um Zeilen und Spalten einzufügen, zu löschen oder auszurichten, öffne das Menü per Rechtsklick in einer Zelle, wähle ihren Zeilen- oder Spaltengriff oder den Tabellenknopf in der Werkzeugleiste, oder drücke **Umschalt+F10** in einer Zelle. Diese Änderungen brauchen eine Verbindung. Ohne Verbindung geht nur **Zeile darunter** am Ende der Tabelle.
+- **Formeln in Zellen:** Bearbeite die Formel direkt in der Zelle, mit Vorschlägen für Funktionen und Spalten und einem laufend aktualisierten Ergebnis. Nach dem Verlassen zeigt die Zelle das Ergebnis.
 - **Vorschläge:** Ist eine Vorschlagsliste offen, setzen **Tab** und **Enter** den markierten Vorschlag ein.
 - **Editor verlassen:** Drücke **Esc** und dann **Tab**, um zum nächsten Bedienelement zu wechseln. Drücke **Esc** und dann **Umschalt+Tab**, um zurückzugehen.
 - **Tab für den Fokus behalten:** Öffne **Einstellungen → Notizbuch → Ansicht und Verhalten** und schalte **Tab-Taste bewegt den Fokus statt einzurücken** ein. Dieser Browser speichert die Wahl, und sie gilt sofort.
@@ -129,6 +149,7 @@ Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite z
 :::reference
 - **Name des Notizbuchs:** Wähle den Namen oben, um zu einem anderen Notizbuch zu wechseln oder **Alle Notizbücher** zu öffnen.
 - **Suche und neue Notizen:** Wähle **Notizen durchsuchen** oder drücke **Cmd/Strg+Umschalt+K**. Mit Zugriff **Bearbeiten** oder **Verwalten** erstellst du mit dem Stift neben dem Namen oder mit **Cmd/Strg+Alt+N** eine Notiz. Das letzte Wort deiner Eingabe findet auch Wortanfänge: *Bespr* findet *Besprechungen*. Notizen, deren Titel deiner Eingabe entspricht oder damit beginnt, stehen oben.
+- **Große Notizbücher:** In einem Notizbuch mit mehr als 100 Notizen öffnet der Baum nur den Weg zur offenen Notiz. Öffne eine Notiz mit Unternotizen, um sie zu laden. Um die offene Notiz zeigt eine Ebene zuerst 20 Notizen. Wähle an ihrem Ende **… weitere Notizen** oder an ihrem Anfang **… vorherige Notizen**, um bis zu 100 weitere zu zeigen.
 - **Favoriten, Zuletzt und Tags:** Diese Filter zeigen statt des Baums eine Liste, die zuletzt geänderte Notiz zuerst. **Zuletzt** zeigt die 12 zuletzt geänderten Notizen. Jede Notiz zeigt, wann sie sich geändert hat, und ihre ersten zwei Tags. Wähle den Filter erneut oder **×** über der Liste, um wieder den Baum zu sehen.
 - **Die Liste bleibt ruhig:** Solange die Liste offen ist, verschieben Änderungen von dir oder anderen ihre Notizen nicht. Eine Notiz, die neu zum Filter passt, kommt ans Ende. Um die Liste neu zu sortieren, wähle den Filter zweimal.
 - **Deine Favoriten:** Wähle im Menü einer Notiz **Zu Favoriten hinzufügen**. Nur du siehst deine Favoriten.
@@ -247,6 +268,7 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 - **Verlauf:** Notizen stehen als Zeilen untereinander, die letzte Änderung zuerst. Die Gruppen beginnen mit **Heute**, **Gestern**, **Diese Woche** und **Letzte Woche**, danach folgen Monate und Jahre. Verknüpfungen sind Bögen links, in der Farbe ihres Ausgangsbereichs. Zeige auf eine Zeile oder fokussiere sie, um ihre Verknüpfungen zu sehen. Eingehende Verknüpfungen sind gestrichelt. Diese Darstellung scrollt, statt zu zoomen. Sie öffnet sich bei der offenen Notiz.
 - **Tiefe:** Wähle in **Umgebung** zwischen **1 Schritt** und **2 Schritte**.
 - **In die Mitte:** Fokussiere eine Notiz und drücke die **Leertaste**. Auf einem Touchscreen wählst du eine Notiz und dann **In die Mitte**. Diese Notiz wird die Mitte.
+- **Große Notizbücher:** In einem Notizbuch mit mehr als 500 Seiten zeigt der Graph die Seiten rund um die offene Seite: ihre Links, deren Links, ihre Unterseiten und die Seiten darüber. Eine Zeile über dem Graphen sagt, wie viele Seiten er zeigt. Um die Seiten um eine andere Seite zu sehen, bringe sie in **Umgebung** in die Mitte oder öffne den Graphen von dieser Seite aus.
 - **Auf dem Telefon:** Verknüpfungen öffnet sich in **Umgebung**, außer du wählst eine andere Darstellung. Deine Wahl bleibt in der Adresse.
 - **Hier keine Verknüpfungen:** Wähle **Ganzes Notizbuch zeigen**, um **Netz** zu sehen. Blenden die Filter alle Verknüpfungen der aktuellen Notiz aus, wähle **Filter zurücksetzen**.
 - **Bereiche:** Jede Seite auf oberster Ebene mit Unterseiten ist ein Bereich mit eigener Farbe. Die übrigen Seiten auf oberster Ebene stehen unter **Oberste Ebene**. Das Netz bewegt sich nicht von selbst. Du kannst eine Notiz ziehen, und ihre Nachbarn folgen ein wenig.

@@ -10,6 +10,7 @@ import { Select } from "../inputs/Select";
 import { resolveSelectMessages } from "../inputs/select-messages";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
+import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 import { resolvePromptMessages } from "./prompt-messages";
@@ -38,6 +39,11 @@ export interface ConfirmOptions extends DialogOptions {
 type PromptContent = string | HTMLElement | JSX.Element;
 
 export type PromptSearchItem<T = unknown> = {
+  /**
+   * Stable identity of the result, such as its record ID. With it, a newer answer that contains the same result keeps
+   * its row, so a click in progress still lands. Without it, each answer replaces the rows.
+   */
+  id?: string;
   label: string;
   desc?: string;
   icon?: string;
@@ -443,6 +449,18 @@ const PromptFormDialog = <T extends Record<string, FieldSchema>>(props: {
   );
 };
 
+// Results without an ID keep today's behavior: each object is its own identity, so a new answer replaces the row.
+const anonymousRows = new WeakMap<object, string>();
+let anonymousRow = 0;
+const searchRowIdentity = (item: PromptSearchItem<unknown>): string => {
+  if (item.id !== undefined) return `id:${item.id}`;
+  const known = anonymousRows.get(item);
+  if (known !== undefined) return known;
+  const key = `object:${anonymousRow++}`;
+  anonymousRows.set(item, key);
+  return key;
+};
+
 type CloudSearchResolver<T> = (input: PromptSearchInput) => Promise<PromptSearchItem<T>[]> | PromptSearchItem<T>[];
 
 const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchResolver<T>, options?: PromptSearchOptions) =>
@@ -605,7 +623,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
                   }
                 >
                   <div id={listboxId} class="k2b-prompt-search__list" role="listbox" aria-label={resolveUiMessages().searchResults}>
-                    <For each={items()}>
+                    <KeyedFor each={items()} by={searchRowIdentity}>
                       {(item, index) => (
                         <button
                           ref={(element) => {
@@ -617,29 +635,29 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
                           role="option"
                           aria-selected={activeIndex() === index()}
                           data-active={activeIndex() === index() ? "true" : undefined}
-                          data-has-description={item.desc ? "true" : undefined}
+                          data-has-description={item().desc ? "true" : undefined}
                           onMouseEnter={() => setActiveIndex(index())}
-                          onClick={() => execute(item)}
+                          onClick={() => execute(item())}
                         >
                           {/* Cloud keeps the preview box mounted once a row declares an image, so a
                               failed load swaps in the fallback glyph instead of collapsing the row. */}
-                          <Show when={item.previewUrl?.startsWith("/") || item.icon}>
+                          <Show when={item().previewUrl?.startsWith("/") || item().icon}>
                             <span class="k2b-prompt-search__preview">
                               <Show
-                                when={item.previewUrl?.startsWith("/") && !failedPreviews[index()]}
-                                fallback={<i class={item.icon ?? "ti ti-file"} aria-hidden="true" />}
+                                when={item().previewUrl?.startsWith("/") && !failedPreviews[index()]}
+                                fallback={<i class={item().icon ?? "ti ti-file"} aria-hidden="true" />}
                               >
-                                <img src={item.previewUrl} alt="" onError={() => setFailedPreviews(index(), true)} />
+                                <img src={item().previewUrl} alt="" onError={() => setFailedPreviews(index(), true)} />
                               </Show>
                             </span>
                           </Show>
                           <span class="k2b-prompt-search__copy">
-                            <strong>{item.label}</strong>
-                            <Show when={item.desc}>{(description) => <small>{description()}</small>}</Show>
+                            <strong>{item().label}</strong>
+                            <Show when={item().desc}>{(description) => <small>{description()}</small>}</Show>
                           </span>
                         </button>
                       )}
-                    </For>
+                    </KeyedFor>
                   </div>
                 </Show>
               </div>

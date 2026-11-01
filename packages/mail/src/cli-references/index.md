@@ -38,14 +38,14 @@ Domain rules include subdomains. Trust rules support sender addresses and sender
 Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
-- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
+- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, the automation log and rule-effect undo, and central run operations.
 - [Mail operations](operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety
 
 - Run `cld mail help` and confirm that the Mail module is available before changing a mailbox.
 - Use `--json` when a later command needs an id, revision, token, or cursor.
-- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself. It is the same Cloud ID that **Copy conversation Cloud ID** and **Copy message Cloud ID** copy in Mail, and other Cloud apps accept it as a reference to that conversation or message. `cld mail show` prints it as `Cloud ID`.
 - Pass provider credentials with `--secret-stdin` or `--secret-file`. Credentials are write-only and are never returned by the API.
 - Read a message and its folder ids before changing provider state, moving, copying, or deleting it.
 - Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).
@@ -69,6 +69,19 @@ cld --json mail ls Support:Archiv
 # {"error":{"message":"\"Archiv\" matches several folders: Archiv (Fa9x2Q), archiv (Kp3m8R). Use one of these paths or IDs.","status":409,"exitCode":1}}
 cld --json mail ls Support:Fa9x2Q
 ```
+
+## Choose your mailbox view
+
+```bash
+cld mail view get Support
+cld mail view set Support --large auto --phone compact
+cld mail view set Support --large columns
+cld mail view set Support --large split --phone detailed
+```
+
+Choices belong to the current person and mailbox. Read access, including assigned-only access, is enough. Large screens accept `auto` (columns until reading, then list + reader), `columns`, or `split`. Phones accept `compact` or `detailed`. An omitted flag keeps that device class unchanged; `set` requires at least one flag. With no stored choice, the defaults are `auto` and `compact`. JSON output is `{ "large": "auto", "phone": "compact" }`.
+
+The API exposes the same preference through `GET` and `PATCH /api/mail/mailboxes/:mailboxId/view`. A small refresh read, `GET /api/mail/mailboxes/:mailboxId/done-today`, returns `{ "doneToday": 0, "doneByAutomation": 0 }` for the caller's visible conversations. The Core time zone defines today, with Europe/Berlin as fallback. Each conversation counts once; its latest transition to done today determines the automation attribution. Reopening does not remove it from today's count.
 
 ## Read mail
 
@@ -183,6 +196,10 @@ An automation's **Done** or **Waiting for reply** covers only its triggering mes
 When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
 For existing messages, use an enabled automation without AI steps; see [Mail automation](automation.md#manage-incoming-automations) for backfill commands and details, or `cld mail sender move` for moving only.
 
+### Assign people and accounts
+
+Conversation assignees include active agents and standalone service accounts with mailbox write access or assigned-only read/write access. `cld mail assign --to` resolves exact account names and user names; use a UUID when names are ambiguous. Account results carry `displayName`, `type: service_account`, and `serviceAccountKind`. Assignment input `assigneeUserIds`, assignee search `userId`, and automation action `assign_user.userId` retain their existing names and accept either principal's UUID. **Assigned to me** follows the current principal; a personal API key follows its person. Assignment notifications go only to people.
+
 ### Choose the right follow-up and mailbox pattern
 
 - **Show later** (`cld mail conversation update <id> --revision <r> --snooze-until <ISO>`) hides a conversation in **Later** until that time, then returns it with the same status; new incoming mail ends it earlier, and Done cannot be snoozed.
@@ -223,7 +240,7 @@ cld --json mail unkeep <conversation-id> --yes
 - `keep` protects whole conversations, including replies that join them later. It needs write access, takes up to 50 IDs, and returns `{ "results": [...] }` with who kept each conversation and since when (`status: "ok"`) or the error (`status: "error"`). Keeping an already kept conversation changes nothing. A batch continues when one conversation fails and then exits with status 1.
 - While a conversation is kept, `rm`, moving it to Junk or Drafts, deleting a folder that holds it, and the same actions from automations, workflows, and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
 - When the mail server or another client deletes a kept message, Cloud keeps its own copy in the folder where it was last. `cat --json` shows it with `deletedOnServer: true` and `remoteAvailable: false`. `archive`, `mv`, `read`, and `flag` change that copy in Cloud only; `message flags|move|copy|delete` for it fail with `KEPT_COPY_ONLY`.
-- `unkeep` needs Manage access and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. It returns `{ "conversationId", "released" }`.
+- `unkeep` requires a Cloud administrator (session or personal API key) and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. Use `--reason <text>` to record a reason (up to 500 characters). Without a mailbox grant, pass its exact public ID with `--mailbox <mailbox-id>`. Agents, standalone service accounts, workflows and automations cannot lift keeps. It returns `{ "conversationId", "released" }`.
 
 ## Answer mail
 
@@ -319,8 +336,8 @@ Mailbox access uses the same direct permission model as the Mail settings UI:
 - `admin` can configure the mailbox, providers, access, references, and workflows.
 
 A grant's scope is `mailbox` (the default) or `assigned`. Assigned grants are
-available to people and groups with `read` or `write`; `ls` and `access list`
-show the scope. With assigned `write`, a person can act on their currently
+available to people, groups, agents, and standalone service accounts with `read` or `write`; `ls` and `access list`
+show the scope. With assigned `write`, a principal can act on its currently
 assigned conversations, reply or forward, manage those drafts and attachments,
 and send or schedule them. Assigned `read` permits comments, personal reminders,
 and viewing presence on those conversations. Composing presence requires `write`.
@@ -329,7 +346,7 @@ Assigned access cannot change assignees, create new conversations or edit-as-new
 or resend drafts, manage mailbox resources, or browse recipient suggestions.
 Queued commands and scheduled sends recheck current access before acting.
 Removing an assignment or grant stops work that has not executed yet. Command
-reads and cancellation expose only the person's own commands with visible targets.
+reads and cancellation expose only the principal's own commands with visible targets.
 Hidden conversations, messages and drafts return `404`.
 
 Search users and groups before creating a grant:
@@ -475,7 +492,7 @@ cld --json mail focus --view unassigned --limit 25
 cld --json mail focus --view waiting --cursor <next-cursor>
 ```
 
-`focus` needs no mailbox selector. Every item includes its mailbox ID and name, and the JSON page includes exact unread and needs-action counts for each readable mailbox. `mine` and `waiting` are personal to the user behind the current credential; `unassigned` and `all` still include only readable mailboxes. For an agent using the generic capability surface, `mail conversation.focus` exposes the same bounded queue and cursor:
+`focus` needs no mailbox selector. Every item includes its mailbox ID and name, and the JSON page includes exact unread and needs-action counts for each readable mailbox. `mine` and `waiting` are personal to the principal behind the current credential; `unassigned` and `all` still include only readable mailboxes. For an agent using the generic capability surface, `mail conversation.focus` exposes the same bounded queue and cursor:
 
 ```bash
 cld capabilities query mail conversation.focus \
@@ -675,7 +692,7 @@ cld --json mail conversation update \
 cld --json mail conversation activity <conversation-id>
 ```
 
-`conversation users` lists active users with mailbox-wide write/admin access or assigned-only read/write access, including nested group grants. Each user has `scope: "mailbox" | "assigned"`; platform administrator status alone does not make a user eligible. Changing assignees requires mailbox-wide write/admin access, even for removing yourself.
+`conversation users` lists active people, standalone accounts, and agents with mailbox-wide write/admin access or assigned-only read/write access, including nested local group grants. Each account has `scope: "mailbox" | "assigned"`; platform administrator status alone does not make a user eligible. Changing assignees requires mailbox-wide write/admin access, even for removing yourself.
 
 `conversation update --assignee` replaces the whole set. Repeat the flag or separate usernames, IDs, or `me` with commas; `--unassign` clears the set. Collaboration returns `assignees` in assignment-time order, with user ID breaking ties. Lists, search, focus, and workflow conversation data return `assigneeUserIds` arrays. “Mine” means the current user is in that set.
 
@@ -775,3 +792,24 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](compose.md).
 
 Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](compose.md).
+
+## Request a conversation summary
+
+```bash
+cld mail conversation summary generate <conversation> --mailbox <mailbox> --mode rolling
+cld --json mail conversation summary generate <conversation> --mode replace
+```
+
+The command reads the current summary revision, then requests generation.
+`rolling` continues the current text; `replace` rewrites it. The request can
+replace your own edited text because you explicitly asked. It uses your
+Assistant allowance and requires conversation write permission. A conflict
+asks you to reread the summary; it never overwrites a newer edit. A second
+request while writing returns the current state.
+
+The API responds with HTTP 202 and the full `ConversationContentSummary`.
+Structured CLI output has the same shape. Read
+`GET /mailboxes/:mailboxId/conversations/:conversationId/summary` for progress
+and results. `mail.summary.allowance_exhausted` leaves the conversation
+unchanged. Allowance presentation contains only `unlimited`, `usedPercent`
+and `resetsAt`.

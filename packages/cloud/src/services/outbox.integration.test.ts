@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { createPgOutbox } from "./outbox";
 
 // The contract an application relies on with a table of its own, shaped as in "Migrations and transactions".

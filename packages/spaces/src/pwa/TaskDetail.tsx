@@ -1,5 +1,6 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import type { DateContext } from "@k2b/stdlib";
-import { Avatar, Button, ButtonLink, Checkbox, IconButton, MarkdownView, Placeholder, Skeleton, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, Checkbox, IconButton, MarkdownView, Placeholder, Skeleton, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildSpaceItemHref } from "@/routes";
@@ -9,6 +10,7 @@ import { saveCompletion } from "./completion";
 import type { WorkItem } from "./MyTasks";
 import { myTasksMessages } from "./messages";
 import { workSchedule } from "./schedule";
+import TaskComment from "./TaskComment";
 import type { PwaTask } from "./task";
 
 /** What the detail knows: the row it was opened from, then the whole task, or why it has none. */
@@ -28,11 +30,6 @@ type Props = {
 };
 
 type EntryState = { saving: boolean; failed: boolean };
-
-const avatarSrc = (person: PwaTask["people"][number]) =>
-  person.kind === "user" && person.avatarHash
-    ? `/api/accounts/users/${encodeURIComponent(person.id)}/avatar?rev=${encodeURIComponent(person.avatarHash)}`
-    : null;
 
 /**
  * One task in the mobile app: done or open, when, where, who, the description and the checklist. Opened from a row,
@@ -228,7 +225,17 @@ export default function TaskDetail(props: Props) {
               <dt>{current().event ? t().attending : t().assigned}</dt>
               <dd>
                 <span class="spaces-pwa-task__avatars">
-                  <For each={task()?.people}>{(person) => <Avatar name={person.displayName} src={avatarSrc(person)} size="xs" />}</For>
+                  <For each={task()?.people}>
+                    {(person) => (
+                      <CloudAvatar
+                        username={person.displayName}
+                        userId={person.id}
+                        avatarHash={person.avatarHash}
+                        kind={person.kind}
+                        size="xs"
+                      />
+                    )}
+                  </For>
                 </span>
                 {task()
                   ?.people.map((person) => person.displayName)
@@ -324,6 +331,12 @@ export default function TaskDetail(props: Props) {
                     </ul>,
                     unsaved() ? "danger" : undefined,
                   )}
+                </Show>
+                {/* A reader who may change the task may comment on it; one field per task, so a draft never moves. */}
+                <Show when={loaded().canWrite}>
+                  <Show when={`${loaded().spaceShortId}/${loaded().shortId}`} keyed>
+                    {section(t().comment, undefined, <TaskComment task={loaded()} userId={props.userId} />)}
+                  </Show>
                 </Show>
                 <div class="spaces-pwa-task__foot">
                   <ButtonLink variant="secondary" href={buildSpaceItemHref(loaded().spaceShortId, loaded().shortId)}>

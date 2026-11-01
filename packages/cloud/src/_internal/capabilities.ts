@@ -1,25 +1,45 @@
+import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
+import { appStatusIssues } from "../contracts/app-status";
+import {
+  CapabilityAppStatusManifestSchema,
+  type CapabilityEventManifest,
+  CapabilityEventManifestSchema,
+  CapabilityQualifiedIdSchema,
+  type CapabilitySubscriptionManifest,
+  CapabilitySubscriptionManifestSchema,
+} from "../contracts/capabilities";
+import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resource-pages";
+import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
+import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
+import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
 
 export { capabilityHash } from "./capability-schemas";
 
 import { isServiceError, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
+import { calendarSourceIssues } from "../contracts/calendar-source";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
+  CAPABILITY_RESOURCE_COLORS,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
   CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
   type CapabilityActionSentences,
+  type CapabilityAppExecutionContext,
+  type CapabilityCalendarSourceDeclaration,
+  CapabilityCalendarSourceManifestSchema,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
   type CapabilityDefinitions,
+  CapabilityDiscussionsManifestSchema,
   type CapabilityError,
   CapabilityErrorSchema,
   type CapabilityExecutionContext,
@@ -35,15 +55,21 @@ import {
   type CapabilityQueryDefinition,
   type CapabilityQueryManifest,
   type CapabilityResourceTypeDefinition,
+  type CapabilityResourceTypeModel,
   type CapabilitySearchTagDefinition,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
+  CloudResourceViewSchema,
   capabilityActionPolicy,
   capabilityResultSchema,
+  ResourceReadableDataSchema,
+  ResourceReadableInputSchema,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
+import { discussionsIssues } from "../contracts/discussions";
 import { fileProviderIssues } from "../contracts/file-provider";
+import { typeViewIssues } from "../contracts/resource-types";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
 import { capabilityActionReceiptIssues, capabilityActionReviewIssues, capabilityQueryChecksActionOutcome } from "./capability-reviews";
 import {
@@ -54,6 +80,10 @@ import {
   parseCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
+import { activeResourcePrincipals } from "./resource-principals";
+
+/** App-only queries never enter a person catalog. */
+export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean => query.appOnly !== true;
 
 type JsonSchema = Record<string, unknown>;
 const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
@@ -78,10 +108,33 @@ const DECLARATION_FIELDS = {
   actions: true,
   commands: true,
   fileProvider: true,
+  calendarSource: true,
+  discussions: true,
+  appStatus: true,
+  events: true,
+  subscribes: true,
 } satisfies DefinedFields<CapabilityDefinitions>;
+const CALENDAR_SOURCE_FIELDS = {
+  calendars: true,
+  events: true,
+  update: true,
+  move: true,
+  delete: true,
+} satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
-const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
+const TYPE_FIELDS = {
+  title: true,
+  description: true,
+  icon: true,
+  color: true,
+  reader: true,
+  pages: true,
+  container: true,
+  access: true,
+} satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
+  app: true,
+  appOnly: true,
   title: true,
   description: true,
   input: true,
@@ -92,6 +145,7 @@ const QUERY_FIELDS = {
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
+  app: true,
   title: true,
   description: true,
   input: true,
@@ -104,7 +158,7 @@ const ACTION_FIELDS = {
   policy: true,
   review: true,
   run: true,
-} satisfies DefinedFields<CapabilityActionDefinition>;
+} satisfies DefinedFields<Omit<CapabilityActionDefinition, "appOnly">>;
 const COMMAND_FIELDS = {
   title: true,
   description: true,
@@ -136,8 +190,14 @@ const assertDefinedStreamFields = (stream: CapabilityStreamDefinition | undefine
   if (stream) assertDefinedFields(stream, stream.direction === "write" ? WRITE_STREAM_FIELDS : READ_STREAM_FIELDS, `${label} stream`);
 };
 
+type AppQueryDefinition = Omit<CapabilityQueryDefinition, "appOnly" | "run"> & {
+  appOnly: true;
+  run: (input: unknown, context: CapabilityAppExecutionContext) => Promise<CapabilityInvocationResult<unknown>>;
+};
+type QueryDefinition = CapabilityQueryDefinition | AppQueryDefinition;
+
 export type CompiledCapabilityQuery = {
-  definition: CapabilityQueryDefinition;
+  definition: QueryDefinition;
   manifest: CapabilityQueryManifest;
   resultSchema: z.ZodType;
 };
@@ -148,7 +208,12 @@ export type CompiledCapabilityAction = {
   resultSchema: z.ZodType;
 };
 
+export type CompiledAppEvent = { definition: AppEventDefinition; manifest: CapabilityEventManifest };
+export type CompiledAppEventSubscription = { definition: AppEventSubscriptionDefinition; manifest: CapabilitySubscriptionManifest };
+
 export type CompiledCapabilities = {
+  events: ReadonlyMap<string, CompiledAppEvent>;
+  subscribes: ReadonlyMap<string, CompiledAppEventSubscription>;
   manifest: CapabilityManifest;
   presentation?: CapabilityPresentationCatalog;
   typeIds: ReadonlySet<string>;
@@ -431,6 +496,7 @@ export const compileCapabilityPresentation = (
   const queries = new Map(manifest.queries.map((operation) => [operation.localId, operation]));
   const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
   const commands = new Map(manifest.commands.map((operation) => [operation.localId, operation]));
+  const events = new Map((manifest.events ?? []).map((event) => [event.localId, event]));
   let sentences: Record<string, CapabilityActionSentences> | undefined;
   if (catalog.sentences !== undefined) {
     if (!catalog.sentences || typeof catalog.sentences !== "object" || Array.isArray(catalog.sentences)) {
@@ -458,7 +524,9 @@ export const compileCapabilityPresentation = (
       throw new Error(`Capability presentation translation ${canonical} must be an object`);
     }
     const raw = rawTranslation as Record<string, unknown>;
-    const extra = Object.keys(raw).find((key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands");
+    const extra = Object.keys(raw).find(
+      (key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands" && key !== "events",
+    );
     if (strict && extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
     const compileGroup = <T>(
       group: unknown,
@@ -502,12 +570,20 @@ export const compileCapabilityPresentation = (
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
       };
     });
+    const translatedEvents = compileGroup(raw.events, events, "Event", (entry, _definition, label) => {
+      const parsed = z.object({
+        title: z.string().trim().min(1).max(120).optional(),
+        description: z.string().trim().min(1).max(1000).optional(),
+      });
+      return (strict ? parsed.strict() : parsed).parse(entry);
+    });
     const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) =>
       compileOperationPresentation(entry, operation, label, strict);
     const translatedQueries = compileGroup(raw.queries, queries, "Query", operationPresentation);
     const translatedActions = compileGroup(raw.actions, actions, "Action", operationPresentation);
     const translatedCommands = compileGroup(raw.commands, commands, "Command", operationPresentation);
     translations[canonical] = {
+      ...(translatedEvents ? { events: translatedEvents } : {}),
       ...(translatedTypes ? { types: translatedTypes } : {}),
       ...(translatedQueries ? { queries: translatedQueries } : {}),
       ...(translatedActions ? { actions: translatedActions } : {}),
@@ -571,7 +647,7 @@ const assertLocalId = (localId: string, label: string): void => {
   if (!parsed.success) throw new Error(`${label} key "${localId}" is invalid: ${parsed.error.issues[0]?.message ?? "invalid id"}`);
 };
 
-const normalizeSearchTags = (definition: CapabilityQueryDefinition, label: string) => {
+const normalizeSearchTags = (definition: QueryDefinition, label: string) => {
   if (!definition.universalSearch) return undefined;
   assertDefinedFields(definition.universalSearch, UNIVERSAL_SEARCH_FIELDS, `${label} universalSearch`);
   const seen = new Set<string>();
@@ -597,7 +673,7 @@ const normalizeSearchTags = (definition: CapabilityQueryDefinition, label: strin
   return { tags, ...(definition.universalSearch.scopeTypes ? { scopeTypes: [...new Set(definition.universalSearch.scopeTypes)] } : {}) };
 };
 
-const compileOperationSchemas = (definition: CapabilityQueryDefinition | CapabilityActionDefinition, label: string) => {
+const compileOperationSchemas = (definition: QueryDefinition | CapabilityActionDefinition, label: string) => {
   assertText(definition.title, `${label} title`, 120);
   assertText(definition.description, `${label} description`, 1000);
   const inputSchema = projectSchema(definition.input, `${label} input`, "input");
@@ -608,6 +684,11 @@ const compileOperationSchemas = (definition: CapabilityQueryDefinition | Capabil
   ) {
     throw new Error(`${label} input field "idempotencyKey" is reserved for capability transports`);
   }
+  if (definition.app !== undefined) {
+    assertDefinedFields(definition.app, { permission: true, run: true }, `${label} app`);
+    if (typeof definition.app.run !== "function") throw new Error(`${label} app.run must be a function`);
+    if (definition.stream) throw new Error(`${label} app calls cannot use streams`);
+  }
   const resultZodSchema = capabilityResultSchema(definition.data);
   const dataSchema = projectSchema(definition.data, `${label} data`, "output");
   return {
@@ -617,17 +698,49 @@ const compileOperationSchemas = (definition: CapabilityQueryDefinition | Capabil
     schemaHash: capabilityHash({
       inputSchema,
       dataSchema,
+      ...(definition.app ? { appPermission: definition.app.permission } : {}),
+      ...("appOnly" in definition && definition.appOnly !== undefined ? { appOnly: definition.appOnly } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
     }),
   };
 };
 
-export const compileCapabilities = (appId: string, definitions: CapabilityDefinitions): CompiledCapabilities => {
+export const compileCapabilities = (
+  appId: string,
+  definitions: CapabilityDefinitions,
+  routes?: readonly string[],
+): CompiledCapabilities => {
   if (definitions.protocolVersion !== CAPABILITY_PROTOCOL_VERSION) {
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
   assertDefinedFields(definitions, DECLARATION_FIELDS, "Capability declaration");
+  if (definitions.calendarSource !== undefined) {
+    assertDefinedFields(definitions.calendarSource, CALENDAR_SOURCE_FIELDS, "calendarSource");
+    // Author declarations must fail here; the manifest reader deliberately drops unreadable declarations.
+    CapabilityCalendarSourceManifestSchema.parse(definitions.calendarSource);
+  }
   if (definitions.fileProvider) assertDefinedFields(definitions.fileProvider, FILE_PROVIDER_FIELDS, "fileProvider");
+
+  if (definitions.appStatus !== undefined) CapabilityAppStatusManifestSchema.parse(definitions.appStatus);
+  if (definitions.discussions !== undefined) CapabilityDiscussionsManifestSchema.parse(definitions.discussions);
+  for (const [localId, type] of Object.entries(definitions.types ?? {})) {
+    if (type.access !== undefined) {
+      assertDefinedFields(type.access, { readable: true }, `Resource type ${localId} access`);
+      if (type.access.readable !== undefined && typeof type.access.readable !== "function")
+        throw new Error(`Resource type ${localId} access.readable must be a function`);
+    }
+    const visited = new Set([localId]);
+    let container = type.container;
+    while (container !== undefined) {
+      CapabilityLocalIdSchema.parse(container);
+      const parent = definitions.types?.[container];
+      if (!parent || !Object.hasOwn(definitions.types ?? {}, container))
+        throw new Error(`Resource type ${localId}: unknown container ${container}`);
+      if (visited.has(container)) throw new Error(`Resource type ${localId}: container cycle at ${container}`);
+      visited.add(container);
+      container = parent.container;
+    }
+  }
 
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {
@@ -641,6 +754,15 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     .map(([localId, definition]) => {
       registerLocalId(localId, "Resource type");
       assertDefinedFields(definition, TYPE_FIELDS, `Resource type ${localId}`);
+      if (definition.pages !== undefined) {
+        if (!definition.reader) throw new Error(`Resource type ${localId}: pages require a reader`);
+        if (!Array.isArray(definition.pages) || definition.pages.length > RESOURCE_PAGES_PER_TYPE)
+          throw new Error(`Resource type ${localId}: at most ${RESOURCE_PAGES_PER_TYPE} pages are allowed`);
+        for (const path of definition.pages) {
+          const issue = typeof path === "string" ? resourcePageIssue(path, routes, appId) : "Expected a page pattern string";
+          if (issue) throw new Error(`Resource type ${localId} pages: ${issue}`);
+        }
+      }
       assertText(definition.title, `Resource type ${localId} title`, 120);
       assertText(definition.description, `Resource type ${localId} description`, 500);
       return {
@@ -648,16 +770,61 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
         title: definition.title.trim(),
         description: definition.description.trim(),
         ...(definition.icon ? { icon: definition.icon } : {}),
+        ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
       };
     });
   const typeIds = new Set(types.map((type) => qualifiedId(appId, type.localId)));
 
+  for (const [localId, definition] of Object.entries(definitions.queries ?? {}))
+    if (Object.hasOwn(definition, "appOnly")) throw new Error(`Query ${localId}: appOnly is reserved for platform-generated reader checks`);
+  const generated: Record<string, AppQueryDefinition> = {};
+  for (const [localId, type] of Object.entries(definitions.types ?? {})) {
+    const readable = type.access?.readable;
+    if (!readable) continue;
+    const queryId = `${localId}.readable`;
+    if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
+    const container = type.container;
+    const input = container
+      ? ResourceReadableInputSchema.extend({
+          container: ResourceReadableInputSchema.shape.container
+            .unwrap()
+            .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
+            .describe("Expected current container of the resource."),
+        })
+      : ResourceReadableInputSchema;
+    generated[queryId] = {
+      title: "Check resource readers",
+      description: `Check current principal readability of ${type.title} without granting content access.`,
+      input,
+      data: ResourceReadableDataSchema,
+      openWorld: false,
+      appOnly: true,
+      run: async (value: unknown, context) => {
+        if (!isAppCapabilityContext(context))
+          return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+        const parsed = input.parse(value);
+        const principals = await activeResourcePrincipals(parsed.principals);
+        const key = (principal: (typeof principals)[number]) => JSON.stringify(principal);
+        const requested = new Set(principals.map(key));
+        const result = ResourceReadableDataSchema.parse({ readable: await readable({ ...parsed, principals }, context) });
+        if (result.readable.some((principal) => !requested.has(key(principal))))
+          throw new Error(`Resource type ${localId} readable returned an unrequested principal`);
+        return { ok: true, data: { data: result } };
+      },
+    };
+  }
   const queries = new Map<string, CompiledCapabilityQuery>();
-  for (const [localId, definition] of Object.entries(definitions.queries ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [localId, definition] of Object.entries({ ...definitions.queries, ...generated }).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
     registerLocalId(localId, "Query");
     const label = `Query ${localId}`;
     assertDefinedFields(definition, QUERY_FIELDS, label);
+    if (definition.appOnly !== undefined) {
+      z.literal(true).parse(definition.appOnly);
+      if (definition.stream) throw new Error(`${label}: app-only queries cannot use streams`);
+    }
     assertDefinedStreamFields(definition.stream, label);
     if (
       definition.stream &&
@@ -684,9 +851,11 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       openWorld: definition.openWorld,
       universalSearch: normalizeSearchTags(definition, label),
+      ...(definition.appOnly !== undefined ? { appOnly: definition.appOnly } : {}),
     } satisfies CapabilityQueryManifest;
     for (const type of manifest.universalSearch?.scopeTypes ?? []) {
       if (!typeIds.has(qualifiedId(appId, type))) throw new Error(`${label} declares an unknown search scope type ${type}`);
@@ -701,6 +870,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     if (!type.reader) continue;
     const reader = queries.get(type.reader);
     if (!reader) throw new Error(`Resource type ${type.localId} reader ${type.reader} must name an existing Query`);
+    if (reader.manifest.appOnly) throw new Error(`Resource type ${type.localId} reader cannot be app-only`);
     assertCanonicalReaderInput(reader.manifest.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
   const actions = new Map<string, CompiledCapabilityAction>();
@@ -766,6 +936,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       destructive: definition.destructive,
       openWorld: definition.openWorld,
@@ -804,19 +975,96 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       });
     });
 
+  const events = new Map<string, CompiledAppEvent>();
+  for (const [localId, definition] of Object.entries(definitions.events ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    registerLocalId(localId, "Event");
+    assertDefinedFields(
+      definition,
+      {
+        version: true,
+        title: true,
+        description: true,
+        subject: true,
+        place: true,
+        schema: true,
+        automation: true,
+      } satisfies DefinedFields<AppEventDefinition>,
+      `Event ${localId}`,
+    );
+    if (!types.some((type) => type.localId === definition.subject)) throw new Error(`Event ${localId} subject must reference a local Type`);
+    if (definition.place && !types.some((type) => type.localId === definition.place && type.reader))
+      throw new Error(`Event ${localId} place must reference a local Type with a reader`);
+    const schemas = compileAppEventSchema(definition.schema, `Event ${localId} data`);
+    assertAppEventDeclarationSize(appId, localId, definition, schemas.dataSchema);
+    const manifest = CapabilityEventManifestSchema.parse({
+      localId,
+      version: definition.version,
+      title: definition.title,
+      description: definition.description,
+      subject: definition.subject,
+      ...(definition.place !== undefined ? { place: definition.place } : {}),
+      ...schemas,
+      ...(definition.automation !== undefined ? { automation: definition.automation } : {}),
+    });
+    events.set(localId, { definition, manifest });
+  }
+  const subscribes = new Map<string, CompiledAppEventSubscription>();
+  for (const [type, definition] of Object.entries(definitions.subscribes ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    CapabilityQualifiedIdSchema.parse(type);
+    assertDefinedFields(
+      definition,
+      { version: true, schema: true, run: true } satisfies DefinedFields<AppEventSubscriptionDefinition>,
+      `Subscription ${type}`,
+    );
+    if (typeof definition.run !== "function") throw new Error(`Subscription ${type} needs run`);
+    const manifest = CapabilitySubscriptionManifestSchema.parse({
+      type,
+      version: definition.version,
+      ...compileAppEventSchema(definition.schema, `Subscription ${type} data`, "reader"),
+    });
+    subscribes.set(type, { definition, manifest });
+  }
+
   const policies = Object.fromEntries(
     [...actions].flatMap(([localId, action]) => (action.definition.policy ? [[localId, action.definition.policy]] : [])),
   );
   const fileProvider = definitions.fileProvider;
+  const calendarSource = definitions.calendarSource;
+  const resourcePages = Object.entries(definitions.types ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .flatMap(([type, definition]) => (definition.pages ?? []).map((path) => ({ type, path })));
+  const resourceTypes: CapabilityResourceTypeModel[] = types.flatMap((type) => {
+    const declaration = definitions.types?.[type.localId];
+    const model: CapabilityResourceTypeModel = {
+      type: type.localId,
+      ...(declaration?.container ? { container: declaration.container } : {}),
+      ...(declaration?.access?.readable ? { readable: true } : {}),
+    };
+    const reader = type.reader ? queries.get(type.reader) : undefined;
+    if (
+      reader &&
+      typeViewIssues({ types, queries: [...queries.values()].map((query) => query.manifest), resourceTypes: [model] }, type.localId)
+        .length === 0
+    )
+      model.view = true;
+    return model.container || model.readable || model.view ? [model] : [];
+  });
   const manifestBase = {
+    ...(resourceTypes.length ? { resourceTypes } : {}),
+    ...(definitions.appStatus ? { appStatus: definitions.appStatus } : {}),
+    ...(definitions.discussions ? { discussions: definitions.discussions } : {}),
+    ...(resourcePages.length ? { resourcePages } : {}),
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
     types,
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
     commands,
+    ...(definitions.events !== undefined ? { events: [...events.values()].map((event) => event.manifest) } : {}),
+    ...(definitions.subscribes !== undefined ? { subscribes: [...subscribes.values()].map((subscription) => subscription.manifest) } : {}),
     ...(Object.keys(policies).length ? { policies } : {}),
     // Omitted when unused so manifests without a provider keep their earlier hash.
+    ...(calendarSource ? { calendarSource: { ...calendarSource } } : {}),
     ...(fileProvider
       ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
       : {}),
@@ -825,6 +1073,16 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  const statusIssues = appStatusIssues(manifest);
+  if (statusIssues.length) throw new Error(`appStatus: ${statusIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
+  const discussionIssues = discussionsIssues(manifest);
+  if (discussionIssues.length)
+    throw new Error(`discussions: ${discussionIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
+  const calendarIssues = calendarSourceIssues(manifest);
+  if (calendarIssues.length)
+    throw new Error(
+      `calendarSource does not match the calendar-source contract:\n- ${calendarIssues.map((issue) => `${issue.function} (${issue.localId}) ${issue.path}: ${issue.message}`).join("\n- ")}`,
+    );
   const providerIssues = fileProviderIssues(manifest);
   if (providerIssues.length > 0) {
     throw new Error(
@@ -838,7 +1096,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
   const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
-  return { manifest, presentation, typeIds, queries, actions };
+  return { manifest, presentation, typeIds, queries, actions, events, subscribes };
 };
 
 const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
@@ -983,6 +1241,20 @@ export const resolveCapabilityManifestPresentation = (
             }
           : operation;
       }),
+      ...(current.events
+        ? {
+            events: current.events.map((event) => {
+              const copy = translation.events?.[event.localId];
+              return copy ? { ...event, title: copy.title ?? event.title, description: copy.description ?? event.description } : event;
+            }),
+          }
+        : {}),
+      ...(current.subscribes ? { subscribes: current.subscribes } : {}),
+      ...(current.resourceTypes ? { resourceTypes: current.resourceTypes } : {}),
+      ...(current.appStatus ? { appStatus: current.appStatus } : {}),
+      ...(current.discussions ? { discussions: current.discussions } : {}),
+      ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
+      ...(current.calendarSource ? { calendarSource: current.calendarSource } : {}),
       ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
       ...(current.policies ? { policies: current.policies } : {}),
     };
@@ -1014,23 +1286,36 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
   if (operation.stream?.direction === "write" && (!("idempotency" in operation) || operation.idempotency !== "required")) {
     throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
   }
+  if ("appOnly" in operation && operation.appOnly !== undefined && operation.stream) throw new Error("App-only queries cannot use streams");
   const expectedSchemaHash = capabilityHash({
     inputSchema: operation.inputSchema,
     dataSchema: operation.dataSchema,
+    ...(operation.appPermission ? { appPermission: operation.appPermission } : {}),
+    ...("appOnly" in operation && operation.appOnly !== undefined ? { appOnly: operation.appOnly } : {}),
     ...(operation.stream ? { stream: operation.stream } : {}),
   });
   if (operation.schemaHash !== expectedSchemaHash) throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
   if ("universalSearch" in operation && operation.universalSearch) {
     const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
-    const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
     if (
       capabilityHash(operation.inputSchema) !== capabilityHash(expectedInput) ||
-      capabilityHash(operation.dataSchema) !== capabilityHash(expectedData)
+      !universalSearchDataHashes().includes(capabilityHash(operation.dataSchema))
     ) {
       throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
     }
   }
 };
+
+/**
+ * The Universal Search data schemas a live manifest may declare: the current one, and the one before results gained
+ * `context` and `status`, so an app built by the previous release keeps its search while Core is already newer. Its
+ * results still parse, because both fields are optional.
+ */
+let searchDataHashes: string[] | undefined;
+const universalSearchDataHashes = () =>
+  (searchDataHashes ??= [UniversalSearchDataSchema, z.array(CloudResourceViewSchema.omit({ context: true, status: true })).max(100)].map(
+    (schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")),
+  ));
 
 const assertUsableCommand = (command: CapabilityCommandManifest): void => {
   z.fromJSONSchema(structuredClone(command.inputSchema));
@@ -1054,7 +1339,7 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
   const sent = CapabilityManifestSchema.parse(value);
   if (sent.appId !== expectedAppId) throw new Error(`manifest appId must be ${expectedAppId}`);
   const localIds = new Set<string>();
-  for (const { localId } of [...sent.types, ...sent.queries, ...sent.actions, ...sent.commands]) {
+  for (const { localId } of [...sent.types, ...sent.queries, ...sent.actions, ...sent.commands, ...(sent.events ?? [])]) {
     if (localIds.has(localId)) throw new Error(`localId ${localId} is declared more than once across Types, Queries, and Actions`);
     localIds.add(localId);
   }
@@ -1062,15 +1347,27 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
   const { manifestHash: _sentHash, ...sentBase } = value as Record<string, unknown>;
   if (sent.manifestHash !== capabilityHash(sentBase)) throw new Error("manifestHash does not match the manifest");
 
+  const usableEventSchema = (entry: CapabilityEventManifest | CapabilitySubscriptionManifest) => {
+    assertBoundedAppEventSchema(entry.dataSchema);
+    if (entry.schemaHash !== capabilityHash({ dataSchema: entry.dataSchema }))
+      throw new Error("Event schemaHash does not match its schema");
+  };
+  const subscriptionTypes = new Set<string>();
+  for (const subscription of sent.subscribes ?? []) {
+    if (subscriptionTypes.has(subscription.type)) throw new Error(`Duplicate subscription ${subscription.type}`);
+    subscriptionTypes.add(subscription.type);
+  }
   // Reading the usable entries again leaves out what depends on an entry left out here.
   const manifest = CapabilityManifestSchema.parse({
     ...sent,
+    ...(sent.events ? { events: sent.events.filter((event) => passes(() => usableEventSchema(event))) } : {}),
+    ...(sent.subscribes ? { subscribes: sent.subscribes.filter((subscription) => passes(() => usableEventSchema(subscription))) } : {}),
     queries: sent.queries.filter((query) => passes(() => assertUsableOperation(query))),
     actions: sent.actions.filter((action) => passes(() => assertUsableOperation(action))),
     commands: sent.commands.filter((command) => passes(() => assertUsableCommand(command))),
   });
   const queries = new Map(manifest.queries.map((query) => [query.localId, query]));
-  return {
+  return CapabilityManifestSchema.parse({
     ...manifest,
     types: manifest.types.map((type) => {
       const reader = type.reader === undefined ? undefined : queries.get(type.reader);
@@ -1079,7 +1376,7 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
       const { reader: _unusable, ...withoutReader } = type;
       return withoutReader;
     }),
-  };
+  });
 };
 
 const schemaSemantics = (value: unknown): unknown => {
@@ -1377,15 +1674,21 @@ const cancelledInvocation = (locale: string) => ({
   },
 });
 
+const isAppCapabilityContext = (
+  context: CapabilityExecutionContext | CapabilityAppExecutionContext,
+): context is CapabilityAppExecutionContext => context.actor.kind === "app";
+
 export const invokeCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   kind: "query" | "action";
   localId: string;
   input: unknown;
   expectedSchemaHash: string | null;
-  context: CapabilityExecutionContext;
+  context: CapabilityExecutionContext | CapabilityAppExecutionContext;
   onUnexpectedError?: (error: unknown) => void;
 }): Promise<CapabilityInvocationResult<unknown>> => {
+  if (!hasOAuthScope(params.context.authority, params.kind === "query" ? "read" : "write", "admin"))
+    return { ok: false, error: { code: "FORBIDDEN", message: "Insufficient OAuth scope", status: 403 } };
   const operation = params.kind === "query" ? params.compiled.queries.get(params.localId) : params.compiled.actions.get(params.localId);
   if (!operation) {
     return {
@@ -1397,6 +1700,8 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
+  if (!isAppCapabilityContext(params.context) && "appOnly" in operation.definition && operation.definition.appOnly !== undefined)
+    return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
   if (params.expectedSchemaHash !== operation.manifest.schemaHash) {
     return {
       ok: false,
@@ -1408,7 +1713,10 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
-  let context = params.context;
+  let context: CapabilityExecutionContext | CapabilityAppExecutionContext = {
+    ...params.context,
+    via: capabilityVia(params.context.origin),
+  };
   if (params.kind === "action") {
     const action = operation as CompiledCapabilityAction;
     if (action.manifest.idempotency === "required" && !params.context.idempotencyKey) {
@@ -1454,7 +1762,7 @@ export const invokeCompiledCapability = async (params: {
         },
       };
     }
-    context = { ...params.context, idempotencyKey: idempotencyKey.data };
+    if (!isAppCapabilityContext(context)) context = { ...context, idempotencyKey: idempotencyKey.data };
   }
   const input = operation.definition.input.safeParse(params.input);
   if (!input.success) {
@@ -1482,7 +1790,20 @@ export const invokeCompiledCapability = async (params: {
   // cross into application code for the first time with an aborted invocation.
   if (context.signal.aborted) return cancelledInvocation(context.locale);
   try {
-    const invoked = await operation.definition.run(input.data, context);
+    let invoked: CapabilityInvocationResult<unknown>;
+    if (isAppCapabilityContext(context)) {
+      const definition = operation.definition;
+      if (definition.app && context.actor.keyId) {
+        invoked = await definition.app.run(input.data, context);
+      } else if (params.kind === "query" && "appOnly" in definition && definition.appOnly === true) {
+        invoked = await definition.run(input.data, context);
+      } else {
+        return { ok: false, error: { code: "FORBIDDEN", message: "App caller is not allowed", status: 403 } };
+      }
+    } else {
+      if (operation.definition.appOnly) return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+      invoked = await operation.definition.run(input.data, context);
+    }
     if (!invoked.ok) {
       return normalizeProviderError(invoked.error, "Capability returned an invalid error", params.onUnexpectedError);
     }
@@ -1576,7 +1897,10 @@ export const reviewCompiledCapability = async (params: {
   }
   if (params.context.signal.aborted) return cancelledInvocation(params.context.locale);
   try {
-    const reviewed = await operation.definition.review(input.data, params.context);
+    const reviewed = await operation.definition.review(input.data, {
+      ...params.context,
+      via: capabilityVia(params.context.origin),
+    });
     if (!reviewed.ok) {
       return normalizeProviderError(reviewed.error, "Capability review returned an invalid error", params.onUnexpectedError);
     }

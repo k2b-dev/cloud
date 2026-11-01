@@ -5,7 +5,7 @@ section: Platform services
 order: 510
 description: Define application settings and access them in requests, jobs, and lifecycle hooks.
 tags: [settings, configuration, typescript]
-updated: 2026-09-11
+updated: 2026-10-30
 ---
 
 # Settings
@@ -40,6 +40,12 @@ export const app = defineApp({
       min: 0,
       max: 10_000,
     },
+    "inventory.servers": {
+      kind: "string_list",
+      default: [],
+      resetOnChange: ["inventory.access"],
+    },
+    "inventory.access": { kind: "secret", default: "" },
     "inventory.digest_enabled": {
       kind: "boolean",
       label: "Daily digest",
@@ -55,6 +61,19 @@ Choose the kind that matches the runtime value. Every definition requires
 
 [Settings kinds and environment](/en/docs/reference/settings-kinds-and-environment)
 lists every kind, field, validation rule, and environment option.
+
+To discard saved access when its endpoint changes, declare `resetOnChange` on
+the endpoint setting. List the related settings to reset to their defaults.
+
+Related values are bound to a hash of the normalized endpoint inside their
+encrypted rows. Missing or mismatched bindings resolve to the default; `read()`
+and `readStates()` report `bindingMismatch: true`.
+A changed normalized value, including a reset, discards the related values in
+the same transaction. An unchanged value keeps them. Save a changed endpoint
+before entering its replacement access. Read related settings with one
+`readStates()` call from `@k2b/cloud/services/settings` so a concurrent save
+cannot mix values from two configurations. Environment bootstrap imports related
+values together and never restores a discarded value from the environment.
 
 ## Access settings
 
@@ -148,6 +167,11 @@ controls for newly unreadable keys; never silently retry with replacement enable
 `remove()` deletes the stored override. The next read uses the fallback or
 default.
 
+For legacy environment migrations, administrators can run `cld admin settings status --env`
+and repair whole values with `cld admin settings set`. See the
+[operator migration guide](/en/docs/operations/deprecations-and-migrations) for
+output fields, exit codes, ownership, and when changes take effect.
+
 The server API validates writes against the declaration. It rejects unknown
 keys and values of the wrong type.
 
@@ -185,7 +209,7 @@ own connection behavior.
 
 Administrators can clear the settings cache for Core and applications currently
 registered in discovery under
-**Administration → Settings → General**. This removes cached values and missing-row
+**Administration → Base settings → General**. This removes cached values and missing-row
 markers; it does not reset stored settings, sign out users, or clear security
 state. The action uses `DELETE /api/admin/core/settings/cache` and requires an
 administrator in both the route and service. A toast confirms completion.
@@ -199,3 +223,14 @@ invalidation fails, the next start retries it and cached values still expire.
 
 See [Verify request caches](/en/docs/contributing/request-cache-tests) for the
 isolated integration command and its CI coverage.
+
+## Keep custom administration on its owning API
+
+A setting with `envBootstrap` or `envFallback` can be repaired through
+`cld admin settings set --app <id>`. Declare `adminWrite: "application"`
+when writes must instead use an application API for connection checks,
+rescheduling or a stronger OAuth scope. The internal generic setter then
+rejects that key, including for an administrator. Supply a named CLI command
+for the owning API; environment diagnostics remain readable without values.
+For example, Assistant's rsql target allowlist uses `assistant studio-admin
+configure`, preserving its connection preflight.

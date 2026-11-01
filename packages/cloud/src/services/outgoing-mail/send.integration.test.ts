@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { type SmtpSinkOptions, smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
@@ -12,6 +11,8 @@ import * as registry from "../../_internal/registry";
 import { createAdminOutgoingMailRoutes } from "../../api/admin-outgoing-mail";
 import type { MailMessage, MailRecord } from "../../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import { sql } from "../../runtime/clients";
+import { parseNetworkAllowlist } from "../../shared/network-address";
 import { audit } from "../audit";
 import { buildProjectedUser } from "../session/user";
 import * as settings from "../settings";
@@ -20,6 +21,7 @@ import * as attachments from "./attachments";
 import { processOutgoingMail, recoverOutgoingMail } from "./dispatcher";
 import { mail } from "./index";
 import { messageAttachmentRefs, outgoingMailMessages } from "./messages";
+import * as mailNetwork from "./resolve-host";
 import { retainOutgoingMail, retainOutgoingMailBatch } from "./retention";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "./runtime";
 import * as store from "./store";
@@ -58,15 +60,13 @@ suiteFor(
   "nats",
   "valkey",
 )("outgoing mail acceptance and Core delivery", () => {
-  let originalTargets: string | undefined;
+  let targets: string[] = [];
+  let network: ReturnType<typeof spyOn<typeof mailNetwork, "outgoingMailAllowlist">>;
   beforeEach(() => {
-    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+    targets = ["127.0.0.1"];
+    network = spyOn(mailNetwork, "outgoingMailAllowlist").mockImplementation(async () => parseNetworkAllowlist(targets));
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => network.mockRestore());
 
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   let connection: Awaited<ReturnType<typeof connectTestNats>>;
@@ -147,14 +147,14 @@ suiteFor(
   };
 
   test("internal SMTP is refused without an allowlist and delivered after operator approval", async () => {
-    delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    targets = [];
     const record = await accept();
     const blocked = await delivery(record);
     expect(blocked).toMatchObject({ status: "queued", error_code: "smtp_failed" });
-    expect(blocked.error_message).toContain("OUTGOING_MAIL_ALLOWED_TARGETS");
+    expect(blocked.error_message).toContain("outgoing_mail.allowed_targets");
     expect(sink.connections).toBe(0);
     expect(sink.messages).toHaveLength(0);
-    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+    targets = ["127.0.0.1"];
     // Keep the deadline and retry policy; make the existing backoff due without sleeping.
     await sql`UPDATE outgoing_mail.messages SET next_attempt_at = now() WHERE id = ${record.id}::uuid`;
     expect((await delivery(record)).status).toBe("sent");

@@ -2,9 +2,10 @@ import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
 import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
+import { userResourceContext } from "./projects.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -14,10 +15,12 @@ import * as capabilityDispatch from "../api/capabilities";
 import type { User } from "../contracts";
 import { type CapabilityActionReviewData, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { type CapabilityGrant, mandates } from "../services/mandates";
+import { serviceAccounts } from "../services/service-accounts";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
@@ -39,6 +42,7 @@ import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { completeThroughStream, createAiProvider } from "./provider";
+import { withProviderErrors } from "./provider-errors";
 import { AiQuotaError } from "./quotas";
 import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
@@ -78,6 +82,12 @@ let onCompletionRequest: ((body: unknown, index: number) => void | Promise<void>
 let completionRequestCount = 0;
 
 const mockProfile = (): AiModelProfile => ({
+  modelId: MODEL_ID,
+  providerId: MODEL_ID,
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: MODEL_ID,
   label: "Mock",
   reasoningEffort: "low",
@@ -85,7 +95,7 @@ const mockProfile = (): AiModelProfile => ({
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   baseURL: `http://localhost:${mockServer?.port ?? 0}/v1`,
 });
@@ -95,9 +105,10 @@ const fakeValidateTurn: typeof validateAiTurnRequest = async () => {
   const profile = mockProfile();
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -105,7 +116,7 @@ const fakeValidateTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
@@ -116,9 +127,10 @@ const fakeValidateWithProvider =
     const profile = mockProfile();
     return {
       settings: {
+        assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
         ok: true,
         enabled: true,
-        defaultModelId: MODEL_ID,
+
         globalInstructions: "",
         localClientInstructions: "",
         compactionInstructions: "",
@@ -126,7 +138,7 @@ const fakeValidateWithProvider =
         firecrawlConfigured: false,
         profiles: [profile],
       },
-      resolved: { profile, provider },
+      resolved: { model: { id: profile.id }, profile, provider: withProviderErrors(provider) },
     };
   };
 
@@ -143,12 +155,13 @@ const syntheticProvider = (stream: Provider["stream"]): Provider => ({
 });
 
 const fakeValidateToolTurn: typeof validateAiTurnRequest = async () => {
-  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools"] };
+  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["tools"] };
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -156,17 +169,18 @@ const fakeValidateToolTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
 const fakeValidateBoundedToolTurn: typeof validateAiTurnRequest = async () => {
-  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools"], maxToolRounds: 1 };
+  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["tools"], maxToolRounds: 1 };
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -174,17 +188,18 @@ const fakeValidateBoundedToolTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
 const fakeValidateVisionTurn: typeof validateAiTurnRequest = async () => {
-  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "vision"] };
+  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["vision"] };
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -192,7 +207,7 @@ const fakeValidateVisionTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
@@ -467,7 +482,7 @@ suite("AI executor integration", () => {
       ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Write item",
@@ -677,7 +692,7 @@ suite("AI executor integration", () => {
       if (!occurrence) throw new Error("Expected occurrence");
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: task.prompt,
@@ -872,7 +887,7 @@ suite("AI executor integration", () => {
       if (!occurrence) throw new Error("Expected occurrence");
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: task.prompt,
@@ -985,7 +1000,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "What can you do?",
@@ -1040,10 +1055,12 @@ suite("AI executor integration", () => {
         markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
       }),
     );
-    const creator = (await aiSkills.list(owner, { authority })).find((candidate) => candidate.name === "skill-creator");
+    const creator = (await aiSkills.list(userResourceContext(owner), { authority })).find(
+      (candidate) => candidate.name === "skill-creator",
+    );
     if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
-      subject: owner,
+      subject: userResourceContext(owner),
       name: `weekly-report-${crypto.randomUUID().slice(0, 8)}`,
       description: "Write the weekly sales report.",
       instructions: "Summarize the week.",
@@ -1080,7 +1097,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig,
         userMessage: userMessage("Weekly report, like last time"),
       });
@@ -1101,7 +1118,7 @@ suite("AI executor integration", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { ...runConfig, input: task.prompt },
         userMessage: userMessage(task.prompt),
         expectedRevision: task.revision,
@@ -1123,10 +1140,10 @@ suite("AI executor integration", () => {
       expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
-      expect(await aiSkills.setEnabled(creator.id, owner, false, authority)).toBeFalse();
+      expect(await aiSkills.setEnabled(creator.id, userResourceContext(owner), false, authority)).toBeFalse();
       const { turn: withoutCreator } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig,
         userMessage: userMessage("Weekly report, like last time"),
       });
@@ -1139,7 +1156,7 @@ suite("AI executor integration", () => {
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-      await aiSkills.delete(skill.id, owner);
+      await aiSkills.delete(skill.id, userResourceContext(owner));
       await creatorApp.remove();
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -1160,7 +1177,7 @@ suite("AI executor integration", () => {
       });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "What can you do for me?",
@@ -1215,7 +1232,7 @@ suite("AI executor integration", () => {
           };
           const { turn } = await aiConversations.submitChatTurn({
             conversationId: conversation.id,
-            modelProfileId: MODEL_ID,
+            modelId: MODEL_ID,
             runConfig,
             userMessage: userMessage("Run the action"),
           });
@@ -1330,7 +1347,7 @@ suite("AI executor integration", () => {
           };
           const { turn } = await aiConversations.submitChatTurn({
             conversationId: conversation.id,
-            modelProfileId: MODEL_ID,
+            modelId: MODEL_ID,
             runConfig,
             userMessage: userMessage("Chart the orders"),
           });
@@ -1415,7 +1432,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Run", signedInSession: true },
         userMessage: userMessage("Run"),
       });
@@ -1568,7 +1585,7 @@ suite("AI executor integration", () => {
         const runConfig: AiChatTurnRunConfig = { kind: "chat", input: "Run", signedInSession: true };
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: chat.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig,
           userMessage: userMessage("Run"),
         });
@@ -1676,7 +1693,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -1744,7 +1761,7 @@ suite("AI executor integration", () => {
       const message: Message = { role: "user", content: [{ type: "text", text: `Describe this image\n${marker}` }] };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: `Describe this image\n${marker}`,
@@ -1826,7 +1843,7 @@ suite("AI executor integration", () => {
       const marker = '<attachment path="/missing.png" media-type="image/png" size="3" />';
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: marker,
@@ -1879,7 +1896,7 @@ suite("AI executor integration", () => {
       const marker = '<attachment path="/label.png" media-type="image/png" size="3" />';
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: marker,
@@ -1903,7 +1920,7 @@ suite("AI executor integration", () => {
       };
       nextJsonCompletion = '{"description":"The label reads Cloud."}';
       const tool = createCloudAiViewImageTool({
-        resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }),
+        resolveModel: async () => ({ model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") }),
       });
       if (tool.location !== "server") throw new Error("view_image must be a server tool");
       const result = await tool.run({ path: "/label.png", prompt: "Read only the label." }, {
@@ -1936,7 +1953,7 @@ suite("AI executor integration", () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools", "vision"] };
+      const profile: AiModelProfile = { ...mockProfile(), capabilities: ["tools", "vision"] };
       let requestBody: unknown;
       onCompletionRequest = (body) => {
         requestBody = body;
@@ -1947,7 +1964,7 @@ suite("AI executor integration", () => {
       const result = await tool.run({ path: "/project/diagram.png", prompt: "Describe the diagram." }, {
         actor: { kind: "user", user: actorUser(userId) },
         conversationId: conversation.id,
-        selectedModel: { profile, provider: createAiProvider(profile, "test") },
+        selectedModel: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
         projectFiles: {
           list: async () => [],
           read: async (path: string) =>
@@ -1995,7 +2012,9 @@ suite("AI executor integration", () => {
           requestBody = body;
         };
         nextJsonCompletion = '{"pages":[{"page":2,"description":"Total 42.00 EUR"}]}';
-        const tool = createCloudAiViewImageTool({ resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }) });
+        const tool = createCloudAiViewImageTool({
+          resolveModel: async () => ({ model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") }),
+        });
         if (tool.location !== "server") throw new Error("Expected server tool");
         const context = {
           actor: { kind: "user", user: actorUser(userId) },
@@ -2020,22 +2039,112 @@ suite("AI executor integration", () => {
     },
   );
 
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind} executor retains read credential for Project mounts and selected Skills, then rejects revoked access`, async () => {
+      const userId = await insertUser();
+      const owner = userResourceContext({ type: "user", userId });
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+        VALUES (${`executor-${kind}-${crypto.randomUUID()}`},${kind}) RETURNING id`;
+      if (!account) throw new Error("Missing machine fixture");
+      const serviceAccount = await serviceAccounts.get({ id: account.id });
+      if (!serviceAccount) throw new Error("Missing service account");
+      const actor: RequestActor = { kind: "service_account", serviceAccount, delegatedUser: null, scopes: ["read"] };
+      const project = await aiProjects.create({ subject: owner, name: "Machine project", instructions: "Machine project rules" });
+      const skill = await aiSkills.create({
+        subject: owner,
+        name: `machine-${crypto.randomUUID()}`,
+        description: "Machine workflow",
+        instructions: "Machine Skill rules",
+      });
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, projectId: project.id });
+      try {
+        const principal = { type: "service_account" as const, serviceAccountId: account.id };
+        const grant = await aiProjects.grantAccess(project.id, owner, { principal, permission: "admin" });
+        await aiSkills.grantAccess(skill.id, owner, { principal, permission: "admin" });
+        await aiProjects.writeFile(project.id, owner, {
+          path: "rules.md",
+          bytes: new TextEncoder().encode("Machine file rules"),
+          mediaType: "text/markdown",
+        });
+        const snapshot = await aiProjects.snapshot(project.id, owner);
+        if (!snapshot || !grant) throw new Error("Missing Project fixture");
+        const config: AiChatTurnRunConfig = {
+          kind: "chat",
+          actor,
+          input: "Read the machine rules.",
+          project: snapshot,
+          selectedSkillIds: [skill.shortId],
+          toolSource: { kind: "default", appTools: false },
+        };
+        const requests: unknown[] = [];
+        onCompletionRequest = (body) => {
+          requests.push(body);
+        };
+        completionQueue = [
+          toolCallCompletion("read-machine-project", "read_file", { path: "/project/rules.md" }),
+          textCompletion("Read the rules"),
+        ];
+        const run = async () => {
+          const { turn } = await aiConversations.submitChatTurn({
+            conversationId: conversation.id,
+            modelId: MODEL_ID,
+            runConfig: config,
+            userMessage: userMessage("Read the machine rules."),
+          });
+          const leaseOwner = `machine-${kind}-exec`;
+          const claim = await aiConversations.claimTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner,
+            leaseMs: 30_000,
+            from: "queue",
+            maxAttempts: 5,
+            runBudgetMs: 60_000,
+          });
+          if (!claim) throw new Error("Missing turn claim");
+          await createExecutor(leaseOwner, undefined, fakeValidateBoundedToolTurn).run({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            claim,
+            signal: new AbortController().signal,
+          });
+          return aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+        };
+        expect((await run())?.status).toBe("completed");
+        expect(requests).toHaveLength(2);
+        expect(JSON.stringify(requests[0])).toContain("Machine Skill rules");
+        expect(JSON.stringify(requests[1])).toContain("Machine file rules");
+        await aiProjects.revokeAccess(project.id, grant.id, owner);
+        expect((await run())?.status).toBe("failed");
+        expect(requests).toHaveLength(2);
+      } finally {
+        completionQueue = [];
+        onCompletionRequest = null;
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await aiProjects.admin.delete(project.id);
+        await aiSkills.admin.delete(skill.id);
+        await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    });
+  }
+
   test("keeps mounted Project files available when dynamic discovery reprepares the tools", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };
-    const project = await aiProjects.create({ subject, name: "Project files" });
+    const project = await aiProjects.create({ subject: userResourceContext(subject), name: "Project files" });
     const conversation = await aiConversations.createConversation({
       ownerUserId: userId,
       projectId: project.id,
       preloadTools: ["list_files"],
     });
     try {
-      await aiProjects.writeFile(project.id, subject, {
+      await aiProjects.writeFile(project.id, userResourceContext(subject), {
         path: "guide.md",
         mediaType: "text/markdown",
         bytes: new TextEncoder().encode("# Guide"),
       });
-      const projectSnapshot = await aiProjects.snapshot(project.id, subject);
+      const projectSnapshot = await aiProjects.snapshot(project.id, userResourceContext(subject));
       if (!projectSnapshot) throw new Error("Expected Project snapshot");
 
       const requests: unknown[] = [];
@@ -2046,7 +2155,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "List the Project files.",
@@ -2110,7 +2219,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "How do contacts work?",
@@ -2163,7 +2272,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Inspect this checkout",
@@ -2216,7 +2325,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Run a script",
@@ -2279,7 +2388,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Write a file",
@@ -2347,14 +2456,14 @@ suite("AI executor integration", () => {
       const validated = await fakeValidateToolTurn({ input: "Was sagt sie?" });
       spyOn(settings, "readAiSettingsState").mockResolvedValue(validated.settings);
       spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
-      spyOn(coreSettings, "get").mockResolvedValue(""); // Includes an empty ai.audio_model_id.
+      spyOn(coreSettings, "get").mockResolvedValue(""); // No audio assignment is configured.
       completionQueue = [textCompletion("An administrator must configure an audio model.")];
       onCompletionRequest = (body) => {
         requests.push(requestSchema.parse(body));
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           assistantChat: true,
@@ -2385,7 +2494,7 @@ suite("AI executor integration", () => {
 
       expect(requests).toHaveLength(1);
       expect(String(requests[0]?.messages.find((message) => message.role === "system")?.content)).toContain(
-        "Audio files in this conversation cannot be transcribed: Audio transcription is not set up: no audio model is configured.",
+        "Audio files in this conversation cannot be transcribed: Audio transcription is not set up: no audio model is assigned.",
       );
       expect((requests[0]?.tools ?? []).map((tool) => tool.function.name)).not.toContain("transcribe_audio");
     } finally {
@@ -2411,7 +2520,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Remember that I prefer short answers.",
@@ -2482,7 +2591,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Summarize", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "none" } },
         userMessage: userMessage("Summarize"),
       });
@@ -2503,7 +2612,7 @@ suite("AI executor integration", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: task.prompt,
@@ -2536,7 +2645,7 @@ suite("AI executor integration", () => {
   test("uses the Project snapshot from the durable turn config", async () => {
     const userId = await insertUser();
     const project = await aiProjects.create({
-      subject: { type: "user", userId },
+      subject: userResourceContext({ type: "user", userId }),
       name: "Meeting summary",
       instructions: "Current instructions that must not replace the snapshot.",
     });
@@ -2552,7 +2661,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize this meeting.",
@@ -2564,7 +2673,7 @@ suite("AI executor integration", () => {
             revision: 4,
             context: "Project: Meeting summary",
             references: [],
-            defaultModelProfileId: null,
+            defaultModel: null,
           },
           toolSource: { kind: "none" },
         },
@@ -2608,7 +2717,7 @@ suite("AI executor integration", () => {
       nextCompletion = textCompletion("Recovered answer");
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -2660,7 +2769,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Find the report",
@@ -2751,7 +2860,7 @@ suite("AI executor integration", () => {
       const requests: unknown[] = [];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Start", toolSource: { kind: "none" } },
         userMessage: userMessage("Start"),
       });
@@ -2812,7 +2921,7 @@ suite("AI executor integration", () => {
       nextCompletion = textCompletion("Recovered answer");
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -2846,7 +2955,7 @@ suite("AI executor integration", () => {
       const calls = await sql<{ status: string; input: number | null; output: number | null; estimated: boolean; error: string | null }[]>`
         SELECT status,input::int AS input,output::int AS output,estimated,error FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid ORDER BY started_at`;
       expect(calls).toEqual([
-        { status: "failed", input: 0, output: 0, estimated: false, error: expect.stringContaining("Rate limit reached") },
+        { status: "failed", input: 0, output: 0, estimated: false, error: "AI provider request failed." },
         { status: "ok", input: 5, output: 3, estimated: false, error: null },
       ]);
     } finally {
@@ -2887,7 +2996,7 @@ suite("AI executor integration", () => {
         const input = `Earlier request ${index}`;
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: { kind: "chat", input, toolSource: { kind: "none" } },
           userMessage: userMessage(input),
         });
@@ -2903,13 +3012,13 @@ suite("AI executor integration", () => {
       const turn = manual
         ? await aiConversations.createCompactionTurn({
             conversationId: conversation.id,
-            modelProfileId: MODEL_ID,
+            modelId: MODEL_ID,
             runConfig: { kind: "compact" },
           })
         : (
             await aiConversations.submitChatTurn({
               conversationId: conversation.id,
-              modelProfileId: MODEL_ID,
+              modelId: MODEL_ID,
               runConfig: { kind: "chat", input: "Continue", locale: "en", toolSource: { kind: "none" } },
               userMessage: userMessage("Continue"),
             })
@@ -2964,14 +3073,14 @@ suite("AI executor integration", () => {
     }
   });
 
-  test("a provider first-byte timeout keeps its text on the call and stores a reason a person can act on for the turn", async () => {
+  test("a provider first-byte timeout uses fixed diagnostics across retries, accounting, logs and the turn", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-    const message = "SSE stream first byte timeout after 60000ms.";
+    const message = "FICTIONAL_TIMEOUT_PROVIDER_CANARY";
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -3012,23 +3121,27 @@ suite("AI executor integration", () => {
       for (const call of calls)
         expect(await aiUsage.detail(call.kind, call.id)).toMatchObject({
           status: "failed",
-          error: message,
+          error: "AI provider request timed out.",
           cancelled: false,
           errorCode: "ai_provider_call_failed",
         });
+      const logs = await sql`SELECT message, metadata FROM logging.entries WHERE metadata::text LIKE ${`%${turn.id}%`}`;
+      expect(logs.length).toBeGreaterThan(0);
+      const callDetails = await sql`SELECT * FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect(JSON.stringify({ logs, callDetails, finalTurn, input })).not.toContain(message);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 
-  test("a model call that throws at once ends the turn with its own reason, also while the executor still handles turn_start", async () => {
+  test("a provider cannot impersonate Cloud quota failures, even while the executor still handles turn_start", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", locale: "en", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -3053,10 +3166,10 @@ suite("AI executor integration", () => {
       });
       expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
         status: "failed",
-        error: "Your AI usage limit for this period is reached. You can continue once it resets.",
+        error: "The model service did not answer. The results so far are kept. Send a new message to continue.",
       });
       const [input] = await aiConversations.listMessages({ conversationId: conversation.id });
-      expect(input?.meta?.turnError).toEqual({ code: "quota_exhausted" });
+      expect(input?.meta?.turnError).toEqual({ code: "model_unavailable" });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
@@ -3078,7 +3191,7 @@ suite("AI executor integration", () => {
       const run = async (text: string, leaseOwner: string) => {
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: {
             kind: "chat",
             input: text,
@@ -3108,7 +3221,7 @@ suite("AI executor integration", () => {
 
       const failed = await run("Fasse den Bericht zusammen", "failed-exec");
       expect(requests).toHaveLength(4);
-      // The stored error is in the turn's language and never the provider's own text, which only the log keeps.
+      // The stored error is in the turn's language and never the provider's own text, which is discarded before accounting and logs.
       expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: failed.id })).toMatchObject({
         status: "failed",
         error: "Der KI-Dienst hat nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
@@ -3184,7 +3297,7 @@ suite("AI executor integration", () => {
       }
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Edit the note",
@@ -3237,7 +3350,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -3293,7 +3406,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3355,7 +3468,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Continue the analysis",
@@ -3409,7 +3522,7 @@ suite("AI executor integration", () => {
       ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3481,7 +3594,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Export the report",
@@ -3526,6 +3639,63 @@ suite("AI executor integration", () => {
     }
   });
 
+  test.each(["invalid-arguments", "unknown-tool"] as const)("tool diagnostics exclude model content: %s", async (kind) => {
+    const marker = "FICTIONAL_TOOL_DIAGNOSTIC_CANARY";
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const logged: unknown[] = [];
+    const warning = spyOn(console, "warn").mockImplementation((...args) => {
+      logged.push(args);
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("call-fixture", kind === "unknown-tool" ? marker : "search_tools", { query: { content: marker } }),
+        textCompletion("Done"),
+      ];
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Fictional test",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Fictional test"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "diagnostic-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected turn claim");
+      await createExecutor("diagnostic-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect(logged.some((entry) => JSON.stringify(entry).includes("tool_execution_error"))).toBe(true);
+      const logs = await sql`SELECT message, metadata FROM logging.entries WHERE metadata::text LIKE ${`%${turn.id}%`}`;
+      expect(logs.length).toBeGreaterThan(0);
+      const calls = await sql`SELECT * FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect(JSON.stringify({ logs, calls, logged })).not.toContain(marker);
+      // Model repair feedback stays in its authorized conversation, outside operational diagnostics.
+      const history = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(history.some(({ message }) => message.role === "tool_result" && JSON.stringify(message.result).includes(marker))).toBe(true);
+    } finally {
+      warning.mockRestore();
+      completionQueue = [];
+      await sql`DELETE FROM logging.entries WHERE metadata::text LIKE ${`%${conversation.id}%`}`;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("a malformed tool call is stored as a failed step the model repairs, with the same steps live and in history", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -3537,7 +3707,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3626,7 +3796,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3687,7 +3857,7 @@ suite("AI executor integration", () => {
         expect(loggedError).toHaveBeenCalledWith(
           "[ai:executor]",
           "AI turn failed",
-          expect.objectContaining({ code: "failed", error: expect.stringMatching(/^The tool call to search_tools could not be used: /) }),
+          expect.objectContaining({ code: "failed", error: "AI execution failed." }),
         );
         expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
         expect(finalTurn?.error).toBe("Something went wrong. The results so far are kept. Send a new message to continue.");
@@ -3730,7 +3900,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3751,7 +3921,7 @@ suite("AI executor integration", () => {
       if (!deadClaim) throw new Error("Expected dead worker claim");
       const earlier = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         turnId: turn.id,
         leaseOwner: "malformed-dead-worker",
       });
@@ -3818,7 +3988,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3839,7 +4009,7 @@ suite("AI executor integration", () => {
       });
       const earlier = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         turnId: turn.id,
         leaseOwner: "archived-dead-worker",
       });
@@ -3965,7 +4135,7 @@ suite("local client in-lease results", () => {
         ];
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: {
             kind: "chat",
             input: "List files, then ask",
@@ -4115,9 +4285,9 @@ suiteFor(
       const claimSpy = claimFails
         ? spyOn(conversationStore, "claimAiToolCheck").mockRejectedValue(new Error("Transient check claim failure"))
         : undefined;
-      const modelRequests: unknown[] = [];
+      const models: unknown[] = [];
       onCompletionRequest = (body) => {
-        modelRequests.push(body);
+        models.push(body);
       };
       try {
         // Existing global approvals continue to apply, even though new cards no longer offer that choice.
@@ -4125,7 +4295,7 @@ suiteFor(
         completionQueue = [toolCallCompletion("send-1", "demo__action__send", {}), textCompletion("Checked the result")];
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: {
             kind: "chat",
             input: "Send the draft",
@@ -4166,8 +4336,8 @@ suiteFor(
           expect(claimSpy).toHaveBeenCalledTimes(1);
           expect(block).toMatchObject({ status: "failed", isError: true });
           expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
-          expect(JSON.stringify(modelRequests.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
-          expect(JSON.stringify(modelRequests.at(-1))).not.toContain("Transient check claim failure");
+          expect(JSON.stringify(models.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(models.at(-1))).not.toContain("Transient check claim failure");
         } else if (withCheck && !preDispatchFailure) {
           expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
           if (outcome === "done")

@@ -97,6 +97,7 @@ const service = (
 // whose credentials ordinary Cloud authentication must never consume.
 const publicPaths: Record<string, string[]> = {
   core: [
+    "/_internal/apps/bootstrap",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",
@@ -148,10 +149,13 @@ const publicPaths: Record<string, string[]> = {
     "/api/widgets/v1/notebooks/recent",
     "/_cloud/app-access/inventory",
     "/open/notebooks.notebook/~fixture",
+    "/api/resources/resolve",
     "/api/_internal/identity/v1/invoke",
+    "/api/_internal/identity/v1/invoke-child",
     "/api/_internal/ai/code/execute",
     "/api/_internal/identity/v1/mandates/mandate",
     ...["confirm", "policy", "pause", "revoke"].map((verb) => `/api/_internal/identity/v1/mandates/mandate/${verb}`),
+    "/api/_internal/identity/v1/oauth/jwks",
     "/api/_internal/identity/v1/oauth/ready",
     "/api/_internal/identity/v1/oauth/token",
     "/api/_internal/identity/v1/oauth/device-approval",
@@ -177,6 +181,7 @@ const publicPaths: Record<string, string[]> = {
   ],
   faq: ["/faq"],
   filesv2: [
+    "/share/filesv2/transfer/ticket",
     "/share/filesv2/s/token",
     "/share/filesv2/s/token/api",
     "/share/filesv2/s/token/api/unlock",
@@ -257,6 +262,7 @@ const publicPaths: Record<string, string[]> = {
 };
 const protectedPaths: Record<string, string[]> = {
   core: [
+    "/_internal/apps/bootstrap/private",
     "/me",
     "/admin",
     "/api/auth/pwa/v1/pairings",
@@ -268,6 +274,8 @@ const protectedPaths: Record<string, string[]> = {
     "/api/admin/identity",
     "/api/ai/tasks",
     "/api/_internal/identity/v1/other",
+    "/api/_internal/identity/v1/oauth/private",
+    "/api/_internal/identity/v1/oauth/jwks/private",
     "/api/capabilities/v1/streams/other",
     "/api/capabilities/v1/catalog/extra",
     "/api/capabilities/v1/queries/notebooks/get/extra",
@@ -281,14 +289,21 @@ const protectedPaths: Record<string, string[]> = {
     "/api/widgets/v1/notebooks/recent/private",
     "/_cloud/app-access/inventory/private",
     "/open/notebooks.notebook/~fixture/private",
+    "/api/resources/resolve/private",
   ],
   "api-docs": ["/api/api-docs/private"],
   assistant: ["/api/assistant/artifacts", "/app/assistant/apps/studio/edit", "/admin/assistant"],
   faq: ["/admin/faq", "/api/faq"],
-  filesv2: ["/api/filesv2/bases", "/api/filesv2/admin/shares", "/api/filesv2/wopi/other"],
+  filesv2: [
+    "/api/filesv2/bases",
+    "/api/filesv2/admin/shares",
+    "/api/filesv2/wopi/other",
+    "/share/filesv2/transfer",
+    "/share/filesv2/transfer/ticket/extra",
+  ],
   "gateway-ops": [
     "/api/gateway/health",
-    "/admin/gateway/apps",
+    "/admin/observability/gateway",
     "/metrics/other",
     "/api/notifications/pending-system/count",
     "/api/notifications/pending-system/send-all",

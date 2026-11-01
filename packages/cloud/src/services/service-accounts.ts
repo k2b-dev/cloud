@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { isUniqueViolation } from "./postgres";
 
 export type ServiceAccountKind = "user_delegated" | "resource_bound" | "standalone" | "agent";

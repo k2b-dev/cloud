@@ -44,6 +44,11 @@
 
 /* A phone shows the chat as its own screen over the visible part of the page, so the keyboard never hides the composer. */
 @media (max-width: 47.999rem) {
+  /* Let the full-screen conversation stack above the shell, outside Main's desktop stacking context. Cloud's global
+     stylesheet loads after this one, so the selector outweighs the shared `.k2b-ui .k2b-app-workspace__main`. */
+  .k2b-ui .chat-workspace__main:has(.chat-conversation) {
+    z-index: auto;
+  }
   .chat-conversation {
     /* follow-viewport.ts replaces both with the visual viewport's once the chat runs in the browser. */
     --chat-viewport-top: 0px;
@@ -110,6 +115,10 @@
   grid-row: 1;
   font-variant-numeric: tabular-nums;
 }
+/* A chat row's avatar takes the icon's place at its own size. */
+.k2b-ui .k2b-app-workspace__sidebar-item-icon:has(> .k2b-avatar) {
+  width: 2rem;
+}
 .chat-list__unread {
   display: flex;
   grid-row: 2;
@@ -147,6 +156,11 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.75rem;
+}
+.chat-add-people__alternative {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 2rem;
 }
 .chat-match {
   width: 100%;
@@ -205,12 +219,92 @@
   white-space: pre-wrap;
 }
 
+/* An empty section in the info panel says so in one quiet line. */
+.chat-info__none {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* Notifications in Info: the levels, one reserved line for a failed save or a blocked device, and the way to the
+   settings for every app. */
+.chat-notifications {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-notifications__mute {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* Room for a two-line message, so a failed save moves nothing below it. */
+.chat-notifications__status {
+  min-height: 3.5rem;
+}
+
+.chat-notifications__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+  line-height: 1.35;
+}
+
+.chat-notifications__note > i {
+  margin-top: 0.0625rem;
+}
+
+.chat-notifications__following {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+}
+
+.chat-notifications__subtitle {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.chat-notifications__following i {
+  color: var(--k2b-action);
+}
+
+/* Add people: the panel's one main action, a quiet tint of the app colour. */
+.k2b-ui .k2b-button.chat-info__main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+
+.k2b-ui .k2b-button.chat-info__main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+
+/* Fifteen unchanged two-line rows fit before this personal section scrolls. */
+.chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
+.chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
+.chat-list-search { padding: .25rem; }
+.chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
+.chat-list-error { color: var(--k2b-danger-text); }
+
+/* Keep progress in one persistent slot; long recovery messages may grow instead of clipping. */
+.chat-list-feedback { display: grid; min-height: 2.25rem; }
+.chat-list-feedback > * { grid-area: 1 / 1; }
 /* Where the reader cannot write, a quiet line takes the composer's place in the same reading column. */
 .chat-conversation__notice {
   display: flex;
   width: 100%;
   max-width: calc(var(--k2b-reading-column) - 1.5rem);
-  min-height: 2.75rem;
+  height: 2.75rem;
+  flex: none;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
@@ -221,6 +315,28 @@
 }
 .chat-conversation__notice > i {
   color: var(--k2b-text-muted);
+}
+/* Automatic read feedback reuses the composer's fixed hint line or the reader notice. */
+.chat-read-status {
+  display: inline-flex;
+  max-width: 100%;
+  height: 1.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  vertical-align: top;
+}
+.chat-read-status > span,
+.chat-conversation__notice > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .chat-read-status > .k2b-button.chat-read-status__retry {
+  flex: none;
+  min-height: 0;
+  padding-block: 0;
+  line-height: inherit;
 }
 .chat-dialog__intro {
   margin: 0;
@@ -316,21 +432,22 @@
 .chat-threads__new {
   color: var(--k2b-action);
 }
-/* A phone names the open thread after the chat's title; a wider window picks it beside the title. */
-.chat-conversation__thread-name {
+/* A phone names the open thread as the title, with the chat and its members below; a wider window picks the thread
+   beside the chat's title. */
+.chat-conversation__phone-subtitle {
   display: none;
-  flex: none;
-  margin-inline-start: 0.375rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-  white-space: nowrap;
 }
 @media (max-width: 47.999rem) {
-  .chat-conversation__thread-name {
-    display: inline;
-  }
-  .chat-conversation__picker {
+  .chat-conversation__picker,
+  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
+  .chat-conversation[data-wide-title] .chat-conversation__wide-subtitle {
     display: none;
+  }
+  .chat-conversation[data-wide-title] .chat-conversation__wide-title {
+    display: flex;
+  }
+  .chat-conversation[data-wide-title] .chat-conversation__phone-subtitle {
+    display: block;
   }
 }
 /* The phone's page between the chats and one thread. */
@@ -365,8 +482,67 @@
     padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   }
 }
-/* The title keeps its own width, so the thread picker stands right beside it. */
-.chat-conversation__header > .k2b-page-title {
+/* One line about this device above the chats: flat on the sidebar, no box. */
+.chat-device-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.chat-device-notice > i {
+  margin-top: 0.0625rem;
+  color: var(--k2b-action);
+  font-size: 1rem;
+}
+
+.chat-device-notice[data-kind="home-screen"] > i,
+.chat-device-notice[data-kind="quiet"] > i {
+  color: var(--k2b-warning-text);
+}
+
+.chat-device-notice[data-kind="quiet"] {
+  align-items: center;
+}
+
+.chat-device-notice__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.chat-device-notice__text {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-device-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* "Off" stands quietly right beside the title. */
+.chat-conversation__muted {
+  flex: none;
+  margin-inline: 0.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+
+/* "You follow" in an item discussion's head carries the app colour while on, like a chosen chip. */
+.k2b-ui .k2b-button.chat-follow[aria-pressed="true"] {
+  color: var(--k2b-action);
+}
+
+/* The title keeps its own width, so the thread picker stands right beside it. Cloud's global stylesheet loads after
+   this one, so the selector outweighs the shared `.k2b-ui .k2b-page-title` instead of tying with it. */
+.k2b-ui .chat-conversation__header > .k2b-page-title {
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -386,24 +562,24 @@
 .chat-list__preview[data-collapsed-only] {
   display: none;
 }
+/* The Cloud app has no thread column, so its picker and thread rows stay at every width. */
 @media (min-width: 1800px) {
-  .chat-conversation__picker,
-  .chat-list__threads,
-  .chat-list__members {
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation__picker,
+  .chat-workspace:not(.chat-workspace--app) .chat-list__threads,
+  .chat-workspace:not(.chat-workspace--app) .chat-list__members {
     display: none;
   }
-  .chat-list__preview[data-collapsed-only] {
+  .chat-workspace:not(.chat-workspace--app) .chat-list__preview[data-collapsed-only] {
     display: block;
   }
-  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
-  .chat-conversation[data-wide-title] .chat-conversation__thread-name {
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title {
     display: none;
   }
-  .chat-conversation[data-wide-title] .chat-conversation__wide-title {
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation[data-wide-title] .chat-conversation__wide-title {
     display: flex;
   }
   /* The open chat's row carries the selection again, like the shared selected row. */
-  .k2b-ui .k2b-app-workspace__sidebar-item.chat-list__open {
+  .k2b-ui .chat-workspace:not(.chat-workspace--app) .k2b-app-workspace__sidebar-item.chat-list__open {
     --k2b-text-muted: var(--k2b-text-secondary);
     color: var(--k2b-app-workspace-active);
     background: var(--k2b-app-workspace-selected);
@@ -560,7 +736,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-conversation__wide-subtitle {
+.chat-conversation__wide-subtitle,
+.chat-conversation__phone-subtitle {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-muted);
@@ -568,4 +745,446 @@
   line-height: 1.125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Chat in the Cloud app: the list is a column of its own on the canvas and the open chat sits beside it on the surface
+   from 64 rem of window width; below, the address decides which of the two fills the page. Heads take the app's header
+   height and title size, so every page title of the app sits on one line. */
+.chat-app {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chat-app__list {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  background: var(--k2b-surface-canvas);
+}
+.chat-app__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
+  padding: calc(env(safe-area-inset-top) + 0.75rem) max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
+}
+.chat-app__head h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+.chat-app__head .k2b-icon-button {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.375rem;
+}
+.chat-app__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.chat-app__rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem 0.5rem calc(1rem + var(--k2b-mobile-shell-toast-inset, 0px));
+}
+.chat-app__main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--k2b-surface);
+}
+.chat-app .chat-conversation__header {
+  min-height: calc(1.5rem + 44px);
+  padding-block: 0.75rem;
+}
+.chat-app .chat-conversation__header .k2b-page-title__title,
+.chat-app .chat-conversation__header h1 {
+  font-size: 1.125rem;
+}
+@container k2b-app-area (max-width: 63.999rem) {
+  .chat-app[data-open] > .chat-app__list,
+  .chat-app:not([data-open]) > .chat-app__main {
+    display: none;
+  }
+}
+@media (min-width: 48rem) {
+  .chat-app__head {
+    padding-inline: 1.25rem max(1.25rem, env(safe-area-inset-right));
+  }
+  .chat-app .chat-conversation__header {
+    min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
+    padding: calc(env(safe-area-inset-top) + 0.75rem) 1.25rem 0.75rem;
+  }
+}
+@container k2b-app-area (min-width: 64rem) {
+  .chat-app__list {
+    width: 22rem;
+    flex: none;
+  }
+}
+/* The chat's info takes its own column; until the window has room for all three, the list gives way to it. */
+@container k2b-app-area (max-width: 89.999rem) {
+  .chat-app[data-info] > .chat-app__list {
+    display: none;
+  }
+}
+/* Beats the shared `.k2b-ui .k2b-button` display, which ties with two classes and wins as Cloud's stylesheet comes later. */
+@container k2b-app-area (min-width: 64rem) {
+  .chat-app .k2b-button.chat-app__to-list {
+    display: none;
+  }
+}
+/* In the Cloud app, Back carries the unread messages of the other chats; its slot keeps one width, so the title never
+   moves when the count changes. */
+.chat-conversation__back-count {
+  display: inline-grid;
+  width: 1.75rem;
+  place-items: center start;
+  color: var(--k2b-action);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) {
+  width: auto;
+  padding-inline-end: 0.25rem;
+  color: var(--k2b-action);
+}
+.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) i {
+  color: var(--k2b-action);
+}
+
+/* Shared Cloud elements under a message's text, one card each, at most the bubble's width. */
+.chat-resource-cards {
+  display: flex;
+  max-width: 24rem;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* "Shared" in the info panel: kind filters, the thread, then one row per item that jumps to its message. */
+.chat-shared {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.chat-shared__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.chat-shared__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.chat-shared__loading > * {
+  height: 2.5rem;
+}
+.chat-shared__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.chat-shared__row {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.chat-shared__row:hover {
+  background: var(--k2b-hover);
+}
+.chat-shared__row:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.chat-shared__icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+}
+.chat-shared__icon[data-image] {
+  overflow: hidden;
+}
+.chat-shared__icon > img,
+.chat-shared__thumb > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Images: three squares a row, each the button to its message. */
+.chat-shared__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-shared__thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--k2b-surface-muted);
+  cursor: pointer;
+}
+.chat-shared__thumb:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+.chat-shared__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.chat-shared__title,
+.chat-shared__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-shared__title {
+  font-size: 0.875rem;
+}
+.chat-shared__meta {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+.chat-shared__row[data-unavailable] .chat-shared__title {
+  color: var(--k2b-text-secondary);
+}
+
+/* System chats use the existing flat list; counts and async actions keep their places. Cloud's global stylesheet loads
+   after this one, so the section rules are anchored at `.k2b-ui` to outweigh the shared section rules. */
+.chat-system-chats {
+  margin-block-start: 0.75rem;
+}
+.k2b-ui .chat-system-chats .k2b-app-workspace__sidebar-section-count {
+  order: 2;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  margin-inline-start: auto;
+  text-align: end;
+}
+.k2b-ui .chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
+  margin-inline-start: 0;
+}
+.k2b-ui .chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
+  visibility: hidden;
+}
+.chat-system-chats__count {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.chat-system-chats__loading,
+.chat-system-directory__results {
+  min-height: 3rem;
+}
+.chat-system-chats__skeleton {
+  height: 3.25rem;
+  margin: 0.25rem 0.5rem;
+}
+.chat-system-chats__empty,
+.chat-search__empty,
+.chat-system-chats__membership {
+  padding: 0.5rem 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+.chat-system-directory__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+.chat-system-directory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.chat-system-directory__description {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-system-directory__more {
+  min-width: 12rem;
+}
+.chat-item-metadata {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--k2b-text-secondary);
+}
+.chat-item-metadata > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-resource-head__status {
+  margin-inline-start: 0.5rem;
+}
+.chat-resource-head__metadata {
+  min-width: 0;
+  max-width: 24rem;
+}
+.chat-resource-head__link {
+  white-space: nowrap;
+  margin-inline: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.chat-resource-head__icon,
+.chat-resource-head__mobile {
+  display: none;
+}
+@media (max-width: 47.999rem) {
+  .chat-resource-head__status,
+  .chat-resource-head__metadata,
+  .chat-resource-head__link {
+    display: none;
+  }
+  .chat-resource-head__icon {
+    display: flex;
+  }
+  .chat-resource-head__mobile {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--k2b-text-secondary);
+  }
+  .chat-resource-head__mobile a {
+    margin-inline-start: auto;
+    white-space: nowrap;
+  }
+}
+.chat-thread-picker--item .chat-thread-picker__name {
+  display: none;
+}
+.chat-system-directory__description > span {
+  min-height: 1.25rem;
+}
+
+/* Keep the container's name readable beside the longer item-discussion action on a phone. */
+@container k2b-app-area (max-width: 47.999rem) {
+  .chat-threads-page__header--system {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  .chat-threads-page__header--system .chat-conversation__actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+/* Discover is a flat workspace page; the action slot stays fixed across membership and pending states. */
+.chat-discover { display: flex; flex-direction: column; min-width: 0; width: 100%; height: 100%; }
+.chat-discover__body { min-height: 0; padding: 1rem; flex: 1; }
+/* The catalog reads in the same column as a chat. */
+.chat-discover__content { max-width: var(--k2b-reading-column); margin-inline: auto; }
+.chat-discover__row { display: flex; align-items: center; gap: 0.75rem; padding-block: 0.75rem; }
+/* "For you": one row per mention or reply; an unread one is bold with its count, whose place a read one keeps. */
+.chat-for-you__loading { display: flex; flex-direction: column; gap: 0.75rem; padding-block: 0.75rem; }
+.chat-for-you__list { display: flex; flex-direction: column; margin: 0 -0.5rem; padding: 0.5rem 0; list-style: none; }
+.chat-for-you__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  text-decoration: none;
+}
+.chat-for-you__row:hover { background: var(--k2b-hover); }
+.chat-for-you__row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.chat-for-you__icon {
+  display: grid;
+  width: 2.125rem;
+  height: 2.125rem;
+  flex: none;
+  place-items: center;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 1.0625rem;
+}
+.chat-for-you__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.chat-for-you__title,
+.chat-for-you__place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-for-you__title { font-size: 0.9375rem; }
+.chat-for-you__row[data-unread] .chat-for-you__title { font-weight: 600; }
+.chat-for-you__place { color: var(--k2b-text-secondary); font-size: 0.8125rem; }
+.chat-for-you__meta { display: grid; flex: none; justify-items: end; gap: 0.125rem; color: var(--k2b-text-secondary); font-size: 0.75rem; }
+.chat-for-you__count {
+  display: grid;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  padding: 0 0.3125rem;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--k2b-action-solid);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  visibility: hidden;
+}
+.chat-for-you__row[data-unread] .chat-for-you__count { visibility: visible; }
+.chat-discover__subscribe { width: 8.5rem; flex-shrink: 0; }
+
+/* The audience line keeps its height while it counts, shows the count, or offers Try again. */
+.chat-channel-audience {
+  display: flex;
+  /* Two lines: a failure with Try again may wrap on a phone. */
+  min-height: 3rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+
 }

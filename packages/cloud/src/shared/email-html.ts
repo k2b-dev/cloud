@@ -6,6 +6,7 @@ export const EMAIL_HTML_TAGS = [
   "br",
   "code",
   "div",
+  "del",
   "em",
   "h1",
   "h2",

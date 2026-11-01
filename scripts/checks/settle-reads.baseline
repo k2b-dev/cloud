@@ -10,7 +10,6 @@ packages/assistant/src/frontend/AssistantChatSidebar.browser.test.ts | 12
 packages/assistant/src/frontend/AssistantProjectView.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantSidebar.browser.test.ts | 1
 packages/assistant/src/frontend/composer-insert.browser.test.ts | 2
-packages/chat/src/frontend/ChatWorkspace.browser.test.ts | 7
 packages/chat/src/styles/app-host.browser.test.ts | 2
 packages/cloud/src/ai/chat/live-turn.browser.test.ts | 40
 packages/cloud/src/ai/chat/view-block.browser.test.ts | 22
@@ -43,6 +42,7 @@ packages/core/src/pages/auth/page.browser.test.ts | 1
 packages/core/src/pages/me/account-pages.browser.test.ts | 4
 packages/core/src/pages/me/app.browser.test.ts | 1
 packages/dashboard/src/frontend/dashboard-home.browser.test.ts | 19
+packages/editor/src/markdown/tables.browser.test.ts | 3
 packages/filesv2/src/frontend/NewFolderDialog.browser.test.ts | 4
 packages/filesv2/src/frontend/StorageOverview.browser.test.ts | 3
 packages/filesv2/src/frontend/UploadPanel.browser.test.ts | 3
@@ -64,12 +64,11 @@ packages/notebooks/src/frontend/[id]/_components/editor/note-preview.browser.tes
 packages/notebooks/src/frontend/[id]/_components/full-width.browser.test.ts | 2
 packages/notebooks/src/frontend/[id]/_components/graph/notebook-graph.browser.test.ts | 9
 packages/notebooks/src/frontend/[id]/_components/note-print-copy.browser.test.ts | 5
-packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 16
+packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 13
 packages/notebooks/src/frontend/[id]/_components/versions/version-history.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/attachment-preview.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/lists.browser.test.ts | 1
-packages/notebooks/src/frontend/lib/editor/tables.browser.test.ts | 3
-packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts | 8
+packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts | 5
 packages/notebooks/src/styles/app-host.browser.test.ts | 2
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-colors.browser-suite.ts | 19
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-days.browser-suite.ts | 1

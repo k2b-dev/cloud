@@ -5,10 +5,245 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-22
+updated: 2026-10-30
 ---
 
 # Deprecations and migrations
+
+## Application deployment moves to key files
+
+This release replaces ordinary apps' shared infrastructure environment block
+with an app key file and Core address. Core and Gateway retain infrastructure
+values. Existing environment mode remains supported during the parallel
+release; environment overrides also remain supported afterward.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for settings checks, resumable enrollment, expected-app and replica checks,
+file permissions and the three rollback boundaries. Use the Compose template
+from that release. Do not remove legacy workload or OAuth credentials until
+the verification steps pass. Removing those authentication paths is a later
+breaking release, separate from this configuration migration.
+
+## App keys authenticate background work and OAuth
+
+Applications with `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE` now sign each request
+to Core. The same key authenticates background capability calls and, with the
+operator-owned `oauth:issue` grant, OAuth issuance. Keys enrolled before this
+release for the built-in `oauth` app get the grant once through the migration;
+every new key needs `--grant oauth:issue` explicitly, and third-party app keys can
+hold it too. Keep
+`CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core.
+Mandates, current grants, and domain idempotency still apply.
+
+`CLOUD_APP_CREDENTIAL` and `CLOUD_OAUTH_BROKER_SECRET` are deprecated. During
+this release, apps without an app key can still use automatically delivered or
+explicit workload credentials, and OAuth can still use its broker secret. A
+configured app key takes precedence; rejection never falls back to a bearer.
+Their removal belongs to the following release as a separate breaking change.
+The former Compose input `CLOUD_MAIL_APP_CREDENTIAL` is already unused; remove
+it and revoke the corresponding old credential after verifying background work.
+
+`CLOUD_OAUTH_JWKS_ORIGIN` is also deprecated. Remove it to load OAuth public
+keys directly from Core through `CLOUD_CORE_INTERNAL_ORIGIN`. An explicit old
+origin remains honored during this release. The public OAuth JWKS endpoint
+and token issuer stay unchanged.
+
+Enroll keys, roll out Core before its callers, verify a background action and
+OAuth readiness and token issuance, then remove legacy secret injection and
+revoke obsolete workload credentials. Keep the legacy configuration until
+these checks pass. A rollback during this release can restore the old env
+configuration; legacy credentials must still be active. See
+[App keys](/en/docs/operations/app-keys) and
+[runtime configuration](/en/docs/operations/runtime-configuration).
+
+## Apps, app credentials and Gateway › Apps are one Apps page
+
+**Administration → Apps** now lists every app the registry, Core or an
+[App status](/en/docs/platform/app-status) provider knows, with its state and
+the one hint that needs attention. An app opens as its own column with state,
+traffic, access, keys and events; each row opens a further column, and the
+address keeps the selection, for example `/admin/apps?app=mail&view=keys`.
+
+| Before | Now |
+| --- | --- |
+| `/admin/apps?app=<id>` | unchanged; opens the app |
+| `/admin/app-credentials` | opens `/admin/apps` with a hint; tokens are under the app's **Keys → Tokens for host operation** |
+| `/admin/observability/gateway` (Apps table) | opens `/admin/apps` with a hint |
+| **Remove offline app** in the Gateway Apps table | **Remove from list …** in the app's row menu or page, only for an app that is not running |
+| `/admin/observability/gateway/routes` | unchanged; app IDs link to the app |
+
+Operators: no migration is needed beyond Core's own. `cld admin app-credentials …`,
+`cld admin apps keys …` and `DELETE /api/gateway/apps/<id>` keep working.
+Update bookmarks in your own runbooks.
+
+## NATS diagnostics access moves to settings
+
+The four Gateway Ops `NATS_ADMIN_*` inputs are deprecated. During this release,
+startup imports missing settings from them, storing credentials, seeds, and CA
+PEM as **contents**, never paths. Stored rows take precedence. Unreadable files
+produce a warning with the variable and path; correct the mount and restart,
+or configure diagnostics in **Administration → Observability → NATS → Diagnostics access**.
+
+Verify cluster diagnostics with a refresh before removing the old inputs and
+mounts. Later changes apply to the next diagnostics connection. The secret
+System access value stays encrypted and hidden in administration responses.
+See [NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for setting keys and the migration steps.
+
+## App workload credentials are delivered automatically
+
+Core now issues and rotates a credential for every registered app instance.
+Remove `CLOUD_MAIL_APP_CREDENTIAL` from Compose environment files and secret
+injection. Update Core and app images together so both support automatic
+delivery. Keep `CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core's private listener.
+After the upgrade, check the credential state under **Administration → App
+credentials** and verify the app's background work. Then revoke the old manually
+created Mail credential there.
+Removing its old Compose input does not itself revoke that credential.
+
+For apps without an app key, the deprecated `CLOUD_APP_CREDENTIAL` remains an
+explicit host-run override and takes precedence over automatic delivery. Existing admin UI, API and CLI creation and revocation
+paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
+for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
+
+## Storage import
+
+Import `storage` from `@k2b/cloud`. The former `@k2b/cloud/services` export
+remains available for this release and is deprecated. Its behavior and saved
+storage configuration are unchanged. See [Object store](/en/docs/platform/object-store).
+
+## Network and AI environment values become administrator settings
+
+This release imports nine network and AI values at startup, without replacing
+stored rows. `GOTENBERG_URL` is bootstrap-only; `CLOUD_IDENTITY_JWKS_ORIGIN`
+is replaced by `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
+to a random per-process ID. Run `cld admin settings status --env` before
+removing legacy variables. Follow the [operator migration steps](/en/docs/operations/deprecations-and-migrations).
+
+## Personal Linux groups in exports
+
+Accounts group and entity exports and OAuth/OIDC group claims exclude personal
+Linux groups. Remove `--include-personal` from CLI commands; `include_personal`
+no longer opts into the API export. Use ordinary team groups in integrations
+and inspect primary GIDs through user Linux identity diagnostics. See the
+[operator upgrade note](/en/docs/operations/linux-identities#upgrade-group-exports-and-integrations)
+for consumer checks and retained Files directories.
+
+## Sign-in and security are one administration area with new addresses
+
+**Administration → Sign-in & security** collects Sign-in, Registration,
+Security, Linux identities, FreeIPA, and Account operations. The old addresses
+open the e-mail templates and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/settings?tab=user` | `/admin/signin` |
+| `/admin/settings?tab=registration` | `/admin/signin/registration` |
+| `/admin/settings?tab=security` | `/admin/signin/security` |
+| `/admin/settings?tab=linux` | `/admin/signin/linux` |
+| `/admin/settings?tab=freeipa` | `/admin/signin/freeipa` |
+| `/admin/settings?tab=account-operations` | `/admin/signin/operations` |
+
+`/admin/sync` without the Accounts app now leads to `/admin/signin/freeipa`.
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks.
+
+## Notebooks page discussion moved to the discussion commands
+
+`cld notebooks comments` now means comments on a passage of the text, with
+replies and suggestions. The page discussion of a note moved to
+`cld notebooks discussion` with unchanged flags and JSON output:
+
+| Before | Now |
+| --- | --- |
+| `comments list <note>` | `discussion list <note>` |
+| `comments add <note> --content …` | `discussion add <note> --content …` |
+| `comments update <note> <id>` | `discussion update <note> <id>` |
+| `comments delete <note> <id>` | `discussion delete <note> <id>` |
+
+`comments add` without `--quote` fails and names `discussion add`. Scripts
+that post page discussion entries must switch to `discussion`. Capability IDs
+are unchanged: `notebooks.annotation.*` are the comments on the text, and
+`notebooks.comment.*` is the page discussion.
+
+## Base settings are one administration area with new addresses
+
+**Administration → Base settings** collects General, Legal, PDF rendering,
+Places & maps, and CLI. The old addresses return `404` or another settings tab
+and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/settings?tab=general` | `/admin/base` |
+| `/admin/settings?tab=legal` | `/admin/base/legal` |
+| `/admin/settings?tab=pdf-rendering` | `/admin/base/pdf` |
+| `/admin/settings?tab=cli` | `/admin/base/cli` |
+| `/admin/places-and-maps`, `/admin/settings?tab=places` | `/admin/base/places` |
+
+The sections save with the button in the column head. A value someone else
+changed in the meantime shows at its field with **Take their value** and
+**Save my value**. `GET /api/admin/core/settings/entries?group=<group>` returns
+the current values and versions of one settings group for administrators.
+
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks.
+
+## Observability is one administration area with new addresses
+
+**Administration → Observability** is now one area: the sidebar shows one
+entry, and the area lists its sections in a first column. Gateway apps and
+routes, NATS and Sync, alerts, the health check and retention are sections of
+it. Several addresses changed; the old ones return `404` and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/gateway`, `/admin/gateway/apps` | `/admin/observability/gateway` |
+| `/admin/gateway/routes` | `/admin/observability/gateway/routes` |
+| `/admin/observability/redis` | `/admin/observability/valkey` |
+| `/admin/observability/notifications` | `/admin/observability/deliveries` |
+| `/admin/observability/sync` | `/admin/observability/nats/sync` |
+| `/admin/observability/data` | `/admin/observability/postgres` |
+
+The health check schedule and the retention of logs and request data moved out
+of dialogs into **Health check** (`/admin/observability/health-check`) and
+**Retention** (`/admin/observability/retention`). A log entry opens beside the
+list at `/admin/observability/logs?entry=<id>`.
+
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks. Applications can contribute links to the area with
+`adminNav[].section: "observability"`; see
+[Add administration pages](/en/docs/build/define-app#add-administration-pages).
+
+## Only Cloud administrators stop keeping Mail conversations
+
+Stopping a Mail conversation keep now requires a current Cloud administrator:
+a person with the platform `admin` role, signed in or using their own personal
+API key or OAuth token. People who manage the mailbox, the person who kept the
+conversation, agents, standalone and resource-bound service accounts, and
+workflows or automations running under a mandate get `403 FORBIDDEN` on every
+path: the reader, `DELETE /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep`,
+the `conversation.keep.release` capability, and `cld mail unkeep`. A Cloud
+administrator needs no grant on the mailbox; on the command line, pass the
+mailbox's public ID: `cld mail unkeep <conversation> --mailbox <mailbox-id> --yes`.
+Keeping a conversation is unchanged. The release accepts an optional `reason` (at most 500 characters),
+which the activity and the audit log record; refused attempts are audited too.
+Cancelling a scheduled message no longer removes a kept conversation: the
+conversation stays kept with Cloud's copy of the unsent message, which the
+export marks with its delivery state.
+
+**Admin → Mail → Kept** lists the kept conversations of every mailbox and lets
+Cloud administrators read them, download them as JSON, and stop keeping them.
+This is the only place where Cloud administrators read mailbox content without
+a grant; every opening and download writes the audit events
+`mail.conversation.keep.view` and `mail.conversation.keep.export`. The export
+format is `cloud.mail.kept-conversations/v1` (`KeptConversationExportSchema`).
+It carries headers, text, sanitized HTML, and attachment metadata, never
+attachment bytes or raw MIME.
+
+Operators: no migration or configuration is needed. Tell the people who
+managed keeps before that only Cloud administrators can lift them now. Scripts
+or workflows that called `cld mail unkeep` or the release capability with a
+mailbox manager's credentials must move to a Cloud administrator.
 
 ## Weather city search uses Core geo
 
@@ -20,7 +255,9 @@ Core `address.autocomplete` with `type: "city"` and `countryCode: "DE"`.
 Autocomplete takes at least three characters and returns at most five
 suggestions. Choose a suggestion and pass its coordinates to Weather for a forecast.
 
-Operators configure the secret `geo.api_key` and credit budgets in Core.
+The [operations replacement table](/en/docs/operations/runtime-configuration#replace-the-legacy-weather-geo-configuration)
+lists each removed API and setting. Operators configure the secret `geo.api_key`
+and credit budgets in Core.
 `weather.geo_url`, `GEO_ALLOWED_TARGETS`, and the development `geo` container
 are removed. Existing saved locations and their coordinates remain valid.
 Remove the old URL and allowlist from deployment configuration; stored legacy
@@ -174,7 +411,7 @@ change nothing.
 
 Creating personal API keys and passkeys now requires a browser sign-in from
 the last ten minutes. OAuth access tokens, API keys, background mandates, and
-mobile app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
+Cloud app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
 An older browser sign-in receives `403 REAUTHENTICATE`.
 
 Automation that created personal API keys using an OAuth token or another API
@@ -506,8 +743,9 @@ bound version, but the field no longer exists in its runs: a step that reads it
 fails with an unavailable reference, and `exists` on it is false. Saving or
 validating the workflow again reports a diagnostic for the unknown field. Replace it with `inputs.conversation.assigneeUserIds`,
 for example `${{ inputs.conversation.assigneeUserIds.0 }}` for the first
-assignee. The workflow action `assignConversation` keeps its `user` input: it
-replaces all assignees with that person, and `null` removes them all.
+assignee. The workflow action `assignConversation` keeps its `user` input and
+accepts an eligible person or service account by exact name or UUID. It assigns
+only when nobody is assigned; `null` leaves existing assignees in place.
 
 Platform administrators without a mailbox grant no longer count as mailbox
 users in Mail's background checks either: reminders and other conversation
@@ -1357,7 +1595,7 @@ topic `cloud:live:grids` and checks, when it delivers an update, that the
 reader may read the Base, by the same rules as the Grids API. A changed grant
 and a deleted Base check the readers of the Base's tables, structure, and runs
 at once. The socket accepts every credential the Grids API accepts, so pages
-in the phone app receive live updates too. A returning tab receives what it
+in the device app receive live updates too. A returning tab receives what it
 missed instead of checking the Base structure again; the check every 30
 seconds is gone.
 
@@ -1397,6 +1635,14 @@ wait in `events.outbox` until Grids is updated again.
 
 ## Mail writes live updates through the platform outbox
 
+This section describes the historical outbox transition. Its rolling-upgrade
+and rollback behavior applies only before the later `principal_assignees`
+schema boundary. For a current Mail upgrade, follow the
+[Mail assignment cutover](/en/docs/operations/mail-assignee-cutover): stop
+every old Mail process before migration. An older image refuses startup
+afterward; recovery requires a fix-forward or coordinated restoration of the
+pre-upgrade backup, not a binary-only rollback.
+
 Mail writes its live updates through the platform outbox that Core's migration
 creates, from the trigger on its activity log, so they are part of the
 transaction that records a change. Update Core before Mail: Mail does not start
@@ -1408,10 +1654,10 @@ which reads the topic `cloud:live:mail` and checks the reader's access when it
 delivers an update. The mailbox view, the composer, and the mailing list dialog
 of a page share one socket instead of opening one each, and a returning tab
 receives what it missed instead of loading the view again. The socket accepts
-every credential the Mail API accepts, so pages in the phone app receive live
+every credential the Mail API accepts, so pages in the device app receive live
 updates too.
 
-The first Mail start after the update replaces `mail.enqueue_live_invalidation()`
+During that historical outbox transition, the first Mail start replaces `mail.enqueue_live_invalidation()`
 and drops `mail.live_invalidation_outbox`. The function keeps its signature, so
 replicas of the previous version that still run during a rolling update write
 their changes to the platform outbox as well, and the new replicas publish them.
@@ -1427,7 +1673,7 @@ expire after 24 hours, but its stream keeps its 1 GiB reservation until the
 next release removes it together with `/api/mail/ws`; see
 [Deployment requirements](/en/docs/operations/deployment-requirements).
 
-If you roll Mail back to the previous version, its pages receive no live
+Before the assignment cutover, rolling back that outbox release leaves its pages without live
 updates until Mail is updated again, because the database keeps the new
 function. Reloading a page shows the current state. The updates written
 meanwhile wait in `events.outbox` and are published by the next Mail start.
@@ -1610,8 +1856,8 @@ removes them after verifying Files:
   choose **Clean up**. The cleanup removes every stored key that no running
   application registers, not only `files.*`, so first check that the list holds
   nothing you still need.
-- the offline `files` registration: in `/admin/gateway/apps`, choose
-  **Remove offline app** for Files (legacy).
+- the offline `files` registration: in **Administration → Apps** (`/admin/apps`), open
+  Files (legacy) and choose **Remove from list …**.
 
 Once Files serves every directory you still need, stop the Filegate v2 daemon
 and remove its configuration and token. Keep its storage: the home and group
@@ -1890,7 +2136,7 @@ or `--content <text>` instead of `--file`, `--stdin`, and `--content`. See
 | `lock-note` | `lock <note>` |
 | `search --all`, `tag-notes` | `search [query] [--notebook] [--tags]` |
 | `favorite`, `unfavorite`, `favorites` | `favorites add`, `favorites remove`, `favorites list` |
-| `comments`, `add-comment`, `update-comment`, `delete-comment` | `comments list`, `add`, `update`, `delete` |
+| `comments`, `add-comment`, `update-comment`, `delete-comment` | `discussion list`, `add`, `update`, `delete` (named `comments` until the page discussion moved) |
 | `versions`, `version`, `restore-version` | `versions list`, `versions cat`, `versions restore --into` |
 | `upload-attachment` | `attach <note> <file>` |
 | `attachments`, `download-attachment`, `delete-attachment` | `attachments list`, `download`, `delete` |
@@ -2436,3 +2682,34 @@ route are replaced by outgoing mail profiles and the per-profile test route.
 Core imports configured legacy SMTP settings automatically.
 See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for the upgrade
 and rollback rules.
+
+## AI model classes
+
+The model-profile JSON setting and the five default/background/workflow/tool
+model settings are removed. Configure providers, models, variants and class
+assignments instead. See [Upgrading to model classes](/en/docs/operations/upgrading-to-model-classes).
+
+Model pickers consume `AiPeopleModels["options"]`; the old `AiPublicModelProfile` type is removed. Server-side model listings use `AiModelProfile`.
+
+Replace `requestedModelId` and `modelProfileId` request fields with
+`model: { class: "balanced" }` or `model: { id: "variant-id" }`.
+Structured results expose `model: AiResolvedModelRef`. Public history and
+accounting fields use `modelId`; historical SQL columns keep their names.
+Project defaults are `defaultModel: AiModelRequest | null`, and personal
+selection is `selection: AiModelRequest | null`. Old pricing/settings CLI
+commands are replaced by `admin ai models update` and `admin ai variants update`.
+
+## Project and Skill service authorization context
+
+Project and Skill services and their AI tool factories now require
+`AiResourceContext` from `@k2b/cloud/ai`. Replace bare `AccessSubject` arguments
+with `{ actor, accessSubject }` from the authenticated request or capability
+context. Pass that same context as `subject` when creating a resource. Keep the
+original machine actor, including its scopes; do not construct a user actor to
+represent a machine credential. Keep the resolved `RequestAuthority` argument
+or list option on Skill calls so app-entry checks retain the credential's scope
+and effective roles. Anonymous read paths may pass `null`.
+
+Standalone and agent credentials use their own grants within their credential
+scopes. Resource-bound credentials are unsupported for Projects and Skills.
+See [Projects and Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).

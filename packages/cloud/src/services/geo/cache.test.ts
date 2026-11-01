@@ -77,3 +77,14 @@ test("only autocomplete bias uses coarse coordinate rounding", () => {
     expect(JSON.stringify(normalizeGeoInput(input, fn))).toContain("48.00123");
   }
 });
+
+test("place-name cache keys preserve provider case and internal whitespace but trim outer whitespace", () => {
+  const base = { categories: ["attraction"], near: { lat: 48, lon: 10 } };
+  const key = geoCacheKey("places", { ...base, name: "Wasserfall" }, "de");
+  expect(geoCacheKey("places", { ...base, name: " Wasserfall " }, "de")).toBe(key);
+  for (const name of [undefined, "Blautopf", "wasserfall", "Wasser fall", "Wasser  fall"])
+    expect(geoCacheKey("places", { ...base, name }, "de")).not.toBe(key);
+  expect(geoCacheKey("places", { ...base, name: "Wasser fall" }, "de")).not.toBe(
+    geoCacheKey("places", { ...base, name: "Wasser  fall" }, "de"),
+  );
+});

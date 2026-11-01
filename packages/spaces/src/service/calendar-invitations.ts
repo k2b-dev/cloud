@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { publishItemEvent } from "../app-events";
 import type { SpaceItemResourceReferenceInput, User } from "../contracts";
 import {
   type CalendarAddress,
@@ -523,6 +524,7 @@ const importParsedCalendarInvitation = async (params: {
         const publicRef = await publicEventRef(persisted.data.id, tx);
         if (!publicRef) return fail(err.internal("Created calendar event has no public ID"));
         await insertItemResourceReferences(tx, persisted.data.id, [params.input.conversation]);
+        await publishItemEvent(tx, "item.created", persisted.data.id, params.input.spaceId);
         await publishSpaceChange(tx, { type: "item.created", spaceId: params.input.spaceId, itemId: persisted.data.id });
         return ok({
           itemId: persisted.data.id,

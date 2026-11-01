@@ -11,7 +11,7 @@ import { hostname } from "node:os";
 import { createSync, type Sync, SyncError } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import type { NatsConnection } from "@nats-io/transport-node";
-import { env } from "../config/env";
+import { connections } from "../runtime/connections";
 import { logger } from "../services/logging";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
 import { connectNats } from "./nats-connection";
@@ -19,6 +19,13 @@ import { withSyncBudgets } from "./sync-budget";
 
 let current: Sync | undefined;
 let starting = false;
+let processNats: NatsConnection | undefined;
+
+/** Existing non-retained NATS transport, owned and drained by the process lifecycle. */
+export const getProcessNats = (): NatsConnection => {
+  if (!processNats) throw new Error("NATS is not available before app.start()");
+  return processNats;
+};
 
 /** Bind the process instance. `startProcessSync()` does this; tests may bind their own. */
 export const bindProcessSync = (sync: Sync): void => {
@@ -128,12 +135,12 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
     sync = withSyncBudgets(
       createSync({
         connection,
-        namespace: env.SYNC_NAMESPACE,
+        namespace: connections().nats.namespace,
         application,
-        defaults: { replicas: env.SYNC_REPLICAS },
+        defaults: { replicas: connections().nats.replicas },
         observe: (event) => observeSyncEvent(event, application),
       }),
-      { connection, namespace: env.SYNC_NAMESPACE },
+      { connection, namespace: connections().nats.namespace },
     );
     bindProcessSync(sync);
     await sync.ready();
@@ -157,13 +164,13 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
  * serves readiness before this returns.
  */
 export const startProcessSync = async ({ application }: { application: string }): Promise<ProcessSync> => {
-  if (!env.SYNC_NAMESPACE.trim()) {
+  if (!connections().nats.namespace.trim()) {
     throw new Error(
       `SYNC_NAMESPACE is not set (application "${application}"). Every process of one Cloud installation ` +
         "must share the same @k2b/sync namespace.",
     );
   }
-  if (env.NATS_SERVERS.length === 0) {
+  if (connections().nats.servers.length === 0) {
     throw new Error(
       `NATS_SERVERS is not set (application "${application}"). @k2b/sync needs a comma-separated list of ` +
         "nats://host:port bootstrap servers, e.g. NATS_SERVERS=nats://ipa_nats_1:4222,nats://ipa_nats_2:4222.",
@@ -173,6 +180,7 @@ export const startProcessSync = async ({ application }: { application: string })
   starting = true;
   try {
     const { sync: active, connection } = await waitForNats(() => connectReadySync(application), { application });
+    processNats = connection;
     let stopPromise: Promise<void> | undefined;
     return {
       sync: active,
@@ -185,6 +193,7 @@ export const startProcessSync = async ({ application }: { application: string })
               await flushSyncTraceEvents();
             } finally {
               if (current === active) unbindProcessSync();
+              if (processNats === connection) processNats = undefined;
               await connection.drain();
             }
           }

@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
+import { robotAvatarFromSeed } from "@k2b/cloud/contracts/avatar";
+import { renderAvatarSvg } from "@k2b/cloud/shared";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
@@ -141,6 +143,8 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const writes: Array<{ method: string; path: string; body: unknown }> = [];
+/** Wakes each wait for a write: the server records one, so a test waits for the save itself, not a fixed time (#2204). */
+const writeWaiters = new Set<() => void>();
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
 let stored: SpaceItem = task;
 let browser: Browser;
@@ -189,11 +193,15 @@ beforeAll(async () => {
         });
       }
       // No Cloud app offers files here, so Add image or video opens the device's file dialog directly.
+      // An agent's picture is its robot, served under the same image address as a person's picture.
+      const robot = /^\/api\/accounts\/users\/([\w-]+)\/avatar$/.exec(url.pathname);
+      if (robot) return new Response(renderAvatarSvg(robotAvatarFromSeed(robot[1]!)), { headers: { "content-type": "image/svg+xml" } });
       if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
         writes.push({ method: request.method, path: url.pathname, body });
+        for (const wake of writeWaiters) wake();
         const itemPath = `/api/spaces/${spaceId}/items/Item01`;
         if (url.pathname === `${itemPath}/claim` && request.method === "POST") {
           stored = {
@@ -401,8 +409,10 @@ const boxes = (page: Page) =>
         return `${element.tagName} ${[box.x, box.y, box.width, box.height].map((value) => value.toFixed(1)).join(" ")}`;
       }),
   );
+/** The Properties section, the first in the panel body. */
+const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__section:first-of-type .k2b-description-list__item";
 const planningRow = (page: Page, term: string) =>
-  page.locator(".k2b-detail-panel__summary .k2b-description-list__item", { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
+  page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
   const label = (await planningRow(page, term).locator("dt").boundingBox())!;
   await page.mouse.click(label.x + 4, label.y + label.height / 2);
@@ -415,16 +425,23 @@ const surface = (page: Page, term: string) =>
     return control ? getComputedStyle(control, "::before").backgroundColor : "none";
   });
 const transparent = "rgba(0, 0, 0, 0)";
+/** Waits until the server has recorded `count` writes, bounded by the test's own timeout, then checks there are no more. */
 const writesReach = async (count: number) => {
-  for (let attempt = 0; attempt < 100 && writes.length < count; attempt += 1) await Bun.sleep(20);
+  while (writes.length < count)
+    await new Promise<void>((wake) => {
+      const once = () => {
+        writeWaiters.delete(once);
+        wake();
+      };
+      writeWaiters.add(once);
+    });
   expect(writes.length).toBe(count);
 };
 const shot = (page: Page, name: string) =>
   page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-${browserName}-${name}.png`, animations: "disabled" });
 
-/** The whole Assigned section, including its heading and add-assignee combobox. */
-const peopleSection = (page: Page) =>
-  page.locator(".k2b-detail-panel__section").filter({ has: page.getByRole("heading", { name: "Zuständig", exact: true }) });
+/** The whole Assigned property row, including its term and add-assignee picker. */
+const peopleSection = (page: Page) => planningRow(page, "Zugewiesen");
 const peopleRows = (page: Page) => peopleSection(page).locator("[data-spaces-assignee-row]");
 const peopleSizes = (page: Page) =>
   peopleRows(page).evaluateAll((rows) =>
@@ -559,8 +576,10 @@ describe("Spaces item detail in a browser", () => {
           const rows = peopleRows(page);
           expect(await rows.count()).toBe(2);
           const agentRow = rows.filter({ hasText: agent.displayName });
-          // The agent shows the service-account icon, never a picture or a person's initials.
-          expect(await agentRow.locator(".k2b-avatar i.ti-api").count()).toBe(1);
+          // The agent shows its robot in a square frame, never a bare icon or a person's initials.
+          const robot = agentRow.locator(`img.k2b-avatar[data-shape="square"][src*="/api/accounts/users/${agent.id}/avatar"]`);
+          await robot.evaluate((image: HTMLImageElement) => image.decode());
+          expect(await robot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
           // As an assignee, the agent can be removed like a person, also while it works on the task.
           expect(await agentRow.getByRole("button", { name: `${agent.displayName} entfernen` }).count()).toBe(1);
           if (state === "working") {
@@ -608,9 +627,9 @@ describe("Spaces item detail in a browser", () => {
             path: `/tmp/spaces-detail-${browserName}-people-assigned-${width}-${theme}.png`,
             animations: "disabled",
           });
-          // The claim time shows whole or not at all, never cut off. Whether it fits a phone depends on the platform's
-          // font metrics, so only the 480 px panel, the widest, promises it. The fixture's claim is more than a week
-          // old, so the time reads as its longest form, a full date, on every day the suite runs.
+          // The claim time shows whole or not at all, never cut off. As a property value the row is narrower than the
+          // panel, so whether it fits depends on the width and the platform's font metrics; no width promises it. The
+          // fixture's claim is more than a week old, so the time reads as its longest form, a full date.
           const time = await peopleRows(page)
             .first()
             .locator("time")
@@ -627,18 +646,17 @@ describe("Spaces item detail in a browser", () => {
               };
             });
           expect(time.whole || time.clipped).toBe(true);
-          if (width === 480) expect(time.whole).toBe(true);
           if (width === 320) {
             const rows = await peopleRows(page).evaluateAll((rows) =>
               rows.map((row) => ({
                 height: row.getBoundingClientRect().height,
-                avatarHeight: row.querySelector(".k2b-avatar")!.getBoundingClientRect().height,
                 scroll: row.scrollWidth,
                 client: row.clientWidth,
               })),
             );
+            // Every person is one row-height line of the property value (2.25rem), as tall as any property row.
             for (const row of rows) {
-              expect(row.height).toBe(row.avatarHeight);
+              expect(row.height).toBe(36);
               expect(row.scroll).toBeLessThanOrEqual(row.client);
             }
           }
@@ -660,27 +678,27 @@ describe("Spaces item detail in a browser", () => {
           await shot(page, `${name}-${theme}`);
           const rest = await boxes(page);
 
-          // Labels and values each keep one column through the planning block, controls and the blocker list included.
-          const columns = await page.evaluate(() => {
-            const rows = Array.from(window.document.querySelectorAll(".k2b-detail-panel__summary .k2b-description-list__item"));
+          // Labels and values each keep one column through the properties, controls, people, and the blocker list included.
+          const columns = await page.evaluate((selector) => {
+            const rows = Array.from(window.document.querySelectorAll(selector));
             const left = (element: Element | null) => Math.round(element!.getBoundingClientRect().left);
             return {
               terms: rows.map((row) => left(row.querySelector("dt"))),
               values: rows.map((row) =>
                 left(
                   row.querySelector(
-                    ".k2b-date-trigger__value, .k2b-number-input__sizer, .k2b-choice-dot, .k2b-choice-pill, .spaces-dependency__icon",
+                    ".k2b-avatar, .k2b-date-trigger__value, .k2b-number-input__sizer, .k2b-choice-dot, .k2b-choice-pill, .spaces-dependency__icon",
                   ),
                 ),
               ),
             };
-          });
+          }, PROPERTY_ROWS);
           expect(new Set(columns.terms).size).toBe(1);
           expect(new Set(columns.values).size).toBe(1);
 
           // At rest the estimate reads at the row's size, on touch screens too, where its input edits at 16 px.
-          const type = await page.evaluate(() => {
-            const rows = Array.from(window.document.querySelectorAll(".k2b-detail-panel__summary .k2b-description-list__item"));
+          const type = await page.evaluate((selector) => {
+            const rows = Array.from(window.document.querySelectorAll(selector));
             const value = (term: string) => rows.find((row) => row.querySelector("dt")?.textContent === term)!;
             const sizer = value("Schätzung").querySelector(".k2b-number-input__sizer")!;
             const input = sizer.querySelector("input")!;
@@ -691,27 +709,26 @@ describe("Spaces item detail in a browser", () => {
               due: getComputedStyle(value("Fällig").querySelector(".k2b-date-trigger__value")!).fontSize,
               input: { size: getComputedStyle(input).fontSize, opacity: getComputedStyle(input).opacity },
             };
-          });
+          }, PROPERTY_ROWS);
           expect(type.estimate).toBe(type.due);
           expect(type.text).toContain("45 min");
           expect(type.unit).toBeNull();
           expect(type.input).toEqual({ size: view.touch ? "16px" : type.due, opacity: "0" });
 
-          // The collapsed details row starts where every other section heading starts.
+          // No section has an icon: every heading, the "More about this task" title and its collapsed rows included,
+          // starts on the same text edge.
           const headings = await page.evaluate(() =>
             Array.from(
               window.document.querySelectorAll(
-                ".k2b-detail-panel__group .k2b-detail-panel__section-header, .k2b-detail-panel__group .k2b-detail-panel__section-summary",
+                ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-detail-panel__group-title, .k2b-discussion h3",
               ),
             )
               .filter((element) => !element.closest("[hidden]"))
-              .map((element) => {
-                const icon = element.querySelector(".k2b-detail-panel__section-icon")!.getBoundingClientRect();
-                const title = element.querySelector("h3, .k2b-detail-panel__section-title")!.getBoundingClientRect();
-                return [Math.round(icon.left), Math.round(title.left)].join(" ");
-              }),
+              .map((element) => Math.round(element.getBoundingClientRect().left)),
           );
+          expect(headings.length).toBeGreaterThan(4);
           expect(new Set(headings).size).toBe(1);
+          expect(await page.locator(".k2b-detail-panel__section-icon").count()).toBe(0);
 
           // Hovering a row paints its quiet surface and moves nothing; the blocker's remove button only fades in.
           for (const term of ["Fällig", "Schätzung", "Priorität", "Tags"]) {
@@ -752,16 +769,15 @@ describe("Spaces item detail in a browser", () => {
             const left = bodyRect.left + body.clientLeft;
             const top = bodyRect.top + body.clientTop;
             const style = getComputedStyle(avatar);
-            const title = avatar.closest(".k2b-detail-panel__section")?.querySelector("h3");
-            const textEdge = title?.getBoundingClientRect().left ?? Number.NaN;
+            const due = window.document.querySelector(".k2b-detail-panel .k2b-date-trigger__value");
+            const valueEdge = due?.getBoundingClientRect().left ?? Number.NaN;
             return {
               ring: avatar.getAttribute("data-ring"),
               outline: style.outlineStyle,
               shadow: style.boxShadow,
               border: style.borderTopWidth,
-              // The holder starts on its section's text edge, as close to the scrollport as panel content gets, where an
-              // outside ring would be the first to be cut off.
-              flush: Math.abs(rect.left - textEdge) <= 0.5,
+              // The holder starts on the property values' edge, like every other value.
+              flush: Math.abs(rect.left - valueEdge) <= 0.5,
               inside:
                 rect.left >= left - 0.5 &&
                 rect.right <= left + body.clientWidth + 0.5 &&
@@ -930,14 +946,16 @@ describe("Spaces item detail in a browser", () => {
       rangeRequests.length = 0;
       const page = await open(view, { locale, attachments: [reelAttachment] });
       try {
-        const label = locale === "de" ? "Reel for approval.webm abspielen" : "Play Reel for approval.webm";
-        const tile = page.getByRole("button", { name: label });
+        // The video is one row of the attachment list: the whole row opens it.
+        const tile = page.getByRole("button", { name: "Reel for approval.webm", exact: true });
         await tile.scrollIntoViewIfNeeded();
-        // The tile shows a decoded frame, not only the video's size and length.
+        // The preview shows a decoded frame, not only the video's size and length.
         await page.waitForFunction(() => (document.querySelector(".k2b-detail-panel video") as HTMLVideoElement | null)?.readyState! >= 2);
-        // The tile keeps its square, whatever the video's shape.
-        const square = (await tile.boundingBox())!;
-        expect([Math.round(square.width), Math.round(square.height)]).toEqual([80, 80]);
+        // The preview keeps its 2.25rem square, whatever the video's shape, and names its kind and size.
+        const row = page.locator(".k2b-file-grid__item", { has: tile });
+        const square = (await row.locator(".k2b-file-grid__preview").boundingBox())!;
+        expect([Math.round(square.width), Math.round(square.height)]).toEqual([36, 36]);
+        expect(await row.locator(".k2b-file-grid__meta").textContent()).toMatch(/^Video · /);
         expect(
           await page
             .locator(".k2b-detail-panel")
@@ -978,7 +996,7 @@ describe("Spaces item detail in a browser", () => {
   test("a video the browser cannot play announces its fallback and keeps focus in the dialog", async () => {
     const page = await open(desktop, { locale: "en", attachments: [brokenAttachment] });
     try {
-      await page.getByRole("button", { name: "Play Broken.mov" }).click();
+      await page.getByRole("button", { name: "Broken.mov", exact: true }).click();
       await page.waitForSelector(".spaces-video-dialog .k2b-video-player__fallback[role=alert]");
       expect(await page.locator(".spaces-video-dialog .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
       // Focus started on the video, which the fallback replaced; it must not drop to the page behind the dialog.

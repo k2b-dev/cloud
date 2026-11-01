@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
+import { stubConnections } from "../../runtime/connections.test-fixture";
 import { encryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
 import { read } from "./index";
@@ -9,13 +10,12 @@ const key = "test.write_key_conflict";
 const lockQuery = "UPDATE settings.entries SET value = value WHERE key = ? RETURNING value";
 const writeQuery = "UPDATE settings.entries SET value = ?, updated_at = now() WHERE key = ?";
 registerSettings([{ key, kind: "url", default: "", description: "Write conflict probe", group: "test" }]);
-const previousSecret = process.env.APP_SECRET;
+let secretStub: ReturnType<typeof stubConnections> | undefined;
 beforeAll(() => {
-  process.env.APP_SECRET = "test-only-write-key-conflict";
+  secretStub = stubConnections({ appSecret: { current: "test-only-write-key-conflict" } });
 });
 afterAll(() => {
-  if (previousSecret === undefined) delete process.env.APP_SECRET;
-  else process.env.APP_SECRET = previousSecret;
+  secretStub?.mockRestore();
 });
 
 // Script the SQL replies at the caller-owned transaction boundary, without a database or timing hooks.

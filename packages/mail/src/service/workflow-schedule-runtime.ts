@@ -1,4 +1,4 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, logger, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
@@ -10,7 +10,6 @@ import {
 } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import type { Scheduler, Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 
 const SCHEDULER_ID = "mail:workflow-schedules";
@@ -76,7 +75,7 @@ const mapActivation = (row: DbActivation): MailWorkflowScheduleActivation => {
   };
 };
 
-const activationColumns = sql`
+const activationColumns = () => sql`
   activation.id::text AS activation_id,
   activation.workflow_id::text,
   activation.workflow_version_id::text,
@@ -89,7 +88,7 @@ const activationColumns = sql`
 
 const listActive = async (): Promise<MailWorkflowScheduleActivation[]> => {
   const rows = await sql<DbActivation[]>`
-    SELECT ${activationColumns}
+    SELECT ${activationColumns()}
     FROM workflows.activation activation
     JOIN workflows.workflow workflow
       ON workflow.id = activation.workflow_id
@@ -115,7 +114,7 @@ const listActive = async (): Promise<MailWorkflowScheduleActivation[]> => {
 
 const loadCurrent = async (registration: WorkflowScheduleRegistration): Promise<MailWorkflowScheduleActivation | null> => {
   const [row] = await sql<DbActivation[]>`
-    SELECT ${activationColumns}
+    SELECT ${activationColumns()}
     FROM workflows.activation activation
     JOIN workflows.workflow workflow
       ON workflow.id = activation.workflow_id

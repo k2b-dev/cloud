@@ -121,9 +121,11 @@ export default function DashboardView(props: DashboardViewProps) {
             ]}
           />
           <div class="pulse-dashboard__actions">
-            <Button variant="ghost" onClick={() => setCustom((value) => !value)} aria-expanded={custom()}>
-              {t().dashboardCustom}
-            </Button>
+            <Show when={props.private}>
+              <Button variant="ghost" onClick={() => setCustom((value) => !value)} aria-expanded={custom()}>
+                {t().dashboardCustom}
+              </Button>
+            </Show>
             <Show when={actions && !c.denied()}>
               <div class="pulse-dashboard__desktop-actions">{actions && <actions.Buttons />}</div>
             </Show>

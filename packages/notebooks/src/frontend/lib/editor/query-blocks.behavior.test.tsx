@@ -10,6 +10,8 @@ import type { BlockPreviewResult } from "./query-blocks";
 
 // The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
+const { createQueryBlockPreviews } = await import("./query-blocks");
+const { notebookChartOptions } = await import("../../../lib/chart-options");
 const { extractNotebookDirectiveRanges } = await import("../../../lib/query-blocks");
 loading.cleanup();
 
@@ -33,12 +35,11 @@ describe("query block previews", () => {
     return;
   }
   const mount = async (
-    load: (markdown: string | undefined, signal: AbortSignal) => Promise<BlockPreviewResult>,
+    load: (markdown: string | undefined, signal: AbortSignal, pages: ReadonlyMap<number, number>) => Promise<BlockPreviewResult>,
     markdown = DOCUMENT,
     readOnly = false,
   ) => {
     const dom = createDomTestHarness();
-    const { createQueryBlockPreviews } = await import("./query-blocks");
     let editor: EditorView;
     const dispose = render(() => {
       const host = document.createElement("div");
@@ -51,7 +52,7 @@ describe("query block previews", () => {
         view,
         enabled: () => true,
         locale: () => "de",
-        load,
+        load: (markdown, pages, signal) => load(markdown, signal, pages),
       });
       onMount(() => {
         editor = new EditorView({
@@ -88,10 +89,75 @@ describe("query block previews", () => {
       const previous = app.view().state.selection.main.anchor;
       anchor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
       expect(app.view().state.selection.main.anchor).toBe(previous);
-      const button = Array.from(app.dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Quelltext"))!;
+      const button = app.dom.root.querySelector<HTMLButtonElement>('button[aria-label="Quelltext anzeigen"]')!;
       button.click();
       expect(app.view().state.selection.main.anchor).toBe(DOCUMENT.indexOf(":::query"));
       expect(app.dom.root.querySelectorAll(".cm-query-block-widget").length).toBe(1);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a paged query turns its page in place, asks for that page and keeps focus on the button", async () => {
+    const requested: number[] = [];
+    const pager = (page: number) =>
+      `<div class="notebook-book-query" data-query-line="3"><ul><li>Row ${page}</li></ul><nav class="notebook-query-pager">` +
+      `<button type="button" data-query-line="3" data-query-page="${page - 1}"${page === 1 ? " disabled" : ""}>‹</button>` +
+      `<span role="status">${page * 20 - 19}–${page * 20} von 362</span>` +
+      `<button type="button" data-query-line="3" data-query-page="${page + 1}">›</button></nav></div>`;
+    const app = await mount(async (_markdown, _signal, pages) => {
+      const page = pages.get(3) ?? 1;
+      requested.push(page);
+      return { ...response(), blocks: [{ line: 3, html: pager(page) }] };
+    });
+    try {
+      await Bun.sleep(40);
+      const next = () => app.dom.root.querySelectorAll<HTMLButtonElement>("button[data-query-page]")[1]!;
+      expect(app.dom.root.textContent).toContain("1–20 von 362");
+      const previous = app.view().state.selection.main.anchor;
+      next().click();
+      await Bun.sleep(40);
+      expect(requested).toEqual([1, 2]);
+      expect(app.dom.root.textContent).toContain("21–40 von 362");
+      expect(app.dom.document.activeElement).toBe(next());
+      // Turning a page is no edit and leaves the cursor where it was.
+      expect(app.view().state.selection.main.anchor).toBe(previous);
+      expect(app.view().state.doc.toString()).toBe(DOCUMENT);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("pages of lines that moved away are dropped, and a late page leaves focus where the reader moved it", async () => {
+    const sent: Array<[number, number][]> = [];
+    let release: (() => void) | undefined;
+    const pager = (line: number, page: number) =>
+      `<div class="notebook-book-query" data-query-line="${line}"><ul><li>Row ${page}</li></ul><nav class="notebook-query-pager">` +
+      `<button type="button" data-query-line="${line}" data-query-page="${page - 1}"${page === 1 ? " disabled" : ""}>‹</button>` +
+      `<span role="status">${page}</span><button type="button" data-query-line="${line}" data-query-page="${page + 1}">›</button></nav></div>`;
+    const app = await mount(async (markdown, _signal, pages) => {
+      sent.push([...pages]);
+      if (pages.size > 0 && !release) await new Promise<void>((resolve) => (release = resolve));
+      const document = markdown ?? DOCUMENT;
+      const line = extractNotebookDirectiveRanges(document).find((block) => block.type === "query")!.line;
+      return { ...response(document), blocks: [{ line, html: pager(line, pages.get(line) ?? 1) }] };
+    });
+    try {
+      await Bun.sleep(40);
+      app.dom.root.querySelectorAll<HTMLButtonElement>("button[data-query-page]")[1]!.click();
+      await Bun.sleep(10);
+      // The reader moves on while the page loads.
+      const elsewhere = app.dom.document.createElement("button");
+      app.dom.root.append(elsewhere);
+      elsewhere.focus();
+      release!();
+      await Bun.sleep(40);
+      expect(app.dom.document.activeElement).toBe(elsewhere);
+      expect(sent.at(-1)).toEqual([[3, 2]]);
+      // Lines added above the query move it; the page of its old line is not sent again.
+      app.view().dispatch({ changes: { from: 0, insert: "Intro\n\n" } });
+      await Bun.sleep(400);
+      expect(sent.at(-1)).toEqual([]);
     } finally {
       app.cleanup();
     }
@@ -102,20 +168,22 @@ describe("query block previews", () => {
       "# Chart\n\n:::chart\ntype: bar\ntitle: Umsatz\ncolumns: [Monat, Umsatz]\nrows:\n  - [Januar, 1200]\nx: Monat\ny: Umsatz\ntooltip:\n  label: Betrag\n  format: EUR\n:::";
     let serverHtml = "";
     const app = await mount(async () => {
-      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("../../../lib/chart-blocks");
-      const parsed = parseNotebookChartBlocks(markdown);
+      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("@k2b/editor/markdown/lib/chart-blocks");
+      const parsed = parseNotebookChartBlocks(markdown, notebookChartOptions);
       expect(parsed.diagnostics).toEqual([]);
       serverHtml = renderNotebookChartFigure(parsed.blocks[0]!.input, "de")!;
       return { markdown, blocks: [{ line: 3, html: serverHtml }], diagnostics: [], headings: [] };
     }, markdown);
     try {
       // Wait for the preview response instead of a fixed time: the widget draws once the debounced request resolves.
-      for (let wait = 0; wait < 200 && !app.dom.root.querySelector(".notebook-book-chart__actions button"); wait++) await Bun.sleep(10);
+      for (let wait = 0; wait < 200 && !app.dom.root.querySelector('[aria-label="Daten kopieren"]'); wait++) await Bun.sleep(10);
       const widget = app.dom.root.querySelector<HTMLElement>(".cm-query-block-widget")!;
       const preview = widget.querySelector<HTMLElement>(".cm-query-block-preview")!;
       const original = document.createElement("div");
       original.innerHTML = serverHtml;
-      expect(widget.querySelectorAll(".notebook-book-chart__actions button")).toHaveLength(2);
+      expect(
+        [...widget.querySelectorAll(".notebook-book-chart__actions button")].map((button) => button.getAttribute("aria-label")),
+      ).toEqual(["Daten kopieren", "Als Tabelle", "Quelltext anzeigen"]);
       expect(widget.querySelector('[aria-label="Daten kopieren"]')).not.toBeNull();
       const toggle = widget.querySelector<HTMLButtonElement>('[aria-label="Als Tabelle"]')!;
       toggle.click();
@@ -152,7 +220,9 @@ describe("query block previews", () => {
     }));
     try {
       const style = document.createElement("style");
-      style.textContent = readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
+      style.textContent =
+        readFileSync(new URL("../../../../../editor/src/styles.css", import.meta.url), "utf8") +
+        readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
       document.head.append(style);
       await Bun.sleep(30);
       const preview = app.dom.root.querySelector<HTMLElement>(".cm-query-block-preview")!;

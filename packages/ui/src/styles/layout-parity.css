@@ -387,9 +387,15 @@
   overflow-y: hidden;
   padding: 0.5rem 0.75rem;
   scrollbar-width: thin;
+  /* The fade has to reach past the row's end padding into the last label, or
+     that label ends at a hard edge. A category scrolled into view stops
+     outside the fade. */
+  --scroll-fade-size: 2.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
-/* In the row a divider separates groups; their labels need the rail's width. */
+/* In the row, space separates groups (no divider line); their labels need the
+   rail's width. */
 .k2b-ui .k2b-settings__tab-group {
   display: flex;
   min-width: 0;
@@ -399,8 +405,7 @@
 }
 
 .k2b-ui .k2b-settings__tab-group + .k2b-settings__tab-group {
-  padding-left: 0.25rem;
-  border-left: 1px solid var(--k2b-border);
+  margin-left: 0.75rem;
 }
 
 .k2b-ui .k2b-settings__tab-group-label {
@@ -457,8 +462,10 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Cloud's icon is `shrink-0 text-sm`; the label is one line that fades out at
-   its end (`k2b-truncate-fade`), which needs a shrinkable box, not a flex column. */
+/* Cloud's icon is `shrink-0 text-sm`. In the scrolling row the label keeps one
+   line and the row scrolls; in the side rail it wraps to two balanced lines and
+   only a longer label fades out at the end of the second (`k2b-truncate-fade-lines`,
+   which needs a line height of at least 1.3 and a shrinkable box). */
 .k2b-ui .k2b-settings__tabs button > i {
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -466,6 +473,8 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
+  line-height: 1.3;
+  text-wrap: balance;
 }
 
 /* The close control comes first in the DOM but sits after the category row,
@@ -485,7 +494,6 @@
   min-height: 0;
   flex-direction: column;
   overflow: clip;
-  border-top: 1px solid var(--k2b-border);
 }
 
 /* Cloud's panel is `h-full overflow-y-auto` and the padding lives on the inner
@@ -775,6 +783,56 @@
   font-weight: 500;
 }
 
+.k2b-ui .k2b-save-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* A fixed minimum width keeps the head still while the status text changes. */
+.k2b-ui .k2b-save-status__slot {
+  display: flex;
+  min-width: 9.5rem;
+  justify-content: flex-end;
+}
+
+.k2b-ui .k2b-save-status__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.625rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-save-status__state[data-state="saved"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-save-status__state[data-state="draft"],
+.k2b-ui .k2b-save-status__state[data-state="readonly"] {
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-save-status__state[data-state="failed"] {
+  background: var(--k2b-danger-surface);
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-save-status__state[data-state="invalid"],
+.k2b-ui .k2b-save-status__state[data-state="unknown"] {
+  background: var(--k2b-warning-surface);
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-save-status__state i {
+  font-size: 1rem;
+}
+
 /* --------------------------------------------------------- app workspace */
 
 /* The room an open detail panel takes beside the work area. It is typed so
@@ -942,11 +1000,19 @@ html {
   background: var(--k2b-surface-muted);
 }
 
+/* The drawer's muted surface sets it apart from Main, without a line. The
+   border box keeps its height, so the edge stays where the handle sits. */
 .k2b-ui .k2b-app-workspace__drawer {
   grid-area: drawer;
   height: var(--k2b-workspace-panel-size);
-  border-top: 1px solid var(--k2b-border);
   background: var(--k2b-surface-muted);
+}
+
+/* Forced colours paint both surfaces as Canvas, so only a line keeps the edge. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-app-workspace__drawer {
+    border-top: 1px solid CanvasText;
+  }
 }
 
 .k2b-ui .k2b-app-workspace__drawer[hidden],
@@ -1066,10 +1132,13 @@ html {
 /* One drag cue for every resize handle: the sidebar, the panes, the Detail,
    and the drawer of a workspace, and a standalone `ResizeSeparator` such as
    Cloud's panel. On hover, on keyboard focus, and while it drags, a handle
-   shows a short grip and a soft shadow on the side of the region that it
-   resizes. Both are paint only, so nothing moves. Space, not a line,
-   separates columns; only the drawer, a row with its own top border, also
-   draws its edge. */
+   shows a short grip. A column handle darkens the shadow its boundary
+   already has (see the column boundaries below), so an edge keeps one shadow
+   with one geometry in every state; the drawer's handle darkens the drawer's
+   edge shade the same way (see the drawer edge below). A standalone
+   separator, which has no such shadow, shows a soft shadow on the side of
+   the region that it resizes. All of it is paint only, so nothing moves. No
+   handle draws a line. */
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) {
   --k2b-resize-shadow-edge: rgb(24 24 27 / 0.035);
   --k2b-resize-shadow-mid: rgb(24 24 27 / 0.014);
@@ -1082,20 +1151,7 @@ html {
   --k2b-resize-shadow-mid: rgb(0 0 0 / 0.036);
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"]::before {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  height: 1px;
-  content: "";
-  opacity: 0;
-  background: var(--k2b-border-strong);
-  transform: translateY(-50%);
-  transition: opacity 120ms ease-out;
-}
-
-.k2b-ui :is(.k2b-app-workspace__resize[data-workspace-resize-shadow="true"], .k2b-resize-separator)::after {
+.k2b-ui .k2b-resize-separator::after {
   position: absolute;
   top: 0;
   right: 50%;
@@ -1108,11 +1164,7 @@ html {
   transition: opacity 150ms ease-out;
 }
 
-.k2b-ui
-  :is(
-    .k2b-app-workspace__resize[data-workspace-resize-shadow="true"][data-workspace-resize-edge="start"],
-    .k2b-resize-separator[data-resize-edge="start"]
-  )::after {
+.k2b-ui .k2b-resize-separator[data-resize-edge="start"]::after {
   right: auto;
   left: 50%;
   background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
@@ -1133,11 +1185,7 @@ html {
   background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
 }
 
-.k2b-ui
-  :is(
-    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"],
-    .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]
-  )::after {
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]::after {
   top: 50%;
   right: 0;
   bottom: auto;
@@ -1539,41 +1587,6 @@ html {
     box-shadow: none;
   }
 
-  /* The absolute decoration uses the same grid area as Detail, but reaches
-     the workspace's full height. A waiting column has a zero-width track,
-     so its shade also has zero width. Direct-child ownership keeps nested
-     workspaces and transparent island wrappers independent. */
-  .k2b-ui
-    .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-drawer]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-drawer])
-    )::after {
-    position: absolute;
-    z-index: 20;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: min(1.5rem, 100%);
-    grid-area: detail;
-    content: "";
-    pointer-events: none;
-    background: linear-gradient(
-      to right,
-      transparent,
-      var(--k2b-detail-column-shadow-mid, rgb(24 24 27 / 0.01)) 45%,
-      var(--k2b-detail-column-shadow-edge, rgb(24 24 27 / 0.04))
-    );
-    mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
-    transform: translateX(-100%);
-  }
-
-  .k2b-ui[data-theme="dark"] .k2b-app-workspace__content::after,
-  .k2b-ui.k2b-dark .k2b-app-workspace__content::after,
-  .dark .k2b-ui .k2b-app-workspace__content::after {
-    --k2b-detail-column-shadow-mid: rgb(0 0 0 / 0.025);
-    --k2b-detail-column-shadow-edge: rgb(0 0 0 / 0.1);
-  }
-
   .k2b-ui .k2b-app-workspace__detail-grabber {
     display: none;
   }
@@ -1587,6 +1600,242 @@ html {
     z-index: 21;
     grid-area: detail;
     transform: translateX(50%);
+  }
+}
+
+/* One quiet shadow at every column boundary of a workspace: after the
+   sidebar, between panes and levels, and before Detail. The column on the
+   right lies slightly higher, so the shade lies on the column before the
+   boundary: 24 px wide, darkest at the boundary, and lighter over the final
+   96 px. No line, fill, or frame separates the columns. Each shade is an
+   absolute pseudo-element whose containing block lies outside its column, so
+   a column that clips or scrolls neither cuts nor moves it. A waiting Detail
+   keeps the drawer's own shadow, a phone shows one column at a time, and
+   print has no columns. The boundary's resize handle only darkens this shade
+   while it is hovered, focused, or dragged: the shade is the edge's single
+   geometry, so its top, bottom, and width never change with the state. The
+   registered colours let that change fade. */
+@property --k2b-workspace-shade-edge {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --k2b-workspace-shade-mid {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@media screen and (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace__content::before,
+  .k2b-ui .k2b-app-workspace__content::after,
+  .k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region]::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-mid);
+    position: absolute;
+    z-index: 20;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--k2b-workspace-shade-mid) 45%, var(--k2b-workspace-shade-edge));
+    mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+    transition:
+      --k2b-workspace-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+      --k2b-workspace-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+
+  /* A handle sits on the boundary it resizes: the sidebar's beside the
+     sidebar, a pane's or level's right before the region whose shade marks
+     that boundary, and the Detail's in Content. */
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        ),
+      > :is(solid-island, solid-client)
+        > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        )
+    )
+    > .k2b-app-workspace__content::before,
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        ),
+      > :is(solid-island, solid-client)
+        > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        )
+    )
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__content::before,
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__resize[data-app-workspace-resize="detail"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        ),
+      > :is(solid-island, solid-client)
+        > .k2b-app-workspace__resize[data-app-workspace-resize="detail"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        )
+    )::after,
+  .k2b-ui
+    .k2b-app-workspace__main.has-panes
+    > .k2b-app-workspace__resize[data-workspace-resize-shadow="true"]:is(:hover, :focus-visible, [data-workspace-resize-active="true"])
+    + [data-workspace-main-region]::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-active-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-active-mid);
+  }
+
+  /* Content is no containing block, so the workspace grid places these
+     shades. Detail's lies in Detail's area, moved before it, and reaches the
+     workspace's full height. A waiting column has a zero-width track, so its
+     shade also has zero width. Direct-child ownership keeps nested
+     workspaces and transparent island wrappers independent. */
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-drawer]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-drawer])
+    )::after {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(1.5rem, 100%);
+    grid-area: detail;
+    content: "";
+    transform: translateX(-100%);
+  }
+
+  /* The sidebar's lies at the end of the sidebar track, which is zero wide
+     while the sidebar is an overlay. */
+  @container k2b-app-area (min-width: 64rem) {
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+      )
+      > .k2b-app-workspace__content::before,
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+      )
+      > :is(solid-island, solid-client)
+      > .k2b-app-workspace__content::before {
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(1.5rem, 100%);
+      grid-area: sidebar;
+      content: "";
+    }
+  }
+
+  /* Regions and levels in `Main` are static, so `Main` is the containing
+     block. A region after another one keeps its shade at its static inline
+     position, the start of its content box, and moves it onto the region
+     before. A level shows the shade unless it is the first level shown. */
+  .k2b-ui
+    .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    > [data-workspace-main-region]
+    ~ [data-workspace-main-region]::before {
+    top: 0;
+    bottom: 0;
+    width: 1.5rem;
+    content: "";
+    transform: translateX(-100%);
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    > [data-workspace-main-region]
+    ~ .k2b-app-workspace__main-pane[data-surface="navigation"]::before {
+    margin-left: -0.5rem;
+  }
+
+  /* A scrolling pane's fade mask would otherwise hide its shade, which lies
+     outside the pane. */
+  .k2b-ui
+    .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    > [data-workspace-main-region]
+    ~ .k2b-app-workspace__main-pane {
+    mask-clip: no-clip;
+  }
+
+  @container k2b-app-area (max-width: 79.999rem) {
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level]:not([data-workspace-level="1"], [data-workspace-level-first~="2"])::before {
+      top: 0;
+      bottom: 0;
+      width: 1.5rem;
+      content: "";
+      transform: translateX(-100%);
+    }
+  }
+
+  @container k2b-app-area (min-width: 80rem) {
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level]:not([data-workspace-level="1"], [data-workspace-level-first~="3"])::before {
+      top: 0;
+      bottom: 0;
+      width: 1.5rem;
+      content: "";
+      transform: translateX(-100%);
+    }
+  }
+}
+
+/* The drawer's edge: one quiet shade, as at a column boundary. The drawer
+   lies slightly higher than Main, so the shade lies on Main above the edge:
+   24 px tall, darkest at the edge, and lighter over the final 96 px. Main and
+   the drawer can share a surface (a navigation pane above it), so the
+   surface step alone does not always show the edge. The drawer is no
+   containing block: the workspace grid places the shade in the drawer's
+   area, so the scrolling drawer neither clips nor moves it, and the border
+   box, and with it the edge under the handle, keeps its place. The drawer's
+   resize handle only darkens this shade while it is hovered, focused, or
+   dragged. */
+@media screen {
+  .k2b-ui .k2b-app-workspace__drawer::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-mid);
+    position: absolute;
+    /* Above Main's content, below a floating Detail and the resize handles (20). */
+    z-index: 19;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1.5rem;
+    grid-area: drawer;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--k2b-workspace-shade-mid) 45%, var(--k2b-workspace-shade-edge));
+    mask-image: linear-gradient(to right, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+    transform: translateY(-100%);
+    transition:
+      --k2b-workspace-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+      --k2b-workspace-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"]:is(
+      :hover,
+      :focus-visible,
+      [data-workspace-resize-active="true"]
+    )
+    + .k2b-app-workspace__drawer::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-active-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-active-mid);
   }
 }
 
@@ -1786,14 +2035,20 @@ html {
     margin: 0;
   }
 
+  /* The rail's own surface separates it from the panel, without a line. */
   .k2b-ui .k2b-settings__rail {
-    border-right: 1px solid var(--k2b-border);
     background: var(--k2b-surface-muted);
+  }
+
+  /* Forced colours paint rail and panel as Canvas, so only a line keeps the edge. */
+  @media (forced-colors: active) {
+    .k2b-ui .k2b-settings__rail {
+      border-right: 1px solid CanvasText;
+    }
   }
 
   .k2b-ui .k2b-settings__content {
     grid-area: 1 / 2;
-    border-top: 0;
   }
 
   .k2b-ui .k2b-settings__tabs {
@@ -1814,8 +2069,7 @@ html {
   }
 
   .k2b-ui .k2b-settings__tab-group + .k2b-settings__tab-group {
-    padding-left: 0;
-    border-left: 0;
+    margin-left: 0;
   }
 
   .k2b-ui .k2b-settings__tab-group-label {
@@ -1824,6 +2078,7 @@ html {
 
   .k2b-ui .k2b-settings__tabs button {
     width: 100%;
+    white-space: normal;
   }
 
   .k2b-ui .k2b-settings__section {
@@ -2239,6 +2494,13 @@ html {
   .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more-count[data-level="compact"] {
     display: inline;
   }
+}
+
+/* A primary that opens a menu says so with a quiet chevron after its label. */
+.k2b-ui .k2b-app-workspace__head-primary-chevron {
+  margin-inline-start: 0.25rem;
+  font-size: 0.875rem;
+  opacity: 0.85;
 }
 
 /* After filters and compact views give way, the primary keeps its name
@@ -2743,7 +3005,7 @@ html {
       .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item,
       .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item
     )
-    :is(.k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-context) {
+    :is(.k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-note, .k2b-app-workspace__sidebar-item-context) {
     display: none;
   }
 
@@ -2997,8 +3259,8 @@ html {
 }
 
 /* Every level keeps its own width while the flexible one keeps 320 px, and
-   starts below the same top inset as a raised level, so the titles of side by
-   side levels share one line. */
+   starts below the same top inset, so the titles of side by side levels share
+   one line. */
 .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
   --k2b-workspace-pane-fit: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size, 100%));
   display: flex;
@@ -3097,12 +3359,25 @@ html {
   gap: 0.25rem;
 }
 
+/* A level keeps 0.5rem inside both side edges, as the sidebar does: a row's
+   fill stops 0.5rem before either edge, and its text lines up with the
+   head's. An inset ScrollArea does the same inside an application's column. */
 .k2b-ui .k2b-app-workspace__level-body {
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  padding-inline: 0.5rem;
   scrollbar-gutter: stable;
+}
+
+.k2b-ui .k2b-scroll-area[data-inset="true"] {
+  padding-inline: 0.5rem;
+}
+
+/* A navigation surface used as a level leaves the inset to its body. */
+.k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"][data-workspace-level] {
+  padding-inline: 0;
 }
 
 .k2b-ui .k2b-app-workspace__level-body[data-scroll="false"] {
@@ -3110,6 +3385,33 @@ html {
   flex-direction: column;
   overflow: hidden;
   scrollbar-gutter: auto;
+}
+
+/* With a mouse, the end inset of a level body, navigation pane, or inset
+   ScrollArea is its fixed 0.5rem scroll track, so a classic scrollbar never
+   makes one side wider. The track is always there, empty while nothing
+   overflows: WebKit reserves no gutter without overflow, so the end would
+   otherwise touch the edge until the content grows and then jump. A MobileShell
+   pads its levels itself. CSS cannot query the scrollbar style, so the primary
+   pointer stands in for it: a touch screen draws overlay scrollbars that take
+   no room and keeps both paddings, as does Firefox, which has no fixed track. */
+@media (pointer: fine) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *),
+    .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level]),
+    .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"] {
+      overflow-y: scroll;
+      padding-inline-end: 0;
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+
+    .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *)::-webkit-scrollbar,
+    .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level])::-webkit-scrollbar,
+    .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"]::-webkit-scrollbar {
+      width: 0.5rem;
+    }
+  }
 }
 
 /* The last shown level takes what is left. Its flex basis is 0, not its
@@ -3147,7 +3449,7 @@ html {
 
     .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
       width: auto;
-      min-width: min(320px, 100%);
+      min-width: min(var(--k2b-workspace-level-min, 320px), 100%);
       flex: 1 1 0;
     }
 
@@ -3157,19 +3459,6 @@ html {
       .k2b-app-workspace__main[data-workspace-levels]
       > [data-workspace-level-shown~="2"][data-workspace-resizable="false"]:not([data-workspace-level-last~="2"]) {
       flex-shrink: 0;
-    }
-
-    /* The last level is raised when another level shows before it. Its
-       margin box keeps the 320 px the flexible level keeps. */
-    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
-      min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
-      margin: var(--k2b-workspace-detail-inset);
-      margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
-      padding-top: 0;
-      border-bottom: 0;
-      border-radius: var(--k2b-radius-surface);
-      background: var(--k2b-surface-elevated);
-      box-shadow: var(--k2b-shadow-frame);
     }
   }
 }
@@ -3188,7 +3477,7 @@ html {
 
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="3"] {
     width: auto;
-    min-width: min(320px, 100%);
+    min-width: min(var(--k2b-workspace-level-min, 320px), 100%);
     flex: 1 1 0;
   }
 
@@ -3199,24 +3488,10 @@ html {
     > [data-workspace-level-shown~="3"][data-workspace-resizable="false"]:not([data-workspace-level-last~="3"]) {
     flex-shrink: 0;
   }
-
-  /* The last level is raised when another level shows before it. Its
-     margin box keeps the 320 px the flexible level keeps. */
-  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="3"] ~ [data-workspace-level-last~="3"] {
-    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
-    margin: var(--k2b-workspace-detail-inset);
-    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
-    padding-top: 0;
-    border-bottom: 0;
-    border-radius: var(--k2b-radius-surface);
-    background: var(--k2b-surface-elevated);
-    box-shadow: var(--k2b-shadow-frame);
-  }
 }
 
 /* On a touch screen a separator between levels is a 44 px target with a
-   width of its own, so a tap on a row's edge never lands on it. Before a
-   raised level it takes the place of that level's leading inset. */
+   width of its own, so a tap on a row's edge never lands on it. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"],
   .k2b-ui
@@ -3232,30 +3507,6 @@ html {
     .k2b-app-workspace__main[data-workspace-levels]
     > .k2b-app-workspace__main-pane:has(+ .k2b-app-workspace__resize[data-app-workspace-resize="pane"]) {
     border-right-width: 0;
-  }
-}
-
-@media (any-pointer: coarse) and (min-width: 48rem) {
-  @container k2b-app-area (max-width: 79.999rem) {
-    .k2b-ui
-      .k2b-app-workspace__main[data-workspace-levels]
-      > [data-workspace-level-shown~="2"]
-      ~ .k2b-app-workspace__resize
-      + [data-workspace-level-last~="2"] {
-      margin-inline-start: 0;
-    }
-  }
-}
-
-@media (any-pointer: coarse) {
-  @container k2b-app-area (min-width: 80rem) {
-    .k2b-ui
-      .k2b-app-workspace__main[data-workspace-levels]
-      > [data-workspace-level-shown~="3"]
-      ~ .k2b-app-workspace__resize
-      + [data-workspace-level-last~="3"] {
-      margin-inline-start: 0;
-    }
   }
 }
 
@@ -3758,6 +4009,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
    from a fixed layer at the top edge, and keeps the colour it had for one that
    covers the whole viewport, which after a dialog is the backdrop's dim. */
 .k2b-ui .k2b-mobile-shell {
+  /* MobileShell replaces this SSR default with the measured persistent-toast inset. */
+  --k2b-mobile-shell-toast-inset: 0px;
   position: absolute;
   inset: 0;
   display: flex;
@@ -3965,13 +4218,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   flex-direction: column;
   min-height: 0;
   padding: 0 0.5rem calc(env(safe-area-inset-bottom) + 0.5rem) max(0.5rem, env(safe-area-inset-left));
-  background: var(--k2b-mobile-shell-sidebar-surface, var(--k2b-surface-muted));
-}
-
-.k2b-ui[data-theme="dark"] .k2b-mobile-shell__sidebar,
-.k2b-ui.k2b-dark .k2b-mobile-shell__sidebar,
-.dark .k2b-ui .k2b-mobile-shell__sidebar {
-  --k2b-mobile-shell-sidebar-surface: var(--k2b-surface-elevated);
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-mobile-shell__sidebar-head {
@@ -4058,17 +4305,20 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-variant-numeric: tabular-nums;
 }
 
-/* The open page, and from the press on the one that is loading, in the action
-   colour and weight. Colour, weight and opacity only, so nothing moves: the
-   label fades at its end and never rewraps. */
+/* The open page, and from the press on the one that is loading, tinted in the
+   action colour and weight, like the selected row of a web sidebar. Colour,
+   fill and weight only, so nothing moves: the label fades at its end and never
+   rewraps. */
 .k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"],
 .k2b-ui .k2b-mobile-shell__sidebar a[data-k2b-pending] {
-  color: var(--k2b-action);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
   font-weight: 600;
 }
 
 .k2b-ui .k2b-mobile-shell__sidebar:has(a[data-k2b-pending]) a[aria-current="page"]:not([data-k2b-pending]) {
   color: var(--k2b-text-secondary);
+  background: transparent;
   font-weight: 400;
 }
 
@@ -4096,10 +4346,12 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     background: var(--k2b-app-workspace-hover);
     color: var(--k2b-text);
   }
+}
 
-  .k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
-    color: var(--k2b-action);
-  }
+/* The open page keeps its fill under the pointer; more specific than the hover above, so it holds on every device. */
+.k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
 /* ------------------------------------------------- levels in a touch app */
@@ -4215,9 +4467,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     background: var(--k2b-surface-canvas);
   }
 
-  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main [data-workspace-level-first] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
-    display: none;
-  }
+  /* Side by side, a back step shows only where the width class hides a shallower level, as outside the shell. */
 }
 
 /* ----------------------------------------------------------------- tab bar */
@@ -4256,6 +4506,19 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 .k2b-ui .k2b-tab-bar a > i {
   font-size: 1.375rem;
+}
+
+/* A tab's attention mark sits at the icon's upper right corner, out of the flow, so a count never moves the label. */
+.k2b-ui .k2b-tab-bar a {
+  position: relative;
+}
+
+.k2b-ui .k2b-tab-bar a > .k2b-tab-bar__badge {
+  position: absolute;
+  top: 0.25rem;
+  left: calc(50% + 0.375rem);
+  max-width: none;
+  pointer-events: none;
 }
 
 .k2b-ui .k2b-tab-bar a > span {
@@ -4433,6 +4696,10 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 .k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__note {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__retry {
+  justify-self: start;
 }
 
 /* The camera picture is dark in both themes. */

@@ -1,11 +1,12 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { connections, sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { CustomAppCapabilitiesSchema, type CustomAppDefinition, type CustomAppReferencedRecordsBlock } from "../custom-apps/contracts";
@@ -46,7 +47,7 @@ const authenticateAs =
 const authenticateAsDelegatedServiceAccount = (
   user: User,
   serviceAccountId: string,
-  scopes = ["grids:write"],
+  scopes: string[] = [],
 ): MiddlewareHandler<AuthContext> => {
   const credentialId = testUuid();
   return async (c, next) => {
@@ -99,28 +100,55 @@ beforeAll(async () => {
 });
 
 describe("Grids App credential scope", () => {
-  postgresTest("rejects read-only credentials on every runtime mutation before evaluating published permissions", async () => {
-    const authenticate = authenticateAsDelegatedServiceAccount(userFor(testUuid()), testUuid(), ["grids:read"]);
-    const api = createCustomAppsApi({ loadOptionalActor: authenticate, requireAuthenticated: authenticate });
-    const routes = [
-      ["POST", "/runtime/ABC123/page/block/submit"],
-      ["POST", "/runtime/ABC123/sidebar/forms/action/submit"],
-      ["POST", "/runtime/ABC123/page/block/scanner"],
-      ["POST", "/runtime/ABC123/page/block/comments"],
-      ["PATCH", "/runtime/ABC123/page/block/comments/COM001"],
-      ["DELETE", "/runtime/ABC123/page/block/comments/COM001"],
-      ["PATCH", "/runtime/ABC123/page/block/record"],
-      ["POST", "/runtime/ABC123/page/block/record/files/DEF123"],
-      ["PUT", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
-      ["DELETE", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
-      ["POST", "/runtime/ABC123/page/block/actions/action"],
-      ["POST", "/runtime/ABC123/page/block/row-actions/action"],
-    ];
-    for (const [method, path] of routes) {
-      const response = await api.request(path!, { method, headers: { "Content-Type": "application/json" }, body: "{}" });
-      expect(response.status).toBe(403);
-    }
-  });
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`rejects read-only ${kind} credentials on every runtime mutation before evaluating published permissions`, async () => {
+      const serviceAccountId = testUuid();
+      const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
+        c.set("actor", {
+          kind: "service_account",
+          serviceAccount: {
+            id: serviceAccountId,
+            name: "Read-only Grids App account",
+            kind,
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          delegatedUser: null,
+          scopes: ["grids:read"],
+        });
+        c.set("accessSubject", { type: "service_account", serviceAccountId });
+        await next();
+      };
+      const api = createCustomAppsApi({ loadOptionalActor: authenticate, requireAuthenticated: authenticate });
+      const routes = [
+        ["POST", "/runtime/ABC123/page/block/submit"],
+        ["POST", "/runtime/ABC123/sidebar/forms/action/submit"],
+        ["POST", "/runtime/ABC123/page/block/scanner"],
+        ["POST", "/runtime/ABC123/page/block/comments"],
+        ["PATCH", "/runtime/ABC123/page/block/comments/COM001"],
+        ["DELETE", "/runtime/ABC123/page/block/comments/COM001"],
+        ["PATCH", "/runtime/ABC123/page/block/record"],
+        ["POST", "/runtime/ABC123/page/block/record/files/DEF123"],
+        ["PUT", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
+        ["DELETE", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
+        ["POST", "/runtime/ABC123/page/block/actions/action"],
+        ["POST", "/runtime/ABC123/page/block/row-actions/action"],
+      ];
+      for (const [method, path] of routes) {
+        const response = await api.request(path!, { method, headers: { "Content-Type": "application/json" }, body: "{}" });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({
+          code: "FORBIDDEN",
+          message: "The API credential does not grant the required Grids scope.",
+        });
+      }
+    });
+  }
 });
 
 describe("Grids App Form runtime", () => {
@@ -840,50 +868,52 @@ describe("Grids App Form runtime", () => {
           INSERT INTO grids.file_attachments (file_id, record_id, field_id, position)
           VALUES (${fileId}::uuid, ${recordId}::uuid, ${imageFieldId}::uuid, 0)
         `;
-        const previousAppSecret = process.env.APP_SECRET;
-        process.env.APP_SECRET = "custom-app-file-test-secret";
+        const secretStub = stubConnections({ ...connections(), appSecret: { current: "custom-app-file-test-secret" } });
+        try {
+          const cardsResponse = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/requests/records`, {
+            headers: { "x-forwarded-for": `custom-app-cards-${baseId}` },
+          });
+          expect(cardsResponse.status).toBe(200);
+          const cardsBody = (await cardsResponse.json()) as {
+            presentation?: { fields: Array<{ id: string; type: string }> };
+            cards?: { displayConfig: { mode: string }; records: Array<{ id: string; data: Record<string, unknown> }> };
+          };
+          expect(cardsBody.cards?.displayConfig.mode).toBe("cards");
+          expect(cardsBody.presentation?.fields).toContainEqual(expect.objectContaining({ id: fieldPublicId, type: "text" }));
+          expect(cardsBody.cards?.records.find((item) => item.id === body.recordId)?.data).toEqual({
+            [suppliedFieldPublicId]: "App portal",
+          });
 
-        const cardsResponse = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/requests/records`, {
-          headers: { "x-forwarded-for": `custom-app-cards-${baseId}` },
-        });
-        expect(cardsResponse.status).toBe(200);
-        const cardsBody = (await cardsResponse.json()) as {
-          presentation?: { fields: Array<{ id: string; type: string }> };
-          cards?: { displayConfig: { mode: string }; records: Array<{ id: string; data: Record<string, unknown> }> };
-        };
-        expect(cardsBody.cards?.displayConfig.mode).toBe("cards");
-        expect(cardsBody.presentation?.fields).toContainEqual(expect.objectContaining({ id: fieldPublicId, type: "text" }));
-        expect(cardsBody.cards?.records.find((item) => item.id === body.recordId)?.data).toEqual({ [suppliedFieldPublicId]: "App portal" });
-
-        const searchedCardsResponse = await publicApi.request(
-          `/apps/runtime/${applied.data.shortId}/home/requests/records?_search=App%20portal`,
-          { headers: { "x-forwarded-for": `custom-app-card-search-${baseId}` } },
-        );
-        expect(searchedCardsResponse.status).toBe(200);
-        const searchedCardsBody = (await searchedCardsResponse.json()) as {
-          rows: Array<{ recordId?: string }>;
-          cards?: { filePreviews: Record<string, Record<string, { contentToken: string }>> };
-        };
-        expect(searchedCardsBody.rows.some((item) => item.recordId === body.recordId)).toBe(true);
-        const contentToken = searchedCardsBody.cards?.filePreviews[body.recordId]?.[imageFieldPublicId]?.contentToken;
-        expect(contentToken).toBeString();
-        const filePath = `/apps/runtime/${applied.data.shortId}/home/requests/files/${encodeURIComponent(contentToken!)}`;
-        const fileResponse = await publicApi.request(`${filePath}?_search=App%20portal`);
-        expect(fileResponse.status).toBe(200);
-        expect(fileResponse.headers.get("content-type")).toBe("image/png");
-        await sql`
+          const searchedCardsResponse = await publicApi.request(
+            `/apps/runtime/${applied.data.shortId}/home/requests/records?_search=App%20portal`,
+            { headers: { "x-forwarded-for": `custom-app-card-search-${baseId}` } },
+          );
+          expect(searchedCardsResponse.status).toBe(200);
+          const searchedCardsBody = (await searchedCardsResponse.json()) as {
+            rows: Array<{ recordId?: string }>;
+            cards?: { filePreviews: Record<string, Record<string, { contentToken: string }>> };
+          };
+          expect(searchedCardsBody.rows.some((item) => item.recordId === body.recordId)).toBe(true);
+          const contentToken = searchedCardsBody.cards?.filePreviews[body.recordId]?.[imageFieldPublicId]?.contentToken;
+          expect(contentToken).toBeString();
+          const filePath = `/apps/runtime/${applied.data.shortId}/home/requests/files/${encodeURIComponent(contentToken!)}`;
+          const fileResponse = await publicApi.request(`${filePath}?_search=App%20portal`);
+          expect(fileResponse.status).toBe(200);
+          expect(fileResponse.headers.get("content-type")).toBe("image/png");
+          await sql`
           UPDATE grids.records
           SET data = jsonb_set(data, ARRAY[${suppliedFieldId}], to_jsonb('No longer searchable'::text))
           WHERE id = ${recordId}::uuid
         `;
-        expect((await publicApi.request(`${filePath}?_search=App%20portal`)).status).toBe(404);
-        await sql`
+          expect((await publicApi.request(`${filePath}?_search=App%20portal`)).status).toBe(404);
+          await sql`
           UPDATE grids.records
           SET data = jsonb_set(data, ARRAY[${suppliedFieldId}], to_jsonb('App portal'::text))
           WHERE id = ${recordId}::uuid
         `;
-        if (previousAppSecret === undefined) delete process.env.APP_SECRET;
-        else process.env.APP_SECRET = previousAppSecret;
+        } finally {
+          secretStub.mockRestore();
+        }
 
         const sidebarResponse = await publicApi.request(`/apps/runtime/${applied.data.shortId}/sidebar/forms/new-request/submit`, {
           method: "POST",
@@ -1640,6 +1670,7 @@ describe("Grids App Form runtime", () => {
                 return accepted
                   ? {
                       runId,
+                      channel: accepted.channel,
                       baseId,
                       workflow: { id: workflowId, shortId: testShortId(), name: "Approve request" },
                       principal: accepted.principal,
@@ -1706,6 +1737,11 @@ describe("Grids App Form runtime", () => {
           },
         );
         expect(delegatedActionResponse.status).toBe(202);
+        expect([...statusRuns.values()][0]?.principal).toMatchObject({
+          userId: authenticatedUser.id,
+          serviceAccountId: null,
+          credential: { scopes: [], permissionCap: "admin", resourceBinding: null },
+        });
         const delegatedAction = (await delegatedActionResponse.json()) as { statusUrl: string };
         const statusPath = delegatedAction.statusUrl.replace(/^\/api\/grids/, "");
         const ownStatus = await firstServiceAccountApi.request(statusPath);

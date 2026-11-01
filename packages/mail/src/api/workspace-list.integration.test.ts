@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { InferResponseType } from "hono/client";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { composeMailListSnapshot, pickMailWorkspaceFrame } from "../frontend/_components/mail-workspace-frame";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { mailLive } from "../service/live";
@@ -166,7 +165,6 @@ suite("Mail workspace list pages", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     reader = await createUser("reader");
     outsider = await createUser("outsider");

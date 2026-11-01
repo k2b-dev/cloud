@@ -9,10 +9,10 @@
  * meant to bring.
  */
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
+import { sql } from "../../runtime/clients";
 import type { WorkflowBoundPlan, WorkflowIrStep } from "../contracts";
 import { hashWorkflowJson } from "../language/canonical";
 import { defineWorkflowModule } from "../module";
@@ -175,6 +175,33 @@ suiteFor("database")("workflow worker", () => {
     expect(await getWorkflowRun(runId)).toMatchObject({
       state: "needs_attention",
       error: { code: "WORKFLOW_MODULE_MISMATCH" },
+    });
+  });
+
+  test("exhausted AI admission retries retain the machine-readable cause", async () => {
+    await ready();
+    const plan = planWith([actionStep(0, "probe.capacity")], ["probe.capacity"]);
+    const { appId, scopeId } = await workflowListening("probe.capacity", plan);
+    const emitted = await emitWorkflowEvent({ appId, scopeId, type: "probe.capacity" }, { dispatch: "now" });
+    const runId = emitted.runIds[0]!;
+    const options = {
+      worker: "capacity",
+      ...forApp(appId),
+      runId,
+      actions: port({
+        "probe.capacity": async () => ({
+          state: "failed" as const,
+          error: { code: "WORKFLOW_AI_CAPACITY", message: "Capacity unavailable", retryable: true },
+        }),
+      }),
+    };
+    // The worker reports a retryable failure as released; the run row keeps the cause for the next attempt.
+    expect(await runOneWorkflow(options)).toMatchObject({ state: "released", runId });
+    expect(await getWorkflowRun(runId)).toMatchObject({ state: "queued", error: { code: "WORKFLOW_AI_CAPACITY" } });
+    await sql`UPDATE workflows.run SET consecutive_failures = 8, retry_after = now() - interval '1 second' WHERE id = ${runId}::uuid`;
+    expect(await runOneWorkflow(options)).toMatchObject({
+      state: "finished",
+      result: { state: "failed", error: { code: "WORKFLOW_AI_CAPACITY", details: { retryExhausted: true } } },
     });
   });
 

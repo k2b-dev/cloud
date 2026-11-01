@@ -15,7 +15,8 @@ export default ssr<AuthContext>(async (c) => {
   const result = await readPublicDashboard(token).catch(() => null);
   const t = pulseMessages.resolve([getLocale(c)]).t;
   const path = requestPath(c);
-  const range = readDashboardRange(path);
+  // Published links read preset ranges only; an old custom-range URL opens its preset.
+  const range = { range: readDashboardRange(path).range };
   const denied = result && !result.ok && [401, 403, 404].includes(result.error.status);
   c.get("page").title = result?.ok ? result.data.name : denied ? t.dashboardDenied : t.pulseDataRefreshFailed;
   if (!result) c.status(503);

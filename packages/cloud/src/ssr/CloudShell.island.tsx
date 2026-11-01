@@ -1,6 +1,8 @@
 import { TabBar, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { isServer, Portal } from "solid-js/web";
+import { TabBarAppBadge } from "./AppBadge";
+import { appBadgeCount } from "./app-badges";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
 import GlobalSearchTrigger from "./GlobalSearchTrigger";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
@@ -35,8 +37,9 @@ export default function CloudShell(props: CloudShellProps) {
 /**
  * The phone bar's live copy, mounted with the rail's island so the shell adds no island instance. It renders nothing
  * while the server's bar is current, so mounting moves and refocuses nothing. When the saved rail preferences or the
- * URL (a fragment, Back and Forward, an in-page navigation) change what the bar shows, it renders the new bar into the
- * bar's row, and CSS hides the server's.
+ * URL (a fragment, Back and Forward, an in-page navigation) change what the bar shows, or an app in it has a count,
+ * it renders the new bar into the bar's row, and CSS hides the server's. Counts, like the rail's, exist only in the
+ * browser.
  */
 function BarNavigation(props: { currentPath: string }) {
   if (isServer) return null;
@@ -51,6 +54,12 @@ function BarNavigation(props: { currentPath: string }) {
     phoneBarItems(projectRailNavigation(data.apps, rail, locale()), path, { label: t().home, path: data.home ?? "/" });
   const served = JSON.stringify(itemsFor(initial, props.currentPath));
   const items = createMemo(() => itemsFor(settings(), currentPath()));
+  const counted = () => items().some((item) => item.counted && appBadgeCount(item.counted) > 0);
+  const live = createMemo(() =>
+    items().map((item) =>
+      item.counted ? { ...item, badge: <TabBarAppBadge endpoint={item.counted.endpoint} appId={item.counted.appId} /> } : item,
+    ),
+  );
   onMount(() => {
     const sync = () => setSettings(readRailContext()?.settings ?? initial);
     const syncLocation = () => setCurrentPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
@@ -76,10 +85,22 @@ function BarNavigation(props: { currentPath: string }) {
   });
   const row = document.querySelector<HTMLElement>(".cloud-tab-bar__row");
   if (!row) return null;
+  // Swapping bars keeps a focused link: the bar that takes over focuses the same destination, once CSS shows it.
+  const [shown, setShown] = createSignal(false);
+  const focusIn = (selector: string, tab: string) =>
+    [...row.querySelectorAll<HTMLElement>(`${selector} a[data-tab]`)].find((link) => link.dataset.tab === tab)?.focus();
+  createEffect(() => {
+    const next = counted() || JSON.stringify(items()) !== served;
+    if (next === shown()) return;
+    const focused = document.activeElement;
+    const tab = focused instanceof HTMLElement && row.contains(focused) ? focused.dataset.tab : undefined;
+    setShown(next);
+    if (tab) queueMicrotask(() => focusIn(next ? ".cloud-tab-bar__live" : ".k2b-tab-bar:not(.cloud-tab-bar__live)", tab));
+  });
   return (
-    <Show when={JSON.stringify(items()) !== served}>
+    <Show when={shown()}>
       <Portal mount={row}>
-        <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={items()} />
+        <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={live()} />
       </Portal>
     </Show>
   );
@@ -90,7 +111,12 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   if (!data?.rail || !data.profile) return null;
-  const profile = { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) };
+  const profile = {
+    userId: data.profile.userId,
+    name: data.profile.name,
+    theme: data.theme,
+    ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+  };
   createEffect(() => setAppLaunchpadContext(data.apps, data.legalLinks, profile));
   return (
     <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t().apps}>
@@ -107,6 +133,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
           helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
         />
         <ProfilePreferences
+          userId={data.profile.userId}
           appHref={data.profile.appHref}
           avatarSrc={data.profile.avatarSrc}
           initialTheme={data.theme}
@@ -143,7 +170,12 @@ function HeaderControls(props: {
             <AppLaunchpadButton
               profile={
                 data.profile
-                  ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) }
+                  ? {
+                      userId: data.profile.userId,
+                      name: data.profile.name,
+                      theme: data.theme,
+                      ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+                    }
                   : undefined
               }
               apps={data.apps}
@@ -167,7 +199,12 @@ function HeaderControls(props: {
             <AppLaunchpadButton
               profile={
                 data.profile
-                  ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) }
+                  ? {
+                      userId: data.profile.userId,
+                      name: data.profile.name,
+                      theme: data.theme,
+                      ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+                    }
                   : undefined
               }
               apps={data.apps}

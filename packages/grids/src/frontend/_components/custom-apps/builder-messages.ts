@@ -53,8 +53,8 @@ const deCopy = {
   General: "Allgemein",
   Lifecycle: "Lebenszyklus",
   "Who can open the published app": "Wer die veröffentlichte App öffnen darf",
-  "App grants are separate from base access. Choose users, groups, all signed-in users, or public access.":
-    "App-Berechtigungen sind unabhängig vom Base-Zugriff. Wähle Nutzer, Gruppen, alle angemeldeten Nutzer oder öffentlichen Zugriff.",
+  "App grants are separate from base access. Choose users, groups, standalone or agent accounts, all signed-in users, or public access.":
+    "App-Berechtigungen sind unabhängig vom Base-Zugriff. Wähle Nutzer, Gruppen, eigenständige Dienstkonten oder Agentenkonten, alle angemeldeten Nutzer oder öffentlichen Zugriff.",
   "App access never opens the raw base, Record API, or GQL. Availability rules can only restrict this access further.":
     "App-Zugriff gewährt keinen Zugriff auf die Base, die Datensatz-API oder GQL. Verfügbarkeitsregeln können diesen Zugriff nur weiter einschränken.",
   "Forms and workflow actions allow only what you publish. Workflow actions require a signed-in user.":
@@ -242,7 +242,8 @@ const deCopy = {
   "Primary action": "Hauptaktion",
   "Secondary action": "Weitere Aktion",
   "Destructive action": "Löschende Aktion",
-  "Content block": "Inhaltsblock",
+  "Shown directly": "Direkt sichtbar",
+  "Default message": "Standardtext",
   "Page settings": "Seiteneinstellungen",
   "Close inspector": "Inspektor schließen",
   "This draft needs attention": "Dieser Entwurf muss geprüft werden",

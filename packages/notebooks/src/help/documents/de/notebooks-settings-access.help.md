@@ -14,7 +14,7 @@ Personen mit Zugriff **Ansehen** sehen immer **Buch**. Buch ist eine Leseansicht
 
 In der Buchansicht aktualisieren Seitenlinks, Tagfilter, Suche und Seitennavigation den Inhalt ohne vollständiges Neuladen. **Zurück** und **Vorwärts** im Browser führen zu früheren Lesestellen. Gespeicherte Änderungen aktualisieren die Seite und die Abfrageergebnisse automatisch. Ohne JavaScript funktioniert die Navigation über normale Seitenaufrufe.
 
-Wähle in der Seitenleiste der Buchansicht eine Seite aus, um sie zu öffnen. Mit dem Pfeil neben einer Seite blendest du ihre Unterseiten ein oder aus. Beim Laden zeigt die Buchansicht die aktuelle Seite mit ihren Unterseiten. Danach behält sie deine Auswahl und klappt nur die Seiten auf, in denen die geöffnete Seite liegt. Auf dem Smartphone zeigt das Navigationsmenü dieselben zugeklappten Seiten. Es behält sie beim Schließen und erneuten Öffnen und öffnet Seiten, ohne das Buch neu zu laden.
+Wähle in der Seitenleiste der Buchansicht eine Seite aus, um sie zu öffnen. Mit dem Pfeil neben einer Seite blendest du ihre Unterseiten ein oder aus. Um die offene Seite zeigt eine Ebene zuerst 20 Seiten; wähle an ihrem Ende **… weitere Seiten** oder an ihrem Anfang **… vorherige Seiten**, um bis zu 100 weitere zu zeigen. Beim Laden zeigt die Buchansicht die aktuelle Seite mit ihren Unterseiten. Danach behält sie deine Auswahl und klappt nur die Seiten auf, in denen die geöffnete Seite liegt. Auf dem Smartphone zeigt das Navigationsmenü dieselben zugeklappten Seiten. Es behält sie beim Schließen und erneuten Öffnen und öffnet Seiten, ohne das Buch neu zu laden.
 
 Die Seitenleiste zeigt die Startseite des Notizbuchs zuerst, mit ihren Unterseiten darunter. Das gilt auch, wenn die Startseite unter einer anderen Seite liegt. Alle weiteren Seiten folgen auf jeder Ebene der Reihenfolge des Notizbuchs:
 
@@ -66,6 +66,12 @@ Notebooks speichert die Änderung sofort.
 Die Einstellung betrifft nur das Löschen und Sperren ganzer Notizen. Personen und Agenten mit Zugriff **Bearbeiten** bearbeiten Notizen weiter wie bisher und können auch Text entfernen. Der Versionsverlauf bewahrt frühere Fassungen.
 
 Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sichtbar, sind aber ausgeschaltet. Sie erklären, dass in diesem Notizbuch nur Personen mit Zugriff **Verwalten** Notizen löschen oder sperren können. Die API, `cld notebooks rm` und `cld notebooks lock` lehnen mit demselben Grund ab. Eine gesperrte Notiz behält ihre Versionen lesbar. Du kannst sie nicht bearbeiten oder eine Version an ihrer Stelle wiederherstellen. Du kannst eine Version aber als Kopie wiederherstellen.
+
+## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
+
+Füge das eigenständige Dienstkonto oder den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
+
+Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent oder eigenständiges Dienstkonto kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API-Schlüssel zählen dafür nicht und bleiben auf ihr Notizbuch beschränkt.
 
 ## Den richtigen Bereich der Einstellungen finden {icon="settings"}
 

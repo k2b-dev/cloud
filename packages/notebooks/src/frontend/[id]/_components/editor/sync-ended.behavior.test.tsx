@@ -1,4 +1,5 @@
-import { describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
+import { closeCompletion, completionStatus } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
 import { Show } from "solid-js";
@@ -28,14 +29,47 @@ const load = async () => {
     mock.module("@k2b/ssr/nav", () => ({ ...nav, refreshCurrentPath }));
     const sync = await import("./sync-ended");
     const { formattingKeymap } = await import("./EditorToolbar");
-    const { markdownExtension } = await import("../../../lib/editor/markdown");
-    mock.module("@/api/client", () => ({ apiClient: { ":id": { "route-state": { $get: routeGet } } } }));
+    const { markdownExtension } = await import("@k2b/editor/markdown");
+    mock.module("@/api/client", () => ({
+      apiClient: {
+        ":id": { "route-state": { $get: routeGet }, notes: { ":noteId": { "table-action": { $post: tablePost } } } },
+        notes: {
+          ":noteId": {
+            annotations: {
+              $get: async ({ param }: { param: { noteId: string } }) =>
+                Response.json({
+                  text: savedTexts.get(param.noteId) ?? annotationText,
+                  contentHash: "fixture-hash",
+                  cursor: null,
+                  restoreRevision: "0",
+                  items: [],
+                  nextCursor: null,
+                }),
+            },
+          },
+        },
+      },
+    }));
     const { default: NoteEditor } = await import("./NoteEditor.client");
     const { yjs } = await import("../../../lib/yjs");
+    const offline = await import("../../../lib/yjs/offline");
     const softNavigation = await import("../../../lib/soft-navigation");
     const ui = await import("@k2b/ui");
+    const { tableHost, runMenuAction } = await import("@k2b/ui/text-editor");
     const { clipboard } = await import("@k2b/stdlib/browser");
-    return { ...sync, ...ui, ...softNavigation, NoteEditor, yjs, clipboard, formattingKeymap, markdownExtension };
+    return {
+      ...sync,
+      ...ui,
+      ...softNavigation,
+      NoteEditor,
+      yjs,
+      offline,
+      clipboard,
+      formattingKeymap,
+      markdownExtension,
+      tableHost,
+      runMenuAction,
+    };
   } finally {
     dom.cleanup();
   }
@@ -56,23 +90,34 @@ const detail = (id: string) => ({
   backlinks: [],
   namedBlocks: [],
 });
+/** The saved text the route state answers for each note; tests set it to model a save by someone else. */
+const savedTexts = new Map<string, string>();
 const routeGet = mock(async ({ query: { href } }: { query: { href: string } }) => {
   const id = new URL(href, "http://localhost").pathname.split("/").at(-1)!;
   return Response.json({
     kind: "ok",
     state: {
       href,
-      note: { id, title: id, lockedAt: null, historyIncomplete: false, yjsSnapshot: null },
+      note: { id, title: id, lockedAt: null, historyIncomplete: false, contentMd: savedTexts.get(id) ?? null },
       detail: detail(id),
     },
   });
 });
+const tablePost = mock(async () => Response.json({ changed: false }));
 const loaded = isServer ? undefined : await load();
 const markdown = "# Keep me\n\nUnsaved **words**.";
+let annotationText = markdown;
+const tableMarkdown = `${markdown}\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n| Ink | 2 |\n`;
 const notePath = "/app/notebooks/Book01/Note01?mode=write";
 const flush = async () => {
   await Promise.resolve();
   await Promise.resolve();
+};
+
+/** Lets timers run until the condition holds or the deadline passes. */
+const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+const waitFor = async (condition: () => boolean, timeoutMs: number) => {
+  for (const deadline = performance.now() + timeoutMs; !condition() && performance.now() < deadline; ) await nextTask();
 };
 
 const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
@@ -159,8 +204,25 @@ const beforeUnloadPrevented = () => {
   window.dispatchEvent(event);
   return event.defaultPrevented;
 };
-const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = {}) => {
+const mountNoteEditor = async ({
+  pending: initialPending = true,
+  readOnly = false,
+  recoveryText,
+  initialContent = markdown,
+  initialRichMode = "source",
+  documentUnavailable = false,
+  documentRetryGate,
+}: {
+  pending?: boolean;
+  readOnly?: boolean;
+  recoveryText?: string;
+  initialContent?: string;
+  initialRichMode?: "rich" | "source";
+  documentUnavailable?: boolean;
+  documentRetryGate?: Promise<void>;
+} = {}) => {
   let pending = initialPending;
+  annotationText = initialContent;
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
   const previousBindings = new Map<string, PropertyDescriptor | undefined>();
@@ -170,19 +232,101 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
   }
   window.history.replaceState({ shown: true }, "", editorHref);
   const { NoteEditor, LocaleProvider, yjs, prompts } = loaded!;
-  const providers: Array<{ opts: YjsProviderOptions; dispose: ReturnType<typeof mock>; reconnectNow: ReturnType<typeof mock> }> = [];
+  const providers: Array<{
+    opts: YjsProviderOptions;
+    dispose: ReturnType<typeof mock>;
+    reconnectNow: ReturnType<typeof mock>;
+    connect: ReturnType<typeof mock>;
+    undo: ReturnType<typeof mock>;
+    beginAction: ReturnType<typeof mock>;
+    replay: (text?: string) => void;
+  }> = [];
   const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => {
+    let ready = false;
     const dispose = mock(() => {});
     const reconnectNow = mock(() => {});
-    providers.push({ opts, dispose, reconnectNow });
-    return { reconnectNow, connect: () => {}, resume: () => {}, dispose, hasUnsentChanges: () => pending };
+    const connect = mock(() => {});
+    const undo = mock(async () => {
+      opts.undoManager?.undo();
+      return null;
+    });
+    const beginAction = mock(() => {
+      if (!ready) throw new Error("The editor must finish synchronizing before changing the table structure");
+      return { applied: Promise.resolve(), cancel: () => {} };
+    });
+    const originalReady = opts.onReady;
+    opts.onReady = () => {
+      ready = true;
+      originalReady?.();
+    };
+    const replay = (text = initialContent) => {
+      opts.onConnectionChange?.(true);
+      const shared = opts.doc.getText("codemirror");
+      const prefix = text.endsWith(initialContent) ? text.slice(0, text.length - initialContent.length) : "";
+      if (prefix) opts.doc.transact(() => shared.insert(0, prefix), "remote");
+      ready = true;
+      opts.onReady?.();
+    };
+    providers.push({ opts, dispose, reconnectNow, connect, undo, beginAction, replay });
+    return {
+      reconnectNow,
+      connect,
+      resume: () => {},
+      dispose,
+      hasUnsentChanges: () => pending || (!ready && !!opts.undoManager?.undoStack.length),
+      restoreRevision: () => (ready ? "0" : (opts.initialRestoreRevision ?? null)),
+      canStructure: () => ready && !pending,
+      canUndo: () => !!opts.undoManager?.undoStack.length,
+      canRedo: () => !!opts.undoManager?.redoStack.length,
+      undo,
+      redo: async () => {
+        opts.undoManager?.redo();
+        return null;
+      },
+      setInverseHandler: () => {},
+      recoveryInput: () => ({
+        state: Y.encodeStateAsUpdate(opts.doc),
+        text: recoveryText ?? opts.doc.getText("codemirror").toString(),
+        pending: [],
+        baseCursor: null,
+      }),
+      beginAction,
+    };
   });
   const confirmed = spyOn(prompts, "confirm").mockResolvedValue(false);
   routeGet.mockClear();
-  const doc = new Y.Doc();
-  doc.getText("codemirror").insert(0, markdown);
-  const initialSnapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-  doc.destroy();
+  tablePost.mockClear();
+  const device = spyOn(loaded!.offline, "openNotebookDocument").mockImplementation(async (options) => {
+    if (options.memoryOnly) await documentRetryGate;
+    if (documentUnavailable) throw new loaded!.offline.NotebookAuthorizationError(0);
+    options.doc.transact(() => options.doc.getText("codemirror").insert(0, options.noteId === "Note01" ? initialContent : ""), "remote");
+    const provider = loaded!.yjs.createYjsProvider({ ...options, initialRestoreRevision: "0" });
+    return {
+      provider,
+      recovery: false,
+      pending: false,
+      refresh: async () => {
+        const response = await routeGet({ query: { href: window.location.pathname + window.location.search } });
+        if (!response.ok) throw new Error("Saved note unavailable");
+        const body = await response.json();
+        if (body.kind !== "ok") {
+          window.location.reload();
+          return;
+        }
+        const content = body.state.note.contentMd;
+        if (content === null) return;
+        const text = options.doc.getText("codemirror");
+        options.doc.transact(() => {
+          text.delete(0, text.length);
+          text.insert(0, content);
+        }, "remote");
+      },
+      retry: async () => {},
+      discard: async () => {},
+      flush: async () => true,
+      dispose: () => provider.dispose(),
+    };
+  });
   const dispose = render(
     () => (
       <LocaleProvider locale="en">
@@ -194,26 +338,30 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
           historyIncomplete={false}
           notebookName="Book"
           appUrl="http://localhost"
-          workspaceCursor={null}
           userId="User01"
           displayName="Reader"
-          initialSnapshot={initialSnapshot}
+          initialContent={initialContent}
           initialPanelOpen={false}
-          initialRichMode="source"
+          initialRichMode={initialRichMode}
           initialHref={editorHref.split("#")[0]!}
           initialDetail={detail("Note01")}
           readOnly={readOnly}
+          canWrite={!readOnly}
         />
       </LocaleProvider>
     ),
     dom.root,
   );
+  await flush();
   const view = () => EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
   return {
     dom,
     providers,
     confirmed,
     view,
+    authorizeDocument: () => {
+      documentUnavailable = false;
+    },
     setPending: (value: boolean) => {
       pending = value;
       providers.at(-1)?.opts.onUnsentChange?.();
@@ -225,11 +373,18 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
         if (previous) Object.defineProperty(globalThis, name, previous);
         else Reflect.deleteProperty(globalThis, name);
       }
+      device.mockRestore();
       provider.mockRestore();
       confirmed.mockRestore();
       dom.cleanup();
     },
   };
+};
+
+const tableCell = (editor: Awaited<ReturnType<typeof mountNoteEditor>>, row = 1, column = 0) => {
+  const cell = editor.dom.root.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="${row}"][data-c="${column}"]`);
+  if (!cell) throw new Error(`Missing table cell ${row}, ${column}`);
+  return cell;
 };
 
 const reasons = [
@@ -249,12 +404,513 @@ describe("sync ended editor recovery", () => {
     return;
   }
 
+  test("ending sync while completion waits for the typing pause preserves its state and closes suggestions", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    await flush();
+    const type = (text: string) => {
+      const end = editor.view().state.doc.length;
+      editor.view().dispatch({ changes: { from: end, insert: text }, selection: { anchor: end + text.length }, userEvent: "input.type" });
+    };
+    const settleCompletion = async () => {
+      for (let step = 0; step < 3; step++) {
+        jest.advanceTimersByTime(100);
+        await flush();
+      }
+    };
+    jest.useFakeTimers();
+    setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
+    try {
+      type("\n/");
+      await settleCompletion();
+      expect(completionStatus(editor.view().state)).toBe("active");
+      closeCompletion(editor.view());
+      type("\n/");
+      expect(completionStatus(editor.view().state)).toBe("pending");
+      editor.end();
+      await settleCompletion();
+      expect(editor.view().state.readOnly).toBe(true);
+      expect(completionStatus(editor.view().state)).toBeNull();
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n/\n/`);
+    } finally {
+      jest.useRealTimers();
+      setSystemTime();
+    }
+  });
+
+  test("ended sync copies the preserved input from before a conflicting remote merge", async () => {
+    const preserved = "| Item | New column |\n| --- | --- |\n| Paper | My offline input |";
+    using editor = await mountNoteEditor({ recoveryText: preserved });
+    const { opts } = editor.providers[0]!;
+    // The initial authorized snapshot is already present.
+    opts.onReady?.();
+    const copied = spyOn(loaded!.clipboard, "copy").mockResolvedValue(undefined);
+    const success = spyOn(loaded!.toast, "success").mockImplementation(() => ({ dismiss() {}, update() {} }));
+    try {
+      editor.end();
+      const copy = Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Copy text");
+      expect(copy).toBeDefined();
+      copy!.click();
+      await flush();
+      expect(copied).toHaveBeenCalledWith(preserved);
+      expect(editor.view().state.doc.toString()).toBe(markdown);
+    } finally {
+      copied.mockRestore();
+      success.mockRestore();
+    }
+  });
+
+  test("the bar that replaces the toolbar keeps the workspace's navigation and Details buttons", async () => {
+    // The note page draws no workspace head; without these two, a narrow window could reach neither.
+    using editor = await mountNoteEditor({ pending: false });
+    const { opts } = editor.providers[0]!;
+    opts.onReady?.();
+    editor.end();
+    const bar = editor.dom.root.querySelector("[data-sync-ended]")!;
+    expect(bar.querySelector('[data-app-workspace-sidebar-toggle][aria-controls="notebook-navigation"]')).not.toBeNull();
+    expect(bar.querySelector('[data-app-workspace-detail-toggle][aria-controls="k2b-workspace-detail-notebook-detail"]')).not.toBeNull();
+  });
+
+  test("ended sync before the first replay copies the visible edits instead of the empty Yjs document", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    editor.view().dispatch({ changes: { from: 0, insert: "My first words. " }, userEvent: "input.type" });
+    const edited = `My first words. ${markdown}`;
+    const copied = spyOn(loaded!.clipboard, "copy").mockResolvedValue(undefined);
+    const success = spyOn(loaded!.toast, "success").mockImplementation(() => ({ dismiss() {}, update() {} }));
+    try {
+      editor.end();
+      const copy = Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Copy text");
+      expect(copy).toBeDefined();
+      copy!.click();
+      await flush();
+      expect(copied).toHaveBeenCalledWith(edited);
+      expect(editor.view().state.doc.toString()).toBe(edited);
+      expect(editor.providers[0]!.opts.doc.getText("codemirror").toString()).toBe(editor.view().state.doc.toString());
+      expect(beforeUnloadPrevented()).toBe(true);
+    } finally {
+      copied.mockRestore();
+      success.mockRestore();
+    }
+  });
+
+  test("reading a note connects nothing; the first keystroke connects and stays on screen as it was typed", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    expect(instance.connect).not.toHaveBeenCalled();
+    expect(editor.view().state.doc.toString()).toBe(markdown);
+    const end = editor.view().state.doc.length;
+    editor.view().dispatch({ changes: { from: end, insert: " More" }, userEvent: "input.type" });
+    editor.view().dispatch({ changes: { from: end + 5, insert: "!" }, userEvent: "input.type" });
+    expect(instance.connect).toHaveBeenCalledTimes(1);
+    expect(editor.view().state.doc.toString()).toBe(`${markdown} More!`);
+    // Until the live note arrives, the typed words are unsent: leaving asks first.
+    expect(beforeUnloadPrevented()).toBe(true);
+
+    const ytext = instance.opts.doc.getText("codemirror");
+    // The replay arrives as remote updates, as the provider applies them.
+    // Replay of the same snapshot is idempotent.
+    instance.opts.onReady?.();
+    expect(ytext.toString()).toBe(`${markdown} More!`);
+    // From now on every keystroke goes to Yjs.
+    editor.view().dispatch({ changes: { from: 0, insert: "> " }, userEvent: "input.type" });
+    expect(ytext.toString()).toBe(`> ${markdown} More!`);
+    expect(instance.connect).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([tableMarkdown, `${markdown}\n\nItem | Cost\n--- | ---:\nPaper | 4\nInk | 2\n`])(
+    "editable table focus connects once without typing; structure waits for replay and preserves source (%s)",
+    async (initialContent) => {
+      using editor = await mountNoteEditor({ pending: false, initialContent, initialRichMode: "rich" });
+      const instance = editor.providers[0]!;
+      const { tableHost, runMenuAction } = loaded!;
+      const structure = () => editor.view().state.facet(tableHost)!.structure!;
+      await flush();
+      expect(instance.connect).not.toHaveBeenCalled();
+      expect(editor.view().state.doc.toString()).toBe(initialContent);
+      expect(structure().available()).toBe(false);
+
+      tableCell(editor).focus();
+      await flush();
+      expect(instance.connect).toHaveBeenCalledTimes(1);
+      expect(beforeUnloadPrevented()).toBe(false);
+      expect(editor.view().state.doc.toString()).toBe(initialContent);
+      expect(instance.opts.doc.getText("codemirror").toString()).toBe(initialContent);
+      expect(structure().available()).toBe(false);
+      // The same action path as the menu cannot send anything before replay.
+      runMenuAction(editor.view(), tableCell(editor).closest<HTMLElement>(".k2b-ste-table")!, "colRight");
+      expect(instance.beginAction).not.toHaveBeenCalled();
+      expect(tablePost).not.toHaveBeenCalled();
+      tableCell(editor, 1, 1).focus();
+      await flush();
+      expect(instance.connect).toHaveBeenCalledTimes(1);
+
+      const live = `Added by Ada\n\n${initialContent}`;
+      instance.replay(live);
+      await flush();
+      expect(structure().available()).toBe(true);
+      expect(editor.view().state.doc.toString()).toBe(live);
+      expect(instance.opts.doc.getText("codemirror").toString()).toBe(live);
+      expect(instance.opts.undoManager!.undoStack).toHaveLength(0);
+      expect(beforeUnloadPrevented()).toBe(false);
+      runMenuAction(editor.view(), tableCell(editor, 1, 1).closest<HTMLElement>(".k2b-ste-table")!, "colRight");
+      await flush();
+      expect(instance.beginAction).toHaveBeenCalledTimes(1);
+      expect(tablePost).toHaveBeenCalledTimes(1);
+      // This response reports no change; focusing, replay and the request never rewrite the source.
+      expect(editor.view().state.doc.toString()).toBe(live);
+      expect(instance.connect).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test("leaving after table startup without edits does not wait for replay or ask about unsaved text", async () => {
+    using editor = await mountNoteEditor({ pending: false, initialContent: tableMarkdown, initialRichMode: "rich" });
+    const instance = editor.providers[0]!;
+    await flush();
+    tableCell(editor).focus();
+    await flush();
+    expect(instance.connect).toHaveBeenCalledTimes(1);
+    expect(beforeUnloadPrevented()).toBe(false);
+    const navigation = loaded!.requestSoftNoteNavigation(otherHref);
+    await flush();
+    expect(routeGet).toHaveBeenCalledTimes(1);
+    expect(await navigation).toEqual({ kind: "applied", href: otherHref });
+    expect(editor.confirmed).not.toHaveBeenCalled();
+    expect(instance.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  test("cell edits during table startup still rebase onto replay and undo through the provider", async () => {
+    using editor = await mountNoteEditor({ pending: false, initialContent: tableMarkdown, initialRichMode: "rich" });
+    const instance = editor.providers[0]!;
+    await flush();
+    const cell = tableCell(editor);
+    cell.focus();
+    await flush();
+    expect(beforeUnloadPrevented()).toBe(false);
+    cell.textContent = "Paper draft";
+    cell.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(beforeUnloadPrevented()).toBe(true);
+    expect(editor.view().state.doc.toString()).toBe(tableMarkdown.replace("Paper", "Paper draft"));
+    const live = `Added by Ada\n\n${tableMarkdown}`;
+    instance.replay(live);
+    await flush();
+    expect(editor.view().state.doc.toString()).toBe(live.replace("Paper", "Paper draft"));
+    const undo = editor.dom.root.querySelector<HTMLButtonElement>('button[aria-label="Undo"]')!;
+    undo.click();
+    expect(instance.undo).toHaveBeenCalledTimes(1);
+    expect(editor.view().state.doc.toString()).toBe(live);
+    expect(instance.opts.doc.getText("codemirror").toString()).toBe(live);
+    expect(instance.connect).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(["readonly", "ended"] as const)("%s table focus cannot start collaboration", async (state) => {
+    using editor = await mountNoteEditor({
+      pending: false,
+      readOnly: state === "readonly",
+      initialContent: tableMarkdown,
+      initialRichMode: "rich",
+    });
+    await flush();
+    if (state === "ended") editor.end();
+    tableCell(editor).focus();
+    await flush();
+    expect(editor.view().state.readOnly).toBe(true);
+    for (const instance of editor.providers) expect(instance.connect).not.toHaveBeenCalled();
+    expect(tablePost).not.toHaveBeenCalled();
+    expect(editor.view().state.doc.toString()).toBe(tableMarkdown);
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  test("opening another note right after the first keystroke waits until the server confirmed the words", async () => {
+    using editor = await mountNoteEditor({ pending: true });
+    const instance = editor.providers[0]!;
+    editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Last words." }, userEvent: "input.type" });
+    routeGet.mockClear();
+    const navigation = loaded!.requestSoftNoteNavigation(otherHref);
+    await flush();
+    // The other note does not load while the words exist only on screen.
+    expect(routeGet).not.toHaveBeenCalled();
+    expect(instance.dispose).not.toHaveBeenCalled();
+    const ytext = instance.opts.doc.getText("codemirror");
+    // Replay of the same snapshot is idempotent.
+    instance.opts.onReady?.();
+    expect(ytext.toString()).toBe(`${markdown} Last words.`);
+    // In Yjs, but not yet confirmed: the other note still waits.
+    await flush();
+    expect(routeGet).not.toHaveBeenCalled();
+    editor.setPending(false);
+    await navigation;
+    expect(routeGet).toHaveBeenCalledTimes(1);
+    expect(editor.confirmed).not.toHaveBeenCalled();
+  });
+
+  test("edits another person made since the note was saved stay, and the first edits land where they were typed", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Mine." }, userEvent: "input.type" });
+    const ytext = instance.opts.doc.getText("codemirror");
+    instance.opts.doc.transact(() => ytext.insert(0, "Intro from Ada\n\n"), "remote");
+    instance.opts.onReady?.();
+    expect(editor.view().state.doc.toString()).toBe(`Intro from Ada\n\n${markdown} Mine.`);
+    expect(ytext.toString()).toBe(editor.view().state.doc.toString());
+    // A remote edit after the catch-up reaches the editor through Yjs.
+    instance.opts.doc.transact(() => ytext.insert(0, "# "), "remote");
+    expect(editor.view().state.doc.toString().startsWith("# Intro from Ada")).toBe(true);
+  });
+
+  test("device retry and the tab-only choice cannot open overlapping sessions", async () => {
+    using editor = await mountNoteEditor({ pending: false, documentUnavailable: true });
+    const action = (label: string) =>
+      Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === label)!;
+    action("Retry saving").click();
+    expect(action("Edit in this tab only").disabled).toBe(true);
+    await flush();
+    expect(action("Edit in this tab only").disabled).toBe(false);
+  });
+
+  test("tab-only typing starts while the server retry is still waiting", async () => {
+    const gate = Promise.withResolvers<void>();
+    using editor = await mountNoteEditor({ pending: false, documentUnavailable: true, documentRetryGate: gate.promise });
+    try {
+      Array.from(editor.dom.root.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Edit in this tab only")!
+        .click();
+      await flush();
+      expect(editor.view().contentDOM.contentEditable).toBe("true");
+      editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " While waiting." }, userEvent: "input.type" });
+      expect(editor.view().state.doc.toString()).toContain(" While waiting.");
+      expect(beforeUnloadPrevented()).toBe(true);
+    } finally {
+      gate.resolve();
+      await flush();
+    }
+  });
+
+  test("tab-only recovery copies the typed words when retry cannot merge them", async () => {
+    using editor = await mountNoteEditor({ pending: false, documentUnavailable: true });
+    const action = (label: string) =>
+      Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === label)!;
+    action("Edit in this tab only").click();
+    await flush();
+    await waitFor(() => editor.view().contentDOM.contentEditable === "true", 1000);
+    editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Mine." }, userEvent: "input.type" });
+    const typed = editor.view().state.doc.toString();
+    const lazy = await import("../../../lib/yjs/lazy-collab");
+    const diff = spyOn(lazy, "rebaseOnto").mockReturnValue(null);
+    const copied = spyOn(loaded!.clipboard, "copy").mockResolvedValue(undefined);
+    try {
+      editor.authorizeDocument();
+      action("Retry saving").click();
+      await flush();
+      expect(editor.dom.root.querySelector("[data-sync-ended]")).not.toBeNull();
+      expect(editor.view().state.doc.toString()).toBe(typed);
+      const recovery = editor.dom.root.querySelector("[data-sync-ended]")!;
+      Array.from(recovery.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Copy text")!
+        .click();
+      await flush();
+      expect(copied).toHaveBeenCalledWith(typed);
+      expect(beforeUnloadPrevented()).toBe(true);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      diff.mockRestore();
+      copied.mockRestore();
+    }
+  });
+
+  test("first edits survive a remote rewrite whose text diff runs out of time", async () => {
+    // A text diff that takes too long gives up (lazy-collab's timeout). Typed words must then still be in the note,
+    // never only in a toast.
+    const lazy = await import("../../../lib/yjs/lazy-collab");
+    const diff = spyOn(lazy, "changesBetween").mockReturnValue(null);
+    try {
+      using editor = await mountNoteEditor({ pending: false });
+      const instance = editor.providers[0]!;
+      // Ada rewrites the note at the same time, from the state before these words were typed.
+      const ada = new Y.Doc();
+      Y.applyUpdate(ada, Y.encodeStateAsUpdate(instance.opts.doc));
+      const before = Y.encodeStateVector(ada);
+      ada.transact(() => {
+        const text = ada.getText("codemirror");
+        text.delete(0, text.length);
+        text.insert(0, "Rewritten by Ada.");
+      });
+      editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Mine." }, userEvent: "input.type" });
+      const ytext = instance.opts.doc.getText("codemirror");
+      Y.applyUpdate(instance.opts.doc, Y.encodeStateAsUpdate(ada, before), "remote");
+      instance.opts.onReady?.();
+      expect(editor.view().state.doc.toString()).toContain("Mine.");
+      expect(ytext.toString()).toContain("Mine.");
+      expect(ytext.toString()).toContain("Rewritten by Ada.");
+      expect(editor.view().state.doc.toString()).toBe(ytext.toString());
+    } finally {
+      diff.mockRestore();
+    }
+  });
+
+  test("before the first edit, a save by someone else replaces the shown text without connecting", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    const updated = () =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, type: "note.updated", notebookId: "Book01", note: { id: "Note01" } }, cover: () => {} },
+        }),
+      );
+    savedTexts.set("Note01", `${markdown}\n\nAdded by Ada.`);
+    try {
+      updated();
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n\nAdded by Ada.`);
+      expect(instance.connect).not.toHaveBeenCalled();
+      // Once the person types, the live note decides; a later save no longer replaces the text.
+      editor.view().dispatch({ changes: { from: 0, insert: "Mine " }, userEvent: "input.type" });
+      savedTexts.set("Note01", "Something else");
+      updated();
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.view().state.doc.toString()).toBe(`Mine ${markdown}\n\nAdded by Ada.`);
+      const ytext = instance.opts.doc.getText("codemirror");
+      instance.opts.onReady?.();
+      expect(ytext.toString()).toBe(`Mine ${markdown}\n\nAdded by Ada.`);
+    } finally {
+      savedTexts.clear();
+    }
+  });
+
+  test("before the first edit, a workspace replay reset covers the new saved text", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const coverages: Promise<void>[] = [];
+    savedTexts.set("Note01", `${markdown}\n\nSaved during a long disconnect.`);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: {
+            cursor: "reset-head",
+            event: {
+              v: 1,
+              type: "workspace.invalidated",
+              notebookId: "Book01",
+              reason: "unknown",
+              scopes: ["notebook", "tree", "tags", "references", "permissions"],
+            },
+            cover: (read: Promise<void>) => coverages.push(read),
+          },
+        }),
+      );
+      await Promise.all(coverages);
+      expect(routeGet).toHaveBeenCalledTimes(1);
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n\nSaved during a long disconnect.`);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      savedTexts.clear();
+    }
+  });
+
+  test("Undo keys before the live socket arrives undo device-backed edits", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    editor.view().dispatch({ changes: { from: 0, insert: "Draft " }, userEvent: "input.type" });
+    // CodeMirror reports a failing key command to the console instead of throwing.
+    const logged = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+        const key = new KeyboardEvent("keydown", { key: "z", code: "KeyZ", keyCode: 90, ...modifier, bubbles: true, cancelable: true });
+        editor.view().contentDOM.dispatchEvent(key);
+      }
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+    expect(editor.view().state.doc.toString()).toBe(markdown);
+    expect(editor.providers[0]!.undo).toHaveBeenCalled();
+    expect(editor.providers[0]!.opts.doc.getText("codemirror").toString()).toBe(editor.view().state.doc.toString());
+  });
+
+  test("a note locked by someone else before the first edit opens again as the server shows it", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    routeGet.mockImplementationOnce(async () => Response.json({ kind: "fallback", reason: "readonly" }));
+    try {
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, type: "note.updated", notebookId: "Book01", note: { id: "Note01" } }, cover: () => {} },
+        }),
+      );
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      reload.mockRestore();
+    }
+  });
+
+  test("before the first edit, a deleted note reopens, a lost history shows, and a failed read tries again", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    const event = (body: Record<string, unknown>) =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, notebookId: "Book01", ...body }, cover: () => {} },
+        }),
+      );
+    try {
+      event({ type: "note.updated", note: { id: "Note01", historyIncomplete: true } });
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.dom.root.textContent).toContain(notebookWorkspaceMessages.resolve(["en"]).t.historyIncompleteTitle);
+
+      // One failed read is retried by the note itself.
+      routeGet.mockImplementationOnce(async () => new Response("unavailable", { status: 503 }));
+      savedTexts.set("Note01", `${markdown}\n\nSaved by Ada.`);
+      event({ type: "note.updated", note: { id: "Note01" } });
+      // The retry waits about a second; poll for its result within a bounded deadline.
+      const retried = `${markdown}\n\nSaved by Ada.`;
+      await waitFor(() => editor.view().state.doc.toString() === retried, 5000);
+      expect(editor.view().state.doc.toString()).toBe(retried);
+
+      event({ type: "note.deleted", noteId: "Note01" });
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      savedTexts.clear();
+      reload.mockRestore();
+    }
+  });
+
+  test("Undo takes back the edits made before the live note arrived as one step", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    for (const word of [" one", " two"])
+      editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: word }, userEvent: "input.type" });
+    const ytext = instance.opts.doc.getText("codemirror");
+    // The replay arrives as remote updates, as the provider applies them.
+    // Replay of the same snapshot is idempotent.
+    instance.opts.onReady?.();
+    expect(ytext.toString()).toBe(`${markdown} one two`);
+    const undo = Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.getAttribute("aria-label") === "Undo");
+    undo!.click();
+    expect(instance.undo).toHaveBeenCalledTimes(1);
+    expect(ytext.toString()).toBe(markdown);
+    expect(editor.view().state.doc.toString()).toBe(markdown);
+  });
+
+  test("a note that is only read reports itself saved and connected, so no offline notice appears", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    const states: SyncStateEventDetail[] = [];
+    const listener = (event: Event) => states.push((event as CustomEvent<SyncStateEventDetail>).detail);
+    window.addEventListener(SYNC_STATE_EVENT, listener);
+    try {
+      window.dispatchEvent(new Event(SYNC_STATE_REQUEST_EVENT));
+      expect(states.at(-1)).toMatchObject({ connected: true, ended: false });
+      expect(beforeUnloadPrevented()).toBe(false);
+    } finally {
+      window.removeEventListener(SYNC_STATE_EVENT, listener);
+    }
+  });
+
   test("a late panel receives sync and presence, requests reconnect and jumps without moving selection", async () => {
-    using editor = mountNoteEditor({ pending: false });
+    using editor = await mountNoteEditor({ pending: false });
     const instance = editor.providers[0]!;
     setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
     const { opts } = instance;
-    expect(opts.awareness.getLocalState()?.user.userId).toBe("User01");
+    expect(opts.awareness.getLocalState()?.user).toBeUndefined();
     const syncStates: SyncStateEventDetail[] = [];
     const locations: PresenceLocationsEventDetail[] = [];
     const active: Array<string | null> = [];
@@ -265,6 +921,7 @@ describe("sync ended editor recovery", () => {
     window.addEventListener(PRESENCE_LOCATIONS_EVENT, onLocations);
     window.addEventListener(ACTIVE_HEADING_EVENT, onActive);
     try {
+      // The initial authorized snapshot is already present.
       opts.onConnectionChange?.(true);
       opts.onReady?.();
       const saved = syncStates.at(-1);
@@ -308,8 +965,8 @@ describe("sync ended editor recovery", () => {
     }
   });
 
-  test("the storage notice survives retries until pending changes are saved", () => {
-    using editor = mountNoteEditor();
+  test("the storage notice survives retries until pending changes are saved", async () => {
+    using editor = await mountNoteEditor();
     const { opts } = editor.providers[0]!;
     opts.onError?.({ code: "STORAGE_EXHAUSTED", message: "storage full" });
     const notice = editor.dom.root.querySelector('[role="alert"]');
@@ -321,8 +978,10 @@ describe("sync ended editor recovery", () => {
   });
 
   test("soft requests ask before replacing the editor, cancel keeps text, confirm leaves once", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     const instance = editor.providers[0]!;
+    expect(instance.opts.initialRestoreRevision).toBe("0");
+    expect(instance.opts.doc.getText("codemirror").toString()).toBe(markdown);
     const view = editor.view();
     editor.end();
     let answer!: (leave: boolean) => void;
@@ -352,13 +1011,15 @@ describe("sync ended editor recovery", () => {
     expect(instance.dispose).toHaveBeenCalledTimes(1);
     expect(window.location.pathname + window.location.search).toBe(otherHref);
     expect(editor.providers).toHaveLength(2);
+    expect(editor.providers[1]!.opts.initialRestoreRevision).toBe("0");
+    expect(editor.providers[1]!.opts.doc.getText("codemirror").toString()).toBe("");
     // The old guard is removed along with its editor instance.
     await loaded!.navigateToNotebookNote("/app/notebooks/Book01/notes/Third1?mode=write");
     expect(editor.confirmed).toHaveBeenCalledTimes(2);
   });
 
   test.each(["mount", "navigation"])("cancelled popstate restores the shown note URL after %s", async (source) => {
-    using editor = mountNoteEditor({ pending: source === "mount" });
+    using editor = await mountNoteEditor({ pending: source === "mount" });
     const shownHref = source === "mount" ? editorHref : `${otherHref}#heading-other`;
     if (source === "navigation") {
       await loaded!.requestSoftNoteNavigation(shownHref);
@@ -390,7 +1051,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("two cancelled popstates sharing a prompt restore the shown URL only once", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     editor.end();
     const answer = Promise.withResolvers<boolean>();
     editor.confirmed.mockImplementation(() => answer.promise);
@@ -409,7 +1070,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("a cancelled popstate keeps a sidebar filter chosen after the note opened", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     editor.end();
     const filtered = "/app/notebooks/Book01/notes/Note01?mode=write&view=recents#heading-keep-me";
     window.history.replaceState(window.history.state, "", filtered);
@@ -422,7 +1083,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("a cancelled request that manages its own history leaves the address and history alone", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     editor.end();
     const length = window.history.length;
     const state = window.history.state;
@@ -442,7 +1103,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("a confirmed search navigation that fails keeps warning before unload", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     const view = editor.view();
     editor.end();
     editor.confirmed.mockResolvedValue(true);
@@ -456,7 +1117,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("a heading of the shown note opens in place without asking", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     const view = editor.view();
     editor.end();
     const heading = "/app/notebooks/Book01/notes/Note01?mode=write#heading-other";
@@ -469,7 +1130,7 @@ describe("sync ended editor recovery", () => {
   test.each(["/app/notebooks/Book01/notes/Note01", "/app/notebooks/Book01/notes/Note01?mode=write#heading-other"])(
     "an anchor to the shown note keeps unsent text without asking: %s",
     async (href) => {
-      using editor = mountNoteEditor();
+      using editor = await mountNoteEditor();
       const view = editor.view();
       editor.end();
       const link = document.createElement("a");
@@ -486,7 +1147,7 @@ describe("sync ended editor recovery", () => {
   );
 
   test("an anchor to another note asks once through soft navigation and cancel keeps the editor", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     const view = editor.view();
     editor.end();
     const link = document.createElement("a");
@@ -507,7 +1168,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("changing the shown note's presentation mode asks before document fallback", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     editor.end();
     const href = "/app/notebooks/Book01/notes/Note01?mode=readonly";
     expect(await loaded!.requestSoftNoteNavigation(href)).toEqual({ kind: "superseded" });
@@ -520,7 +1181,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("a confirmed navigation superseded by the shown note restores the unsent text warning", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     const view = editor.view();
     editor.end();
     editor.confirmed.mockResolvedValue(true);
@@ -548,7 +1209,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("a confirmed navigation superseded by another pending leave keeps leave confirmed", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     editor.end();
     editor.confirmed.mockResolvedValue(true);
     const firstStarted = Promise.withResolvers<void>();
@@ -577,7 +1238,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("soft navigation without unsent text proceeds without a prompt", async () => {
-    using editor = mountNoteEditor({ pending: false });
+    using editor = await mountNoteEditor({ pending: false });
     editor.end();
     expect(await loaded!.requestSoftNoteNavigation(otherHref)).toEqual({ kind: "applied", href: otherHref });
     expect(editor.confirmed).not.toHaveBeenCalled();
@@ -588,7 +1249,7 @@ describe("sync ended editor recovery", () => {
     expect(editor.confirmed).toHaveBeenCalledTimes(1);
     expect(routeGet).toHaveBeenCalledTimes(1);
 
-    using reader = mountNoteEditor({ readOnly: true });
+    using reader = await mountNoteEditor({ readOnly: true });
     reader.confirmed.mockClear();
     expect(reader.providers).toHaveLength(0);
     expect(reader.dom.root.querySelector("[data-sync-ended]")).toBeNull();
@@ -648,7 +1309,9 @@ describe("sync ended editor recovery", () => {
     expect(editor.sync.ended()).toBe(originalEnd);
     expect(editor.bar()).toBe(originalBar);
     const signIn = code === "SESSION_EXPIRED" || code === "LOGIN_REQUIRED";
-    expect(editor.bar().querySelectorAll("button")).toHaveLength(signIn ? 1 : 2);
+    expect(
+      editor.bar().querySelectorAll("button:not([data-app-workspace-sidebar-toggle], [data-app-workspace-detail-toggle])"),
+    ).toHaveLength(signIn ? 1 : 2);
     expect(document.activeElement).toBe(editor.button(signIn ? "Sign in again" : "Copy text"));
     if (signIn) {
       editor.button("Sign in again").click();
@@ -688,7 +1351,9 @@ describe("sync ended editor recovery", () => {
     expect(refreshCurrentPath).not.toHaveBeenCalled();
     expect(editor.bar().querySelector('[role="alert"]')?.getAttribute("data-tone")).toBe("warning");
     if (code === "SESSION_EXPIRED" || code === "LOGIN_REQUIRED") {
-      expect(editor.bar().querySelectorAll("button")).toHaveLength(1);
+      expect(
+        editor.bar().querySelectorAll("button:not([data-app-workspace-sidebar-toggle], [data-app-workspace-detail-toggle])"),
+      ).toHaveLength(1);
       editor.button("Sign in again").click();
       expect(editor.opened).toHaveBeenCalledTimes(1);
     } else {
@@ -771,7 +1436,7 @@ describe("sync ended editor recovery", () => {
   });
 
   test("leaving the note for another route with unsent changes asks first", async () => {
-    using editor = mountNoteEditor();
+    using editor = await mountNoteEditor();
     const link = document.createElement("a");
     link.href = "/app/settings";
     let followed = 0;

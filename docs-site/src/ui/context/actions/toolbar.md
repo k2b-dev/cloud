@@ -16,7 +16,7 @@ import { Button, IconButton, Toolbar } from "@k2b/ui";
 
 Enable `wrap` where actions may outgrow the available width. Button variants remain yours.
 
-Separators automatically follow the toolbar orientation: they are vertical in a horizontal toolbar and horizontal in a vertical toolbar.
+A separator groups clusters with space, not a drawn line, and keeps `role="separator"` for assistive technology. It follows the toolbar orientation: vertical in a horizontal toolbar and horizontal in a vertical toolbar.
 
 ## Floating variant
 
@@ -26,13 +26,49 @@ Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
 
+## Selection toolbar
+
+Use `SelectionToolbar` for actions on selected text, such as formatting and
+commenting in an editor. It holds a normal `Toolbar` (actions, separators, a
+text button) and floats at the selection in the top layer, so no scroll
+container clips it.
+
+- Give `anchor` a function that returns the selection's box, or nothing while
+  the toolbar should be closed. Open it after the pointer is released, not while
+  someone drags the selection. The toolbar reads the box again while the page
+  scrolls or resizes, so it stays attached.
+- It sits centered above the selection with an 8 px gap. Near the top of
+  `boundary`, such as the editor's scroll area under its own toolbar, it goes
+  below the selection. On touch use `placement="below"`: the system's selection
+  menu sits above.
+- It is compact so it stays small over the text: a 4 px frame, 30 px buttons
+  with 16 px icons, tight gaps and a narrow separator space. Use `Toolbar.Action` for
+  icon commands and a `size="sm"` ghost `Button` for a text command such as
+  Comment. On touch screens every button keeps a 44 px hit area through the
+  buttons' own touch rule; the bar does not grow. Shortcuts from `keys` show in
+  the tooltips only: the hints under the icons that the floating variant has do
+  not fit.
+- Pressing its buttons keeps the selection, so actions apply to it.
+- Escape inside the toolbar calls `onEscape`; close the toolbar there and
+  return focus to the text. Keyboard navigation is the `Toolbar` roving group.
+- Show only actions the person may use. Someone who can only read gets no
+  selection toolbar.
+
+```tsx
+<SelectionToolbar label="Selection" anchor={selectionBox} boundary={() => scroller} onEscape={close}>
+  <Toolbar.Action label="Bold" icon="ti ti-bold" keys="mod+b" onClick={bold} />
+  <Toolbar.Separator />
+  <Button size="sm" variant="ghost" onClick={comment}><i class="ti ti-message-plus" /> Comment</Button>
+</SelectionToolbar>
+```
+
 ## Toolbar.Action
 
 Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place.
 
 In a floating toolbar, `priority` lets an action move into More when the column is too narrow. **1 is most important.** Larger numbers move first; equal priorities move the later action first. Omit `priority` to keep an action fixed. More is the last control and lists the moved actions in their original order. Widening the column brings them back. Inline toolbars keep every action in place; use `wrap` there.
 
-`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon, the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
+`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon (not in `SelectionToolbar`), the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
 
 To hide an action, stop rendering it, for example with `<Show>`. A `Toolbar.Group` hidden through its `class` also takes its actions out of More, because the toolbar measures again. A style that an outer element's class applies inside the toolbar is noticed only at the next resize. In a floating toolbar, empty groups and leading, trailing, or repeated separators are hidden. Keep fixed content compact. Actions move before a `Toolbar.Label` truncates; only when the fixed items alone are too wide does the label shrink.
 

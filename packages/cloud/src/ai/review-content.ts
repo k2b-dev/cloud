@@ -1,7 +1,8 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { capabilityRequestHash } from "../capabilities/claims";
 import { parseStoredReviewContent } from "../capabilities/review-storage";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES, type CapabilityActionReviewPresentation } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import type { AiStoredActionReview } from "./action-review";
 
 export type ReviewContentLocation = { conversationId: string; turnId: string; callId: string };

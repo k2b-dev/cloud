@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-18
+updated: 2026-10-30
 ---
 
 # Background authority mandates
@@ -24,7 +24,7 @@ interactive create/update                 later background run
 user -> owning app -> mandate in Postgres
                          |
                          v
-worker -- app credential + mandate id --> Core
+worker -- signed request + mandate id --> Core
                                           | validate current mandate + subject
                                           | sign exact 30-second invocation
                                           v
@@ -34,9 +34,9 @@ worker -- app credential + mandate id --> Core
                                         result
 ```
 
-Only the Core-to-target hop carries the invocation JWT. The worker never gets
-signing power and the target never receives the app credential, mandate ID as
-authority, or original user credential.
+Only Core signs the target invocation JWT. The worker's app key signs requests
+to Core, and the target never receives that app proof, mandate ID as authority,
+or original user credential.
 
 ## Create one mandate with the workload
 
@@ -65,8 +65,8 @@ const mandate = await mandates.create(
 );
 ```
 
-A mandate keeps acting after the person's phone is removed, so the
-[mobile app's session](/en/docs/identity/authentication#app-sessions-preview)
+A mandate keeps acting after the person's device is removed, so the
+[Cloud app's session](/en/docs/identity/authentication#app-sessions-preview)
 never creates, widens, or resumes one. Before you create a mandate, change its
 policy, or resume it with an interactive authority, reject such requests:
 `auth.rejectAppSession` on the route, or `isAppSessionActor(actor)` in a service
@@ -78,7 +78,7 @@ Pausing and revoking stay allowed. `POST /api/me/mandates`, Assistant routines
 Built-in applications that share Postgres create the mandate and owning
 workload in one transaction. A separately deployed application that cannot
 share that transaction creates a pending mandate, persists the workload, and
-then confirms it with the owning app's workload credential. A pending mandate
+then confirms it with a signed app request (or legacy workload credential). A pending mandate
 cannot issue invocations. Revoke it when persistence fails; Core also revokes
 unconfirmed mandates after the bounded confirmation window.
 
@@ -96,7 +96,7 @@ sequence. Core always derives the user subject from that session; the request
 contains only the bounded owner app, workload coordinates, policy, and optional
 expiry. Persist the returned ID and revision first, then call
 `POST /api/_internal/identity/v1/mandates/<mandateId>/confirm` with the same
-revision and the app workload credential. Ordinary `mandates.create(...)`
+revision and a signed app request (or legacy workload credential). Ordinary `mandates.create(...)`
 remains the atomic same-transaction path and is confirmed immediately.
 Before confirming, the owning app must verify that the persisted workload
 belongs to the mandate's subject; knowing a workload ID is not proof of ownership.
@@ -116,6 +116,12 @@ Policy values are:
 `preapproved` requires explicit non-empty app and operation allowlists. A
 wildcard mandate always requires approval. It cannot silently approve an
 operation that the product or capability contract says needs user attention.
+Unattended Actions follow the live capability policy: `ask`, `routines: false`,
+and legacy Actions without `none` or `rememberable` approval require an
+interactive workflow. Optional grants add exact capability and input
+constraints. A `require_approval` mandate without grants can execute an Action
+after its separate approval has completed through Cloud. The app invocation
+broker never supplies this approval.
 
 Background work does not inherit remembered interactive approvals, neither
 those for a chat, including a website allowed for a chat, nor those that apply
@@ -127,6 +133,12 @@ with a user's browser session or silently recreated by a worker.
 Only a current interactive subject or administrator can create, resume, or
 broaden a mandate. The owning workload may narrow, pause, or revoke it. A
 revoked mandate is terminal.
+
+Active standalone and agent accounts can also be mandate subjects. Only an
+administrator can create authority for a machine; the editing person's grants
+are never substituted for the machine's own grants. Grids binds its
+`workflow.run` mandate to one workflow and a write ceiling; see
+[Machine workflow mandates](./machine-workflow-mandates.md).
 
 ## Grant capabilities to an unattended Assistant routine
 
@@ -189,17 +201,33 @@ run server Code Mode tools under the same routine-scoped authority; see
 
 ## Invoke from a worker
 
-Provision a resource-bound service-account credential for the owning
-application with binding `{ appId, resourceType: "cloud.app", resourceId:
-appId }` and the `identity:invoke` scope. Store it as
-`CLOUD_APP_CREDENTIAL` in that application only.
-Also set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
-broker routes are not reachable through the public gateway, and the helper
-does not fall back to the public origin for mandate calls.
+Configure the owning application's [app key](/en/docs/operations/app-keys) and
+`CLOUD_CORE_INTERNAL_ORIGIN`. Workers supply mandate coordinates and context;
+the platform signs each final request, including every safe retry. Core resolves
+the key to `cloud.app/<appId>` with `identity:invoke`, checks revocation directly,
+and applies the current mandate and grant checks.
 
-An administrator opens **Administration → App credentials** (`/admin/app-credentials`),
-chooses **Create credential**, then selects the owning app and enters a name and
-optional expiration time in the dialog.
+### Legacy credentials during this release
+
+Apps without an app key retain the deprecated workload-credential path.
+Core automatically delivers an app-bound `identity:invoke` credential to each
+registered app instance. Use `getAppWorkloadCredential()` from
+`@k2b/cloud/services` at call time so rotation takes effect. It returns
+`undefined` when no valid credential is available; dependent work must fail
+closed with a visible reason. A transient refresh failure keeps the current
+token available until it expires. Never cache the returned token or pass it to a browser
+or target app.
+
+Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
+broker routes are not reachable through the public gateway, and the helper
+does not fall back to the public origin for mandate calls. For host-run apps,
+deprecated `CLOUD_APP_CREDENTIAL` is an optional explicit override; it wins over automatic
+delivery and remains operator-managed. See [runtime configuration](/en/docs/operations/runtime-configuration)
+for rotation, revocation, health diagnostics, and the shared-infrastructure trust limit.
+
+For an explicit host-run override, an administrator opens **Administration → Apps** (`/admin/apps`), opens the owning app,
+then **Keys**, unfolds **Tokens for host operation**, chooses **Create token**, and enters a name and
+optional expiration time in the dialog. The old address `/admin/app-credentials` opens the Apps page with a hint.
 The token is shown once. Save it in the deployment's secret store and inject it
 only into that app. The table lists credentials across all apps and supports revocation.
 
@@ -232,21 +260,45 @@ credential metadata across apps with `GET /api/admin/identity/workloads/credenti
 or for one app with `GET /api/admin/identity/workloads/inventory/credentials`, and
 revoke one exact credential with
 `DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
-Rotate by creating a new credential, deploying it to the owning app, verifying
+Revoking an automatic runtime credential disables the app's workload access
+across all instances and restarts. Restore it in the app's **Keys** column with
+**Turn on again**, with `cld admin app-credentials enable <app> --yes`,
+or with `PATCH /api/admin/identity/workloads/<app>` and `{"status":"active"}`.
+The shared capability client refreshes a broker-rejected workload credential
+and retries once; persistent credential rejection returns HTTP 503 so workers
+can retry later. Subject and target authorization failures remain permanent.
+
+For a host-run override, rotate by creating a new credential, deploying it to the owning app, verifying
 broker calls, and then revoking the old credential. Do not reuse the OAuth
 broker secret; it is shared only by Core and OAuth for OAuth issuance.
 
-The same app-bound credential owns the remote mandate lifecycle under
+The same app-key proof or legacy app-bound credential owns the remote mandate lifecycle under
 `/api/_internal/identity/v1/mandates/<mandateId>`. It may read its mandate,
 confirm a pending workload, narrow policy, pause, or revoke. It cannot create
 user authority, broaden policy, or resume a paused mandate. Core derives the
 owner from the authenticated credential; an app ID in a request body is never
 trusted as owner authority.
 
+For remote lifecycle requests, use `sendAppRequest` from
+`@k2b/cloud/services/identity` with the final `Request` and `{ appId }`.
+Call it again for every safe retry. It signs the exact method, path including
+query, and body with a fresh proof and disables redirects. Without an app key,
+it uses the legacy workload credential. It sets `X-Cloud-App-Id` in both modes
+and rejects a conflicting caller-supplied app identity before sending.
+It never retries an uncertain transmission on its own.
+
+Signed request body reads have an absolute 10-second deadline, including
+uploads that continue to send data. Core returns `DEADLINE_EXCEEDED` (HTTP 504)
+when that deadline expires. Admission returns `RATE_LIMITED` (HTTP 429) with
+`Retry-After`; authentication failures retain their HTTP 401 or 403 status.
+All these failures include the capability error fields `code` and `message`.
+
 Lifecycle request bodies are limited to 256 KiB, including streamed requests
 without a reliable `Content-Length`. Oversized bodies return HTTP 413. Missing
 mutation authority returns HTTP 403; an authorized but stale revision returns
 HTTP 409.
+
+### Invoke a capability
 
 Use the server capability helper with the current mandate revision:
 
@@ -262,7 +314,6 @@ const result = await invokeCapability(
     idempotencyKey: job.id,
   },
   {
-    authorization: `Bearer ${process.env.CLOUD_APP_CREDENTIAL}`,
     mandate: {
       id: job.mandateId,
       revision: job.mandateRevision,
@@ -272,8 +323,9 @@ const result = await invokeCapability(
 );
 ```
 
-The helper sends the app credential only to Core. Core checks the credential's
-exact app binding and `identity:invoke` scope, reloads the mandate and subject,
+The helper signs with the app key, or uses the legacy workload credential when
+no key is configured. Only Core receives it. Core checks the app binding and
+`identity:invoke` scope, reloads the mandate and subject,
 matches the target and operation, signs one target-specific invocation, and
 dispatches through the live capability schema. The target then performs its
 ordinary effect-time permission checks.

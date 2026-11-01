@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { clickhouseAdminQuery } from "../../../../scripts/fixtures/test-clickhouse";
-import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { ALERT_CHECKS_PER_HOUR } from "../alert-contracts";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
@@ -21,15 +21,14 @@ suiteFor(
   "valkey",
 )("scheduled alerts use real bounded SQL and durable state", () => {
   let createBaseLifecycle: typeof import("./base-lifecycle").createBaseLifecycle;
-  let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   let settings: ReturnType<typeof settingsFixture>;
   let credentials: ReturnType<typeof spyOn<typeof baseStore, "readUserCredentials">>;
   const store = fixtureStore();
   const start = new Date("2026-10-20T10:00:00.000Z");
   beforeAll(async () => {
-    database = await useFreshDatabase("pulse_alert_execution");
-    const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-    await runCoreSetup();
+    database = await useMigratedDatabase("pulse_alert_execution");
+
     ({ createBaseLifecycle } = await import("./base-lifecycle"));
     settings = settingsFixture();
     settings.values["pulse.clickhouse_connection"] = JSON.stringify(fixtureConnection());

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { PermissionLevel, Principal } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";

@@ -2,8 +2,8 @@
 import { chmod, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { sql } from "@k2b/cloud";
 import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { migrate } from "../src/migrate";
 import { gridsService } from "../src/service";
 import { lockDurableHistoryMutationBoundary } from "../src/service/durable-history";
@@ -724,4 +724,6 @@ const main = async (): Promise<void> => {
   usage();
 };
 
+const { initializePlatform } = await import("@k2b/cloud/start");
+await initializePlatform({ appId: "grids", source: "env" });
 await main();

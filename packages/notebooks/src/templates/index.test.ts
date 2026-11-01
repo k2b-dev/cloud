@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { renderNotebookBook } from "../lib/book-renderer";
-import { extractNamedDataProperties } from "../lib/named-blocks";
 import { deriveNoteTitle } from "../lib/note-title";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
 import type { NoteQueryResult } from "../service/note-query";

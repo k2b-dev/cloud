@@ -1,9 +1,11 @@
+import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
   type AccessSubject,
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
   type PermissionLevel,
@@ -13,7 +15,6 @@ import {
 } from "@k2b/cloud/server";
 import { accounts, audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
 
 type SqlClient = typeof sql;
@@ -53,7 +54,7 @@ type DbAccess = {
 
 /**
  * Where a mailbox grant applies: `mailbox` covers every conversation, `assigned` only the
- * conversations assigned to the person. Assigned grants live in `mail.mailbox_assigned_access`
+ * conversations assigned to the principal. Assigned grants live in `mail.mailbox_assigned_access`
  * and allow read or write; they never manage the mailbox.
  */
 export type MailboxAccessScope = "mailbox" | "assigned";
@@ -82,13 +83,10 @@ const assertShareablePrincipal = (principal: Principal): Result<void> => {
   return fail(err.badInput("Mailboxes can be shared only with users, groups, or service accounts"));
 };
 
-/** Assigned-only access follows conversations assigned to people, so only people and groups can hold it. */
+/** Assigned-only grants cover a principal's assignments; they never confer mailbox administration. */
 const assertGrantShape = (principal: Principal, permission: Exclude<PermissionLevel, "none">, scope: MailboxAccessScope): Result<void> => {
   const shareable = assertShareablePrincipal(principal);
   if (!shareable.ok || scope === "mailbox") return shareable;
-  if (principal.type !== "user" && principal.type !== "group") {
-    return fail(err.badInput("Access to assigned conversations can be given only to people and groups"));
-  }
   if (permission === "admin") return fail(err.badInput("Access to assigned conversations allows read or write, not administration"));
   return ok();
 };
@@ -188,7 +186,7 @@ const getPrincipalGrant = async (mailboxId: string, principal: Principal, db: Sq
 export const getMailboxPermission = async (context: MailRequestContext, mailboxId: string, db: SqlClient = sql): Promise<PermissionLevel> =>
   (await resolveMailboxGrants(context, mailboxId, false, db)).mailbox;
 
-const PERMISSION_ORDER = sql`
+const PERMISSION_ORDER = () => sql`
   CASE a.permission
     WHEN 'admin' THEN 3
     WHEN 'write' THEN 2
@@ -223,7 +221,7 @@ const resolveMailboxGrants = async (
     JOIN auth.access a ON a.id = ma.access_id
     WHERE ma.mailbox_id = ${mailboxId}::uuid
       AND ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    ORDER BY ${PERMISSION_ORDER}
+    ORDER BY ${PERMISSION_ORDER()}
     LIMIT 1
   `;
   const [assigned] = await db<{ permission: PermissionLevel }[]>`
@@ -232,7 +230,7 @@ const resolveMailboxGrants = async (
     JOIN auth.access a ON a.id = assigned.access_id
     WHERE assigned.mailbox_id = ${mailboxId}::uuid
       AND ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    ORDER BY ${PERMISSION_ORDER}
+    ORDER BY ${PERMISSION_ORDER()}
     LIMIT 1
   `;
   return {
@@ -246,24 +244,24 @@ const assignedPermission = (permission: PermissionLevel): PermissionLevel => (pe
 
 /**
  * What a request may see in one mailbox: every conversation (`mailbox`), or only the conversations
- * assigned to its person (`assigned`). A mailbox-wide grant wins over an assigned-only one.
+ * assigned to its principal (`assigned`). A mailbox-wide grant wins over an assigned-only one.
  */
 export type MailboxAccess =
   | { scope: "mailbox"; permission: Exclude<PermissionLevel, "none"> }
-  | { scope: "assigned"; permission: "read" | "write"; userId: string };
-
-/** The person whose assignments an assigned-only grant follows: the request's user, also behind a personal API key. */
-const assignedAccessUserId = (context: Pick<MailRequestContext, "accessSubject">): string | null =>
-  context.accessSubject.type === "user" ? context.accessSubject.userId : null;
+  | ({ scope: "assigned"; permission: "read" | "write" } & (
+      | { userId: string; serviceAccountId?: never }
+      | { serviceAccountId: string; userId?: never }
+    ));
 
 const accessFromGrants = (
   context: Pick<MailRequestContext, "accessSubject">,
   grants: { mailbox: PermissionLevel; assigned: PermissionLevel },
 ): MailboxAccess | null => {
   if (grants.mailbox !== "none") return { scope: "mailbox", permission: grants.mailbox };
-  const userId = assignedAccessUserId(context);
-  if (!userId || (grants.assigned !== "read" && grants.assigned !== "write")) return null;
-  return { scope: "assigned", permission: grants.assigned, userId };
+  if (grants.assigned !== "read" && grants.assigned !== "write") return null;
+  return context.accessSubject.type === "service_account"
+    ? { scope: "assigned", permission: grants.assigned, serviceAccountId: context.accessSubject.serviceAccountId }
+    : { scope: "assigned", permission: grants.assigned, userId: context.accessSubject.userId };
 };
 
 export const getMailboxAccess = async (
@@ -296,7 +294,6 @@ export const readableMailboxGrants = (context: MailRequestContext) => sql`
     SELECT mailbox_id, access_id, 'mailbox'::text AS scope FROM mail.mailbox_access
     UNION ALL
     SELECT mailbox_id, access_id, 'assigned'::text AS scope FROM mail.mailbox_assigned_access
-    WHERE ${context.accessSubject.type === "user"}
   ) grants
   JOIN auth.access a ON a.id = grants.access_id
   JOIN mail.mailboxes mailbox ON mailbox.id = grants.mailbox_id AND mailbox.deleted_at IS NULL
@@ -316,7 +313,7 @@ export const conversationVisibleTo = (access: MailboxAccess, conversationId: Bun
     : sql`(${conversationId}) IN (
         SELECT visible_assignee.conversation_id
         FROM mail.conversation_assignees visible_assignee
-        WHERE visible_assignee.user_id = ${access.userId}::uuid
+        WHERE visible_assignee.principal_id = ${access.userId ?? access.serviceAccountId}::uuid
       )`;
 
 /** Whether message `messageId` (a SQL expression) belongs to a conversation visible with `access`; scoped like `conversationVisibleTo`. */
@@ -327,7 +324,7 @@ export const messageVisibleTo = (access: MailboxAccess, messageId: Bun.SQL.Query
         SELECT visible_link.message_id
         FROM mail.conversation_messages visible_link
         JOIN mail.conversation_assignees visible_assignee ON visible_assignee.conversation_id = visible_link.conversation_id
-        WHERE visible_assignee.user_id = ${access.userId}::uuid
+        WHERE visible_assignee.principal_id = ${access.userId ?? access.serviceAccountId}::uuid
       )`;
 
 /**
@@ -413,13 +410,15 @@ export const getMailboxAccesses = async (
       getEffectivePermissions({ accessIds: rows.filter((row) => row.scope === scope).map((row) => row.access_id), subjects }),
     ),
   );
-  return readers.map((reader, position) =>
-    isResourceBoundToMailbox(reader, mailboxId)
-      ? accessFromGrants(reader, {
-          mailbox: capByCredentialScopes(reader, mailboxGranted?.[position] ?? "none"),
-          assigned: capByCredentialScopes(reader, assignedPermission(assignedGranted?.[position] ?? "none")),
-        })
-      : null,
+  return Promise.all(
+    readers.map(async (reader, position) =>
+      (await isCurrentActorActive(reader)) && isResourceBoundToMailbox(reader, mailboxId)
+        ? accessFromGrants(reader, {
+            mailbox: capByCredentialScopes(reader, mailboxGranted?.[position] ?? "none"),
+            assigned: capByCredentialScopes(reader, assignedPermission(assignedGranted?.[position] ?? "none")),
+          })
+        : null,
+    ),
   );
 };
 
@@ -465,7 +464,7 @@ export const loadMailboxAccessEntries = async (mailboxId: string): Promise<Mailb
     SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
-    ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER}, a.created_at, a.id
+    ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
   return resolveDisplayNames(rows.map(mapAccess));
 };
@@ -612,6 +611,42 @@ const updateMailboxAccessWithAuthority = async (params: {
     () => err.internal("Failed to update mailbox access"),
   );
 
+/** Access removal forgets personal views only when no readable grant remains.
+ * Read one stored principal at a time; the platform resolves groups and public/authenticated grants.
+ */
+const pruneMailboxViews = async (mailboxId: string, db: SqlClient): Promise<void> => {
+  const grants = await db<{ access_id: string; scope: MailboxAccessScope }[]>`SELECT * FROM (${accessRows(mailboxId)}) grants`;
+  let after = "";
+  while (true) {
+    const [row] = await db<{ user_id: string | null; service_account_id: string | null; key: string }[]>`
+      SELECT user_id, service_account_id,
+        COALESCE(user_id::text, 'service:' || service_account_id::text) AS key
+      FROM mail.personal_mailbox_preferences
+      WHERE mailbox_id = ${mailboxId}::uuid AND (large_view IS NOT NULL OR phone_view IS NOT NULL)
+        AND COALESCE(user_id::text, 'service:' || service_account_id::text) > ${after}
+      ORDER BY COALESCE(user_id::text, 'service:' || service_account_id::text) LIMIT 1`;
+    if (!row) break;
+    after = row.key;
+    const subject: AccessSubject = row.user_id
+      ? { type: "user", userId: row.user_id }
+      : { type: "service_account", serviceAccountId: row.service_account_id! };
+    const permission = await getEffectivePermission(
+      {
+        subject,
+        accessIds: grants.filter((grant) => row.user_id || grant.scope === "mailbox").map((grant) => grant.access_id),
+      },
+      db,
+    );
+    if (hasPermission(permission, "read")) continue;
+    await db`UPDATE mail.personal_mailbox_preferences SET large_view = NULL, phone_view = NULL
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND user_id IS NOT DISTINCT FROM ${row.user_id}::uuid
+        AND service_account_id IS NOT DISTINCT FROM ${row.service_account_id}::uuid`;
+  }
+  await db`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid
+    AND large_view IS NULL AND phone_view IS NULL AND pinned_at IS NULL AND hidden_at IS NULL`;
+};
+
 const revokeMailboxAccessWithAuthority = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -627,6 +662,7 @@ const revokeMailboxAccessWithAuthority = async (params: {
         unwrap(ensureAdminRemains(entries, params.accessId, null));
         await deleteGrantLinks(tx, params.mailboxId, params.accessId);
         unwrap(await deleteAccess({ id: params.accessId }, tx));
+        await pruneMailboxViews(params.mailboxId, tx);
         await audit.record(
           {
             action: "mail.mailbox.access.revoke",

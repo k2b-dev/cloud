@@ -368,6 +368,7 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
         status: "error",
         error: "TIME_LIMIT",
         lastGood: null,
+        variant: "fixture",
         nextRefreshAt: "2026-10-20T14:33:00.000Z",
       } satisfies DashboardPanelResult,
     });
@@ -389,6 +390,7 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
         status: "error",
         error: "STORE_UNAVAILABLE",
         lastGood: null,
+        variant: "fixture",
         nextRefreshAt: "2026-10-20T14:34:00.000Z",
       } satisfies DashboardPanelResult,
     });
@@ -402,6 +404,33 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     expect(await tab.locator("[data-panel]").count()).toBe(0);
   } finally {
     release?.();
+    await tab.close();
+  }
+}, 30_000);
+
+test("cleared data replaces the shown result, while a cache miss for the same data keeps it", async () => {
+  const { tab, panels } = await open({});
+  try {
+    await ready(tab);
+    const waiting = (variant: string): DashboardPanelResult => ({
+      panelId: "req",
+      status: "waiting",
+      error: null,
+      lastGood: null,
+      variant,
+      nextRefreshAt: "2026-10-20T14:34:00.000Z",
+    });
+    panels.set("req", { json: waiting("fixture") });
+    const reread = tab.waitForResponse((response) => response.url().includes("/panels/req"));
+    await tab.clock.runFor(60000);
+    await reread;
+    await ready(tab);
+    expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
+    panels.set("req", { json: waiting("after-clear") });
+    await tab.clock.runFor(60000);
+    await tab.locator('[data-panel="req"] .k2b-skeleton').waitFor();
+    expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(0);
+  } finally {
     await tab.close();
   }
 }, 30_000);
@@ -672,6 +701,7 @@ test("server admission waiting keeps a loading state until the shared result bec
         status: "waiting",
         error: null,
         lastGood: null,
+        variant: "fixture",
         nextRefreshAt: "2026-10-20T14:33:00.000Z",
       } satisfies DashboardPanelResult,
     });
@@ -975,7 +1005,14 @@ test("cold polling respects future backoff across visibility changes and expired
     const { tab, panels, requests } = await open({ deferred });
     try {
       panels.set("req", {
-        json: { panelId: "req", status: "waiting", error: null, lastGood: null, nextRefreshAt: receipt } satisfies DashboardPanelResult,
+        json: {
+          panelId: "req",
+          status: "waiting",
+          error: null,
+          lastGood: null,
+          variant: "fixture",
+          nextRefreshAt: receipt,
+        } satisfies DashboardPanelResult,
       });
       release();
       await tab.locator('[data-panel="hosts"][aria-busy="false"] .pulse-dashboard__table').waitFor();

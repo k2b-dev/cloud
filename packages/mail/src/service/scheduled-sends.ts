@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit, logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type {
   CancelScheduledSendInput,
@@ -297,8 +297,12 @@ const cancelScheduledSendBy = async (params: {
   if (!permission.ok) return permission;
   try {
     const result = await sql.begin(async (tx) => {
+      // Keep/command creation lock the mailbox before any conversation, draft or outbox row.
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR UPDATE`;
       const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
+      // Owner cleanup and summary requests lock the mailbox before outbox or conversation rows.
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR NO KEY UPDATE`;
       const [outbox] = await tx<
         {
           id: string;
@@ -355,8 +359,16 @@ const cancelScheduledSendBy = async (params: {
         UPDATE mail.drafts
         SET
           state = ${draftState},
+          doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' AND ${params.input.disposition === "draft"} THEN 1 ELSE 0 END,
+          doc_frozen_cursor = NULL, doc_frozen_state = NULL, doc_frozen_generation = NULL, doc_frozen_revision = NULL,
           revision = revision + ${params.input.disposition === "draft" ? 1 : 0}
         WHERE id = ${outbox.draft_id}::uuid
+      `;
+      await tx`
+        INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+        SELECT id, doc_generation, revision, doc_state, doc_cursor FROM mail.drafts
+        WHERE id = ${outbox.draft_id}::uuid AND edit_mode = 'shared' AND state = 'draft' AND doc_state IS NOT NULL
+        ON CONFLICT DO NOTHING
       `;
       await removeUnsentOutboundMessage(tx, outbox.id);
       const projectionSnapshotId =
