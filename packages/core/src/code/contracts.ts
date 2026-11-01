@@ -66,7 +66,6 @@ export const CODE_TABLES = {
   versionGrants: "code.version_grants",
   activationNotices: "code.activation_notices",
   activationOutbox: "code.activation_outbox",
-  cleanupJobs: "code.cleanup_jobs",
   policy: "code.policy",
   policyRules: "code.policy_rules",
   policyCoverage: "code.policy_coverage",

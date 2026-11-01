@@ -5,10 +5,42 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Deprecations and migrations
+
+## Existing Assistant routines and approvals adopt capability targets
+
+Stop every old Core and Assistant worker replica before upgrading. Start the
+upgraded Core before its Assistant workers, and deploy the converted capability
+providers and callers together. Do not run old replicas during this migration. Core migrates existing
+routine mandates and pending capability approvals during its AI startup migration.
+The Assistant app ID and `/assistant/…` addresses remain valid.
+
+A routine's literal container field, such as `fixedInput.spaceId`, becomes its
+exact grant target. Destination restrictions become exact additional refs;
+other fixed inputs keep restricting the call. A routine confirmed for Space A
+continues to authorize Space A only. The migration commits and audits each
+routine separately and does nothing to it on later starts.
+
+A missing, dynamic, conflicting, or unknown target puts the routine in
+`needs_attention` and pauses its mandate. Its notice names the capability:
+**Please confirm this routine again: … now needs a fixed target.** Review its
+grants, choose the intended target, and confirm it again before running it.
+Cloud does not infer a container from a task, note, contact, or other child ID.
+Unknown third-party capabilities also require this review.
+
+Pending capability approvals and approved calls still waiting to run that can
+be converted keep their question and review, with the digest bound to the complete normalized call. Confirmation
+still checks the current review and permissions. A proposal that cannot be
+converted becomes `aborted`; its chat says **Please ask again**
+(**Bitte neu anfragen** in German). Send the request again to review a new
+proposal. The old proposal is retained.
+
+Chats, messages, tool-call history, files, projects, memories, Skills, and
+**Always approve** preferences remain unchanged. History displays stored
+arguments without validating them against the new capability schema.
 
 ## Spaces and Contacts Actions name their container
 

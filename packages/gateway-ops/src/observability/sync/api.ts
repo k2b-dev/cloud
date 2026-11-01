@@ -50,7 +50,7 @@ const syncApiRoutes = new Hono<AuthContext>()
   .use("*", middleware.noTransform())
   .use(rateLimit())
   .use(auth.requireRole("admin"))
-  .use(auth.requireOAuthScope("admin"))
+  .use((c, next) => auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next))
 
   /** Dead letters, resources, and schedules of every reachable app. */
   .get(
@@ -59,7 +59,7 @@ const syncApiRoutes = new Hono<AuthContext>()
       tags: ["Sync"],
       summary: "Inspect Sync app health, resources, schedules and bounded dead-letter previews",
       description:
-        "Optional app, resource and problems filters. sampledAt identifies this snapshot; dead-letter previews are bounded per store, oldest first.",
+        "Optional app, resource and problems filters. sampledAt identifies this snapshot; dead-letter previews are bounded per store, oldest first, and redacted for OAuth callers without explicit admin scope.",
     }),
     v("query", OverviewQuerySchema),
     async (c) => respond(c, ok(await syncOpsService.overview(syncOpsCredentials(c.req.raw), c.req.valid("query")))),
@@ -88,7 +88,7 @@ const syncApiRoutes = new Hono<AuthContext>()
       tags: ["Sync"],
       summary: "Inspect a dead letter",
       description:
-        "Returns original error, tenant and consumer context plus an explicitly bounded UTF-8 payload preview. Queue and job details require the streamSequence from the list as the sequence query parameter. Missing or deleted entries return 404.",
+        "Returns tenant and consumer context; original error and bounded UTF-8 payload preview require explicit admin scope for OAuth callers. Queue and job details require the streamSequence from the list as the sequence query parameter. Missing or deleted entries return 404.",
     }),
     v("param", DeadLetterEntryParamSchema),
     v("query", DetailQuerySchema),

@@ -547,7 +547,12 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
         "Ordering:chapter-2",
       ]);
       expect(placed.note.position).toBe(1);
-      expect(await latestCursor({ notebookId: internal.id })).not.toBe(before);
+      // The outbox publishes the hint after the commit; wait for it instead of sampling the cursor at once.
+      const published = AbortSignal.timeout(15_000);
+      while ((await latestCursor({ notebookId: internal.id })) === before) {
+        published.throwIfAborted();
+        await Bun.sleep(20);
+      }
       expect(await readLevel()).toEqual([ten.id, two.id, parent.id]);
       await cldJson(["notebooks", "mv", parent.id, "--first"]);
       expect(await readLevel()).toEqual([parent.id, ten.id, two.id]);

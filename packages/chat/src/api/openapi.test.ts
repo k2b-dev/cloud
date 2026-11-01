@@ -12,6 +12,13 @@ const OperationSchema = z.object({
   parameters: z.array(z.unknown()).optional(),
 });
 const SpecSchema = z.object({ paths: z.record(z.string(), z.record(z.string(), OperationSchema)) });
+test("the administrator setting update documents its actual success status", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(chatApi));
+  const operation = spec.paths["/admin/settings/{key}"]?.put;
+  expect(operation?.summary).toBe("Update a Chat setting");
+  expect(operation?.responses["200"]).toBeDefined();
+  expect(operation?.responses["204"]).toBeUndefined();
+});
 test("audience reads document an unavailable count as HTTP 503", async () => {
   const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
   for (const [path, method] of [
