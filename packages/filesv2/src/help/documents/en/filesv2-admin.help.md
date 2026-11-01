@@ -93,7 +93,7 @@ Historical versions can be permanently deleted only from the administrator file 
 
 ## Use the terminal {icon="terminal"}
 
-`cld filesv2 admin inventory --storage freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json` or `--stdin`. An omitted or empty `token` preserves the secret.
+`cld filesv2 admin inventory --storage freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json --yes` or `--stdin`. An omitted or empty `token` preserves the secret.
 
 `cld filesv2 admin shares list --json` lists all links; `admin shares revoke <share-id> --yes` revokes one. `cld filesv2 admin uploads list --json` lists unresolved inbox reservations. These lists accept `--after` for further pages.
 
