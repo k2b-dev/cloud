@@ -164,7 +164,7 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state) VALUES(${codeId},'person',${userId}::uuid,'Attack fixture','active')`;
     const [version] = await sql<{ id: string }[]>`
       INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
-      VALUES(${codeId},1,${JSON.stringify(files)}::jsonb,${source},${manifest.hashes.source},${hash},${JSON.stringify(manifest)}::jsonb,
+      VALUES(${codeId},1,${JSON.stringify(files)}::text::jsonb,${source},${manifest.hashes.source},${hash},${JSON.stringify(manifest)}::text::jsonb,
       ${Buffer.byteLength(source)},${Buffer.byteLength(source)},${userId}::uuid) RETURNING id`;
     const [run] = await sql<{ id: string }[]>`
       INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
