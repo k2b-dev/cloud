@@ -104,10 +104,23 @@ export const listPending = async (input: {
   });
 
 /** Count the same current personal and role requests as `listPending`, including requests without a chat. */
-export const countPending = async (input: { approverUserId: string; roleContext?: ApprovalRoleContext }): Promise<ApprovalCounts> =>
+export const countPending = async (input: {
+  approverUserId: string;
+  roleContext?: ApprovalRoleContext;
+  /** Count only one kind, such as Code versions for Administration › Code. */
+  kind?: ApprovalKind;
+  /** For optional hints: Postgres cancels lock waits and the statement after this budget instead of holding a page. */
+  timeoutMs?: number;
+}): Promise<ApprovalCounts> =>
   sql.begin(async (tx) => {
+    if (input.timeoutMs !== undefined) {
+      const budget = Math.max(1, Math.floor(input.timeoutMs));
+      await tx.unsafe(`SET LOCAL lock_timeout = ${budget}`);
+      await tx.unsafe(`SET LOCAL statement_timeout = ${budget}`);
+    }
     const open = await openRecipientRequests(input.approverUserId, undefined, input.roleContext, tx);
-    const [row] = await tx<ApprovalCounts[]>`WITH open AS MATERIALIZED (${open.query}),
+    const [row] = await tx<ApprovalCounts[]>`WITH open AS MATERIALIZED (SELECT * FROM (${open.query}) all_open
+      WHERE ${input.kind ?? null}::text IS NULL OR all_open.kind=${input.kind ?? null}),
     app_requests AS (SELECT DISTINCT r.id AS request_id, app.id AS app_id FROM open r
       CROSS JOIN LATERAL unnest(ARRAY[r.app_id,r.requester_app_id]) app(id)),
     app_counts AS (SELECT app_id AS id,count(*)::int AS count FROM app_requests GROUP BY app_id)

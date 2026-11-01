@@ -18,6 +18,8 @@ type PageEnv<T extends object> = {
     user?: User;
     railPreferences?: RailSnapshot;
     panelConsent?: PanelConsentSnapshot;
+    /** Open Code-version approvals for a Cloud admin on an admin page. */
+    adminCodeApprovals?: number;
     settings?: Unflatten<SettingsFlat<typeof CORE_SETTINGS>>;
   };
 };
