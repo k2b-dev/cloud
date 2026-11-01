@@ -116,7 +116,9 @@ content selector, the Query returns metadata and `content: null`.
 contains the run input and output plus at most one capability call. Follow
 `contents.nextCursor` to read calls in invocation order. A call records its
 normalized `{ capability, target, refs, input }`, capability name, kind,
-result, state and times. It is an observation of one attempt; it does not
+result, state and times. Call states are `running`, `succeeded`, `failed`,
+and `uncertain`; an unfinished call in a lost attempt stays uncertain until an
+authoritative result arrives. It is an observation of one attempt; it does not
 provide replay or resumption.
 
 Values larger than 16 KiB of compact JSON return `null` inline and set
@@ -185,3 +187,6 @@ storage seams. The dispatcher must authorize execution and validate its lease
 and generation in the same transaction before recording calls. They do not
 grant invocation authority. `generation` and `lease_expires_at` reserve the
 additive storage columns for the execution service.
+
+Scheduling, retries, generation fencing and skipped ticks are described in
+[Code runs](/en/docs/platform/code-runs).

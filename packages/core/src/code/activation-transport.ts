@@ -83,6 +83,7 @@ async function authorityRequest(
   operation: "list" | "rm" | "ownerTitle",
   principal: string,
   input: unknown,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const app = await getApp(appId);
   if (!app) throw new CodeActivationTransportError("target_unavailable", true);
@@ -97,7 +98,7 @@ async function authorityRequest(
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(input),
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     },
   );
 }
@@ -126,10 +127,14 @@ export const codeActivationTransport: CodeActivationTransport = {
   },
 };
 /** Core-only, title-only reader projection under the exact owning Code account. No session is retained. */
-export async function readCodeResourceOwnerTitle(ref: { type: string; id: string }, principal: string): Promise<string | null> {
+export async function readCodeResourceOwnerTitle(
+  ref: { type: string; id: string },
+  principal: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   return (
     await decode(
-      await authorityRequest(targetApp(ref), "ownerTitle", principal, ref),
+      await authorityRequest(targetApp(ref), "ownerTitle", principal, ref, signal),
       z.object({ title: z.string().min(1).max(500).nullable() }).strict(),
     )
   ).title;

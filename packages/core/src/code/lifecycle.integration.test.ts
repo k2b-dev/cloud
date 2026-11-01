@@ -126,7 +126,7 @@ async function grant(f: Fixture, user: User, planned = false) {
   const target = { type: "spaces.space", id: shortId },
     operations = ["spaces.task.create"];
   await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::jsonb,${operations},${planned ? "planned" : "granted"})`;
+    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::text::jsonb,${operations},${planned ? "planned" : "granted"})`;
   const claims: CodeAccessProofClaims = {
     ver: 1,
     iss: "https://cloud.example",
@@ -333,7 +333,7 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     await deliver();
     expect((await findCode(f.id))?.state).toBe("active");
     await sql`SELECT events.enqueue(gen_random_uuid(),'core','code_owner_deleted','fixture-person',
-      ${JSON.stringify({ type: "core.user", id: user.id })}::jsonb)`;
+      ${JSON.stringify({ type: "core.user", id: user.id })}::text::jsonb)`;
     await deliver();
     expect((await findCode(personal.id))?.state).toBe("active");
   });

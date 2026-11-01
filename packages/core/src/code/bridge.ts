@@ -36,7 +36,7 @@ const refusalResponse = (error: CodeBridgeRefusal) => Response.json({ ok: false,
 export async function requireCodeRunFence(claims: CodeRunTokenClaims, db: SQL): Promise<void> {
   const [run] = await db<{ code_id: string; version_id: string; entrypoint: string; generation: number; valid: boolean }[]>`
     SELECT code_id,version_id,entrypoint,generation,
-      (state='running' AND lease_expires_at>clock_timestamp() AND started_at IS NOT NULL) AS valid
+      (state='running' AND lease_expires_at>clock_timestamp() AND started_at IS NOT NULL AND (deadline_at IS NULL OR deadline_at>clock_timestamp())) AS valid
     FROM code.runs WHERE id=${claims.runId}::uuid FOR UPDATE`;
   if (
     !run ||
@@ -152,6 +152,8 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
             { runId: call.claims.runId, kind: call.kind === "action" ? "action" : "query", call: call.call },
             tx,
           );
+          // Future db/kv/files writes must use an effectful kind too; query is reserved for reads.
+          if (call.kind !== "query") await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
           const payloadLimit = await codeSettings.get("core.code.payload_bytes");
           const [payload] = await tx<
             { valid: boolean }[]
