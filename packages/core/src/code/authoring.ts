@@ -281,6 +281,7 @@ export const codeAuthoringServices = {
           ? { ...checked.manifest, secrets, policyRows: [...new Set([...checked.manifest.policyRows, "internet" as const])].sort() }
           : checked.manifest,
         baseVersionId: input.baseVersionId,
+        tests: input.tests,
       },
       context,
     );

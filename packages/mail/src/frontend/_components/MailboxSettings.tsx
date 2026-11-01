@@ -2,6 +2,7 @@ import { PermissionEditor } from "@k2b/cloud/access/ui";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
+  ButtonLink,
   confirmDiscardIfDirty,
   NoticeCard,
   NumberInput,
@@ -20,6 +21,7 @@ import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, FolderDisplay, Mailbox } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
+import { codeSummaryText, MailboxDeleteDialog, type MailboxDeleteOutcome } from "./MailboxDeleteDialog";
 import MailCalendarSettings from "./MailCalendarSettings";
 import MailComposeSettings from "./MailComposeSettings";
 import { MailConnectionSettings } from "./MailConnectionSettings";
@@ -323,33 +325,53 @@ export default function MailboxSettings(props: {
     onError: (error) => prompts.error(error.message),
   });
 
-  const deleteMailbox = mutation.create<boolean, void>({
-    mutation: async (_input, { abortSignal }) => {
-      const confirmed = await prompts.confirm(messages().recentlyDeletedDescription, {
-        title: messages().moveMailboxToRecentlyDeleted,
-        confirmText: messages().moveToRecentlyDeleted,
-        variant: "danger",
-      });
-      if (!confirmed || abortSignal.aborted) return false;
-      const response = await apiClient.mailboxes[":mailboxId"].$delete(
-        { param: { mailboxId: props.context.mailbox.id } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedMoveToRecentlyDeleted));
-      return true;
-    },
-    onSuccess: (deleted) => {
-      if (deleted) props.onDeleted();
-    },
-    onError: (error) => prompts.error(error.message),
-  });
+  const codeRowText = () => {
+    const code = props.context.admin?.code;
+    if (!code) return messages().codeUnknown;
+    return code.exists ? codeSummaryText(messages(), code) : messages().codeNone;
+  };
+  const openDeleteDialog = async () => {
+    const admin = props.context.admin;
+    const address = props.context.compose?.identities[0]?.fromAddress ?? props.context.mailbox.name;
+    let dismissed = false;
+    const finishedLate = (outcome: MailboxDeleteOutcome) => {
+      if (!dismissed) return;
+      if (outcome === "deleted") props.onDeleted();
+      else toast.error(outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody);
+    };
+    const deleted = await prompts.dialog<boolean>(
+      (close) => (
+        <MailboxDeleteDialog
+          address={address}
+          mails={admin?.messageCount ?? null}
+          folders={admin?.folders.length ?? 0}
+          accessEntries={admin?.accessEntries.length ?? 0}
+          code={admin?.code ?? null}
+          close={close}
+          remove={async () => {
+            let outcome: MailboxDeleteOutcome = "unknown";
+            try {
+              const response = await apiClient.mailboxes[":mailboxId"].$delete({ param: { mailboxId: props.context.mailbox.id } });
+              outcome = response.ok ? "deleted" : response.status >= 400 && response.status < 500 ? "refused" : "unknown";
+            } catch {
+              // A lost answer may follow a committed delete.
+            }
+            finishedLate(outcome);
+            return outcome;
+          }}
+        />
+      ),
+      { title: messages().deleteMailboxTitle({ address }), icon: "ti ti-trash", size: "medium" },
+    );
+    dismissed = true;
+    if (deleted) props.onDeleted();
+  };
   onCleanup(() => {
     saveReadingPreferences.abort();
     saveWritingPreferences.abort();
     saveMailboxSettings.abort();
     updateFolderRole.abort();
     saveAutomaticReplyAccess.abort();
-    deleteMailbox.abort();
   });
 
   return (
@@ -480,6 +502,14 @@ export default function MailboxSettings(props: {
       <SettingsModal.Group title={messages().mailbox}>
         <Show when={canAdmin() && props.context.admin}>
           <SettingsModal.Tab id="mailbox" title={messages().general} icon="ti ti-id" description={messages().mailboxGeneralDescription}>
+            <SettingsGroup title={messages().codeSection} description={codeRowText()}>
+              <SettingsGroup.Action>
+                <ButtonLink variant="secondary" size="sm" href={`/app/mail/${props.context.mailbox.id}/code`}>
+                  <i class="ti ti-code" aria-hidden="true" />
+                  {messages().codeOpen}
+                </ButtonLink>
+              </SettingsGroup.Action>
+            </SettingsGroup>
             <SettingsGroup title={messages().identity} description={messages().identityDescription}>
               <SettingsField
                 label={messages().name}
@@ -735,8 +765,8 @@ export default function MailboxSettings(props: {
           >
             <SettingsGroup title={messages().moveToRecentlyDeleted} description={messages().recentlyDeletedGroupDescription}>
               <SettingsGroup.Action>
-                <Button variant="danger" size="sm" type="button" onClick={() => deleteMailbox.mutate()} disabled={deleteMailbox.loading()}>
-                  <i class={`ti ${deleteMailbox.loading() ? "ti-loader-2 animate-spin" : "ti-trash"}`} aria-hidden="true" />
+                <Button variant="danger" size="sm" type="button" onClick={() => void openDeleteDialog()}>
+                  <i class="ti ti-trash" aria-hidden="true" />
                   {messages().moveToRecentlyDeleted}
                 </Button>
               </SettingsGroup.Action>

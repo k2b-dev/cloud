@@ -250,6 +250,39 @@ export const fixtureApprovalDetail = (
             decidedByName: "Ben Schulz",
           }
         : null,
+    evidence: first
+      ? {
+          version: 1,
+          tests: { state: "passed", passed: 7, total: 7, error: null },
+          trial: { runs: 7, calls: [{ operation: "mail.draft.create", count: 4 }] },
+        }
+      : {
+          version: 1,
+          tests: { state: "passed", passed: 9, total: 9, error: null },
+          trial: {
+            runs: 9,
+            calls: [
+              { operation: "spaces.task.create", count: 6 },
+              { operation: "mail.message.list", count: 9 },
+            ],
+          },
+        },
+    comparisonEvidence: first
+      ? null
+      : {
+          version: 1,
+          tests: { state: "passed", passed: 7, total: 7, error: null },
+          trial: {
+            runs: 7,
+            calls: [
+              { operation: "mail.draft.create", count: 6 },
+              { operation: "mail.message.list", count: 7 },
+            ],
+          },
+        },
+    explanation: first
+      ? "Fragt jemand in info@ nach einer Lieferzeit, legt der Code einen Entwurf mit der Antwort an."
+      : "Bittet jemand in info@ um Rückruf, legt der Code eine Aufgabe in Space Logistik an und taggt die Unterhaltung.",
     internet: first ? [] : ["https://api.buchhaltung-beispiel.de", "https://bank.example", "https://status.example:8443"],
     secrets: first
       ? []
@@ -573,6 +606,7 @@ export const fixtureData = (): CodeAreaData => ({
   approval: null,
   codes: { items: fixtureCodes(), total: 8, owners: 5, nextCursor: null },
   code: null,
+  source: null,
   policy: fixturePolicy(),
   effective: null,
   history: fixtureHistory(),
@@ -650,6 +684,9 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       history: "failed",
       runners: "failed",
       limits: "failed",
+      ...(query.sec === "code" && query.id
+        ? { code: fixtureCodeDetail(query.id), source: query.version ? ("failed" as const) : null }
+        : {}),
     };
   if (query.sec === "approvals" && query.id) {
     const variant = query.id === FIXTURE_VERSIONS.lieferzeit1 ? "first" : state;
@@ -668,6 +705,16 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
           );
   }
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
+  if (query.sec === "code" && query.id && query.version)
+    data.source =
+      state === "missing"
+        ? "missing"
+        : {
+            versionId: query.version,
+            number: 2,
+            bundleHash: h("bb"),
+            files: [{ path: "code.ts", lines: before.split("\n").map((text) => ({ kind: "add" as const, text })) }],
+          };
   if (query.sec === "code" && query.status) {
     const codes = data.codes;
     if (codes !== null && codes !== "failed" && codes !== "missing")

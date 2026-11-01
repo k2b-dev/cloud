@@ -121,8 +121,8 @@ export const codeAuthoringContracts = {
   check: { input: source, data: check },
   test: { input: source.extend({ tests: CodeSourceFilesSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
   simulate: { input: source.extend({ fixture: CodeTestCaseSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
-  push: { input: source.extend({ baseVersionId: z.uuid().nullable() }), data: submitted },
-  submit: { input: source.extend({ baseVersionId: z.uuid().nullable() }), data: submitted },
+  push: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
+  submit: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
   /** Submits the latest source once more, for a page without a local project: it picks up changed secret bindings. */
   resubmit: { input: z.object({ codeId: CodeIdSchema, baseVersionId: z.uuid() }).strict(), data: submitted },
   diff: {

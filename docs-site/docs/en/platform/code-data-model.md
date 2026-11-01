@@ -95,6 +95,7 @@ check current permissions in Core's Code service.
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
+| `core.code.summary` | Exact `owner` | For each readable Code: `automations` of the running or newest version, and `access` as targets per type with `title` and `count`. For settings and delete dialogs |
 | `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
 | `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
 
