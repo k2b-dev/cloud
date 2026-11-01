@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Background authority mandates
@@ -247,6 +247,20 @@ and target pairs, including `target: null` for app-wide Actions. Queries check
 the operation; their provider must return only resources with the Code
 account's own current access. Neither a mandate nor a signed-in, public or group
 grant supplies that access. Unattended `ask` Actions remain blocked.
+
+Code Actions need an explicit `silent` policy that permits routines. Version
+approval does not override `ask`, `routines: false`, or `unattended: false`.
+The target provider repeats the Action review immediately before execution;
+a failed review or a per-call `ask` blocks the call. The chat remembering
+scope is not additional authority for Code.
+
+For example, Spaces declares `task.create` and `task.update` as
+`policy: { silent: "shared" }`. An approved version with the matching mandate
+and Space access can create or update tasks unattended. Creating from a
+template or with assignees still requires confirmation for that call.
+In chat, these policies keep the existing behavior: the first call asks and
+the person may remember the Space scope. A per-call confirmation cannot be
+remembered. Deletes and sends continue to require confirmation.
 
 The signed invocation carries empty credential scopes. Once the platform has
 verified its current version mandate and Code principal, the mandate replaces
