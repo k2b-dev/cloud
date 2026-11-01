@@ -4,6 +4,7 @@ import { createCodeAccessAuthorityRoutes } from "../_internal/code-access-author
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "../contracts/capabilities";
 import type { CodeAccessAdapter } from "../contracts/code-access";
 import type { User } from "../contracts/shared";
+import * as accountUsers from "../services/accounts/users";
 import { audit } from "../services/audit";
 import * as accessService from "./access";
 import { type CodeAccessDependencies, codeAccessPersonAllowed, listCodeAccess, removeCodeAccess, setCodeAccess } from "./access";
@@ -84,6 +85,8 @@ let writes: number;
 let canManage: boolean;
 let activeCode: boolean;
 let auditSpy: ReturnType<typeof spyOn<typeof audit, "record">>;
+let adminSpy: ReturnType<typeof spyOn<typeof accountUsers, "hasInstallationAdminInTransaction">>;
+let beforeTransaction: (() => void) | undefined;
 let adapter: CodeAccessAdapter;
 let deps: CodeAccessDependencies;
 const bindings = () => new Map([[target.type, adapter]]);
@@ -94,7 +97,9 @@ beforeEach(() => {
   writes = 0;
   canManage = true;
   activeCode = true;
+  beforeTransaction = undefined;
   auditSpy = spyOn(audit, "record").mockResolvedValue(undefined);
+  adminSpy = spyOn(accountUsers, "hasInstallationAdminInTransaction").mockResolvedValue(true);
   const query = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const statement = strings.join("?");
     if (statement.includes("auth.service_accounts")) return activeCode || values[1] === false ? [{ id: principal }] : [];
@@ -121,11 +126,12 @@ beforeEach(() => {
     }
     return [];
   };
-  const db = Object.assign(query, {
+  const db = Object.assign((strings: TemplateStringsArray, ...values: unknown[]) => query(strings, ...values), {
     begin: async (fn: (tx: SQL) => Promise<unknown>) => {
+      beforeTransaction?.();
       const snapshot = structuredClone({ rows, grants, writes });
       try {
-        return await fn(db as unknown as SQL);
+        return await fn(query as unknown as SQL);
       } catch (error) {
         ({ rows, grants, writes } = snapshot);
         throw error;
@@ -148,7 +154,52 @@ beforeEach(() => {
     list: () => grants,
   };
 });
-afterEach(() => auditSpy.mockRestore());
+afterEach(() => {
+  auditSpy.mockRestore();
+  adminSpy.mockRestore();
+});
+
+test("manager changes before the write transaction refuse set and rm without changing grants", async () => {
+  const check = spyOn(adapter, "manages").mockImplementation((tx, current, id) => {
+    expect(tx).not.toBe(deps.db);
+    expect(current.actor).toMatchObject({ kind: "user", user: { id: person.id } });
+    expect(id).toBe(target.id);
+    return canManage;
+  });
+  // A preflight can see a manager, then the manager change commits before begin.
+  expect(canManage).toBe(true);
+  beforeTransaction = () => {
+    canManage = false;
+  };
+  expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toMatchObject({ granted: false, reasonCode: "not_manager" });
+  expect({ rows, grants, writes }).toEqual({ rows: [], grants: [], writes: 0 });
+  beforeTransaction = undefined;
+  canManage = true;
+  await setCodeAccess("inventory", bindings(), input, context, deps);
+  const snapshot = structuredClone({ rows, grants, writes });
+  beforeTransaction = () => {
+    canManage = false;
+  };
+  expect(await removeCodeAccess("inventory", bindings(), grantId, { context: removeContext }, deps.db)).toBe(false);
+  expect({ rows, grants, writes }).toEqual(snapshot);
+  expect(check).toHaveBeenCalledTimes(3);
+});
+
+test("a stale admin role cannot authorize a set or removal after live admin authority changes", async () => {
+  const admin = { ...context, actor: { ...actor, user: { ...person, roles: ["admin" as const] } } };
+  await setCodeAccess("inventory", bindings(), input, admin, deps);
+  const snapshot = structuredClone({ rows, grants, writes });
+  canManage = false;
+  beforeTransaction = () => {
+    adminSpy.mockResolvedValue(false);
+  };
+  expect(await setCodeAccess("inventory", bindings(), input, admin, deps)).toMatchObject({ granted: false, reasonCode: "not_manager" });
+  const removeAdmin = { ...admin, actor: { ...admin.actor, delegation: { ...actor.delegation, codeAccess: "rm" as const } } };
+  expect(await removeCodeAccess("inventory", bindings(), grantId, { context: removeAdmin }, deps.db)).toBe(false);
+  expect(adminSpy).toHaveBeenCalledTimes(3);
+  for (const [, tx] of adminSpy.mock.calls) expect(tx).not.toBe(deps.db);
+  expect({ rows, grants, writes }).toEqual(snapshot);
+});
 
 test("dryRun rolls back even an adapter that writes; a refusal rolls back too", async () => {
   expect(await setCodeAccess("inventory", bindings(), { ...input, dryRun: true }, context, deps)).toEqual({
@@ -225,7 +276,7 @@ test("cleanup removes only its account's code grants; retries stay safe", async 
     true,
   );
   expect(grants).toEqual([]);
-  expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ action: "code.access.rm", requestId: "cleanup" }), deps.db);
+  expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ action: "code.access.rm", requestId: "cleanup" }), expect.anything());
 });
 
 test("Core account inspection preserves unchanged foreign grants without target-manager authority", async () => {

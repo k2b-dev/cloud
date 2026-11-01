@@ -102,7 +102,17 @@ export const generatedCodeAccess = (
     "code.access.set": {
       title: copy.setTitle,
       description: copy.setDescription,
-      input: CodeAccessSetInputSchema,
+      input: CodeAccessSetInputSchema.extend({
+        proof: CodeAccessSetInputSchema.shape.proof.describe(copy.setInput.proof),
+        target: CodeAccessSetInputSchema.shape.target
+          .extend({
+            type: CodeAccessSetInputSchema.shape.target.shape.type.describe(copy.setInput["target.type"]),
+            id: CodeAccessSetInputSchema.shape.target.shape.id.describe(copy.setInput["target.id"]),
+          })
+          .describe(copy.setInput.target),
+        operations: CodeAccessSetInputSchema.shape.operations.describe(copy.setInput.operations),
+        dryRun: CodeAccessSetInputSchema.shape.dryRun.describe(copy.setInput.dryRun),
+      }),
       data: CodeAccessSetDataSchema,
       destructive: false,
       openWorld: false,
@@ -130,7 +140,7 @@ export const generatedCodeAccess = (
     "code.access.rm": {
       title: copy.rmTitle,
       description: copy.rmDescription,
-      input: CodeAccessRemoveInputSchema,
+      input: CodeAccessRemoveInputSchema.extend({ grantId: CodeAccessRemoveInputSchema.shape.grantId.describe(copy.rmInput.grantId) }),
       data: CodeAccessRemoveDataSchema,
       destructive: false,
       openWorld: false,
@@ -155,7 +165,7 @@ export const generatedCodeAccess = (
     "code.access.list": {
       title: copy.listTitle,
       description: copy.listDescription,
-      input: CodeAccessListInputSchema,
+      input: CodeAccessListInputSchema.extend({ principal: CodeAccessListInputSchema.shape.principal.describe(copy.listInput.principal) }),
       data: CodeAccessListDataSchema,
       openWorld: false,
       run: async (input, context) =>
@@ -176,11 +186,29 @@ export const codeAccessPresentation = (presentation?: CapabilityPresentationCata
     const existing = translations[locale];
     translations[locale] = {
       ...existing,
-      queries: { "code.access.list": { title: copy.listTitle, description: copy.listDescription }, ...existing?.queries },
+      queries: {
+        ...existing?.queries,
+        "code.access.list": {
+          title: copy.listTitle,
+          description: copy.listDescription,
+          ...existing?.queries?.["code.access.list"],
+          input: { ...copy.listInput, ...existing?.queries?.["code.access.list"]?.input },
+        },
+      },
       actions: {
-        "code.access.set": { title: copy.setTitle, description: copy.setDescription },
-        "code.access.rm": { title: copy.rmTitle, description: copy.rmDescription },
         ...existing?.actions,
+        "code.access.set": {
+          title: copy.setTitle,
+          description: copy.setDescription,
+          ...existing?.actions?.["code.access.set"],
+          input: { ...copy.setInput, ...existing?.actions?.["code.access.set"]?.input },
+        },
+        "code.access.rm": {
+          title: copy.rmTitle,
+          description: copy.rmDescription,
+          ...existing?.actions?.["code.access.rm"],
+          input: { ...copy.rmInput, ...existing?.actions?.["code.access.rm"]?.input },
+        },
       },
     };
   }
