@@ -149,6 +149,12 @@ async function box(locator: Locator) {
   return result;
 }
 
+// Ticks a consent box where a person presses: the visible box. The real input is a hidden 1px element.
+const agree = async (dialog: Locator, name: RegExp) => {
+  await dialog.locator(".k2b-check", { hasText: name }).locator(".k2b-check__control").click();
+  expect(await dialog.getByRole("checkbox", { name }).isChecked()).toBe(true);
+};
+
 describe("k2b notes · Produktions-SPA", () => {
   test("erster Besuch: die Willkommensnotiz öffnet sich im Editor und kommt nach dem Löschen nicht wieder", async () => {
     await context.close();
@@ -258,9 +264,9 @@ describe("k2b notes · Produktions-SPA", () => {
     const dialog = page.getByRole("dialog");
     const submit = dialog.getByRole("button", { name: "Links erstellen", exact: true });
     expect(await submit.isDisabled()).toBe(true);
-    await dialog.getByRole("checkbox", { name: /Ich halte mich an die Nutzungsbedingungen/ }).check();
+    await agree(dialog, /Ich halte mich an die Nutzungsbedingungen/);
     expect(await submit.isDisabled()).toBe(true);
-    await dialog.getByRole("checkbox", { name: /Ich habe die Datenschutzhinweise gelesen/ }).check();
+    await agree(dialog, /Ich habe die Datenschutzhinweise gelesen/);
     expect(await submit.isEnabled()).toBe(true);
     const [response] = await Promise.all([
       page.waitForResponse((response) => new URL(response.url()).pathname === "/api/pads" && response.request().method() === "POST"),
@@ -306,8 +312,8 @@ describe("k2b notes · Produktions-SPA", () => {
     await createNote("Geteilt");
     await page.getByRole("button", { name: "Teilen", exact: true }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("checkbox", { name: /Ich halte mich an die Nutzungsbedingungen/ }).check();
-    await dialog.getByRole("checkbox", { name: /Ich habe die Datenschutzhinweise gelesen/ }).check();
+    await agree(dialog, /Ich halte mich an die Nutzungsbedingungen/);
+    await agree(dialog, /Ich habe die Datenschutzhinweise gelesen/);
     await dialog.getByRole("button", { name: "Links erstellen", exact: true }).click();
     await dialog.getByRole("button", { name: "Fertig", exact: true }).click();
     await dialog.waitFor({ state: "hidden" });
