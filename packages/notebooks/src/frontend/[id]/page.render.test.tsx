@@ -555,6 +555,16 @@ test.each(["versions", "graph"] as const)("%s mode has no note preview", async (
   expect(await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]')).toEqual([]);
 });
 
+test.each(["versions", "graph"] as const)("%s mode leaves the way back to its own control, while a note keeps its way up", async (mode) => {
+  // The test has no app route, so the shell keeps the app root here; the notebook is the level that matters.
+  const up = (html: string) =>
+    (
+      JSON.parse(/<script[^>]*data-k2b-page-trail[^>]*>([^<]*)<\/script>/.exec(html)![1]!) as { ancestors: { href: string }[] }
+    ).ancestors.map((level) => level.href);
+  expect(up(await renderEditorPage({ mode }))).not.toContain("/app/notebooks/book01");
+  expect(up(await renderEditorPage({}))).toContain("/app/notebooks/book01");
+});
+
 test("Links from version history returns to version history", async () => {
   const html = await renderEditorPage({ mode: "versions" });
   const [links] = await select(html, ".notebook-sidebar-foot a");
