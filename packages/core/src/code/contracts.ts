@@ -58,6 +58,10 @@ export const CODE_TABLES = {
   versions: "code.versions",
   runs: "code.runs",
   calls: "code.calls",
+  policy: "code.policy",
+  policyRules: "code.policy_rules",
+  policyCoverage: "code.policy_coverage",
+  policyPauseOutbox: "code.policy_pause_outbox",
 } as const;
 const timestamp = z.iso.datetime();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -69,6 +73,9 @@ export const CodeSchema = z
     serviceAccountId: z.uuid().nullable(),
     state: z.enum(["draft", "active", "paused", "deleting"]),
     activeVersionId: z.uuid().nullable(),
+    pauseReason: z.string().nullable(),
+    pauseRows: z.array(z.string()),
+    pausePolicyRevision: z.number().int().positive().nullable(),
     createdBy: z.uuid().nullable(),
     createdAt: timestamp,
   })

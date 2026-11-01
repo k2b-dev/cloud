@@ -305,6 +305,9 @@ describe("Core AI capabilities", () => {
       "ai.task.run.read",
       "ai.tasks.list",
       "code.list",
+      "code.policy.effective",
+      "code.policy.preview",
+      "code.policy.read",
       "code.read",
       "code.run.list",
       "code.run.read",
@@ -332,6 +335,7 @@ describe("Core AI capabilities", () => {
       "ai.task.resume",
       "ai.task.run",
       "ai.task.update",
+      "code.policy.update",
     ];
     expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual([
       "core.ai.chat",
@@ -359,6 +363,7 @@ describe("Core AI capabilities", () => {
         manifest.actions.map((action) => [action.localId, { destructive: action.destructive, idempotency: action.idempotency }]),
       ),
     ).toEqual({
+      "code.policy.update": { destructive: true, idempotency: "required" },
       "ai.chat.message": { destructive: false, idempotency: "required" },
       "ai.skill.access.change": { destructive: true, idempotency: "required" },
       "ai.skill.create": { destructive: false, idempotency: "required" },
@@ -1243,6 +1248,14 @@ for (const kind of ["standalone", "agent"] as const) {
   });
 }
 
+test("every Code Action with policy declares review and the Core manifest compiles", () => {
+  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
+    if (!id.startsWith("code.") || !("policy" in action)) continue;
+    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
+  }
+  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
+});
+
 test("routine actions reject a routine in another target chat before changing state or grants", async () => {
   spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
   const update = spyOn(aiChatTasks, "update");
@@ -1262,6 +1275,7 @@ test("routine actions reject a routine in another target chat before changing st
 test("Core action targets replace their primary input selector in the manifest", () => {
   const manifest = compileCapabilityManifest("core", aiCapabilities);
   for (const action of manifest.actions) {
+    if (action.localId.startsWith("code.")) continue;
     if (action.localId === "ai.skill.create") {
       expect(action.target).toBeUndefined();
       continue;

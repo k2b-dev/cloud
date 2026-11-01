@@ -13,6 +13,11 @@ const structured: Readonly<Record<string, { file: string; command: string }>> = 
     "core.code.manifest_bytes",
     "core.code.payload_bytes",
     "core.code.calls_per_run",
+    "core.code.wall_clock_ms",
+    "core.code.database_bytes",
+    "core.code.ai_budget_usd",
+    "core.code.concurrency_per_code",
+    "core.code.concurrency_per_owner",
   ].map((key) => [key, { file: "packages/cloud/src/cli/admin/administration.ts", command: "settings apply" }]),
   ...["assistant.storage_file_mib", "assistant.storage_total_mib"].map((key) => [
     key,

@@ -35,6 +35,9 @@ type CodeRow = {
   service_account_id: string | null;
   state: Code["state"];
   active_version_id: string | null;
+  pause_reason?: string | null;
+  pause_rows?: string[];
+  pause_policy_revision?: number | null;
   created_by: string | null;
   created_at: Date;
 };
@@ -51,6 +54,9 @@ const mapCode = (row: CodeRow): Code => ({
   serviceAccountId: row.service_account_id,
   state: row.state,
   activeVersionId: row.active_version_id,
+  pauseReason: row.pause_reason ?? null,
+  pauseRows: row.pause_rows ?? [],
+  pausePolicyRevision: row.pause_policy_revision ?? null,
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
 });

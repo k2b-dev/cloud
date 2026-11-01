@@ -1,10 +1,38 @@
 import { i18n } from "@k2b/stdlib";
+import type { CodePolicyRow, CodePolicyValue } from "./code/policy-contracts";
 
 /** Runtime text of Core capabilities: approval reviews, result summaries, and search metadata in the caller's locale. */
 const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codePolicyReview: ({ revision, count }: { revision: number; count: number }) =>
+        `Update Code policy at revision ${revision}. ${count} ${count === 1 ? "Code will" : "Codes will"} be paused.`,
+      codePolicyTitle: "Code policy",
+      codePolicyRunning: "Saving Code policy.",
+      codePolicyDone: "Code policy saved.",
+      codePolicyConfirm: "Save policy",
+      codePolicyDecline: "Cancel",
+      codePolicyDefault: "Default",
+      codePolicyValue: ({ value }: { value: CodePolicyValue }) =>
+        ({ automatic: "Automatic", admin: "Admin approval", never: "Never" })[value],
+      codePolicyRow: ({ row }: { row: CodePolicyRow }) =>
+        ({
+          read: "Read",
+          silent_you: "Only for the person",
+          silent_draft: "Drafts",
+          silent_shared: "Visible to others",
+          ask_sends: "Sends",
+          ask_deletes: "Deletes",
+          ask_cannot_undo: "Cannot undo",
+          ask_involves_people: "Involves people",
+          ask_changes_access: "Changes access",
+          ask_keeps_working: "Keeps working",
+          ask_sensitive: "Sensitive",
+          ask_app_asks: "App asks",
+          ai: "AI use",
+          internet: "Internet",
+        })[row],
       chat: "Chat",
       targetChat: "Target chat",
       message: "Message",
@@ -86,6 +114,33 @@ const messages = i18n.define({
       chatMessageQueued: ({ title }: { title: string }) => `Queued a message for “${title}”.`,
     },
     de: {
+      codePolicyReview: ({ revision, count }) =>
+        `Code-Richtlinie am Stand ${revision} ändern. ${count} ${count === 1 ? "Code wird" : "Codes werden"} pausiert.`,
+      codePolicyTitle: "Code-Richtlinie",
+      codePolicyRunning: "Code-Richtlinie wird gespeichert.",
+      codePolicyDone: "Code-Richtlinie gespeichert.",
+      codePolicyConfirm: "Richtlinie speichern",
+      codePolicyDecline: "Abbrechen",
+      codePolicyDefault: "Standard",
+      codePolicyValue: ({ value }: { value: CodePolicyValue }) =>
+        ({ automatic: "Automatisch", admin: "Admin gibt frei", never: "Nie" })[value],
+      codePolicyRow: ({ row }: { row: CodePolicyRow }) =>
+        ({
+          read: "Lesen",
+          silent_you: "Nur für die eigene Person",
+          silent_draft: "Entwürfe",
+          silent_shared: "Für andere sichtbar",
+          ask_sends: "Sendet",
+          ask_deletes: "Löscht",
+          ask_cannot_undo: "Nicht rückgängig",
+          ask_involves_people: "Bezieht Personen ein",
+          ask_changes_access: "Ändert Zugriff",
+          ask_keeps_working: "Läuft weiter",
+          ask_sensitive: "Sensibel",
+          ask_app_asks: "App fragt nach",
+          ai: "KI-Nutzung",
+          internet: "Internet",
+        })[row],
       chat: "Chat",
       targetChat: "Zielchat",
       message: "Nachricht",
