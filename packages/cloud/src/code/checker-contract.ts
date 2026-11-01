@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodeInternetOriginsSchema } from "../contracts/code-internet";
 import type { GeneratedCodeSdk } from "./types";
 
 /** Administrator budgets for C22. UTF-8 sizes; checkMs covers all child processes together. No environment overrides. */
@@ -62,7 +63,7 @@ export const CodeVersionManifestSchema = z
     ),
     permissions: z.array(CodePermissionSchema),
     ai: z.boolean(),
-    internet: z.boolean().optional(),
+    internet: CodeInternetOriginsSchema.optional(),
     hashes: z.object({ source: hash, sdk: hash, bundle: hash }).strict(),
   })
   .strict();

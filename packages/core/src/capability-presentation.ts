@@ -39,7 +39,7 @@ const codeVersionSubmissionInput = {
   "manifest.secrets[].headers": "Erlaubte Kopfzeilen der Bindung.",
   "manifest.secrets[].name": "Name des gebundenen Secrets.",
   "manifest.secrets[].binding_revision": "Unveränderliche Bindungsrevision.",
-  "manifest.internet": "Ob diese Version das Internet nutzt.",
+  "manifest.internet": "Vollständige Liste der genauen HTTPS-Ursprünge dieser Version, auch ohne Secrets.",
   "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
   "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
   "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",

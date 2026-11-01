@@ -89,8 +89,10 @@ export type CodeAdminApprovalDetail = {
   own: boolean;
   soleAdminNotice: string | null;
   decision: (CodeVersionDecision & { decidedByName: string | null }) | null;
-  /** Internet targets: exact HTTPS origins from the version's C11 secret bindings, and whether calls without a secret use public HTTPS. */
-  internet: { origins: { origin: string; secrets: string[] }[]; open: boolean };
+  /** Full immutable version origin list, with or without secret bindings. */
+  internet: string[];
+  /** Selected immutable bindings, independently reviewed from internet destinations. */
+  secrets: NonNullable<CodeCheckedVersionManifest["secrets"]>;
   /** Localized catalog titles for operations and target types; ids stay the fallback. */
   titles: { operations: Record<string, string>; types: Record<string, string> };
 };
@@ -323,14 +325,9 @@ export function codeAdminPermissionChanges(
   return changes.sort((a, b) => order[a.change] - order[b.change]);
 }
 
-/** Origins a version may send secrets to, from its immutable C11 bindings, one entry per origin. */
-export function codeAdminInternet(manifest: CodeCheckedVersionManifest | null): CodeAdminApprovalDetail["internet"] {
-  const origins = new Map<string, string[]>();
-  for (const binding of manifest?.secrets ?? []) origins.set(binding.origin, [...(origins.get(binding.origin) ?? []), binding.name]);
-  return {
-    origins: [...origins].sort(([a], [b]) => a.localeCompare(b)).map(([origin, secrets]) => ({ origin, secrets: secrets.sort() })),
-    open: manifest?.internet === true || (manifest?.policyRows.includes("internet") ?? false),
-  };
+/** Internet destinations reviewed with this exact version. Secret bindings never widen this list. */
+export function codeAdminInternet(manifest: CodeCheckedVersionManifest | null): string[] {
+  return [...(manifest?.internet ?? [])].sort();
 }
 
 /** Catalog titles of the operations and target types a version names, in the request locale. */
@@ -470,6 +467,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
         }
       : null,
     internet: codeAdminInternet(manifest),
+    secrets: manifest?.secrets ?? [],
     titles: await operationTitles(permissions, context),
   };
 }

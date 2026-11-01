@@ -464,6 +464,7 @@ test("SDK secrets contain only placeholders and HTTP dispatches those placeholde
   });
   expect(sdk.secrets.API).toBe("[secret:API]");
   expect(String(sdk.secrets.constructor)).toBe("[secret:constructor]");
+  sdk.http.allow(["https://api.example"]);
   await sdk.http.fetch("https://api.example/v1", { headers: { authorization: "Bearer " + sdk.secrets.API } });
   expect(calls).toEqual([
     { operation: "http.fetch", input: { method: "GET", url: "https://api.example/v1", headers: { authorization: "Bearer [secret:API]" } } },

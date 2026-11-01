@@ -250,9 +250,18 @@ export const fixtureApprovalDetail = (
             decidedByName: "Ben Schulz",
           }
         : null,
-    internet: first
-      ? { origins: [], open: false }
-      : { origins: [{ origin: "https://api.buchhaltung-beispiel.de", secrets: ["BUCHHALTUNG_TOKEN"] }], open: true },
+    internet: first ? [] : ["https://api.buchhaltung-beispiel.de", "https://bank.example", "https://status.example:8443"],
+    secrets: first
+      ? []
+      : [
+          {
+            name: "BUCHHALTUNG_TOKEN",
+            origin: "https://api.buchhaltung-beispiel.de",
+            pathPrefix: "/v1",
+            headers: ["authorization"],
+            binding_revision: "a0000000-0000-4000-8000-000000000001",
+          },
+        ],
     titles: {
       operations: {
         "spaces.task.create": "Aufgabe anlegen",

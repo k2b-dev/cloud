@@ -7,6 +7,7 @@ export class CodeBridgeRefusal extends Error {
   constructor(
     readonly code: string,
     readonly status: 200 | 400 | 403 | 409 | 503 = 200,
+    readonly origin?: string,
   ) {
     super(code);
   }
