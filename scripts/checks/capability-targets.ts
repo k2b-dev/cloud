@@ -5,7 +5,16 @@ import { packageIds } from "../workspace";
 import { declarationOf } from "./capability-presentation";
 import type { Rule } from "./rule";
 
-/** Candidate resource IDs: a migration report, not proof that a domain field grants access. */
+/** Reviewed provider contracts whose coordinates cannot name a fixed, provider-owned Type.
+ * Keep the exception field-specific and unavailable to resource Code; new ID fields still fail.
+ * See /en/docs/platform/capabilities#name-the-resource-an-operation-acts-on.
+ */
+const foreignInputIds: Record<string, readonly string[]> = {
+  "gateway-ops.app-status.forget": ["appId"], // Shared app-status role addresses another application.
+  "chat.discussion.post": ["ref.id"], // The discussion item Type belongs to its foreign provider.
+};
+
+/** ID-like inputs require a target unless a reviewed foreign-provider field is explicitly exempt. */
 export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => {
   const idPaths = (schema: unknown, prefix = ""): string[] => {
     if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
@@ -22,16 +31,17 @@ export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => 
   return manifest.actions
     .filter((action) => action.target === undefined)
     .flatMap((action) => {
-      const fields = [...new Set(idPaths(action.inputSchema))];
+      const exempt = action.code === false ? (foreignInputIds[`${manifest.appId}.${action.localId}`] ?? []) : [];
+      const fields = [...new Set(idPaths(action.inputSchema))].filter((field) => !exempt.includes(field));
       return fields.length ? [`${manifest.appId}.${action.localId}: ${fields.join(", ")}`] : [];
     });
 };
 
-/** C0 additive migration: report the gaps until every application has moved to explicit targets. */
+/** Missing targets fail the repository gate; there is no report-only migration mode. */
 export const rule: Rule = {
   name: "capability-targets",
-  description: "Report Actions with resource ID inputs but no declared target (additive migration)",
-  run: async ({ workspaceRoot, flags }) => {
+  description: "Require targets on Actions with resource ID inputs",
+  run: async ({ workspaceRoot }) => {
     const findings = [];
     for (const appId of packageIds(workspaceRoot)) {
       const declaration = declarationOf(join(workspaceRoot, "packages", appId, "src"));
@@ -43,10 +53,6 @@ export const rule: Rule = {
       for (const gap of capabilityTargetGaps(compileCapabilities(appId, definitions).manifest))
         findings.push({ file: declaration.file, message: `Action needs a target: ${gap}` });
     }
-    // C0f removes report-only mode after C0b–C0g. --enforce-targets supports migration checks now.
-    if (flags.has("--enforce-targets")) return findings;
-    if (findings.length)
-      console.info(`Capability target migration gaps (${findings.length}):\n${findings.map((item) => `  ${item.message}`).join("\n")}`);
-    return [];
+    return findings;
   },
 };

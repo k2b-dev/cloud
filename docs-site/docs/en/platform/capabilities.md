@@ -1014,9 +1014,11 @@ Declare `target` when an Action acts on a resource. It names a local Type of
 this application. The caller supplies a resource ID for that fixed type;
 it cannot choose another type or containment level. A Query may also declare a
 target when it reads exactly one container. An operation without a target acts
-at application level; existing declarations continue to work during migration.
+at application level. Every Action with resource ID input must declare a target,
+except the reviewed foreign-provider contracts below. This requirement also
+applies to third-party applications; `code: false` alone does not exempt an Action.
 Canonical resource readers, Universal Search, Action outcome checks and shared
-file, calendar and discussion provider contracts supply only their existing
+file, calendar, app-status and discussion provider contracts supply only their existing
 domain input. They cannot declare `target` or `refs`; publish a separate Query
 when an explicit caller needs a container target. Consumer contracts may name
 a fixed local `CapabilityContract.target`; the provider must match it exactly
@@ -1135,12 +1137,26 @@ idempotency use these same coordinates. Approval services receive the complete
 normalized call as their `input`, so `approvalArgsDigest(call)` equals
 `capabilityCallDigest(call)`.
 
-Existing operations with neither `target` nor `refs` keep their earlier
-input-only approval and idempotency hashes during the additive rollout.
-The repository's `capability-targets` rule reports Actions with ID-like input
-fields but no target; this migration report is not an authorization check.
-See [Roll out capability targets](/en/docs/operations/capability-targets) before
-converting an existing published Action.
+Application-wide operations with neither `target` nor `refs` retain their
+input-only approval and idempotency hashes. The repository's
+`capability-targets` rule now fails on ID-like input fields without a target;
+there is no report-only mode. It checks declarations, not resource permissions.
+
+Two reviewed foreign-provider contracts keep their existing input coordinates:
+
+- `gateway-ops.app-status.forget` keeps `appId`, as required by the shared
+  [app-status contract](/en/docs/platform/app-status). The app being forgotten
+  is not a resource Type owned by the status provider.
+- `chat.discussion.post` keeps `ref.id`, whose Type is chosen by the foreign
+  discussion provider. Chat cannot declare that Type locally. See
+  [item discussions](/en/docs/platform/chat-discussions#action-targets).
+
+Both declare `code: false`. The check exempts only those named fields on
+those operations; another ID field or removal of `code: false` fails it.
+Shared provider contracts continue to use their published shapes. Do not
+invent a local resource Type to re-label a foreign resource as the provider's.
+See [Roll out capability targets](/en/docs/operations/capability-targets) for
+upgrade order and existing-data migration.
 
 ### Retry an Action safely
 

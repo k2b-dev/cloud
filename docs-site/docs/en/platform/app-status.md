@@ -80,7 +80,11 @@ your own measurements; keep domain reads and authorization inside your app.
 The example is checked in `docs-site/examples/cloud-docs/platform-app-status.ts`.
 
 The role points to local IDs, not fixed operation names. Gateway's first
-provider uses `app-status.summary`, `app-status.detail`, and `app-status.forget`.
+provider uses `app-status.summary`, `app-status.detail`, and `app-status.forget`. The forget
+Action keeps its `appId` input and declares `code: false`: it addresses a foreign
+application, not a resource Type owned by the status provider. This reviewed
+exception to [Action targets](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
+retains the shared provider contract for built-in and third-party providers.
 Startup rejects incompatible declarations; registry readers omit incompatible
 roles, and consumers check compatibility before calling. Both Queries must be
 closed-world and person-readable. The forget Action requires idempotency.

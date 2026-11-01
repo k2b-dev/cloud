@@ -15,12 +15,20 @@ Upgrade Core before deploying an application that declares capability `target`,
 coordinates beside `input`. Chat and MCP callers keep flat tool arguments;
 the platform converts them into the same call.
 
-This is an additive rollout. Applications without target declarations keep
-their existing input, schema hashes, approval digests and idempotency behavior.
+This is a coordinated contract change for the major Code release. Every Action
+with resource ID input must declare its resource target, including third-party
+applications. The `capability-targets` check fails on missing declarations;
+report-only mode has ended. Targetless application-wide Actions and shared
+foreign-provider contracts retain their published shapes, as described in
+[App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
+
 Converting an existing Action's resource ID input into a target changes its
-contract and schema hash. Core now migrates existing routine grants and pending
-approvals for the coordinated application conversion; see the
-[operator migration note](/en/docs/reference/deprecations-and-migrations#existing-assistant-routines-and-approvals-adopt-capability-targets).
+schema hash. Refresh catalogs and generated callers with the provider upgrade.
+Core migrates stored routine grants and pending approvals before AI workers
+start. Stop old Core and Assistant replicas first; do not mix old and new
+workers. Mail also migrates incoming automations before its workers start.
+Follow the [operator migration note](/en/docs/reference/deprecations-and-migrations#capability-targets-major-release-operator-note)
+for backups, restart order, confirmation states and rollback.
 Existing chats and their stored history stay unchanged.
 
 Legacy mandates constrain domain input only. They are refused for operations
@@ -48,20 +56,28 @@ Older Core readers omit operations with target fields they cannot understand.
 They do not invoke those operations after stripping the fields. Other
 operations remain available.
 
-Spaces and Contacts Actions now use fixed `space` and `book` targets.
-Creation inputs omit `spaceId` and `bookId`; contact moves carry their
-destination in `refs.targetBookId`. Upgrade Mail with these providers so its
-calendar, linked-item and contact-creation calls send the new coordinates.
-Directory providers implementing `create` declare a local `book` Type and
-move the selected book out of `ContactDirectoryCreateInputSchema`.
+## Upgrade application callers
 
-The Spaces invitation preparation and commit Actions declare `code: false`.
-Resource-owned Code must leave them out; person calls keep their service
-permission checks. Core performs the coordinated routine and approval migration before starting
-its AI workers.
+Use the provider's guide for its exact input changes:
 
-See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
-for the declaration, invocation and digest contract.
+- [Mail targets](/en/docs/platform/mail-capabilities) lists mailbox-bound
+  Actions and Queries, plus discovery and outcome checks that keep their inputs.
+- [Grids and Files targets](/en/docs/operations/grids-files-capability-targets)
+  lists base, table, and storage-root calls and copy destination refs.
+- [Spaces and Contacts migration](/en/docs/reference/deprecations-and-migrations#spaces-and-contacts-actions-name-their-container)
+  covers Space and book targets and contact moves.
+- [Chat discussion targets](/en/docs/platform/chat-discussions#action-targets)
+  covers message and conversation targets and the foreign item exception.
+
+Notebooks binds note, comment and annotation Actions to the notebook. Pulse
+binds existing-resource Actions to the Base. Venue binds assignments to the
+venue, Weather binds deletion to the saved location, and Core binds Skill
+changes to the Skill and routine changes to the AI chat. Their primary resource
+selectors move from `input` to `target`; contained object IDs remain in `input`.
+
+All Chat Actions, Spaces invitation preparation and commit, and Gateway Ops'
+app-status forget Action declare `code: false`. Resource-owned Code must leave
+them out; person calls retain their existing service permission checks.
 
 ## Enable target-side Code access
 
@@ -88,16 +104,3 @@ operation-bound Core editor admission.
 
 See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
 for the adapter and Core proof contracts.
-
-## Converted application Actions
-
-Notebooks binds note, comment and annotation Actions to the notebook. Pulse
-binds existing-resource Actions to the Base. Venue binds assignments to the
-venue, Weather binds deletion to the saved location, and Core binds Skill
-changes to the Skill and routine changes to the AI chat. Chat binds message
-changes to the message and notification preferences and follows to the
-conversation. Their primary resource selectors move from `input` to `target`;
-refresh generated clients and the capability catalog together with these apps.
-
-All Chat Actions declare `code: false` for resource Code, including
-personal notification preferences. Calls acting as a person retain their existing permission checks.
