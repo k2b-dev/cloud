@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  aiSkillLoadTools,
   isAiSkillManualOnly,
   mountAiSkillInstructionLinks,
   parseAiSkillMarkdown,
@@ -83,4 +84,36 @@ test("mounts flat relative Markdown reference links without changing other paths
   expect(mountAiSkillInstructionLinks("weekly-status", instructions)).toBe(
     "[A](/skills/weekly-status/references/a.md) [B](/skills/other/references/b.md) [C](references/nested/c.md) `references/a.md`",
   );
+});
+
+test("load-tools lists 1-25 unique tool names and grants nothing beyond naming them", () => {
+  const source = `---
+name: inventory-counting
+description: Count stock in Inventory.
+load-tools:
+  - inventory.location.list
+  - inventory.count.record
+  - calculate
+---
+
+Find the location first.
+`;
+  const parsed = parseAiSkillMarkdown(source);
+  expect(aiSkillLoadTools(parsed.extraFrontmatter)).toEqual(["inventory.location.list", "inventory.count.record", "calculate"]);
+  expect(parseAiSkillMarkdown(serializeAiSkillMarkdown(parsed))).toEqual(parsed);
+  expect(aiSkillLoadTools({})).toEqual([]);
+
+  const tooMany = Array.from({ length: 26 }, (_, index) => `inventory.query-${index}`);
+  for (const value of [
+    "inventory.location.list",
+    [],
+    tooMany,
+    ["inventory.location.list", "inventory.location.list"],
+    [1],
+    [""],
+    ["../secret"],
+    ["a b"],
+  ])
+    expect(() => validateAiSkillExtraFrontmatter({ "load-tools": value })).toThrow('"load-tools" must list 1-25 unique');
+  expect(validateAiSkillExtraFrontmatter({ "load-tools": tooMany.slice(0, 25) })).toEqual({ "load-tools": tooMany.slice(0, 25) });
 });

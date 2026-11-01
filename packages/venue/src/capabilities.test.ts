@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -146,9 +146,9 @@ describe("Venue capabilities", () => {
       "assignment.mine": { venueId, days: 30, limit: 25 },
       "assignment.read": { id: newShortId() },
       "feedback.summary": { venueId },
-      "assignment.signup": { venueId, templateId: newShortId(), date: "2026-10-05" },
-      "assignment.signup_free": { venueId, startsAt: "2026-10-05T10:00:00Z", endsAt: "2026-10-05T11:00:00Z" },
-      "assignment.cancel": { venueId, assignmentId: newShortId() },
+      "assignment.signup": { templateId: newShortId(), date: "2026-10-05" },
+      "assignment.signup_free": { startsAt: "2026-10-05T10:00:00Z", endsAt: "2026-10-05T11:00:00Z" },
+      "assignment.cancel": { assignmentId: newShortId() },
     };
     const operations: Readonly<Record<string, CapabilityQueryDefinition | CapabilityActionDefinition>> = {
       ...(venueCapabilities.queries as unknown as Readonly<Record<string, CapabilityQueryDefinition>>),
@@ -317,21 +317,24 @@ describe("Venue capabilities", () => {
         const wrongDay = futureDateForWeekday(2);
         const rejectedWrongDay = await invokeAction(
           "assignment.signup",
-          { venueId: venueShortId, templateId: templateShortId, date: wrongDay },
-          context,
+          { templateId: templateShortId, date: wrongDay },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(rejectedWrongDay.ok).toBe(false);
 
         const deniedSignup = await invokeAction(
           "assignment.signup",
-          { venueId: venueShortId, templateId: templateShortId, date: shiftDate },
-          otherContext,
+          { templateId: templateShortId, date: shiftDate },
+          { ...otherContext, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(deniedSignup.ok).toBe(false);
 
         const signupReview = venueCapabilities.actions["assignment.signup"].review;
         if (!signupReview) throw new Error("Template signup review missing");
-        const reviewedSignup = await signupReview({ venueId: venueShortId, templateId: templateShortId, date: shiftDate }, context);
+        const reviewedSignup = await signupReview(
+          { templateId: templateShortId, date: shiftDate },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
+        );
         expect(reviewedSignup).toMatchObject({ ok: true, data: { message: "Take the shift “Agent shift” at Agent Venue." } });
         if (reviewedSignup.ok) {
           expect(reviewedSignup.data.details).toEqual(
@@ -344,8 +347,8 @@ describe("Venue capabilities", () => {
 
         const signup = await invokeAction(
           "assignment.signup",
-          { venueId: venueShortId, templateId: templateShortId, date: shiftDate },
-          context,
+          { templateId: templateShortId, date: shiftDate },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(signup.ok && signup.data.data).toMatchObject({
           venueId: venueShortId,
@@ -376,8 +379,8 @@ describe("Venue capabilities", () => {
         const freeSignupReview = venueCapabilities.actions["assignment.signup_free"].review;
         if (!freeSignupReview) throw new Error("Free signup review missing");
         const reviewedFreeSignup = await freeSignupReview(
-          { venueId: venueShortId, startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Agent-created shift" },
-          context,
+          { startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Agent-created shift" },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(reviewedFreeSignup).toMatchObject({ ok: true, data: { message: "Add a free shift at Agent Venue." } });
         if (reviewedFreeSignup.ok) {
@@ -391,8 +394,8 @@ describe("Venue capabilities", () => {
         }
         const freeSignup = await invokeAction(
           "assignment.signup_free",
-          { venueId: venueShortId, startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Agent-created shift" },
-          context,
+          { startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Agent-created shift" },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(freeSignup.ok && freeSignup.data.data).toMatchObject({
           venueId: venueShortId,
@@ -402,8 +405,8 @@ describe("Venue capabilities", () => {
         expect(freeSignup.ok && freeSignup.data.summary).toBe("Added a free shift at Agent Venue.");
         const duplicateFree = await invokeAction(
           "assignment.signup_free",
-          { venueId: venueShortId, startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Duplicate" },
-          context,
+          { startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Duplicate" },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(duplicateFree.ok).toBe(false);
 
@@ -439,8 +442,14 @@ describe("Venue capabilities", () => {
 
         const cancelReview = venueCapabilities.actions["assignment.cancel"].review;
         if (!cancelReview) throw new Error("Cancel review missing");
-        expect(await cancelReview({ venueId: venueShortId, assignmentId: signup.data.data.id }, context)).toMatchObject({ ok: true });
-        const cancelled = await invokeAction("assignment.cancel", { venueId: venueShortId, assignmentId: signup.data.data.id }, context);
+        expect(
+          await cancelReview({ assignmentId: signup.data.data.id }, { ...context, target: { type: "venue.venue", id: venueShortId } }),
+        ).toMatchObject({ ok: true });
+        const cancelled = await invokeAction(
+          "assignment.cancel",
+          { assignmentId: signup.data.data.id },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
+        );
         expect(cancelled.ok && cancelled.data.data).toEqual({ assignmentId: signup.data.data.id, cancelled: true });
         expect(cancelled.ok && cancelled.data.summary).toBe("Left your shift at Agent Venue.");
         const successfulActions = [signup, freeSignup, cancelled];
@@ -451,8 +460,8 @@ describe("Venue capabilities", () => {
         }
         const cancelledAgain = await invokeAction(
           "assignment.cancel",
-          { venueId: venueShortId, assignmentId: signup.data.data.id },
-          context,
+          { assignmentId: signup.data.data.id },
+          { ...context, target: { type: "venue.venue", id: venueShortId } },
         );
         expect(cancelledAgain.ok).toBe(false);
       } finally {
@@ -530,12 +539,8 @@ describe("Venue capabilities", () => {
       expect(crossVenue).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
       const userOnlyAction = await invokeAction(
         "assignment.signup_free",
-        {
-          venueId: boundVenueShortId,
-          startsAt: new Date(Date.now() + 86_400_000).toISOString(),
-          endsAt: new Date(Date.now() + 90_000_000).toISOString(),
-        },
-        context,
+        { startsAt: new Date(Date.now() + 86_400_000).toISOString(), endsAt: new Date(Date.now() + 90_000_000).toISOString() },
+        { ...context, target: { type: "venue.venue", id: boundVenueShortId } },
       );
       expect(userOnlyAction).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
     } finally {
@@ -617,4 +622,49 @@ describe("Venue capabilities", () => {
   test("compiles the declared capability manifest", () => {
     expect(() => compileCapabilityManifest("venue", venueCapabilities)).not.toThrow();
   });
+});
+
+test("Venue review and execution reject a template or assignment outside the target", async () => {
+  const venue = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    slug: "harbor",
+    name: "Harbor Cafe",
+    icon: "ti ti-building",
+    description: null,
+    timezone: "Europe/Berlin",
+    openMode: "regular" as const,
+    signupMode: "both" as const,
+    publicEnabled: false,
+    feedbackEnabled: false,
+    accentColor: "#123456",
+    logoBase64: null,
+    bannerBase64: null,
+    permission: "write" as const,
+    createdAt: "2026-10-01T10:00:00Z",
+    updatedAt: "2026-10-01T10:00:00Z",
+  };
+  const resolve = spyOn(venueService.venues, "resolve").mockResolvedValue({ ok: true, data: venue });
+  const owned = spyOn(venueService.publicResources, "resolveOwned").mockResolvedValue(null);
+  const context = {
+    ...userContext(testUser("11111111-1111-4111-8111-111111111111", "target")),
+    target: { type: "venue.venue", id: "VenueA" },
+  };
+  try {
+    for (const localId of ["assignment.signup", "assignment.cancel"] as const) {
+      const action: CapabilityActionDefinition = venueCapabilities.actions[localId];
+      const input = localId === "assignment.signup" ? { templateId: "FromB1", date: "2026-11-02" } : { assignmentId: "FromB2" };
+      expect(await action.review!(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    }
+    expect(owned.mock.calls.map(([table, id, resource]) => [table, id, resource])).toEqual([
+      ["templates", venue.id, "FromB1"],
+      ["templates", venue.id, "FromB1"],
+      ["assignments", venue.id, "FromB2"],
+      ["assignments", venue.id, "FromB2"],
+    ]);
+    expect(resolve.mock.calls.every(([id]) => id === "VenueA")).toBe(true);
+  } finally {
+    resolve.mockRestore();
+    owned.mockRestore();
+  }
 });

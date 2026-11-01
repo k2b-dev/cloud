@@ -28,17 +28,17 @@ registry entry with `public: true`.
 
 ```bash
 cld --profile operator admin apps domains ls website --json
-cld --profile operator admin apps domains add website example.com
-cld --profile operator admin apps domains add website www.example.com --redirect-to example.com
-cld --profile operator admin apps domains check website example.com --json
-cld --profile operator admin apps domains set website www.example.com --no-redirect
+cld --profile operator admin apps domains add website example.com --yes
+cld --profile operator admin apps domains add website www.example.com --redirect-to example.com --yes
+cld --profile operator admin apps domains check website example.com --yes --json
+cld --profile operator admin apps domains set website www.example.com --no-redirect --yes
 cld --profile operator admin apps domains rm website www.example.com --yes
 ```
 
 `set` takes exactly one of `--redirect-to <host>` or `--no-redirect`. Redirects
 stay within the app, without chains. Remove incoming redirects before removing
 their target; the error names those domains. Changes require an administrator;
-OAuth mutations also require `admin` scope. The initial check runs in the
+OAuth mutations require `write` or `admin` scope. Domain changes and checks require `--yes`. The initial check runs in the
 background. Checks run at most once per 60 seconds; later stages are `null`
 after a failure. `--json` and `--jsonl` preserve the API payload. A first check
 in progress can return `status: null`; list again shortly.
@@ -282,7 +282,7 @@ including its full stored error. No command exposes private chat message text.
 ## Sync and NATS
 
 `admin sync` inspects application-owned work; `admin nats` reads broker diagnostics.
-Both use administrator access; OAuth callers need the `admin` scope.
+Both use the current administrator role. OAuth reads accept `read` or `admin`; recovery actions still require `admin` scope (see the step-up instructions below).
 
 ```bash
 cld admin sync status --json
@@ -716,8 +716,9 @@ Run `cld admin settings status --env --json` after an upgrade. Exit 0 means no
 reported process needs attention; nonzero means a conflict, invalid env value,
 unreadable row, pending import, or unavailable process. Values are never
 printed. Resolve the problem before removing deprecated environment entries.
+Use `cld admin settings list [--app <id>] --json` to discover keys and types, then `settings show <key>` for presence and readability. Neither prints values.
 Use `cld admin settings set <key> --value '<JSON>' --yes`, adding `--app <id>`
-for application-owned keys. Use `--replace-unreadable` only for an explicit
+for application-owned keys. Secret settings require `--from <private-json-file>` or `--from -` for stdin; they cannot be supplied with `--value`. Use `--replace-unreadable` only for an explicit
 whole replacement.
 ## Application Ed25519 keys
 
@@ -748,3 +749,77 @@ grants and cannot be combined with `--grant`. Repeating an existing enrollment
 keeps its original grants. To withdraw issuance, create and deploy an ungranted
 replacement, then revoke every granted key for that app. Listings include
 `grants`. Issuance uses clients and grants registered in Cloud's OAuth registry.
+
+
+## Administrator login and step-up
+
+A normal `cld login` requests `read write`. With a person's current administrator
+role, this reads NATS, Sync, app events, Core app status, settings status and
+Pulse administration. The server checks the role on every request. Removing
+the role ends access with the same token. A standalone OAuth client has no
+administrator role, even when its token contains `admin`.
+
+Routine configuration uses `write` plus that role. App access repair, Sync
+recovery, app-event replay/acknowledgment/recording, Pulse store credentials and
+backend actions, Pulse base recovery/orphan deletion, Studio machine servers
+and secrets, and Files machine provisioning/grants retain their explicit
+`admin` requirement. To perform an authorized action, obtain a short-lived
+login through browser or device approval:
+
+```bash
+cld login admin-step-up --server https://cloud.example --device --ttl 15m \
+  --scope 'openid profile email offline_access read write admin'
+cld --profile admin-step-up admin sync --help
+cld logout admin-step-up
+```
+
+Approve the code in your browser as the administrator. `--user` (Cloud Login)
+does not issue `admin`; adding it to a token never grants the person that role.
+Commands still require their normal `--yes` confirmation.
+
+## Configure the instance and applications
+
+Use `--help` to inspect a command's positional arguments. Named JSON setters
+below take `--from <file|-> --yes`. Input follows the same schema as the UI API;
+`cld api-docs` describes the fields. Reads accept `--query '<URL query>'` when
+filters or pagination are needed.
+
+| UI area | CLI |
+| --- | --- |
+| Navigation/app bar | `admin rail show`, `rail set`, `rail cache-clear --yes` |
+| AI projects and access | `admin ai projects list`, `access list\|grant\|set\|revoke`, `projects delete` |
+| Geo provider and budget | `admin geo status\|usage`, `geo key set\|remove`, `geo budget set` |
+| Signing keys and mandates | `admin identity keys status`, `identity mandates list` |
+| Exact directory shares | `admin directory-shares list\|grant\|revoke` |
+| Capability execution journal | `admin capabilities summary`, `executions list\|show` |
+| Browser/Web Vitals | `admin telemetry browser` |
+| Account lifecycle reports | `admin lifecycle deleted-accounts\|reminders\|health`, `lifecycle run` |
+| Retention | `admin retention show`, `admin logs retention show\|set`; telemetry periods through `settings set --app gateway-ops` |
+| NATS diagnostics access, Gateway Ops and network lists | `admin settings list --app gateway-ops`; `settings set ... --app gateway-ops` |
+| Notebook settings and cron | `admin settings list\|set --app notebooks` |
+| Grids settings | `admin settings list\|set --app grids` |
+| Chat instance policy | `admin settings list\|set --app chat` |
+| Weather settings | `admin settings list --app weather`, `admin weather config set\|reset` |
+| Files configuration | `filesv2 admin configuration get\|set\|reset` |
+| Files machine storage and grants | `admin files machines list\|create`, `machines grants list\|grant\|revoke` |
+| Studio machine access and secret metadata | `admin studio machines access list\|set`, `machines secrets list\|set\|delete` |
+| Contacts administration and recovery | `admin contacts list`, `contacts access list\|grant\|set\|revoke` |
+| Spaces administration and recovery | `admin spaces list`, `spaces access list\|grant\|set\|revoke`, `spaces delete` |
+| Chat health | `admin chat status` |
+| Proxy authentication policy | `admin proxy-auth list\|show\|add\|set\|delete` |
+| Pulse policy, limits and internal targets | `pulse admin policy set`, `bases limits`, `targets add\|remove` |
+| Assistant Studio storage/database | `assistant studio-admin storage-configure\|configure --yes` (database JSON through `--input-file` or `--stdin`) |
+
+`admin settings apply --from <file|-> --yes` applies Core updates and resets
+atomically. `settings reset <key> --yes` restores one Core default. Saved
+backend checks use `settings test pdf|storage|freeipa --yes`; manual AI
+enrichment uses `ai enrichment run --yes`.
+
+Core settings, AI execution limits and instance network allowlists use
+`admin settings list|show|set`. Existing commands continue to own outgoing mail,
+AI models/quotas, OAuth clients, app keys and grants, sign-in, account policy,
+webhooks and resource access. Structured app setters preserve their validation,
+connection checks and live rescheduling. Settings writes record keys and actor
+in audit without copying submitted values.
+
+Sync diagnostic reads redact payloads and raw error text with ordinary `read` scope. Use an explicitly approved `admin` step-up profile when unredacted dead-letter content is required.
