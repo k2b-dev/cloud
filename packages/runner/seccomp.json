@@ -1012,16 +1012,16 @@
       "args": [
         {
           "index": 0,
-          "value": 1879179281,
+          "value": 2013397009,
           "op": "SCMP_CMP_EQ"
         }
       ],
-      "comment": "Only the credential-free job launcher creates user+PID+mount+network namespaces; no host SYS_ADMIN is granted."
+      "comment": "Trusted job setup creates user+PID+mount+network+IPC namespaces; role filters deny namespace creation. No host SYS_ADMIN is granted."
     },
     {
       "names": ["mount"],
       "action": "SCMP_ACT_ALLOW",
-      "comment": "Kernel restricts mounts to the launcher child user namespace; supervisor has no SYS_ADMIN and workerd denies mount."
+      "comment": "Trusted setup mounts only inside the child user namespace; supervisor has no SYS_ADMIN and mandatory role filters deny mount."
     }
   ]
 }

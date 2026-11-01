@@ -13,6 +13,7 @@ profile cloud-code-runner flags=(attach_disconnected,mediate_deleted) {
   mount options=(rw, rprivate) -> /,
   mount fstype=proc -> /proc/,
   mount fstype=tmpfs -> /tmp/,
+  mount fstype=tmpfs -> /dev/{shm,mqueue}/,
   deny /proc/{bus,fs,irq,sys}/** wklx,
   deny /proc/sysrq-trigger rwklx,
   deny /proc/{kcore,mem,kmem,keys,interrupts,timer_list,timer_stats,latency_stats,sched_debug} rwklx,

@@ -42,7 +42,12 @@ export async function executeRunnerJob(
       throw error;
     }
   })();
-  const stop = () => child.kill("SIGKILL");
+  let force: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => {
+    if (child.exitCode !== null || force) return;
+    child.kill("SIGTERM");
+    force = setTimeout(() => child.kill("SIGKILL"), 1000);
+  };
   signal.addEventListener("abort", stop, { once: true });
   if (signal.aborted) stop();
   try {
@@ -62,9 +67,10 @@ export async function executeRunnerJob(
     signal.removeEventListener("abort", stop);
     if (child.exitCode === null) stop();
     await child.exited;
-    // An abnormal helper death may race the namespace init's death signal.
-    // Reuse only the proven waitpid-success path; abandoned ranges remain reserved.
-    if (child.exitCode === 0) identities.release();
+    clearTimeout(force);
+    // Reserved helper exits prove namespace teardown even for cancellation or role failure.
+    // An externally killed helper has no such proof; its range stays reserved.
+    if (child.exitCode === 0 || child.exitCode === 124 || child.exitCode === 125) identities.release();
   }
 }
 

@@ -307,7 +307,7 @@ retry later; cancellation and time limits leave a visible failure.
 The runner image contains both isolated roles and the compiler. Core needs
 none of these binaries. Each role receives only its input over stdin and
 returns bounded JSON over stdout. It runs as PID 1 with private user, PID,
-mount and network namespaces, an empty environment, private `/proc` and
+mount, network and IPC namespaces, an empty environment, private `/proc` and
 bounded `/tmp`. The job's separate lease key stays in the supervisor; no
 bridge token reaches the job or is issued for it.
 
@@ -322,7 +322,7 @@ Both Compose templates require that named policy and the checked-in seccomp
 profile. They remove Docker's locked system-path submounts so a job can mount
 its private procfs; the named policy preserves read-only kernel controls and
 blocks access to sensitive proc/sysfs paths. It permits only the proc/tmpfs
-mount targets and private-mount propagation needed by job setup. No host
+mount targets, private shared-memory/queue directories and private-mount propagation needed by job setup. No host
 `SYS_ADMIN` is granted. After setup, both roles inherit a mandatory seccomp
 filter that refuses further namespace creation and mount operations. Workerd
 retains its own independent mandatory filter.
@@ -331,8 +331,9 @@ Hosts need AppArmor with user-namespace mediation, user namespaces and
 namespace-local proc/tmpfs mounts. Docker user-namespace remapping needs an
 outer UID/GID range large enough for the supervisor's distinct production
 identities and 65,536-ID job ranges; the usual 65,536-ID remap is insufficient.
-Successful jobs reuse their range only after the namespace is empty. A helper
-that dies abnormally does not release its range. Exhausting identities stops
+Jobs reuse their range only after the launcher has reaped the namespace,
+including on cancellation or role failure. A helper that dies abnormally
+does not release its range. Exhausting identities stops
 acquisition and exits the supervisor so its container can restart.
 
 Docker refuses to start the container when the named profile is missing.
@@ -346,6 +347,9 @@ Keep Compose's `init: true`, or Docker's `--init` for custom deployments.
 The container init reaps orphaned namespace processes after an abrupt launcher
 death. A dead namespace process must disappear from `/proc`, including its
 zombie entry, so repeated cancellations do not exhaust the container PID budget.
+Routine cancellation first asks the launcher to kill and reap its namespace;
+after one second the supervisor can force termination. Abrupt launcher deaths
+retain their UID range because teardown has no launcher receipt.
 
 Administration defaults to one simultaneous authoring role per runner,
 within its four shared slots. Increase the authoring-slot setting only with

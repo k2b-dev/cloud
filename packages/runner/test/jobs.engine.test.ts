@@ -1,5 +1,5 @@
 import { test as bunTest, expect } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, readlink, unlink, writeFile } from "node:fs/promises";
 import { CODE_CHECK_LIMITS, CodeCheckResultSchema, type CodeTestLimits } from "@k2b/cloud/code";
 import type { RunnerJobLease } from "@k2b/cloud/code/runner";
 import { allocateRunnerIdentities } from "../src/identities";
@@ -76,6 +76,8 @@ test("C13b real isolated checker returns permission locations and fake test role
   });
 }, 50000);
 test("C13b job init has private proc/tmp and inherits no credentials or network", async () => {
+  const marker = `/dev/shm/c13b-${crypto.randomUUID()}`;
+  await writeFile(marker, "supervisor-only", { mode: 0o644 });
   const child = Bun.spawn(
     [
       "/app/job-isolate",
@@ -92,11 +94,23 @@ test("C13b job init has private proc/tmp and inherits no credentials or network"
     const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     expect(exit).toBe(0);
     expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual({ pid: 1, parent: 0, tmpOwner: 0, environment: [], processes: ["1"], network: false });
+    const result = JSON.parse(stdout);
+    expect(result).toMatchObject({
+      pid: 1,
+      parent: 0,
+      tmpOwner: 0,
+      shm: [],
+      queues: [],
+      environment: [],
+      processes: ["1"],
+      network: false,
+    });
+    expect(result.ipc).not.toBe(await readlink("/proc/self/ns/ipc"));
   } finally {
     clearTimeout(timer);
     if (child.exitCode === null) child.kill("SIGKILL");
     await child.exited;
+    await unlink(marker);
   }
 }, 10000);
 
@@ -119,48 +133,50 @@ test("C13b checker scrub retains only its trusted Go execution-thread budget", a
     await child.exited;
   }
 }, 10000);
-test("C13b killing the launcher terminates and reaps its namespace init", async () => {
-  const child = Bun.spawn(
-    [
-      "/app/job-isolate",
-      String(allocateRunnerIdentities(65536)),
-      String(1024 * 1024),
-      process.execPath,
-      "--no-env-file",
-      "/app/job-probe.js",
-      "--hold",
-    ],
-    { env: {}, stdout: "pipe", stderr: "ignore" },
-  );
-  const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
-  const reader = child.stdout.getReader();
-  try {
-    const first = await reader.read();
-    expect(first.done).toBe(false);
-    const pid = Number((await readFile(`/proc/${child.pid}/task/${child.pid}/children`, "utf8")).trim().split(" ")[0]);
-    expect(pid).toBeGreaterThan(1);
-    child.kill("SIGKILL");
-    await child.exited;
-    const until = performance.now() + 2000;
-    let stopped = false;
-    while (performance.now() < until) {
-      try {
-        await readFile(`/proc/${pid}/stat`, "utf8");
-      } catch (error) {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-          stopped = true;
-          break;
+for (const termination of ["SIGTERM", "SIGKILL"] as const)
+  test(`C13b ${termination} of the launcher terminates and reaps its namespace init`, async () => {
+    const child = Bun.spawn(
+      [
+        "/app/job-isolate",
+        String(allocateRunnerIdentities(65536)),
+        String(1024 * 1024),
+        process.execPath,
+        "--no-env-file",
+        "/app/job-probe.js",
+        "--hold",
+      ],
+      { env: {}, stdout: "pipe", stderr: "ignore" },
+    );
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+    const reader = child.stdout.getReader();
+    try {
+      const first = await reader.read();
+      expect(first.done).toBe(false);
+      const pid = Number((await readFile(`/proc/${child.pid}/task/${child.pid}/children`, "utf8")).trim().split(" ")[0]);
+      expect(pid).toBeGreaterThan(1);
+      child.kill(termination);
+      await child.exited;
+      if (termination === "SIGTERM") expect(child.exitCode).toBe(124);
+      const until = performance.now() + 2000;
+      let stopped = false;
+      while (performance.now() < until) {
+        try {
+          await readFile(`/proc/${pid}/stat`, "utf8");
+        } catch (error) {
+          if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+            stopped = true;
+            break;
+          }
+          throw error;
         }
-        throw error;
+        await Bun.sleep(10);
       }
-      await Bun.sleep(10);
+      expect(stopped).toBe(true);
+    } finally {
+      clearTimeout(timer);
+      if (child.exitCode === null) child.kill("SIGKILL");
+      await child.exited;
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
-    expect(stopped).toBe(true);
-  } finally {
-    clearTimeout(timer);
-    if (child.exitCode === null) child.kill("SIGKILL");
-    await child.exited;
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}, 10000);
+  }, 10000);
