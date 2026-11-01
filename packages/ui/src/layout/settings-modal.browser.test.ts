@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Which box a focus scrolls is decided by layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
@@ -145,4 +145,89 @@ describe("@k2b/ui SettingsModal scrolling", () => {
       }
     });
   }
+});
+
+/** Two groups with more categories than a phone row shows. */
+const crowdedModal = () =>
+  renderToString(() =>
+    createComponent(SettingsModal, {
+      title: "Mailbox settings",
+      onClose: () => {},
+      get children() {
+        return ["Personal", "Compose", "Mailbox", "Delivery"].map((group) =>
+          createComponent(SettingsModal.Group, {
+            title: group,
+            get children() {
+              return [1, 2].map((index) =>
+                createComponent(SettingsModal.Tab, { id: `${group}-${index}`.toLowerCase(), title: `${group} ${index}`, children: group }),
+              );
+            },
+          }),
+        );
+      },
+    }),
+  );
+
+describe("@k2b/ui SettingsModal separation", () => {
+  for (const [name, viewport] of Object.entries(viewports)) {
+    test(`separates groups and the category list from the panel without lines on a ${name}`, async () => {
+      const page = await browser.newPage({ viewport });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${crowdedModal()}</div></body></html>`,
+        );
+        await settled(page);
+        const lines = await page.evaluate(() => {
+          const sides = ["top", "right", "bottom", "left"];
+          const selectors = [
+            ".k2b-settings__rail",
+            ".k2b-settings__tabs",
+            ".k2b-settings__tab-group",
+            ".k2b-settings__content",
+            ".k2b-settings__body",
+          ];
+          return {
+            borders: selectors.flatMap((selector) =>
+              Array.from(document.querySelectorAll(selector)).flatMap((element) => {
+                const style = getComputedStyle(element);
+                return sides
+                  .filter((side) => Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0)
+                  .map((side) => `${selector} ${side}`);
+              }),
+            ),
+            separators: document.querySelectorAll('.k2b-settings__rail :is(hr, [role="separator"])').length,
+          };
+        });
+        expect(lines).toEqual({ borders: [], separators: 0 });
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("the phone row fades out into the last category it cuts", async () => {
+    const page = await browser.newPage({ viewport: viewports.phone });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${crowdedModal()}</div></body></html>`,
+      );
+      // The island measures the overflow and sets this attribute; the page is only server-rendered here.
+      await page.locator(".k2b-settings__tabs").evaluate((element) => element.setAttribute("data-scroll-fade", "bottom"));
+      await settled(page);
+      const fade = await page.locator(".k2b-settings__tabs").evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          overflows: element.scrollWidth > element.clientWidth,
+          masked: style.maskImage.includes("linear-gradient"),
+          reachesPastPadding:
+            Number.parseFloat(style.getPropertyValue("--scroll-fade-size")) * 16 > Number.parseFloat(style.paddingRight) + 16,
+        };
+      });
+      expect(fade).toEqual({ overflows: true, masked: true, reachesPastPadding: true });
+    } finally {
+      await page.close();
+    }
+  });
 });
