@@ -408,6 +408,33 @@ describe("Code with access in the shared rights editor", () => {
     }
   });
 
+  test("a removal that fails after editing stopped does not bring its retry back", async () => {
+    const [editable, setEditable] = createSignal(true);
+    let fail: (() => void) | undefined;
+    const view = await setup({
+      canEdit: editable,
+      respond: ({ url }) =>
+        url.endsWith("/accounts")
+          ? accountsResponse()
+          : new Promise<Response>((resolve) => {
+              fail = () => resolve(Response.json({ code: "UNAVAILABLE", message: "x" }, { status: 503 }));
+            }),
+    });
+    try {
+      await waitFor(() => view.codeRows()[0]?.textContent?.includes("info@") === true, "owner titles");
+      view.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
+      await waitFor(() => fail !== undefined, "the pending removal");
+      setEditable(false);
+      fail!();
+      await waitFor(() => view.codeRows()[0]?.getAttribute("aria-busy") === null, "the settled removal");
+      setEditable(true);
+      await Bun.sleep(20);
+      expect(view.section()!.querySelector("[role=alert]")).toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("Code accounts never appear in the principal picker, even when the directory returns one", async () => {
     const view = await setup({
       respond: ({ url }) =>

@@ -71,7 +71,6 @@ afterAll(async () => {
 type Handlers = { accounts: (route: Route) => unknown; remove?: (route: Route) => unknown };
 const open = async (width: number, handlers: Handlers, query = "") => {
   const tab = await browser.newPage({ viewport: { width, height: width < 600 ? 844 : 900 }, reducedMotion: "reduce" });
-  await tab.clock.setFixedTime(new Date("2026-10-31T12:00:00.000Z"));
   const origin = "https://code-access.test";
   await tab.route(`${origin}/**`, (route) => {
     const path = new URL(route.request().url()).pathname;

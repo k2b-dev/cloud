@@ -50,12 +50,16 @@ export default function CodeAccessSection(props: {
     setTargetAppId(navigationApps().currentAppId ?? document.querySelector("[data-app-id]")?.getAttribute("data-app-id") ?? undefined);
   });
   const canRemove = (entry: AccessEntry) => props.canEdit && Boolean(entry.grantId) && targetAppId() !== undefined;
-  // A failed removal and its retry leave with editing, like the editor's own rows.
+  // A failed removal and its retry leave with editing, like the editor's own rows. A removal that fails after
+  // editing stopped belongs to that ended session and never reappears when editing returns.
+  let editingSession = 0;
   createEffect(
     on(
       () => props.canEdit,
       (editable) => {
-        if (!editable) for (const id of Object.keys(failures)) setFailures(id, undefined);
+        if (editable) return;
+        editingSession += 1;
+        for (const id of Object.keys(failures)) setFailures(id, undefined);
       },
     ),
   );
@@ -130,6 +134,7 @@ export default function CodeAccessSection(props: {
     if (!confirmed || disposed || !canRemove(entry)) return;
     setRemoving(entry.id);
     setFailures(entry.id, undefined);
+    const session = editingSession;
     try {
       const response = await fetch("/api/resources/code-access/remove", {
         method: "POST",
@@ -147,7 +152,8 @@ export default function CodeAccessSection(props: {
       props.onRemoved(entry);
     } catch (error) {
       // Only this section's own wording reaches the row; a network error reads like any other failure.
-      if (!disposed) setFailures(entry.id, error instanceof RemoveFailure ? error.message : t().codeRemoveFailed);
+      if (!disposed && session === editingSession)
+        setFailures(entry.id, error instanceof RemoveFailure ? error.message : t().codeRemoveFailed);
     } finally {
       if (!disposed) setRemoving(null);
     }
