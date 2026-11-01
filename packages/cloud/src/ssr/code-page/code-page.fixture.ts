@@ -109,7 +109,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   active: v4,
   waiting: null,
   attentionReasons: null,
-  internet: null,
+  internet: { active: ["https://bank.example", "https://status.example:8443"], waiting: ["https://bank.example", "https://new.example"] },
   automations: [
     {
       entrypoint: "anfragenSortieren",
@@ -143,6 +143,8 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
 
 export const codePageFixture = (
   state:
+    | "no-internet"
+    | "internet-failed"
     | "overview"
     | "waiting"
     | "approval"
@@ -355,9 +357,8 @@ export const codePageFixture = (
           waiting: v5,
           waitingTargets,
           internet: {
-            origins: ["https://api.spedition-probe.example", "https://tracking.example:8443"],
-            newOrigins: ["https://tracking.example:8443"],
-            unbound: false,
+            active: ["https://api.spedition-probe.example"],
+            waiting: ["https://api.spedition-probe.example", "https://tracking.example:8443"],
           },
         }),
       };
@@ -378,6 +379,10 @@ export const codePageFixture = (
           ],
         }),
       };
+    case "no-internet":
+      return { ...base, tab: "overview", state: ready({ internet: { active: [], waiting: [] } }) };
+    case "internet-failed":
+      return { ...base, tab: "overview", state: ready({ internet: { active: null, waiting: [] } }) };
     case "versions-failed":
       return { ...base, tab: "overview", state: ready({ waiting: v5, waitingTargets, versionsFailed: true }) };
     case "reader":
@@ -403,6 +408,7 @@ export const codePageFixture = (
             version: v5,
             comparison: 4,
             staleComparison: false,
+            internet: ["https://version.example:8443"],
             files: [
               {
                 path: "code.ts",

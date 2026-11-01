@@ -25,10 +25,10 @@ export type CodeApprovalReviewProps = {
   newer: { number: number; author: string; href: string } | null;
   why: string[];
   rights: CodeApprovalRight[];
+  internet: string[];
   diffHeader: string;
   files: CodeVersionDiffFile[] | null;
   decision: { approved: boolean; soleAdmin: boolean; by: string; when: string } | null;
-  internet: { origins: { origin: string; secrets: string[] }[]; open: boolean };
   /** The Code in Administration › Code, where it can be paused. */
   codeHref: string;
   nextHref: string | null;
@@ -142,6 +142,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     <div class="flex min-h-full flex-col">
       <div class="grid flex-1 content-start gap-6 px-2 pt-1 pb-6">
         <Show when={decidedNotice()}>{(notice) => notice()}</Show>
+
         <Show when={!done() && (props.status === "expired" || props.status === "cancelled")}>
           <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />
         </Show>
@@ -255,30 +256,26 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         <section class="grid gap-2" aria-labelledby="code-review-internet">
           <div class="flex items-baseline justify-between gap-3">
             <h3 id="code-review-internet" class="text-base font-semibold">
-              {t().internet}
+              {t().internetOrigins}
             </h3>
             <span class="text-xs text-(--k2b-text-muted)">{t().internetSub}</span>
           </div>
           <Show
-            when={props.internet.origins.length || props.internet.open}
+            when={props.internet.length}
             fallback={<p class="text-sm text-(--k2b-text-muted)">{t().internetNone}</p>}
           >
             <ul class="grid gap-1">
-              <For each={props.internet.origins}>
+              <For each={props.internet}>
                 {(target) => (
                   <li class="flex items-center gap-3 px-3 py-1 text-sm">
                     <i class="ti ti-world text-(--k2b-text-muted)" aria-hidden="true" />
                     <span class="min-w-0 flex-1">
-                      <span class="font-mono">{target.origin}</span>
-                      <span class="block text-xs text-(--k2b-text-muted)">{t().internetSecrets({ names: target.secrets.join(", ") })}</span>
+                      <span class="font-mono">{target}</span>
                     </span>
                   </li>
                 )}
               </For>
             </ul>
-            <Show when={props.internet.open}>
-              <p class="text-xs text-(--k2b-text-muted)">{t().internetOpen}</p>
-            </Show>
           </Show>
         </section>
 

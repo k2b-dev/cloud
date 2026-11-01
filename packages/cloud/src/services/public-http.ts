@@ -10,6 +10,8 @@ export type PublicHttpInput = {
   body?: Uint8Array;
   maxBytes: number;
   signal: AbortSignal;
+  /** Return a redirect target to a host that validates every hop. Never follows redirects itself. */
+  includeRedirectLocation?: boolean;
 };
 
 /** One public HTTPS request, pinned to a validated address. Never redirects or retries.
@@ -35,7 +37,7 @@ export async function requestPublicHttps(
   input.signal.throwIfAborted();
   const target = addresses[0]!;
   try {
-    return await readNetworkResponse<{ status: number; headers: Record<string, string>; body: Uint8Array }>({
+    return await readNetworkResponse<{ status: number; headers: Record<string, string>; body: Uint8Array; redirectLocation?: string }>({
       request: dependencies.request,
       signal: input.signal,
       body: input.body,
@@ -58,7 +60,14 @@ export async function requestPublicHttps(
         }
         // A redirect never receives a second request or exposes a Location token.
         if (status >= 300 && status < 400 && status !== 304) {
-          finish({ status, headers, body: new Uint8Array() });
+          finish({
+            status,
+            headers,
+            body: new Uint8Array(),
+            ...(input.includeRedirectLocation && typeof incoming.headers.location === "string"
+              ? { redirectLocation: incoming.headers.location }
+              : {}),
+          });
           return;
         }
         if (incoming.headers["content-encoding"] && incoming.headers["content-encoding"] !== "identity") {

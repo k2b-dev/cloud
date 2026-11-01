@@ -5,6 +5,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CodeHttpRequest,
   CodeHttpRequestSchema,
+  CodeInternetOriginsSchema,
   type CodeSecretVersionBinding,
   CodeSecretVersionBindingSchema,
   codeSecretHeaderAllowed,
@@ -111,7 +112,16 @@ export function redactCodeHttpResponse(
   if (Buffer.byteLength(JSON.stringify({ ok: true, data: result })) > CAPABILITY_MAX_RESULT_BYTES) return deny("code_http_result_limit");
   return result;
 }
-const VersionSecretsSchema = z.object({ secrets: z.array(CodeSecretVersionBindingSchema).optional() });
+const VersionSecretsSchema = z.object({
+  secrets: z.array(CodeSecretVersionBindingSchema).optional(),
+  internet: CodeInternetOriginsSchema.optional(),
+});
+/** A declaration never relaxes own-origin or network address protections. The refusal includes only the canonical origin. */
+export function requireCodeHttpOrigin(raw: string, declared: readonly string[], own: readonly string[]): URL {
+  const url = codeSecretRequestUrl(raw, own);
+  if (!declared.includes(url.origin)) throw new CodeBridgeRefusal("code_http_origin_undeclared", 200, url.origin);
+  return url;
+}
 /** Core dispatcher only. The runner sends markers, Core reads the exact version binding and the current value at issuance.
  * C4 checks policy/fence/mandate and prepares the request in a short transaction. Network I/O starts only after commit.
  */
@@ -148,11 +158,12 @@ export async function dispatchCodeSecretHttp(
             try {
               const [version] = await tx<
                 { manifest: unknown }[]
-              >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb)) AS manifest
+              >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb),'internet',COALESCE(manifest->'internet','[]'::jsonb)) AS manifest
           FROM code.versions WHERE code_id=${input.claims.codeId} AND id=${input.claims.versionId}::uuid`;
               const parsed = VersionSecretsSchema.safeParse(version?.manifest);
               if (!parsed.success) return deny();
               const bindings = parsed.data.secrets ?? [];
+              requireCodeHttpOrigin(request.url, parsed.data.internet ?? [], input.ownOrigins);
               await validateCodeSecretBindings(input.claims.codeId, bindings, tx);
               const plan = codeSecretHeaderPlan(request, bindings, input.ownOrigins);
               const values = new Map<string, string>();
@@ -183,10 +194,10 @@ export async function dispatchCodeSecretHttp(
                 }),
               );
               if (Buffer.byteLength(JSON.stringify(headers)) > payloadLimit) return deny("code_http_input_limit");
-              return { ok: true as const, headers, inserted };
+              return { ok: true as const, headers, inserted, bindings, origins: parsed.data.internet ?? [] };
             } catch (error) {
               // Expected preparation refusals remain data, so the mandate wrapper cannot erase their codes.
-              if (error instanceof CodeBridgeRefusal) return { ok: false as const, code: error.code };
+              if (error instanceof CodeBridgeRefusal) return { ok: false as const, code: error.code, origin: error.origin };
               throw error;
             }
           },
@@ -194,21 +205,45 @@ export async function dispatchCodeSecretHttp(
         );
         return issued.ok ? issued.data : { ok: false as const, code: "code_http_forbidden" };
       });
-      if (!prepared.ok) return deny(prepared.code);
+      if (!prepared.ok) throw new CodeBridgeRefusal(prepared.code, 200, "origin" in prepared ? prepared.origin : undefined);
       // Locks protect issuance, not the remote effect. A slow endpoint must not block pause, revoke or heartbeats.
       signal.throwIfAborted();
-      const response = await send({
-        url: request.url,
-        method: request.method,
-        headers: prepared.headers,
-        body: request.body === undefined ? undefined : Buffer.from(request.body),
-        maxBytes: Math.floor((CAPABILITY_MAX_RESULT_BYTES * 3) / 4),
-        signal,
-      });
-      return Response.json({ ok: true, data: redactCodeHttpResponse(response, prepared.inserted) });
+      // The same administrator call budget bounds network hops; a caller can instead use the final URL.
+      const hopBudget = await codeSettings.get("core.code.calls_per_run");
+      let current = request;
+      for (let hop = 0; hop < hopBudget; hop++) {
+        signal.throwIfAborted();
+        requireCodeHttpOrigin(current.url, prepared.origins, input.ownOrigins);
+        // Reapply secret origin/path/header constraints before every hop, never forward an inserted header blindly.
+        codeSecretHeaderPlan(current, prepared.bindings, input.ownOrigins);
+        const response = await send({
+          url: current.url,
+          method: current.method,
+          headers: prepared.headers,
+          body: current.body === undefined ? undefined : Buffer.from(current.body),
+          maxBytes: Math.floor((CAPABILITY_MAX_RESULT_BYTES * 3) / 4),
+          signal,
+          includeRedirectLocation: true,
+        });
+        if (![301, 302, 303, 307, 308].includes(response.status) || !response.redirectLocation)
+          return Response.json({ ok: true, data: redactCodeHttpResponse(response, prepared.inserted) });
+        const next = new URL(response.redirectLocation, current.url).href;
+        requireCodeHttpOrigin(next, prepared.origins, input.ownOrigins);
+        const get =
+          (response.status === 303 && current.method !== "HEAD") ||
+          ((response.status === 301 || response.status === 302) && current.method === "POST");
+        current = { ...current, url: next, ...(get ? { method: "GET" as const, body: undefined } : {}) };
+      }
+      return deny("code_http_redirect_limit");
     });
   } catch (error) {
     // Never forward raw request, response, crypto, cancellation or transport exception text.
-    return Response.json({ ok: false, error: { code: error instanceof CodeBridgeRefusal ? error.code : "code_http_failed" } });
+    return Response.json({
+      ok: false,
+      error: {
+        code: error instanceof CodeBridgeRefusal ? error.code : "code_http_failed",
+        ...(error instanceof CodeBridgeRefusal && error.origin ? { origin: error.origin } : {}),
+      },
+    });
   }
 }

@@ -82,7 +82,7 @@ Copy the selected metadata into `manifest.secrets`, omitting `configured`:
     "pathPrefix": "/v1",
     "headers": ["authorization"]
   }],
-  "internet": true,
+  "internet": ["https://api.example.com:8443"],
   "policyRows": ["internet"]
 }
 ```
@@ -119,9 +119,30 @@ app.schedule("0 8 * * 1", async () => {
 `secrets.API` is the opaque string `[secret:API]`. It never contains the
 credential. `http.fetch` accepts a URL and optional `method`, `headers` and
 UTF-8 `body`. Its result is `{ status, headers, body }`, with a base64 body so
-binary responses survive the JSON bridge. Its checker evidence marks
-`internet: true`; the trusted host includes the `internet` policy row when
-submitting it.
+binary responses survive the JSON bridge.
+
+Every version, including personal Code, declares its exact HTTPS origins in
+`manifest.internet`. The checker reads literal URLs and literal origins before
+a dynamic path, such as ``http.fetch(`https://api.example.com/items/${id}`)``.
+For a dynamic origin or a redirect destination, declare a literal list:
+
+```ts
+http.allow(["https://api.example.com", "https://downloads.example.com:8443"]);
+```
+
+An origin is scheme, host and effective port. Use HTTPS without wildcards,
+credentials, paths or a trailing slash. `http.allow` declares destinations; it
+does not send a request or grant authority. A dynamic origin without this list
+produces `code_http_origin_dynamic`, with a hint to use `http.allow`.
+`CodeInternetOriginSchema` and `CodeInternetOriginsSchema` from
+`@k2b/cloud/contracts` validate canonical origins and unique origin lists.
+
+The trusted host adds the `internet` policy row for a nonempty list. The
+“Admin approval” preset requires an administrator to approve those versions.
+Approval and the resource's Code page show the complete list, including
+requests without secrets. A changed list needs a new version approval under
+that policy. A missing or empty list permits no internet requests. One-shot
+`code_run` in Gustav continues to request approval for each HTTP call.
 
 Core injects values only into header placeholders. It refuses placeholders
 in a URL or body, unknown names, unapproved headers, duplicate header names,
@@ -147,14 +168,19 @@ A request already issued may finish after a value replacement, delete or pause. 
 "http"` grant; fixed origin, URL and method restrictions still apply.
 The version's secret binding narrows this grant further.
 
-Current activation does not yet issue HTTP grants. Activated versions therefore
-receive `code_http_forbidden` for HTTP calls until
-[declared-origin activation support](https://github.com/k2b-dev/cloud/pull/2349)
-is available. Storing values and approving bindings are available independently.
+Core sends requests through `requestPublicHttps`, with public-address
+validation and pinned DNS on every hop, bounded response bytes, the run's
+remaining deadline, and cancellation. Every request and redirect must match
+`manifest.internet`; an undeclared origin returns `code_http_origin_undeclared`
+with that canonical `origin`. The runner includes the origin in the error.
+Declared origins never permit private/internal hosts or private DNS answers.
 
-Core sends one request through `requestPublicHttps`, with public-address
-validation, pinned DNS, bounded response bytes, the run's remaining deadline,
-and cancellation. It follows no redirects and performs no retries. HTTP is
+Redirects recheck the origin list and secret origin/path/header bindings
+before sending another request. A cross-origin redirect cannot carry a secret
+bound to the previous origin. The administrator's `core.code.calls_per_run`
+budget also bounds the number of network hops within one `http.fetch`;
+exhaustion returns `code_http_redirect_limit`. Use the final URL to avoid a
+redirect chain. Core performs no retries. HTTP is
 recorded as a possible Action so attempt recovery cannot automatically repeat
 an external write.
 

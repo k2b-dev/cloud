@@ -34,7 +34,7 @@ const ROW_DE: Record<CodePolicyRow, [string, string]> = {
   ask_sensitive: ["Sensibel", "Personal- und Gesundheitsdaten"],
   ask_app_asks: ["App fragt nach", "Die App verlangt eine Rückfrage"],
   ai: ["KI-Nutzung", "Text einordnen, Antwort schreiben"],
-  internet: ["Internet", "Adressen außerhalb von Cloud aufrufen"],
+  internet: ["Ins Internet", "Adressen außerhalb von Cloud aufrufen"],
 };
 
 export const codeAdminMessages = i18n.define({
@@ -182,6 +182,7 @@ export const codeAdminMessages = i18n.define({
       grpSilent: "Silent, without asking",
       grpAsk: "Would otherwise ask",
       grpAiNet: "AI and Internet",
+      internetOrigins: "Internet origins",
       rowLabel: ({ row }: Row) => ROW_EN[row][0],
       rowExample: ({ row }: Row) => `e.g. ${ROW_EN[row][1]}`,
       usage: ({ n }: N) => (n === 0 ? "not used" : n === 1 ? "1 Code" : `${n} Code`),
@@ -488,6 +489,7 @@ export const codeAdminMessages = i18n.define({
       grpSilent: "Still, ohne Rückfrage",
       grpAsk: "Fragt sonst nach",
       grpAiNet: "KI und Internet",
+      internetOrigins: "Ursprünge im Internet",
       rowLabel: ({ row }: Row) => ROW_DE[row][0],
       rowExample: ({ row }: Row) => `z. B. ${ROW_DE[row][1]}`,
       usage: ({ n }: N) => (n === 0 ? "nicht genutzt" : n === 1 ? "1 Code" : `${n} Code`),
