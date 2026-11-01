@@ -12,6 +12,7 @@ import { type CodeContext, CodeDataError, codePerson, requireCodePermission } fr
 import {
   CODE_ACTIVATION_MANAGER_NAMES,
   type CodeActivation,
+  type CodeActivationCheck,
   type CodeActivationFailure,
   CodeActivationFailureSchema,
   codeActivationContracts,
@@ -99,11 +100,13 @@ const visibleManagerNames = async (managerIds: string[], person: { id: string; r
   }
 };
 async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
-  const failure = result.failure;
+  return result.failure ? { ...result, failure: await visibleFailure(result.failure, context) } : result;
+}
+async function visibleFailure(failure: CodeActivationFailure, context: CodeContext): Promise<CodeActivationFailure> {
   // Provider presentation needs a current reader check. Core's own operational
   // failures contain no target presentation and retain their recovery reason.
-  if (!failure?.target || (failure.readable === undefined && failure.title === undefined && failure.managerUserIds === undefined))
-    return result;
+  if (!failure.target || (failure.readable === undefined && failure.title === undefined && failure.managerUserIds === undefined))
+    return failure;
   const person = codePerson(context);
   let readable = false;
   if (failure.readable !== false && failure.target.type !== "app") {
@@ -119,13 +122,12 @@ async function visibleReceipt(result: CodeActivation, context: CodeContext): Pro
       /* An unavailable reader check never supplies presentation. */
     }
   }
-  if (!readable)
-    result.failure = { target: failure.target, code: failure.code, reason: activationManagerRequired(context.locale), readable: false };
-  else if (failure.managerUserIds?.length) {
+  if (!readable) return { target: failure.target, code: failure.code, reason: activationManagerRequired(context.locale), readable: false };
+  if (failure.managerUserIds?.length) {
     const managerNames = await visibleManagerNames(failure.managerUserIds, person);
-    if (managerNames.length > 0) result.failure = { ...failure, managerNames };
+    if (managerNames.length > 0) return { ...failure, managerNames };
   }
-  return result;
+  return failure;
 }
 const load = async (id: string, db: SQL = sql) => (await db<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${id}::uuid`)[0];
 const terminal = (state: CodeActivation["state"]) => ["active", "failed", "cancelled"].includes(state);
@@ -230,6 +232,86 @@ export async function activateCodeVersion(
   });
   return visibleReceipt(result, context);
 }
+/**
+ * The switch-on dialog's answer before the click: every target an activation would ask, asked the same way with `dryRun`.
+ * Only a person who could start this activation may ask. It changes no access and starts no activation; each target logs
+ * the question like any capability call. Activating later checks everything again.
+ */
+export async function checkCodeActivation(
+  raw: z.input<typeof codeActivationContracts.check.input>,
+  context: CodeContext,
+  overrides?: Partial<CodeActivationDependencies>,
+): Promise<CodeActivationCheck> {
+  const input = codeActivationContracts.check.input.parse(raw),
+    deps = { ...defaults, ...overrides },
+    person = activationPerson(context),
+    code = await authorizedCode(input.codeId, context);
+  await sql.begin(async (tx) => {
+    await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
+    await requireCodeVersionApproval(code, input.versionId, tx);
+  });
+  // An application that cannot list its grants leaves only its own targets unknown; the others still answer.
+  const unavailable = new Set<string>();
+  const listAvailable: typeof liveGrants = async (listed, items, transport) => {
+    const live = new Map<string, CodeAccessGrant>();
+    if (listed.serviceAccountId)
+      for (const app of new Set(items.map((item) => targetApp(item.target))))
+        try {
+          for (const grant of await transport.list(app, listed.serviceAccountId)) live.set(grant.grantId, grant);
+        } catch (error) {
+          if (!(error instanceof CodeActivationTransportError)) throw error;
+          unavailable.add(app);
+        }
+    return live;
+  };
+  let plan: CodeActivationTarget[];
+  try {
+    ({ plan } = await planActivation(input.versionId, code, deps, listAvailable));
+  } catch (error) {
+    if (!(error instanceof ActivationRefused)) throw error;
+    const { failure } = error;
+    return {
+      targets: failure.target ? [{ target: failure.target, state: "refused", failure: await visibleFailure(failure, context) }] : [],
+    };
+  }
+  const targets: CodeActivationCheck["targets"] = [];
+  // No grant or activation exists for this identity; it only binds the proofs of this one question.
+  const activationId = crypto.randomUUID();
+  for (const item of plan.filter((item) => item.owner || !item.reused)) {
+    context.signal?.throwIfAborted();
+    if (!code.serviceAccountId || (!item.owner && unavailable.has(targetApp(item.target)))) {
+      targets.push({ target: item.target, state: "unknown", failure: null });
+      continue;
+    }
+    try {
+      const decision = await deps.transport.set(
+        {
+          codeId: code.id,
+          versionId: input.versionId,
+          activationId,
+          activatingPerson: person.id,
+          principal: code.serviceAccountId,
+          item,
+          dryRun: true,
+        },
+        context,
+      );
+      targets.push(
+        decision.granted
+          ? { target: item.target, state: "granted", failure: null }
+          : {
+              target: item.target,
+              state: "refused",
+              failure: await visibleFailure(refusalFailure(item.target, decision, context), context),
+            },
+      );
+    } catch (error) {
+      if (!(error instanceof CodeActivationTransportError)) throw error;
+      targets.push({ target: item.target, state: "unknown", failure: null });
+    }
+  }
+  return { targets };
+}
 /** Permission-aware process status for CLI and resource Code pages. */
 export async function readCodeActivation(
   input: z.infer<typeof codeActivationContracts.read.input>,
@@ -253,20 +335,27 @@ class ActivationRefused extends Error {
 function refuse(target: CodeActivationFailure["target"], code: string, reason: string): never {
   throw new ActivationRefused({ target, code, reason });
 }
-function refuseDecision(
+function refusalFailure(
   target: CodeActivationFailure["target"],
   raw: Extract<CodeAccessSetData, { granted: false }>,
   context: CodeContext,
-): never {
+): CodeActivationFailure {
   const decision = activationDecision(raw, context.locale);
   if (decision.granted) throw new Error("Expected refusal");
-  throw new ActivationRefused({
+  return {
     target,
     code: decision.reasonCode,
     reason: decision.reason,
     readable: decision.readable === true,
     ...(decision.readable ? { title: decision.title, managerUserIds: decision.managerUserIds } : {}),
-  });
+  };
+}
+function refuseDecision(
+  target: CodeActivationFailure["target"],
+  raw: Extract<CodeAccessSetData, { granted: false }>,
+  context: CodeContext,
+): never {
+  throw new ActivationRefused(refusalFailure(target, raw, context));
 }
 async function checkpoint(row: ActivationRow, deps: CodeActivationDependencies): Promise<{ code: Code; context: CodeContext }> {
   if ((await load(row.id))?.cancel_requested) refuse(null, "cancelled", "Activation cancelled.");
@@ -286,10 +375,11 @@ async function liveGrants(code: Code, targets: readonly { target: { type: string
       for (const grant of await transport.list(app, code.serviceAccountId)) live.set(grant.grantId, grant);
   return live;
 }
-async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDependencies): Promise<CodeActivationTarget[]> {
+/** What this version asks of its targets right now, with new grant identities. Writes nothing. */
+async function planActivation(versionId: string, code: Code, deps: CodeActivationDependencies, list = liveGrants) {
   const [version] = await sql<
     { manifest: unknown }[]
-  >`SELECT manifest FROM code.versions WHERE id=${row.version_id}::uuid AND code_id=${code.id}`;
+  >`SELECT manifest FROM code.versions WHERE id=${versionId}::uuid AND code_id=${code.id}`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
   const catalogs = new Map<string, CapabilityManifest>();
   for (const appId of new Set(manifest.permissions.map((p) => p.operation.split(".")[0]!))) {
@@ -307,7 +397,7 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
   const prior = await sql<
     GrantRow[]
   >`SELECT g.* FROM code.target_grants g JOIN code.version_grants vg ON vg.grant_id=g.grant_id WHERE g.code_id=${code.id} AND g.state='granted' AND vg.version_id=${code.activeVersionId}::uuid ORDER BY g.grant_id`;
-  const live = await liveGrants(code, built.targets, deps.transport);
+  const live = await list(code, built.targets, deps.transport);
   const plan: CodeActivationTarget[] = [];
   const owner = ownerTarget(code);
   if (owner) plan.push({ target: owner, operations: [], grantId: crypto.randomUUID(), reused: false, owner: true });
@@ -322,10 +412,14 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
     );
     plan.push({ ...item, grantId: reusable?.grant_id ?? crypto.randomUUID(), reused: Boolean(reusable), owner: false });
   }
+  return { plan, policy: built.policy };
+}
+async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDependencies): Promise<CodeActivationTarget[]> {
+  const { plan, policy } = await planActivation(row.version_id, code, deps);
   await sql.begin(async (tx) => {
     await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
     if ((await findCode(code.id, tx))?.state === "deleting") refuse(null, "code_unavailable", "Code is being deleted.");
-    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(built.policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
+    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
         VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${tx.array(item.operations, "text")},'planned')`;

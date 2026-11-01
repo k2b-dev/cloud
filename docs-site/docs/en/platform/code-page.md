@@ -35,7 +35,10 @@ third-party application get the same page. It never names an application.
 - **Runs:** each run with its trigger, version and state, including skipped
   schedule ticks. A run lists its calls in order with their result. A run that
   failed after its first action offers **Run again**, once per failed run; a
-  run that failed earlier was already retried by Core.
+  run that failed earlier was already retried by Core. Editors can open any
+  failed run in the panel with **View with <panel>**. A run started again says
+  "run again by Ben Schulz" in the list and detail and links the failed run
+  ("Run again from #2284a1"); a hidden name leaves "run again".
 - **Secrets (editors only):** each secret's name, the address, path and headers
   that may receive it, who last set the value and which versions use it; never
   the value. Editors create a secret, replace a value, change a binding or
@@ -140,4 +143,5 @@ because the Code never gets access of its own. Gustav uses this at
 `/app/assistant/code/<codeId>`.
 
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
-appears as **Edit with <panel>** on the page and on an empty page.
+appears as **Edit with <panel>** on the page and on an empty page, with the icon
+the panel declares; the page names no application.

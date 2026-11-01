@@ -620,6 +620,23 @@ describe("Code with access in the shared rights editor", () => {
       view.cleanup();
     }
   });
+
+  test("a search that finds nobody says why Code is never listed, and everyone answers only its own name", async () => {
+    const view = await setup({
+      respond: ({ url }) => (url.includes("/api/accounts/entities") ? Response.json({ items: [] }) : accountsResponse()),
+      initialEntries: [person],
+    });
+    try {
+      const input = view.dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.value = "info@";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => view.dom.root.textContent?.includes("Keine Person und keine Gruppe gefunden.") === true, "the empty search");
+      expect(view.dom.root.textContent).toContain("Code steht hier nie zur Auswahl.");
+      expect(view.dom.root.querySelectorAll("[role=option]")).toHaveLength(0);
+    } finally {
+      view.cleanup();
+    }
+  });
 });
 
 describe("Sharing a Code itself", () => {

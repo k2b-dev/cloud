@@ -439,6 +439,8 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
         createdAt: "2026-11-01T07:42:00.000Z",
         startedAt: "2026-11-01T07:42:01.000Z",
         endedAt: "2026-11-01T07:42:03.000Z",
+        rerunOf: null,
+        rerunByName: null,
       },
       {
         id: "90000000-0000-4000-8000-000000000002",
@@ -451,6 +453,8 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
         createdAt: "2026-10-31T16:10:00.000Z",
         startedAt: "2026-10-31T16:10:01.000Z",
         endedAt: "2026-10-31T16:10:02.000Z",
+        rerunOf: null,
+        rerunByName: null,
       },
     ],
     cleanup: [],

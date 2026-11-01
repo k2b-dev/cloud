@@ -391,6 +391,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
             input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
+            rerunOf: "Der fehlgeschlagene Lauf dieses Codes und Einstiegs, den dieser Lauf erneut startet.",
           },
         },
         "code.secret.set": {
