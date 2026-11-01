@@ -53,6 +53,7 @@ const codeVersionSubmissionInput = {
   "manifest.permissions[].target.id": "Wörtliche Ziel-ID oder null bei einem dynamischen persönlichen Ziel.",
   "manifest.permissions[].file": "Relative Quelldatei mit dieser Operation.",
   "manifest.permissions[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.permissions[].entrypoints": "Automationen, deren Handler diese Operation selbst aufruft; fehlt, wenn es unbekannt ist.",
   "manifest.ai": "Ob erkannte Aufrufe KI nutzen.",
   "manifest.hashes": "Prüfsummen für Quelltext, erzeugtes SDK und genaues Bundle.",
   "manifest.hashes.source": "SHA-256-Hash des Quelltexts aus der Prüfung.",

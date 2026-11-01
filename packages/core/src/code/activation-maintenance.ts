@@ -80,8 +80,20 @@ async function withRemovals(rows: CodeTargetAccess[], principal: string): Promis
   // Each grant is matched with its own target and owning app before the newest event is chosen.
   const events = await sql<{ grant_id: string; actor_user_id: string | null; created_at: Date }[]>`
     SELECT DISTINCT ON (r.grant_id) r.grant_id, e.actor_user_id, e.created_at
-    FROM unnest(${removed.map((row) => row.grantId)}::text[], ${removed.map((row) => row.target.type)}::text[],
-      ${removed.map((row) => row.target.id)}::text[], ${removed.map((row) => targetApp(row.target))}::text[])
+    FROM unnest(${sql.array(
+      removed.map((row) => row.grantId),
+      "text",
+    )}::text[], ${sql.array(
+      removed.map((row) => row.target.type),
+      "text",
+    )}::text[],
+      ${sql.array(
+        removed.map((row) => row.target.id),
+        "text",
+      )}::text[], ${sql.array(
+        removed.map((row) => targetApp(row.target)),
+        "text",
+      )}::text[])
       AS r(grant_id, target_type, target_id, app_id)
     JOIN audit.events e ON e.target_type = r.target_type AND e.target_id = r.target_id
     WHERE e.action = 'code.access.rm' AND e.outcome = 'allowed'
