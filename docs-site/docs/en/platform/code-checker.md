@@ -101,8 +101,14 @@ contract, shared with the version service, contains:
 
 - `entrypoints`: schedule/manual kinds, named ESM exports, cron expression or
   null, and declaration file and line;
-- `permissions`: `{ operation, target, file, line }`, with a row for each literal
-  target and additional reference;
+- `permissions`: `{ operation, target, file, line, entrypoints? }`, with a row
+  for each literal target and additional reference. `entrypoints` lists, sorted,
+  the schedules whose handler contains the call: an inline function, or a
+  function declaration or `const` function the schedule names directly, also
+  from another file. A call in a helper that the handler calls, or in a function
+  bound with `let`, has no `entrypoints` field. Share dialogs name the
+  automation from it ("for “weekly”") and leave the line out when it is absent;
+  it never affects authorization;
 - `ai`: whether the detected calls use AI;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk`, and `bundle`.
 
