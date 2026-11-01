@@ -279,6 +279,7 @@ export {
   readAppAccess,
   changeAppAccess,
   canRepairAppAccess,
+  canReadAppAdministration,
   requireAppAccessManager,
   type AppAccessSnapshot,
 } from "./app-access-management";

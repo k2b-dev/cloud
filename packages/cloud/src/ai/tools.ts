@@ -9,6 +9,7 @@ import type {
   AiApprovalTarget,
   AiDataBoundary,
   AiFrontendToolMode,
+  AiLoadToolsResult,
   AiProjectFileToolSource,
   AiResolvedModel,
   AiRuntimeTool,
@@ -73,6 +74,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
+          /** Loads tools for the next model turn under the same rules as load_tools; absent where a turn has no tool discovery. */
+          loadTools?: (names: readonly string[]) => Promise<AiLoadToolsResult>;
         },
       ) => Promise<z.infer<TOutput>>,
     ): AiToolRuntime<TInput, TOutput> {
@@ -131,6 +134,7 @@ export type AiToolPreparationContext = {
   /** Registers the deterministic review before requesting or consuming a nested approval. */
   describeReview?: (approvalCallId: string, review: CapabilityActionCallReview) => void | Promise<void>;
   reportWebsiteReceipts?: (callId: string, receipts: AiWebsiteReceipt[]) => Promise<void>;
+  loadTools?: (names: readonly string[]) => Promise<AiLoadToolsResult>;
 };
 
 /**
@@ -257,6 +261,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
               : undefined,
           reportWebsiteReceipts:
             callId && input.reportWebsiteReceipts ? (receipts) => input.reportWebsiteReceipts!(callId, receipts) : undefined,
+          loadTools: input.loadTools,
         });
       });
     }

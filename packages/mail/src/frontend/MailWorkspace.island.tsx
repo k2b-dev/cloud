@@ -137,6 +137,7 @@ import {
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { createMailboxSearch } from "./_components/mailbox-search";
+import { automationLogHref } from "./automation-log-href";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { mailPageMessages } from "./pages-messages";
 import { assertCursorProgress } from "./pagination";
@@ -2962,7 +2963,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
               done: controller().data.doneTodayCounts.doneToday,
               automated: controller().data.doneTodayCounts.doneByAutomation,
               open: controller().data.viewCounts.needs_action,
-              logHref: `/app/mail/${controller().data.mailbox.id}/automations/log`,
+              logHref: automationLogHref(controller().data.mailbox.id),
             }
           : null
       }

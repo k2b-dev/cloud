@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { aiSkillLoadTools } from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { gridsCapabilities } from "./capabilities";
 import { parseGridsQueryDsl } from "./query-dsl/parser";
 import { SKILLS } from "./skills";
 
@@ -66,4 +69,14 @@ test("Grids skill names canonical Help and declared capabilities", async () => {
   for (const match of grids.instructions.matchAll(/`(grids\.[a-z0-9.-]+)`/g)) expect(declared.has(match[1]!)).toBeTrue();
   const help = await Bun.file(new URL("./help/documents/en/grids-gql.help.md", import.meta.url)).text();
   expect(help).toContain("Query with AI");
+});
+
+test("Skills load only capabilities the app declares", () => {
+  const manifest = compileCapabilityManifest("grids", gridsCapabilities);
+  const declared = [...manifest.queries, ...manifest.actions].map((operation) => `grids.${operation.localId}`);
+  for (const skill of SKILLS) {
+    const names = aiSkillLoadTools(skill.extraFrontmatter);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(declared).toContain(name);
+  }
 });

@@ -512,7 +512,9 @@ const TemplateUseInputShape = {
 export const TaskCreateInputSchema = z
   .object({
     spaceId: SpaceIdSchema,
-    columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
+    columnId: ResourceShortIdSchema.optional().describe(
+      "Optional target column ID returned by Read space. When omitted, the task goes to the Space's first open column, the first one in board order that is not marked done.",
+    ),
     title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
     description: markdownInput(z.string().max(5000).optional().describe("Optional task description.")),
     deadline: DeadlineInputSchema.optional(),
