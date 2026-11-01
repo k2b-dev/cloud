@@ -75,7 +75,10 @@ const isGroupDefinition = (value: unknown): value is SettingsModalGroupDefinitio
 const isFooterDefinition = (value: unknown): value is SettingsModalFooterDefinition =>
   !!value && typeof value === "object" && (value as { kind?: unknown }).kind === SETTINGS_MODAL_FOOTER;
 
+// A group's children are not resolved by `children()`: a control-flow child such as `<Show>` stays an accessor and
+// resolves here, inside the caller's tracking scope, so a conditional tab appears and disappears with its condition.
 const collectTabs = (value: unknown): SettingsModalTabDefinition[] => {
+  if (typeof value === "function" && value.length === 0) return collectTabs(value());
   if (Array.isArray(value)) return value.flatMap(collectTabs);
   if (isGroupDefinition(value)) return collectTabs(value.props.children);
   return isTabDefinition(value) ? [value] : [];
@@ -192,7 +195,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
         onKeyDown={(event) => moveTabFocus(event, tab.props.id)}
       >
         <Show when={tab.props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <span class="k2b-truncate-fade">{tab.props.title}</span>
+        <span class="k2b-truncate-fade-lines">{tab.props.title}</span>
       </button>
     );
   };
