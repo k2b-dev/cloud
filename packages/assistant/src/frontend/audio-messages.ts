@@ -55,7 +55,8 @@ export const audioMessages = i18n.define({
       failed: "Die Transkription ist fehlgeschlagen. Du kannst sie erneut versuchen oder die Aufnahme verwerfen.",
       recordFailed: "Audioaufnahme nicht möglich. Prüfe die Mikrofonberechtigung und die Browserunterstützung.",
       recordInstead: "Stattdessen aufnehmen",
-      recordInsteadNote: "Versuch es gleich noch mal oder nimm auf. Dann erscheint der Text nach dem Stopp, und die Aufnahme wird im Gespräch gespeichert.",
+      recordInsteadNote:
+        "Versuch es gleich noch mal oder nimm auf. Dann erscheint der Text nach dem Stopp, und die Aufnahme wird im Gespräch gespeichert.",
       uploadFailed: "Upload fehlgeschlagen. Die Aufnahme ist hier noch verfügbar. Versuche es erneut, bevor du die Seite verlässt.",
       conflict: "Der gespeicherte Entwurf wurde geändert. Dein lokaler Text bleibt erhalten.",
       savedDraft: "Gespeicherter Entwurf",
