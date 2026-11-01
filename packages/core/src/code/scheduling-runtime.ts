@@ -5,14 +5,9 @@ import { CAPABILITY_MAX_REQUEST_BYTES, CodeCheckedVersionManifestSchema } from "
 import { coreSettings, logger } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
-import {
-  claimCodeRuns,
-  codeRunnerLease,
-  processCurrentCodeScheduleTick,
-  readCodeRunLimits,
-  reconcileCodeRuns,
-  recordCodeRunner,
-} from "./scheduling";
+import { claimCodeWork } from "./dispatch";
+import { reconcileCodeJobs } from "./runner-jobs";
+import { codeRunnerLease, processCurrentCodeScheduleTick, readCodeRunLimits, reconcileCodeRuns, recordCodeRunner } from "./scheduling";
 import { CODE_SCHEDULE_TICK_RETENTION_MS } from "./scheduling-contracts";
 import { codeSettings } from "./settings";
 
@@ -37,6 +32,20 @@ export const createCodeRunOutbox = (queue: () => Queue<CodeRunWakeup>) =>
     },
   });
 export const codeRunOutbox = createCodeRunOutbox(codeRunQueue);
+/** Job tickets use the same queue/consumer and therefore the same runner slot advertisement. */
+export const createCodeJobOutbox = (queue: () => Queue<CodeRunWakeup>) =>
+  createPgOutbox<OutboxRow & { job_id: string }>({
+    table: "code.job_outbox",
+    name: "core:code-jobs",
+    orderBy: "job_id",
+    sequence: "sequence",
+    batchSize: 100,
+    reconcileIntervalMs: 1000,
+    publish: async (row) => {
+      await queue().send({ data: { runId: row.job_id }, idempotencyKey: row.id });
+    },
+  });
+export const codeJobOutbox = createCodeJobOutbox(codeRunQueue);
 /** Configuration is read at runner startup. No runner environment variables control budgets. */
 export async function readCodeRunnerConfig() {
   return RunnerConfigSchema.parse({
@@ -67,9 +76,9 @@ export async function fetchCodeRuns(
       const ticket = await reader.receive({ waitMs: 1000, signal: abort });
       if (!ticket) continue;
       // Selection skips Codes at their limit rather than making this runner wait behind their tickets.
-      const runs = await claimCodeRuns(free, await readCodeRunLimits(), request.instanceId);
+      const { runs, jobs } = await claimCodeWork(free, request.instanceId, await readCodeRunLimits());
       await ticket.ack();
-      if (runs.length) {
+      if (runs.length || jobs.length) {
         const ownerChecks = new Map<string, Promise<boolean>>();
         // Parallel bounded reads share one owner check per Code and cannot discard another Code's lease.
         const prepared = await Promise.all(
@@ -84,11 +93,11 @@ export async function fetchCodeRuns(
         );
         const leases = prepared.filter((lease) => lease !== null);
         try {
-          await recordCodeRunner(request.instanceId, free - leases.length);
+          await recordCodeRunner(request.instanceId, free - leases.length - jobs.length);
         } catch {
           logger("core:code-scheduling").warn("code_runner_metrics_unavailable");
         }
-        if (leases.length) return { runs: leases };
+        if (leases.length || jobs.length) return { runs: leases, jobs };
       }
     }
     return { runs: [] };
@@ -182,16 +191,20 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
   const reconcileSchedules = createCodeScheduleReconciler(codeRunScheduler());
   const recover = async () => {
     await reconcileCodeRuns();
+    await reconcileCodeJobs();
     await reconcileSchedules();
     await codeRunOutbox.notify();
+    await codeJobOutbox.notify();
   };
   try {
     worker = await codeRunScheduler().process();
     codeRunOutbox.start();
+    codeJobOutbox.start();
   } catch (error) {
     worker?.stop();
     await worker?.drain();
     await codeRunOutbox.stop();
+    await codeJobOutbox.stop();
     throw error;
   }
   const startRecovery = () => {
@@ -215,5 +228,6 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
     worker?.stop();
     await worker?.drain();
     await codeRunOutbox.stop();
+    await codeJobOutbox.stop();
   };
 }

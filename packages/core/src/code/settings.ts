@@ -2,6 +2,85 @@ import { createSettingsAPI } from "@k2b/cloud/services";
 
 /** Storage and execution budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
+  "core.code.job_pending": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 10000,
+    default: 100,
+    label: "Pending check and test jobs",
+    description: "Installation-wide queued and running authoring jobs; further requests return busy.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Offene Prüf- und Testaufträge",
+          description: "Installationsweite wartende und laufende Prüfaufträge; weitere Anfragen werden als ausgelastet abgewiesen.",
+        },
+      },
+    },
+  },
+  "core.code.job_wait_ms": {
+    kind: "number",
+    integer: true,
+    min: 1000,
+    max: 120000,
+    default: 30000,
+    label: "Authoring job queue wait (ms)",
+    description: "Queue allowance added to the isolated role execution budget.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Wartebudget für Prüfaufträge (ms)",
+          description: "Wartebudget zusätzlich zum Ausführungsbudget der isolierten Rolle.",
+        },
+      },
+    },
+  },
+  "core.code.runner_job_slots": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 64,
+    default: 1,
+    label: "Authoring slots per runner",
+    description: "Maximum simultaneous authoring roles per replica, within its shared slots and host memory/process allocation.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Prüfplätze je Runner",
+          description: "Maximale gleichzeitige Prüfrollen innerhalb der geteilten Plätze und der Speicher- und Prozessbudgets des Hosts.",
+        },
+      },
+    },
+  },
+  "core.code.test_cases": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1000,
+    default: 64,
+    label: "Cases per test job",
+    description: "Maximum declarative fixtures in one isolated test job.",
+    presentation: {
+      translations: {
+        de: { label: "Testfälle je Prüfauftrag", description: "Maximale deklarative Testfälle eines isolierten Prüfauftrags." },
+      },
+    },
+  },
+  "core.code.test_runs": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1000,
+    default: 200,
+    label: "Invocations per test job",
+    description: "Maximum fixture invocations across all cases of one test job.",
+    presentation: {
+      translations: {
+        de: { label: "Ausführungen je Prüfauftrag", description: "Maximale Ausführungen über alle Testfälle eines Prüfauftrags." },
+      },
+    },
+  },
   "core.code.source_bytes": {
     kind: "number",
     integer: true,
@@ -205,9 +284,11 @@ export const CODE_SETTINGS = {
     max: 64,
     default: 4,
     label: "Slots per runner",
-    description: "Maximum concurrent runs advertised by one runner replica.",
+    description: "Maximum concurrent runs and authoring jobs advertised by one runner replica.",
     presentation: {
-      translations: { de: { label: "Plätze je Runner", description: "Maximale gleichzeitige Läufe einer Runner-Instanz." } },
+      translations: {
+        de: { label: "Plätze je Runner", description: "Maximale gleichzeitige Läufe und Prüfaufträge einer Runner-Instanz." },
+      },
     },
   },
   "core.code.runner_poll_ms": {

@@ -1,9 +1,20 @@
 import { CoreBridge } from "./bridge";
 import { WorkerdEngine } from "./engine";
 import { runnerEnvironment } from "./env";
+import { probeJobIsolation } from "./jobs";
 import { Runner } from "./runner";
 
+if (process.pid === 1) {
+  console.error("runner_init_required");
+  process.exit(1);
+}
 const { key, origin } = await runnerEnvironment();
+try {
+  await probeJobIsolation();
+} catch {
+  console.error("runner_job_isolation_unavailable");
+  process.exit(1);
+}
 const runner = new Runner(new CoreBridge(key, origin), new WorkerdEngine());
 const stop = () => runner.stop();
 process.on("SIGTERM", stop);

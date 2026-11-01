@@ -712,10 +712,17 @@ jobs:
           cache-to: type=gha,mode=max,scope=ci-runner
       - name: Exercise the compiled runner under its container restrictions
         run: |
-          runner_limits=(--rm --network none --read-only --cap-drop ALL
+          sudo apparmor_parser -r packages/runner/apparmor.profile
+          runner_limits=(--rm --init --network none --read-only --cap-drop ALL
             --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE
-            --security-opt no-new-privileges --memory 1g --pids-limit 256
+            --security-opt no-new-privileges --security-opt seccomp=packages/runner/seccomp.json
+            --security-opt apparmor=cloud-code-runner --security-opt systempaths=unconfined --memory 1g --pids-limit 256
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777)
+          if docker run "${runner_limits[@]}" --init=false cloud-runner:ci > "$RUNNER_TEMP/runner-no-init.log" 2>&1; then
+            echo "Runner accepted startup without an init" >&2
+            exit 1
+          fi
+          [[ "$(cat "$RUNNER_TEMP/runner-no-init.log")" == "runner_init_required" ]]
           docker run "${runner_limits[@]}" cloud-runner:ci \
             bun --no-env-file test /app/engine.test.js /app/isolation.test.js /app/shutdown.test.js
           # This test invokes the entrypoint itself, including its startup-only cap.

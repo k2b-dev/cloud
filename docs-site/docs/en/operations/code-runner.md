@@ -285,3 +285,88 @@ installation ingress setting and the telemetry cleanup budget (at most 20 per
 second). Existing identities continue polling and heartbeating independently
 of this registration budget. A burst of new replicas retries registration;
 inactive telemetry is removed after its poll-plus-lease freshness window.
+## Run tests without effects
+
+The same runner image includes a separate `code-test.js` stdin/stdout role.
+It uses the production workerd engine with a fake-only bridge and no app key
+or Core connection. Core checks the source first and sends the immutable
+bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
+for the request, result schema, and isolation requirements.
+
+## Check and test on the runner pool
+
+The same signed long-poll now carries `check`, `test` and `simulate` jobs.
+Core alternates authoring jobs with eligible production runs and counts both
+against each replica's advertised slots. Scaling needs no additional service
+or per-replica configuration. Queue admission defaults to 100 pending jobs
+installation-wide, bounded also by the owner's concurrency setting. The
+queue allowance defaults to 30 seconds, followed by the role's work budget.
+Change these under Administration > Code. `code_job_busy` asks the caller to
+retry later; cancellation and time limits leave a visible failure.
+
+The runner image contains both isolated roles and the compiler. Core needs
+none of these binaries. Each role receives only its input over stdin and
+returns bounded JSON over stdout. It runs as PID 1 with private user, PID,
+mount, network and IPC namespaces, an empty environment, private `/proc` and
+bounded `/tmp`. Private `/dev/shm` and `/dev/mqueue` mounts are read-only and
+limited to one page each; only `/tmp` receives the 16 MiB workspace budget.
+The job's separate lease key stays in the supervisor; no
+bridge token reaches the job or is issued for it.
+
+Before starting runners, install the supplied AppArmor policy once on each
+Linux Docker host:
+
+```sh
+sudo apparmor_parser -r packages/runner/apparmor.profile
+```
+
+Both Compose templates require that named policy and the checked-in seccomp
+profile. They remove Docker's locked system-path submounts so a job can mount
+its private procfs; the named policy preserves read-only kernel controls and
+blocks access to sensitive proc/sysfs paths. It permits only the proc/tmpfs
+mount targets, private shared-memory/queue directories and private-mount propagation needed by job setup. No host
+`SYS_ADMIN` is granted. After setup, both roles inherit a mandatory seccomp
+filter that refuses further namespace creation and mount operations. Workerd
+retains its own independent mandatory filter.
+
+Hosts need AppArmor with user-namespace mediation, user namespaces and
+namespace-local proc/tmpfs mounts. Docker user-namespace remapping needs an
+outer UID/GID range large enough for the supervisor's distinct production
+identities and 65,536-ID job ranges; the usual 65,536-ID remap is insufficient.
+Jobs reuse their range only after the launcher has reaped the namespace,
+including on cancellation or role failure. A helper that dies abnormally
+does not release its range. Exhausting identities stops
+acquisition and exits the supervisor so its container can restart.
+
+Docker refuses to start the container when the named profile is missing.
+The runner probes isolation before polling. Unsupported namespace/mount
+setup or a failed mandatory filter logs
+`runner_job_isolation_unavailable` and refuses startup. CI uses the same
+profile and container envelope. The local profile syntax check cannot replace
+this image verification.
+
+Keep Compose's `init: true`, or Docker's `--init` for custom deployments.
+The supervisor refuses PID 1 with `runner_init_required`. Custom deployments,
+including Kubernetes, must put an init/reaper ahead of the image entrypoint.
+The container init reaps orphaned namespace processes after an abrupt launcher
+death. A dead namespace process must disappear from `/proc`, including its
+zombie entry, so repeated cancellations do not exhaust the container PID budget.
+Routine cancellation first asks the launcher to kill and reap its namespace;
+after one second the supervisor can force termination. Abrupt launcher deaths
+retain their UID range because teardown has no launcher receipt.
+
+Administration defaults to one simultaneous authoring role per runner,
+within its four shared slots. Increase the authoring-slot setting only with
+a corresponding container memory/process allocation. Each role has a
+32-thread/process limit per Linux identity; compiler children use two Go
+execution threads. Checker memory also respects the runner process-memory
+setting. Retain headroom for the supervisor, cache and production workerd
+groups when budgeting a replica. These controls bound authoring load;
+container-wide exhaustion can still interrupt active work.
+
+`RunnerFetchResponse.jobs` contains `RunnerJobLease` values. The signed
+`RUNNER_PATHS.jobInput` route returns bounded input; the existing heartbeat
+and complete routes accept `RunnerJobProof` and `RunnerJobComplete`.
+`RunnerJobResultSchema` validates check/test/simulate results in both runner
+and Core. Job generations and random lease keys are fenced in Postgres, so
+any Core replica can serve them. Retries retain the original deadline.

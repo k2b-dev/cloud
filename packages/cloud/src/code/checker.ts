@@ -2,14 +2,19 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { capabilityHash } from "../_internal/capability-schemas";
 import type { CodeAnalysis } from "./checker-analysis";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodeCheckResult, CodePermission } from "./checker-contract";
 import { CODE_CHECK_LIMITS, CodeCheckLimitsSchema, CodeVersionManifestSchema } from "./checker-contract";
+import { codeSdkHash } from "./sdk-hash";
 
 /** Trusted executable paths provided by the runner image. isolate is mandatory and fails closed: no unsandboxed fallback.
  * compiler is the native tsgo binary (not its Node launcher); worker is code-check-worker.ts with its compiler libraries. */
-export type CodeCheckHost = { isolate: string; compiler: string; worker: string; bun: string };
+export type CodeCheckHost =
+  | { isolate: string; compiler: string; worker: string; bun: string }
+  | {
+      /** Core uses runner transport; no compiler or untrusted execution belongs in Core. */
+      check: (request: CodeCheckRequest, signal?: AbortSignal) => Promise<CodeCheckResult>;
+    };
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 const failure = (code: string, message: string, file: string): CodeCheckResult => ({
   ok: false,
@@ -22,6 +27,7 @@ const permissionKey = (p: Pick<CodePermission, "operation" | "target">) =>
  * Wall time is shared; output is drained with a byte bound, RSS is polled on Linux, and cancellation reaps every child.
  * Source paths and contents are untrusted data. SDK and host paths must originate from the platform, never the Code author. */
 export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, signal?: AbortSignal): Promise<CodeCheckResult> {
+  if ("check" in host) return host.check(request, signal);
   const limits = CodeCheckLimitsSchema.parse(request.limits ?? CODE_CHECK_LIMITS);
   if (process.platform !== "linux") return failure("code_checker_unavailable", "Der Code-Prüfer benötigt Linux.", request.entry);
   if (signal?.aborted) return failure("code_check_cancelled", "Prüfung abgebrochen.", request.entry);
@@ -39,7 +45,13 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
   const run = async (command: string[]) => {
     if (signal?.aborted) throw new Error("code_check_cancelled");
     if (performance.now() >= deadline) throw new Error("code_check_time_limit");
-    const child = Bun.spawn([host.isolate, ...command], { cwd: directory, env: {}, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const child = Bun.spawn([host.isolate, ...command], {
+      cwd: directory,
+      env: {},
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     let reason: string | undefined;
     let outputBytes = 0;
     const stop = (code: string) => {
@@ -163,7 +175,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
       ai: analysis.ai,
       hashes: {
         source: sha256(JSON.stringify({ entry: request.entry, files: names.map((name) => [name, request.files[name]]) })),
-        sdk: capabilityHash(request.sdk),
+        sdk: codeSdkHash(request.sdk),
         bundle: sha256(bundle),
       },
     });

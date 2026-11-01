@@ -5,7 +5,7 @@ section: Platform services
 order: 681
 description: Check Code types, inspect operation and target permissions, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Code checker
@@ -89,8 +89,9 @@ operation appears in that trusted list. The request's SDK, operation metadata,
 existing permissions, executable paths, and budgets come from the host, never
 from the Code author.
 
-`CodeCheckHost` supplies the mandatory Linux isolation executable, the native
-tsgo binary, the trusted analysis/build worker, and Bun. There is no fallback
+`CodeCheckHost` accepts either a remote `check(request, signal)` function or
+the mandatory Linux isolation executable, native tsgo binary, trusted
+analysis/build worker, and Bun. Core uses the remote form. There is no fallback
 to an unisolated process. Pass an `AbortSignal` to cancel a check; the checker
 kills and reaps its child and returns `code_check_cancelled`.
 
@@ -130,3 +131,28 @@ Files ending in `.tsx` can contain ordinary TypeScript in Phase 1. Rendering JSX
 comes with the Phase 2 page runtime; JSX expressions currently produce a type
 error. Workerd-compatible web types remain visible, but they grant no outbound
 network access. Use the SDK's authorized bridge operations for external effects.
+
+## Use the Core runner host
+
+Core consumers import `createCodeCheckRequest` and `createRunnerCodeCheckHost`
+from `packages/core/src/code/index.ts`. First build the request with
+`await createCodeCheckRequest(codeId, files, entry, context)`; this authorizes
+editing and generates SDK metadata from the current catalog. Then call
+`checkCode(request, createRunnerCodeCheckHost(context), signal)` or the host's
+`check` method. Do not accept SDK metadata or checker budgets from author JSON.
+
+The host enqueues a bounded `check` job and waits for its validated
+`CodeCheckResultSchema` result. Jobs share the signed long-poll runner pool
+and free slots with production runs. They receive a generation and separate
+lease key, with no bridge run token. Cancellation fences the job. A lost
+checker lease can be retried within the original deadline and attempt budget.
+
+`submitCodeVersion` repeats this server check before storing a submission.
+The exact bundle and static manifest evidence must match; a forged or stale
+client result is refused. This check grants no execution permission.
+
+`CodeJobError.code` is `code_job_busy`, `code_job_request_limit`,
+`code_job_output_limit`, `code_job_time_limit`, `code_job_cancelled`, or
+`code_job_failed`. Busy means
+retry later. Administration > Code bounds pending jobs and queue allowance;
+no caller waits indefinitely. Forward the request's cancellation signal.

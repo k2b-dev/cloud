@@ -2,6 +2,7 @@ import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "@k
 import { err, fail, ok } from "@k2b/stdlib";
 import { ZodError } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./access";
+import { CodeJobError } from "./job-errors";
 import { CodeVersionError } from "./versions";
 
 const contextFor = (context: CapabilityExecutionContext): CodeContext => {
@@ -12,6 +13,12 @@ export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: 
   try {
     return ok({ data: await run(contextFor(context)) });
   } catch (error) {
+    if (error instanceof CodeJobError)
+      return fail({
+        code: error.code,
+        status: error.code === "code_job_request_limit" ? (400 as const) : (409 as const),
+        message: error.code === "code_job_busy" ? "Code runners are busy. Retry later." : error.message,
+      });
     if (error instanceof ZodError) return fail(err.badInput("Invalid Code input."));
     if (error instanceof CodeVersionError) {
       let details = error.details;
