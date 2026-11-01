@@ -59,15 +59,17 @@ transaction and retain locks shared with the provider's manager-change paths.
 Update older two-argument adapters before deploying this contract; use the
 supplied connection for every adapter query.
 
-Deploy Spaces and Mail with `managerUserIds` on adapter dry runs and the generated
-Core-only notification lookup before enabling Cloud-admin activation in Core.
-The audience contains current human managers, including nested manager-group
-members. Person-visible dry-run answers include these IDs only for readable
-targets. An unavailable server-side audience leaves activation waiting for retry. No new configuration or
-migration is needed for this result field. A target with more managers than the
-capability response budget allows refuses preflight with a reason; reduce that
-target's manager audience before trying again. During a directory update, retry
-a transiently unavailable manager check after the update finishes.
+Deploy the updated Core activation transport together with providers that expose
+the generated Code access routes. Dry-run answers reveal only what the person
+may read through the target Type's existing `access.readable`. Core obtains
+Cloud-admin notification recipients through its separate target-bound server
+authority; they are not required in an unreadable person's dry-run answer.
+Adapters return the current human managers, including nested manager-group
+members, on dry runs. An unavailable server-side audience leaves activation
+waiting for retry. No new configuration or migration is needed. An audience
+exceeding the capability response budget refuses preflight; reduce that target's
+manager audience before retrying. During a directory update, retry a transiently
+unavailable manager check after the update finishes.
 
 Keep the adapter available while its app has Code grants to remove. Core must
 finish target cleanup before deleting the Code account. Live grants prevent
