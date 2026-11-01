@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Which box a focus scrolls is decided by layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
@@ -140,6 +140,70 @@ describe("@k2b/ui SettingsModal scrolling", () => {
         // The panel contains whatever a tab renders, so the control sits in the frame itself to lie beyond it.
         await page.evaluate(focusHiddenControl, { parent: ".k2b-settings", style: "top:300%" });
         expect(await page.evaluate(layout)).toEqual(before);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+});
+
+/** A rail with the longest category label of Mail's mailbox settings. */
+const groupedModal = () =>
+  renderToString(() =>
+    createComponent(SettingsModal, {
+      title: "Postfach-Einstellungen",
+      onClose: () => {},
+      get children() {
+        return [
+          createComponent(SettingsModal.Group, {
+            title: "Postfach",
+            get children() {
+              return createComponent(SettingsModal.Tab, { id: "general", title: "Allgemein", icon: "ti ti-id", children: "General" });
+            },
+          }),
+          createComponent(SettingsModal.Group, {
+            title: "Zustellung",
+            get children() {
+              return createComponent(SettingsModal.Tab, {
+                id: "delivery",
+                title: "Konten und Identitäten",
+                icon: "ti ti-send",
+                children: "Delivery",
+              });
+            },
+          }),
+        ];
+      },
+    }),
+  );
+
+describe("@k2b/ui SettingsModal category labels", () => {
+  // The rail may wrap a label to two lines; whether it needs to depends on the engine's font.
+  for (const [name, viewport, maxLines] of [
+    ["desktop rail at 1440", { width: 1440, height: 900 }, 2],
+    ["phone row", viewports.phone, 1],
+  ] as const) {
+    test(`shows a long category label in full in the ${name}`, async () => {
+      const page = await browser.newPage({ viewport });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${groupedModal()}</div></body></html>`,
+        );
+        await settled(page);
+        const label = await page
+          .locator('[role="tab"]', { hasText: "Konten und Identitäten" })
+          .locator("span")
+          .evaluate((element) => ({
+            overflowsInline: element.scrollWidth > element.clientWidth,
+            overflowsBlock: element.scrollHeight > element.clientHeight,
+            lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)),
+          }));
+        expect({ overflowsInline: label.overflowsInline, overflowsBlock: label.overflowsBlock }).toEqual({
+          overflowsInline: false,
+          overflowsBlock: false,
+        });
+        expect(label.lines).toBeLessThanOrEqual(maxLines);
       } finally {
         await page.close();
       }

@@ -457,8 +457,10 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Cloud's icon is `shrink-0 text-sm`; the label is one line that fades out at
-   its end (`k2b-truncate-fade`), which needs a shrinkable box, not a flex column. */
+/* Cloud's icon is `shrink-0 text-sm`. In the scrolling row the label keeps one
+   line and the row scrolls; in the side rail it wraps to two balanced lines and
+   only a longer label fades out at the end of the second (`k2b-truncate-fade-lines`,
+   which needs a line height of at least 1.3 and a shrinkable box). */
 .k2b-ui .k2b-settings__tabs button > i {
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -466,6 +468,8 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
+  line-height: 1.3;
+  text-wrap: balance;
 }
 
 /* The close control comes first in the DOM but sits after the category row,
@@ -2065,6 +2069,7 @@ html {
 
   .k2b-ui .k2b-settings__tabs button {
     width: 100%;
+    white-space: normal;
   }
 
   .k2b-ui .k2b-settings__section {

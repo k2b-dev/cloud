@@ -111,6 +111,9 @@ export default function MailboxSettings(props: {
       return { title: messages().healthBootstrappingTitle, message: messages().healthBootstrappingMessage, tone: "info" as const };
     return { title: messages().healthReconnectingTitle, message: messages().healthReconnectingMessage, tone: "info" as const };
   });
+  // The service and the database accept 1 to 160 characters.
+  const mailboxNameError = () =>
+    !name().trim() ? messages().nameRequired : name().trim().length > 160 ? messages().mailboxNameTooLong : undefined;
   const mailboxDetailsDirty = createMemo(
     () => name().trim() !== props.context.mailbox.name || description().trim() !== (props.context.mailbox.description ?? ""),
   );
@@ -484,7 +487,7 @@ export default function MailboxSettings(props: {
               <SettingsField
                 label={messages().name}
                 description={messages().mailboxNameDescription}
-                error={() => (!name().trim() ? messages().nameRequired : undefined)}
+                error={mailboxNameError}
                 changed={() => name().trim() !== props.context.mailbox.name}
               >
                 {(control) => (
@@ -560,7 +563,7 @@ export default function MailboxSettings(props: {
               <SettingsPanelFooter
                 changeCount={mailboxChangeCount}
                 loading={() => saveMailboxSettings.loading() || props.reloading}
-                saveDisabled={() => !name().trim()}
+                saveDisabled={() => mailboxNameError() !== undefined}
                 onDiscard={() => {
                   setName(props.context.mailbox.name);
                   setDescription(props.context.mailbox.description ?? "");
