@@ -1,6 +1,16 @@
 ---
 name: cloud-spaces
 description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
+load-tools:
+  - spaces.item.search
+  - spaces.space.browse
+  - spaces.task.list
+  - spaces.task.focus
+  - spaces.event.agenda
+  - spaces.item.read
+  - spaces.task.create
+  - spaces.task.update
+  - spaces.task.set-completed
 ---
 
 # Work with Cloud Spaces
@@ -18,7 +28,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 
 ## Make focused changes
 
-- Create with `spaces.task.create` or `spaces.event.create`; supply the chosen Space and a valid column. Put actionable titles and durable context in the description, without copying unrelated source material; write descriptions with real line breaks, never the two characters `\n`.
+- Create with `spaces.task.create` or `spaces.event.create`; events need a column, tasks only if asked. Put actionable titles and durable context in the description, without copying unrelated source material; write descriptions with real line breaks, never the two characters `\n`.
 - Change task or event fields with `spaces.task.update` or `spaces.event.update`; use `spaces.task.set-completed` for completion or reopening.
 - Respect active blockers before completing a task. Use `spaces.task.blocker.list` when details matter and `spaces.task.blocks.list` for the opposite direction. Dependencies must be real prerequisites between tasks in the same Space.
 - Simple subtasks use `spaces.task.checklist.list`, `spaces.task.checklist.create`, `spaces.task.checklist.update` and `spaces.task.checklist.delete`. Keep each entry to a label and completion state; do not turn checklist entries into independent assigned tasks.
