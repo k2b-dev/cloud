@@ -2,21 +2,25 @@ import { redis } from "../runtime/clients";
 
 export const LIVE_DICTATION_LEASE_MS = 15_000;
 const reserveScript = `
-redis.call('ZREMRANGEBYSCORE',KEYS[2],'-inf',ARGV[2])
+local time = redis.call('TIME')
+local now = tonumber(time[1])*1000 + math.floor(tonumber(time[2])/1000)
+redis.call('ZREMRANGEBYSCORE',KEYS[2],'-inf',now)
 if redis.call('EXISTS',KEYS[1]) == 1 then return 'busy_elsewhere' end
-if tonumber(redis.call('GET',KEYS[3]) or '0') >= tonumber(ARGV[5]) then return 'daily_limit' end
-if redis.call('ZCARD',KEYS[2]) >= tonumber(ARGV[4]) then return 'overloaded' end
-redis.call('SET',KEYS[1],ARGV[1],'PX',ARGV[3])
-redis.call('ZADD',KEYS[2],tonumber(ARGV[2])+tonumber(ARGV[3]),ARGV[1])
-redis.call('PEXPIRE',KEYS[2],ARGV[3])
+if tonumber(redis.call('GET',KEYS[3]) or '0') >= tonumber(ARGV[4]) then return 'daily_limit' end
+if redis.call('ZCARD',KEYS[2]) >= tonumber(ARGV[3]) then return 'overloaded' end
+redis.call('SET',KEYS[1],ARGV[1],'PX',ARGV[2])
+redis.call('ZADD',KEYS[2],now+tonumber(ARGV[2]),ARGV[1])
+redis.call('PEXPIRE',KEYS[2],ARGV[2])
 return 'ok'`;
 const renewScript = `
 if redis.call('GET',KEYS[1]) ~= ARGV[1] then return 0 end
+local time = redis.call('TIME')
+local now = tonumber(time[1])*1000 + math.floor(tonumber(time[2])/1000)
 local expiry = redis.call('ZSCORE',KEYS[2],ARGV[1])
-if not expiry or tonumber(expiry) <= tonumber(ARGV[2]) then return 0 end
-redis.call('PEXPIRE',KEYS[1],ARGV[3])
-redis.call('ZADD',KEYS[2],tonumber(ARGV[2])+tonumber(ARGV[3]),ARGV[1])
-redis.call('PEXPIRE',KEYS[2],ARGV[3])
+if not expiry or tonumber(expiry) <= now then return 0 end
+redis.call('PEXPIRE',KEYS[1],ARGV[2])
+redis.call('ZADD',KEYS[2],now+tonumber(ARGV[2]),ARGV[1])
+redis.call('PEXPIRE',KEYS[2],ARGV[2])
 return 1`;
 const chargeScript = `
 if redis.call('GET',KEYS[1]) ~= ARGV[1] then return -1 end
@@ -65,7 +69,6 @@ export const createLiveDictationLimits = (namespace = "ai:live-dictation") => {
         ...keys(input.userId),
         window.key,
         input.token,
-        String(input.now),
         String(LIVE_DICTATION_LEASE_MS),
         String(input.concurrency),
         String(input.minutesPerDay * 60),
@@ -74,8 +77,8 @@ export const createLiveDictationLimits = (namespace = "ai:live-dictation") => {
         throw new Error("Invalid dictation reservation result");
       return { result, resetsAt: new Date(window.resetsAt).toISOString() };
     },
-    async renew(userId: string, token: string, now: number) {
-      return (await redis.send("EVAL", [renewScript, "2", ...keys(userId), token, String(now), String(LIVE_DICTATION_LEASE_MS)])) === 1;
+    async renew(userId: string, token: string) {
+      return (await redis.send("EVAL", [renewScript, "2", ...keys(userId), token, String(LIVE_DICTATION_LEASE_MS)])) === 1;
     },
     async charge(userId: string, token: string, from: number, until: number, timeZone: string) {
       let cursor = from;

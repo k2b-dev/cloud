@@ -4,6 +4,7 @@ import { getAiCredential } from "./credentials";
 import { aiModelAccess } from "./model-access";
 import { readAiSettingsState } from "./settings";
 import type { AiModelProfile } from "./types";
+import { isAiSettingsError } from "./validate";
 
 export type LiveDictationStatus = { available: boolean; reason?: "not_configured" | "no_access" | "disabled" };
 export class LiveDictationError extends Error {
@@ -27,7 +28,8 @@ export const resolveLiveDictationModel = async (subject: AccessSubject | null): 
     throw new LiveDictationError("not_configured");
   try {
     await aiModelAccess.assertAllowed(profile.modelId, subject);
-  } catch {
+  } catch (error) {
+    if (!isAiSettingsError(error) || error.aiError.code !== "model_policy_mismatch") throw error;
     throw new LiveDictationError("no_access");
   }
   return profile;

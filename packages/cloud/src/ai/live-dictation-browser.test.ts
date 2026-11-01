@@ -105,7 +105,7 @@ describe("browser protocol", () => {
 });
 
 describe("browser source lifecycle without a microphone", () => {
-  const fixture = (failure?: string, vanished = false) => {
+  const fixture = (failure?: string, vanished?: string) => {
     const saved = new Map(
       ["window", "navigator", "WebSocket", "AudioContext", "AudioWorkletNode"].map((name) => [
         name,
@@ -117,6 +117,7 @@ describe("browser source lifecycle without a microphone", () => {
     let contextsClosed = 0;
     let requested = 0;
     let constraints: MediaStreamConstraints | undefined;
+    const requests: MediaStreamConstraints[] = [];
     const track = Object.assign(new EventTarget(), {
       label: "Actual microphone",
       getSettings: () => ({ deviceId: "actual" }),
@@ -133,7 +134,7 @@ describe("browser source lifecycle without a microphone", () => {
       binaryType = "";
       onopen?: () => void;
       onmessage?: (event: { data: string }) => void;
-      onclose?: () => void;
+      onclose?: (event: { code: number; reason: string }) => void;
       onerror?: () => void;
       constructor(readonly url: URL) {
         Socket.current = this;
@@ -153,9 +154,11 @@ describe("browser source lifecycle without a microphone", () => {
       }
     }
     class Context {
+      constructor(readonly options?: AudioContextOptions) {}
       audioWorklet = { addModule: async () => {} };
       destination = {};
       createMediaStreamSource() {
+        if (this.options?.sampleRate) throw new DOMException("Stream and context rates differ", "NotSupportedError");
         return { connect() {} };
       }
       createGain() {
@@ -183,8 +186,9 @@ describe("browser source lifecycle without a microphone", () => {
       async getUserMedia(value: MediaStreamConstraints) {
         requested++;
         constraints = value;
+        requests.push(value);
         if (failure) throw new DOMException("Fixture", failure);
-        if (vanished && requested === 1) throw new DOMException("Gone", "OverconstrainedError");
+        if (vanished && requested === 1) throw { name: vanished };
         return { getTracks: () => [track], getAudioTracks: () => [track] };
       },
     };
@@ -204,6 +208,7 @@ describe("browser source lifecycle without a microphone", () => {
       contextsClosed: () => contextsClosed,
       requested: () => requested,
       constraints: () => constraints,
+      requests,
       restore() {
         for (const [name, previous] of saved) {
           if (previous) Object.defineProperty(globalThis, name, previous);
@@ -221,7 +226,7 @@ describe("browser source lifecycle without a microphone", () => {
   };
 
   test("normal stop keeps final words, uses the actual device and closes every resource", async () => {
-    const f = fixture(undefined, true);
+    const f = fixture(undefined, "OverconstrainedError");
     const controller = new AbortController();
     try {
       const source = createLiveDictationSource({ app: "notebooks" });
@@ -260,6 +265,65 @@ describe("browser source lifecycle without a microphone", () => {
       f.restore();
     }
   });
+  test("uses the microphone's default context rate and keeps a stored ID hidden before permission", async () => {
+    const f = fixture();
+    const controller = new AbortController();
+    try {
+      const session = createLiveDictationSource({ app: "mail" }).start({ deviceId: "hidden", signal: controller.signal });
+      await opened(() => !!f.Socket.current);
+      expect(f.requests).toEqual([
+        { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, deviceId: { exact: "hidden" } } },
+      ]);
+      controller.abort();
+      await session.stop();
+      expect(f.stopped()).toBe(1);
+      expect(f.contextsClosed()).toBe(1);
+    } finally {
+      controller.abort();
+      f.restore();
+    }
+  });
+  for (const name of ["OverconstrainedError", "NotFoundError"]) {
+    test(`retries a vanished microphone on ${name} from another realm`, async () => {
+      const f = fixture(undefined, name);
+      const controller = new AbortController();
+      try {
+        const session = createLiveDictationSource({ app: "mail" }).start({ deviceId: "selected", signal: controller.signal });
+        await opened(() => !!f.Socket.current);
+        expect(f.requests).toEqual([
+          { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, deviceId: { exact: "selected" } } },
+          { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } },
+        ]);
+        controller.abort();
+        await session.stop();
+      } finally {
+        controller.abort();
+        f.restore();
+      }
+    });
+  }
+  for (const reason of ["no_access", "daily_limit", "overloaded", "busy_elsewhere", "unknown_reason"] as const) {
+    test(`policy close ${reason} without an error frame is terminal`, async () => {
+      const f = fixture();
+      const controller = new AbortController();
+      try {
+        const session = createLiveDictationSource({ app: "chat" }).start({ signal: controller.signal });
+        const events = Array.fromAsync(session.events);
+        await opened(() => !!f.Socket.current);
+        f.Socket.current.onclose?.({ code: 1008, reason });
+        expect((await events).at(-1)).toEqual({
+          type: "error",
+          code: reason === "unknown_reason" ? "connection_lost" : reason,
+          retryable: false,
+        });
+        await session.stop();
+        expect(f.stopped()).toBe(1);
+      } finally {
+        controller.abort();
+        f.restore();
+      }
+    });
+  }
   test("a stalled server-initiated finish stops the microphone and ends with a recoverable error", async () => {
     const f = fixture();
     const controller = new AbortController();
@@ -311,7 +375,7 @@ describe("browser source lifecycle without a microphone", () => {
         f.Socket.current.message({ type: "ready", maxMs: 600000 });
         if (exit === "abort") controller.abort();
         else if (exit === "pagehide") f.page.dispatchEvent(new Event("pagehide"));
-        else f.Socket.current.onclose?.();
+        else f.Socket.current.onclose?.({ code: 1006, reason: "" });
         const received = await events;
         await session.stop();
         expect(f.stopped()).toBe(1);

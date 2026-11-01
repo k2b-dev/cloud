@@ -4,7 +4,7 @@ section: AI
 order: 1060
 description: Stream speech into an application's draft with shared authorization, limits, and cancellation.
 tags: [ai, audio, dictation, browser]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Live dictation
@@ -67,20 +67,24 @@ The event types are exported alongside `DictationSource`, `DictationSession`,
 
 Call `await session.stop()` for a regular stop. It ends audio normally so the
 model can commit its final words. Cloud waits at most five seconds, then returns
-the text received so far. Abort the start signal to discard or leave: microphone
-and connection close immediately and the iterable ends silently. `pagehide`
-also cancels. There is no automatic reconnect, replay, or correction pass.
+the text received so far. If the model's final text revises the streamed text,
+Cloud finishes successfully with the text already delivered. Abort the start
+signal to discard or leave: microphone and connection close immediately and
+the iterable ends silently. `pagehide` also cancels. There is no automatic
+reconnect, replay, or correction pass.
 
 `await source.devices()` lists microphone IDs and labels; labels may be empty
 before permission. Pass a selected `deviceId` to `start`. A missing or vanished
 selection falls back to the system default. The host owns device preferences.
-Audio uses one channel, echo cancellation, noise suppression, and an AudioWorklet
-that emits 100 ms PCM16 frames. If the context runs at another sample rate, the
-worklet resamples linearly to 16 kHz.
+Audio uses one channel, echo cancellation, noise suppression, and the browser's
+default AudioContext sample rate. An AudioWorklet resamples linearly to 16 kHz
+and emits 100 ms PCM16 frames.
 
 Microphone permission failures map to `microphone_blocked` (retryable);
 unavailable or unreadable microphones map to `microphone_unavailable`.
-A socket closing without a final result maps to retryable `connection_lost`.
+A socket closing without a final result maps to retryable `connection_lost`,
+except close code 1008: its recognized error reason becomes a non-retryable
+error of that code; an unknown reason becomes non-retryable `connection_lost`.
 
 ## WebSocket protocol
 
@@ -94,7 +98,8 @@ opening. Wait for `{"type":"ready","maxMs":600000}`, then send binary mono
 PCM16 little-endian audio at 16 kHz. A 100 ms frame is 3200 bytes; each frame
 must contain whole samples and be at most 16 KiB. End with `{"type":"stop"}`.
 Unknown controls, duplicate starts, or audio before ready end the socket with
-close code 1008.
+close code 1008. This includes audio sent after `start` while the model is
+still connecting.
 
 Server messages are:
 
@@ -122,17 +127,17 @@ A second start receives `busy_elsewhere`; it cannot take over the session.
 Installation-wide concurrency defaults to four. A full installation or more
 than two seconds of queued provider audio returns `overloaded`.
 
-A session lasts at most ten minutes, with time-left warnings from minute nine.
+A session lasts at most ten minutes, with one time-left warning at minute nine.
 Two minutes of silence below -50 dBFS, including an idle microphone connection,
 stop it. Incoming audio is limited to 32,000 bytes per second with a two-second
 burst. Cloud bounds its in-memory PCM queue to two seconds too. The model must
 establish its realtime session within five seconds.
 
 The separate daily allowance defaults to 60 minutes per person, resets at local
-midnight in the installation's time zone, and is checked before start and every
-ten seconds while running. It measures active session seconds, including
-pauses. It does not consume the chat token allowance. The usage administration
-shows audio minutes grouped by person and app.
+midnight in the installation's time zone, and is checked before start and on
+every charge at the five-second heartbeat while running. It measures active
+session seconds, including pauses. It does not consume the chat token allowance.
+The usage administration shows audio minutes grouped by person and app.
 
 Session revocation, model access loss, lease loss, disconnect, or Core shutdown
 abort the model connection. After an interruption, start another dictation
@@ -145,6 +150,9 @@ model. It stores neither audio nor transcript and logs no content. Accounting
 keeps metadata: person, app, model, duration, and audio duration. The host app
 may save inserted text as ordinary draft text. The speech provider's own
 retention policy remains the operator's responsibility.
+
+Discarding a session records a normal end with cancellation metadata. Dictation
+runs do not add turns to the chat usage timeline.
 
 Public notebook pages do not receive live dictation. This API does not replace
 or alter Assistant's existing recording storage path.

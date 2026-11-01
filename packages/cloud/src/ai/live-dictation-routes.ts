@@ -5,7 +5,7 @@ import { type AuthContext, auth } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
 import { coreSettings } from "../services/settings/api";
 import { publicCloudOrigin } from "../shared/app-url";
-import { getLiveDictationStatus, resolveLiveDictationModel } from "./live-dictation-model";
+import { getLiveDictationStatus, LiveDictationError, resolveLiveDictationModel } from "./live-dictation-model";
 import { createLiveDictationSession, type LiveDictationCode } from "./live-dictation-runtime";
 
 const sessions = new Set<ReturnType<typeof createLiveDictationSession>>();
@@ -21,11 +21,15 @@ export const liveDictationOriginAllowed = (origin: string | undefined, appUrl: s
 type Probe = AuthContext & {
   Bindings: { found(session: { kind: string | undefined; subject: import("../server/services/access").AccessSubject }): Promise<void> };
 };
-const probe = new Hono<Probe>().get("*", auth.requireRole("authenticated"), async (c) => {
-  await c.env.found({ kind: c.get("credentialKind"), subject: c.get("accessSubject") });
-  return c.body(null, 204);
-});
-const revalidator = (c: Context<AuthContext>, profileId: string, userId: string) => {
+const probe = new Hono<Probe>()
+  .onError((error) => {
+    throw error;
+  })
+  .get("*", auth.requireRole("authenticated"), async (c) => {
+    await c.env.found({ kind: c.get("credentialKind"), subject: c.get("accessSubject") });
+    return c.body(null, 204);
+  });
+export const createLiveDictationRevalidator = (c: Context<AuthContext>, profileId: string, userId: string) => {
   const headers = new Headers();
   const cookie = c.req.header("cookie");
   if (cookie) headers.set("cookie", cookie);
@@ -41,7 +45,8 @@ const revalidator = (c: Context<AuthContext>, profileId: string, userId: string)
           if (subject.type !== "user" || subject.userId !== userId) return;
           try {
             allowed = (await resolveLiveDictationModel(subject)).id === profileId;
-          } catch {
+          } catch (error) {
+            if (!(error instanceof LiveDictationError)) throw error;
             allowed = false;
           }
         },
@@ -93,7 +98,7 @@ export const aiDictationRoutes = new Hono<AuthContext>()
             timeZone: timeZone || "UTC",
             send: (event) => ws.send(JSON.stringify(event)),
             close: (code, reason) => ws.close(code, reason),
-            revalidate: revalidator(c, profile.id, subject.userId),
+            revalidate: createLiveDictationRevalidator(c, profile.id, subject.userId),
           });
           sessions.add(session);
         },
