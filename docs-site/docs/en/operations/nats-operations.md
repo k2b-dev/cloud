@@ -47,8 +47,8 @@ ID when retrying an unconfirmed submission within the current page.
 
 ## Read diagnostics with the CLI
 
-Use the same administrator identity as the UI. OAuth callers also need the
-`admin` scope. JSON diagnostics use `/api/gateway/nats` and `/api/gateway/sync`;
+Use the same administrator identity as the UI. OAuth reads accept `read` or `admin` scope and check the person's current administrator role. Sync recovery actions still require `admin` scope;
+[obtain a short-lived approved login](/en/docs/operations/cli-administration#approve-a-dangerous-action). JSON diagnostics use `/api/gateway/nats` and `/api/gateway/sync`;
 the CLI handles authentication and URL encoding.
 
 ```bash

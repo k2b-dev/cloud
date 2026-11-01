@@ -82,6 +82,7 @@ const callMailCapability = async <T>(params: {
   request: MailIntegrationRequest;
   dataSchema: z.ZodType<T>;
   input: unknown;
+  target?: { type: "mail.mailbox"; id: string };
   idempotencyKey?: string;
 }): Promise<IntegrationResult<CapabilityResult<T>>> => {
   const result = await invokeCapabilityWithDataSchema(
@@ -90,6 +91,7 @@ const callMailCapability = async <T>(params: {
       capabilityId: params.capabilityId,
       kind: params.kind,
       input: params.input,
+      ...(params.target ? { target: params.target } : {}),
       idempotencyKey: params.idempotencyKey,
     },
     params.dataSchema,
@@ -109,7 +111,8 @@ const listIdentities = async (mailboxId: string, request: MailIntegrationRequest
       capabilityId: "mailbox.identity.list",
       request,
       dataSchema: senderIdentityListSchema,
-      input: { mailboxId, limit: 50, ...(cursor ? { cursor } : {}) },
+      target: { type: "mail.mailbox", id: mailboxId },
+      input: { limit: 50, ...(cursor ? { cursor } : {}) },
     });
     if (!page.ok) return page;
     identities.push(...page.data.data);
@@ -200,11 +203,11 @@ export const createInvitationDraft = async (
   const created = await callMailCapability({
     kind: "action",
     capabilityId: "draft.create",
+    target: { type: "mail.mailbox", id: input.mailboxId },
     request,
     dataSchema: draftDataSchema,
     idempotencyKey: input.idempotencyKey,
     input: {
-      mailboxId: input.mailboxId,
       senderIdentityId: input.senderIdentityId,
       to: input.to,
       subject: input.subject,

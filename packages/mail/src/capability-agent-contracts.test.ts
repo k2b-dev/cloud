@@ -14,7 +14,7 @@ import {
 
 describe("Mail agent contracts", () => {
   test("keep and release carry exact conversation identities without incidental revision state", () => {
-    const input = { mailboxId: "MbA123", conversationId: "CvB456" };
+    const input = { conversationId: "CvB456" };
     expect(ConversationKeepInputSchema.parse(input)).toEqual(input);
     expect(ConversationKeepReleaseInputSchema.parse({ ...input, reason: "  Policy reviewed  " })).toEqual({
       ...input,
@@ -22,7 +22,7 @@ describe("Mail agent contracts", () => {
     });
     expect(ConversationKeepReleaseInputSchema.safeParse({ ...input, reason: "x".repeat(501) }).success).toBeFalse();
 
-    expect(ConversationListInputSchema.parse({ mailboxId: "MbA123", view: "kept" }).view).toBe("kept");
+    expect(ConversationListInputSchema.parse({ view: "kept" }).view).toBe("kept");
     expect(
       ConversationKeepDataSchema.safeParse({
         conversationId: input.conversationId,
@@ -34,7 +34,7 @@ describe("Mail agent contracts", () => {
     expect(ConversationKeepReleaseDataSchema.parse({ conversationId: input.conversationId, released: true }).released).toBeTrue();
   });
   test("patch never supplies defaults for omitted draft fields", () => {
-    const value = { mailboxId: "MbA123", draftId: "DrG789", expectedRevision: 3, patch: { subject: "Updated" } };
+    const value = { draftId: "DrG789", expectedRevision: 3, patch: { subject: "Updated" } };
     expect(DraftPatchInputSchema.parse(value)).toEqual(value);
     expect(DraftPatchInputSchema.parse({ ...value, patch: { to: [] } }).patch).toEqual({ to: [] });
     expect(DraftPatchInputSchema.safeParse({ ...value, patch: {} }).success).toBeFalse();
@@ -63,10 +63,9 @@ describe("Mail agent contracts", () => {
 test("agent flag searches preserve their folder scope through Boolean expressions", () => {
   for (const type of ["unread", "flagged"] as const) {
     const expression = { type: "not" as const, expression: { type, folderId: "Fold01" } };
-    expect(ConversationSearchInputSchema.parse({ mailboxId: "MbA123", expression }).expression).toEqual(expression);
+    expect(ConversationSearchInputSchema.parse({ expression }).expression).toEqual(expression);
     expect(
       ConversationSearchInputSchema.safeParse({
-        mailboxId: "MbA123",
         expression: { type, folderId: "11111111-1111-4111-8111-111111111111" },
       }).success,
     ).toBe(false);
