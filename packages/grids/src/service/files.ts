@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { err, fail, fileIcons, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
 import { documentServiceText } from "./document-messages";
 import { captureRecordRevision, lockDurableHistoryMutationBoundary, prepareRecordMutation } from "./durable-history";

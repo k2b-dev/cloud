@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { Filegate, FilegateError } from "@k2b/filegate";
-import { sql } from "bun";
 import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
+import { migratePosix } from "../../core/src/migrate/core/posix";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
 import { withRootLock } from "../src/data/operations";
@@ -85,8 +85,8 @@ suite("real Filegate directory lifecycle", () => {
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
+    await migratePosix();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
@@ -256,50 +256,59 @@ suite("real Filegate directory lifecycle", () => {
       expect(auditEvents).toContainEqual({ action, outcome: "allowed" });
   }, 60_000);
 
-  test("two concurrent upload sequences commit all forty files into one root and base", async () => {
-    const baseId = `freeipa:users:${id(ipaUser)}`;
-    const folder = "concurrent-uploads";
-    const root = client.root("freeipa");
-    const target = `${prefix}/home/${name(ipaUser)}/${folder}`;
-    await root.mkdir(target, { ownership: { uid, gid, dirMode: "0700" } });
-    const failures: string[] = [];
-    const uncommitted = new Set<string>();
-    try {
-      for (let index = 0; index < 20; index++) {
-        // This per-pair barrier finishes both transfers before starting either commit, so the two
-        // commits contend for the root lock the way two tabs do.
-        const pair = await Promise.all(
-          [0, 1].map(async (tab) => {
-            const blob = new Blob([`tab ${tab}, file ${index}`]);
-            const upload = await service.upload(testCall(ipaUser), {
-              baseId,
-              path: `${folder}/tab-${tab}-${index}.txt`,
-              size: blob.size,
-              onConflict: "error",
-              idempotencyKey: crypto.randomUUID(),
-            });
-            uncommitted.add(upload.id);
-            if (!upload.url) throw new Error("Expected an open upload session");
-            await client.directSession({ url: upload.url, expires: upload.expires, operations: ["write"] }).put(0, blob);
-            return upload;
-          }),
-        );
-        const settled = await Promise.allSettled(pair.map((upload) => service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })));
-        settled.forEach((result, tab) => {
-          if (result.status === "fulfilled") uncommitted.delete(pair[tab]!.id);
-          else failures.push(`tab-${tab}-${index}: ${(result.reason as { code?: string }).code ?? String(result.reason)}`);
-        });
+  // Keep both tabs, the shared root/base and all forty files. Bound each group of
+  // five contested pairs separately so fixture work cannot overrun one test and
+  // leak a still-running uploader into the editor/cleanup tests that follow.
+  test.each([0, 5, 10, 15])(
+    "two concurrent upload sequences commit five pairs starting at %i into one root and base",
+    async (first) => {
+      const baseId = `freeipa:users:${id(ipaUser)}`;
+      const folder = `concurrent-uploads-${first}`;
+      const root = client.root("freeipa");
+      const target = `${prefix}/home/${name(ipaUser)}/${folder}`;
+      await root.mkdir(target, { ownership: { uid, gid, dirMode: "0700" } });
+      const failures: string[] = [];
+      const uncommitted = new Set<string>();
+      try {
+        for (let index = first; index < first + 5; index++) {
+          // This per-pair barrier finishes both transfers before starting either commit, so the two
+          // commits contend for the root lock the way two tabs do.
+          const pair = await Promise.all(
+            [0, 1].map(async (tab) => {
+              const blob = new Blob([`tab ${tab}, file ${index}`]);
+              const upload = await service.upload(testCall(ipaUser), {
+                baseId,
+                path: `${folder}/tab-${tab}-${index}.txt`,
+                size: blob.size,
+                onConflict: "error",
+                idempotencyKey: crypto.randomUUID(),
+              });
+              uncommitted.add(upload.id);
+              if (!upload.url) throw new Error("Expected an open upload session");
+              await client.directSession({ url: upload.url, expires: upload.expires, operations: ["write"] }).put(0, blob);
+              return upload;
+            }),
+          );
+          const settled = await Promise.allSettled(
+            pair.map((upload) => service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })),
+          );
+          settled.forEach((result, tab) => {
+            if (result.status === "fulfilled") uncommitted.delete(pair[tab]!.id);
+            else failures.push(`tab-${tab}-${index}: ${(result.reason as { code?: string }).code ?? String(result.reason)}`);
+          });
+        }
+        expect(failures).toEqual([]);
+        expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength(10);
+        for (let index = first; index < first + 5; index++)
+          for (const tab of [0, 1])
+            expect(await (await root.contentRaw(`${target}/tab-${tab}-${index}.txt`)).text()).toBe(`tab ${tab}, file ${index}`);
+      } finally {
+        // Best effort, one at a time: Filegate bounds concurrent Unix executions, and the suite removes its prefix anyway.
+        for (const uploadId of uncommitted) await service.abortUpload(testCall(ipaUser), { baseId, id: uploadId }).catch(() => undefined);
       }
-      expect(failures).toEqual([]);
-      expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength(40);
-      for (let index = 0; index < 20; index++)
-        for (const tab of [0, 1])
-          expect(await (await root.contentRaw(`${target}/tab-${tab}-${index}.txt`)).text()).toBe(`tab ${tab}, file ${index}`);
-    } finally {
-      // Best effort, one at a time: Filegate bounds concurrent Unix executions, and the suite removes its prefix anyway.
-      for (const uploadId of uncommitted) await service.abortUpload(testCall(ipaUser), { baseId, id: uploadId }).catch(() => undefined);
-    }
-  }, 60_000);
+    },
+    60_000,
+  );
 
   test("WOPI and Markdown publish through real Filegate with stale-save protection on unmanaged storage", async () => {
     configuration.collabora = { url: "http://localhost:9980", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
@@ -377,6 +386,72 @@ suite("real Filegate directory lifecycle", () => {
     expect(whole.headers.get("accept-ranges")).toBe("bytes");
     expect((await whole.arrayBuffer()).byteLength).toBe(total);
   }, 30_000);
+
+  test("search finds typos and folder names, ranks, highlights, filters and counts without the trash on Filegate 7.1", async () => {
+    const root = client.root("cloud");
+    const user = await createUser("files-search-local", "local");
+    configuration.cloud.autoCreate = true;
+    const base = (await service.bases(testCall(user))).items.find((item) => item.area === "cloud" && item.kind === "users")!;
+    expect(base.status).toBe("existing");
+    const home = `${prefix}/home/${name(user)}`;
+    const files: [string, number][] = [
+      ["Rechnungen/2026/Rechnung-2026-031.pdf", 300],
+      ["Kunden/Bäckerei/Rechnung Oktober.pdf", 50],
+      ["Buchhaltung/Rechnungseingang.xlsx", 20],
+      ["Notizen/einkauf.txt", 10],
+      ["trash/Alte Rechnung.pdf", 40],
+    ];
+    for (const [path, size] of files) {
+      const parent = path.split("/").slice(0, -1).join("/");
+      for (const folder of parent.split("/").map((_, index, parts) => parts.slice(0, index + 1).join("/")))
+        await root.mkdir(`${home}/${folder}`).catch((error) => {
+          if (!(error instanceof FilegateError && error.status === 409)) throw error;
+        });
+      await root.put(`${home}/${path}`, new Blob(["x".repeat(size)]));
+    }
+    const search = (input: Parameters<typeof service.search>[1] extends infer T ? Omit<T, "baseId"> : never) =>
+      service.search(testCall(user), { baseId: base.id, ...input });
+
+    // Defaults: typos, folder names and relevance; the shortest exact name comes first and the trash never shows.
+    const found = await search({ q: "rechnung" });
+    const paths = found.items.map((item) => item.path);
+    expect(paths).toContain("Rechnungen");
+    expect(paths).toContain("Kunden/Bäckerei/Rechnung Oktober.pdf");
+    expect(paths.some((path) => path.startsWith("trash/"))).toBe(false);
+    expect(found.items[0]?.name).toBe("Rechnungen");
+    // The total counts the hits Files shows, without the one in the trash.
+    expect(found.total).toBe(found.items.length);
+    const hit = found.items.find((item) => item.path === "Kunden/Bäckerei/Rechnung Oktober.pdf")!;
+    const marked = hit.highlight.map(([start, end]) => Array.from(hit.path).slice(start, end).join(""));
+    expect(marked.map((part) => part.toLowerCase())).toContain("rechnung");
+
+    // A missing letter still finds the invoices; exact matching does not.
+    expect((await search({ q: "rechnug" })).items.map((item) => item.path)).toContain("Kunden/Bäckerei/Rechnung Oktober.pdf");
+    expect((await search({ q: "rechnug", match: "exact" })).items).toEqual([]);
+    // Folder words find the file below them; name matching alone does not.
+    expect((await search({ q: "kunden oktober" })).items.map((item) => item.path)).toEqual(["Kunden/Bäckerei/Rechnung Oktober.pdf"]);
+    expect((await search({ q: "kunden oktober", in: "name" })).items).toEqual([]);
+
+    // Filters narrow before ranking, also without a query.
+    expect((await search({ q: "rechnung", ext: "pdf" })).items.map((item) => item.name).sort()).toEqual([
+      "Rechnung Oktober.pdf",
+      "Rechnung-2026-031.pdf",
+    ]);
+    expect((await search({ q: "rechnung", minSize: 100 })).items.map((item) => item.name)).toEqual(["Rechnung-2026-031.pdf"]);
+    expect((await search({ q: "rechnung", modifiedAfter: "2999-01-01T00:00:00Z" })).items).toEqual([]);
+    const sheets = await search({ q: "", ext: "xlsx" });
+    expect(sheets.items.map((item) => item.path)).toEqual(["Buchhaltung/Rechnungseingang.xlsx"]);
+    expect(sheets.items[0]?.highlight).toEqual([]);
+    await expect(search({ q: "" })).rejects.toMatchObject({ code: "invalid_input" });
+    // A word that could match the trash folder's own name gets no total, so a count never reveals a hidden entry.
+    const trashWord = await search({ q: "trash", ext: "pdf" });
+    expect(trashWord.items).toEqual([]);
+    expect(trashWord.total).toBeNull();
+    // One entry type alone is a search too: every folder below, without the trash.
+    const folders = (await search({ q: "", type: "directories" })).items.map((item) => item.path);
+    expect(folders).toContain("Kunden/Bäckerei");
+    expect(folders.some((path) => path.startsWith("trash"))).toBe(false);
+  }, 60_000);
 
   test("automatic Cloud creation and archival preserve daemon ownership and suppress reprovisioning", async () => {
     const root = client.root("cloud");

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { recordBaseActivity } from "./base-activity";
 import { enqueueBaseNotice, notificationLocale } from "./base-notifications";
 import { type FreshnessSource, sourceStaleSince } from "./source-staleness";

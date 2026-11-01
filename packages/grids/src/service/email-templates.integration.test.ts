@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { postgresTest, testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { create, get, listDependenciesForBase, remove, update } from "./email-templates";

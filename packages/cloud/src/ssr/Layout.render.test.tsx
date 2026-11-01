@@ -23,6 +23,8 @@ const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
 const { useLocale } = await import("@k2b/ui");
 const { default: AdminLayout } = await import("./AdminLayout");
+const { AdminArea } = await import("./AdminArea");
+const { AppWorkspace } = await import("@k2b/ui");
 
 const app = defineApp({
   id: "layout-render-probe",
@@ -67,6 +69,7 @@ const badgeApps = [
 const server = new Hono()
   .use("*", async (c, next) => {
     c.set("runtime" as never, { apps: [] } as never);
+    if (c.req.query("cloudUrl")) c.set("settings" as never, { app: { url: c.req.query("cloudUrl") } } as never);
     await next();
   })
   .get(
@@ -111,6 +114,7 @@ const server = new Hono()
           fullPage: mode === "fullPage",
           fullWidth: mode === "fullWidth",
           title: "Public tools",
+          focusMode: c.req.query("focusMode") === "true",
           help: c.req.queries("help"),
           children: "Anonymous content",
         });
@@ -181,7 +185,25 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
     ),
   )
   .get("/help/apps/accent-probe", ...app.ssr((c) => () => createComponent(Layout, { c, title: "App Help", children: "Help content" })))
-  .get("/admin/accent", ...app.ssr((c) => () => createComponent(AdminLayout, { c, title: "App admin", children: "Admin content" })));
+  .get("/admin/accent", ...app.ssr((c) => () => createComponent(AdminLayout, { c, title: "App admin", children: "Admin content" })))
+  .get(
+    "/admin/area",
+    ...app.ssr(
+      (c) => () =>
+        createComponent(AdminArea, {
+          c,
+          label: "AI",
+          sectionsLabel: "AI sections",
+          href: "/admin/area",
+          groups: [{ items: [{ id: "general", label: "General", href: "/admin/area?sec=general", icon: "ti ti-adjustments" }] }],
+          current: "general",
+          title: "General",
+          get children() {
+            return createComponent(AppWorkspace.MainPane, { id: "section", label: "General", children: "Section content" });
+          },
+        }),
+    ),
+  );
 
 describe("Cloud layouts SSR", () => {
   test("the page shell gives portalled dialogs the current app's accent without its canvas background", async () => {
@@ -234,6 +256,14 @@ describe("Cloud layouts SSR", () => {
       for (const spy of spies) spy.mockRestore();
     }
   });
+  test("an admin area resizes its sidebar and columns like any app workspace", async () => {
+    const html = await (await accentServer.request("/admin/area")).text();
+    expect(html).toContain('data-app-workspace-resize="sidebar"');
+    expect(html).toContain(
+      'data-workspace-main-region="area" data-workspace-mobile-active="false" data-workspace-panel-id="area" data-workspace-resizable="true"',
+    );
+  });
+
   test("full-page workspaces contain outer viewport overscroll", async () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
@@ -564,6 +594,7 @@ const swapServer = new Hono<{ Variables: { runtime: RuntimeContext; user: import
         },
       ],
     });
+    if (c.req.query("cloudUrl")) c.set("settings" as never, { app: { url: c.req.query("cloudUrl") } } as never);
     if (c.req.query("anonymous") !== "true") c.set("user", person);
     await next();
   })
@@ -688,6 +719,40 @@ test("launcher catalog follows live app navigation, roles and request locale in 
           expect(html).not.toContain(absent);
       }
     }
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("Layout and AdminLayout serialize the canonical configured origin; MinimalLayout has no shell data", async () => {
+  const parameter = new URLSearchParams({ cloudUrl: "https://canonical.example/cloud/" });
+  for (const path of ["/layout", "/admin", "/layout?focusMode=true"]) {
+    const html = await (await server.request(`${path}${path.includes("?") ? "&" : "?"}${parameter}`)).text();
+    const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+    expect(data?.cloudOrigin).toBe("https://canonical.example");
+  }
+  const unset = await (await server.request("/layout")).text();
+  const data = JSON.parse(unset.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+  expect(data).not.toHaveProperty("cloudOrigin");
+  const minimal = await (await server.request(`/minimal/on?${parameter}`)).text();
+  expect(minimal).not.toContain('id="cloud-shell-data"');
+});
+
+test("changing the canonical origin changes the kept shell's page-swap signature", async () => {
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+  ];
+  try {
+    const signatures = [];
+    for (const cloudUrl of ["https://first.example", "https://second.example"]) {
+      const html = await (await swapServer.request(`/app/swap?${new URLSearchParams({ cloudUrl })}`)).text();
+      signatures.push(html.match(/data-nav-shell="([^"]+)"/)?.[1]);
+    }
+    expect(signatures[0]).toBeDefined();
+    expect(signatures[1]).toBeDefined();
+    expect(signatures[0]).not.toBe(signatures[1]);
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, hasPermission, listUsersWithAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type {
   CreateWormhole,
   MutationResult,
@@ -11,6 +11,7 @@ import type {
   User,
   WormholeTransferResult,
 } from "@/contracts";
+import { publishItemEvent } from "../app-events";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
@@ -340,6 +341,7 @@ export const transfer = async (params: {
         target_column_id: string;
         target_space_id: string;
         target_is_done: boolean;
+        completed_at: Date | null;
         recurrence_rrule: string | null;
         recurring_event_id: string | null;
       }[]
@@ -347,6 +349,7 @@ export const transfer = async (params: {
       SELECT
         i.id,
         i.title,
+        i.completed_at,
         w.target_column_id,
         c.space_id AS target_space_id,
         c.is_done AS target_is_done,
@@ -401,7 +404,7 @@ export const transfer = async (params: {
     const accessRows = await tx<{ access_id: string }[]>`
       SELECT access_id FROM spaces.space_access WHERE space_id = ${locked.target_space_id}::uuid
     `;
-    // Broad access preserves existing people only. Accounts always need their own direct grant.
+    // Broad access preserves existing people only. Machine accounts need an eligible direct or local-group grant.
     const [broadAccess] = await tx<{ allowed: boolean }[]>`
       SELECT EXISTS (
         SELECT 1
@@ -483,6 +486,9 @@ export const transfer = async (params: {
         { spaceId: params.sourceSpaceId, itemId: params.itemId, itemTitle: locked.title, actor: workActor, claim: claim.data },
         tx,
       );
+    if (locked.target_is_done && locked.completed_at === null) {
+      await publishItemEvent(tx, "item.completed", updated.id, locked.target_space_id);
+    }
     // Each Space's readers learn only that the item left or arrived.
     await publishSpaceChange(tx, { type: "item.transferred", spaceId: params.sourceSpaceId, itemId: updated.id });
     await publishSpaceChange(tx, { type: "item.transferred", spaceId: locked.target_space_id, itemId: updated.id });

@@ -100,6 +100,9 @@ describe("AppWorkspace.SidebarItemStatus", () => {
     const marks = html.match(/class="k2b-app-workspace__sidebar-status-(muted|mention|unread)"[^>]*>/g) ?? [];
     expect(marks).toHaveLength(3);
     for (const mark of marks) expect(mark).toContain('aria-hidden="true"');
+    // A muted item marks itself, so its label and count stay quiet.
+    expect(html).toContain('data-muted="true"');
+    expect(render({ unread: 5 })).not.toContain("data-muted");
     expect(html).toMatch(/<a [^>]*href="\/design"[\s\S]*k2b-sr-only[\s\S]*<\/a>/);
   });
 

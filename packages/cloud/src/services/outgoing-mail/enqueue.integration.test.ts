@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
@@ -11,6 +10,8 @@ import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync
 import * as registry from "../../_internal/registry";
 import { createAdminOutgoingMailRoutes } from "../../api/admin-outgoing-mail";
 import type { MailMessage } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
+import { parseNetworkAllowlist } from "../../shared/network-address";
 import { audit } from "../audit";
 import { buildProjectedUser } from "../session/user";
 import { outgoingMailLog } from "./admin";
@@ -19,6 +20,7 @@ import { attemptOutgoingMail, processOutgoingMail, recoverOutgoingMail } from ".
 import { claimOutgoingBulkMail, drainOutgoingMail, dueOutgoingBulkProfiles, MAIL_DRAIN_MS, nextOutgoingBulkDelay } from "./drain";
 import { mail } from "./index";
 import { messageAttachmentRefs, outgoingMailMessages } from "./messages";
+import * as mailNetwork from "./resolve-host";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "./runtime";
 import { outgoingMailStore } from "./store";
 import { mailAttachments } from "./sync";
@@ -36,15 +38,13 @@ suiteFor(
   "nats",
   "valkey",
 )("atomic bulk mail and paced Core delivery", () => {
-  let originalTargets: string | undefined;
+  let targets: string[] = [];
+  let network: ReturnType<typeof spyOn<typeof mailNetwork, "outgoingMailAllowlist">>;
   beforeEach(() => {
-    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+    targets = ["127.0.0.1"];
+    network = spyOn(mailNetwork, "outgoingMailAllowlist").mockImplementation(async () => parseNetworkAllowlist(targets));
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => network.mockRestore());
 
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   let connection: Awaited<ReturnType<typeof connectTestNats>>;

@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+import { sql } from "@k2b/cloud";
+import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import { env } from "@k2b/cloud/config";
 import {
   type AppApprovalConfig,
@@ -7,10 +9,11 @@ import {
   readAppApprovalConfig,
   toPgTextArray,
 } from "@k2b/cloud/services";
-import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
+import { recordLegacyAppUse } from "@k2b/cloud/services/app-migration-evidence";
+import { isAppRequestProof, withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { sql } from "bun";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
 import { z } from "zod";
@@ -301,7 +304,9 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
       ) AS specific_access,
       u.id AS user_id, u.uid, u.profile, u.provider, u.display_name, u.given_name, u.sn AS family_name,
       u.mail, u.account_expires,
-      COALESCE(ARRAY(SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id = ug.group_id ORDER BY g.name), ARRAY[]::text[]) AS groups,
+      COALESCE(ARRAY(SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id = ug.group_id
+        WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
+        ORDER BY g.name), ARRAY[]::text[]) AS groups,
       sa.id AS service_account_id, sa.kind AS service_account_kind, sa.status AS service_account_status,
       sa.delegated_user_id, sa.app_id, sa.resource_type, sa.resource_id
     FROM oauth.clients c
@@ -382,6 +387,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
 };
 
 type Dependencies = {
+  recordLegacy: typeof recordLegacyAppUse;
   notifyNewAccess: CoreNotificationSender["sendOAuthNewAccess"];
   authenticate: (token: string | null) => boolean;
   withActiveSigner: typeof withActiveIdentitySigner;
@@ -397,7 +403,23 @@ export const authenticateOAuthBroker = (token: string | null): boolean => {
   return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
 };
 
+/** Signed OAuth calls additionally require the operator-owned oauth:issue key grant. */
+export const authorizeOAuthRequest = async (
+  c: Context,
+  legacyAuthenticate: Dependencies["authenticate"] = authenticateOAuthBroker,
+  recordLegacy = recordLegacyAppUse,
+): Promise<Response | null> => {
+  if (isAppRequestProof(c.req.header("authorization"))) {
+    const authenticated = await authenticateSignedAppRequest(c, "oauth:issue");
+    return authenticated instanceof Response ? authenticated : null;
+  }
+  if (!legacyAuthenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ code: "UNAUTHORIZED" }, 401);
+  await recordLegacy("broker-secret");
+  return null;
+};
+
 const defaultDependencies: Dependencies = {
+  recordLegacy: recordLegacyAppUse,
   notifyNewAccess: async () => {
     throw new Error("New-access notification sender is not configured");
   },
@@ -578,14 +600,16 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   const routes = new Hono();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");
-    if (!dependencies.authenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
+    const denied = await authorizeOAuthRequest(c, dependencies.authenticate, dependencies.recordLegacy);
+    if (denied) return denied;
     await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
   });
   routes.post("/oauth/token", async (c) => {
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");
-    if (!dependencies.authenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
+    const denied = await authorizeOAuthRequest(c, dependencies.authenticate, dependencies.recordLegacy);
+    if (denied) return denied;
 
     const contentLength = Number(c.req.header("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ message: "Request too large" }, 413);

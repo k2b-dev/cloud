@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { app } from "./config";
 import { newShortId } from "./lib/short-id";
-import { migrate } from "./migrate";
 import { createMailNotificationService } from "./notifications";
 import type { MailRequestContext } from "./service/auth";
 import { createMailbox } from "./service/mailboxes";
@@ -40,7 +39,6 @@ suite("Mail collaboration notification deliveries", () => {
   let context: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const [user] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-notifications-${suffix}`}, 'local', 'user', 'Mail Notifications', false)

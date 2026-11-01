@@ -1,5 +1,6 @@
 /* App-owned utilities; shared components and theme come from global.css. */
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "./history.css";
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -372,6 +373,14 @@
 .filesv2-list__row--virtual .filesv2-list__name {
   flex: none;
 }
+/* A search hit's folder gives way well before its name. */
+.filesv2-list[data-search] .filesv2-list__name {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.filesv2-list[data-search] .filesv2-list__detail {
+  flex-shrink: 8;
+}
 .filesv2-list__disclosure {
   display: inline-flex;
   align-items: center;
@@ -421,6 +430,50 @@
   align-items: center;
   gap: 0.5rem;
   min-height: 2rem;
+}
+/* Search filters stay on one line; a value that no longer fits scrolls the strip instead of moving the rows below. */
+.filesv2-search-filters {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.filesv2-search-filters > * {
+  flex-shrink: 0;
+}
+/* A running search shows rows of the list's geometry: its head, then 2.5rem rows with the 2rem file-type tile. */
+.filesv2-search-loading {
+  display: flex;
+  flex-direction: column;
+  padding: 1.75rem 0.5rem 0.5rem;
+}
+.filesv2-search-loading__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2.5rem;
+  padding-left: 0.25rem;
+}
+.filesv2-search-loading__icon {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: var(--k2b-radius-control);
+}
+.filesv2-search-loading__text {
+  width: min(22rem, 60%);
+  height: 0.75rem;
+  border-radius: 999px;
+}
+.filesv2-search-loading__row:nth-child(3n) .filesv2-search-loading__text {
+  width: min(15rem, 45%);
+}
+.filesv2-search-loading__row:nth-child(3n + 1) .filesv2-search-loading__text {
+  width: min(28rem, 70%);
 }
 .filesv2-hero {
   display: block;
@@ -1117,4 +1170,33 @@
   .filesv2-upload__bar-done {
     transition: none;
   }
+}
+
+/* This native dialog contains only the app-owned export form; other prompts keep their shared size. */
+dialog[open]:has(.filesv2-export-dialog) {
+  width: min(460px, calc(100vw - 2rem));
+}
+/* Details panel in the shared outline: the one main action in a quiet tint of
+   the app colour, a quiet line for an empty section, and image thumbnails
+   that fill the file list's preview slot. */
+.k2b-ui .k2b-button.filesv2-details-main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+.k2b-ui .k2b-button.filesv2-details-main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+.k2b-ui .filesv2-details-none {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+.k2b-file-grid__preview > .filesv2-thumbnail {
+  width: 100%;
+  height: 100%;
+  flex-basis: auto;
+}
+.k2b-file-grid__preview > .filesv2-thumbnail img {
+  border-radius: 0;
 }

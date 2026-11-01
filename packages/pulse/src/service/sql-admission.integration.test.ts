@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { RedisClient } from "bun";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { ALERT_CHECKS_PER_HOUR } from "../alert-contracts";
 import { validateSqlInput } from "../sql-params";
@@ -15,7 +16,7 @@ suite("SQL admission is atomic across replicas", () => {
     const namespace = `test:pulse:sql:${crypto.randomUUID()}`;
     const make = () => {
       const instance = createSqlAdmission({
-        url: requireInfraUrl("valkey"),
+        createClient: () => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 }),
         namespace,
         testOnly: {
           nowMs: () => now,

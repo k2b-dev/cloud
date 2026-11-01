@@ -1,14 +1,16 @@
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
-import { env } from "../config/env";
 import type { User } from "../contracts/shared";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { auth } from "../server/middleware/auth";
 import * as invocationActor from "../services/identity/invocation-actor";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
 import * as invocationToken from "../services/identity/invocation-token";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as settingsSnapshot from "../services/settings/snapshot";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
@@ -65,8 +67,7 @@ test("internal Sync operations require a bound invocation and current admin auth
   let activeClaims = claims;
   let resourceReads = 0;
   let currentUser = user;
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "widget-context-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "widget-context-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   // The heartbeats are stubbed, so the registry handles declared on this fake are never used.
@@ -80,9 +81,20 @@ test("internal Sync operations require a bound invocation and current admin auth
     health: () => ({ state: "ready", connection: "connected" }),
   } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(fakeSync);
       return { sync: fakeSync, stop: async () => processSync.unbindProcessSync() };
+    }),
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
     }),
     spyOn(heartbeat, "createHeartbeat").mockReturnValue({ start: async () => {}, stop: async () => {} }),
     spyOn(watcher, "ensureRuntimeWatcher").mockResolvedValue(),
@@ -128,13 +140,20 @@ test("internal Sync operations require a bound invocation and current admin auth
     expect((await request(headers)).status).toBe(403);
     expect(resourceReads).toBe(0);
     currentUser = { ...user, roles: ["admin"] };
-    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+    for (const scopes of [[], ["read"], ["write"], ["read", "write"], ["admin"]]) {
       activeClaims = { ...claims, credential_kind: "oauth", scopes };
       const previousReads = resourceReads;
       const response = await request(headers);
-      expect(response.status).toBe(scopes.includes("admin") ? 200 : 403);
-      expect(resourceReads - previousReads).toBe(scopes.includes("admin") ? 1 : 0);
+      const allowed = scopes.includes("read") || scopes.includes("admin");
+      expect(response.status).toBe(allowed ? 200 : 403);
+      expect(resourceReads - previousReads).toBe(allowed ? 1 : 0);
     }
+    currentUser = user;
+    activeClaims = { ...claims, credential_kind: "oauth", scopes: ["read", "write"] };
+    const previousReads = resourceReads;
+    expect((await request(headers)).status).toBe(403);
+    expect(resourceReads).toBe(previousReads);
+    currentUser = { ...user, roles: ["admin"] };
     activeClaims = { ...claims, op: syncInvocationOperation("DELETE", "/resources") };
     expect((await request(headers)).status).toBe(401);
     activeClaims = claims;
@@ -143,7 +162,7 @@ test("internal Sync operations require a bound invocation and current admin auth
     for (const spy of spies) spy.mockRestore();
     processSync.unbindProcessSync();
     clearProcessApplicationId();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {
         if (!previousListeners[index]!.has(listener)) process.removeListener(signal, listener);

@@ -1,4 +1,4 @@
-import { redis } from "bun";
+import { redis } from "@k2b/cloud";
 import type { OAuthScope } from "@/contracts";
 
 export type OAuthConsentRequest = {

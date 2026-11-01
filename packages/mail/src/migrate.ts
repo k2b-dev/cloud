@@ -3,34 +3,47 @@
  * a fresh installation runs that file once inside one transaction and records
  * version 1 (`baseline`) in `mail.schema_migrations`. Objects added after the
  * baseline live in `applyAdditions` below or the background index builders.
+ * Incompatible additions also record a schema marker that excludes older images.
  *
  * The historical 1..126 migration chain was collapsed into that baseline before
- * Mail was first deployed; a developer machine that still holds the old chain
- * is reset by dropping the schema.
+ * Mail was first deployed. That history remains unsupported; an unknown newer
+ * history is also refused without altering its data or suggesting a schema reset.
  */
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
-import { sql } from "bun";
+import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
+import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
+import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
 
 const BASELINE_VERSION = 1;
 const BASELINE_NAME = "baseline";
+// Schema compatibility marker, independent of Cloud release/package versions.
+const PRINCIPAL_ASSIGNEES_VERSION = 2;
+const PRINCIPAL_ASSIGNEES_NAME = "principal_assignees";
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
 const log = logger("mail:migrate");
 
-/** Refuse databases created by the removed migration chain instead of half-upgrading them. */
-const assertBaselineOnly = (applied: readonly { version: number; name: string }[]): void => {
-  const foreign = applied.filter((row) => row.version !== BASELINE_VERSION || row.name !== BASELINE_NAME);
-  if (foreign.length === 0) return;
-  const versions = foreign.map((row) => `${row.version} (${row.name})`).join(", ");
+/** Refuse unsupported legacy or newer schemas before any additions replace shared functions. */
+const assertSupportedSchema = (applied: readonly { version: number; name: string }[]): void => {
+  if (applied.length === 0) return;
+  const baseline = applied.some((row) => row.version === BASELINE_VERSION && row.name === BASELINE_NAME);
+  const foreign = applied.filter(
+    (row) =>
+      !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
+      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME),
+  );
+  if (baseline && foreign.length === 0) return;
+  const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
   throw new Error(
-    `Mail's schema history was collapsed into a single baseline, but this database still holds migration ${versions}. ` +
-      "Mail has never been deployed and there is no upgrade path: drop the schema and let Mail recreate it with " +
-      "`DROP SCHEMA mail CASCADE;`.",
+    `This Mail image does not support the database's schema history: ${versions}. ` +
+      "Use an image compatible with this schema, or restore a pre-upgrade backup for rollback. " +
+      "Do not remove migration markers or reset the database to bypass this check.",
   );
 };
 
@@ -46,7 +59,7 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
   const applied = await tx<{ version: number; name: string }[]>`
     SELECT version, name FROM mail.schema_migrations ORDER BY version
   `;
-  assertBaselineOnly(applied);
+  assertSupportedSchema(applied);
   if (applied.length > 0) return;
   await tx.unsafe(baselineSchema).simple();
   await tx`
@@ -57,10 +70,101 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
 
 /**
  * Objects added after the baseline. Every statement is idempotent and runs on
- * each start, so a database installed from the baseline gains them, and an
- * older Mail image, which records no version for them, still starts on it.
+ * each start. Compatible additions need no ledger row; incompatible changes
+ * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // Release N understands both modes; existing and newly created drafts stay
+  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (edit_mode IN ('lock', 'shared'))`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
+    CHECK (doc_generation > 0)`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_generation bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_revision bigint`.simple();
+  // Revision writers need the exact identities they read, including deletes.
+  // A cursor alone cannot reconstruct an earlier state from a newer GC snapshot.
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_revisions (
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL CHECK (generation > 0),
+    revision bigint NOT NULL CHECK (revision > 0),
+    state bytea NOT NULL,
+    cursor text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (draft_id, generation, revision)
+  )`.simple();
+  // Historical exact bases share the browser's two-envelope pending budget:
+  // 2 * 8,000,000 base64 characters * 3/4 = 12,000,000 raw Yjs bytes.
+  // Required current/frozen bases are additional pinned state. Enforce here
+  // so attachment-only revisions and generation resets obey the same policy.
+  await tx`CREATE OR REPLACE FUNCTION mail.trim_draft_document_revisions(target uuid)
+    RETURNS void LANGUAGE plpgsql AS $$
+    DECLARE current_draft mail.drafts%ROWTYPE;
+    BEGIN
+      SELECT * INTO current_draft FROM mail.drafts WHERE id = target FOR UPDATE;
+      IF NOT FOUND THEN RETURN; END IF;
+      WITH historical AS (
+        SELECT generation, revision,
+          sum(octet_length(state)::bigint) OVER (ORDER BY revision DESC) AS retained_bytes
+        FROM mail.draft_document_revisions
+        WHERE draft_id = target AND generation = current_draft.doc_generation
+          AND revision <> current_draft.revision
+          AND NOT (generation = coalesce(current_draft.doc_frozen_generation, 0)
+            AND revision = coalesce(current_draft.doc_frozen_revision, 0))
+      )
+      DELETE FROM mail.draft_document_revisions r
+      WHERE r.draft_id = target
+        AND NOT (r.generation = current_draft.doc_generation AND r.revision = current_draft.revision)
+        AND NOT (r.generation = coalesce(current_draft.doc_frozen_generation, 0)
+          AND r.revision = coalesce(current_draft.doc_frozen_revision, 0))
+        AND (r.generation <> current_draft.doc_generation OR EXISTS (
+          SELECT 1 FROM historical h WHERE h.generation = r.generation AND h.revision = r.revision
+            AND h.retained_bytes > 12000000
+        ));
+    END;
+    $$`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.trim_inserted_draft_document_revision()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM mail.trim_draft_document_revisions(NEW.draft_id);
+      RETURN NEW;
+    END;
+    $$`.simple();
+  await tx`CREATE OR REPLACE TRIGGER trim_draft_document_revisions
+    AFTER INSERT OR UPDATE OF state ON mail.draft_document_revisions
+    FOR EACH ROW EXECUTE FUNCTION mail.trim_inserted_draft_document_revision()`.simple();
+  // Apply the policy to pre-existing history as well as future admissions.
+  await tx`SELECT mail.trim_draft_document_revisions(draft_id)
+    FROM (SELECT DISTINCT draft_id FROM mail.draft_document_revisions) existing`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_freezes (
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL CHECK (generation > 0),
+    revision bigint NOT NULL CHECK (revision > 0),
+    cursor text NOT NULL,
+    state bytea NOT NULL,
+    PRIMARY KEY (draft_id, generation)
+  )`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_rests (
+    source_draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL CHECK (generation > 0),
+    actor_kind text NOT NULL CHECK (actor_kind IN ('user', 'service_account')),
+    actor_id uuid NOT NULL,
+    client_id uuid NOT NULL,
+    rest_draft_id uuid REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    source_state bytea NOT NULL,
+    PRIMARY KEY (source_draft_id, generation, actor_kind, actor_id, client_id),
+    UNIQUE (rest_draft_id)
+  )`.simple();
+  await tx`ALTER TABLE mail.draft_document_rests ALTER COLUMN rest_draft_id DROP NOT NULL`.simple();
+
+  await tx.unsafe(automationLogSchema).simple();
+  await ensureMailWorkflowEffectOrderSchema(tx);
   await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_logo_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
@@ -112,6 +216,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       kept_at timestamptz NOT NULL DEFAULT now()
     )
   `.simple();
+  await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_admin_page_idx
+    ON mail.conversation_keeps (kept_at DESC, conversation_id DESC)`.simple();
   await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_mailbox_idx
     ON mail.conversation_keeps (mailbox_id, kept_at DESC, conversation_id)`.simple();
   await tx`
@@ -151,6 +257,9 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`
     CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_mailbox_idx ON mail.personal_mailbox_preferences USING btree (mailbox_id)
   `.simple();
+  await tx`ALTER TABLE mail.personal_mailbox_preferences
+    ADD COLUMN IF NOT EXISTS large_view text CHECK (large_view IN ('auto', 'columns', 'split')),
+    ADD COLUMN IF NOT EXISTS phone_view text CHECK (phone_view IN ('compact', 'detailed'))`.simple();
   // Body downloads in progress, so the recovery of claims a stopped worker left behind reads only
   // them instead of every message. Building it reads the table once, on the first start after the update.
   // Even when the index exists, CREATE INDEX waits for the table lock that a running BM25 build holds.
@@ -166,8 +275,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // Folders the provider fills from the others (Gmail's Important and Starred). Discovery sets it.
   await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS provider_collection boolean DEFAULT false NOT NULL`.simple();
   // A folder's display replaces its sidebar switch: shown folders keep their mail everywhere, hidden
-  // ones stay hidden. The backfill runs once, when the column appears. show_in_sidebar stays, and Mail
-  // keeps it current, so an older Mail image still starts on this database and reads hidden folders.
+  // ones stay hidden. The backfill runs once, when the column appears. show_in_sidebar stays as the
+  // original display mirror; schema markers decide which Mail images may start.
   await tx`
     DO $$
     BEGIN
@@ -186,6 +295,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await addCommandUndoRequests(tx);
   await addSenderVerificationCommands(tx);
   await addConversationAssignees(tx);
+  await addServiceAccountAssignees(tx);
   await addAssignedOnlyMailboxAccess(tx);
   await writeLiveUpdatesToPlatformOutbox(tx);
   // A message only some recipients accepted keeps needing attention for the others while its Sent
@@ -249,10 +359,10 @@ const addCommandUndoRequests = async (tx: SqlClient): Promise<void> => {
 };
 
 /**
- * The people a conversation is assigned to; a conversation can have several. The table replaces
+ * The original people-only assignment relation; a conversation can have several. It replaces
  * `mail.conversations.assignee_user_id`: its first start copies every existing assignment once,
- * when it creates the table. Mail keeps that column at the earliest remaining assignee, so an
- * older Mail image still starts on this database and shows one of the assignees.
+ * when it creates the table. The next addition extends it to accounts; the legacy column
+ * remains a mirror of the earliest human assignee, not a rolling-upgrade contract.
  */
 const addConversationAssignees = async (tx: SqlClient): Promise<void> => {
   await tx`
@@ -276,11 +386,28 @@ const addConversationAssignees = async (tx: SqlClient): Promise<void> => {
   `.simple();
 };
 
-/**
- * Grants that cover only the conversations assigned to a person, next to the mailbox-wide grants in
- * `mail.mailbox_access`. They live in a table of their own on purpose: an older Mail image reads
- * only `mail.mailbox_access`, so it grants these people nothing instead of the whole mailbox.
- */
+/** Keep real identity foreign keys and one indexed assignment key for either principal type. */
+const addServiceAccountAssignees = async (tx: SqlClient): Promise<void> => {
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'conversation_assignees' AND column_name = 'principal_id') THEN
+      ALTER TABLE mail.conversation_assignees DROP CONSTRAINT conversation_assignees_pkey;
+      ALTER TABLE mail.conversation_assignees ALTER COLUMN user_id DROP NOT NULL;
+      ALTER TABLE mail.conversation_assignees
+        ADD COLUMN service_account_id uuid REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+        ADD COLUMN principal_id uuid GENERATED ALWAYS AS (COALESCE(user_id, service_account_id)) STORED,
+        ADD CONSTRAINT conversation_assignees_principal_check CHECK (num_nonnulls(user_id, service_account_id) = 1),
+        ADD CONSTRAINT conversation_assignees_pkey PRIMARY KEY (conversation_id, principal_id);
+      CREATE INDEX conversation_assignees_principal_idx ON mail.conversation_assignees (principal_id, conversation_id);
+    END IF;
+  END $$`.simple();
+  // The previous baseline-only runner refuses this row before replacing live functions.
+  // Existing older processes must be stopped before this migration starts.
+  await tx`INSERT INTO mail.schema_migrations (version, name)
+    VALUES (${PRINCIPAL_ASSIGNEES_VERSION}, ${PRINCIPAL_ASSIGNEES_NAME}) ON CONFLICT (version) DO NOTHING`;
+};
+
+/** Grants covering only assigned conversations stay separate from mailbox-wide access. */
 const addAssignedOnlyMailboxAccess = async (tx: SqlClient): Promise<void> => {
   await tx`
     CREATE TABLE IF NOT EXISTS mail.mailbox_assigned_access (
@@ -298,12 +425,12 @@ const addAssignedOnlyMailboxAccess = async (tx: SqlClient): Promise<void> => {
  * Mail's one writer of live updates, called by the trigger on `mail.activity_events` and by
  * changes that record no activity. It writes to Core's platform outbox and joins the updates of
  * one conversation, or of the whole mailbox, in one transaction. It keeps the signature of the
- * function that wrote to Mail's former table, so the replicas of an older image that still run
- * during a rollout write their updates here too; the uuid it returns is always NULL.
+ * function that wrote to Mail's former table; the uuid it returns is always NULL.
+ * The principal-assignee schema marker excludes older Mail images; no mixed rollout is supported.
  * The baseline does not create it, so a fresh installation and an upgraded one get this body.
  *
- * People who may read only the conversations assigned to them never follow the mailbox key, which
- * names every conversation. An update of a conversation also goes to the key `<mailbox>:<user>` of
+ * Principals who may read only the conversations assigned to them never follow the mailbox key, which
+ * names every conversation. An update of a conversation also goes to the key `<mailbox>:<principal>` of
  * each of its assignees, and an update of the whole mailbox, which names none, to `<mailbox>:assigned`.
  */
 const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> => {
@@ -346,13 +473,13 @@ const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> =>
           gen_random_uuid(),
           'mail',
           'live',
-          target_mailbox_id::text || ':' || assignee.user_id::text,
+          target_mailbox_id::text || ':' || assignee.principal_id::text,
           jsonb_build_object(
             'v', 1,
-            'k', target_mailbox_id::text || ':' || assignee.user_id::text,
+            'k', target_mailbox_id::text || ':' || assignee.principal_id::text,
             'd', jsonb_build_object('conversationId', conversation_short_id)
           ),
-          target_mailbox_id::text || ':' || assignee.user_id::text || ':' || conversation_short_id
+          target_mailbox_id::text || ':' || assignee.principal_id::text || ':' || conversation_short_id
         )
         FROM mail.conversation_assignees assignee
         WHERE assignee.conversation_id = target_conversation_id;
@@ -433,6 +560,8 @@ export const migrate = async (): Promise<void> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateAiDailyBudget(tx);
+        await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
       });
       return;

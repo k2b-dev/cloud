@@ -476,6 +476,7 @@ export const venueCapabilities = defineCapabilities({
       description: "A public or permission-scoped place with opening and staffing rules.",
       icon: "ti ti-building-carousel",
       reader: "venue.read",
+      pages: ["/app/venue/:id", "/app/venue/public/:id", "/app/venue/:id/:view"],
     },
     assignment: {
       title: "Shift assignment",

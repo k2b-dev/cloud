@@ -1,4 +1,4 @@
-import { getApp } from "@k2b/cloud";
+import { getApp, sql } from "@k2b/cloud";
 import { type CapabilityCatalogApp, getCapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import {
   CapabilityAppIdSchema,
@@ -10,7 +10,6 @@ import {
 } from "@k2b/cloud/contracts";
 import { invalidateSettingsCache, read, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { Context } from "hono";
 import { app } from "../config";
 import { contactDirectoryMessages } from "../contact-directory-messages";

@@ -124,6 +124,25 @@ describe("shell routes", () => {
     expect(await response.text()).toContain("Can't reach Example Cloud right now.");
   });
 
+  test("a launch resumes the validated remembered address, while tapping Start opens Start", async () => {
+    const headers = { Cookie: "pwa_session=test-session; pwa_last_address=" + encodeURIComponent("/pwa/spaces/demo/task?view=mine") };
+    let response = await request("/pwa/?launch", { headers });
+    expect(response.headers.get("location")).toBe("/pwa/_auth/session/launch?to=%2Fpwa%2Fspaces%2Fdemo%2Ftask%3Fview%3Dmine");
+    signIn();
+    response = await request("/pwa/?launch", { headers });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/pwa/spaces/demo/task?view=mine");
+    response = await request("/pwa/", { headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_last_address=%2Fpwa%2F;"))).toBe(true);
+    for (const address of ["https://elsewhere.example/", "/pwa/_auth/session/renew", "/pwa/?pwa=ended", "/pwa/offline"]) {
+      const response = await request("/pwa/?launch", {
+        headers: { Cookie: "pwa_session=test-session; pwa_last_address=" + encodeURIComponent(address) },
+      });
+      expect(response.headers.get("location")).toBe("/pwa/");
+    }
+  });
+
   test("a web session never opens Start", async () => {
     signIn("web");
     const response = await request("/pwa/", { headers: { Cookie: "session_token=test-session" } });
@@ -132,7 +151,7 @@ describe("shell routes", () => {
 
   for (const [state, text] of [
     ["new", "Pair this app with your account on the web."],
-    ["ended", "This phone was signed out. Connect it again."],
+    ["ended", "This device was signed out. Connect it again."],
     ["expired", "This code expired. Get a new one on the web."],
     ["blocked", "This account can't use the app right now."],
     ["unavailable", "Can't reach Example Cloud right now."],
@@ -152,16 +171,66 @@ describe("shell routes", () => {
       }
     });
 
+  for (const [locale, computer, share, homeScreen] of [
+    ["en", "On a computer, use Example Cloud in the browser.", "Open Share", "Add to Home Screen"],
+    ["de", "Auf dem Computer nutzt du Example Cloud im Browser.", "Teilen öffnen", "Zum Home-Bildschirm"],
+  ] as const)
+    test(`iPadOS Safari without a session renders both installation variants in ${locale}`, async () => {
+      const response = await request("/pwa/?pwa=new", {
+        headers: {
+          Cookie: `cloud.locale=${locale}`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+        },
+      });
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain('class="pwa-coarse-only"');
+      expect(html).toContain('data-platform="apple-mobile"');
+      expect(html).toContain(share);
+      expect(html).toContain(homeScreen);
+      expect(html).toContain('class="pwa-fine-only"');
+      expect(html).toContain(computer);
+      expect(html).not.toContain("This app is for phones");
+      expect(html).not.toContain("Diese App ist für Telefone");
+    });
+
+  test("a generic desktop gets the computer sentence without mobile installation steps", async () => {
+    const html = await (
+      await request("/pwa/?pwa=new", {
+        headers: { Cookie: "cloud.locale=en", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)" },
+      })
+    ).text();
+    expect(html).toContain("On a computer, use Example Cloud in the browser.");
+    expect(html).not.toContain('data-platform="apple-mobile"');
+  });
+
+  test("/pwa/?pwa=ended deletes drafts only with the launch's marker, and removes the marker", async () => {
+    // The Welcome island's `clearDrafts` prop as the browser receives it (seroval: 2 is true, 3 false, 1 absent).
+    const clearDrafts = (html: string) => {
+      const props = /data-props="([^"]*)" data-file="Welcome\.island\.tsx"/.exec(html)?.[1]?.replaceAll("&quot;", '"');
+      const tree = JSON.parse(props ?? "null") as { t: { p: { k: string[]; v: { s: number }[] } } };
+      const index = tree.t.p.k.indexOf("clearDrafts");
+      return index < 0 ? undefined : tree.t.p.v[index]?.s === 2;
+    };
+    const marked = await request("/pwa/?pwa=ended", { headers: { Cookie: "cloud.locale=en; pwa_ended=1" } });
+    expect(marked.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_ended=;") && cookie.includes("Max-Age=0"))).toBe(true);
+    expect(clearDrafts(await marked.text())).toBe(true);
+    const typed = await request("/pwa/?pwa=ended", { headers: { Cookie: "cloud.locale=en" } });
+    expect(typed.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_ended="))).toBe(false);
+    expect(clearDrafts(await typed.text())).toBe(false);
+  });
+
   test("Start lists the parts and Settings, and shows a calm empty state without parts", async () => {
     signIn();
     let html = await (await request("/pwa/", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } })).text();
-    expect(html).toContain("No apps for your phone yet.");
+    expect(html).toContain("No apps for your device yet.");
     expect(html).toContain('href="/pwa/settings"');
     expect(html).toContain("<title>Example Cloud</title>");
 
     apps = [shell, inventory];
     html = await (await request("/pwa/", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } })).text();
-    expect(html).not.toContain("No apps for your phone yet.");
+    expect(html).not.toContain("No apps for your device yet.");
     expect(html).toContain('href="/pwa/inventory"');
     expect(html).toContain("Count what is on the shelf");
     expect(html).toContain("k2b-tab-bar");
@@ -179,6 +248,7 @@ describe("shell routes", () => {
     expect(html).toContain("Mia Muster");
     expect(html).toContain("mia.muster@example.test");
     expect(html).toContain("&quot;iPhone&quot;");
+    expect(html).toMatch(/<input[^>]*disabled[^>]*maxlength="80"/);
     expect(html).toMatch(/Cloud \d+\.\d+\.\d+/);
     expect(html).toContain('href="/pwa/"');
   });
@@ -211,7 +281,7 @@ describe("manifest", () => {
       id: "/pwa/",
       name: "Example Cloud",
       short_name: "Example Cloud",
-      start_url: "/pwa/",
+      start_url: "/pwa/?launch",
       scope: "/pwa/",
       display: "standalone",
       background_color: "#fafafa",

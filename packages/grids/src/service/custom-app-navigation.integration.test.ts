@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import type { CustomAppDefinition } from "../custom-apps/contracts";

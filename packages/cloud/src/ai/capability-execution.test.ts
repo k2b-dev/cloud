@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases } from "../_internal/capability-review.test-fixture";
 import type { dispatchCapability } from "../api/capabilities";
 import * as executionStore from "../capabilities/executions";
 import { defineCapabilities } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import * as categoryPolicy from "../services/account-category-policy";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -20,6 +21,8 @@ import {
   reviewAiCapability,
 } from "./capability-execution";
 import type { AiConversation } from "./types";
+
+useUnitClients();
 
 afterEach(() => mock.restore());
 
@@ -147,7 +150,7 @@ describe("AI capability authority", () => {
     ).rejects.toThrow("no longer active");
   });
 
-  test("a turn started in the mobile app keeps the app's limits after the owner is reloaded", async () => {
+  test("a turn started in the Cloud app keeps the app's limits after the owner is reloaded", async () => {
     spyOn(categoryPolicy, "isAccountCategoryAllowed").mockResolvedValue(true);
     const current = { ...user("11111111-1111-4111-8111-111111111111"), roles: ["user" as const, "admin" as const] };
     const resolved = await resolveAiCapabilityActor({

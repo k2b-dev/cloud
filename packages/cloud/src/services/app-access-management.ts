@@ -1,7 +1,9 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { managerEligibility } from "../_internal/app-access-manager-sql";
 import type { AppMeta } from "../contracts/app";
 import type { AppAccessDeclaration, AppAccessSnapshot } from "../contracts/app-access";
 import { publishAppAccessChanged, wakeAppAccessChanged } from "../events/app-access";
+import { sql } from "../runtime/clients";
 import { isAppSessionActor, userFromActor } from "../server/actor";
 import type { RequestAuthority } from "../server/middleware/auth";
 import {
@@ -48,6 +50,15 @@ const credentialIsEligible = (authority: RequestAuthority): boolean => {
     serviceAccount.kind !== "resource_bound" &&
     (!credentialExpiresAt || new Date(credentialExpiresAt).getTime() > Date.now())
   );
+};
+
+/** Read administration metadata without creating or changing app access. */
+export const canReadAppAdministration = (authority: RequestAuthority): boolean => {
+  if (!credentialIsEligible(authority) || isAppSessionActor(authority.actor)) return false;
+  const user = userFromActor(authority.actor);
+  if (!user?.roles.includes("admin") || authority.accessSubject.type !== "user" || authority.accessSubject.userId !== user.id) return false;
+  const kind = authority.credentialKind === "invocation" ? authority.actor.delegation?.credentialKind : authority.credentialKind;
+  return kind === "oauth" ? authority.scopes.some((scope) => scope === "read" || scope === "admin") : canRepairAppAccess(authority);
 };
 
 /** Repair is administration authority, never an implicit usage grant. */
@@ -107,14 +118,6 @@ const listEntries = async (appId: string, db: SQL = sql): Promise<AccessEntry[]>
             : { type: "public" },
   }));
 };
-/** Shared eligibility predicate for the last-manager guard and its presentation. */
-const managerEligibility = (db: SQL) => db`
-  EXISTS (SELECT 1 FROM auth.users u WHERE (u.account_expires IS NULL OR u.account_expires > now()) AND
-    (u.id = a.user_id OR (a.group_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(db`u.id`)}))))
-  OR EXISTS (SELECT 1 FROM auth.service_accounts sa WHERE sa.id = a.service_account_id
-    AND sa.status = 'active' AND sa.kind IN ('standalone', 'agent'))
-`;
-
 const entryPresentation = async (appId: string): Promise<Map<string, { groupMemberCount?: number; effectiveManager: boolean }>> => {
   const rows = await sql<{ id: string; group_member_count: number | null; effective_manager: boolean }[]>`
     SELECT a.id,
@@ -494,7 +497,7 @@ export const appAccessManagers = async (appId: string): Promise<AccessEntry[]> =
 
 /** Batched grant counts for the administration repair overview. */
 export const appAccessGrantCounts = async (authority: RequestAuthority, apps: readonly ManagedApp[]): Promise<Map<string, number>> => {
-  if (!canRepairAppAccess(authority)) throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
+  if (!canReadAppAdministration(authority)) throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
   const ids = apps.filter((app) => app.access?.kind === "grants").map((app) => app.id);
   if (!ids.length) return new Map();
   const rows = await sql<{ app_id: string; count: number; authenticated: boolean; configured: boolean }[]>`

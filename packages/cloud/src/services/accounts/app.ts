@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { accountCategory } from "../../contracts/account-categories";
+import type { PersonAvatar } from "../../contracts/avatar";
 import type {
   BaseGroup,
   BaseUser,
@@ -7,10 +7,14 @@ import type {
   EntityListItem,
   GroupMember,
   MutationResult,
+  ServiceAccountKind,
+  ServiceAccountStatus,
   User,
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
+import type { ServiceAccountRequestActor } from "../../server/middleware/auth";
 import {
   err,
   fail,
@@ -34,9 +38,11 @@ import { providers } from "../providers";
 import { session } from "../session";
 import { get as getSetting } from "../settings";
 import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isAdminActor, isSelfTarget } from "./authz";
+import type { AvatarChange, AvatarState } from "./avatar";
 import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
 import * as groups from "./groups";
+import { mutateMachineGroupMember } from "./machine-group-management";
 import type { AccountsNotificationSender } from "./notification-sender";
 import { PosixError } from "./posix";
 import { accountRequestsEnabled } from "./request-policy";
@@ -375,6 +381,29 @@ export const accountsAppService = {
         actor: auditActor(config.actor),
         target: targetInfo,
         metadata: { selfService },
+        result,
+      });
+    },
+    getAvatarState: async (config: { id: string }) => users.getAvatarState(config),
+    /** One save of the profile picture dialog: a photo, a built avatar, or which stored picture others see. */
+    updateAvatar: async (config: { actor: AccountsActor; id: string; change: AvatarChange }) => {
+      const target = await users.getMinimal({ id: config.id });
+      const targetInfo = userTarget(target);
+      const selfService = config.actor.userId === config.id;
+      if (!selfService) {
+        const adminError = await requireAdminActor<AvatarState<PersonAvatar>>({
+          actor: config.actor,
+          action: "accounts.user.avatar.update",
+          target: targetInfo,
+        });
+        if (adminError) return adminError;
+      }
+      const result = fromMutationResult(await users.updateAvatar({ id: config.id, change: config.change }));
+      return recordCompletedMutation({
+        action: "accounts.user.avatar.update",
+        actor: auditActor(config.actor),
+        target: targetInfo,
+        metadata: { selfService, kind: result.ok ? result.data.kind : null, avatarHash: result.ok ? result.data.avatarHash : null },
         result,
       });
     },
@@ -942,7 +971,7 @@ export const accountsAppService = {
   group: {
     list: async (config: {
       pagination?: PageParams;
-      filter?: { search?: string; includePersonal?: boolean };
+      filter?: { search?: string };
       scope?: { userId?: string; ids?: string[]; provider?: UserProvider; mode?: "all" | "member" | "managed" };
     }): Promise<Paginated<BaseGroup>> => {
       const { page, perPage } = paginate(config.pagination);
@@ -954,7 +983,6 @@ export const accountsAppService = {
         scope: config.scope?.mode,
         ids: config.scope?.ids,
         provider: config.scope?.provider,
-        includePersonal: config.filter?.includePersonal,
       });
 
       return {
@@ -965,7 +993,10 @@ export const accountsAppService = {
         hasNext: result.pagination.hasNext,
       };
     },
-    get: async (config: { id: string }) => groups.get(config),
+    get: async (config: { id: string }) => {
+      const result = await groups.list({ ids: [config.id], perPage: 1 });
+      return result.groups[0] ?? null;
+    },
     member: {
       list: async (config: {
         id: string;
@@ -988,7 +1019,16 @@ export const accountsAppService = {
         });
         return paginateItems(filtered, config.pagination);
       },
-      add: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      add: async (config: {
+        actor: AccountsActor | ServiceAccountRequestActor;
+        requestId?: string;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
+        if ("kind" in config.actor) return mutateMachineGroupMember({ ...config, actor: config.actor, operation: "add" });
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1007,17 +1047,27 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.member.add",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
-      remove: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      remove: async (config: {
+        actor: AccountsActor | ServiceAccountRequestActor;
+        requestId?: string;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
+        if ("kind" in config.actor) return mutateMachineGroupMember({ ...config, actor: config.actor, operation: "remove" });
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1036,13 +1086,14 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.member.remove",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
@@ -1065,7 +1116,14 @@ export const accountsAppService = {
         });
         return paginateItems(filtered, config.pagination);
       },
-      add: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      add: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1088,17 +1146,25 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.manager.add",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
-      remove: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      remove: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1121,13 +1187,14 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.manager.remove",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
@@ -1227,6 +1294,9 @@ export const accountsAppService = {
       profile?: UserProfile;
       userIds?: string[];
       groupIds?: string[];
+      serviceAccountIds?: string[];
+      serviceAccountKinds?: ServiceAccountKind[];
+      serviceAccountStatus?: ServiceAccountStatus;
       excludeUserIds?: string[];
       excludeGroupIds?: string[];
       excludeServiceAccountIds?: string[];
@@ -1236,7 +1306,6 @@ export const accountsAppService = {
       parentGroupId?: string;
       managedByUserId?: string;
       recursive?: boolean;
-      includePersonal?: boolean;
     }): Promise<Paginated<EntityListItem>> => {
       const canSearchDirectory = config.actor.roles.includes("user");
       const usesRelationFilter = Boolean(
@@ -1258,6 +1327,9 @@ export const accountsAppService = {
         profile: config.profile,
         userIds: config.userIds,
         groupIds: config.groupIds,
+        serviceAccountIds: config.serviceAccountIds,
+        serviceAccountKinds: config.serviceAccountKinds,
+        serviceAccountStatus: config.serviceAccountStatus,
         excludeUserIds: config.excludeUserIds,
         excludeGroupIds: config.excludeGroupIds,
         excludeServiceAccountIds: config.excludeServiceAccountIds,
@@ -1267,7 +1339,6 @@ export const accountsAppService = {
         parentGroupId: config.parentGroupId,
         managedByUserId: config.managedByUserId,
         recursive: config.recursive,
-        includePersonal: config.includePersonal,
         page,
         perPage,
       });
@@ -1629,9 +1700,9 @@ export const accountsAppService = {
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local') AS local_accounts_total,
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local' AND profile = 'user') AS local_user_accounts_total,
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local' AND profile = 'guest') AS local_guest_accounts_total,
-          (SELECT COUNT(*)::int FROM auth.groups) AS groups_total,
-          (SELECT COUNT(*)::int FROM auth.groups WHERE provider = 'ipa') AS ipa_groups_total,
-          (SELECT COUNT(*)::int FROM auth.groups WHERE provider = 'local') AS local_groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)) AS groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE provider = 'ipa' AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)) AS ipa_groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE provider = 'local' AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)) AS local_groups_total,
           (SELECT COUNT(*)::int FROM auth.account_requests WHERE status = 'pending') AS open_requests,
           (
             SELECT COUNT(*)::int

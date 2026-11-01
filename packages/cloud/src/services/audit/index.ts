@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { err, fail, type PageParams, type Paginated, paginate, type Result, type ServiceError } from "../../server/services";
 import { logger } from "../logging";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";

@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import { logger } from "../../services/logging";
 import { toPgUuidArray } from "../../services/postgres";
 import { withTransaction } from "./transaction";

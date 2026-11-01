@@ -18,12 +18,7 @@ import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
-import {
-  createNavigationHidden,
-  keepFocusAfterShowingNavigation,
-  NOTEBOOK_NAVIGATION_ID,
-  setNavigationHidden,
-} from "../sidebar/navigation-visibility";
+import { NOTEBOOK_NAVIGATION_ID } from "../sidebar/navigation-visibility";
 import CircleDisplay from "./CircleDisplay";
 import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
@@ -60,7 +55,6 @@ type Props = {
   now: string;
   /** The viewer's timezone from the request date config, used for date groups. */
   timeZone: string;
-  navigationHidden: boolean;
 };
 
 /**
@@ -82,10 +76,8 @@ export default function NotebookGraph(props: Props) {
     typeof window === "undefined" ? null : window.matchMedia(PHONE_GRAPH_QUERY).matches,
   );
   const display = createMemo(() => resolveGraphDisplay(state().display, phone()));
-  const navigationHidden = createNavigationHidden(props.navigationHidden);
   const [controls, setControls] = createSignal<GraphZoomControls | null>(null);
   let focusNote: ((id?: string) => void) | undefined;
-  let navigationToggle: HTMLDivElement | undefined;
 
   // The address follows the state. Typing in the search writes it once the typing pauses, since Safari limits how
   // often a page may replace its history entry; a write it refuses is tried again, and leaving the page writes first.
@@ -118,6 +110,15 @@ export default function NotebookGraph(props: Props) {
   };
   const recenter = (id: string) => {
     if (!model.byId.has(id) || id === centreId()) return;
+    if (props.graph.scope) {
+      // A large notebook's graph holds only the pages around one page; the graph around the chosen one loads anew.
+      const url = writeGraphViewState(new URL(window.location.href), state());
+      url.pathname = url.pathname.replace(/\/notes\/[^/]+\/?$/, "");
+      url.searchParams.set("note", id);
+      flushUrl();
+      navigateTo(`${url.pathname}${url.search}`);
+      return;
+    }
     setCentreId(id);
     centreChanged = true;
     writeUrl();
@@ -199,7 +200,6 @@ export default function NotebookGraph(props: Props) {
     update({ hide: hide.includes(key) ? hide.filter((item) => item !== key) : [...hide, key] });
   };
   const areaName = (area: GraphArea) => (area.index === 0 ? t().graphTopLevel : area.title || t().untitled);
-  const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
   const showsGraph = () =>
     !state().list &&
     display() !== "timeline" &&
@@ -295,29 +295,18 @@ export default function NotebookGraph(props: Props) {
   return (
     <div ref={root} class="notebook-graph" data-display={display() ?? undefined} data-list={state().list ? "" : undefined}>
       <Toolbar label={t().graphTools} class="notebook-graph__head">
-        {/* The navigation sidebar sits beside the graph from a 64 rem app host; below that, from md, the toggle only
-            brings a hidden navigation back. Phones keep the header's menu (app.css). */}
-        <div ref={navigationToggle} class="notebooks-navigation-toggle" data-navigation-hidden={navigationHidden() ? "" : undefined}>
-          <Tooltip.Anchor content={navigationLabel()}>
+        {/* The workspace has no head here: this button opens the navigation as an overlay below a 64 rem app host and
+            shows or hides the column from there; the shared controller runs it. Phones keep the header's menu (app.css). */}
+        <div class="notebooks-navigation-toggle">
+          <Tooltip.Anchor content={t().navigation}>
             <IconButton
-              label={navigationLabel()}
+              label={t().navigation}
               tooltip={false}
               size="sm"
-              aria-expanded={!navigationHidden()}
               aria-controls={NOTEBOOK_NAVIGATION_ID}
-              onClick={() => {
-                const showing = navigationHidden();
-                setNavigationHidden(!showing);
-                if (showing && navigationToggle)
-                  keepFocusAfterShowingNavigation(navigationToggle, () =>
-                    root.querySelector<HTMLInputElement>(".notebook-graph__head input")?.focus(),
-                  );
-              }}
+              data-app-workspace-sidebar-toggle=""
             >
-              <i
-                class={`ti ${navigationHidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"}`}
-                aria-hidden="true"
-              />
+              <i class="ti ti-layout-sidebar" aria-hidden="true" />
             </IconButton>
           </Tooltip.Anchor>
         </div>
@@ -445,6 +434,22 @@ export default function NotebookGraph(props: Props) {
             </IconButton>
           </Toolbar.Group>
         </Toolbar>
+      </Show>
+
+      {/* A large notebook draws the pages around one page; the line says so from the first paint, so nothing moves. */}
+      <Show when={props.graph.scope}>
+        {(scope) => (
+          <p class="notebook-graph__scope" role="note">
+            <i class="ti ti-zoom-in-area" aria-hidden="true" />
+            <span>
+              {t().graphScope({
+                shown: model.notes.length,
+                total: scope().total,
+                title: model.byId.get(scope().around)?.title || t().untitled,
+              })}
+            </span>
+          </p>
+        )}
       </Show>
 
       <div class="notebook-graph__body">

@@ -25,6 +25,7 @@ import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
+import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
@@ -47,13 +48,19 @@ import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
 import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputChoiceChips from "./input/choice-chips.md" with { type: "text" };
+import inputChoiceList from "./input/choice-list.md" with { type: "text" };
+import inputChoiceSlider from "./input/choice-slider.md" with { type: "text" };
+import inputChoiceTiles from "./input/choice-tiles.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
+import inputColorChoices from "./input/color-choices.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
+import inputDictation from "./input/dictation.md" with { type: "text" };
 import inputEmojiPicker from "./input/emoji-picker.md" with { type: "text" };
 import inputFileDropTarget from "./input/file-drop-target.md" with { type: "text" };
 import inputFileDropzone from "./input/file-dropzone.md" with { type: "text" };
 import inputIcon from "./input/icon.md" with { type: "text" };
+import inputIconChoices from "./input/icon-choices.md" with { type: "text" };
 import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
@@ -66,6 +73,7 @@ import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
 import inputText from "./input/text.md" with { type: "text" };
+import layoutAnchoredPopover from "./layout/anchored-popover.md" with { type: "text" };
 import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
 import layoutDiscussion from "./layout/discussion.md" with { type: "text" };
@@ -99,12 +107,14 @@ import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
 import surfaceStats from "./surfaces/stats.md" with { type: "text" };
 import surfaceUtilities from "./surfaces/utilities.md" with { type: "text" };
+import inputTextEditor from "./text-editor.md" with { type: "text" };
 import widgetDashboard from "./widgets/dashboard.md" with { type: "text" };
 
 const catalogContextSources = {
   "ai/chat": { file: "ai/chat.md", content: aiChat },
   "ai/context-usage": { file: "ai/context-usage.md", content: aiContextUsage },
   "input/text": { file: "input/text.md", content: inputText },
+  "input/text-editor": { file: "text-editor.md", content: inputTextEditor },
   "input/markdown-editor": { file: "markdown-editor.md", content: inputMarkdownEditor },
   "input/autocomplete": { file: "input/autocomplete.md", content: inputAutocomplete },
   "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
@@ -113,12 +123,17 @@ const catalogContextSources = {
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
+  "input/choice-list": { file: "input/choice-list.md", content: inputChoiceList },
+  "input/choice-tiles": { file: "input/choice-tiles.md", content: inputChoiceTiles },
   "input/combobox": { file: "input/combobox.md", content: inputCombobox },
   "input/color": { file: "input/color.md", content: inputColor },
+  "input/color-choices": { file: "input/color-choices.md", content: inputColorChoices },
+  "input/icon-choices": { file: "input/icon-choices.md", content: inputIconChoices },
   "input/tags": { file: "input/tags.md", content: inputTags },
   "input/tag-editor": { file: "input/tag-editor.md", content: inputTagEditor },
   "input/pin": { file: "input/pin.md", content: inputPin },
   "input/emoji-picker": { file: "input/emoji-picker.md", content: inputEmojiPicker },
+  "input/dictation": { file: "input/dictation.md", content: inputDictation },
   "input/qr-scanner": { file: "input/qr-scanner.md", content: inputQrScanner },
   "input/signature": { file: "input/signature.md", content: inputSignature },
   "input/image": { file: "input/image.md", content: inputImage },
@@ -126,6 +141,7 @@ const catalogContextSources = {
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },
   "input/file-drop-target": { file: "input/file-drop-target.md", content: inputFileDropTarget },
   "input/icon": { file: "input/icon.md", content: inputIcon },
+  "input/choice-slider": { file: "input/choice-slider.md", content: inputChoiceSlider },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
@@ -156,6 +172,7 @@ const catalogContextSources = {
   "layout/settings-modal": { file: "layout/settings-modal.md", content: layoutSettingsModal },
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
+  "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
@@ -178,6 +195,7 @@ const catalogContextSources = {
   "content/map-view": { file: "content/map-view.md", content: contentMapView },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
+  "content/match-text": { file: "content/match-text.md", content: contentMatchText },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },

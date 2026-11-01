@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import { err } from "@k2b/stdlib";
-import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { localVerificationUrl } from "../../scripts/verification";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -480,7 +480,12 @@ describe("Document ZIP output", () => {
       const childUrl = new URL(database);
       childUrl.searchParams.set("application_name", `grids-zip-crash:${f.runId}`);
       const child = Bun.spawn([process.execPath, join(import.meta.dir, "document-zip-crash.worker.ts"), JSON.stringify(request)], {
-        env: { ...process.env, DATABASE_URL: childUrl.toString() },
+        env: {
+          ...process.env,
+          BUN_OPTIONS: `${process.env.BUN_OPTIONS ?? "--no-env-file"} --preload=${join(import.meta.dir, "../../../../scripts/fixtures/test-infra.ts")}`,
+          CLOUD_TEST_DATABASE_URL: childUrl.toString(),
+          DATABASE_URL: childUrl.toString(),
+        },
         stdout: "pipe",
         stderr: "pipe",
         ipc: (message) => {

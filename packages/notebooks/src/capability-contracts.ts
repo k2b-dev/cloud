@@ -1,4 +1,9 @@
-import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
+import {
+  CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
+  DiscussionActivityInputSchema,
+  ResourceActivityEventSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -27,8 +32,11 @@ const NotebookDataShape = {
   links: ResourceLinksSchema,
 };
 
-export const NotebookDataSchema = z.object(NotebookDataShape).strict();
-const NotebookListItemDataSchema = NotebookDataSchema.extend({ ref: resourceRef("notebooks.notebook") }).strict();
+export const NotebookDataSchema = z.object({ ...NotebookDataShape, view: CloudResourceReaderViewSchema }).strict();
+const NotebookListItemDataSchema = z
+  .object(NotebookDataShape)
+  .extend({ ref: resourceRef("notebooks.notebook") })
+  .strict();
 export const NotebookListDataSchema = z.array(NotebookListItemDataSchema).max(100);
 export const NotebookBrowseDataSchema = z
   .array(
@@ -119,6 +127,8 @@ export const NamedBlockSummaryDataSchema = z
   .strict();
 
 export const NoteDetailDataSchema = NoteSummaryDataSchema.extend({
+  view: CloudResourceReaderViewSchema.required({ container: true }),
+  container: z.strictObject({ ref: resourceRef("notebooks.notebook"), name: z.string().min(1).max(200), permission: PermissionSchema }),
   content: z.string().max(50_000),
   contentOffset: z.number().int().nonnegative(),
   contentLength: z.number().int().nonnegative(),
@@ -303,7 +313,16 @@ const EditLineSchema = z.number().int().positive().describe("One-based Markdown 
 const SetContentEditOperationSchema = z.object({ kind: EditKindSchema("set-content"), content: FullEditContentSchema }).strict();
 
 const StructuralNoteEditOperationSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: EditKindSchema("append"), content: FragmentEditContentSchema }).strict(),
+  z
+    .object({
+      kind: EditKindSchema("append"),
+      content: FragmentEditContentSchema,
+      separator: z
+        .literal("none")
+        .optional()
+        .describe("Append the exact fragment without adding a paragraph separator. Omit for existing paragraph behavior."),
+    })
+    .strict(),
   z.object({ kind: EditKindSchema("prepend"), content: FragmentEditContentSchema }).strict(),
   z.object({ kind: EditKindSchema("insert-before-line"), line: EditLineSchema, content: FragmentEditContentSchema }).strict(),
   z.object({ kind: EditKindSchema("insert-after-line"), line: EditLineSchema, content: FragmentEditContentSchema }).strict(),
@@ -410,3 +429,20 @@ export const NoteMoveInputSchema = z
     (input) => [input.position, input.before, input.after].filter((value) => value !== undefined).length <= 1,
     "Specify at most one placement: position, before, or after",
   );
+
+export const ActivityInputSchema = DiscussionActivityInputSchema.extend({
+  container: DiscussionActivityInputSchema.shape.container.optional(),
+  notebook: ResourceShortIdSchema.optional().describe("Published alias for container; use either field, or the same ID in both."),
+})
+  .refine((input) => Boolean(input.container ?? input.notebook), "A container is required")
+  .refine((input) => !input.container || !input.notebook || input.container === input.notebook, "Container aliases must agree");
+export const ActivityDataSchema = z
+  .array(
+    ResourceActivityEventSchema.extend({
+      title: z.string().max(500).nullable(),
+      ref: resourceRef("notebooks.note")
+        .extend({ id: ResourceShortIdSchema.min(6).max(6) })
+        .nullable(),
+    }),
+  )
+  .max(100);

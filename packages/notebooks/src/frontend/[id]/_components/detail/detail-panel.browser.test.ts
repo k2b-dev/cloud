@@ -30,7 +30,8 @@ beforeAll(async () => {
     entrypoints: [resolve(import.meta.dir, "detail-panel.browser-harness.tsx")],
     target: "browser",
     conditions: ["browser"],
-    format: "iife",
+    // The PDF dialog includes MapLibre's import.meta worker URLs.
+    format: "esm",
     plugins: [
       {
         name: "solid-detail-panel-test",
@@ -77,7 +78,7 @@ beforeAll(async () => {
       if (path.startsWith("/api/")) return new Response("Unexpected harness API", { status: 404 });
       if (path === "/harness.js") return new Response(bundle, { headers: { "content-type": "application/javascript; charset=utf-8" } });
       return new Response(
-        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -148,18 +149,24 @@ for (const width of [1440, 390]) {
   test(`${width}: section and row text share one leading and trailing edge`, async () => {
     const { page } = await open(width);
     try {
+      // The activity waits closed under "Mehr zu dieser Notiz"; open it so its rows count too.
+      await page
+        .locator(".notebook-activity .k2b-detail-panel__section-summary")
+        .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+      await settle(page);
       const edges = await page.evaluate(() => {
         const visible = (element: Element) => element.getBoundingClientRect().width > 0;
         const left = [
           ...document.querySelectorAll(
-            ".k2b-detail-panel__section-header h3, .k2b-discussion__header h3, .k2b-discussion__entry > header > strong, .notebook-outline-row[data-depth='0'] .k2b-detail-panel__action-title, .notebook-activity .k2b-detail-panel__action-title, .k2b-detail-panel__section:has(.ti-paperclip) .k2b-detail-panel__action-title",
+            // Without section icons, titles and rows start on one text edge; a comment or activity row starts with its avatar there.
+            ".k2b-detail-panel__section-header h3, .k2b-discussion__header h3, .k2b-discussion__avatar, .notebook-outline-row[data-depth='0'] .k2b-detail-panel__action-title, .notebook-activity .k2b-detail-panel__action-leading, .k2b-detail-panel__group-title",
           ),
         ]
           .filter(visible)
           .map((element) => ({ label: element.textContent, x: element.getBoundingClientRect().left }));
         const right = [
           ...document.querySelectorAll(
-            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-detail-panel__section:has(.ti-paperclip) .k2b-detail-panel__action-trailing, .k2b-detail-panel__section-actions .k2b-button, .k2b-discussion__actions .k2b-button",
+            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-detail-panel__section-actions .k2b-button, .k2b-discussion__actions .k2b-button",
           ),
         ]
           .filter(visible)
@@ -181,7 +188,7 @@ for (const width of [1440, 390]) {
       });
       expect(edges.left.length).toBeGreaterThan(14);
       expect(edges.right.length).toBeGreaterThan(8);
-      for (const edge of edges.left) closeTo(edge.x, edges.left[0]!.x, 1);
+      expect(edges.left.filter((edge) => Math.abs(edge.x - edges.left[0]!.x) > 1).map((edge) => edge.label)).toEqual([]);
       for (const edge of edges.right) closeTo(edge.x, edges.right[0]!.x, 2);
     } finally {
       await page.close();
@@ -211,7 +218,8 @@ for (const width of [1440, 390]) {
           closeTo(after.height, before.height, 0.5);
         } else sameBox(after, before);
       }
-      const above = [".k2b-detail-panel__header", header, ".notebook-tasks"];
+      // Contents now precedes the comments (K1 order), so only what stands above it must hold still.
+      const above = [".k2b-detail-panel__header", ".notebook-tasks"];
       const beforeCollapse = await Promise.all(above.map((selector) => box(page, selector)));
       // DOM click avoids Playwright scrolling the body to the disclosure.
       await page

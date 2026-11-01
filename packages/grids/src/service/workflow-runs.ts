@@ -13,6 +13,7 @@
  * CLI, or a browser.
  */
 
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
@@ -24,7 +25,6 @@ import {
   type WorkflowStepSummary,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   GridsWorkflowChannel,
   GridsWorkflowLauncherKind,
@@ -34,7 +34,7 @@ import type {
   GridsWorkflowRunStatsWindow,
   GridsWorkflowStepRun,
 } from "../workflows/contracts";
-import { toWorkflowRevision } from "../workflows/contracts";
+import { GRIDS_WORKFLOW_CHANNELS, toWorkflowRevision } from "../workflows/contracts";
 import { GRIDS_EVENT } from "../workflows/events";
 import { documentConfirmationFromDependency } from "../workflows/query-contracts";
 import type { SqlClient } from "./audit";
@@ -43,6 +43,7 @@ import { parseJsonbRow } from "./jsonb";
 import { insertWithShortIdForDb } from "./short-id";
 import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 import { workflowConflict } from "./workflow-errors";
+import { canExecuteWorkflow } from "./workflow-execution-authorization";
 import { getWorkflow } from "./workflow-read";
 import { workflowServiceText } from "./workflow-service-messages";
 
@@ -174,7 +175,8 @@ const parseSnapshot = (value: unknown): GridsWorkflowAuthorizationSnapshot | nul
 
 // ─── Reading a run ───────────────────────────────────────────────────────────
 
-const RUN_SELECT = sql.unsafe(`
+const RUN_SELECT = () =>
+  sql.unsafe(`
   r.id::text AS id, r.workflow_id::text AS workflow_id, r.mode, r.state, r.inputs,
   r.result, r.result_message, r.error, r.created_at, r.started_at, r.finished_at,
   v.revision AS workflow_revision,
@@ -182,7 +184,8 @@ const RUN_SELECT = sql.unsafe(`
   p.actor_user_id::text AS actor_user_id, p.service_account_id::text AS service_account_id
 `);
 
-const RUN_FROM = sql.unsafe(`
+const RUN_FROM = () =>
+  sql.unsafe(`
   FROM workflows.run AS r
   JOIN workflows.version AS v ON v.id = r.workflow_version_id
   JOIN grids.workflow_run_profile AS p ON p.run_id = r.id
@@ -210,13 +213,13 @@ const mapRun = (row: DbRow): GridsWorkflowRun => ({
 
 export const getWorkflowRun = async (runId: string, client?: SqlClient): Promise<GridsWorkflowRun | null> => {
   const db = client ?? sql;
-  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT} ${RUN_FROM} WHERE r.id = ${runId}::uuid`;
+  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT()} ${RUN_FROM()} WHERE r.id = ${runId}::uuid`;
   return row ? mapRun(row) : null;
 };
 
 export const getWorkflowRunByShortId = async (shortId: string, client?: SqlClient): Promise<GridsWorkflowRun | null> => {
   const db = client ?? sql;
-  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT} ${RUN_FROM} WHERE p.short_id = ${shortId}`;
+  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT()} ${RUN_FROM()} WHERE p.short_id = ${shortId}`;
   return row ? mapRun(row) : null;
 };
 
@@ -240,8 +243,8 @@ export const listWorkflowRunsPage = async (params: {
   const channelClause = params.channel ? sql`AND p.channel = ${params.channel}` : sql``;
   const cursorClause = cursor ? sql`AND (r.created_at, r.id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : sql``;
   const rows = await sql<DbRow[]>`
-    SELECT ${RUN_SELECT}, (r.created_at::text || '|' || r.id::text) AS cursor_token
-    ${RUN_FROM}
+    SELECT ${RUN_SELECT()}, (r.created_at::text || '|' || r.id::text) AS cursor_token
+    ${RUN_FROM()}
     WHERE p.base_id = ${params.baseId}::uuid
       AND r.workflow_id = ANY(${workflowIds}::uuid[])
       ${workflowClause}
@@ -353,6 +356,7 @@ export const getWorkflowDocumentConfirmation = async (runId: string) => {
  */
 export type GridsWorkflowRunScope = {
   runId: string;
+  channel: GridsWorkflowChannel;
   baseId: string;
   workflow: { id: string; shortId: string; name: string };
   principal: GridsWorkflowPrincipal;
@@ -364,7 +368,7 @@ export const getWorkflowRunScope = async (runId: string, client?: SqlClient): Pr
   const db = client ?? sql;
   const [row] = await db<DbRow[]>`
     SELECT r.id::text AS id, r.authorization_snapshot,
-           p.base_id::text AS base_id, p.launcher_id::text AS launcher_id,
+           p.base_id::text AS base_id, p.launcher_id::text AS launcher_id, p.channel,
            profile.id::text AS workflow_id, profile.short_id, workflow.name
     FROM workflows.run AS r
     JOIN grids.workflow_run_profile AS p ON p.run_id = r.id
@@ -375,8 +379,11 @@ export const getWorkflowRunScope = async (runId: string, client?: SqlClient): Pr
   if (!row) return null;
   const snapshot = parseSnapshot(row.authorization_snapshot);
   if (!snapshot) return null;
+  const channel = GRIDS_WORKFLOW_CHANNELS.find((channel) => channel === row.channel);
+  if (!channel) return null;
   return {
     runId: row.id as string,
+    channel,
     baseId: row.base_id as string,
     workflow: { id: row.workflow_id as string, shortId: row.short_id as string, name: row.name as string },
     principal: snapshot.principal,
@@ -774,6 +781,23 @@ export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Re
     if (!current) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
     if (current.revision !== input.workflow.revision) return fail(workflowConflict(t.workflowChangedCaller));
     if (input.mode === "execute" && !current.enabled) return fail(err.badInput(t.workflowDisabled));
+    // Input preparation and catalog-lock waits can outlive owner changes.
+    // Retain the automatic owner and live mandate through admission commit.
+    if (
+      (input.channel === "schedule" || input.channel === "recordEvent") &&
+      !(await canExecuteWorkflow(
+        {
+          baseId: scopeId,
+          workflowId: current.id,
+          channel: input.channel,
+          principal: input.principal,
+          authorization: input.authorization,
+          launcherId: input.launcherId,
+        },
+        tx,
+      ))
+    )
+      return fail(err.forbidden(t.actorCannotRun));
     const created =
       input.mode === "execute"
         ? await startFromEvent(input, scopeId, snapshot, occurredAt, tx)

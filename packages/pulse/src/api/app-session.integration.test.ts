@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { createTestAppSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { settingsFixture } from "../store/settings.test-fixture";
@@ -10,7 +10,7 @@ import api from ".";
 const suite = suiteFor("database", "nats", "valkey");
 const users: string[] = [];
 
-suite("Pulse API keys and the mobile app", () => {
+suite("Pulse API keys and the Cloud app", () => {
   let settings: ReturnType<typeof settingsFixture>;
   beforeAll(() => {
     settings = settingsFixture();

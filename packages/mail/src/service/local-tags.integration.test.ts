@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailSearchExpression } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { writeConversationAssignees } from "./collaboration";
@@ -63,7 +62,6 @@ suite("mail local tags and structured search", () => {
   let blobId = "";
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (role: string) => {
       const uid = `mail-local-tags-${role}-${suffix}`;
       const displayName = `${role} local tag test`;

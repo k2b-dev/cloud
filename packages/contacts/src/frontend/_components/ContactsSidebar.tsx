@@ -100,7 +100,7 @@ export default function ContactsSidebar(props: Props) {
           })),
         ]}
       />
-      <AppWorkspace.Sidebar collapsible>
+      <AppWorkspace.Sidebar id="contacts-book-navigation" label={t().contacts} collapsible>
         <AppWorkspace.SidebarDesktop>
           <div data-sidebar-mode="expanded" style={`view-transition-name:${vt("primary-actions-desktop")}`}>
             <ContactsSpotlightButton variant="sidebar" registerCommand />

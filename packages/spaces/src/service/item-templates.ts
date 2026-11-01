@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { isUniqueViolation, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import {
   type CreateItemTemplate,
   type ItemTemplateKind,
@@ -30,6 +30,7 @@ type DbTemplate = {
   space_id: string;
   kind: ItemTemplateKind;
   name: string;
+  icon: string | null;
   title: string;
   description: string | null;
   priority: SpaceItemTemplate["priority"];
@@ -64,6 +65,7 @@ const mapTemplate = (row: DbTemplate, tags: SpaceTag[], assignees: SpaceItemAssi
   spaceId: row.space_id,
   kind: row.kind,
   name: row.name,
+  icon: row.icon,
   title: row.title,
   description: row.description,
   priority: row.priority,
@@ -94,8 +96,17 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       WHERE tt.template_id = ANY(${ids}::uuid[])
       ORDER BY t.name
     `,
-    sql<{ template_id: string; kind: SpaceItemAssignee["kind"]; id: string; display_name: string; avatar_hash: string | null }[]>`
-      SELECT ta.template_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+    sql<
+      {
+        template_id: string;
+        kind: SpaceItemAssignee["kind"];
+        service_account_kind: SpaceItemAssignee["serviceAccountKind"] | null;
+        id: string;
+        display_name: string;
+        avatar_hash: string | null;
+      }[]
+    >`
+      SELECT ta.template_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
         CASE WHEN ta.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
       FROM spaces.item_template_assignees ta
       LEFT JOIN auth.users u ON u.id = ta.user_id
@@ -121,13 +132,19 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       (tags.get(row.id) ?? []).map((tag) => ({ id: tag.id, spaceId: tag.space_id, name: tag.name, color: tag.color })),
       (assignees.get(row.id) ?? [])
         .filter((user) => withAccess.get(row.space_id)?.has(`${user.kind}:${user.id}`))
-        .map((user) => ({ kind: user.kind, id: user.id, displayName: user.display_name, avatarHash: user.avatar_hash })),
+        .map((user) => ({
+          kind: user.kind,
+          serviceAccountKind: user.service_account_kind ?? undefined,
+          id: user.id,
+          displayName: user.display_name,
+          avatarHash: user.avatar_hash,
+        })),
     ),
   );
 };
 
-const COLUMNS = sql`
-  id, space_id, kind, name, title, description, priority, assign_creator, checklist, estimated_duration_minutes,
+const COLUMNS = () => sql`
+  id, space_id, kind, name, icon, title, description, priority, assign_creator, checklist, estimated_duration_minutes,
   location, url, all_day, duration_minutes, time_of_day::text AS time_of_day, date_rule, date_weekdays, date_offset_days,
   created_at, updated_at
 `;
@@ -135,7 +152,7 @@ const COLUMNS = sql`
 /** Templates of a Space, by kind and then name. */
 export const list = async (params: { spaceId: string; kind?: ItemTemplateKind }): Promise<SpaceItemTemplate[]> => {
   const rows = await sql<DbTemplate[]>`
-    SELECT ${COLUMNS}
+    SELECT ${COLUMNS()}
     FROM spaces.item_templates
     WHERE space_id = ${params.spaceId}::uuid AND (${params.kind ?? null}::text IS NULL OR kind = ${params.kind ?? null})
     ORDER BY kind DESC, lower(name), id
@@ -145,7 +162,7 @@ export const list = async (params: { spaceId: string; kind?: ItemTemplateKind })
 };
 
 export const get = async (params: { id: string }): Promise<SpaceItemTemplate | null> => {
-  const rows = await sql<DbTemplate[]>`SELECT ${COLUMNS} FROM spaces.item_templates WHERE id = ${params.id}::uuid`;
+  const rows = await sql<DbTemplate[]>`SELECT ${COLUMNS()} FROM spaces.item_templates WHERE id = ${params.id}::uuid`;
   const [template] = await loadRelations(rows);
   return template ?? null;
 };
@@ -153,7 +170,7 @@ export const get = async (params: { id: string }): Promise<SpaceItemTemplate | n
 /** A template of the Space whose name matches case-insensitively; the name is unique per Space and kind. */
 export const findByName = async (params: { spaceId: string; name: string; kind?: ItemTemplateKind }): Promise<SpaceItemTemplate[]> => {
   const rows = await sql<DbTemplate[]>`
-    SELECT ${COLUMNS}
+    SELECT ${COLUMNS()}
     FROM spaces.item_templates
     WHERE space_id = ${params.spaceId}::uuid
       AND lower(name) = lower(${params.name.trim()})
@@ -232,11 +249,11 @@ export const create = async (params: {
         if ((count?.count ?? 0) >= MAX_ITEM_TEMPLATES_PER_KIND) return { ok: false, error: LIMIT_REACHED, status: 409 };
         const [row] = await tx<{ id: string }[]>`
           INSERT INTO spaces.item_templates (
-            short_id, space_id, kind, name, title, description, priority, assign_creator, checklist,
+            short_id, space_id, kind, name, icon, title, description, priority, assign_creator, checklist,
             estimated_duration_minutes, location, url, all_day, duration_minutes, time_of_day,
             date_rule, date_weekdays, date_offset_days, created_by
           ) VALUES (
-            ${shortId}, ${spaceId}::uuid, ${data.kind}, ${data.name.trim()}, ${data.title}, ${data.description ?? null},
+            ${shortId}, ${spaceId}::uuid, ${data.kind}, ${data.name.trim()}, ${data.icon ?? null}, ${data.title}, ${data.description ?? null},
             ${data.priority ?? null}, ${data.assignCreator}, ${toPgTextArray(data.checklist ?? [])}::text[],
             ${data.estimatedDurationMinutes ?? null}, ${blankToNull(data.location)}, ${data.url ?? null}, ${data.allDay},
             ${data.durationMinutes ?? null}, ${data.timeOfDay ?? null}::time, ${rule.date_rule},
@@ -264,6 +281,7 @@ export const update = async (params: { id: string; data: UpdateItemTemplate }): 
   const { data } = params;
   const merged: TemplateValues = {
     name: data.name ?? existing.name,
+    icon: data.icon === undefined ? existing.icon : data.icon,
     title: data.title ?? existing.title,
     description: data.description === undefined ? existing.description : data.description,
     priority: data.priority === undefined ? existing.priority : data.priority,
@@ -288,6 +306,7 @@ export const update = async (params: { id: string; data: UpdateItemTemplate }): 
       const [row] = await tx<{ id: string }[]>`
         UPDATE spaces.item_templates SET
           name = ${merged.name.trim()},
+          icon = ${merged.icon ?? null},
           title = ${merged.title},
           description = ${merged.description ?? null},
           priority = ${merged.priority ?? null},

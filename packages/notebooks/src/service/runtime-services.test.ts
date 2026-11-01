@@ -269,6 +269,7 @@ natsSuite()("notebook reindex runtime", () => {
 
     expect(schedulerStarts).toBe(1);
     expect(createdSchedules.map((schedule) => [schedule.id, schedule.cron, schedule.timezone])).toEqual([
+      ["notebooks:note-updates", "* * * * *", "Europe/Berlin"],
       ["notebooks:yjs-snapshot-reconcile", "0 * * * *", "Europe/Berlin"],
       ["notebooks:yjs-legacy-migration", "*/5 * * * *", "Europe/Berlin"],
       ["notebooks:reindex", "0 */12 * * *", "Europe/Berlin"],

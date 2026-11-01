@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-22
+updated: 2026-10-24
 ---
 
 # Pulse
@@ -13,6 +13,9 @@ updated: 2026-10-22
 Pulse collects metrics, events, and states in bases. Add sources, send batches
 through HTTP ingest, or let Pulse scrape Prometheus endpoints. Measurements go
 to one ClickHouse database per base; Postgres keeps control data.
+
+Open **Pulse** from the app menu. Pulse is hidden from the app bar by default;
+your saved choice to show or pin it there stays in place.
 
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
@@ -711,6 +714,19 @@ current settings.
 ClickHouse TTLs expire events and state history by raw retention, hourly values
 by their own retention, and sensitive fields by a separate column TTL.
 Physical removal follows storage merges. Current states have no TTL.
+SQL reads apply the base's retention even while physical cleanup is pending.
+Events use the exact cutoff; raw samples and hourly values include the complete
+boundary hour. This applies equally to the console, CLI, Assistant, and alert
+queries. Current states remain readable until replaced or cleared.
+
+On update, Pulse reconciles each base to read-schema version 4. Retention
+changes update these read boundaries during the same base reconciliation that
+updates the storage TTLs. Delayed hourly aggregation continues reading the
+protected internal raw samples before the nightly job removes them. Counter
+and histogram helpers also use these protected samples within the longer of
+raw and hourly retention, so a delayed rollup cannot replace a newer observation
+with a stale hourly total. These samples remain hidden from direct raw reads,
+and helper windows outside raw retention still require complete hours.
 
 Raw metric samples use daily partitions. The nightly retention job at 03:17
 UTC removes a partition only when its whole day is past raw retention and all

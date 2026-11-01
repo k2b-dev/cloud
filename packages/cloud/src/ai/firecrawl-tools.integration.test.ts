@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
+import { sql } from "../runtime/clients";
 import { AI_WEBSITE_APPROVAL_TOOL, rememberAiToolApproval } from "./approvals";
 import { createCloudAiFetchFileTool } from "./fetch-file-tool";
 import { createCloudAiWebExtractTool, createCloudAiWebSearchTool } from "./firecrawl-tools";
@@ -54,7 +54,7 @@ databaseSuite()("web_extract provenance", () => {
       );
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Read", signedInSession: true },
         userMessage: { role: "user", content: [{ type: "text", text: "Read" }] },
       });

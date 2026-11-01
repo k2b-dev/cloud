@@ -11,7 +11,8 @@
  * matched nothing and said nothing, and a run that started long after the
  * occurrence that caused it.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowInvocationMode, WorkflowJsonValue, WorkflowRunState } from "../contracts";
 import type { WorkflowEffectBudget } from "./budget";
 

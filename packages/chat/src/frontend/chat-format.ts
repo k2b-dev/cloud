@@ -42,3 +42,8 @@ export const lastMessageLine = (conversation: z.infer<typeof ConversationSchema>
   // In a chat with threads, the preview names the thread first: "Problems · Jonas: Done".
   return conversation.threads > 0 && message.thread ? t.threadPreview({ thread: message.thread.name, line }) : line;
 };
+/** When a muted chat speaks again: "today 18:42", or the short day and date with the time on another day. */
+export const untilLabel = (at: At, now: Date, dateConfig: DateContext): string =>
+  daysAgo(at, now, dateConfig) === 0
+    ? `${chatMessages.resolve(dateConfig.locale ? [dateConfig.locale] : []).t.today.toLocaleLowerCase(dateConfig.locale)} ${messageTime(at, dateConfig)}`
+    : format(at, dateConfig, { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });

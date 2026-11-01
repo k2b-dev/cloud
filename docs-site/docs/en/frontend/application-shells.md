@@ -36,7 +36,7 @@ See [Page swaps](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps).
 | Complex editor dialog | `PanelDialog` |
 | Tabular records | `DataPanel` and `DataTable` |
 | Metrics | `StatGrid` and `StatCell` |
-| Page in the mobile app (preview) | `PwaLayout`; see [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
+| Page in the Cloud app (preview) | `PwaLayout`; see [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages) |
 
 
 ## Build an overview
@@ -123,7 +123,9 @@ own close button or link with `data-workspace-detail-close`; column Escape
 and phone dismissal click it. Omit both for permanent context. The application still
 owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
 page’s own keyboard handlers, so a handler that uses one of these keys for
-local state calls `preventDefault()`.
+local state calls `preventDefault()`. Open menus and dialogs keep these keys;
+passive tooltips allow J, K and F6. Tooltip and reaction hints handle Escape
+first to dismiss themselves.
 
 Opening reserves the column immediately, then slides the panel in. Closing
 slides it out over 140 ms with the column still reserved, then returns the

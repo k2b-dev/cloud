@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.GRIDS_RECORD_EVENTS_DB_CHILD;
@@ -40,7 +40,8 @@ if (!databaseName) {
       await sql`CREATE SCHEMA auth`.simple();
       await sql`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
       await sql`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
-      await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+      await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY, name TEXT, kind TEXT, status TEXT)`.simple();
+      await sql`CREATE TABLE auth.mandates (id UUID PRIMARY KEY)`.simple();
       const { migrate: migrateWorkflows } = await import("../../../core/src/migrate/core/workflows");
       const { migrate: migrateLogging } = await import("../../../core/src/migrate/core/logging");
       const { migrate: migrateEvents } = await import("../../../core/src/migrate/core/events");

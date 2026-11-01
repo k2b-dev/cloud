@@ -1,3 +1,4 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { openCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
@@ -129,6 +130,7 @@ export default function SpacesOverview(props: Props) {
         current: { kind: "overview" },
         canCreate: canCreate(),
         myWorkLabel: t.myWork,
+        calendarLabel: t.calendar,
         newSpaceLabel: t.newSpace,
       }),
     onAction: async (action) => {
@@ -259,20 +261,11 @@ export default function SpacesOverview(props: Props) {
           <For each={activityItems()}>
             {(entry) => (
               <li class="spaces-overview-activity-item">
-                <Avatar
-                  name={entry.actor.displayName}
-                  src={
-                    entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
-                      ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
-                      : undefined
-                  }
-                  icon={
-                    entry.actor.kind === "service_account"
-                      ? "ti ti-api"
-                      : entry.actor.kind === "system"
-                        ? "ti ti-settings-automation"
-                        : undefined
-                  }
+                <CloudAvatar
+                  username={entry.actor.displayName}
+                  userId={entry.actor.id}
+                  avatarHash={entry.actor.avatarHash}
+                  kind={entry.actor.kind}
                   size="sm"
                 />
                 <a

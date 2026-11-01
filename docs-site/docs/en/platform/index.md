@@ -32,7 +32,9 @@ do not copy files into an application or take ownership of its data model.
 | Security evidence | An action, outcome, actor, and target | Durable, sanitized audit storage |
 | User communication | Typed payloads and channel-neutral presentation | Preferences, channel routing, durable delivery, retries, and deduplication |
 | Cross-app and agent operations | Curated Types, Queries, and Actions | Live schemas, generic dispatch, CLI, and MCP tools |
+| [Calendars for other apps](/en/docs/platform/calendar-sources) | Readable calendars, occurrences, deadlines, and optional versioned Actions | A shared source contract and bounded server reader |
 | Files for other apps | A list Query, a read stream, and optionally a save Action | The shared file-provider contract, its checks, and discovery in the capability catalog |
+| [App status](/en/docs/platform/app-status) | Administrator-only traffic Queries and an offline forget Action | Role discovery, bounded reads, and provider provenance |
 | Global discovery | One permission-aware Query projected into Universal Search | Provider discovery, query fan-out, and shared search UI |
 | [Panels](/en/docs/platform/panels) | One authorized page rendered with `PanelLayout` | A shared slot, provider tabs, sizing, and keyboard controls |
 | Dashboard summaries | Authenticated JSON endpoints | Widget discovery, layout, and rendering |

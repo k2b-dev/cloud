@@ -1,8 +1,8 @@
 import { afterAll } from "bun:test";
 import { bindProcessApplicationId } from "../../packages/cloud/src/_internal/process-identity";
-import { startProcessSync } from "../../packages/cloud/src/_internal/process-sync";
+import { getProcessSync, startProcessSync } from "../../packages/cloud/src/_internal/process-sync";
 import { createIdentityPublicRoutes, initializeIdentityAuthority } from "../../packages/cloud/src/services/identity";
-import { requireInfra, testInfra } from "./test-infra";
+import { requireInfra, testInfra, usesMigratedDatabase } from "./test-infra";
 
 /**
  * Starts a real Core identity authority (identity routes, OAuth issuance, process
@@ -17,6 +17,15 @@ type OAuthModule = { default: Routes };
 
 if (testInfra.database && testInfra.nats) {
   await requireInfra("database", "nats");
+  // A migrated clone already contains Core and OAuth; empty/shared fixtures retain setup.
+  if (!usesMigratedDatabase()) {
+    const setupPath = "../../packages/core/src/runtime-helpers";
+    const { runCoreSetup } = (await import(setupPath)) as { runCoreSetup: () => Promise<void> };
+    await runCoreSetup();
+    const oauthMigrationPath = "../../packages/oauth/src/migrate";
+    const { migrate } = (await import(oauthMigrationPath)) as { migrate: () => Promise<void> };
+    await migrate();
+  }
   // Loaded through computed specifiers so a test in one package does not pull the
   // Core and OAuth programs into that package's typecheck.
   const issuancePath = "../../packages/core/src/api/identity-oauth-issuance";
@@ -26,7 +35,13 @@ if (testInfra.database && testInfra.nats) {
   const { createIdentityOAuthDeviceApprovalRoutes } = (await import(deviceApprovalPath)) as DeviceApprovalModule;
   const { default: oauthRoutes } = (await import(oauthPath)) as OAuthModule;
   bindProcessApplicationId("core");
-  const runtime = await startProcessSync({ application: "core" });
+  // Reuse the package's test Sync when its preload owns the lifecycle.
+  let runtime: Awaited<ReturnType<typeof startProcessSync>> | undefined;
+  try {
+    getProcessSync();
+  } catch {
+    runtime = await startProcessSync({ application: "core" });
+  }
   const routes = createIdentityPublicRoutes()
     .route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes())
     .route("/api/_internal/identity/v1", createIdentityOAuthDeviceApprovalRoutes())
@@ -37,7 +52,7 @@ if (testInfra.database && testInfra.nats) {
   process.env.CLOUD_OAUTH_JWKS_ORIGIN = authority.url.origin;
   afterAll(async () => {
     await authority.stop(true);
-    await runtime.stop();
+    await runtime?.stop();
   });
   await initializeIdentityAuthority();
 }

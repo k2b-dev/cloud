@@ -1,7 +1,8 @@
+import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema } from "@k2b/cloud/contracts";
 import { respond } from "@k2b/cloud/server";
 import { mandates } from "@k2b/cloud/services";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
+import { type AuthenticatedWorkload, authenticateWorkloadCredential, isAppRequestProof } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -28,7 +29,8 @@ const bearerToken = (authorization: string | undefined): string | null => {
 const authenticateOwner = async (
   c: Context,
   authenticate: typeof authenticateWorkloadCredential,
-): Promise<AuthenticatedWorkload | null> => {
+): Promise<AuthenticatedWorkload | Response | null> => {
+  if (isAppRequestProof(c.req.header("Authorization"))) return authenticateSignedAppRequest(c, "identity:invoke");
   const appId = CapabilityAppIdSchema.safeParse(c.req.header("X-Cloud-App-Id"));
   if (!appId.success) return null;
   return authenticate({ token: bearerToken(c.req.header("Authorization")), appId: appId.data, scope: "identity:invoke" });
@@ -79,6 +81,7 @@ export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDepen
 
   const ownerMandate = async (c: Context) => {
     const workload = await authenticateOwner(c, authenticate);
+    if (workload instanceof Response) return { error: workload };
     if (!workload) return { error: c.json({ code: "UNAUTHORIZED", message: "A valid app workload credential is required" }, 401) };
     const params = MandateParamsSchema.safeParse(c.req.param());
     if (!params.success) return { error: c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate id" }, 400) };

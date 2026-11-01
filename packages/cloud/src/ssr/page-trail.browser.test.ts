@@ -20,6 +20,7 @@ setDefaultTimeout(30_000);
 
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { server, folders } = await import("./page-trail.browser-harness");
 
@@ -33,6 +34,7 @@ beforeAll(async () => {
   spies.push(
     spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
@@ -426,6 +428,33 @@ describe("layout.update() keeps the trail current", () => {
 describe("going up returns to the page as this tab left it", () => {
   const scrollOf = (page: Page) =>
     page.evaluate(() => document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-users"]')!.scrollTop);
+
+  test("same-address transient history keeps scroll without another page snapshot", async () => {
+    const { context, page } = await open(phone, "/app/accounts/users?group=sales");
+    try {
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-users"]')!.scrollTop = 600;
+      });
+      await settle(page);
+      const scrolled = await scrollOf(page);
+      expect(scrolled).toBeGreaterThan(0);
+      await page.evaluate(async () => {
+        // Like the app menu: a transient entry at this address, removed before navigation.
+        sessionStorage.removeItem("cloud:page-trail");
+        history.pushState({ ...history.state, transientFixture: true }, "");
+        await new Promise<void>((done) => {
+          addEventListener("popstate", () => done(), { once: true });
+          history.back();
+        });
+      });
+      await settle(page);
+      expect(await page.evaluate(() => sessionStorage.getItem("cloud:page-trail"))).toBeNull();
+      expect(await scrollOf(page)).toBe(scrolled);
+      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe("/app/accounts/users?group=sales");
+    } finally {
+      await context.close();
+    }
+  });
 
   for (const device of [ipadLandscape, laptop]) {
     test(`${device.name}: the back link keeps filters and scroll and marks the row; a new tab gets the plain list`, async () => {

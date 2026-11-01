@@ -197,7 +197,7 @@ of points.
 
 | Kind | Data and options |
 | --- | --- |
-| `bar` | `data: [{label, value}]`; `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
+| `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
@@ -213,8 +213,14 @@ Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
 "currency", currency?, unit?, decimals?, compact?}`. Currency requires an
 uppercase three-letter code exactly when style is currency; percent takes
 fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
-Date x axes take `{date: "day" | "minute" | "second"}`. With `showValues` on
-bars, y ticks use the value format. Pie and donut slices show shares, so their
+A currency without decimals shows cents only when a value of the chart has
+them.
+Date x axes take `{date: "day" | "minute" | "second"}`. Bar charts label every
+category and print each value with the y axis format when it stays readable;
+`showValues: false` turns the values off, `true` keeps them even where they
+need rows. Few short labels stand below columns. Many or long labels make one
+row per category, with long labels wrapped onto two lines; a single chat chart
+grows with its rows up to 40rem and scrolls them inside beyond it. Pie and donut slices show shares, so their
 format applies to the values in tooltips and the data table.
 
 Every chart kind accepts `tooltip: {label?, format?}`; groups do not. `label`
@@ -470,7 +476,11 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `search_tools` searches Cloud built-ins and live app operations by task. App
   operations use their stable qualified capability ID, such as
   `mail.conversation.list`. Its
-  optional `appId` scopes app operations; `kind` is returned as metadata and is
+  optional `appId` searches that app first. If it has no matches, discovery
+  returns matching tools from other available apps or built-ins, within the
+  same permissions, chat scope, and task grants. Successful scoped searches
+  stay scoped. Search includes operation titles in the request language as
+  well as base titles and descriptions. `kind` is returned as metadata and is
   not a search filter. Searching never loads a tool;
 - `load_tools` retains qualified capability IDs or stable built-in names.
   Skills and the system prompt may name either directly, so the model does not
@@ -825,6 +835,14 @@ Server tools may await `context.reportProgress?.(message)` to publish a short,
 localized status in the active tool row. Report phase changes rather than every
 poll. This status is presentation only: do not include payloads or secrets, and
 continue to return the authoritative result from the tool.
+
+A server tool may also await `context.reportResult?.(result)` to show a durable
+intermediate result in that same tool block while it continues. Cloud validates
+it against the declared output schema and the turn's tool-result character
+budget. The callback updates presentation; the tool must still return its final
+result. Persist recoverable state before reporting it. The native map tool uses
+this for a saved loading snapshot, then returns a compact reference to the
+completed map.
 
 ## Maintain a chat working plan
 

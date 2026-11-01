@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { ConversationView, FolderDisplay } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { writeConversationAssignees } from "./collaboration";
@@ -195,7 +194,6 @@ suite("mail folder display", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const ownerUser = await createUser("owner");
     ownerId = ownerUser.id;
     owner = ownerUser.context;

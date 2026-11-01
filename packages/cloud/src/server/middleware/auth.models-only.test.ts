@@ -1,10 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { redis } from "bun";
 import { Hono } from "hono";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import * as assistantModels from "../../ai/assistant-models";
 import { aiRoutes } from "../../ai/routes";
 import meRoutes from "../../api/me";
 import { AI_INFERENCE_SCOPE } from "../../contracts/shared";
+import { redis } from "../../runtime/clients";
 import { authenticateModelsOnlyCredential } from "../../services/identity/models-only-auth";
 import { authenticateWorkloadCredential } from "../../services/identity/workload-auth";
 import { type AuthenticatedServiceAccountCredential, serviceAccountCredentials } from "../../services/service-account-credentials";
@@ -12,6 +13,8 @@ import { buildProjectedUser } from "../../services/session/user";
 import * as settings from "../../services/settings";
 import { coreSettings } from "../../services/settings/api";
 import { type AuthContext, auth } from "./auth";
+
+useUnitClients();
 
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", uid: "models-user", provider: "local", profile: "user" });
 const token = "cld_0123456789abcdef01234567_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -97,12 +100,15 @@ describe("models-only credential boundary", () => {
     const state = spyOn(assistantModels, "assistantAiSettingsState").mockResolvedValue({
       ok: true,
       enabled: true,
-      defaultModelId: "",
+      status: "ok",
+      selection: null,
+      effectiveDefault: { class: "balanced" },
+      classes: [],
       visionModelConfigured: false,
       audioModelConfigured: false,
       error: null,
       firecrawlConfigured: false,
-      models: [],
+      options: [],
     });
     try {
       const headers = { authorization: `Bearer ${token}` };
@@ -145,10 +151,33 @@ describe("models-only credential boundary", () => {
       lookup.mockRestore();
     }
   });
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind} authenticates as its own principal, without the creator`, async () => {
+      const machine = {
+        ...authenticated,
+        delegatedUser: null,
+        serviceAccount: { ...authenticated.serviceAccount, kind, delegatedUserId: null },
+      };
+      const lookup = spyOn(serviceAccountCredentials, "authenticateApiToken").mockResolvedValue(machine);
+      try {
+        expect(await authenticateModelsOnlyCredential(token)).toEqual({
+          subject: { type: "service_account", serviceAccountId: machine.serviceAccount.id },
+          credentialId: machine.credential.id,
+        });
+        const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).get("/", (c) => c.text("ok"));
+        expect((await app.request("/", { headers: { authorization: `Bearer ${token}` } })).status).toBe(401);
+      } finally {
+        lookup.mockRestore();
+      }
+    });
+  }
   test("the dedicated authenticator accepts only the exact active delegated identity", async () => {
     const lookup = spyOn(serviceAccountCredentials, "authenticateApiToken").mockResolvedValue(authenticated);
     try {
-      expect(await authenticateModelsOnlyCredential(token)).toEqual({ user, credentialId: authenticated.credential.id });
+      expect(await authenticateModelsOnlyCredential(token)).toEqual({
+        subject: { type: "user", userId: user.id },
+        credentialId: authenticated.credential.id,
+      });
       for (const invalid of [
         null,
         { ...authenticated, credential: { ...authenticated.credential, scopes: [] } },
@@ -156,7 +185,7 @@ describe("models-only credential boundary", () => {
         { ...authenticated, credential: { ...authenticated.credential, serviceAccountId: user.id } },
         { ...authenticated, serviceAccount: { ...authenticated.serviceAccount, status: "disabled" as const } },
         { ...authenticated, serviceAccount: { ...authenticated.serviceAccount, kind: "resource_bound" as const } },
-        { ...authenticated, serviceAccount: { ...authenticated.serviceAccount, kind: "standalone" as const } },
+        { ...authenticated, credential: { ...authenticated.credential, scopes: [AI_INFERENCE_SCOPE, "files:read"] } },
         { ...authenticated, serviceAccount: { ...authenticated.serviceAccount, delegatedUserId: "another-user" } },
         { ...authenticated, delegatedUser: null },
         { ...authenticated, delegatedUser: { ...user, accountExpires: "2000-01-01T00:00:00Z" } },

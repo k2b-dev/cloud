@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { getEffectiveGroupIds } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { loadMailboxAccessEntries, requireMailboxPermission } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
 

@@ -1,35 +1,56 @@
-import { EditorState } from "@codemirror/state";
+import { autocompletion } from "@codemirror/autocomplete";
+import { history, historyKeymap, redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
+import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
+import { listSharedTextOfflineGenerations } from "@k2b/cloud/browser/shared-text";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { encoding } from "@k2b/stdlib";
+import { caretIntoTableCell, createEditor, tableCellCompletions } from "@k2b/editor";
+import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
+import {
+  createNotebookTablePresentation,
+  fadeScrollMarginsExtension,
+  fadeScrollPadding,
+  listCommandsExtension,
+  notebookSourceFormulasExtension,
+  pressMissedEditor,
+} from "@k2b/editor/markdown";
+import { extractNamedBlockSummaries, type NamedBlockSummary } from "@k2b/editor/markdown/lib/named-blocks";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
-import { FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
-import { createCodeMirror } from "solid-codemirror";
-import { type Accessor, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
+import { Button, FileDropTarget, InlineGuidance, NoticeCard, prompts, ScrollArea, TextInput, toast, useLocale } from "@k2b/ui";
+import { TextEditor } from "@k2b/ui/text-editor";
+import { type Accessor, createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { yCollab, ySyncAnnotation } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
-import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
+import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
+import { notebookTableOptions } from "../../../../lib/table-options";
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
-import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
-import { listCommandsExtension } from "../../../lib/editor/list-commands";
+import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
+import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
-import { remoteCursors } from "../../../lib/editor/remote-cursors";
-import { pressMissedEditor } from "../../../lib/editor/surface-press";
+import { cellFormattingKeys, tableCellPresence, tableCellSearch } from "../../../lib/editor/shared-editor";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
-import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
-import { isolateYjsHistory } from "../../../lib/yjs/history";
+import type { YjsProviderOptions } from "../../../lib/yjs";
+import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
+import {
+  NotebookAuthorizationError,
+  type NotebookDeviceState,
+  type NotebookDocumentClient,
+  openNotebookDocument,
+} from "../../../lib/yjs/offline";
 import { notebookWorkspaceMessages } from "../../messages";
+import { createEditorComments } from "../comments/EditorComments";
 import {
   ACTIVE_HEADING_EVENT,
   type ActiveHeadingEventDetail,
@@ -46,7 +67,6 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
-  PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
   RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
@@ -67,7 +87,8 @@ import {
   NAVIGATION_VISIBILITY_EVENT,
   NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT,
 } from "../sidebar/navigation-visibility";
-import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
+import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
+import { openAttachmentPicker } from "./AttachmentPicker";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
@@ -82,8 +103,20 @@ import { slashCommandsExtension } from "./slash-commands";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 import { createSyncStateBridge } from "./sync-state";
 import { createTabKeyPreference } from "./tab-key-preference";
+import {
+  createNotebookTableStructure,
+  NOTE_EDITOR_MAX_LENGTH,
+  type TableStructureProvider,
+  type UnknownTableAction,
+} from "./table-structure";
 
 const TOC_DEBOUNCE_MS = 300;
+/** Marks the editor's own catch-up with the live document, which is no edit of the person's. */
+const firstEditsSettled = Annotation.define<boolean>();
+/** How long leaving the note waits for the first edits to reach the live note before it asks. */
+const FIRST_EDITS_LEAVE_WAIT_MS = 5_000;
+/** How often a note that is only read tries again to load a newer saved text, waiting 1, 2, then 4 s. */
+const SAVED_TEXT_RETRIES = 3;
 type LeaveGuard = Pick<ReturnType<typeof createSyncEnded>, "confirmLeave" | "releaseLeave">;
 type EditorInstanceProps = {
   noteId: string;
@@ -93,18 +126,23 @@ type EditorInstanceProps = {
   historyIncomplete: boolean;
   notebookName: string;
   appUrl: string;
-  workspaceCursor: string | null;
-  onWorkspaceCursorChange?: (cursor: string) => void;
   userId: string;
   displayName: string;
-  initialSnapshot: string | null;
-  initialContent?: string | null;
+  /** The saved Markdown the note opens with; editing text or focusing an editable table cell starts collaboration. */
+  initialContent: string | null;
   initialPanelOpen: boolean;
   initialRichMode: "rich" | "source";
   readOnly?: boolean;
+  /** Write access to the note: commenting needs it, also where the editor only shows the text. */
+  canWrite: boolean;
+  /** Live dictation is set up and allowed for this person; the toolbar then shows Dictate. */
+  liveDictation?: boolean;
+  /** The note's comments from the server response; a note opened in the page loads its own. */
+  initialAnnotations?: AnnotationProjection | null;
 };
 
 const CURSOR_IDLE_TIMEOUT_MS = 8_000;
+const liveDictationSource = createLiveDictationSource({ app: "notebooks" });
 
 type SoftNavigatedDetail = {
   noteAuthors: NoteAuthors;
@@ -139,11 +177,7 @@ export default function NoteEditor(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const { initialHref, initialDetail, ...initialEditorProps } = props;
-  const [lastWorkspaceCursor, setLastWorkspaceCursor] = createSignal(initialEditorProps.workspaceCursor);
-  const [current, setCurrent] = createSignal<EditorInstanceProps>({
-    ...initialEditorProps,
-    onWorkspaceCursorChange: setLastWorkspaceCursor,
-  });
+  const [current, setCurrent] = createSignal<EditorInstanceProps>(initialEditorProps);
   // Read before anything mounts: the first editor opens where the reader scrolled the server preview.
   const preview = document.getElementById(NOTE_PREVIEW_ID);
   let previewPosition = preview ? previewReadingPosition(preview) : null;
@@ -194,7 +228,8 @@ export default function NoteEditor(props: Props) {
         noteTitle: note.title,
         noteLockedAt: note.lockedAt,
         historyIncomplete: note.historyIncomplete,
-        initialSnapshot: note.yjsSnapshot,
+        initialContent: note.contentMd,
+        initialAnnotations: null,
       },
       eventDetail: detail,
     };
@@ -237,11 +272,7 @@ export default function NoteEditor(props: Props) {
     const loaded = routeState.data();
     if (loaded && routeSource() === loaded.source) {
       const applied = navigation.apply(loaded.source, loaded.href, () => {
-        setCurrent({
-          ...loaded.props,
-          workspaceCursor: lastWorkspaceCursor(),
-          onWorkspaceCursorChange: setLastWorkspaceCursor,
-        });
+        setCurrent(loaded.props);
         layout.update({
           breadcrumbs: [
             { title: t().start, href: "/" },
@@ -404,6 +435,15 @@ function EditorInstance(
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
+  const [device, setDevice] = createSignal<NotebookDeviceState>({ pending: false, saved: false, failed: false, recovery: false });
+  const [deviceReady, setDeviceReady] = createSignal(false);
+  const [deviceOpening, setDeviceOpening] = createSignal(false);
+  const [tabOnly, setTabOnly] = createSignal(false);
+  const [deviceKept, setDeviceKept] = createSignal(false);
+  const [deviceOpenError, setDeviceOpenError] = createSignal<"access" | "network" | null>(null);
+  let documentClient: NotebookDocumentClient | undefined;
+  let provider: NotebookDocumentClient["provider"] | undefined;
+  const documentAbort = new AbortController();
   const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
   const [storageExhausted, setStorageExhausted] = createSignal(false);
   createEffect(() => {
@@ -413,11 +453,23 @@ function EditorInstance(
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
   const syncEnded = createSyncEnded({
     messages: t,
-    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    hasUnsentChanges: () => hasUnsentChanges(),
     resume: () => provider?.resume(),
     focusEditor: () => editorView()?.focus(),
   });
-  onCleanup(props.registerLeaveGuard(syncEnded));
+  // Edits the server has not confirmed yet, also those typed before the live note arrived, hold leaving until it does.
+  const sentWaiters = new Set<() => void>();
+  const notifySent = () => {
+    if (hasUnsentChanges()) return;
+    for (const resolve of sentWaiters) resolve();
+    sentWaiters.clear();
+  };
+  onCleanup(
+    props.registerLeaveGuard({
+      confirmLeave: () => (holdsLeave() ? leaveAfterSent() : syncEnded.confirmLeave()),
+      releaseLeave: syncEnded.releaseLeave,
+    }),
+  );
   // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   const onPanelState = (event: Event) => {
@@ -426,33 +478,55 @@ function EditorInstance(
   };
   const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
+  // The authorized snapshot initializes Yjs before editing. SSR text is presentation only,
+  // so the saved base is never inserted into the document a second time.
   const doc = new Y.Doc({ gc: true });
-  if (props.initialSnapshot) {
-    const bytes = encoding.fromBase64(props.initialSnapshot);
-    if (bytes.length) Y.applyUpdate(doc, bytes, "initial");
-  }
-
   const ytext = doc.getText("codemirror");
-  if (props.readOnly && !props.initialSnapshot && props.initialContent) {
-    ytext.insert(0, props.initialContent);
-  }
+  /** The saved text the editor shows until collaboration starts; a newer save by someone else replaces it. */
+  const baseText = (props.initialContent ?? "").replace(/\r\n?/g, "\n");
   const awareness = new Awareness(doc);
 
-  const color = getNotebookPresenceColor(props.userId);
-  awareness.setLocalStateField("user", { userId: props.userId, name: props.displayName, color });
+  // The websocket supplies the authenticated identity for remote cursor presence.
+  awareness.setLocalStateField("cursor", null);
 
-  const {
-    ref: editorRef,
-    createExtension: addExtension,
-    editorView,
-  } = createCodeMirror({
-    value: ytext.toString(),
+  // One shared editor view; Notebook extensions reconfigure their own compartments of it.
+  // Reactive extensions are slots of the one shared view; the toolbar formats the same editor.
+  const editorState = createEditor();
+  const addExtension = editorState.use;
+  const editorView = editorState.view;
+  const tableControls = editorState.controls;
+  let openTablePicker = () => {};
+  const tablePresentation = createNotebookTablePresentation({ ...notebookTableOptions(props.notebookId), locale });
+  const comments = createEditorComments({
+    notebookId: props.notebookId,
+    noteId: props.noteId,
+    me: { id: props.userId, name: props.displayName },
+    canWrite: props.canWrite,
+    editable: () => !props.readOnly && !syncEnded.ended(),
+    readOnly: !!props.readOnly,
+    initial: props.initialAnnotations,
+    view: editorView,
   });
+  addExtension(comments.extension);
+  let commentsHost: HTMLDivElement | undefined;
+  const [commentsExtent, setCommentsExtent] = createSignal(0);
+  // With the detail panel open, comments show as dots beside the lines (the server renders the first state).
+  createEffect(
+    on(panelOpen, (open) => commentsHost?.closest(".notebook-document-surface")?.toggleAttribute("data-detail-open", open), {
+      defer: true,
+    }),
+  );
+  /** The visible saved text, then the live collaborative text after replay. */
+  const currentText = () => editorView()?.state.doc.toString() ?? baseText;
 
   // Book's rendering of the draft, or of the saved note in read-only mode: block previews and heading lines.
-  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal) => {
+  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal, pages?: ReadonlyMap<number, number>) => {
+    const json = {
+      ...(markdown === undefined ? {} : { markdown }),
+      ...(pages?.size ? { pages: Object.fromEntries([...pages].map(([line, page]) => [String(line), page])) } : {}),
+    };
     const response = await apiClient[":id"].notes[":noteId"]["block-preview"].$post(
-      { param: { id: props.notebookId, noteId: props.noteId }, json: markdown === undefined ? {} : { markdown } },
+      { param: { id: props.notebookId, noteId: props.noteId }, json },
       { init: { signal: abortSignal } },
     );
     if (!response.ok) throw new Error(queryBlockMessages.resolve([locale()]).t.failed);
@@ -462,26 +536,103 @@ function EditorInstance(
     notebookId: props.notebookId,
     noteId: props.noteId,
     readOnly: !!props.readOnly,
-    initialMarkdown: ytext.toString(),
+    initialMarkdown: baseText,
     view: editorView,
     enabled: richMode,
     locale,
-    load: loadBlockPreview,
+    load: (markdown, pages, abortSignal) => loadBlockPreview(markdown, abortSignal, pages),
   });
+  addExtension(cellFormattingKeys(tableControls));
+  addExtension(tableCellSearch);
   addExtension(blockPreviews.listener);
 
   const undoManager = props.readOnly ? null : new Y.UndoManager(ytext);
+  const collab = new Compartment();
+  const [collabStarted, setCollabStarted] = createSignal(false);
+  const [collabActive, setCollabActive] = createSignal(false);
+  const startCollaboration = () => {
+    if (props.readOnly || !deviceReady() || syncEnded.ended() || collabStarted()) return;
+    setCollabStarted(true);
+    syncState.start();
+    provider?.connect();
+  };
   if (!props.readOnly && undoManager) {
-    addExtension(() => yCollab(ytext, null, { undoManager }));
+    addExtension(collab.of([history(), keymap.of(historyKeymap)]));
     addExtension(() => isolateYjsHistory(undoManager));
-    addExtension(() => remoteCursors(ytext, awareness));
-    addExtension(() => (syncEnded.ended() ? [] : keymap.of(yUndoManagerKeymap)));
+    addExtension(cloudLinkPasteExtension());
+    // Reading or switching notes needs no collaboration; text edits and editable table focus start it.
+    addExtension(
+      EditorView.updateListener.of((update) => {
+        if (
+          !update.docChanged ||
+          update.transactions.every(
+            (tr) => tr.annotation(firstEditsSettled) || tr.annotation(Transaction.remote) || tr.annotation(ySyncAnnotation),
+          )
+        )
+          return;
+        startCollaboration();
+        structureChanged();
+        // The typed words are unsent until the live note confirms them; leaving asks first.
+        syncEnded.refresh();
+        notifySent();
+      }),
+    );
   }
+  const leaveAfterSent = async (): Promise<boolean> => {
+    await Promise.race([
+      new Promise<void>((resolve) => sentWaiters.add(resolve)),
+      new Promise((resolve) => setTimeout(resolve, FIRST_EDITS_LEAVE_WAIT_MS)),
+    ]);
+    if (!holdsLeave()) return syncEnded.confirmLeave();
+    const text = t();
+    return (
+      (await prompts.confirm(text.leaveUnsavedConfirm, {
+        title: text.leaveNote,
+        icon: "ti ti-logout",
+        variant: "danger",
+        confirmText: text.leaveNote,
+      })) === true
+    );
+  };
+  /** Edits not yet confirmed by the server, including those typed before the live document arrived. */
+  const hasUnsentChanges = () =>
+    (tabOnly() && !collabActive() && currentText() !== baseText) ||
+    (device().pending && !device().saved) ||
+    (provider?.hasUnsentChanges() ?? false);
+  /** Leaving waits only while this editor's own edits are on their way; an ended session has its own bar and prompt. */
+  const holdsLeave = () => collabStarted() && !syncEnded.ended() && hasUnsentChanges();
+
+  // Normally the authorized Y.Doc loads before typing and the first keystroke is device-backed.
+  // Explicit tab-only input during an outage stays in the editor until an authorized read succeeds.
+  const settleFirstEdits = () => {
+    const view = editorView();
+    if (!view || !undoManager || collabActive()) return;
+    const edited = view.state.doc.toString();
+    const text = ytext.toString();
+    if (text !== edited)
+      view.dispatch({
+        changes: changesBetween(edited, text) ?? { from: 0, to: edited.length, insert: text },
+        annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+      });
+    view.dispatch({
+      effects: collab.reconfigure([
+        yCollab(ytext, null, { undoManager }),
+        remoteCursors(ytext, awareness),
+        tableCellPresence(ytext, awareness),
+      ]),
+    });
+    undoManager?.stopCapturing();
+    setCollabActive(true);
+    syncState.unsentChanged();
+    syncEnded.refresh();
+    notifySent();
+  };
 
   let cursorIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let cursorHiddenByIdle = false;
 
   const publishCurrentCursor = (view: EditorView) => {
+    if (!collabActive()) return;
     const selection = view.state.selection.main;
     awareness.setLocalStateField("cursor", {
       anchor: Y.createRelativePositionFromTypeIndex(ytext, selection.anchor),
@@ -504,6 +655,25 @@ function EditorInstance(
     }, CURSOR_IDLE_TIMEOUT_MS);
   };
 
+  // A focused table cell is inside the view but is not CodeMirror's own focus.
+  const editorFocused = () => {
+    const view = editorView();
+    return !!view && (view.hasFocus || view.contentDOM.contains(document.activeElement));
+  };
+
+  const publishCellSelection = (selection: { anchor: number; head: number } | null) => {
+    if (!selection || props.readOnly || syncEnded.ended()) return;
+    // Table structure needs replayed identities before its first mutation, even when no text was typed.
+    startCollaboration();
+    if (!collabActive()) return;
+    awareness.setLocalStateField("cursor", {
+      anchor: Y.createRelativePositionFromTypeIndex(ytext, selection.anchor),
+      head: Y.createRelativePositionFromTypeIndex(ytext, selection.head),
+    });
+    cursorHiddenByIdle = false;
+    scheduleCursorIdleHide();
+  };
+
   const markCursorActivity = (view?: EditorView) => {
     scheduleCursorIdleHide();
     if (cursorHiddenByIdle && view) {
@@ -524,7 +694,7 @@ function EditorInstance(
     noteId: props.noteId,
     linkedHeading: props.linkedHeading,
     view: editorView,
-    loadHeadings: (abortSignal) => loadBlockPreview(props.readOnly ? undefined : ytext.toString(), abortSignal),
+    loadHeadings: (abortSignal) => loadBlockPreview(props.readOnly ? undefined : currentText(), abortSignal),
     focus: !props.readOnly,
   });
   addExtension(linkedHeadingJump.extension);
@@ -532,15 +702,24 @@ function EditorInstance(
   addExtension(editor.basicExtensions());
   // Custom formatting commands dispatch changes even in a read-only state.
   addExtension(() => (syncEnded.ended() ? [] : formattingKeymap({ notebookId: props.notebookId })));
+  // Pending completion callbacks still read their state after sync ends.
+  // Keep that state installed while removing every source from the read-only note.
   addExtension(() =>
-    syncEnded.ended() ? [] : slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }),
+    syncEnded.ended()
+      ? autocompletion({ override: [] })
+      : slashCommandsExtension({
+          notebookId: props.notebookId,
+          notebookName: props.notebookName,
+          locale: locale(),
+          openTablePicker: () => openTablePicker(),
+        }),
   );
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   let scrollPort: HTMLDivElement | undefined;
   addExtension(fadeScrollMarginsExtension(() => scrollPort));
-  addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
   addExtension(syncEnded.extension);
+  addExtension(() => (!props.readOnly && !deviceReady() ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
   // List keys work whatever the Tab preference; toolbar formats follow the caret.
@@ -549,7 +728,7 @@ function EditorInstance(
     props.readOnly
       ? []
       : [
-          listCommandsExtension(),
+          listCommandsExtension(notebookListOptions),
           EditorView.updateListener.of((update) => {
             if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
@@ -568,26 +747,29 @@ function EditorInstance(
 
   addExtension(editor.noteScroller);
 
-  addExtension(() => (richMode() ? [] : lineNumbers()));
+  // Markdown shows formula results beside the raw table cells; the formatted grid renders them in the cells.
+  addExtension(() => (richMode() ? [] : [lineNumbers(), notebookSourceFormulasExtension({ locale })]));
 
   addExtension(() =>
     richMode()
       ? [
-          editor.tablesExtension(props.notebookId),
-          editor.imageExtension(props.notebookId),
-          editor.listsExtension(),
+          tablePresentation.extension,
+          caretIntoTableCell,
+          tableCellCompletions,
+          editor.imageExtension(notebookUrlOptions(props.notebookId)),
+          editor.listsExtension(notebookListOptions),
           editor.infoBlocksExtension(locale()),
           editor.dataBlocksExtension(),
           blockPreviews.extension,
           editor.namedBlocksExtension(),
-          editor.linksExtension(props.notebookId),
+          editor.linksExtension(notebookUrlOptions(props.notebookId)),
           editor.markupExtension(),
           editor.markExtension(),
           editor.subSupExtension(),
-          editor.ligaturesExtension(),
+          editor.ligaturesExtension(notebookListOptions),
           editor.initialMarkdownDecorationRefreshExtension(),
           editor.pointerSelectionMarkdownRefreshExtension(),
-          editor.mermaidExtension(),
+          editor.mermaidExtension(notebookMermaidOptions),
           editor.katexExtension(),
           editor.codeFontExtension(),
           editor.tagPillExtension(props.notebookId),
@@ -596,56 +778,192 @@ function EditorInstance(
   );
 
   const syncState = createSyncStateBridge({
-    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    hasUnsentChanges: () => hasUnsentChanges(),
     emit: (detail) => {
       if (!props.readOnly) window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail }));
     },
   });
-  const provider = props.readOnly
-    ? null
-    : yjs.createYjsProvider({
-        doc,
-        awareness,
-        noteId: props.noteId,
-        appUrl: props.appUrl,
-        onConnectionChange: (value) => {
-          setConnected(value);
-          syncState.connectionChanged(value);
-        },
-        onHistoryIncomplete: () => setHistoryIncomplete(true),
-        onError: (error) => {
-          if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
-        },
-        onReady: () => {
-          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
-          syncState.ready();
-          syncEnded.ready();
-        },
-        // Forwards every presence update to the OnlineSection island via a
-        // window event — the editor itself doesn't need to track participants
-        // anymore now that the toolbar no longer renders them.
-        onPresenceChange: (next) => {
-          window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: next }));
-        },
-        workspace: {
+  const providerOptions: Omit<YjsProviderOptions, "doc" | "awareness" | "noteId" | "appUrl"> = {
+    undoManager: undoManager ?? undefined,
+    onConnectionChange: (value) => {
+      setConnected(value);
+      syncState.connectionChanged(value);
+      structureChanged();
+    },
+    onHistoryIncomplete: () => setHistoryIncomplete(true),
+    onRetainedColumn: () => tableControls()?.notify(t().tableColumnRetained),
+    onError: (error) => {
+      if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
+    },
+    onReady: () => {
+      settleFirstEdits();
+      if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+      syncState.ready();
+      syncEnded.ready();
+      structureChanged();
+    },
+    onFatal: (error) => {
+      syncState.end();
+      syncEnded.end(error);
+      structureChanged();
+    },
+    onUnsentChange: () => {
+      if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+      syncState.unsentChanged();
+      syncEnded.refresh();
+      structureChanged();
+      notifySent();
+    },
+  };
+
+  // F3 A: inserting in the middle, columns, deleting and alignment run on the server. The menu re-reads availability
+  // whenever the provider's replay, connection or unsent state changes.
+  const [structureRevision, setStructureRevision] = createSignal(0);
+  const structureChanged = () => setStructureRevision((revision) => revision + 1);
+  const runHistory = (direction: "undo" | "redo") => {
+    if (props.readOnly || syncEnded.ended()) return;
+    const view = editorView();
+    if (!collabActive()) {
+      if (tabOnly() && view) (direction === "undo" ? undo : redo)(view);
+      return;
+    }
+    if (!provider) return;
+    void provider[direction]().catch(() => tableControls()?.notify(t().tableActionFailed));
+  };
+  const canHistory = (direction: "canUndo" | "canRedo") => {
+    structureRevision();
+    if (syncEnded.ended()) return false;
+    if (collabActive()) return !!provider?.[direction]();
+    const view = editorView();
+    return tabOnly() && !!view && (direction === "canUndo" ? undoDepth(view.state) : redoDepth(view.state)) > 0;
+  };
+  const [unknownTableAction, setUnknownTableAction] = createSignal<UnknownTableAction | null>(null);
+  let inverseHandler: Parameters<TableStructureProvider["setInverseHandler"]>[0] | undefined;
+  // TextEditor captures its host at mount, so this adapter must exist before async authorization.
+  const tableStructure = createNotebookTableStructure({
+    ytext,
+    provider: {
+      canStructure: () => provider?.canStructure() ?? false,
+      restoreRevision: () => provider?.restoreRevision() ?? null,
+      beginAction: (actionId) => {
+        if (!provider) throw new Error("Notebook document is not ready");
+        return provider.beginAction(actionId);
+      },
+      setInverseHandler: (handler) => {
+        inverseHandler = handler;
+        provider?.setInverseHandler(handler);
+      },
+    },
+    track: structureRevision,
+    post: (json) =>
+      apiClient[":id"].notes[":noteId"]["table-action"].$post({ param: { id: props.notebookId, noteId: props.noteId }, json }),
+    notify: (message) => tableControls()?.notify(message),
+    fallback: () => t().tableActionFailed,
+    onUnknown: (action) => setUnknownTableAction(action),
+  });
+  let initialization: Promise<void> | undefined;
+  const initializeDevice = (memoryOnly = tabOnly()): Promise<void> => {
+    if (!props.canWrite || documentAbort.signal.aborted || documentClient) return Promise.resolve();
+    if (initialization) return initialization;
+    setDeviceOpening(true);
+    initialization = (async () => {
+      try {
+        setDeviceOpenError(null);
+        // Read mode still offers an authorized pending copy (including a note locked
+        // after typing). Ordinary readers do not open storage or a live socket.
+        if (
+          props.readOnly &&
+          !(await listSharedTextOfflineGenerations({ userId: props.userId, draftId: `notebooks:${props.noteId}` })).length
+        )
+          return;
+        const client = await openNotebookDocument({
+          ...providerOptions,
+          doc,
+          awareness,
+          noteId: props.noteId,
+          appUrl: props.appUrl,
           notebookId: props.notebookId,
-          initialCursor: props.workspaceCursor,
-          onEvent: dispatchWorkspaceEvent,
-          onCursorChange: props.onWorkspaceCursorChange,
-        },
-        onFatal: (error) => {
-          syncState.end();
-          syncEnded.end(error);
-        },
-        onUnsentChange: () => {
-          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
-          syncState.unsentChanged();
-          syncEnded.refresh();
-        },
-      });
+          userId: props.userId,
+          signal: documentAbort.signal,
+          recoveryOnly: props.readOnly,
+          memoryOnly,
+          onDeviceState: (state) => {
+            setDevice(state);
+            syncEnded.refresh();
+            notifySent();
+          },
+        });
+        if (documentAbort.signal.aborted) {
+          client.dispose();
+          return;
+        }
+        documentClient = client;
+        provider = client.provider;
+        if (inverseHandler) provider.setInverseHandler(inverseHandler);
+        // During a server outage tab-only input stays in CodeMirror, without invented Yjs identities.
+        // Carry it onto the committed document only after a fresh authorized read succeeds.
+        if (tabOnly() && currentText() !== baseText) {
+          const rebased = rebaseOnto(baseText, currentText(), ytext.toString());
+          if (!rebased) {
+            syncEnded.end({ code: "RESYNC_REQUIRED", message: "Tab input needs recovery", reopen: true });
+            return;
+          }
+          applyToYText(ytext, rebased.changes, undoManager);
+        }
+        settleFirstEdits();
+        setDeviceReady(true);
+        if (collabStarted()) provider.connect();
+        if (client.recovery) syncEnded.end({ code: "RESYNC_REQUIRED", message: "Device input needs recovery" });
+        else if (client.pending) startCollaboration();
+        structureChanged();
+      } catch (error) {
+        if (!documentAbort.signal.aborted) {
+          const accessDenied = error instanceof NotebookAuthorizationError && [401, 403, 404].includes(error.status);
+          if (accessDenied) setDeviceReady(false);
+          setDeviceOpenError(accessDenied ? "access" : error instanceof NotebookAuthorizationError ? "network" : null);
+          setDevice((previous) => ({ ...previous, failed: true }));
+        }
+      }
+    })().finally(() => {
+      initialization = undefined;
+      setDeviceOpening(false);
+    });
+    return initialization;
+  };
+  onMount(() => void initializeDevice());
+  const editInTab = async () => {
+    // Access failures never offer this action. A failed server read can keep input
+    // in this tab, but neither reads stored private bytes nor publishes it.
+    if (props.readOnly || !props.canWrite || deviceOpening() || deviceOpenError() === "access") return;
+    setTabOnly(true);
+    // A server retry may wait on an unavailable proxy. The explicit choice lets
+    // typing start now; initializeDevice rebases it when authorization returns.
+    if (deviceOpenError() === "network") {
+      setDeviceReady(true);
+      editorView()?.focus();
+    }
+    await initializeDevice(true);
+    if (documentAbort.signal.aborted || deviceOpenError() === "access") return;
+    setDeviceReady(true);
+    editorView()?.focus();
+  };
+  const discardDeviceInput = async () => {
+    if (
+      (await prompts.confirm(t().deviceDiscardConfirm, { title: t().deviceDiscard, variant: "danger", confirmText: t().deviceDiscard })) !==
+      true
+    )
+      return;
+    try {
+      await documentClient?.discard();
+      syncEnded.allowLeave();
+      window.location.reload();
+    } catch {
+      setDevice((previous) => ({ ...previous, failed: true }));
+    }
+  };
 
   let disposed = false;
-  let headingLines = extractHeadingLines(ytext.toString());
+  let headingLines = extractHeadingLines(baseText);
   let panelFrame: number | undefined;
   let lastActiveHeading: string | null | undefined;
   let presencePending = false;
@@ -723,7 +1041,7 @@ function EditorInstance(
   // events in one pass. (TOC + tasks each parse cheaply, but doing it
   // twice would scan a large note twice per debounce tick.)
   const emitDerivedDocState = () => {
-    const md = ytext.toString();
+    const md = currentText();
     headingLines = extractHeadingLines(md);
     schedulePresenceLocations();
     const title = deriveNoteTitle(md);
@@ -758,14 +1076,23 @@ function EditorInstance(
     scheduleDerivedEmit();
     printCopy?.changed();
   };
-  ytext.observe(onTextUpdate);
+  // Local and remote edits both reach the editor's document, before and after collaboration starts.
+  addExtension(
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) onTextUpdate();
+    }),
+  );
 
-  const onToggleRich = () =>
-    setRichMode((value) => {
-      const next = !value;
-      writeSettings(props.notebookId, { richMode: next ? "rich" : "source" });
-      return next;
-    });
+  const changeRichMode = (next: boolean) => {
+    const view = editorView();
+    const restore = view && scrollPort ? keepReadingPosition(view, scrollPort, { selection: true }) : null;
+    setRichMode(next);
+    // Reactive presentation compartments settle before the next paint. The
+    // outer scroll area must follow the same text as tables change height.
+    if (restore) queueMicrotask(() => !disposed && restore());
+    writeSettings(props.notebookId, { richMode: next ? "rich" : "source" });
+  };
+  const onToggleRich = () => changeRichMode(!richMode());
 
   // Broadcast richMode whenever it changes so the detail panel's "Markdown
   // source" / "Rich text mode" label can flip accordingly. Fires once on
@@ -775,7 +1102,7 @@ function EditorInstance(
   });
 
   const exportContent = () =>
-    historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${ytext.toString()}` : ytext.toString();
+    historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${currentText()}` : currentText();
 
   let printArticle!: HTMLElement;
   let printCopy: ReturnType<typeof createNotePrintCopy> | undefined;
@@ -793,7 +1120,7 @@ function EditorInstance(
   };
 
   const onDownload = () => {
-    const filename = `${deriveNoteTitle(ytext.toString())}.md`;
+    const filename = `${deriveNoteTitle(currentText())}.md`;
     files.downloadFileFromContent(exportContent(), filename, "text/markdown");
   };
 
@@ -841,11 +1168,13 @@ function EditorInstance(
     }
 
     const at = target === "end" ? view.state.doc.length : 0;
+    // Record focus in the selection transaction. A later focus-only update can
+    // otherwise clear Android's deferred first Enter before it is applied.
+    view.focus();
     view.dispatch({
       selection: { anchor: at },
       scrollIntoView: scroll,
     });
-    view.focus();
     return true;
   };
 
@@ -865,8 +1194,8 @@ function EditorInstance(
     const firstLine = view.state.doc.line(1);
     const marker = /^#\s+/.exec(firstLine.text);
     const from = firstLine.from + (marker?.[0].length ?? 0);
-    view.dispatch({ selection: { anchor: from, head: firstLine.to }, scrollIntoView: true });
     view.focus();
+    view.dispatch({ selection: { anchor: from, head: firstLine.to }, scrollIntoView: true });
     return true;
   };
 
@@ -878,7 +1207,7 @@ function EditorInstance(
   //   3. Paste of clipboard files (e.g. screenshots).
   const uploadFilesSequentially = async (fileList: File[]) => {
     const view = editorView();
-    if (!view || fileList.length === 0) return;
+    if (!view || !deviceReady() || props.readOnly || syncEnded.ended() || fileList.length === 0) return;
     for (const file of fileList) {
       try {
         // Try to bring oversize images under the limit by scaling
@@ -909,11 +1238,12 @@ function EditorInstance(
   const onInsertAttachment = (event: Event) => {
     const view = editorView();
     const detail = (event as CustomEvent<AttachmentRef>).detail;
-    if (view && detail) insertAttachment(view, detail);
+    if (!view || !detail || !deviceReady() || props.readOnly || syncEnded.ended()) return;
+    insertAttachment(view, detail);
   };
 
   const onPaste = (event: ClipboardEvent) => {
-    if (syncEnded.ended()) return;
+    if (!deviceReady() || syncEnded.ended()) return;
     const fileList = Array.from(event.clipboardData?.files ?? []);
     if (fileList.length === 0) return;
     event.preventDefault();
@@ -923,7 +1253,6 @@ function EditorInstance(
   onMount(() => {
     printCopy = createNotePrintCopy(printArticle, { notebookId: props.notebookId, noteId: props.noteId, markdown: exportContent, locale });
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
-    provider?.connect();
     const opensHeading = linkedHeadingJump.open();
     const startPosition = props.startPosition;
     if (startPosition) {
@@ -934,9 +1263,21 @@ function EditorInstance(
       });
     }
     if (!props.readOnly) {
-      if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-      // A reader who scrolled the preview keeps reading there; the caret still starts the note.
-      else if (!opensHeading) focusEditor(0, "start", !startPosition);
+      // Initial device authorization can finish after mount. Focus once editing is enabled,
+      // preserving both focus elsewhere and the reader's position in the preview.
+      let initialFocusHandled = false;
+      createEffect(
+        on(deviceReady, (ready) => {
+          if (!ready || initialFocusHandled) return;
+          initialFocusHandled = true;
+          queueMicrotask(() => {
+            if (disposed || document.activeElement !== document.body) return;
+            if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
+            // A reader who scrolled the preview keeps reading there; the caret still starts the note.
+            else if (!opensHeading) focusEditor(0, "start", !startPosition);
+          });
+        }),
+      );
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,
@@ -987,6 +1328,50 @@ function EditorInstance(
       );
     }
 
+    let savedTextRequest: AbortController | undefined;
+    const readSavedText = async (request: AbortController, attempt = 0): Promise<void> => {
+      try {
+        await initializeDevice();
+        if (request.signal.aborted || documentAbort.signal.aborted || collabStarted()) return;
+        if (!documentClient) throw new Error("Notebook document is not ready");
+        await documentClient.refresh(request.signal);
+      } catch (error) {
+        if (request.signal.aborted || documentAbort.signal.aborted) return;
+        if (error instanceof NotebookAuthorizationError || attempt >= SAVED_TEXT_RETRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+        return readSavedText(request, attempt + 1);
+      }
+    };
+    const onWorkspaceEvent = (raw: Event) => {
+      const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
+      const { event } = detail;
+      if (props.readOnly || collabStarted() || event.notebookId !== props.notebookId) return;
+      // A note deleted elsewhere before anyone typed here reopens as the server now shows it.
+      if (event.type === "note.deleted" && event.noteId === props.noteId) {
+        window.location.reload();
+        return;
+      }
+      if (event.type === "note.updated") {
+        if (event.note.id !== props.noteId) return;
+        if (event.note.historyIncomplete) setHistoryIncomplete(true);
+      } else if (event.type !== "workspace.invalidated") return;
+      savedTextRequest?.abort();
+      const request = new AbortController();
+      savedTextRequest = request;
+      detail.cover(readSavedText(request));
+    };
+    window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+    onCleanup(() => {
+      window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+      savedTextRequest?.abort();
+    });
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!holdsLeave()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    onCleanup(() => window.removeEventListener("beforeunload", onBeforeUnload));
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.addEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
@@ -1024,7 +1409,6 @@ function EditorInstance(
     if (tocDebounceTimer) {
       clearTimeout(tocDebounceTimer);
     }
-    ytext.unobserve(onTextUpdate);
     window.removeEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.removeEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.removeEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
@@ -1034,7 +1418,8 @@ function EditorInstance(
     window.removeEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
     window.removeEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
     themeObserver?.disconnect();
-    provider?.dispose();
+    documentAbort.abort();
+    documentClient?.dispose();
     undoManager?.destroy();
     awareness.destroy();
     doc.destroy();
@@ -1049,6 +1434,21 @@ function EditorInstance(
       </Show>
       <Show when={historyIncomplete()}>
         <NoticeCard role="status" tone="warning" title={t().historyIncompleteTitle} detail={t().historyIncompleteDetail} />
+      </Show>
+      {/* Never resubmitted automatically: the change may still arrive. Stopping only re-enables table actions. */}
+      <Show when={unknownTableAction()}>
+        {(action) => (
+          <NoticeCard
+            role="status"
+            tone="warning"
+            title={t().tableActionUnknownTitle}
+            detail={action().message ?? t().tableActionUnknownDetail}
+          >
+            <Button size="sm" variant="ghost" onClick={() => action().stopWaiting()}>
+              {t().tableActionStopWaiting}
+            </Button>
+          </NoticeCard>
+        )}
       </Show>
       <ScrollArea
         ref={scrollPort}
@@ -1065,14 +1465,12 @@ function EditorInstance(
           }
         }}
         onMouseMove={() => {
-          const view = editorView();
-          if (view?.hasFocus) {
+          if (editorFocused()) {
             scheduleCursorIdleHide();
           }
         }}
         onKeyDown={() => {
-          const view = editorView();
-          if (view?.hasFocus) {
+          if (editorFocused()) {
             scheduleCursorIdleHide();
           }
         }}
@@ -1081,12 +1479,46 @@ function EditorInstance(
         tabIndex={-1}
         aria-label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
       >
-        <div ref={editorRef} />
+        <div ref={commentsHost} class="notebook-comments-host" style={{ "min-height": `${commentsExtent()}px` }}>
+          <TextEditor
+            label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
+            initialValue={baseText}
+            mode={richMode() ? "formatted" : "source"}
+            onModeChange={(mode) => changeRichMode(mode === "formatted")}
+            readOnly={!!props.readOnly || !deviceReady() || !!syncEnded.ended()}
+            // Notebook keeps its own Markdown presentation, toolbar and view menu; the engine adds the shared table grid.
+            presentation={() => []}
+            toolbar={false}
+            extensions={editorState.extension()}
+            maxLength={NOTE_EDITOR_MAX_LENGTH}
+            host={{
+              undo: () => runHistory("undo"),
+              redo: () => runHistory("redo"),
+              boundary: () => undoManager?.stopCapturing(),
+              structure: tableStructure,
+              tabMovesFocus: () => !tabKeys.indents(),
+              renderCell: tablePresentation.renderCell,
+              onCellSelection: publishCellSelection,
+            }}
+            // Clipboard image files upload through the surface's paste handler; only images without a file need the hint.
+            onDroppedImages={(count, files) => files.length >= count}
+            onAttachImages={() => openAttachmentPicker(props.notebookId, locale())}
+            onReady={(controller, controls) => {
+              editorState.attach(controller.view, { controller, controls });
+            }}
+          />
+          {comments.margin(
+            () => commentsHost,
+            () => commentsHost?.closest<HTMLElement>(".notebook-document-surface") ?? undefined,
+            setCommentsExtent,
+          )}
+        </div>
       </ScrollArea>
+      {comments.toolbar(() => scrollPort)}
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
       <FileDropTarget
         label={t().dropToInsert}
-        disabled={props.readOnly || !!syncEnded.ended()}
+        disabled={props.readOnly || !deviceReady() || !!syncEnded.ended()}
         onDrop={(fileList) => void uploadFilesSequentially(fileList)}
       />
       <Show when={tabKeys.indents()}>
@@ -1094,20 +1526,101 @@ function EditorInstance(
           {t().tabIndentHint}
         </p>
       </Show>
-      <Show when={!props.readOnly}>
+      <Show when={!props.readOnly || device().failed || device().recovery}>
+        <Show when={deviceReady() && device().recovery && (props.readOnly || provider?.recoveryInput().text !== currentText())}>
+          <TextInput multiline readOnly label={t().deviceCopyLabel} value={deviceReady() ? (provider?.recoveryInput().text ?? "") : ""} />
+        </Show>
+        <Show when={tabOnly() || device().failed || device().recovery}>
+          <div class="flex flex-wrap items-center gap-2 px-2 py-2" data-notebook-device-state>
+            <InlineGuidance
+              role={device().failed ? "alert" : "status"}
+              tone={device().failed ? "danger" : "warning"}
+              class="min-w-0 flex-1"
+            >
+              {deviceOpenError() === "access"
+                ? t().deviceAccessChanged
+                : tabOnly()
+                  ? t().deviceTabOnly
+                  : device().failed
+                    ? deviceOpenError() === "network"
+                      ? t().deviceOffline
+                      : deviceReady()
+                        ? t().deviceFailed
+                        : t().deviceOpeningFailed
+                    : deviceKept()
+                      ? t().deviceKept
+                      : t().deviceRecovery}
+            </InlineGuidance>
+            <Show when={tabOnly() && device().failed && deviceOpenError() !== "access"}>
+              <InlineGuidance role="alert" tone="warning">
+                {t().deviceTabRetryFailed}
+              </InlineGuidance>
+            </Show>
+            <Show when={device().failed}>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={deviceOpening()}
+                onClick={() => void (documentClient ? documentClient.retry() : initializeDevice())}
+              >
+                {t().deviceRetry}
+              </Button>
+            </Show>
+            <Show when={device().failed && !deviceReady() && !props.readOnly && props.canWrite && deviceOpenError() !== "access"}>
+              <Button size="xs" variant="ghost" disabled={deviceOpening()} onClick={() => void editInTab()}>
+                {t().deviceEditInTab}
+              </Button>
+            </Show>
+            <Show when={tabOnly() || (deviceReady() && (device().pending || device().failed))}>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => void clipboard.copy((collabActive() ? provider?.recoveryInput().text : undefined) ?? currentText())}
+              >
+                {t().copyText}
+              </Button>
+            </Show>
+            <Show when={device().recovery}>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={deviceKept() || !device().saved}
+                onClick={() =>
+                  void documentClient?.flush().then((saved) => {
+                    if (saved) setDeviceKept(true);
+                  })
+                }
+              >
+                {t().deviceKeep}
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => void discardDeviceInput()}>
+                {t().deviceDiscard}
+              </Button>
+            </Show>
+          </div>
+        </Show>
         <Show
           when={syncEnded.ended()}
           fallback={
-            <EditorToolbar
-              connected={connected()}
-              editorView={editorView()}
-              notebookId={props.notebookId}
-              noteId={props.noteId}
-              initialPanelOpen={panelOpen()}
-              format={format()}
-              onUndo={() => undoManager?.undo()}
-              onRedo={() => undoManager?.redo()}
-            />
+            <Show when={!props.readOnly}>
+              <EditorToolbar
+                connected={!collabStarted() || connected()}
+                editor={editorState}
+                notebookId={props.notebookId}
+                noteId={props.noteId}
+                format={format()}
+                onUndo={() => runHistory("undo")}
+                canUndo={canHistory("canUndo")}
+                onRedo={() => runHistory("redo")}
+                canRedo={canHistory("canRedo")}
+                table={tableControls()}
+                onTablePickerReady={(open) => {
+                  openTablePicker = open;
+                }}
+                comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
+                dictation={props.liveDictation ? liveDictationSource : undefined}
+              />
+            </Show>
           }
         >
           {(ended) => (
@@ -1115,7 +1628,7 @@ function EditorInstance(
               notebookId={props.notebookId}
               ended={ended()}
               sync={syncEnded}
-              markdown={() => ytext.toString()}
+              markdown={() => (collabActive() ? provider?.recoveryInput().text : undefined) ?? currentText()}
               noteHref={() => window.location.pathname + window.location.search}
             />
           )}

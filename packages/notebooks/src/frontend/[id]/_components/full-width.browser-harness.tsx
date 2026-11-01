@@ -3,12 +3,13 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { runContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { collectContextAwareCommands } from "@k2b/cloud/browser/testing";
+import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension } from "@k2b/editor/markdown";
 import { AppWorkspace, DetailPanel, LocaleProvider, ScrollArea, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { editor } from "../../lib/editor";
-import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../lib/editor/fade-scroll-margins";
-import { listCommandsExtension } from "../../lib/editor/list-commands";
+import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../messages";
 import { keepBookReadingPosition } from "./book/book-reading-position";
 import { ViewMenu } from "./detail/ViewMenu";
@@ -47,21 +48,21 @@ function Harness() {
             fadeScrollMarginsExtension(() => port),
             editor.noteScroller,
             editor.customLightInit(),
-            listCommandsExtension(),
-            editor.tablesExtension("book01"),
-            editor.imageExtension("book01"),
-            editor.listsExtension(),
+            listCommandsExtension(notebookListOptions),
+            editor.tablesExtension(notebookTableOptions("book01")),
+            editor.imageExtension(notebookUrlOptions("book01")),
+            editor.listsExtension(notebookListOptions),
             editor.infoBlocksExtension("de"),
             editor.dataBlocksExtension(),
             editor.namedBlocksExtension(),
-            editor.linksExtension("book01"),
+            editor.linksExtension(notebookUrlOptions("book01")),
             editor.markupExtension(),
             editor.markExtension(),
             editor.subSupExtension(),
-            editor.ligaturesExtension(),
+            editor.ligaturesExtension(notebookListOptions),
             editor.initialMarkdownDecorationRefreshExtension(),
             editor.pointerSelectionMarkdownRefreshExtension(),
-            editor.mermaidExtension(),
+            editor.mermaidExtension(notebookMermaidOptions),
             editor.katexExtension(),
             editor.codeFontExtension(),
             editor.tagPillExtension("book01"),

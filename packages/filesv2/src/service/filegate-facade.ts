@@ -13,9 +13,14 @@ export function filegateCallTimeoutMs(input: Parameters<typeof fetch>[0], init?:
   return slow ? SLOW_CALL_TIMEOUT_MS : 10_000;
 }
 
-export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch {
+export function filegateApiFetch(transport: typeof fetch = fetch, requestAbort?: AbortSignal): typeof fetch {
   return Object.assign(
     (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requestAbort?.throwIfAborted();
+      if (requestAbort) {
+        const signal = init?.signal ? AbortSignal.any([requestAbort, init.signal]) : requestAbort;
+        return transport(input, { ...init, signal });
+      }
       if (init?.signal) return transport(input, init);
       const budget = filegateCallTimeoutMs(input, init);
       // Bun's own socket idle timer (5 min by default) would otherwise end a silent slow call first.
@@ -25,8 +30,12 @@ export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch 
   );
 }
 
-export function connectFilegate(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
-  return FilesFilegate.connect(config, transport);
+export function connectFilegate(
+  config: { url: string; token: string },
+  transport?: typeof fetch,
+  requestAbort?: AbortSignal,
+): FilesFilegate {
+  return FilesFilegate.connect(config, transport, requestAbort);
 }
 
 export class FilesFilegate {
@@ -37,9 +46,14 @@ export class FilesFilegate {
   ) {
     this.#client = client;
   }
-  static connect(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
+  static connect(config: { url: string; token: string }, transport?: typeof fetch, requestAbort?: AbortSignal): FilesFilegate {
     return new FilesFilegate(
-      new Filegate({ baseUrl: config.url, token: config.token, transferBaseUrl: config.url, fetch: filegateApiFetch(transport) }),
+      new Filegate({
+        baseUrl: config.url,
+        token: config.token,
+        transferBaseUrl: config.url,
+        fetch: filegateApiFetch(transport, requestAbort),
+      }),
       config.url,
     );
   }
@@ -52,6 +66,9 @@ export class FilesFilegate {
   archiveLease(...args: Parameters<Filegate["archiveLease"]>) {
     return this.#client.archiveLease(...args);
   }
+  leaseTransportUrl(url: string): string {
+    return this.#client.transferUrl(url);
+  }
   downloadRaw(...args: Parameters<Filegate["downloadRaw"]>) {
     return this.#client.downloadRaw(...args);
   }
@@ -62,11 +79,23 @@ export class FilesFilegate {
   }
 }
 
+export type StorageGuard = {
+  check(permission: "read" | "write", path: string, session?: boolean): Promise<void>;
+  target(root: string, path: string): Promise<void>;
+  lease(
+    kind: "download" | "upload",
+    path: string,
+    lease: { url: string; expires: string },
+    session?: boolean,
+  ): Promise<{ url: string; expires: string }>;
+};
+
 export class FilesRoot {
   #client: RootClient;
   constructor(
     client: RootClient,
     private readonly serverUrl: string,
+    private readonly guard?: StorageGuard,
   ) {
     this.#client = client;
   }
@@ -74,9 +103,17 @@ export class FilesRoot {
     return this.#client.name;
   }
   as(...args: Parameters<RootClient["as"]>): FilesRoot {
-    return new FilesRoot(this.#client.as(...args), this.serverUrl);
+    return new FilesRoot(this.#client.as(...args), this.serverUrl, this.guard);
   }
-  #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
+  guarded(guard: StorageGuard): FilesRoot {
+    return new FilesRoot(this.#client, this.serverUrl, guard);
+  }
+  async #read<T>(path: string, run: () => Promise<T>, session = false): Promise<T> {
+    await this.guard?.check("read", path, session);
+    return run();
+  }
+  async #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
+    await this.guard?.check("write", path, method === "commitSession" || method === "abortSession");
     return filegateMutation(this.serverUrl, this.name, method, path, run);
   }
   info(...args: Parameters<RootClient["info"]>) {
@@ -86,54 +123,75 @@ export class FilesRoot {
     return this.#client.resolve(...args);
   }
   stat(...args: Parameters<RootClient["stat"]>) {
-    return this.#client.stat(...args);
+    return this.#read(args[0], () => this.#client.stat(...args));
   }
   list(...args: Parameters<RootClient["list"]>) {
-    return this.#client.list(...args);
+    return this.#read(args[0] ?? "", () => this.#client.list(...args));
   }
   search(...args: Parameters<RootClient["search"]>) {
-    return this.#client.search(...args);
+    return this.#read(args[1]?.path ?? "", () => this.#client.search(...args));
   }
   getACL(...args: Parameters<RootClient["getACL"]>) {
-    return this.#client.getACL(...args);
+    return this.#read(args[0], () => this.#client.getACL(...args));
   }
   contentRaw(...args: Parameters<RootClient["contentRaw"]>) {
-    return this.#client.contentRaw(...args);
+    return this.#read(args[0], () => this.#client.contentRaw(...args));
   }
-  directDownload(...args: Parameters<RootClient["directDownload"]>) {
-    return this.#client.directDownload(...args);
+  async directDownload(...args: Parameters<RootClient["directDownload"]>) {
+    await this.guard?.check("read", args[0]);
+    const lease = await this.#client.directDownload(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("download", args[0], lease)) } : lease;
   }
-  directThumbnail(...args: Parameters<RootClient["directThumbnail"]>) {
-    return this.#client.directThumbnail(...args);
+  async directThumbnail(...args: Parameters<RootClient["directThumbnail"]>) {
+    await this.guard?.check("read", args[0]);
+    const lease = await this.#client.directThumbnail(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("download", args[0], lease)) } : lease;
   }
-  directVersionDownload(...args: Parameters<RootClient["directVersionDownload"]>) {
-    return this.#client.directVersionDownload(...args);
+  async directVersionDownload(...args: Parameters<RootClient["directVersionDownload"]>) {
+    await this.guard?.check("read", args[0]);
+    const lease = await this.#client.directVersionDownload(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("download", args[0], lease)) } : lease;
   }
   session(...args: Parameters<RootClient["session"]>) {
-    return this.#client.session(...args);
+    return this.#read(args[0], () => this.#client.session(...args), true);
   }
-  sessionLease(...args: Parameters<RootClient["sessionLease"]>) {
-    return this.#client.sessionLease(...args);
+  async sessionLease(...args: Parameters<RootClient["sessionLease"]>) {
+    await this.guard?.check("write", args[0], true);
+    const lease = await this.#client.sessionLease(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("upload", args[0], lease, true)) } : lease;
   }
   versions(...args: Parameters<RootClient["versions"]>) {
-    return this.#client.versions(...args);
+    return this.#read(args[0], () => this.#client.versions(...args));
   }
   mkdir(...args: Parameters<RootClient["mkdir"]>) {
-    return this.#mutate("mkdir", args[0], () => this.#client.mkdir(...args));
+    return filegateMutation(this.serverUrl, this.name, "mkdir", args[0], () => this.#client.mkdir(...args), undefined, { mkdir: args[1] });
   }
-  put(...args: Parameters<RootClient["put"]>) {
+  async put(...args: Parameters<RootClient["put"]>) {
+    await this.guard?.check("write", args[0]);
     return filegateMutation(this.serverUrl, this.name, "put", args[0], () => this.#client.put(...args), undefined, {
       size: args[1].size,
       options: args[2] ?? {},
     });
   }
-  createSession(...args: Parameters<RootClient["createSession"]>) {
+  async createSession(...args: Parameters<RootClient["createSession"]>) {
+    await this.guard?.check("write", args[0]);
     const { idempotencyKey, expiresIn: _expires, allowAbort: _abort, ...options } = args[2] ?? {};
-    return filegateMutation(this.serverUrl, this.name, "createSession", args[0], () => this.#client.createSession(...args), undefined, {
-      size: args[1],
-      options,
-      key: idempotencyKey,
-    });
+    const created = await filegateMutation(
+      this.serverUrl,
+      this.name,
+      "createSession",
+      args[0],
+      () => this.#client.createSession(...args),
+      undefined,
+      {
+        size: args[1],
+        options,
+        key: idempotencyKey,
+      },
+    );
+    return this.guard && created.lease
+      ? { ...created, lease: { ...created.lease, ...(await this.guard.lease("upload", args[0], created.lease)) } }
+      : created;
   }
   commitSession(...args: Parameters<RootClient["commitSession"]>) {
     return this.#mutate("commitSession", args[0], () => this.#client.commitSession(...args));
@@ -141,28 +199,56 @@ export class FilesRoot {
   abortSession(...args: Parameters<RootClient["abortSession"]>) {
     return this.#mutate("abortSession", args[0], () => this.#client.abortSession(...args));
   }
-  transfer(...args: Parameters<RootClient["transfer"]>) {
+  async transfer(...args: Parameters<RootClient["transfer"]>) {
+    await this.guard?.check(args[3]?.move ? "write" : "read", args[0]);
+    await this.guard?.target(args[1], args[2]);
     return filegateMutation(this.serverUrl, this.name, "transfer", args[0], () => this.#client.transfer(...args), {
+      kind: "transfer",
       root: args[1],
       path: args[2],
       move: args[3]?.move ?? false,
       onConflict: args[3]?.onConflict ?? "error",
+      options: args[3],
     });
   }
-  restore(...args: Parameters<RootClient["restore"]>) {
-    return this.#mutate("restore", args[0], () => this.#client.restore(...args));
+  async restore(...args: Parameters<RootClient["restore"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "restore", args[0], () => this.#client.restore(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
-  copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
-    return this.#mutate("copyVersion", args[0], () => this.#client.copyVersion(...args));
+  async copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
+    await this.guard?.check("read", args[0]);
+    await this.guard?.target(args[2], args[3]);
+    return filegateMutation(this.serverUrl, this.name, "copyVersion", args[0], () => this.#client.copyVersion(...args), {
+      kind: "version",
+      id: args[1],
+      target: { root: args[2], path: args[3] },
+      options: args[4],
+    });
   }
-  updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
-    return this.#mutate("updateVersion", args[0], () => this.#client.updateVersion(...args));
+  async updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "updateVersion", args[0], () => this.#client.updateVersion(...args), {
+      kind: "version",
+      id: args[1],
+      options: args[2],
+    });
   }
-  deleteVersion(...args: Parameters<RootClient["deleteVersion"]>) {
-    return this.#mutate("deleteVersion", args[0], () => this.#client.deleteVersion(...args));
+  async deleteVersion(...args: Parameters<RootClient["deleteVersion"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "deleteVersion", args[0], () => this.#client.deleteVersion(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
-  remove(...args: Parameters<RootClient["remove"]>) {
-    return this.#mutate("remove", args[0], () => this.#client.remove(...args));
+  async remove(...args: Parameters<RootClient["remove"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "remove", args[0], () => this.#client.remove(...args), {
+      kind: "remove",
+      recursive: args[1] ?? false,
+    });
   }
   // Maintenance only: these rebuild derived metadata, without changing user data.
   refreshStats(...args: Parameters<RootClient["refreshStats"]>) {

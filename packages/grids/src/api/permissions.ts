@@ -48,7 +48,9 @@ export const currentResourceBoundBaseId = <T extends AuthContext>(c: Context<T>)
   resourceBoundBaseIdFor(gridsAccessContext(c));
 
 const credentialPermissionFor = (access: GridsAccessContext): PermissionLevel =>
-  access.actor?.kind === "service_account" ? permissionFromCredentialScopes(access.actor.scopes) : "admin";
+  access.actor?.kind === "service_account" && access.actor.serviceAccount.kind !== "user_delegated"
+    ? permissionFromCredentialScopes(access.actor.scopes)
+    : "admin";
 
 export const currentCredentialPermission = <T extends AuthContext>(c: Context<T>): PermissionLevel =>
   credentialPermissionFor(gridsAccessContext(c));
@@ -108,7 +110,7 @@ export const workflowPrincipalFor = (access: GridsAccessContext): GridsWorkflowP
       kind: credentialId ? "api_token" : "oauth",
       id: credentialId,
       scopes: [...actor.scopes],
-      permissionCap: permissionFromCredentialScopes(actor.scopes),
+      permissionCap: credentialPermissionFor(access),
       expiresAt: actor.credentialExpiresAt ?? null,
       resourceBinding: workflowCredentialBinding(actor.serviceAccount),
     },

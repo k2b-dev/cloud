@@ -1,11 +1,21 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/cloud/contracts";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
-import { SHARED_TEXT_NAME, type SharedTextEditResult } from "@k2b/cloud/shared-text";
+import {
+  planTableAction,
+  prepareTableActionFocus,
+  SHARED_TEXT_NAME,
+  type SharedTextEditResult,
+  TableActionLimitError,
+  TableActionRejectedError,
+  type TableFocusWitness,
+} from "@k2b/cloud/shared-text";
 import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
-import { RetentionGapError } from "@k2b/sync";
-import { sql, type TransactionSQL } from "bun";
+import { ConflictError, RetentionGapError } from "@k2b/sync";
+import type { TransactionSQL } from "bun";
 import * as Y from "yjs";
+import { markNoteUpdated, publishNoteCreated } from "../app-events";
 import { mayDeleteOrLockNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";
 import {
   applyNoteEdits,
@@ -15,15 +25,23 @@ import {
   noteContentHash,
   summarizeNoteEditBlocks,
 } from "../lib/note-edit";
-import { compareNoteOrder, isHandOrdered, sortNoteLevels } from "../lib/note-order";
+import { compareNoteOrder, sortNoteLevels } from "../lib/note-order";
 import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "../lib/note-title";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
+import {
+  encodeTableFocus,
+  NOTE_TABLE_ACTION_MAX_LENGTH,
+  type NoteTableActionErrorCode,
+  type NoteTableActionResponse,
+  type NoteTableIntent,
+} from "../lib/table-actions";
 import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
-import { invalidated, noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
+import { buildTextQuery } from "./search";
+import { invalidated, noteCreated, noteDeleted, noteUpdated, workspaceTransaction } from "./workspace-events";
 import {
   applyYjsTopicEvent,
   compareStreamCursor,
@@ -60,6 +78,7 @@ export type Note = {
 export type NoteWithContent = Note & {
   /** Yjs snapshot as base64 (null if no content yet) */
   yjsSnapshot: string | null;
+  yjsRestoreRevision: string;
 };
 
 export type NoteTreeNode = Note & {
@@ -198,9 +217,10 @@ const mapToNote = (row: DbNote): Note => ({
 /**
  * Extends `mapToNote` by serializing the optional Yjs snapshot buffer as base64.
  */
-const mapToNoteWithContent = (row: DbNote): NoteWithContent => ({
+const mapToNoteWithContent = (row: DbNote & { yjs_restore_revision: string }): NoteWithContent => ({
   ...mapToNote(row),
   yjsSnapshot: row.yjs_snapshot ? row.yjs_snapshot.toString("base64") : null,
+  yjsRestoreRevision: row.yjs_restore_revision,
 });
 
 const parentExistsInNotebook = async (parentId: string, notebookId: string): Promise<boolean> => {
@@ -213,17 +233,6 @@ const parentExistsInNotebook = async (parentId: string, notebookId: string): Pro
     ) AS exists
   `;
   return row?.exists ?? false;
-};
-
-const cleanupFailedCreate = async (noteId: string): Promise<void> => {
-  try {
-    await sql`DELETE FROM notebooks.notes WHERE id = ${noteId}::uuid`;
-  } catch (error) {
-    log.error("Failed to remove partially created note", {
-      noteId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
 };
 
 /**
@@ -314,8 +323,18 @@ const readLevel = (tx: TransactionSQL, notebookId: string, parentId: string | nu
   tx<LevelNote[]>`SELECT id, short_id, title, position FROM notebooks.notes
     WHERE notebook_id = ${notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${parentId}::uuid`;
 
-const appendPosition = (level: LevelNote[]): number =>
-  isHandOrdered(level) ? level.reduce((max, note) => Math.max(max, note.position), 0) + 1 : 0;
+export const appendPositionQuery = (tx: TransactionSQL, notebookId: string, parentId: string | null) => {
+  const parent = parentId === null ? tx`parent_id IS NULL` : tx`parent_id = ${parentId}::uuid`;
+  // Nonzero positions mark a hand-ordered level, including legacy negative positions.
+  return tx<{ position: number }[]>`
+    SELECT CASE WHEN MIN(position) IS NULL OR (MIN(position) = 0 AND MAX(position) = 0)
+      THEN 0 ELSE GREATEST(0, MAX(position)) + 1 END::int AS position
+    FROM notebooks.notes WHERE notebook_id = ${notebookId}::uuid AND ${parent}
+  `;
+};
+
+const appendPosition = async (tx: TransactionSQL, notebookId: string, parentId: string | null): Promise<number> =>
+  (await appendPositionQuery(tx, notebookId, parentId))[0]!.position;
 
 const placeInLevel = async (
   tx: TransactionSQL,
@@ -323,7 +342,7 @@ const placeInLevel = async (
   note: LevelNote,
   placement: NotePlacement,
   locale: string,
-): Promise<void> => {
+): Promise<boolean> => {
   const ordered = siblings.map((note) => ({ ...note, shortId: note.short_id })).sort(compareNoteOrder(locale, (note) => note.shortId));
   const index =
     "position" in placement
@@ -339,10 +358,11 @@ const placeInLevel = async (
   const ids = toPgUuidArray(ordered.map((note) => note.id));
   const positions = `{${ordered.map((_, index) => index + 1).join(",")}}`;
   // Unchanged rows keep their version, so their search index and concurrent saves are left alone.
-  await tx`UPDATE notebooks.notes AS note SET position = ordered.position
+  const changed = await tx<{ id: string }[]>`UPDATE notebooks.notes AS note SET position = ordered.position
     FROM unnest(${ids}::uuid[], ${positions}::int[]) AS ordered(id, position)
-    WHERE note.id = ordered.id AND note.position <> ordered.position`;
+    WHERE note.id = ordered.id AND note.position <> ordered.position RETURNING note.id`;
   note.position = index + 1;
+  return changed.some((row) => row.id === note.id);
 };
 
 const createDocFromState = (state: Uint8Array | null, fallbackContent: string | null | undefined): Y.Doc => {
@@ -394,7 +414,8 @@ export const lock = async (params: {
 
   const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
   // The rule is checked in the same statement, so a concurrent settings change cannot slip a lock through.
-  const [row] = await sql<DbNote[]>`
+  const row = await workspaceTransaction(async (tx) => {
+    const [row] = await tx<DbNote[]>`
     UPDATE notebooks.notes n
     SET locked_at = now(), updated_at = now()
     FROM notebooks.notebooks nb
@@ -405,6 +426,12 @@ export const lock = async (params: {
     RETURNING n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
               n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at
   `;
+    if (row) {
+      await markNoteUpdated(tx, row.id);
+      await noteUpdated(mapToNote({ ...row, has_children: existing.hasChildren }), tx);
+    }
+    return row;
+  });
 
   if (!row) {
     const current = await get({ id });
@@ -414,7 +441,6 @@ export const lock = async (params: {
   }
 
   const note = mapToNote({ ...row, has_children: existing.hasChildren });
-  await noteUpdated(note);
   return {
     ok: true,
     data: note,
@@ -441,9 +467,9 @@ export type RecentNote = {
   notebookName: string;
 };
 
-export const recentForUser = async (params: { userId: string; limit: number }): Promise<RecentNote[]> => {
+export const recentForUserQuery = (params: { userId: string; limit: number }) => {
   const principalMatch = buildNotebookVisibleAccessCondition({ userId: params.userId });
-  const rows = await sql<
+  return sql<
     {
       id: string;
       short_id: string;
@@ -458,18 +484,26 @@ export const recentForUser = async (params: { userId: string; limit: number }): 
     SELECT
       nt.id, nt.short_id, nt.notebook_id, nt.title, nt.updated_at,
       nb.short_id AS notebook_short_id, nb.icon AS notebook_icon, nb.name AS notebook_name
-    FROM notebooks.notes nt
-    JOIN notebooks.notebooks nb ON nb.id = nt.notebook_id
+    FROM notebooks.notebooks nb
+    CROSS JOIN LATERAL (
+      SELECT n.id, n.short_id, n.notebook_id, n.title, n.updated_at
+      FROM notebooks.notes n WHERE n.notebook_id = nb.id
+      ORDER BY n.updated_at DESC, n.id ASC LIMIT ${params.limit}
+    ) nt
     WHERE EXISTS (
       SELECT 1
       FROM notebooks.notebook_access na
       JOIN auth.access a ON a.id = na.access_id
-      WHERE na.notebook_id = nt.notebook_id
+      WHERE na.notebook_id = nb.id
         AND ${principalMatch}
     )
-    ORDER BY nt.updated_at DESC
+    ORDER BY nt.updated_at DESC, nt.id ASC
     LIMIT ${params.limit}
   `;
+};
+
+export const recentForUser = async (params: Parameters<typeof recentForUserQuery>[0]): Promise<RecentNote[]> => {
+  const rows = await recentForUserQuery(params);
   return rows.map((r) => ({
     id: r.id,
     shortId: r.short_id,
@@ -499,79 +533,76 @@ export const list = async (params: { notebookId: string }): Promise<Note[]> => {
   return rows.map(mapToNote);
 };
 
+/** Keyset batches for whole-notebook jobs; content-free batches build export link maps. */
+export const readBatchQuery = (params: { notebookId: string; after?: string; includeContent?: boolean }) => sql<DbNote[]>`
+    WITH page AS MATERIALIZED (
+      SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+        n.yjs_history_incomplete, n.yjs_snapshot_at,
+        ${params.includeContent === false ? sql`NULL::text` : sql`n.content_md`} AS content_md,
+        n.created_by, n.created_at, n.updated_at, n.locked_at
+      FROM notebooks.notes n
+      WHERE n.notebook_id = ${params.notebookId}::uuid
+        AND ${params.after ? sql`n.id > ${params.after}::uuid` : sql`true`}
+      ORDER BY n.id LIMIT 100
+    )
+    SELECT page.*, EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = page.id) AS has_children
+    FROM page ORDER BY page.id
+  `;
+
+export const readBatch = async (params: Parameters<typeof readBatchQuery>[0]): Promise<Note[]> =>
+  (await readBatchQuery(params)).map(mapToNote);
+
 /**
  * List notes with SQL-side filtering and pagination.
  */
-export const listPaged = async (params: {
+type NoteListParams = {
   notebookId: string;
   query?: string;
   parentId?: string | null;
   pagination?: { limit: number; offset: number };
-}): Promise<{ items: Note[]; total: number }> => {
+};
+
+const listCondition = (params: NoteListParams) => {
   const query = params.query?.trim();
-  const pattern = query && query.length > 0 ? `%${query}%` : null;
-  const parentId = params.parentId;
+  const pattern = `%${query}%`;
+  const textCondition = query
+    ? // Part of a title matches anywhere in it; the search index finds whole words and word starts in the text.
+      sql`(n.title ILIKE ${pattern} OR n.search_document @@ ${buildTextQuery(query)})`
+    : sql`true`;
   const parentCondition =
-    parentId === undefined ? sql`true` : parentId === null ? sql`n.parent_id IS NULL` : sql`n.parent_id = ${parentId}::uuid`;
+    params.parentId === undefined
+      ? sql`true`
+      : params.parentId === null
+        ? sql`n.parent_id IS NULL`
+        : sql`n.parent_id = ${params.parentId}::uuid`;
+  return sql`n.notebook_id = ${params.notebookId}::uuid AND ${parentCondition} AND ${textCondition}`;
+};
 
-  const rows =
-    params.pagination === undefined
-      ? await sql<DbNote[]>`
-          SELECT
-            n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-            n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-            EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
-          FROM notebooks.notes n
-          WHERE n.notebook_id = ${params.notebookId}::uuid
-            AND ${parentCondition}
-            AND (
-              ${pattern}::text IS NULL
-              OR n.title ILIKE ${pattern}
-              OR COALESCE(n.content_md, '') ILIKE ${pattern}
-            )
-          ORDER BY
-            CASE WHEN ${pattern}::text IS NULL THEN 0 WHEN n.title ILIKE ${pattern} THEN 0 ELSE 1 END,
-            n.position ASC,
-            n.updated_at DESC
-        `
-      : await sql<DbNote[]>`
-          SELECT
-            n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-            n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-            EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
-          FROM notebooks.notes n
-          WHERE n.notebook_id = ${params.notebookId}::uuid
-            AND ${parentCondition}
-            AND (
-              ${pattern}::text IS NULL
-              OR n.title ILIKE ${pattern}
-              OR COALESCE(n.content_md, '') ILIKE ${pattern}
-            )
-          ORDER BY
-            CASE WHEN ${pattern}::text IS NULL THEN 0 WHEN n.title ILIKE ${pattern} THEN 0 ELSE 1 END,
-            n.position ASC,
-            n.updated_at DESC,
-            n.id DESC
-          LIMIT ${params.pagination.limit}
-          OFFSET ${params.pagination.offset}
-        `;
-
-  const [countRow] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notebooks.notes n
-    WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND ${parentCondition}
-      AND (
-        ${pattern}::text IS NULL
-        OR n.title ILIKE ${pattern}
-        OR COALESCE(n.content_md, '') ILIKE ${pattern}
-      )
+export const listPageQuery = (params: NoteListParams) => {
+  const query = params.query?.trim();
+  // A page is read first and only its rows ask for sub-notes: an `EXISTS` beside the whole match would be planned for
+  // every matching row and hash the parent index of the entire table.
+  return sql<DbNote[]>`
+    WITH page AS MATERIALIZED (
+      SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+        n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+        ${query ? sql`CASE WHEN n.title ILIKE ${`%${query}%`} THEN 0 ELSE 1 END` : sql`0`} AS title_rank
+      FROM notebooks.notes n WHERE ${listCondition(params)}
+      ORDER BY title_rank, n.position ASC, n.updated_at DESC, n.id DESC
+      ${params.pagination ? sql`LIMIT ${params.pagination.limit} OFFSET ${params.pagination.offset}` : sql``}
+    )
+    SELECT page.*, EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = page.id) AS has_children
+    FROM page
+    ORDER BY page.title_rank, page.position ASC, page.updated_at DESC, page.id DESC
   `;
+};
 
-  return {
-    items: rows.map(mapToNote),
-    total: countRow?.count ?? 0,
-  };
+export const listPaged = async (params: NoteListParams): Promise<{ items: Note[]; total: number }> => {
+  const rows = await listPageQuery(params);
+  const [countRow] = await sql<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count FROM notebooks.notes n WHERE ${listCondition(params)}
+  `;
+  return { items: rows.map(mapToNote), total: countRow?.count ?? 0 };
 };
 
 /**
@@ -704,13 +735,45 @@ export const titlesByShortIds = async (params: { notebookId: string; shortIds: s
 };
 
 /**
+ * Notes whose title contains `query`, for a person picking one by name: the exact title first, then titles that
+ * start with it, then the rest; without a query the last changed notes. Reads titles only, `limit` at most.
+ */
+export const findByTitle = async (params: {
+  notebookId: string;
+  query: string;
+  limit: number;
+}): Promise<{ notes: Array<{ shortId: string; title: string }>; hasMore: boolean }> => {
+  const query = params.query.trim();
+  const escaped = query.replace(/[\\%_]/g, (char) => `\\${char}`);
+  const rows = await sql<{ short_id: string; title: string }[]>`
+    SELECT n.short_id, n.title
+    FROM notebooks.notes n
+    WHERE n.notebook_id = ${params.notebookId}::uuid
+      AND (${query === ""} OR n.title ILIKE ${`%${escaped}%`})
+    ORDER BY
+      ${
+        query === ""
+          ? sql`n.updated_at DESC`
+          : sql`CASE WHEN lower(n.title) = lower(${query}) THEN 0 WHEN n.title ILIKE ${`${escaped}%`} THEN 1 ELSE 2 END,
+                length(n.title), lower(n.title)`
+      },
+      n.short_id
+    LIMIT ${params.limit + 1}
+  `;
+  return {
+    notes: rows.slice(0, params.limit).map((row) => ({ shortId: row.short_id, title: row.title })),
+    hasMore: rows.length > params.limit,
+  };
+};
+
+/**
  * Get a note with its Yjs content.
  */
-const getWithContentRow = async (id: string): Promise<DbNote | null> => {
-  const [row] = await sql<DbNote[]>`
+const getWithContentRow = async (id: string): Promise<(DbNote & { yjs_restore_revision: string }) | null> => {
+  const [row] = await sql<(DbNote & { yjs_restore_revision: string })[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_stream_cursor, n.yjs_history_incomplete, n.yjs_snapshot_at,
+      n.yjs_snapshot, n.yjs_restore_revision::text, n.yjs_stream_cursor, n.yjs_history_incomplete, n.yjs_snapshot_at,
       n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
@@ -740,6 +803,7 @@ export const getCurrentWithContent = async (params: { id: string }): Promise<Not
     ...mapToNote(row),
     contentMd: current.text,
     yjsSnapshot: current.state ? toBase64(current.state) : null,
+    yjsRestoreRevision: current.restoreRevision,
   };
 };
 
@@ -798,10 +862,10 @@ export const resolveShortIdsToNotebookShortIds = async (params: {
 
 /** Resolve the public note identity and include its collaborative content. */
 export const getWithContentByShortId = async (params: { shortId: string }): Promise<NoteWithContent | null> => {
-  const [row] = await sql<DbNote[]>`
+  const [row] = await sql<(DbNote & { yjs_restore_revision: string })[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_snapshot, n.yjs_restore_revision::text, n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
     WHERE n.short_id = ${params.shortId}
@@ -821,9 +885,10 @@ export const create = async (params: {
   placement?: NotePlacement;
   /** Preserve version Markdown, including empty content, without a title template. */
   exactContent?: boolean;
+  /** Notebook creation can seed its first note in the same transaction. */
+  tx?: TransactionSQL;
 }): Promise<MutationResult<Note>> => {
   const { data, creatorId } = params;
-  let createdNoteId: string | null = null;
 
   if (data.parentId && !(await parentExistsInNotebook(data.parentId, data.notebookId))) {
     return { ok: false, error: "Parent note not found in notebook", status: 404 };
@@ -845,10 +910,11 @@ export const create = async (params: {
     const doc = createDocFromState(null, contentMd);
     const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc));
     doc.destroy();
-    const row = await sql.begin(async (tx) => {
+    const persist = async (tx: TransactionSQL) => {
       await lockTree(tx, data.notebookId);
-      const level = await readLevel(tx, data.notebookId, data.parentId ?? null);
-      const position = appendPosition(level);
+      const placement = params.placement ?? (data.position === undefined ? undefined : { position: data.position });
+      const level = placement ? await readLevel(tx, data.notebookId, data.parentId ?? null) : [];
+      const position = await appendPosition(tx, data.notebookId, data.parentId ?? null);
       const [row] = await tx<DbNote[]>`
       INSERT INTO notebooks.notes (
         short_id, notebook_id, parent_id, title, title_projection_version, position,
@@ -871,29 +937,33 @@ export const create = async (params: {
                 yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
     `;
 
-      const placement = params.placement ?? (data.position === undefined ? undefined : { position: data.position });
       if (row && placement) {
         await placeInLevel(tx, level, row, placement, params.locale ?? params.dateConfig?.locale ?? "en");
       }
+      if (row) {
+        await activity.record(
+          {
+            notebookId: data.notebookId,
+            noteId: row.id,
+            actor: params.actor ?? (creatorId ? { kind: "user", id: creatorId } : { kind: "system", id: null }),
+            action: "note.created",
+          },
+          tx,
+        );
+        await reindexNoteRefsSafe({ noteId: row.id, notebookId: data.notebookId, contentMd }, tx);
+        await publishNoteCreated(tx, row);
+        await noteCreated(mapToNote({ ...row, has_children: false }), tx);
+      }
       return row;
-    });
+    };
+    const row = await (params.tx ? persist(params.tx) : workspaceTransaction(persist));
 
     if (!row) {
       return { ok: false, error: "Failed to create note", status: 500 };
     }
-    createdNoteId = row.id;
-    await reindexNoteRefsSafe({ noteId: row.id, notebookId: data.notebookId, contentMd });
-    const note = (await get({ id: row.id })) ?? mapToNote({ ...row, has_children: false });
-    await activity.record({
-      notebookId: data.notebookId,
-      noteId: row.id,
-      actor: params.actor ?? (creatorId ? { kind: "user", id: creatorId } : { kind: "system", id: null }),
-      action: "note.created",
-    });
-    await noteCreated(note);
+    const note = mapToNote({ ...row, has_children: false });
     return { ok: true, data: note };
   } catch (e: unknown) {
-    if (createdNoteId) await cleanupFailedCreate(createdNoteId);
     const error = e as { code?: string };
     if (error.code === "23503") {
       return {
@@ -943,7 +1013,7 @@ export const remove = async (params: { id: string; permission: PermissionLevel }
   const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
   const [target] = await sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE id = ${params.id}::uuid`;
   if (!target) return fail(err.notFound("Note"));
-  const deleted = await sql.begin(async (tx) => {
+  const deleted = await workspaceTransaction(async (tx) => {
     await lockTree(tx, target.notebook_id);
     // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
     const [deleted] = await tx<{ id: string; notebook_id: string; short_id: string }[]>`
@@ -954,6 +1024,7 @@ export const remove = async (params: { id: string; permission: PermissionLevel }
         AND nb.note_delete_permission = ANY(${toPgTextArray(allowedRules)}::text[])
       RETURNING n.id, n.notebook_id, n.short_id
     `;
+    if (deleted) await noteDeleted({ notebookId: deleted.notebook_id, noteId: deleted.id, shortId: deleted.short_id }, tx);
     return deleted;
   });
 
@@ -964,7 +1035,6 @@ export const remove = async (params: { id: string; permission: PermissionLevel }
       : fail(err.notFound("Note"));
   }
 
-  await noteDeleted({ notebookId: deleted.notebook_id, noteId: deleted.id, shortId: deleted.short_id });
   return ok();
 };
 
@@ -986,15 +1056,14 @@ export const move = async (params: {
   const anchor = anchorId ? await get({ id: anchorId }) : null;
   if (anchorId && (!anchor || anchor.notebookId !== existing.notebookId)) return { ok: false, error: "Anchor note not found", status: 404 };
   const parentId = params.parentId === undefined ? (anchor ? anchor.parentId : existing.parentId) : params.parentId;
-  let changed = false;
-  const result = await sql.begin(async (tx): Promise<MutationResult<Note>> => {
+  const result = await workspaceTransaction(async (tx): Promise<MutationResult<Note>> => {
     await lockTree(tx, existing.notebookId);
     // The row lock keeps a concurrent lock() from slipping in between the check and the move.
     const [row] = await tx<DbNote[]>`SELECT n.*,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
       FROM notebooks.notes n WHERE n.id = ${params.id}::uuid FOR NO KEY UPDATE OF n`;
     if (!row) return { ok: false, error: "Note not found", status: 404 };
-    const level = await readLevel(tx, existing.notebookId, parentId);
+    const level = params.placement ? await readLevel(tx, existing.notebookId, parentId) : [];
     if (anchorId && !level.some((note) => note.id === anchorId)) {
       const [currentAnchor] = await tx<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE id = ${anchorId}::uuid`;
       return !currentAnchor || currentAnchor.notebook_id !== row.notebook_id
@@ -1018,32 +1087,33 @@ export const move = async (params: {
     const siblings = level.filter((note) => note.id !== row.id);
     if (parentChanged) {
       const [updated] = await tx<DbNote[]>`UPDATE notebooks.notes
-        SET parent_id = ${parentId}::uuid, position = ${appendPosition(siblings)}, updated_at = now()
+        SET parent_id = ${parentId}::uuid, position = ${await appendPosition(tx, existing.notebookId, parentId)}, updated_at = now()
         WHERE id = ${row.id}::uuid RETURNING *`;
       Object.assign(row, updated);
     }
-    if (params.placement) await placeInLevel(tx, siblings, row, params.placement, params.locale);
-    changed = true;
+    const orderChanged = params.placement ? await placeInLevel(tx, siblings, row, params.placement, params.locale) : false;
+    if (parentChanged || orderChanged) await markNoteUpdated(tx, row.id);
+    await noteUpdated(mapToNote(row), tx);
     return { ok: true, data: mapToNote(row) };
   });
-  if (result.ok && changed) await noteUpdated(result.data);
   return result;
 };
 
 export const resetOrder = async (params: { notebookId: string; parentId: string | null }): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx) => {
+  const result = await workspaceTransaction(async (tx) => {
     await lockTree(tx, params.notebookId);
     if (params.parentId) {
       const [parent] =
         await tx`SELECT id FROM notebooks.notes WHERE id = ${params.parentId}::uuid AND notebook_id = ${params.notebookId}::uuid`;
       if (!parent) return fail(err.notFound("Parent note"));
     }
-    const changed = await tx`UPDATE notebooks.notes SET position = 0
-      WHERE notebook_id = ${params.notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${params.parentId}::uuid AND position <> 0`;
-    return ok(changed.count > 0);
+    const changed = await tx<{ id: string }[]>`UPDATE notebooks.notes SET position = 0
+      WHERE notebook_id = ${params.notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${params.parentId}::uuid AND position <> 0
+      RETURNING id`;
+    if (changed.length > 0) await invalidated({ notebookId: params.notebookId, reason: "bulk", scopes: ["tree"] }, tx);
+    return ok(changed.length > 0);
   });
   if (!result.ok) return result;
-  if (result.data) await invalidated({ notebookId: params.notebookId, reason: "bulk", scopes: ["tree"] });
   return ok();
 };
 
@@ -1214,7 +1284,12 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
   const requestedAtSeconds = (requestedAt ?? Date.now()) / 1000;
 
   // The note and its version commit together.
-  const { result, versionId } = await sql.begin(async (tx) => {
+  const { result, versionId } = await workspaceTransaction(async (tx) => {
+    // Take the parent before the note so projection FKs cannot deadlock with
+    // notebook deletion cascading down to this note.
+    await tx`SELECT id FROM notebooks.notebooks WHERE id = ${existing.notebookId}::uuid FOR KEY SHARE`;
+    const [before] = await tx<{ changed: boolean; yjs_history_incomplete: boolean }[]>`
+      SELECT content_md IS DISTINCT FROM ${contentMd} AS changed, yjs_history_incomplete FROM notebooks.notes WHERE id = ${noteId}::uuid FOR NO KEY UPDATE`;
     const result = parsedCursor
       ? await tx`
         UPDATE notebooks.notes
@@ -1250,6 +1325,7 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
           AND locked_at IS NULL
       `;
 
+    if (result.count > 0) await reindexNoteRefsSafe({ noteId, notebookId: existing.notebookId, contentMd }, tx);
     const versionId =
       result.count > 0 && createVersion
         ? await insertNoteVersion(tx, {
@@ -1262,6 +1338,42 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
             includeActivityContributors: params.restoredBy === undefined,
           })
         : null;
+    if (result.count > 0) {
+      if (createVersion && !params.restoredBy) {
+        for (const contributor of contributors) {
+          const bucketStartedAt = new Date(contributor.lastContributedAt);
+          bucketStartedAt.setUTCMinutes(0, 0, 0);
+          await activity.record(
+            {
+              notebookId: existing.notebookId,
+              noteId,
+              noteVersionId: versionId,
+              actor: { kind: contributor.kind, id: contributor.id },
+              action: "note.edited",
+              bucketStartedAt,
+              occurredAt: contributor.lastContributedAt,
+            },
+            tx,
+          );
+        }
+      }
+
+      if (params.restoredBy)
+        await activity.record(
+          {
+            notebookId: existing.notebookId,
+            noteId,
+            noteVersionId: versionId,
+            actor: params.restoredBy,
+            action: "note.restored",
+          },
+          tx,
+        );
+    }
+    if (result.count > 0 && before && (before.changed || (params.historyIncomplete === true && !before.yjs_history_incomplete))) {
+      await markNoteUpdated(tx, noteId);
+      await noteUpdated({ ...existing, historyIncomplete: before.yjs_history_incomplete || params.historyIncomplete === true }, tx);
+    }
     return { result, versionId };
   });
 
@@ -1308,41 +1420,6 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
       return { ok: true, data: { versionId: restoredVersionId } };
     }
     return { ok: true, data: { versionId: null } };
-  }
-
-  if (createVersion && !params.restoredBy) {
-    for (const contributor of contributors) {
-      const bucketStartedAt = new Date(contributor.lastContributedAt);
-      bucketStartedAt.setUTCMinutes(0, 0, 0);
-      await activity.record({
-        notebookId: existing.notebookId,
-        noteId,
-        noteVersionId: versionId,
-        actor: { kind: contributor.kind, id: contributor.id },
-        action: "note.edited",
-        bucketStartedAt,
-        occurredAt: contributor.lastContributedAt,
-      });
-    }
-  }
-
-  if (params.restoredBy)
-    await activity.record({
-      notebookId: existing.notebookId,
-      noteId,
-      noteVersionId: versionId,
-      actor: params.restoredBy,
-      action: "note.restored",
-    });
-
-  // Refresh the three note-ref indexes (links, tags, attachments) after
-  // every successful content write. Cheap and best-effort — a failure
-  // here never aborts the save (the periodic scheduler reconciles drift).
-  const note = await get({ id: noteId });
-  if (note) {
-    await reindexNoteRefsSafe({ noteId, notebookId: note.notebookId, contentMd });
-    if (existing.title !== note.title || existing.contentMd !== note.contentMd || existing.historyIncomplete !== note.historyIncomplete)
-      await noteUpdated(note);
   }
 
   return { ok: true, data: { versionId } };
@@ -1422,6 +1499,216 @@ export const editContent = async (params: {
   };
 };
 
+type NoteTableActionFailure = {
+  ok: false;
+  error: string;
+  status: 403 | 404 | 409 | 413 | 500;
+  code: NoteTableActionErrorCode;
+  accepted: boolean | null;
+  cursor: string | null;
+  receipt: NoteTableActionResponse["receipt"];
+  focus?: NoteTableActionResponse["focus"];
+};
+
+export type NoteTableActionResult = { ok: true; data: NoteTableActionResponse } | NoteTableActionFailure;
+
+const tableActionFailure = (
+  code: NoteTableActionErrorCode,
+  error: string,
+  status: NoteTableActionFailure["status"],
+): NoteTableActionFailure => ({ ok: false, error, status, code, accepted: false, cursor: null, receipt: null });
+
+class NoteTableActionAbort extends Error {
+  constructor(readonly result: NoteTableActionFailure) {
+    super(result.error);
+  }
+}
+
+/** Permission is resolved by the authenticated route, including credential scope caps. */
+export const tableAction = async (params: {
+  notebookId: string;
+  noteId: string;
+  permission: PermissionLevel;
+  intent: NoteTableIntent;
+  focus?: TableFocusWitness;
+  caret?: { row: number; column: number };
+  restoreRevision: string;
+  actionId: string;
+  createdBy: string | null;
+  actor: { kind: "user" | "service_account"; id: string };
+  signal?: AbortSignal;
+}): Promise<NoteTableActionResult> => {
+  if (params.permission !== "write" && params.permission !== "admin")
+    return tableActionFailure("table_action_access_denied", "Access denied", 403);
+
+  const checkNote = async (): Promise<NoteTableActionFailure | null> => {
+    params.signal?.throwIfAborted();
+    const note = await get({ id: params.noteId });
+    if (!note || note.notebookId !== params.notebookId) return tableActionFailure("table_action_note_not_found", "Note not found", 404);
+    if (note.lockedAt) return tableActionFailure("table_action_locked", "Cannot modify locked note", 403);
+    if (note.historyIncomplete)
+      return tableActionFailure(
+        "table_action_history_incomplete",
+        "Note history is incomplete; table action rejected without changing text",
+        409,
+      );
+    return null;
+  };
+  const blocked = await checkNote();
+  if (blocked) return blocked;
+
+  let result: SharedTextEditResult<NoteTextSaved>;
+  let focusState: Uint8Array | undefined;
+  let focusPlan: ((after: Y.Text) => TableFocusWitness | null) | undefined;
+  try {
+    if ("receiptCursor" in params.intent) {
+      result = await noteDocuments.inverse(params.noteId, {
+        actor: params.actor,
+        context: { createdBy: params.createdBy },
+        signal: params.signal,
+        actionId: params.actionId,
+        receiptCursor: params.intent.receiptCursor,
+        restoreRevision: params.restoreRevision,
+        maxLength: NOTE_TABLE_ACTION_MAX_LENGTH,
+        validate: async () => {
+          const blocked = await checkNote();
+          if (blocked) throw new NoteTableActionAbort(blocked);
+          const stored = await getYjsStateWithCursor({ noteId: params.noteId });
+          if (!stored || stored.restoreRevision !== params.restoreRevision)
+            throw new NoteTableActionAbort(
+              tableActionFailure("table_action_restore_conflict", "Note was restored; table action rejected without changing text", 409),
+            );
+        },
+      });
+    } else {
+      const intent = params.intent;
+      result = await noteDocuments.change(
+        params.noteId,
+        {
+          actor: params.actor,
+          context: { createdBy: params.createdBy },
+          signal: params.signal,
+          maxLength: NOTE_TABLE_ACTION_MAX_LENGTH,
+          actionId: params.actionId,
+        },
+        async (current) => {
+          // Replay may have waited while the note was locked, moved, or recovered.
+          const blocked = await checkNote();
+          if (blocked) throw new NoteTableActionAbort(blocked);
+          const stored = await getYjsStateWithCursor({ noteId: params.noteId });
+          if (!stored) throw new NoteTableActionAbort(tableActionFailure("table_action_note_not_found", "Note not found", 404));
+          if (stored.historyIncomplete)
+            throw new NoteTableActionAbort(
+              tableActionFailure(
+                "table_action_history_incomplete",
+                "Note history is incomplete; table action rejected without changing text",
+                409,
+              ),
+            );
+          if (current.restoreRevision !== params.restoreRevision || stored.restoreRevision !== current.restoreRevision)
+            throw new NoteTableActionAbort(
+              tableActionFailure("table_action_restore_conflict", "Note was restored; table action rejected without changing text", 409),
+            );
+          const doc = new Y.Doc();
+          try {
+            const state = current.state();
+            Y.applyUpdate(doc, state);
+            if (params.focus) {
+              focusState = state;
+              focusPlan = prepareTableActionFocus(doc.getText(SHARED_TEXT_NAME), intent, params.focus, params.caret);
+            }
+            const changes = planTableAction(doc.getText(SHARED_TEXT_NAME), intent, NOTE_TABLE_ACTION_MAX_LENGTH);
+            const length = changes.reduce(
+              (length, change) => length + change.insert.length - (change.to - change.from),
+              current.text.length,
+            );
+            if (length > NOTE_TABLE_ACTION_MAX_LENGTH)
+              throw new NoteTableActionAbort(
+                tableActionFailure(
+                  "table_action_too_large",
+                  "Table action exceeds the 2,097,152 UTF-16 code unit limit; existing text was preserved",
+                  413,
+                ),
+              );
+            return changes;
+          } finally {
+            doc.destroy();
+          }
+        },
+      );
+    }
+  } catch (error) {
+    if (error instanceof NoteTableActionAbort) return error.result;
+    if (error instanceof TableActionLimitError || error instanceof RangeError)
+      return tableActionFailure(
+        "table_action_too_large",
+        "Table action exceeds the 2,097,152 UTF-16 code unit limit; existing text was preserved",
+        413,
+      );
+    if (error instanceof TableActionRejectedError) return tableActionFailure(error.code, error.message, 409);
+    if (error instanceof ConflictError)
+      return tableActionFailure(
+        "table_action_conflict",
+        "Note changed before publication; table action rejected without changing text",
+        409,
+      );
+    // Cancellation before publication propagates. Other thrown failures can
+    // include a lost publish acknowledgement: never claim they were rejected.
+    params.signal?.throwIfAborted();
+    return {
+      ...tableActionFailure(
+        "table_action_outcome_unknown",
+        "Table action outcome is unknown; synchronize before taking another action",
+        500,
+      ),
+      accepted: null,
+    };
+  }
+  if (result.status === "notFound") return tableActionFailure("table_action_note_not_found", "Note not found", 404);
+  if (result.status === "syncFailed") {
+    const failure = noteTextFailure(result);
+    return tableActionFailure("table_action_sync_failed", failure.ok ? "Failed to synchronize note stream" : failure.error, 409);
+  }
+  if (result.status === "unchanged") return { ok: true, data: { changed: false, cursor: null, receipt: null } };
+  let focus: NoteTableActionResponse["focus"] = null;
+  if (focusState && focusPlan && result.receipt) {
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdate(doc, focusState);
+      Y.applyUpdate(doc, result.receipt.update);
+      const target = focusPlan(doc.getText(SHARED_TEXT_NAME));
+      focus = target ? encodeTableFocus(target) : null;
+    } finally {
+      doc.destroy();
+    }
+  }
+  const receipt = result.receipt ? { actionId: result.receipt.actionId, update: toBase64(result.receipt.update) } : null;
+  if (result.status === "persistFailed" || !result.saved.ok) {
+    const failure = result.status === "persistFailed" ? noteTextFailure(result) : result.saved;
+    return {
+      ...tableActionFailure("table_action_persist_failed", failure.ok ? "Failed to persist note edit" : failure.error, 500),
+      accepted: true,
+      cursor: result.cursor,
+      receipt,
+      focus,
+    };
+  }
+  return { ok: true, data: { changed: true, cursor: result.cursor, receipt, focus } };
+};
+
+/** Socket has authenticated actor/write access; canonical admission still fences targets and lineage. */
+export const acceptYjsUpdate = (params: {
+  noteId: string;
+  actor: { kind: "user" | "service_account"; id: string };
+  update: Uint8Array;
+  baseCursor: string | null;
+  restoreRevision: string;
+  originNodeId: string;
+  originPeerId: string | null;
+  signal?: AbortSignal;
+  validate?: () => Promise<boolean>;
+}) => noteDocuments.accept(params.noteId, { ...params, maxLength: NOTE_TABLE_ACTION_MAX_LENGTH });
+
 /**
  * Get the stored Yjs state for a note.
  */
@@ -1448,6 +1735,27 @@ export const getYjsStateWithCursor = async (params: {
     historyIncomplete: row.yjs_history_incomplete,
   };
 };
+
+/**
+ * Serialize authoritative socket delivery with store-only replacement. `deliver`
+ * must send synchronously: validation and send share the same row lock, without
+ * a network await or a second connection between them.
+ */
+export const deliverAtRestoreRevision = async (params: {
+  noteId: string;
+  restoreRevision: string;
+  deliver: () => undefined;
+}): Promise<"delivered" | "notFound" | "stale"> =>
+  sql.begin(async (tx) => {
+    const [row] = await tx<{ revision: string }[]>`
+      SELECT yjs_restore_revision::text AS revision FROM notebooks.notes
+      WHERE id = ${params.noteId}::uuid FOR SHARE
+    `;
+    if (!row) return "notFound";
+    if (row.revision !== params.restoreRevision) return "stale";
+    params.deliver();
+    return "delivered";
+  });
 
 type YjsState = NonNullable<Awaited<ReturnType<typeof getYjsStateWithCursor>>>;
 
@@ -1508,7 +1816,7 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
       const doc = createDocFromState(stored.yjsState, stored.contentMd);
       try {
         for await (const event of topic.replay({ tenantId: noteId, until: latest, signal: params.signal })) {
-          applyYjsTopicEvent(doc, event, noteId);
+          applyYjsTopicEvent(doc, event, noteId, stored.restoreRevision);
         }
         yjsState = Y.encodeStateAsUpdate(doc);
         contentMd = doc.getText(SHARED_TEXT_NAME).toString();
@@ -1518,7 +1826,11 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
       if (compareStreamCursor(latest, head) > 0) watermark = latest;
     }
     const seq = topic.cursorSequence(watermark);
-    const result = await sql`
+    const result = await sql.begin(async (tx) => {
+      const [before] = await tx<
+        { changed: boolean }[]
+      >`SELECT content_md IS DISTINCT FROM ${contentMd} AS changed FROM notebooks.notes WHERE id = ${noteId}::uuid FOR UPDATE`;
+      const result = await tx`
       UPDATE notebooks.notes
       SET yjs_stream_cursor = ${watermark},
           yjs_stream_seq = ${seq},
@@ -1529,6 +1841,9 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
         AND yjs_restore_revision = ${stored.restoreRevision}::bigint
         AND yjs_stream_cursor IS NOT DISTINCT FROM ${stored.streamCursor}
     `;
+      if (result.count > 0 && before && before.changed) await markNoteUpdated(tx, noteId);
+      return result;
+    });
     if (result.count > 0) {
       log.info("Anchored note on the shared Yjs log", { noteId, legacyCursor: stored.streamCursor, cursor: watermark });
     }
@@ -1539,7 +1854,7 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
 
 type NoteTextContext = { createdBy: string | null; restoredBy?: activity.NotebookActivityIdentity };
 
-const noteDocuments = notebooksTextLog.withStore<NoteTextSaved, NoteTextContext>({
+export const noteDocuments = notebooksTextLog.withStore<NoteTextSaved, NoteTextContext>({
   load: async (noteId, { signal }) => {
     const stored = await getAnchoredYjsState({ noteId, signal });
     return stored
@@ -1617,6 +1932,7 @@ export const adoptSnapshotAtHead = async (params: {
       after: stored.streamCursor,
       until: head,
       doc,
+      restoreRevision: stored.restoreRevision,
       signal: params.signal,
     }));
     params.signal?.throwIfAborted();
@@ -1792,8 +2108,13 @@ export const restoreFromSnapshot = async (params: {
   noteId: string;
   yjsSnapshot: string; // base64
   createdBy: string | null;
+  signal?: AbortSignal;
 }): Promise<MutationResult<Note>> => {
   const { noteId, yjsSnapshot, createdBy } = params;
+  // Replay under the row lock has a fixed head and the platform's maximum
+  // request budget, even for callers without a request cancellation signal.
+  const deadline = AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1_000);
+  const signal = params.signal ? AbortSignal.any([params.signal, deadline]) : deadline;
 
   const existing = await getWithContent({ id: noteId });
   if (!existing) {
@@ -1803,27 +2124,6 @@ export const restoreFromSnapshot = async (params: {
   // Check if note is locked
   if (existing.lockedAt) {
     return { ok: false, error: "Cannot restore locked note", status: 403 };
-  }
-
-  const currentContent = existing.contentMd ?? "";
-  let hasContent = currentContent.trim().length > 0;
-  if (!hasContent && existing.yjsSnapshot) {
-    const currentDoc = new Y.Doc();
-    try {
-      Y.applyUpdate(currentDoc, Buffer.from(existing.yjsSnapshot, "base64"));
-      hasContent = currentDoc.getText("codemirror").toString().trim().length > 0;
-    } catch {
-      hasContent = true;
-    } finally {
-      currentDoc.destroy();
-    }
-  }
-  if (hasContent) {
-    return {
-      ok: false,
-      error: "Restore only supports new empty notes. Create a new note and restore there.",
-      status: 400,
-    };
   }
 
   // Decode new snapshot and extract markdown for note row + version history.
@@ -1841,18 +2141,62 @@ export const restoreFromSnapshot = async (params: {
   }
   const restoredTitle = deriveNoteTitle(restoredContentMd);
   const restoredDataProperties = dataPropertiesForContent(restoredContentMd);
-  // The restored snapshot replaces everything up to this real stream boundary.
-  // Preserve the zero boundary too: absence of retained events is not a new log.
+  // Anchoring may UPDATE through the pool: do it before taking the row lock.
+  const anchored = await getAnchoredYjsState({ noteId, signal });
+  if (!anchored) return { ok: false, error: "Note not found", status: 404 };
   const restoreTopic = createYjsTopic();
-  // Head before latest: every note event up to the chosen cursor is replaced.
-  const restoreHead = await restoreTopic.head();
-  const restoreLatest = await restoreTopic.latestCursor({ tenantId: noteId });
-  const restoreCursor = restoreLatest && compareStreamCursor(restoreLatest, restoreHead) > 0 ? restoreLatest : restoreHead;
-  const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
-  // Unmigrated edits of a retired per-note topic predate the restore as well.
   const legacyTopic = await legacyYjsTopicInfo(noteId);
 
-  const restored = await sql.begin(async (tx): Promise<{ versionId: string } | null> => {
+  const restored = await workspaceTransaction(async (tx): Promise<MutationResult<{ versionId: string }>> => {
+    await tx`SELECT id FROM notebooks.notebooks WHERE id = ${existing.notebookId}::uuid FOR KEY SHARE`;
+    const [current] = await tx<(DbYjsState & { locked_at: Date | null })[]>`
+      SELECT yjs_snapshot, yjs_stream_cursor, content_md, yjs_restore_revision::text,
+        yjs_history_incomplete, locked_at
+      FROM notebooks.notes WHERE id = ${noteId}::uuid FOR NO KEY UPDATE
+    `;
+    if (!current) return { ok: false, error: "Note not found", status: 404 };
+    if (current.locked_at) return { ok: false, error: "Cannot restore locked note", status: 403 };
+    if (current.yjs_restore_revision !== anchored.restoreRevision)
+      return { ok: false, error: "Note snapshot changed during replay; retry from its current state", status: 409 };
+    signal.throwIfAborted();
+    // Matches SQL `IS DISTINCT FROM`: only a changed projection counts as an update.
+    const changed = current.content_md !== restoredContentMd;
+    // Capture the final replacement boundary only after excluding socket
+    // receipts. An edit acknowledged before this lock is in this replay;
+    // an edit published during it cannot be acknowledged on the old revision.
+    const restoreHead = await restoreTopic.head();
+    const restoreLatest = await restoreTopic.latestCursor({ tenantId: noteId });
+    const restoreCursor = restoreLatest && compareStreamCursor(restoreLatest, restoreHead) > 0 ? restoreLatest : restoreHead;
+    const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
+    const live = new Y.Doc({ gc: true });
+    try {
+      try {
+        if (current.yjs_snapshot) Y.applyUpdate(live, current.yjs_snapshot, "snapshot");
+        else if (current.content_md) live.getText(SHARED_TEXT_NAME).insert(0, current.content_md);
+      } catch {
+        return { ok: false, error: "Restore only supports new empty notes. Create a new note and restore there.", status: 400 };
+      }
+      if (restoreLatest)
+        await notebooksTextLog.replay({
+          docId: noteId,
+          after: current.yjs_stream_cursor,
+          until: restoreLatest,
+          doc: live,
+          restoreRevision: current.yjs_restore_revision,
+          signal,
+        });
+      signal.throwIfAborted();
+      // Whitespace and unresolved updates are user data too. Never replace a
+      // base whose accepted content is nonempty or cannot yet be reconstructed.
+      if (live.getText(SHARED_TEXT_NAME).length || live.store.pendingStructs || live.store.pendingDs)
+        return {
+          ok: false,
+          error: "Restore only supports new empty notes. Create a new note and restore there.",
+          status: 400,
+        };
+    } finally {
+      live.destroy();
+    }
     const result = await tx`
       UPDATE notebooks.notes
       SET yjs_snapshot = ${snapshotBuffer},
@@ -1870,7 +2214,7 @@ export const restoreFromSnapshot = async (params: {
       WHERE id = ${noteId}::uuid
         AND locked_at IS NULL
     `;
-    if (result.count === 0) return null;
+    if (result.count === 0) return { ok: false, error: "Failed to restore snapshot", status: 500 };
 
     // Keep the restored row and its history entry atomic.
     const [version] = await tx<{ id: string }[]>`
@@ -1885,29 +2229,25 @@ export const restoreFromSnapshot = async (params: {
         VALUES (${version.id}::uuid, 'user', ${createdBy}::uuid)
       `;
     }
-    return { versionId: version.id };
+    if (changed) await markNoteUpdated(tx, noteId);
+    await reindexNoteRefsSafe({ noteId, notebookId: existing.notebookId, contentMd: restoredContentMd }, tx);
+    await activity.record(
+      {
+        notebookId: existing.notebookId,
+        noteId,
+        noteVersionId: version.id,
+        actor: createdBy ? { kind: "user", id: createdBy } : { kind: "system", id: null },
+        action: "note.restored",
+      },
+      tx,
+    );
+    await noteUpdated(existing, tx);
+    return { ok: true, data: { versionId: version.id } };
   });
 
-  if (!restored) {
-    const current = await get({ id: noteId });
-    if (!current) return { ok: false, error: "Note not found", status: 404 };
-    if (current.lockedAt) return { ok: false, error: "Cannot restore locked note", status: 403 };
-    return { ok: false, error: "Failed to restore snapshot", status: 500 };
-  }
-
-  // Restored content can carry a different set of refs (links, tags,
-  // attachments) than was previously indexed — refresh all three.
-  await reindexNoteRefsSafe({ noteId, notebookId: existing.notebookId, contentMd: restoredContentMd });
-  await activity.record({
-    notebookId: existing.notebookId,
-    noteId,
-    noteVersionId: restored.versionId,
-    actor: createdBy ? { kind: "user", id: createdBy } : { kind: "system", id: null },
-    action: "note.restored",
-  });
+  if (!restored.ok) return restored;
 
   const updated = await get({ id: noteId });
-  if (updated) await noteUpdated(updated);
   return { ok: true, data: updated! };
 };
 

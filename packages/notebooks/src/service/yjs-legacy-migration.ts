@@ -19,11 +19,11 @@
  * A topic an old node recreates after deletion is simply found again: with no
  * recorded sequence, all of its events are republished.
  */
-import { getProcessSync } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { RetentionGapError } from "@k2b/sync";
-import { sql } from "bun";
 import * as Y from "yjs";
+import { markNoteUpdated } from "../app-events";
 import * as notes from "./notes";
 import { yjsSnapshotWorker } from "./yjs-snapshot-worker";
 import { createYjsTopic, fromBase64, LEGACY_TOPIC_PREFIX, legacyYjsTopic, legacyYjsTopicInfo, NODE_ID, toBase64 } from "./yjs-sync";
@@ -93,13 +93,24 @@ const republish = async (noteId: string, captured: number, last: number, signal?
     const published = await shared.publish({
       tenantId: noteId,
       idempotencyKey: `legacy-${captured}-${start}`,
-      data: { kind: "sync", payload: toBase64(Y.mergeUpdates(updates.slice(start, end))), originNodeId: NODE_ID, originPeerId: null },
+      // Legacy streams belong to the original document, never to a replacement snapshot.
+      data: {
+        kind: "sync",
+        payload: toBase64(Y.mergeUpdates(updates.slice(start, end))),
+        restoreRevision: "0",
+        originNodeId: NODE_ID,
+        originPeerId: null,
+      },
     });
     lastCursor = published.cursor;
     start = end;
   }
   if (gap || malformed > 0) {
-    await sql`UPDATE notebooks.notes SET yjs_history_incomplete = TRUE WHERE id = ${noteId}::uuid`;
+    await sql.begin(async (tx) => {
+      const changed = await tx`UPDATE notebooks.notes SET yjs_history_incomplete = TRUE
+        WHERE id = ${noteId}::uuid AND NOT yjs_history_incomplete`;
+      if (changed.count > 0) await markNoteUpdated(tx, noteId);
+    });
     log.error("Legacy Yjs topic had lost or malformed updates; retained updates were migrated", { noteId, gap, malformed });
   }
   const recorded = await sql`

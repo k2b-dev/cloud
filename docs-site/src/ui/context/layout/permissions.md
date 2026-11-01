@@ -41,7 +41,7 @@ The editor updates its local list only after a callback succeeds. `canEdit={fals
 
 A level with a `scope` applies to a narrower part of the resource that the application defines, such as the conversations assigned to a person. It sits in the same menu as the whole-resource levels; give it a label that names the part and, when the label is not enough, a short `description`.
 
-Public access and service accounts are opt-in through `allowPublic` and `allowServiceAccounts`.
+Service accounts and agents are included by default. Set `allowServiceAccounts={false}` only for a documented user-backed workflow. Public access remains opt-in through `allowPublic`.
 
 Authorization still belongs in the service. Rendering an editor does not grant the current actor permission to change access.
 

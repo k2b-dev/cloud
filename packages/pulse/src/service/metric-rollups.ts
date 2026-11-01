@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { assertStoreName } from "../store/base-schema";
 import { baseStore } from "../store/base-store";
 import { requireBaseWritable } from "./access-control";
@@ -29,7 +29,7 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
   const db = assertStoreName(database, prefix);
   return `INSERT INTO ${db}._rollups
     WITH
-    in_hour AS (SELECT series_id,ts,value FROM ${db}.samples WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64})),
+    in_hour AS (SELECT series_id,ts,argMax(src.value,src.version) AS value FROM ${db}._samples AS src WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64}) GROUP BY series_id,ts),
     ids AS (SELECT DISTINCT series_id FROM in_hour),
     raw_recent AS (SELECT src.series_id,argMax(src.value,(src.ts,src.version)) AS value,max(src.ts) AS ts FROM ${db}._samples src
       WHERE src.series_id IN ids AND src.ts<fromUnixTimestamp64Milli({start:Int64}) AND src.ts>=fromUnixTimestamp64Milli({rawFrom:Int64}) GROUP BY src.series_id),
@@ -50,8 +50,17 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
     FROM pairs p INNER JOIN ${db}.series s ON s.series_id=p.series_id GROUP BY p.series_id`;
 };
 export const createHourlyRollup =
-  ({ store = baseStore, database = sql, clock = store.clock }: { store?: IngestStore; database?: typeof sql; clock?: () => Date } = {}) =>
+  ({
+    store = baseStore,
+    database: injectedDatabase,
+    clock = store.clock,
+  }: {
+    store?: IngestStore;
+    database?: typeof sql;
+    clock?: () => Date;
+  } = {}) =>
   async (baseId?: string): Promise<{ buckets: number; done: boolean; retryAfterMs?: number }> => {
+    const database = injectedDatabase ?? sql;
     const connectedStore = { ...store, query: await store.prepare() };
     let failedHour: { baseId: string; hour: Date; now: Date } | undefined;
     try {

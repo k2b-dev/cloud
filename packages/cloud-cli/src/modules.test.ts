@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 // name grantees with, and the embedded core skill may load for host commands;
 // no plugin from the store or the plugins directory may.
 const hostFile =
-  /\/packages\/(cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities)\.ts$)[^/]+|cloud\/src\/contracts\/resource-href|cloud\/src\/access\/(principal-label|messages)|cloud\/src\/shared\/account-display)\.ts$|\/skills\/cloud-cli\/.+\.(md|yaml)$/;
+  /\/packages\/(cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities|events)\.ts$)[^/]+|cloud\/src\/contracts\/resource-href|cloud\/src\/access\/(principal-label|messages)|cloud\/src\/shared\/account-display)\.ts$|\/skills\/cloud-cli\/.+\.(md|yaml)$/;
 
 test("host commands load no module", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-modules-test-"));
@@ -19,11 +19,14 @@ test("host commands load no module", async () => {
     const loaded = Object.keys(require.cache).filter((path) => !path.includes("/node_modules/"));
     process.stderr.write("CLD_PROBE" + JSON.stringify(loaded));
   `;
+  // This probe measures CLI imports, not the infrastructure preload's server startup.
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.startsWith("CLOUD_TEST_")) delete env[key];
   try {
     for (const args of [["--version"], ["help"], ["profile", "list"], ["plugins", "list"], ["auth", "status"], ["update", "--help"]]) {
       const child = Bun.spawn([process.execPath, "-e", probe], {
         env: {
-          ...process.env,
+          ...env,
           HOME: directory,
           XDG_CONFIG_HOME: directory,
           CLD_CONFIG: join(directory, "config.json"),

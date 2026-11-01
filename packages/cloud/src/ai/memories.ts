@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { withAiShortId } from "./short-id";
 

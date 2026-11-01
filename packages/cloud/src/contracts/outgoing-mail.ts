@@ -2,7 +2,7 @@ import type { PageParams, Paginated, ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import { type RequestActor, ServiceAccountSchema, UserSchema } from "./shared";
 
-export const PlatformPermissionSchema = z.enum(["mail:send", "mail:read"]);
+export const PlatformPermissionSchema = z.enum(["mail:send", "mail:read", "resources:readers", "geo:query"]);
 export type PlatformPermission = z.infer<typeof PlatformPermissionSchema>;
 export const MailRetentionSchema = z.object({ contentDays: z.int().min(1).max(36500), recordDays: z.int().min(1).max(36500) }).strict();
 export type MailRetention = z.infer<typeof MailRetentionSchema> & {

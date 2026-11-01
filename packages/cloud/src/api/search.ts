@@ -139,9 +139,14 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       const stream = acceptsStream(c.req.header("accept"));
       const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
       const invocationAuthority = invocationAuthorityFromRequest(auth.getAuthority(c));
+      // One request-wide budget covers resource access, signing and provider I/O.
+      const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
+      // A client that stops reading a stream ends the search too.
+      const streamCancelled = new AbortController();
+      const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline, streamCancelled.signal]);
       let entries: CapabilityRegistryEntry[];
       try {
-        entries = await discoverableAppEntries(appAccessAuthority(c), await registry(), dependencies.listApps);
+        entries = await discoverableAppEntries(appAccessAuthority(c), await registry(), dependencies.listApps, { signal: fanoutSignal });
       } catch (error) {
         log.warn("Search capability registry unavailable", { error: error instanceof Error ? error.message : String(error) });
         return c.json(
@@ -227,11 +232,6 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // at GLOBAL_RESULT_LIMIT so a single app can saturate the response
       // but no more.
       const effectiveProviderLimit = active.length === 1 ? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3) : query.provider_limit;
-      // The same request-wide budget covers signing and provider I/O.
-      const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
-      // A client that stops reading a stream, such as the browser on the next keystroke, ends the search too.
-      const streamCancelled = new AbortController();
-      const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline, streamCancelled.signal]);
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.
@@ -258,7 +258,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
                           signer,
                           issuer: signer.issuer,
                         },
-                        { db, groupsAdmin: signer.groupsAdmin },
+                        { db, groupsAdmin: signer.groupsAdmin, signal: fanoutSignal },
                       ),
                     fanoutSignal,
                   ),
@@ -353,6 +353,8 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
             ref: view.ref,
             title: view.title,
             href: open.href,
+            context: view.context,
+            status: view.status,
             preview: view.preview,
             icon: view.icon,
             priority: view.priority,

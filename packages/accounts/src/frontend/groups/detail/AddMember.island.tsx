@@ -21,14 +21,17 @@ type AddMemberProps = {
   excludeUserIds?: string[];
   /** CNs to exclude (already members/managers) */
   excludeGroups?: string[];
+  excludeServiceAccountIds?: string[];
 };
 
 export default function AddMember(props: AddMemberProps) {
   const messages = useAccountsMessages();
-  const mutation = mutations.create<void, { type: "user" | "group"; id: string }>({
+  const mutation = mutations.create<void, { type: "user" | "group" | "service_account"; id: string }>({
     mutation: async (vars) => {
-      const endpoint = props.membershipRole === "members" ? apiClient.groups[":id"].members.$post : apiClient.groups[":id"].managers.$post;
-      const res = await endpoint({ param: { id: props.groupId }, json: vars });
+      const res =
+        props.membershipRole === "members"
+          ? await apiClient.groups[":id"].members.$post({ param: { id: props.groupId }, json: vars })
+          : await apiClient.groups[":id"].managers.$post({ param: { id: props.groupId }, json: vars });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message ?? (props.membershipRole === "members" ? messages().addMemberFailed : messages().addManagerFailed));
@@ -57,14 +60,25 @@ export default function AddMember(props: AddMemberProps) {
           providers={[props.groupProvider]}
           includeUsers={props.searchUsers !== false}
           includeGroups={props.searchGroups}
+          includeServiceAccounts={props.groupProvider === "local"}
+          serviceAccountKinds={["standalone", "agent"]}
+          serviceAccountStatus="active"
+          excludeServiceAccountIds={props.excludeServiceAccountIds}
           excludeUserIds={props.excludeUserIds}
           excludeGroupIds={props.excludeGroups}
-          placeholder={props.searchGroups ? messages().searchUsersOrGroups : messages().searchUsers}
+          placeholder={
+            props.groupProvider === "local"
+              ? messages().searchMembers
+              : props.searchGroups
+                ? messages().searchUsersOrGroups
+                : messages().searchUsers
+          }
           disabled={mutation.loading()}
           onSelect={async (result) => {
             close();
             if (result.type === "user") await mutation.mutate({ type: "user", id: result.userId });
             else if (result.type === "group") await mutation.mutate({ type: "group", id: result.groupId });
+            else if (result.type === "service_account") await mutation.mutate({ type: "service_account", id: result.serviceAccountId });
           }}
         />
       ),

@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { clearFolderRole, resolveRoleFolder, setFolderRole } from "./folders";
 import { createMailbox } from "./mailboxes";
@@ -44,7 +43,6 @@ suite("mail archive role", () => {
     sql`UPDATE mail.provider_bindings SET capabilities = ${{ gmailExtensions: enabled }}::jsonb WHERE id = ${bindingId}::uuid`;
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-archive-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

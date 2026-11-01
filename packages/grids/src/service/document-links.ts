@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { coreSettings } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { CreateDocumentLinkInput, Document, DocumentLink, DocumentLinkTtl } from "../contracts";
 import { documentAllowsPublicLinks } from "../document-sharing";
 import { logAudit, type SqlClient } from "./audit";
@@ -91,6 +91,7 @@ export const createDocumentLink = async (params: {
   ip?: string | null;
   userAgent?: string | null;
   client?: SqlClient;
+  beforeWrite?: () => Promise<void>;
   locale?: string;
 }): Promise<Result<{ link: DocumentLink; token: string }>> => {
   const t = documentServiceText(params.locale);
@@ -100,6 +101,7 @@ export const createDocumentLink = async (params: {
   const comment = normalizeDocumentLinkComment(params.input.comment);
   const create = async (tx: SqlClient): Promise<Result<{ link: DocumentLink; token: string }>> => {
     const row = await insertWithShortIdForDb(tx, "idx_grids_document_links_short_id", async (attempt, shortId) => {
+      await params.beforeWrite?.();
       const [created] = await attempt<DocumentDbRow[]>`
         INSERT INTO grids.document_links (
           short_id, document_id, base_id, table_id, record_id, token_hash, comment, created_by, expires_at

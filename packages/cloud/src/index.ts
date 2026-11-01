@@ -36,9 +36,10 @@ export type { RuntimeCompatibilityIssue } from "./_internal/runtime-compatibilit
 export { assessRuntimeCompatibility } from "./_internal/runtime-compatibility";
 export { buildRuntimeFromRegistry } from "./_internal/runtime-context";
 export { type AppSkillDefinition, skill } from "./ai/app-skills";
-export type { AppAccessDeclaration, AppAccessRule, FixedAppAccessRule } from "./contracts/app-access";
+export type { AppAccessDeclaration, AppAccessRule, FixedAppAccessRule, ResourceAppAccessAdapter } from "./contracts/app-access";
 export { appAccess } from "./contracts/app-access";
 export { defineCapabilities } from "./contracts/capabilities";
+export type { AppInstallable } from "./contracts/installable";
 export type {
   AnyBoundNotificationDefinition,
   BoundNotificationDefinition,
@@ -59,5 +60,15 @@ export type {
   NotificationSendInput,
 } from "./contracts/notification-types";
 export { notification } from "./contracts/notification-types";
+export { createRedis, createSql, redis, type SqlPoolOptions, sql } from "./runtime/clients";
+export {
+  type ConnectionSource,
+  connections,
+  type PlatformBootstrapMetadata,
+  type PlatformConnectionSources,
+  type PlatformConnections,
+  type PlatformConnectionValues,
+} from "./runtime/connections";
 export type { HelpDefinition, HelpDefinitionDocument } from "./server/help";
 export { defineHelp } from "./server/help";
+export { storage } from "./services/object-store";

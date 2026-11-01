@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import {
   grantMailboxAccess,
   grantMailboxAccessAsPlatformAdmin,
@@ -21,6 +20,7 @@ import {
   listDeletedMailboxes,
   listMailboxes,
   restoreMailbox,
+  updateMailbox,
 } from "./mailboxes";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
@@ -58,7 +58,6 @@ suite("reversible mailbox lifecycle", () => {
   let platformContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const users = await sql<{ id: string; uid: string; admin: boolean }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES
@@ -487,5 +486,69 @@ suite("reversible mailbox lifecycle", () => {
     const restored = await restoreMailbox(platformContext, mailboxId);
     expect(restored.ok).toBe(true);
     if (restored.ok) expect(restored.data).toMatchObject({ syncEnabled: false, health: "paused" });
+  });
+
+  test("renaming needs Manage access and changes only the display name", async () => {
+    const created = await createMailbox(ownerContext, { name: `Sales ${suffix}` });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const mailboxId = created.data.id;
+    mailboxIds.push(mailboxId);
+    const receivingAddress = `sales-${suffix}@example.com`;
+    await sql`
+      INSERT INTO mail.provider_connections (
+        owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode,
+        smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret
+      ) VALUES (
+        ${mailboxId}::uuid, 'Rename fixture', ${receivingAddress}, ${receivingAddress},
+        'imap.example.com', 993, 'implicit', 'smtp.example.com', 587, 'starttls',
+        'password', 'rename-fixture-secret'
+      )
+    `;
+    await sql`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, display_name, from_address, label, is_default)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sales Team', ${receivingAddress}, 'Sales', true)
+    `;
+    const addressing = () => sql`
+      SELECT
+        (SELECT jsonb_agg(jsonb_build_object('email', email, 'username', username, 'name', name) ORDER BY id)
+          FROM mail.provider_connections WHERE owner_mailbox_id = ${mailboxId}::uuid) AS connections,
+        (SELECT jsonb_agg(jsonb_build_object('id', id, 'displayName', display_name, 'from', from_address, 'label', label) ORDER BY id)
+          FROM mail.sender_identities WHERE mailbox_id = ${mailboxId}::uuid) AS identities
+    `;
+    const before = await addressing();
+    const writer = await grantMailboxAccess({
+      context: ownerContext,
+      mailboxId,
+      principal: { type: "user", userId: readerContext.accessSubject.type === "user" ? readerContext.accessSubject.userId : "" },
+      permission: "write",
+    });
+    expect(writer.ok).toBe(true);
+
+    const denied = await updateMailbox({ context: readerContext, mailboxId, name: `Taken over ${suffix}` });
+    expect(denied.ok).toBe(false);
+    const unchanged = await getMailbox(ownerContext, mailboxId);
+    expect(unchanged.ok && unchanged.data.name).toBe(`Sales ${suffix}`);
+    expect((await updateMailbox({ context: ownerContext, mailboxId, name: " ".repeat(3) })).ok).toBe(false);
+    expect((await updateMailbox({ context: ownerContext, mailboxId, name: "x".repeat(161) })).ok).toBe(false);
+
+    const renamed = await updateMailbox({ context: ownerContext, mailboxId, name: `  Sales North ${suffix}  ` });
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.data).toMatchObject({ id: mailboxId, name: `Sales North ${suffix}`, health: created.data.health });
+    expect(await addressing()).toEqual(before);
+    const listed = await listMailboxes(readerContext, 100, undefined, receivingAddress);
+    expect(listed.ok && listed.data.find((mailbox) => mailbox.id === mailboxId)).toMatchObject({
+      name: `Sales North ${suffix}`,
+      receivingAddress,
+    });
+    const [auditEntry] = await sql<{ label: string; changed: string[] }[]>`
+      SELECT target_label AS label, (metadata #>> '{}')::jsonb -> 'changed' AS changed
+      FROM audit.events
+      WHERE target_type = 'mailbox' AND target_id = ${mailboxId} AND action = 'mail.mailbox.update' AND outcome = 'allowed'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    expect(auditEntry).toEqual({ label: `Sales North ${suffix}`, changed: ["name"] });
   });
 });

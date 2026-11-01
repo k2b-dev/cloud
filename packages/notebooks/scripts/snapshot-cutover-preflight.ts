@@ -1,9 +1,9 @@
+import { connections, createSql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
 /** Read-only gate for the quiesced, unpartitioned-to-ordered snapshot cutover. */
-import { readFile } from "node:fs/promises";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect, credsAuthenticator } from "@nats-io/transport-node";
-import { SQL } from "bun";
 
 const LEGACY_JOB_ID = "notebooks.yjs.snapshot";
 const NOTE_TOPIC_PREFIX = "cloud:notebooks:yjs:";
@@ -26,23 +26,18 @@ export const snapshotCoverage = (
 };
 
 export const main = async (): Promise<void> => {
-  const namespace = process.env.SYNC_NAMESPACE?.trim();
-  const servers = process.env.NATS_SERVERS?.split(",")
-    .map((server) => server.trim())
-    .filter(Boolean);
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!namespace || !servers?.length || !databaseUrl)
-    throw new Error("Set SYNC_NAMESPACE, NATS_SERVERS, and DATABASE_URL for the exact installation");
-  const credsFile = process.env.NATS_CREDS_FILE;
-  const caFile = process.env.NATS_TLS_CA_FILE;
+  await initializePlatform({ appId: "notebooks", source: "env" });
+  const nats = connections().nats;
+  const { namespace, servers } = nats;
+  if (!namespace || !servers.length) throw new Error("Set SYNC_NAMESPACE and NATS_SERVERS for the exact installation");
   const connection = await connect({
     servers,
     name: "notebooks-snapshot-cutover-preflight",
-    ignoreClusterUpdates: process.env.NATS_IGNORE_CLUSTER_UPDATES === "true",
-    ...(credsFile ? { authenticator: credsAuthenticator(await readFile(credsFile)) } : {}),
-    ...(caFile ? { tls: { caFile } } : {}),
+    ignoreClusterUpdates: nats.ignoreClusterUpdates,
+    ...(nats.creds ? { authenticator: credsAuthenticator(new TextEncoder().encode(nats.creds)) } : {}),
+    ...(nats.ca ? { tls: { ca: nats.ca } } : {}),
   });
-  const database = new SQL(databaseUrl);
+  const database = createSql();
   // Declaration-only topic handles validate opaque cursors. Never call ready(),
   // publish(), process(), or any API that provisions a resource in this command.
   const sync = createSync({ connection, namespace, application: "notebooks" });

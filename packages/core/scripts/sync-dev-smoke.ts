@@ -1,17 +1,19 @@
+import { connections, sql } from "@k2b/cloud";
 /**
  * Local Compose HTTP acceptance smoke. Run inside the rebuilt app-core:
  * docker compose -f compose.dev.yml exec -T app-core bun packages/core/scripts/sync-dev-smoke.ts
  * Uses a disposable local account and canonical session issuance; no credentials are printed.
  */
 import { session } from "@k2b/cloud/services";
-import { sql } from "bun";
+import { initializePlatform } from "@k2b/cloud/start";
 import { Hono } from "hono";
 import { z } from "zod";
 
 const gateway = "http://gateway:3000";
 const apiPaths = ["/api/admin/sync", "/api/admin/sync/core/resources", "/api/admin/sync/core/dead-letters", "/api/gateway/sync"];
-const adminPaths = ["/admin/gateway/apps", "/admin/observability/sync", "/admin/observability/jobs"];
-const database = new URL(process.env.DATABASE_URL ?? "postgresql://invalid/invalid");
+const adminPaths = ["/admin/observability/gateway", "/admin/observability/nats/sync", "/admin/observability/jobs"];
+await initializePlatform({ appId: "core", source: "env" });
+const database = new URL(connections().database.url);
 if (
   process.env.NODE_ENV !== "development" ||
   process.env.APP_ID !== "core" ||

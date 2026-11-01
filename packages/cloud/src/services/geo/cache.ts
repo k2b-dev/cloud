@@ -4,13 +4,14 @@ import type { GeoFunction } from "../../contracts/geo";
 import { requestCacheRedis } from "../request-cache-redis";
 import type { GeoRedis } from "./bucket";
 
-export const GEO_ADAPTER_VERSION = "geoapify-v2";
+export const GEO_ADAPTER_VERSION = "geoapify-v3";
 export const GEO_MAX_JSON_BYTES = 256 * 1024;
 // Raw provider geometry is compacted before entering the public result/cache budget.
 export const GEO_MAX_ROUTE_RESPONSE_BYTES = 26 * GEO_MAX_JSON_BYTES;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 export const normalizeGeoInput = (input: unknown, fn: GeoFunction, path = ""): unknown => {
   const field = path.split(".").at(-1);
+  if (typeof input === "string" && fn === "places" && field === "name") return input.trim();
   if (typeof input === "string" && fn === "route") return field === "polyline6" ? hash(input) : input;
   if (typeof input === "string") return field === "polyline6" ? hash(input) : input.toLowerCase().trim().replace(/\s+/g, " ");
   if (typeof input === "number") {

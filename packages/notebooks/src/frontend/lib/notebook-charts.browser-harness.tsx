@@ -1,4 +1,5 @@
-import { enhanceNotebookCharts } from "./notebook-charts";
+import { enhanceNotebookCharts } from "@k2b/editor/markdown/notebook-charts";
+import { notebookChartOptions } from "../../lib/chart-options";
 
 declare global {
   interface Window {
@@ -10,7 +11,7 @@ declare global {
 
 const root = document.getElementById("notebook-book-content")!;
 const cleanups: (() => void)[] = [];
-window.enhance = () => cleanups.push(enhanceNotebookCharts(root, "de"));
+window.enhance = () => cleanups.push(enhanceNotebookCharts(root, "de", notebookChartOptions));
 window.restore = () =>
   cleanups
     .splice(0)

@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { packInlinePlugin } from "../test/fixtures/build-plugin";
-import { installFirstPartyModules } from "../test/fixtures/first-party";
+import { bundleFirstPartyModule, installFirstPartyModules } from "../test/fixtures/first-party";
 import { LOGIN_PAGE_CSP } from "./login-page";
 
 type MockServerState = {
@@ -42,6 +42,13 @@ const MODULES = [
   "pulse",
   "tools",
 ];
+
+// Build real plugin fixtures before a command's behavior budget starts.
+// Each module has its own normal hook deadline; tests still install isolated stores.
+for (const name of MODULES)
+  beforeAll(async () => {
+    await bundleFirstPartyModule(name);
+  });
 
 const createTempDir = async (): Promise<string> => {
   const dir = await mkdtemp(join(tmpdir(), "cld-cli-test-"));
@@ -1383,7 +1390,9 @@ describe("cloud CLI OAuth session handling", () => {
   });
 
   test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
-    const dir = await createTempDir();
+    // This standalone plugin does not use the first-party module inventory.
+    const dir = await mkdtemp(join(tmpdir(), "cld-opener-test-"));
+    tempDirs.push(dir);
     const configPath = join(dir, "config.json");
     const pluginDir = join(dir, "package-browser");
     const binDir = join(dir, "bin");

@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { deleteAccess } from "@k2b/cloud/server";
 import { logger, get as settingsGet } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
-import { sql } from "bun";
 import { BaseTimezoneSchema } from "./base-settings";
 import { installAgentSourceOwnership, installBaseline, installDashboards, installOverviewAlerts, installSqlConsole } from "./schema";
 
@@ -42,7 +42,8 @@ export const migrate = async (timezone: string | undefined = undefined): Promise
       // The service-account deletion API uses the global connection, not this transaction.
       // Its SQL deletion (including credential cascades) is kept in the locked reset transaction.
       await tx`DROP SCHEMA pulse CASCADE`.simple();
-      const tokens = await tx`DELETE FROM auth.service_accounts WHERE kind='resource_bound' AND app_id='pulse'`;
+      const tokens =
+        await tx`DELETE FROM auth.service_accounts WHERE kind='resource_bound' AND app_id='pulse' AND resource_type IS DISTINCT FROM 'cloud.app'`;
       const accessRows = access.length;
       for (const row of access) {
         await deleteAccess({ id: row.access_id }, tx);

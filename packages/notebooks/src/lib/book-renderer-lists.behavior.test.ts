@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { basicExtensions } from "../frontend/lib/editor/basic";
-import { markdownExtension } from "../frontend/lib/editor/markdown";
 
 const loading = createDomTestHarness();
-const { listCommandsExtension } = await import("../frontend/lib/editor/list-commands");
+const { basicExtensions, markdownExtension } = await import("@k2b/editor/markdown");
+const { notebookListOptions } = await import("../frontend/lib/editor/notebook-options");
+const { listCommandsExtension } = await import("@k2b/editor/markdown");
 const { renderNotebookBook } = await import("./book-renderer");
 loading.cleanup();
 
@@ -17,7 +18,7 @@ test("Enter twice ends a tight list before the next Book paragraph", () => {
     state: EditorState.create({
       doc: "- a",
       selection: { anchor: 3 },
-      extensions: [basicExtensions(), markdownExtension(), listCommandsExtension()],
+      extensions: [basicExtensions(), markdownExtension(), listCommandsExtension(notebookListOptions)],
     }),
   });
   try {

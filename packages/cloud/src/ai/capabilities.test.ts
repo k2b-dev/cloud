@@ -11,6 +11,7 @@ import {
   CapabilityActionReviewSchema,
   defineCapabilities,
 } from "../contracts/capabilities";
+import { geoMapContract } from "../contracts/geo-map";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
@@ -36,7 +37,11 @@ import { aiChatTasks } from "./chat-tasks";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
+import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
+import { userResourceContext } from "./projects.test-fixture";
 import * as settings from "./settings";
+import { createCloudAiLoadSkillTool } from "./skill-tool";
+import { aiSkills } from "./skills";
 import { prepareAiTools } from "./tools";
 import type { AiModelProfile } from "./types";
 
@@ -72,6 +77,12 @@ afterEach(() => mock.restore());
 
 const configureAudio = async (audioModelId = "speech") => {
   const audio: AiModelProfile = {
+    modelId: "speech",
+    providerId: "speech",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "speech",
     label: "Speech",
     provider: "openai-compatible",
@@ -81,11 +92,11 @@ const configureAudio = async (audioModelId = "speech") => {
     capabilities: ["transcription"],
     dataBoundary: "private",
   };
-  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
-  const state = await settings.resolveAiSettingsStateFromRaw({
+  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["tools"] };
+  const state = aiSettingsFixture({
     enabled: true,
-    defaultModelId: chat.id,
-    profilesJson: JSON.stringify([chat, audio]),
+    assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", audioModelId)],
+    profiles: [chat, audio],
   });
   spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
   spyOn(coreSettings, "get").mockResolvedValue(audioModelId);
@@ -535,6 +546,15 @@ describe("AI capability catalog", () => {
     expect(longName).toHaveLength(64);
   });
 
+  test("omits every query marked app-only from the AI catalog", () => {
+    const app = capabilityApp("spaces");
+    app.manifest.queries.push(
+      { ...app.manifest.queries[0]!, localId: "readable", appOnly: true as const },
+      { ...app.manifest.queries[0]!, localId: "disabled", appOnly: true as const },
+    );
+    expect(buildAiCapabilityCatalog([app]).map((entry) => entry.name)).toEqual(["spaces.create", "spaces.list"]);
+  });
+
   test("searches deterministic compact entries with an optional app filter", () => {
     const first = capabilityApp("contacts", "Contacts");
     const second = capabilityApp("spaces", "Spaces");
@@ -694,11 +714,201 @@ describe("AI capability catalog", () => {
     expect(searchAiTools(catalog, { query: "read email messages", appId: "mail" }).tools).toEqual([
       expect.objectContaining({ name: "mail.list" }),
     ]);
-    expect(searchAiTools(catalog, { query: "read", appId: "mail" }).tools).toEqual([]);
+    expect(searchAiTools(catalog, { query: "read", appId: "mail" }).tools).toEqual([expect.objectContaining({ name: "contacts.list" })]);
+    // Fallback must still match words: "read" is not a match for "unread".
+    expect(
+      searchAiTools(
+        catalog.filter((entry) => entry.appId === "mail"),
+        { query: "read" },
+      ).tools,
+    ).toEqual([]);
     expect(searchAiTools(catalog, { query: "missing phrase" }).tools).toEqual([]);
     expect(searchAiTools(catalog, { query: "create items", appId: "contacts" }).tools).toContainEqual(
       expect.objectContaining({ name: "contacts.create" }),
     );
+  });
+
+  test("recovers a wrong app hint through discovery, loading and execution", async () => {
+    const core = capabilityApp("core", "Core");
+    const query = core.manifest.queries[0]!;
+    core.manifest.queries = [
+      {
+        ...query,
+        localId: "map.style",
+        title: "Show a map",
+        description: "Return a Cloud map style URL.",
+        inputSchema: z.toJSONSchema(geoMapContract.style.input),
+        dataSchema: z.toJSONSchema(geoMapContract.style.data),
+      },
+      { ...query, localId: "address.geocode", title: "Find an address", description: "Resolve an address to coordinates." },
+      { ...query, localId: "route.calculate", title: "Calculate a route", description: "Calculate stops by car, bike or on foot." },
+    ];
+    core.presentation = {
+      baseLocale: "en",
+      translations: {
+        de: {
+          queries: {
+            "map.style": { title: "Karte anzeigen" },
+            "address.geocode": { title: "Adresse finden" },
+            "route.calculate": { title: "Route berechnen" },
+          },
+        },
+      },
+    };
+    const venue = capabilityApp("venue", "Venue");
+    const result = { data: { styleUrl: "/api/geo/style?theme=light&locale=de", attribution: [] } };
+    const execute = mock(async () => result);
+    const resolver = createAiToolResolver({
+      conversationId: "geo-discovery",
+      actor,
+      locale: "de",
+      staticTools: [],
+      store: createRunToolStore([]),
+      listRegistry: async () => [core, venue],
+      execute,
+    });
+    const context = {
+      signal: new AbortController().signal,
+      requestApproval: async () => false,
+      requestClientTool: async () => {
+        throw new Error("Unexpected client tool");
+      },
+    };
+    const tools = await resolver();
+    const search = tools.find((tool) => tool.def.name === "search_tools")!;
+    for (const [query, name] of [
+      ["map location", "core.map.style"],
+      ["Karte", "core.map.style"],
+      ["address", "core.address.geocode"],
+      ["Adresse", "core.address.geocode"],
+      ["route", "core.route.calculate"],
+    ]) {
+      for (const appId of ["venue", "unknown-app", undefined]) {
+        expect(await search.execute({ query, appId }, context)).toMatchObject({
+          tools: expect.arrayContaining([expect.objectContaining({ name })]),
+        });
+      }
+    }
+    // A successful scoped search stays scoped, even when other apps match.
+    expect(await search.execute({ query: "create", appId: "venue" }, context)).toMatchObject({
+      tools: [expect.objectContaining({ name: "venue.create" })],
+    });
+    const load = tools.find((tool) => tool.def.name === "load_tools")!;
+    expect(await load.execute({ names: ["core.map.style"] }, context)).toMatchObject({
+      loaded: [{ name: "core.map.style", call: "core__query__map_dot_style" }],
+    });
+    const map = (await resolver()).find((tool) => tool.def.name === "core__query__map_dot_style")!;
+    expect(await map.execute({ theme: "light" }, context)).toEqual(result);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  test("load_skill loads the tools its Skill lists through the same checks as load_tools", async () => {
+    const venue = capabilityApp("venue", "Venue");
+    const other = capabilityApp("other", "Other");
+    spyOn(aiSkills, "loadForTurn").mockResolvedValue({
+      name: "venue-booking",
+      description: "Book venues.",
+      revision: 1,
+      instructions: "List venues first.",
+      files: [],
+      loadTools: ["venue.list", "venue.create", "other.list", "calculate", "missing.list"],
+      loadedAt: "2026-10-31T12:00:00.000Z",
+    });
+    const execute = mock(async () => ({ data: [] }));
+    const resolver = createAiToolResolver({
+      conversationId: "skill-tools",
+      actor,
+      staticTools: [createCloudAiLoadSkillTool(userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }))],
+      // The chat's fixed scope excludes other.list; a Skill cannot widen it.
+      allowedTools: ["load_skill", "venue.list", "venue.create"],
+      runtimeContext: { turnId: "22222222-2222-4222-8222-222222222222" },
+      store: createRunToolStore([]),
+      listRegistry: async () => [venue, other],
+      execute,
+    });
+    const context = {
+      signal: new AbortController().signal,
+      requestApproval: async () => false,
+      requestClientTool: async () => {
+        throw new Error("Unexpected client tool");
+      },
+    };
+    const first = await resolver();
+    expect(first.map((tool) => tool.def.name)).not.toContain("venue__query__list");
+    const loadSkill = first.find((tool) => tool.def.name === "load_skill")!;
+    expect(await loadSkill.execute({ name: "venue-booking" }, context)).toMatchObject({
+      name: "venue-booking",
+      tools: {
+        loaded: [
+          { name: "venue.list", call: "venue__query__list" },
+          { name: "venue.create", call: "venue__action__create" },
+        ],
+        alreadyLoaded: [],
+        unavailable: [
+          { name: "other.list", reason: "not_allowed" },
+          { name: "calculate", reason: "unknown" },
+          { name: "missing.list", reason: "unknown" },
+        ],
+        evicted: [],
+      },
+    });
+    const next = (await resolver()).map((tool) => tool.def.name);
+    expect(next).toContain("venue__query__list");
+    expect(next).toContain("venue__action__create");
+    expect(next).not.toContain("other__query__list");
+    // Loading the tools runs nothing; every later call is still authorized by its app.
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  test.each(["scope", "mandate", "hidden", "offline"] as const)("search fallback preserves %s exclusions", async (exclusion) => {
+    const core = capabilityApp("core", "Core", { title: "Show a map", description: "Return a Cloud map style URL." });
+    const venue = capabilityApp("venue", "Venue");
+    const tools = await createAiToolResolver({
+      conversationId: "restricted-discovery",
+      actor,
+      staticTools: [],
+      store: createRunToolStore([]),
+      listRegistry: async () => (exclusion === "offline" ? [venue] : [core, venue]),
+      ...(exclusion === "scope" ? { allowedTools: ["venue.list"] } : {}),
+      ...(exclusion === "mandate"
+        ? {
+            mandatePolicy: parseMandatePolicy({
+              version: 1,
+              apps: ["venue"],
+              operations: ["capability.query:list"],
+              actions: "deny",
+              grants: [{ appId: "venue", capabilityId: "list", kind: "query", fixedInput: {} }],
+            }),
+          }
+        : {}),
+      ...(exclusion === "hidden"
+        ? {
+            listApps: async () => [
+              {
+                id: "venue",
+                name: "Venue",
+                description: "Venues",
+                icon: "ti ti-box",
+                routes: [],
+                baseUrl: "http://test.invalid",
+              },
+            ],
+          }
+        : {}),
+    })();
+    const search = tools.find((tool) => tool.def.name === "search_tools")!;
+    expect(
+      await search.execute(
+        { query: "map location", appId: "venue" },
+        {
+          signal: new AbortController().signal,
+          requestApproval: async () => false,
+          requestClientTool: async () => {
+            throw new Error("Unexpected client tool");
+          },
+        },
+      ),
+    ).toEqual({ tools: [] });
   });
 
   test("does not let a scoped app description make every operation match", () => {

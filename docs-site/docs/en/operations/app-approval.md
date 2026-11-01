@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Integrate an authenticator website
@@ -38,6 +38,11 @@ HTTP loopback origins work only outside production. The issuer is the canonical
 origin of `app.url`, never the incoming Host header.
 
 ## Pair a device
+
+The optional `label` in new pairing payloads is a suggested local display name
+(1–80 characters), never account identity. Operators configure it through
+[Name in Cloud Login](./cloud-login.md#suggest-a-cloud-label). Existing device
+records are unaffected. Update strict authenticator parsers before Cloud.
 
 In Cloud, open **My account → Security → Pair a device**. Scan the QR code,
 copy its pairing link into the authenticator, or choose **Open app on this
@@ -163,7 +168,7 @@ extra fields and private JWK material are rejected.
 
 1. In the Cloud, call `POST /manage/pairings/start` with `{}` for yourself or
    `{userId}` for administrator-assisted pairing. The response is
-   `{protocol, issuer, pairingId, secret, expiresAt}`. Only a current interactive
+   `{protocol, issuer, pairingId, secret, expiresAt, label?}`. Only a current interactive
    session issued within the last ten minutes can start or confirm pairing;
    API/OAuth tokens cannot.
 2. Transfer this pairing payload by QR, copy/paste or opening the link on the
@@ -294,7 +299,7 @@ their `auth.app.device.enroll` and `auth.app.device.revoke` entries.
 Use `appPairingLink(authenticatorOrigin, payload)` from the contracts export to
 create `https://auth.example/#pairing=<percent-encoded JSON payload>`. The
 authenticator origin comes from the operator setting, not from user input.
-The QR encodes this exact link; copying it or opening it on the same phone
+The QR encodes this exact link; copying it or opening it on the same device
 transfers the same five-minute, one-use enrollment secret.
 
 The authenticator accepts the whole link as pasted text and calls
@@ -320,11 +325,23 @@ method: the default follows the selected category, an explicit
 `credential=app` or `credential=legacy` link, and for FreeIPA the
 `login_freeipa_app` cookie. A completed FreeIPA app sign-in sets that cookie in
 the browser and a FreeIPA password sign-in removes it; it names no account.
+For Login, `login_email=1` remembers a successful email link or code instead;
+a later Login app sign-in removes it. Email-link completion derives the category
+from the verified account, including when the link opens in a new tab.
 The category switch remains unchanged. Local accounts retain **Use an email
 link instead**. When FreeIPA opens with the app, the password alternative
 stays available. Passkeys and email-link verification still work. An unpaired
 or unknown account does not get a distinct error: use another existing sign-in
 method if no paired app receives the request.
+
+Identity confirmation uses this same selection, without forcing a credential.
+Its verification requests send `X-Cloud-Reauthenticate: 1`. The header only
+constrains issuance: a valid web session and fresh proof for that same account
+are required. Otherwise completion answers `403 ACCOUNT_MISMATCH` and leaves
+the current session unchanged. Email-link failures offer **Back to sign in**
+with the original destination. Password recovery and emergency admin sign-in
+run outside confirmation; flagged requests answer
+`403 CONFIRMATION_METHOD_UNAVAILABLE` before changing credentials.
 
 The waiting Cloud page displays the comparison code. Open the paired app and
 approve only a request you started whose code matches. The page continues as
@@ -425,7 +442,7 @@ With opt-in, each browser sign-in carries this strict `AppLoginContext`:
 | `history.knownSince` | This browser's first successful sign-in for this account inside its current remembered period, or `null` if unknown. |
 | `history.newCountry` | Core has a country for the request, `geoip_since` is set, and this account has no successful sign-in from that country inside the 90-day window. |
 | `history.countriesSince` | `geoip_since` when less than 90 days ago, otherwise `null`. A shorter history can be shown as “since {date}”. |
-| `sameNetwork` | Optional literal `true`. The browser request and phone share the full IPv4 address or IPv6 /64. Absence makes no claim. |
+| `sameNetwork` | Optional literal `true`. The browser request and device share the full IPv4 address or IPv6 /64. Absence makes no claim. |
 
 Dates use UTC ISO date-times. Browser recognition uses the browser cookie
 (S1); countries use successful sign-ins inside the last 90 days (S6).
@@ -448,7 +465,7 @@ address pseudonyms, storage, and retention.
 Terminal sign-ins never carry context. Push never carries it. The waiting
 browser's `/login/start`, `/login/status`, and `/login/complete` responses stay
 unchanged, and `/login/start` sets no cookie. Context is a snapshot of the
-start request; it is not recomputed while the phone polls.
+start request; it is not recomputed while the device polls.
 
 An opted-in browser request can lack context if it started before the upgrade
 or the response budget forced it out. Cloud first drops Actions from the end
@@ -581,7 +598,7 @@ App names come from Cloud's registry in the language Cloud used when it asked.
 The chat title is `null` when empty.
 `message` is plain text or `null`. Each detail has `{label, value}` and may
 carry `format: "date" | "date-time"`. Those values retain their raw date
-encoding; show them in the phone's locale and time zone. Markdown details
+encoding; show them in the device's locale and time zone. Markdown details
 arrive as plain text with no markdown format. Dates are ISO dates or RFC 3339;
 creation and expiry times are UTC ISO timestamps.
 
@@ -686,7 +703,7 @@ A `409` means the request was decided elsewhere, expired, or its view changed.
 Remove the old choice and reload the inbox. Do not retry the old decision
 against a new view.
 
-### Wake the paired phone
+### Wake the paired device
 
 A device with a push token gets at most one sign-in wake-up in 30 seconds
 while its previously woken request is pending and unexpired. A new sign-in
@@ -713,7 +730,7 @@ carries the comparison code, challenge, browser secret, account name or email.
 The call runs in the background with a five-second timeout: it never delays
 `/login/start`, and unknown, disabled or throttled accounts, which receive a
 decoy request, never trigger one. Core does not retry; Cloud Login queues and
-retries delivery itself. An answer of 410 means the phone's subscription is
+retries delivery itself. An answer of 410 means the device's subscription is
 gone, so Core clears that token from the account's devices. Revoked devices
 are never woken.
 

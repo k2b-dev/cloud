@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { conversationVisibleTo, requireMailboxAccess } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import type { CollaborationNotificationKind } from "./notification-outbox";

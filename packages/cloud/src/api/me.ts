@@ -5,7 +5,6 @@
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
@@ -13,6 +12,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
   AccountActivityListResponseSchema,
+  AvatarStateSchema,
   BrowserNotificationConfigurationSchema,
   BrowserNotificationEndpointSchema,
   BrowserPushSubscriptionSchema,
@@ -27,10 +27,10 @@ import {
   NotificationDeliveryStatusSchema,
   NotificationQuietSettingsSchema,
   RegisterBrowserNotificationEndpointSchema,
+  SaveAvatarResponseSchema,
+  SaveAvatarSchema,
   ServiceAccountCredentialSchema,
   SignOutOthersResponseSchema,
-  UpdateAvatarResponseSchema,
-  UpdateAvatarSchema,
   UpdateNotificationQuietSettingsSchema,
   UpdateProfileSchema,
   UpdateUserNotificationPreferenceSchema,
@@ -41,6 +41,7 @@ import {
   WebAuthnPasskeySchema,
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
@@ -323,7 +324,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "List current user notification preferences",
-      description: "List active user-facing notification kinds, app recommendations, required channels, and explicit preferences.",
+      description:
+        "List active user-facing notification kinds, app recommendations, required and excluded channels, and explicit preferences.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(UserNotificationPreferencesResponseSchema, "Notification preferences"),
@@ -342,11 +344,12 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "Set current user notification preference",
-      description: "Replace optional channels for one notification kind. Required channels remain enforced by the definition.",
+      description:
+        "Replace optional channels for one notification kind. Required channels remain enforced; excluded channels are rejected.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(UserNotificationPreferenceSchema, "Updated notification preference"),
-        400: jsonResponse(ErrorResponseSchema, "Invalid or unavailable channel"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid, unavailable, or excluded channel"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         404: jsonResponse(ErrorResponseSchema, "Notification preference not found"),
       },
@@ -492,32 +495,50 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  .get(
+    "/avatar",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Read current user profile picture",
+      description:
+        "Which picture others see (photo, built avatar, or initials), the stored built avatar, and whether a photo is stored. The image itself is served under the account's avatar URL.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(AvatarStateSchema, "Profile picture"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        404: jsonResponse(ErrorResponseSchema, "User not found"),
+      },
+    }),
+    async (c) =>
+      respond(c, async () => {
+        const state = await accountsService.user.getAvatarState({ id: c.get("user").id });
+        return state ? ok(state) : fail(err.notFound("User"));
+      }),
+  )
+
   .put(
     "/avatar",
     describeRoute({
       tags: ["Me"],
-      summary: "Update current user avatar",
-      description: "Store a small profile picture for the authenticated account. Avatars are visible to user-backed authenticated actors.",
+      summary: "Update current user profile picture",
+      description:
+        "Store and show a photo (`dataUrl`) or a built avatar (`built`), or show a stored picture (`use`: photo, built, or initials). A stored photo stays until it is deleted; only the shown picture is served. Avatars are visible to user-backed authenticated actors.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(UpdateAvatarResponseSchema, "Avatar updated"),
+        200: jsonResponse(SaveAvatarResponseSchema, "Avatar updated"),
         400: jsonResponse(ErrorResponseSchema, "Failed to update avatar"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        409: jsonResponse(ErrorResponseSchema, "The picture to show is not stored"),
         422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
-    v("json", UpdateAvatarSchema),
+    v("json", SaveAvatarSchema),
     async (c) =>
       respond(c, async () => {
         const user = c.get("user");
-        const data = c.req.valid("json");
-        const result = await accountsService.user.setAvatar({
-          actor: toAccountsActor(user),
-          id: user.id,
-          dataUrl: data.dataUrl,
-        });
+        const result = await accountsService.user.updateAvatar({ actor: toAccountsActor(user), id: user.id, change: c.req.valid("json") });
         if (!result.ok) return result;
-        return ok({ message: "Avatar updated.", avatarHash: result.data.avatarHash });
+        return ok({ message: "Avatar updated.", ...result.data });
       }),
   )
 
@@ -799,7 +820,7 @@ const app = new Hono<AuthContext>()
       tags: ["Me"],
       summary: "Sign out every other sign-in",
       description:
-        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login phones stay paired. API keys, passkeys and mandates stay valid.",
+        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login devices stay paired. API keys, passkeys and mandates stay valid.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SignOutOthersResponseSchema, "Other sign-ins ended"),

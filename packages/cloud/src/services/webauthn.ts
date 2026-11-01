@@ -10,8 +10,8 @@ import {
   verifyRegistrationResponse,
   type WebAuthnCredential,
 } from "@simplewebauthn/server";
-import { redis, sql } from "bun";
 import type { User, WebAuthnPasskey } from "../contracts/shared";
+import { redis, sql } from "../runtime/clients";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { logger } from "./logging";

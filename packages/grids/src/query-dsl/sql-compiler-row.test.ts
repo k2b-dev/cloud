@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { resolveDslQueryToQueryPlan } from "./resolver";
 import { ctx, field, normalizedSql, orders, parseOk } from "./resolver-fixtures";
 import { compileDslQueryPlanToSql } from "./sql-compiler-row";
+
+useUnitClients();
 
 describe("editable record SQL selection", () => {
   test("retains the full persisted record without forcing JS-only formula fields through SQL", () => {

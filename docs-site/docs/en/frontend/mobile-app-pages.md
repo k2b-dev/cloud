@@ -1,27 +1,34 @@
 ---
-title: Pages in the mobile app
-navTitle: Mobile app pages
+title: Pages in the Cloud app
+navTitle: Cloud app pages
 section: Frontend
 order: 835
-description: Add phone-first pages of an application to the installable mobile app.
+description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
 updated: 2026-10-23
 ---
 
-# Pages in the mobile app
+# Pages in the Cloud app
 
-> **Preview:** the mobile app is not released yet. This contract may still
+> **Preview:** the Cloud app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-Each Cloud installation has one installable phone app. The `pwa` application
+Each Cloud installation has one installable device app. The `pwa` application
 provides it: the Home Screen app, its Start page, Settings, and pairing. An
 application adds a **part**: its own pages at `/pwa/<app-id>`, built for a
-task people do on a phone. A part is not the web version on a small screen.
-It looks and behaves like an app and offers only what the phone task needs.
+task people do on a device. A part is not the web version on a small screen.
+It looks and behaves like an app and offers only what the task needs.
 
-The mobile app finds parts in the live app registry. People install nothing
+The Cloud app finds parts in the live app registry. People install nothing
 per application, and applications without a part do not appear in the app.
 Built-in and third-party applications use the same contract.
+
+On iPad, open `/pwa/` in Safari and choose **Share → Add to Home Screen**.
+Safari on iPadOS reports a Mac user agent, so the welcome page renders both
+the iPad steps and the computer hint. CSS selects the iPad steps with
+`(pointer: coarse)` before JavaScript runs. On a computer, use Cloud in the
+browser. To pair on the same iPad, copy the link from **App → Pair a device**
+on the web and paste it into the installed app.
 
 ## Declare a part
 
@@ -49,19 +56,46 @@ Cloud then:
 it, every signed-in person sees the part. The app has no `admin` role, so a part
 limited to administrators never appears.
 
+`badge` (optional) names a `GET` route of the application that answers like
+`nav.badge`, with `{ "count": n }`, for something that calls for attention,
+such as unread messages. The sidebar and the part's tab show the count as a
+mark; `0`, an error, or another answer shows none.
+
+`summary` (optional) names a `GET` route that says what waits in the part, as
+a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
+the part instead of its `description`, and the sidebar shows `count` quietly
+beside a part without a `badge`. Write `text` in the request's locale, as one
+line of at most 200 characters, such as "5 tasks for you · 1 today". Until the
+route answers, or when it fails, Start shows the `description`.
+
+Both routes are read once a minute and when the app returns to the
+foreground, and must be among the application's own paths. Chat answers both
+from one route; Spaces only summarizes:
+
+```ts
+// Chat
+pwa: { requiresRoles: ["user"], badge: "/api/chat/conversations/unread-count", summary: "/api/chat/conversations/unread-count" },
+// Spaces
+pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary" },
+```
+
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
-[Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app).
+[Define an application](/en/docs/build/define-app#add-pages-to-the-cloud-app).
 
 Spaces adds its "My tasks" page this way, as an example of a list with a quick
-action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
+action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-cloud-app). Chat
+adds `/pwa/chat` with its chats and one conversation, as an example of a list
+beside its detail with a composer at the bottom edge. Its archive and channel
+search also stay below `/pwa/chat`; reloading preserves the selected list,
+search, and open thread.
 
 ## Paths
 
 | Path | Owner |
 | --- | --- |
-| `/pwa/` | The mobile app: Start, the manifest scope |
-| `/pwa/settings`, `/pwa/offline` | The mobile app |
-| `/pwa/_auth/*` | Core: the phone's sign-in endpoints |
+| `/pwa/` | The Cloud app: Start, the manifest scope |
+| `/pwa/settings`, `/pwa/offline` | The Cloud app |
+| `/pwa/_auth/*` | Core: the device's sign-in endpoints |
 | `/pwa/<app-id>/*` | The application's part |
 | `/api/<app-id>/*` | The application's API, used by the part as on the web |
 
@@ -72,7 +106,7 @@ A part's application id consists of lowercase letters, digits, and hyphens and
 starts with a letter. The ids `pwa`, `settings`, and `offline` cannot declare a
 part. The gateway skips every other route below `/pwa`, also from applications
 that do not use `defineApp()`. See
-[Route conventions](/en/docs/reference/route-conventions#mobile-app-paths).
+[Route conventions](/en/docs/reference/route-conventions#cloud-app-paths).
 
 ## Serve pages
 
@@ -114,9 +148,9 @@ export default ssr<AuthContext>(async (c) => {
 
 | Case | Response |
 | --- | --- |
-| No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the phone to the same page |
+| No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the device to the same page |
 | No app session after that return (`pwa_launch` in the query) | `302` to `/pwa/?pwa=unavailable`, which stops a redirect loop |
-| Signed in without the required role | `403` page in the mobile app's layout |
+| Signed in without the required role | `403` page in the Cloud app's layout |
 
 Each of these responses sets `Cache-Control: private, no-store`. For other errors, call
 `ssr.error(c, status, { layout: "pwa" })`; see
@@ -130,7 +164,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 
 ### PwaLayout
 
-`PwaLayout` from `@k2b/cloud/ssr` frames every page in the mobile app:
+`PwaLayout` from `@k2b/cloud/ssr` frames every page in the Cloud app:
 
 | Prop | Meaning |
 | --- | --- |
@@ -199,7 +233,7 @@ a touch device, also with a trackpad.
 ### Only the app's session reaches a part
 
 Requests below `/pwa/`, except Core's `/pwa/_auth`, authenticate only with the
-mobile app's session, whatever the request type. A web session or an API key
+Cloud app's session, whatever the request type. A web session or an API key
 never reaches part content, so `auth.requireRole` on a part route already
 admits only the app. Parts need no extra middleware. See
 [Which session a request uses](/en/docs/identity/authentication#which-session-a-request-uses).
@@ -208,6 +242,63 @@ An app session resolves to the same `actor`, `accessSubject`, and
 `credentialKind: "session"` as a web session of the same person. It also
 carries `sessionKind: "app"`. Use `actor` for audit and `accessSubject` for
 grants, as on the web.
+
+## Restart at the last page
+
+Launching the Cloud app from the Home Screen resumes its last successful page,
+including its path and query below `/pwa/`. Tapping Start still opens Start.
+Signing out of the app or completing a new pairing resets the destination to
+Start. If access to the remembered page has changed, that page shows its own
+403 or 404.
+
+The shell handles this for every part. It remembers the address in the
+`pwa_last_address` cookie: `Path=/pwa/`, `Secure`, `SameSite=Lax`,
+with the pairing's 150-day idle lifetime. Each successful page writes its
+address when it arrives and again when the app leaves the foreground, so
+changes a part makes through browser history count too, as Spaces makes for
+task selections and filters. A page that is being left writes nothing, so it
+never replaces the next page's address or undoes a sign-out. It stores no
+credentials, fragments,
+auth endpoints, welcome states, or error pages. Without an app session, the
+launch bounce renews the session and validates the remembered destination.
+
+The manifest uses `/pwa/?launch` to distinguish a Home Screen launch from a
+Start link before rendering a page. Its existing `id: "/pwa/"` stays unchanged.
+Already installed apps need their browser to adopt the updated manifest. A
+browser that retains the old `/pwa/` start URL still opens Start while its app
+session is valid; without a session, it resumes through the launch bounce.
+Reinstalling adopts the new start URL when the browser does not update it.
+
+## Keep drafts
+
+Parts keep unsaved text with `pwaDrafts` from
+`@k2b/cloud/browser/pwa-drafts`. Key each field by the signed-in account's id
+and a stable field id, including the conversation or resource id when needed.
+Store only the text the person typed: no credentials, attachments, account
+objects, or server data.
+
+```ts
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
+
+// Restore after mounting, so SSR and the first browser render agree.
+const draft = pwaDrafts.read(accountId, "chat.composer:conversation-id");
+// On every input, including empty text:
+const kept = pwaDrafts.write(accountId, "chat.composer:conversation-id", text);
+// After a successful send/save, or an explicit discard:
+pwaDrafts.remove(accountId, "chat.composer:conversation-id");
+```
+
+An absent draft returns `undefined`; an empty draft returns `""`. Draft values
+are plain text in `localStorage` and survive the app being ended or reloaded.
+If `write` returns `false`, explain that this browser cannot keep the draft
+after the app closes. The helper protects the current document's text from
+automatic update reloads even then. Keep a failed save's draft and preserve any
+new text typed while a save or send was in flight.
+
+The shell uses this contract for the device name in Settings. The platform
+clears every account's app drafts on sign-out, a new pairing, or a server
+response that says the device was removed. Other browser storage is untouched.
+Parts do not need their own sign-out cleanup.
 
 ## Rules for parts
 
@@ -235,10 +326,10 @@ grants, as on the web.
 - Do not register a service worker, set `theme-color`, or add `position: fixed`
   or `sticky` layers at the top edge. The layout owns all three; iOS takes the
   status bar color from the top layer. The gateway answers `403` to a worker
-  script request below `/pwa` that does not go to the mobile app.
+  script request below `/pwa` that does not go to the Cloud app.
 - The server renders the initial data and decides permissions. Islands handle
   only the interaction. Views and filters live in the URL.
-- Design for the phone: one column, flat sections without boxes inside boxes
+- Design for the device: one column, flat sections without boxes inside boxes
   and without lines between rows or sections, one primary action per screen,
   targets of at least 44 px, nothing that needs hover, public `@k2b/ui`
   components, light and dark, and every language the application supports.
@@ -247,7 +338,7 @@ grants, as on the web.
 
 ## Touch gestures
 
-The mobile app feels like an app, as Cloud Login does. Pinch zoom is off,
+The Cloud app feels like an app, as Cloud Login does. Pinch zoom is off,
 including in dialogs, and touch scrolling stays available. The page itself
 never scrolls or bounces: the header and the tab bar stay in place, and only
 the content scrolls. Text fields use 16 px text, so iOS does not zoom into a
@@ -261,7 +352,7 @@ own gesture, such as a drag handle, sets its own `touch-action`.
 
 ## Offline and updates
 
-The mobile app's service worker handles only navigations below `/pwa/` and
+The Cloud app's service worker handles only navigations below `/pwa/` and
 caches nothing. Every page and every API response comes from the network.
 When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
@@ -279,12 +370,32 @@ the server kept and say why.
 Controls that the server renders before their island runs stay disabled until
 then, because a tap on them would do nothing.
 
-There is no update prompt. Each tab tap and each link loads a page from the
-network, so a new release of the part reaches the phone with the next page.
+### Pick up updates
 
-When the mobile app is not running, a request to a part still reaches the part,
+Each tab tap and link loads a fresh document from the network. An open app
+also checks release identities through its existing session keepalive, on
+returning from the background and hourly while visible. It compares the
+page owner's build and Core's shared-asset build with those used to render
+the document; an unrelated part's release does not make this page stale.
+Unnamed development builds do not identify a release.
+
+On returning to the foreground with a new version, the app reloads the current
+address when no field the person types into (text, numbers, dates, and times)
+is focused, no unsaved typing or account draft remains, and no modal dialog is
+open. Otherwise it shows a persistent quiet notice with the installation's
+name, such as **New version of Example Cloud · Reload** (**Neue Version von
+Example Cloud · Neu laden** in German), in the work area's toast rail. Its action reloads the current page; stored drafts
+restore after mounting. The hourly check offers the same notice and never
+interrupts work with an automatic reload. There is no extra polling.
+
+Parts use the draft helper for text they intend to save or send. For other
+text fields, automatic reloads also defer when input differs from the field's
+`defaultValue`; update that baseline after successfully saving. A field with
+focus always holds an automatic reload, even before the first keystroke.
+
+When the Cloud app is not running, a request to a part still reaches the part,
 but without an app session it ends at Core's not-found page. Nobody can pair a
-phone then.
+device then.
 
 ## Test a part
 
@@ -302,13 +413,13 @@ Cover the part at its own seams, as described in
 - **Safari:** run the behavior checks in WebKit with iPhone emulation, because
   iOS decides the status bar color and the zoom behavior.
 
-To try a part on a phone, run Cloud over HTTPS at the address set in the
-installation's URL setting, open `/me/app` on a computer, and pair the phone.
+To try a part on a device, run Cloud over HTTPS at the address set in the
+installation's URL setting, open `/me/app` on a computer, and pair the device.
 
 ## Speed budget
 
-The mobile app must feel like an app on a phone, also over a slow link such
-as a VPN. Every part keeps these limits:
+The Cloud app must feel like an app on every device, also over a slow link
+such as a VPN. Every part keeps these limits:
 
 | Interaction | Budget |
 | --- | --- |
@@ -326,7 +437,7 @@ result at once and saves in the background, as described in
 
 ### Judge loading speed
 
-Judge loading speed on a production build. In production, the phone's
+Judge loading speed on a production build. In production, the device's
 browser keeps stylesheets, scripts, and fonts in its cache, so a tab switch
 usually loads only its page. After an application restarts or updates, its
 first page loads its stylesheets again. A development stack serves the same
@@ -335,7 +446,7 @@ page. Over a slow or remote connection, such as a VPN, a tab switch then takes
 a second or more, while the same switch in production takes a few hundred
 milliseconds.
 
-Measure the budget with the performance harness. It pairs a throwaway phone
+Measure the budget with the performance harness. It pairs a throwaway device
 through the real pairing flow and times taps, tab switches, settings changes,
 check-off, back and forward, and relaunches in WebKit at iPhone and iPad sizes
 and in Chromium at phone and monitor sizes, with the HTTP cache state of

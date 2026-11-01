@@ -181,7 +181,7 @@ test("Project uploads preserve the typed malformed-image 422", async () => {
     description: "",
     icon: "",
     instructions: "",
-    defaultModelProfileId: null,
+    defaultModel: null,
     permission: "admin",
     revision: 1,
     createdAt: "2026-01-01T00:00:00Z",
@@ -207,4 +207,35 @@ test("Project uploads preserve the typed malformed-image 422", async () => {
     code: "MALFORMED_IMAGE",
     message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
   });
+});
+
+test("Project PATCH preserves omitted fields and rejects an empty update", async () => {
+  const project = {
+    id: projectId,
+    shortId: projectShortId,
+    name: "Project",
+    description: "Original",
+    icon: "ti ti-book",
+    instructions: "Original instructions",
+    defaultModel: null,
+    permission: "write" as const,
+    revision: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  spyOn(aiProjects, "getByShortId").mockResolvedValue(project);
+  const update = spyOn(aiProjects, "update").mockResolvedValue(project);
+  const routes = __buildAiProjectsRoutesForTest({ limit: pass, authenticate });
+  const patch = (body: unknown) =>
+    routes.request(`/${projectShortId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  expect((await patch({ description: "Changed" })).status).toBe(200);
+  expect(update.mock.calls[0]?.[2]).toEqual({ description: "Changed" });
+  expect((await patch({})).status).toBe(400);
+  expect(update).toHaveBeenCalledTimes(1);
+  expect((await patch({ instructions: "" })).status).toBe(200);
+  expect(update.mock.calls[1]?.[2]).toEqual({ instructions: "" });
 });

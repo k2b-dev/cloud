@@ -115,7 +115,8 @@ describe("Filesv2 interactions", () => {
     const secret = dom.document.querySelector<HTMLInputElement>('input[name="filegate-token"]')!;
     expect(secret.value).toBe("");
     expect(dom.root.textContent).toContain("Leave this blank to keep it");
-    expect(dom.root.textContent).toContain("Cloud files require local Linux identities");
+    expect(dom.root.textContent).toContain("Personal storage and local POSIX group folders require local Linux identities");
+    expect(dom.root.textContent).toContain("Independent machine storage uses explicit path grants and needs no Unix identity provisioning");
     const form = dom.root.querySelector("form")!;
     const submit = () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     const url = dom.root.querySelector<HTMLInputElement>('input[name="filegate-url"]')!;
@@ -168,7 +169,6 @@ describe("Filesv2 interactions", () => {
         createComponent(Browser, {
           directory,
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
           onOpenDirectory: (path) => (opened = path),
         }),
@@ -185,9 +185,10 @@ describe("Filesv2 interactions", () => {
     expect(new URL(next.href, "https://cloud.test").searchParams.get("after")).toBe("next/+=");
     rows[1]!.click();
     await flush();
-    const download = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    const download = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__header button")].find(
       (button) => button.textContent?.trim() === "Download",
     )!;
+    expect(download).toBeDefined();
     // The inspector preview already asked for a lease; only the explicit download is counted here.
     const before = requests.length;
     download.click();
@@ -250,7 +251,6 @@ describe("Filesv2 interactions", () => {
         createComponent(Browser, {
           directory,
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
         }),
       dom.root,
@@ -315,10 +315,7 @@ describe("Filesv2 interactions", () => {
       opened.push([String(url), target, features]);
       return features === "noopener" ? null : tab;
     }) as unknown as typeof dom.window.open;
-    const dispose = render(
-      () => createComponent(Browser, { directory, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {} }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(Browser, { directory, bases: [directory.base], onNavigate: async () => {} }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -330,8 +327,9 @@ describe("Filesv2 interactions", () => {
         await Bun.sleep(0);
       }
     };
+    // The panel keeps rarer commands in its "More actions" menu.
     const openInTab = () =>
-      [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__action")].find((action) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((action) =>
         action.textContent?.includes("Open in new tab"),
       )!;
 
@@ -405,7 +403,6 @@ describe("Filesv2 interactions", () => {
         createComponent(Browser, {
           directory: listing,
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
         }),
       dom.root,
@@ -415,7 +412,7 @@ describe("Filesv2 interactions", () => {
       globalThis.fetch = originalFetch;
       dom.cleanup();
     };
-    const actions = () => [...dom.root.querySelectorAll(".k2b-detail-panel__action")].map((action) => action.textContent?.trim());
+    const actions = () => [...dom.root.querySelectorAll('[role="menuitem"]')].map((action) => action.textContent?.trim());
 
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(notPdf.name))!.click();
     await flush();

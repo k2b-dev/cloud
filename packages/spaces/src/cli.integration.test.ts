@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 import { newShortId } from "./lib/short-id";
@@ -97,7 +97,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       managesGroupIds: [],
     };
     userId = user.id;
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     await migrate();
     await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user', 'Cli Agent')`;
 

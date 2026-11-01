@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { PULSE_INTERNAL_INGEST_BATCH_LIMIT } from "../ingest-limits";
 import { baseStore } from "../store/base-store";
 import { requireBaseActive } from "./access-control";

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { OverviewNumberSchema, readOverviewNumber } from "../overview-number";
 import { sqlParameterNames } from "../sql-params";

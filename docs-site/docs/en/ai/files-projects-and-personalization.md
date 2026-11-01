@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-12
+updated: 2026-10-31
 ---
 
 # Files, Projects, Skills, and personalization
@@ -226,6 +226,24 @@ below `references/`, export it, or manage its Cloud access. `read` access can
 view and use a Skill, `write` can edit it, and `admin` can also share or delete
 it. The final admin grant cannot be removed.
 
+Project and Skill services require an `AiResourceContext` from `@k2b/cloud/ai`:
+pass `{ actor, accessSubject }` from the authenticated request or capability
+context to every service call, including creation. Skill calls also retain their
+resolved `RequestAuthority` argument (or `authority` list option) for app-entry
+checks; missing authority denies Skills whose app declares an access rule. Standalone and agent accounts
+use their own grants; their credential's `read`, `write`, or `admin` scope caps
+the granted permission. Creating a Project or Skill needs `write` or `admin`.
+Scopes alone grant no resource access. Resource-bound credentials cannot access
+Projects or user-owned Skills. They can read an app Skill belonging to their
+bound app when app access, credential scopes, and a Skill grant all allow it.
+An independent machine with an app-prefixed scope, such as `notebooks:read`,
+can also read that app's Skills with app access and a Skill grant. These broker
+permissions allow reads only, even with a write or admin grant or app scope.
+User and user-delegated requests retain the user's grants.
+User, group, authenticated-audience, standalone-account, and agent admin grants
+can keep a resource manageable when another admin grant is removed. Delegated
+and resource-bound account grants cannot replace the last manager.
+
 If the sole Skill administrator is removed outside the Skill service, a
 platform administrator can restore access under **Administration > AI Skills**. The
 same recovery surface can grant access to or permanently delete any Skill.
@@ -246,6 +264,26 @@ a differing Cloud Skill; pull first to keep Cloud changes, or use `push <dir> --
 to replace it. Pull defaults to `.agents/skills/<name>` in the current folder.
 `cld assistant reference` explains skipped files and `--force`.
 
+Manage direct grants with `cld assistant skills access list <name-or-id>` and
+`grant`, `set`, or `revoke`. The same commands exist under
+`cld assistant projects access`. For example:
+
+```bash
+cld assistant skills access grant weekly-status --service-account "Release agent" --permission read
+cld assistant projects access set "Release notes" --service-account <account-uuid> --permission write
+cld assistant skills access revoke weekly-status --access-id <grant-id> --yes
+```
+
+Use `--user`, `--group`, `--service-account`, or `--authenticated` to choose
+one recipient. Names require directory access; use the recipient's UUID when
+that access is unavailable. `access search-principals <query>` uses the same
+directory policy. `set` creates or updates a direct grant. Revoking needs `--yes`.
+
+Skill HTTP management, including these CLI writes, requires a user-backed actor
+and Core app access. The list and read routes broker access through the Skill's
+grant and its owning app. Machine callers use the supported service or capability
+contract for Skill mutations; their credential scopes still cap each operation.
+
 With `disable-model-invocation: true`, a Skill starts only when a person
 selects it with `/`. It stays out of the model catalog and `search_skills`,
 while remaining available in the slash menu. Later turns can reload a selected
@@ -262,7 +300,7 @@ request and exposes the omitted entries through `search_skills`. The slash menu 
 It supports partial words and minor typos, prioritizes name matches, and excludes
 disabled Skills before limiting results. Skill instructions and references are
 not searched or loaded during discovery. Server callers use
-`aiSkills.search(accessSubject, query, limit, { modelInvocableOnly })` and receive
+`aiSkills.search({ actor, accessSubject }, query, limit, { modelInvocableOnly })` and receive
 `{ skills, more }`. Set `modelInvocableOnly: true` for model discovery; omit it
 to include manual-only Skills for explicit selection.
 `GET /api/ai/skills?q=…` uses this search
@@ -289,6 +327,23 @@ A Skill names app operations by their stable qualified capability ID, such as
 `mail.conversation.list`. Assistant can pass that ID directly to `load_tools`;
 `search_tools` remains for finding an operation the Skill does not already
 identify.
+
+The optional `load-tools` frontmatter field lists the tools a Skill needs for
+most requests: 1 to 25 unique capability IDs or built-in tool names.
+`load_skill` loads them together with the instructions, so Assistant can call
+them in its next step without a separate `load_tools` round. They pass the same
+checks as `load_tools`: a tool outside the chat's tool scope, a routine's
+grants, or the live app catalog is reported as unavailable with its reason, and
+the model's tool limit still applies. The list grants nothing; every call is
+authorized as usual. It comes from the pinned `SKILL.md`, like the
+instructions. Skills a person selects with `/` and local Skills load no tools
+this way.
+
+```yaml
+load-tools:
+  - mail.search
+  - mail.conversation.read
+```
 
 The first successful load pins one Skill revision for that turn, including
 retries, so an edit cannot change an in-progress result. A later turn sees the
@@ -624,9 +679,11 @@ Cloud composes the system prompt in this order:
    current user message when it is clear and otherwise uses that locale. It
    shows dates and times in the runtime time zone, also in drafts and Skills
    it writes, unless the user asks for another zone such as UTC. When the turn
-   offers `calculate`, every amount, sum, or other number the model derives
-   itself must come from it; numbers that a tool, file, or code result returns
-   are stated as returned. With app tools, a reference to earlier work outside
+   offers `calculate`, every amount, sum, percentage, or multi-step result the
+   model derives itself must come from it; simple relative dates such as
+   tomorrow and known facts need no call, and numbers that a tool, file, or
+   code result returns are stated as returned. The model stops as soon as the
+   request is done. With app tools, a reference to earlier work outside
    the current chat, such as "like last time", goes to `core.ai.chats.search`
    first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
@@ -668,7 +725,7 @@ there either. The preview in **Assistant settings > System prompt** and
   routine offer, as described in
   [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
   otherwise the offer is a concrete next step that saves the user real work.
-  The model makes no offer for simple facts, while asking or waiting for
+  The model makes no offer for simple requests or facts, while asking or waiting for
   approval, after a failure, after a reply that already ended with one, once
   the user declined, or when the user asked for no suggestions or only a short
   answer. A request to shorten a draft does not count as that. It never
@@ -717,9 +774,29 @@ tool result uses that result. A crash before result persistence can repeat the
 provider call; it cannot overwrite another call's artifact or a file edited
 since creation. Artifact collisions fail explicitly.
 
-See [Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
+See [Models and providers](/en/docs/ai/models-and-providers#assign-classes-and-tools)
 for container and provider limits. Normal file storage limits do not imply
 that an audio endpoint accepts the same input size.
+
+## Store Studio app files
+
+Studio app files are shared by everyone who can use the app. They have a
+separate budget from personal and shared JSON storage. By default, a file can
+contain up to 50 MiB and each app has 250 MiB of shared file storage. Operators
+can change these limits in Studio administration; each binary transfer remains
+limited to 64 MiB. The `cloud.files.write` runtime API additionally limits each
+payload to 16 MiB.
+
+The total file budget counts payload bytes plus the PostgreSQL size of each
+file's key and media-type metadata record. Empty files are supported and consume
+metadata space. Listed file sizes show payload bytes only. Replacing a file
+replaces its quota charge, and deletion releases that charge.
+
+Existing files remain readable after an operator lowers a limit or after an
+upgrade changes accounting. A replacement may exceed a lowered limit only when
+it does not increase the corresponding usage: payload size for the per-file
+limit, or payload plus metadata for the total budget. To add more data after
+`STORAGE_FULL`, delete files or ask the operator to increase the budget.
 
 ## Explicit file transfers
 

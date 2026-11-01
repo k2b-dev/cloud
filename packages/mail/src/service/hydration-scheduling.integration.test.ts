@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
-import { sql } from "bun";
 import type { FetchMessageObject } from "imapflow";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
@@ -233,7 +232,6 @@ suite("mail body hydration scheduling", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-hydration-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

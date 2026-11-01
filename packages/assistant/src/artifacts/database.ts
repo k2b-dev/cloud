@@ -1,13 +1,14 @@
+import { createSql, sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
-import { createAllowedNetworkFetch } from "@k2b/cloud/services";
+import { audit, createAllowedNetworkFetch } from "@k2b/cloud/services";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
-import { SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { app } from "../config";
-import { appEnv } from "../env";
 import { LIMITS } from "./contracts";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { databaseConfigLock } from "./database-lock";
@@ -24,10 +25,13 @@ import {
 } from "./database-runtime";
 import { safeQuery } from "./database-sql";
 import { CHECK_LIMITS } from "./html/check-contracts";
+import { machineDataRight } from "./machine-authority";
 import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
-export const rsqlAllowlist = () => parseNetworkAllowlistEnv("ASSISTANT_RSQL_ALLOWED_TARGETS", appEnv.ASSISTANT_RSQL_ALLOWED_TARGETS);
+/** The internal rsql targets in use, or a draft list that a connection test or save checks before storing it. */
+export const rsqlAllowlist = async (draft?: string[]) =>
+  parseNetworkAllowlistEnv("assistant.rsql_allowed_targets", draft ?? (await app.settings.get("assistant.rsql_allowed_targets")));
 
 export class DatabaseError extends Error {
   constructor(
@@ -44,7 +48,12 @@ function admin(identity: ArtifactIdentity) {
 async function config() {
   return { url: await app.settings.get("assistant.rsql_url"), token: await app.settings.get("assistant.rsql_api_token") };
 }
-function connection(c: { url: string; token: string }, signal?: AbortSignal, streaming = false) {
+function connection(
+  c: { url: string; token: string; allowedTargets?: string[] },
+  signal?: AbortSignal,
+  streaming = false,
+  authorize?: () => Promise<void>,
+) {
   if (!c.url || !c.token) throw new DatabaseError("DB_NOT_CONFIGURED", 409, "The app database service is not configured.");
   const address = new URL(c.url);
   if (!["http:", "https:"].includes(address.protocol) || address.username || address.password || address.search || address.hash)
@@ -54,6 +63,8 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
     token: c.token,
     fetch: Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
+        await authorize?.();
+        signal?.throwIfAborted();
         const deadline = new AbortController();
         const timer = streaming ? setTimeout(() => deadline.abort(), 15000) : undefined;
         const timeout = streaming ? deadline.signal : AbortSignal.timeout(15000);
@@ -63,7 +74,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
         if (input instanceof Request) signals.push(input.signal);
         let response: Response;
         try {
-          response = await createAllowedNetworkFetch(rsqlAllowlist())(input, {
+          response = await createAllowedNetworkFetch(await rsqlAllowlist(c.allowedTargets))(input, {
             ...init,
             redirect: "error",
             signal: AbortSignal.any(signals),
@@ -74,7 +85,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
             throw new DatabaseError(
               "DB_TARGET_BLOCKED",
               502,
-              "The rsql server address is on an internal network. An operator can allow it with ASSISTANT_RSQL_ALLOWED_TARGETS.",
+              "The rsql server address is on an internal network. An operator can allow it with assistant.rsql_allowed_targets.",
             );
           throw new DatabaseError(timeout.aborted ? "DB_TIMEOUT" : "DB_UNREACHABLE", 502);
         } finally {
@@ -107,12 +118,13 @@ function result<T>(r: RsqlResult<T>): T {
 const generation = (namespace: string) => new Bun.CryptoHasher("sha256").update(namespace).digest("hex");
 // A separate, single-connection pool cannot queue behind callers holding App
 // locks in the ordinary pool. This query never takes an App/config lock.
-const mutationIntents = new SQL({ max: 1, connectionTimeout: 15 });
+let mutationIntentPool: SQL | undefined;
+const mutationIntents = () => (mutationIntentPool ??= createSql({ max: 1, connectionTimeout: 15 }));
 // Called while the owning App row is locked. Commit the intent separately so
 // a timeout, upstream failure or process crash still invalidates earlier reviews.
 // No mapping row is locked/updated by the surrounding transaction on this path.
 async function markDataMutation(id: string) {
-  await mutationIntents`UPDATE assistant.artifact_databases SET data_revision=gen_random_uuid() WHERE artifact_id=${id}::uuid`;
+  await mutationIntents()`UPDATE assistant.artifact_databases SET data_revision=gen_random_uuid() WHERE artifact_id=${id}::uuid`;
 }
 const CheckColumn = z.object({
   name: z.string(),
@@ -152,6 +164,7 @@ type CheckTable = z.infer<typeof CheckTable>;
 export const artifactDatabase = {
   /** Stable source definitions, never row counts or namespace identity. */
   async checkDefinitions(id: string, identity: ArtifactIdentity, signal?: AbortSignal, transaction?: SQL): Promise<CheckTable[]> {
+    user(identity);
     const read = async (db: SQL) => {
       const { row } = await requireArtifact(db, id, identity, "read");
       const [mapping] = await db<
@@ -176,6 +189,7 @@ export const artifactDatabase = {
     return transaction ? read(transaction) : sql.begin(read);
   },
   async copyForCheck(from: string, to: string, identity: ArtifactIdentity, signal: AbortSignal, transaction: SQL): Promise<string[]> {
+    user(identity);
     const tables = await this.checkDefinitions(from, identity, signal, transaction);
     const [original] = await transaction<
       { namespace: string; connected: boolean }[]
@@ -244,6 +258,7 @@ export const artifactDatabase = {
     return schemaOnly ? [`Database copied as schema only: more than ${CHECK_LIMITS.rows} rows or ${CHECK_LIMITS.copyBytes} bytes.`] : [];
   },
   async status(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    user(identity);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -273,6 +288,7 @@ export const artifactDatabase = {
     });
   },
   async reset(id: string, expectedGeneration: string | null, identity: ArtifactIdentity, expectedDataRevision?: string | null) {
+    user(identity);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -291,6 +307,7 @@ export const artifactDatabase = {
     });
   },
   async clear(id: string, expectedGeneration: string, expectedDataRevision: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    user(identity);
     signal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15000)]);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
@@ -334,6 +351,7 @@ export const artifactDatabase = {
     });
   },
   async export(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    user(identity);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -349,18 +367,23 @@ export const artifactDatabase = {
     admin(identity);
     const url = await app.settings.read("assistant.rsql_url");
     const token = await app.settings.read("assistant.rsql_api_token");
+    const targets = await app.settings.read("assistant.rsql_allowed_targets");
     return {
       url: url.value,
       tokenSet: token.stored !== "unreadable" && Boolean(token.value),
+      allowedTargets: targets.value,
       unreadable: {
         "assistant.rsql_url": url.stored === "unreadable",
         "assistant.rsql_api_token": token.stored === "unreadable",
+        "assistant.rsql_allowed_targets": targets.stored === "unreadable",
       },
     };
   },
   async configure(input: unknown, identity: ArtifactIdentity, testOnly = false) {
     admin(identity);
     const next = DatabaseSettings.parse(input);
+    const invalidTargets = next.allowedTargets === undefined ? undefined : validateNetworkAllowlist(next.allowedTargets);
+    if (invalidTargets) throw new DatabaseError("DB_TARGETS_INVALID", 400, invalidTargets);
     await sql.begin(async (db) => {
       await db`SELECT pg_advisory_xact_lock(hashtext('assistant-rsql-settings'))`;
       const states = { url: await app.settings.read("assistant.rsql_url"), token: await app.settings.read("assistant.rsql_api_token") };
@@ -375,6 +398,15 @@ export const artifactDatabase = {
         )
           throw new SettingUnreadableError(key);
       }
+      // The list in use applies to a test; only replacing an unreadable stored list needs confirmation.
+      const targets = await app.settings.read("assistant.rsql_allowed_targets");
+      if (
+        !testOnly &&
+        targets.stored === "unreadable" &&
+        next.allowedTargets !== undefined &&
+        !next.replaceUnreadable?.includes("assistant.rsql_allowed_targets")
+      )
+        throw new SettingUnreadableError("assistant.rsql_allowed_targets");
       const current = { url: states.url.value, token: states.token.value },
         url = next.url ?? current.url,
         token = next.token ?? current.token;
@@ -389,7 +421,8 @@ export const artifactDatabase = {
       }
       const knownUrl = next.url !== undefined || states.url.stored !== "unreadable";
       const knownToken = next.token !== undefined || states.token.stored !== "unreadable";
-      if (knownUrl && knownToken && (url || token)) result(await connection({ url, token }).namespaces.list({ limit: 1 }));
+      if (knownUrl && knownToken && (url || token))
+        result(await connection({ url, token, allowedTargets: next.allowedTargets }).namespaces.list({ limit: 1 }));
       if (testOnly) return;
       if (next.url !== undefined)
         await set("assistant.rsql_url", next.url, db, {
@@ -399,15 +432,30 @@ export const artifactDatabase = {
         await set("assistant.rsql_api_token", next.token, db, {
           replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_api_token") === true,
         });
+      if (next.allowedTargets !== undefined)
+        await set("assistant.rsql_allowed_targets", next.allowedTargets, db, {
+          replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_allowed_targets") === true,
+        });
+      await audit.record(
+        {
+          action: "assistant.database.configure",
+          outcome: "allowed",
+          actor: { userId: user(identity)?.id },
+          metadata: { fields: Object.keys(next) },
+        },
+        db,
+      );
     });
     if (testOnly) return { connected: true };
     await invalidateSettingsCache([
       ...(next.url !== undefined ? ["assistant.rsql_url"] : []),
       ...(next.token !== undefined ? ["assistant.rsql_api_token"] : []),
+      ...(next.allowedTargets !== undefined ? ["assistant.rsql_allowed_targets"] : []),
     ]);
     return this.settings(identity);
   },
   async connect(id: string, identity: ArtifactIdentity, signal?: AbortSignal, requireManage = false) {
+    user(identity);
     const publicId = id;
     // Persist the intended namespace before any remote effect. A failed call
     // can be retried, and deletion can always find a partially created DB.
@@ -446,6 +494,7 @@ export const artifactDatabase = {
       const flat = FlatDatabaseRequest.parse(input);
       return this.runtime(id, flat, identity, signal);
     }
+    user(identity);
     const req = DatabaseRequest.parse(input);
     if (mode === "inspect" && !["tables.list", "schema.get", "rows.list", "query"].includes(req.operation))
       throw new DatabaseError("DB_SQL_UNSUPPORTED");
@@ -557,8 +606,20 @@ export const artifactDatabase = {
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       const resource = await requireArtifact(db, id, identity, "read");
+      await machineDataRight(
+        db,
+        resource.row.id,
+        resource.row.short_id,
+        identity,
+        "database",
+        !["query", "list", "get"].includes(req.operation),
+      );
       id = resource.row.id;
-      const upstream = connection(await config(), signal);
+      const upstream = connection(await config(), signal, false, async () => {
+        if (identity.actor.kind !== "service_account" || identity.actor.delegatedUser !== null) return;
+        await requireArtifact(db, resource.row.short_id, identity, "read");
+        await machineDataRight(db, id, resource.row.short_id, identity, "database", !["query", "list", "get"].includes(req.operation));
+      });
       const [mapping] = await db<
         { namespace: string; connected: boolean }[]
       >`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
@@ -588,7 +649,7 @@ export const artifactDatabase = {
         );
       let schema = TableSchema.parse(result(await client.tables.get(req.table)));
       const missing = ["created_by", "updated_by"].filter((name) => !schema.columns.some((column) => column.name === name));
-      if (missing.length) {
+      if (missing.length && (identity.actor.kind !== "service_account" || identity.actor.delegatedUser !== null)) {
         await markDataMutation(id);
         result(await client.tables.update(req.table, { add_columns: missing.map((name) => ({ name, type: "text" })) }));
         schema = TableSchema.parse(result(await client.tables.get(req.table)));
@@ -609,7 +670,10 @@ export const artifactDatabase = {
         );
       else if (req.operation === "get") output = await get(req.id);
       else {
-        const requester = user(identity).id;
+        const requester =
+          identity.actor.kind === "service_account" && identity.actor.delegatedUser === null
+            ? `service_account:${identity.actor.serviceAccount.id}`
+            : user(identity).id;
         const previous = req.operation === "insert" ? null : await get(req.id);
         checkRowWrite(tableWrite(schema), requester, resource.permission === "admin", req.operation, previous);
         if (req.operation !== "insert" && !previous) return req.operation === "delete" ? false : null;

@@ -1,10 +1,14 @@
+import { sql } from "@k2b/cloud";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CloudResourceView,
   capabilityPage,
+  DiscussionContainersDataSchema,
+  DiscussionContainersInputSchema,
   defineCapabilities,
   type MutationResult,
+  type ResourceReadableInput,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
@@ -13,7 +17,11 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
+import { annotationActions, annotationQueries } from "./annotation-capabilities";
+import { notebooksEvents } from "./app-events";
 import {
+  ActivityDataSchema,
+  ActivityInputSchema,
   CommentBrowseDataSchema,
   CommentCreateInputSchema,
   CommentDataSchema,
@@ -51,7 +59,9 @@ import { notebookCapabilityMessages } from "./capability-messages";
 import { notebooksCapabilityPresentation } from "./capability-presentation";
 import { NoteComposeInputSchema } from "./commands";
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
-import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
+import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID, readableNotebookPrincipals } from "./service/access";
+import * as activity from "./service/activity";
+import { notebookActivityRow } from "./service/activity-timeline";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
 import { loadBookBlockPreview } from "./service/book";
 import * as commentStore from "./service/comments";
@@ -182,7 +192,9 @@ const authorizeNotebook = async (notebook: Notebook, context: CapabilityExecutio
   const ids = principalIds(context);
   const granted = await notebookStore.getPermission({ notebookId: notebook.id, ...ids });
   const permission = granted === "none" ? "none" : effectivePermission(granted, context);
-  return hasPermission(permission, required) ? ok({ notebook, permission }) : capabilityNotFound(t.notebookNotFound);
+  return permission !== "none" && hasPermission(permission, required)
+    ? ok({ notebook, permission })
+    : capabilityNotFound(t.notebookNotFound);
 };
 
 const requireNotebook = async (notebookId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
@@ -206,6 +218,40 @@ const requireNoteByShortId = async (shortId: string, context: CapabilityExecutio
   if (!note) return capabilityNotFound(t.noteNotFound);
   const access = await requireNotebook(note.notebookId, context, required);
   return access.ok ? ok({ note, notebook: access.data.notebook, permission: access.data.permission }) : capabilityNotFound(t.noteNotFound);
+};
+
+export const runNotebookActivity = async (input: z.output<typeof ActivityInputSchema>, context: CapabilityExecutionContext) => {
+  const container = input.container ?? input.notebook;
+  if (!container) return fail(err.badInput("A container is required"));
+  const access = await requireNotebookByShortId(container, context);
+  if (!access.ok) return access;
+  const note = input.item ? await requireNoteByShortId(input.item, context) : null;
+  if (note && (!note.ok || note.data.note.notebookId !== access.data.notebook.id))
+    return capabilityNotFound(capabilityMessages(context).noteNotFound);
+  try {
+    context.signal.throwIfAborted();
+    const page = await activity.list({
+      ...principalIds(context),
+      notebookId: access.data.notebook.id,
+      noteId: note?.ok ? note.data.note.id : undefined,
+      timeline: true,
+      before: input.before,
+      after: input.after,
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+    const data = page.items.map((event) => notebookActivityRow(event, { viewer: activityActor(context), locale: context.locale }));
+    const result = (count: number) => ({
+      data: data.slice(0, count),
+      page: capabilityPage(count < data.length ? page.items[count - 1]!.cursor : page.nextCursor),
+    });
+    let count = data.length;
+    while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+    return ok(result(count));
+  } catch (error) {
+    if (error instanceof activity.InvalidActivityCursorError) return fail(err.badInput(capabilityMessages(context).invalidCursor));
+    throw error;
+  }
 };
 
 const mapNotebook = (notebook: Notebook, permission: Exclude<PermissionLevel, "none">) => ({
@@ -290,7 +336,7 @@ const noteEditOperationReview = (operation: NoteEditOperation, locale?: string):
       effect = t.replaceCompleteNote;
       break;
     case "append":
-      effect = t.appendToNote;
+      effect = operation.separator === "none" ? t.appendExactlyToNote : t.appendToNote;
       break;
     case "prepend":
       effect = t.prependToNote;
@@ -447,7 +493,10 @@ const runNotebookRead = async (input: z.infer<typeof NotebookReadInputSchema>, c
   const access = await requireNotebookByShortId(input.id, context);
   if (!access.ok) return access;
   return ok({
-    data: mapNotebook(access.data.notebook, access.data.permission as Exclude<PermissionLevel, "none">),
+    data: {
+      ...mapNotebook(access.data.notebook, access.data.permission as Exclude<PermissionLevel, "none">),
+      view: { title: access.data.notebook.name.slice(0, 500), permission: access.data.permission, context: t.notebook },
+    },
     summary: t.readNotebook({ name: access.data.notebook.name }),
     refs: [notebookRef(access.data.notebook)],
     links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
@@ -534,6 +583,20 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
   const result = {
     data: {
       ...mapNote(note, resolved.data.notebook.shortId, await resolveParentShortId(note)),
+      view: {
+        title: note.title.slice(0, 500),
+        context: t.noteInNotebook({ notebook: resolved.data.notebook.name }).replace(/\s+/g, " ").trim().slice(0, 200),
+        permission: resolved.data.permission,
+        container: {
+          ref: { type: "notebooks.notebook", id: resolved.data.notebook.shortId },
+          title: resolved.data.notebook.name.slice(0, 500),
+        },
+      },
+      container: {
+        ref: { type: "notebooks.notebook" as const, id: resolved.data.notebook.shortId },
+        name: resolved.data.notebook.name.slice(0, 200),
+        permission: resolved.data.permission,
+      },
       content: content.slice(input.contentOffset, end),
       contentOffset: input.contentOffset,
       contentLength: content.length,
@@ -547,7 +610,13 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocksTruncated: blocks.length > 500,
     },
     summary: t.readNote({ title: note.title }),
-    refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
+    refs: [
+      {
+        ...noteRef(note, resolved.data.notebook.name),
+        context: t.noteInNotebook({ notebook: resolved.data.notebook.name }).replace(/\s+/g, " ").trim().slice(0, 200),
+      },
+      notebookRef(resolved.data.notebook),
+    ],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   };
   while (notebookEnvelopeBytes(result) > ENVELOPE_DATA_BUDGET) {
@@ -1047,7 +1116,21 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
   );
 };
 
+const readableNotebook = async (input: ResourceReadableInput) => {
+  const notebook = await notebookStore.getByShortId({ shortId: input.id });
+  return notebook ? readableNotebookPrincipals(notebook.id, input.principals) : [];
+};
+const readableNote = async (input: ResourceReadableInput) => {
+  if (input.container?.type !== "notebooks.notebook") return [];
+  const [[note], notebook] = await Promise.all([
+    sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE short_id = ${input.id}`,
+    notebookStore.getByShortId({ shortId: input.container.id }),
+  ]);
+  return note && notebook && note.notebook_id === notebook.id ? readableNotebookPrincipals(notebook.id, input.principals) : [];
+};
+
 export const notebooksCapabilities = defineCapabilities({
+  events: notebooksEvents,
   protocolVersion: 2,
   commands: {
     "note.compose": {
@@ -1060,21 +1143,66 @@ export const notebooksCapabilities = defineCapabilities({
   },
   presentation: notebooksCapabilityPresentation,
   types: {
+    annotation: {
+      title: "Comment",
+      description: "A comment on a passage of a note's text, with replies and an optional suggestion.",
+      icon: "ti ti-message",
+      reader: "annotation.read",
+    },
     notebook: {
       title: "Notebook",
       description: "A permission-scoped collection of Markdown notes.",
       icon: "ti ti-notebook",
       reader: "notebook.read",
+      access: { readable: readableNotebook },
+      pages: ["/app/notebooks/:id"],
     },
-    note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
+    note: {
+      title: "Note",
+      description: "A Markdown note in an accessible notebook.",
+      icon: "ti ti-file-text",
+      color: "violet",
+      reader: "note.read",
+      container: "notebook",
+      access: { readable: readableNote },
+      pages: ["/app/notebooks/:notebook/notes/:id"],
+    },
     comment: {
-      title: "Note comment",
-      description: "Durable discussion context attached to one accessible note.",
+      title: "Page discussion post",
+      description: "A post in the page discussion of one accessible note, not tied to a passage.",
       icon: "ti ti-message",
       reader: "comment.read",
     },
   },
+  discussions: { item: "note", containers: "notebook.containers", activity: "notebook.activity" },
   queries: {
+    "notebook.containers": {
+      title: "List discussion containers",
+      description: "List containers the caller can read, with opaque pagination.",
+      input: DiscussionContainersInputSchema,
+      data: DiscussionContainersDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const result = await runNotebookList({ ...input, minimumPermission: "read" }, context);
+        if (!result.ok) return result;
+        return ok({
+          data: {
+            items: result.data.data.map((container) => ({ ref: container.ref, title: container.name.slice(0, 500) })),
+            next: result.data.page?.hasMore ? result.data.page.nextCursor : null,
+          },
+        });
+      },
+    },
+    ...annotationQueries,
+    "notebook.activity": {
+      title: "Read note activity",
+      description:
+        "Read a newest-first page of authorized note changes in one notebook, optionally for one note. Sentences use the caller's locale, one row per recorded edit bucket. Comments and deleted notes are omitted. Follow page.nextCursor with cursor; before and after are exclusive time bounds.",
+      input: ActivityInputSchema,
+      data: ActivityDataSchema,
+      openWorld: false,
+      run: runNotebookActivity,
+    },
     "note.preview": {
       title: "Check note blocks",
       description:
@@ -1172,7 +1300,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runNoteLinks,
     },
     "comment.list": {
-      title: "List note comments",
+      title: "List page discussion",
       description:
         "List complete Markdown comments for one known note, newest first. A response may contain fewer than limit to fit the transport budget; always follow page.nextCursor. Prefer comment.browse to select comments before reading full bodies.",
       input: CommentListInputSchema,
@@ -1181,7 +1309,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentList,
     },
     "comment.browse": {
-      title: "Browse comment previews",
+      title: "Browse page discussion previews",
       description:
         "Select discussion context using short previews, newest first. Follow page.nextCursor; read the full text of any previewTruncated item with comment.read using ref.id.",
       input: CommentListInputSchema,
@@ -1190,7 +1318,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentBrowse,
     },
     "comment.read": {
-      title: "Read note comment",
+      title: "Read page discussion post",
       description: "Read one notebooks.comment ref returned by comment.list after checking access to its parent note.",
       input: CommentReadInputSchema,
       data: CommentDataSchema,
@@ -1217,8 +1345,9 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...annotationActions,
     "comment.update": {
-      title: "Edit note comment",
+      title: "Edit page discussion post",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentUpdateInputSchema,
       data: CommentDataSchema,
@@ -1238,7 +1367,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentUpdate,
     },
     "comment.delete": {
-      title: "Delete note comment",
+      title: "Delete page discussion post",
       description: "Delete the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentDeleteInputSchema,
       data: CommentDeleteDataSchema,
@@ -1258,7 +1387,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentDelete,
     },
     "comment.create": {
-      title: "Add note comment",
+      title: "Add page discussion post",
       description: "Add Markdown discussion context to one writable note as the current user.",
       input: CommentCreateInputSchema,
       data: CommentDataSchema,

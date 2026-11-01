@@ -1,5 +1,6 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { groupDisplayName } from "@k2b/cloud/shared";
-import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
 
@@ -15,6 +16,7 @@ type ManagersTabProps = {
   groupProvider: "ipa" | "local";
   allManagerIds: string[];
   allManagerGroupIds: string[];
+  allManagerServiceAccountIds?: string[];
   canManage: boolean;
   isAdmin: boolean;
   groupHref: (groupId: string) => string;
@@ -26,7 +28,8 @@ type ManagersTabProps = {
 export default function ManagersTab(props: ManagersTabProps) {
   const messages = useAccountsMessages();
   const locale = useLocale();
-  const isEmpty = props.items.length === 0;
+  // The total decides: an empty page of a non-empty list is not an empty list.
+  const isEmpty = props.pagination.total === 0;
   const columns: DataTableColumn<EntityListItem>[] = [
     { id: "type", header: messages().type, value: (item) => item.kind, cellClass: "whitespace-nowrap" },
     {
@@ -76,10 +79,13 @@ export default function ManagersTab(props: ManagersTabProps) {
               searchGroups={props.isAdmin}
               excludeUserIds={props.allManagerIds}
               excludeGroups={props.allManagerGroupIds}
+              excludeServiceAccountIds={props.allManagerServiceAccountIds}
             />
           ) : undefined
         }
       />
+
+      {props.groupProvider === "local" && <p class="text-sm text-dimmed">{messages().machineManagementHint}</p>}
 
       {isEmpty ? (
         <Placeholder surface="paper" icon="ti ti-users-group" description={<>{messages().noManagers}</>} />
@@ -158,11 +164,12 @@ export default function ManagersTab(props: ManagersTabProps) {
                         ? messages().agent
                         : messages().resourceBound;
                 const href = props.isAdmin ? `/app/accounts/service-accounts?search=${encodeURIComponent(serviceAccount.name)}` : undefined;
-                if (col.id === "type") return <span class="text-dimmed">{messages().serviceAccount}</span>;
+                if (col.id === "type")
+                  return <span class="text-dimmed">{serviceAccount.kind === "agent" ? messages().agent : messages().serviceAccount}</span>;
                 if (col.id === "name") {
                   const content = (
                     <>
-                      <Avatar name={serviceAccount.name} icon="ti ti-user-key" size="xs" />
+                      <CloudAvatar username={serviceAccount.name} userId={serviceAccount.id} kind="service_account" size="xs" />
                       <span class="truncate font-medium">{serviceAccount.name}</span>
                     </>
                   );
@@ -175,6 +182,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                   );
                 }
                 if (col.id === "detail") {
+                  if (serviceAccount.kind === "agent" || serviceAccount.kind === "standalone") return <span class="text-dimmed">—</span>;
                   const content = (
                     <span class="block truncate" title={serviceAccount.appId || messages().noAppId}>
                       {serviceAccount.appId || <span class="italic">{messages().noAppId}</span>}
@@ -188,7 +196,24 @@ export default function ManagersTab(props: ManagersTabProps) {
                     <span class="text-dimmed">{content}</span>
                   );
                 }
-                if (col.id === "access") return <Tag>{kindLabel}</Tag>;
+                if (col.id === "access")
+                  return (
+                    <Tag>
+                      {serviceAccount.kind === "agent" || serviceAccount.kind === "standalone"
+                        ? messages().machineManagementAccess
+                        : kindLabel}
+                    </Tag>
+                  );
+                if (col.id === "actions")
+                  return props.canManage ? (
+                    <RemoveMember
+                      groupId={props.groupId}
+                      membershipRole="managers"
+                      type="service_account"
+                      id={serviceAccount.id}
+                      label={serviceAccount.name}
+                    />
+                  ) : null;
                 return null;
               }
 

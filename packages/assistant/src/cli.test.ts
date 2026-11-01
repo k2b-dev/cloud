@@ -685,7 +685,7 @@ describe("assistant CLI", () => {
         userId: "22222222-2222-4222-8222-222222222222",
         memoryEnabled: body && typeof body === "object" && "memoryEnabled" in body ? body.memoryEnabled : true,
         memoryLearningEnabled: body && typeof body === "object" && "memoryLearningEnabled" in body ? body.memoryLearningEnabled : false,
-        lastModelId: "model-1",
+        selection: null,
       });
     };
 
@@ -715,7 +715,7 @@ describe("assistant CLI", () => {
         turnId: "turn-1",
         attempt: 1,
         seq: 1,
-        modelProfileId: "model-1",
+        modelId: "model-1",
         providerModel: "provider/model",
       },
       {
@@ -883,20 +883,20 @@ describe("assistant CLI", () => {
       ),
     );
     const { ctx, stdout } = createContext([], async (path, init) => {
-      if (path === "/api/ai/status") {
+      if (path === "/api/ai/status" || path === "/api/ai/models") {
         return json({
-          defaultModelId: "model-1",
-          models: [
-            { id: "model-1", label: "Model One", provider: "provider", model: "one", capabilities: [] },
-            { id: "model-2", label: "Model Two", provider: "provider", model: "two", capabilities: [] },
-          ],
+          status: "ok",
+          selection: null,
+          effectiveDefault: { id: "model-1" },
+          classes: [],
+          options: ["One", "Two"].map((name, index) => ({
+            id: `model-${index + 1}`,
+            label: `Model ${name}`,
+            description: "",
+            icon: { kind: "mark", text: "T", color: "test" },
+            classes: [],
+          })),
         });
-      }
-      if (path === "/api/ai/models") {
-        return json([
-          { id: "model-1", label: "Model One", provider: "provider", model: "one", capabilities: [] },
-          { id: "model-2", label: "Model Two", provider: "provider", model: "two", capabilities: [] },
-        ]);
       }
       if (path === "/api/ai/conversations") return json({ id: "chat-1", title: "New chat" }, 201);
       if (path === "/api/ai/conversations/chat-1/stream") return streams[streamIndex++]!;
@@ -919,14 +919,14 @@ describe("assistant CLI", () => {
     expect(turnBodies).toEqual([
       {
         draftRevision: 1,
-        modelProfileId: "model-2",
+        model: { id: "model-2" },
         clientToolIds: LOCAL_CLIENT_TOOL_IDS,
         client: localClient,
         localContext: noLocalContext,
       },
       {
         draftRevision: 2,
-        modelProfileId: "model-2",
+        model: { id: "model-2" },
         clientToolIds: LOCAL_CLIENT_TOOL_IDS,
         client: localClient,
         localContext: noLocalContext,
@@ -935,7 +935,7 @@ describe("assistant CLI", () => {
     const output = stdout.join("");
     expect(output).toContain("Assistant · Model One · /help for commands");
     expect(output).toContain("Select a model:");
-    expect(output).toContain("2. Model Two · provider · two");
+    expect(output).toContain("2. Model Two");
   });
 
   test("recognizes an approval already present in the initial stream state", async () => {
@@ -1499,7 +1499,7 @@ describe("assistant CLI", () => {
       icon: "ti ti-folders",
       permission: "admin",
       revision: 1,
-      defaultModelProfileId: null,
+      defaultModel: null,
       createdAt: "2026-08-04T00:00:00.000Z",
       updatedAt: "2026-08-04T00:00:00.000Z",
     });
@@ -1520,7 +1520,7 @@ describe("assistant CLI", () => {
       icon: "ti ti-folders",
       permission: "admin",
       revision: 1,
-      defaultModelProfileId: null,
+      defaultModel: null,
       createdAt: "2026-08-04T00:00:00.000Z",
       updatedAt: "2026-08-04T00:00:00.000Z",
     });
@@ -1643,6 +1643,7 @@ test.each(["explicit", "temporary"])("code check saves every chat output locally
   let input: unknown,
     closed = false;
   const host = spyOn(codeHost, "createCliCodeHost").mockResolvedValue({
+    machine: async () => null,
     health: async () => {},
     execute: async (call) => {
       input = call.args;
@@ -1694,4 +1695,36 @@ test("code check rejects an empty --out and documents the temporary directory de
   await assistantCli.run(help.ctx);
   expect(help.stdout.join("")).toContain("--out");
   expect(help.stdout.join("")).toContain("new printed temp directory");
+});
+
+test("Studio administration confirms before input and keeps malformed credential input out of errors", async () => {
+  let calls = 0;
+  const fetcher: CloudCliContext["fetch"] = async () => {
+    calls++;
+    return json({ saved: true });
+  };
+  for (const command of ["configure", "storage-configure", "grant", "change-grant"]) {
+    const context = createContext(
+      [
+        "studio-admin",
+        command,
+        ...(["grant", "change-grant"].includes(command) ? ["Abc234"] : []),
+        ...(command === "change-grant" ? ["entry"] : []),
+      ],
+      fetcher,
+    );
+    context.ctx.flags = { input: "{}" };
+    await expect(assistantCli.run(context.ctx)).rejects.toThrow("--yes");
+  }
+  const context = createContext(["studio-admin", "configure"], fetcher);
+  context.ctx.flags = { input: '{"token":"private"}', yes: true };
+  await expect(assistantCli.run(context.ctx)).rejects.toThrow("--input-file or --stdin");
+  context.ctx.flags = { stdin: true, yes: true };
+  const stdin = spyOn(Bun.stdin, "text").mockResolvedValue('{"token":"private"oops}');
+  try {
+    await expect(assistantCli.run(context.ctx)).rejects.toThrow("Input must be valid JSON.");
+  } finally {
+    stdin.mockRestore();
+  }
+  expect(calls).toBe(0);
 });

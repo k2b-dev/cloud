@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import { migrateCloudAi } from "../../ai/migrate";
@@ -7,6 +6,7 @@ import { aiConversations, recordAiToolReview } from "../../ai/store";
 import { createDeviceActions } from "../../api/app-approval-actions";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 import { type ApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
 import { readApprovalContent } from "./content";
 
@@ -30,7 +30,7 @@ databaseSuite()("pending approval lists", () => {
     const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Write a letter" });
     const { turn } = await aiConversations.submitChatTurn({
       conversationId: chat.id,
-      modelProfileId: "mock",
+      modelId: "mock",
       runConfig: { kind: "chat", input: "Write a letter" },
       userMessage: { role: "user", content: [{ type: "text", text: "Write a letter" }] },
     });

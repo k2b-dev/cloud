@@ -2,11 +2,10 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { handleSoftNoteNavigationRequests } from "../soft-navigation";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
-import { markdownExtension } from "./markdown";
 
 describe("editor links", () => {
   if (isServer) {
@@ -16,14 +15,16 @@ describe("editor links", () => {
 
   const mount = async (doc: string, readOnly = false) => {
     const dom = createDomTestHarness();
+    const { markdownExtension, refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
+    const { notebookUrlOptions } = await import("./notebook-options");
     // The link widgets load the shared UI, which needs the browser globals of the harness.
-    const { linksExtension } = await import("./links");
+    const { linksExtension } = await import("@k2b/editor/markdown");
     const view = new EditorView({
       parent: dom.root,
       state: EditorState.create({
         doc,
         selection: { anchor: doc.length },
-        extensions: [markdownExtension(), linksExtension("Nb12Cd"), readOnly ? EditorState.readOnly.of(true) : []],
+        extensions: [markdownExtension(), linksExtension(notebookUrlOptions("Nb12Cd")), readOnly ? EditorState.readOnly.of(true) : []],
       }),
     });
     forceParsing(view, doc.length, 5000);

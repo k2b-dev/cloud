@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { defineApp, notification } from "..";
 import { createAppApprovalRoutes } from "../api/app-approval";
@@ -182,7 +182,7 @@ const pair = async (owner: Person, phone = new Jar(), platform: "ios" | "android
   return { phone, deviceId, pairingId: started.id };
 };
 
-suite("mobile app pairing and app sessions", () => {
+suite("Cloud app pairing and app sessions", () => {
   let previousUrl: unknown;
   beforeAll(async () => {
     previousUrl = await settings.get("app.url");
@@ -201,6 +201,162 @@ suite("mobile app pairing and app sessions", () => {
     if (typeof previousUrl === "string") await settings.set("app.url", previousUrl);
     invalidateIdentityRuntimeConfig();
     if (users.length) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users)}::uuid[])`;
+  });
+
+  const startFor = (admin: Person, owner: Person) => call(admin.web, "POST", `${PWA_API_PATH}/users/${owner.id}/pairings`);
+  const decide = (device: Jar, confirmationToken: string, decision: "confirm" | "reject") =>
+    call(device, "POST", `${PWA_AUTH_PATH}/pairings/decision`, { body: { confirmationToken, decision } });
+  const adminPairing = async () => {
+    const admin = await person({ admin: true, name: "Admin Example" });
+    const owner = await person();
+    const device = new Jar();
+    const started = await typed<{ id: string; secret: string }>(await startFor(admin, owner));
+    const claimed = await typed<{ code: string }>(await claim(device, started.secret));
+    return { admin, owner, device, started, claimed };
+  };
+
+  test("only a fresh administrator web sign-in can start pairing for an active person", async () => {
+    const admin = await person({ admin: true });
+    const owner = await person();
+    expect((await startFor(owner, owner)).status).toBe(403);
+    await expect(pwaDevices.startUserPairing({ userId: owner.id, sid: owner.sid, admin: true }, admin.id)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    const app = await createTestAppSession(admin.id);
+    expect((await call(new Jar({ pwa_session: app.token }), "POST", `${PWA_API_PATH}/users/${owner.id}/pairings`)).status).toBe(403);
+    expect(
+      (await call(admin.web, "POST", `${PWA_API_PATH}/users/${owner.id}/pairings`, { headers: { Authorization: "Bearer api-key" } }))
+        .status,
+    ).toBe(403);
+    await sql`UPDATE auth.session_families SET issued_at = now() - interval '11 minutes' WHERE sid = ${admin.sid}::uuid`;
+    expect(await json(await startFor(admin, owner))).toMatchObject({ code: "REAUTHENTICATE" });
+    await sql`UPDATE auth.session_families SET issued_at = now() WHERE sid = ${admin.sid}::uuid`;
+    await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${owner.id}::uuid`;
+    const blocked = await startFor(admin, owner);
+    expect(blocked.status).toBe(403);
+    expect(await json(blocked)).toMatchObject({ code: "ACCOUNT_BLOCKED" });
+    await sql`UPDATE auth.users SET account_expires = NULL, profile = 'guest' WHERE id = ${owner.id}::uuid`;
+    await settings.set("user.category.guest.enabled", false);
+    expect((await startFor(admin, owner)).status).toBe(403);
+  });
+
+  test("administrative pairing shares the open pairing limit of the target account", async () => {
+    const admin = await person({ admin: true });
+    const owner = await person();
+    for (let n = 0; n < PWA_LIMITS.pendingPerAccount; n++) expect((await startFor(admin, owner)).status).toBe(201);
+    const limited = await startFor(admin, owner);
+    expect(limited.status).toBe(429);
+    expect(await json(limited)).toMatchObject({ code: "LIMIT_REACHED" });
+    expect((await call(owner.web, "POST", `${PWA_API_PATH}/pairings`)).status).toBe(429);
+  });
+
+  test("administrative completion keeps the target's active device limit", async () => {
+    const { admin, owner, device, started, claimed } = await adminPairing();
+    await sql`INSERT INTO auth.pwa_devices (id, user_id, name, platform, auth_epoch, secret_hash, rotated_at)
+      SELECT gen_random_uuid(), u.id, 'Existing device', 'other', u.auth_epoch, ${"0".repeat(64)}, now()
+      FROM auth.users u CROSS JOIN generate_series(1, ${PWA_LIMITS.devicesPerAccount}) WHERE u.id = ${owner.id}::uuid`;
+    await confirm(admin, started.id, claimed.code);
+    const shown = await typed<{ confirmationToken: string }>(await complete(device));
+    expect((await decide(device, shown.confirmationToken, "confirm")).status).toBe(204);
+    const result = await complete(device);
+    expect(result.status).toBe(429);
+    expect(await json(result)).toMatchObject({ code: "LIMIT_REACHED" });
+    expect(device.get("pwa_device")).toBeUndefined();
+    expect(sent).toEqual([]);
+  });
+
+  test("three wrong administrator codes end the pairing and issue no device", async () => {
+    const { admin, owner, device, started, claimed } = await adminPairing();
+    for (const left of [2, 1, 0]) {
+      const response = await confirm(admin, started.id, wrong(claimed.code));
+      expect(response.status).toBe(left ? 409 : 410);
+      expect(await json(response)).toMatchObject({ code: left ? "WRONG_CODE" : "EXPIRED", attemptsLeft: left });
+    }
+    expect((await complete(device)).status).toBe(410);
+    expect(await pwaDevices.listUserDevices({ userId: admin.id, admin: true }, owner.id)).toEqual([]);
+  });
+
+  test("the claimed device must fetch and explicitly accept its own post-code confirmation before credentials exist", async () => {
+    const { admin, owner, device, started, claimed } = await adminPairing();
+    expect((await decide(device, "A".repeat(43), "confirm")).status).toBe(403);
+    expect((await confirm(owner, started.id, claimed.code)).status).toBe(404);
+    expect((await confirm(admin, started.id, claimed.code)).status).toBe(204);
+    const status = await json(await call(admin.web, "GET", `${PWA_API_PATH}/pairings/${started.id}`));
+    expect(status).toMatchObject({ state: "awaiting_device" });
+    expect(status).not.toHaveProperty("confirmationToken");
+    expect(status).not.toHaveProperty("code");
+    const prompt = await complete(device);
+    expect(prompt.status).toBe(202);
+    expect(prompt.headers.getSetCookie().some((c) => c.startsWith("pwa_device=") || c.startsWith("pwa_session="))).toBeFalse();
+    const shown = await typed<{ confirmationToken: string; state: string; account: { name: string }; administrator: { name: string } }>(
+      prompt,
+    );
+    expect(shown).toMatchObject({
+      state: "confirmation_required",
+      account: { name: "Ada Example" },
+      administrator: { name: "Admin Example" },
+    });
+    expect(device.get("pwa_device")).toBeUndefined();
+    expect(sent).toEqual([]);
+    expect((await decide(new Jar(), shown.confirmationToken, "confirm")).status).toBe(410);
+    const another = await adminPairing();
+    expect((await confirm(another.admin, another.started.id, another.claimed.code)).status).toBe(204);
+    expect((await decide(another.device, shown.confirmationToken, "confirm")).status).toBe(403);
+    const again = await complete(device);
+    expect(again.status).toBe(202);
+    const latest = await typed<{ confirmationToken: string }>(again);
+    expect((await decide(device, shown.confirmationToken, "confirm")).status).toBe(403);
+    expect((await decide(device, latest.confirmationToken, "confirm")).status).toBe(204);
+    expect((await decide(device, latest.confirmationToken, "confirm")).status).toBe(204);
+    deliver = sendNotice;
+    expect((await complete(device)).status).toBe(200);
+    expect(await json(await probe(device))).toMatchObject({ userId: owner.id, kind: "app" });
+    const deviceId = device.get("pwa_device")!.split(".")[0]!;
+    expect(sent).toEqual([expect.objectContaining({ deviceId, userId: owner.id, pairedBy: { userId: admin.id, name: "Admin Example" } })]);
+    const notices = await sql<{ recipient_user_id: string }[]>`SELECT recipient_user_id FROM notifications.events
+      WHERE definition_id = ${noticeApp.notifications.paired.id} AND idempotency_key = ${deviceId}`;
+    expect(notices).toEqual([{ recipient_user_id: owner.id }]);
+    expect(await pwaDevices.listUserDevices({ userId: admin.id, admin: true }, admin.id)).toEqual([]);
+    const events = await sql<{ action: string; actor_user_id: string; metadata: Record<string, unknown> }[]>`
+      SELECT action, actor_user_id, metadata FROM audit.events
+      WHERE target_id IN (${started.id}, ${deviceId}) AND action IN ('auth.pwa.pairing.start', 'auth.pwa.pairing.confirm', 'auth.pwa.pairing.device_confirm', 'auth.pwa.device.enroll')`;
+    expect(events).toHaveLength(4);
+    for (const event of events) {
+      expect(event.actor_user_id).toBe(event.action === "auth.pwa.pairing.device_confirm" ? owner.id : admin.id);
+      expect(event.metadata).toMatchObject({ targetUserId: owner.id, administratorUserId: admin.id });
+    }
+  });
+
+  test("rejecting on the device pairs nothing and audits both identities", async () => {
+    const { admin, owner, device, started, claimed } = await adminPairing();
+    await confirm(admin, started.id, claimed.code);
+    const shown = await typed<{ confirmationToken: string }>(await complete(device));
+    expect((await decide(device, shown.confirmationToken, "reject")).status).toBe(204);
+    expect((await decide(device, shown.confirmationToken, "reject")).status).toBe(204);
+    expect((await decide(device, shown.confirmationToken, "confirm")).status).toBe(409);
+    expect(await json(await complete(device))).toEqual({ state: "rejected" });
+    expect(await json(await call(admin.web, "GET", `${PWA_API_PATH}/pairings/${started.id}`))).toMatchObject({ state: "rejected" });
+    expect(device.get("pwa_device")).toBeUndefined();
+    expect(device.get("pwa_session")).toBeUndefined();
+    expect(await pwaDevices.listUserDevices({ userId: admin.id, admin: true }, owner.id)).toEqual([]);
+    expect(sent).toEqual([]);
+    const [event] = await sql<
+      { actor_user_id: string; metadata: Record<string, unknown> }[]
+    >`SELECT actor_user_id, metadata FROM audit.events WHERE target_id = ${started.id} AND action = 'auth.pwa.pairing.reject'`;
+    expect(event).toMatchObject({ actor_user_id: owner.id, metadata: { targetUserId: owner.id, administratorUserId: admin.id } });
+  });
+
+  test("device acceptance stops working when the administrator signs out or loses the role, or the target expires", async () => {
+    for (const change of ["signout", "role", "expiry"] as const) {
+      const { admin, owner, device, started, claimed } = await adminPairing();
+      await confirm(admin, started.id, claimed.code);
+      const shown = await typed<{ confirmationToken: string }>(await complete(device));
+      if (change === "signout") await sql`UPDATE auth.session_families SET revoked_at = now() WHERE sid = ${admin.sid}::uuid`;
+      if (change === "role") await sql`UPDATE auth.users SET admin = false WHERE id = ${admin.id}::uuid`;
+      if (change === "expiry") await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${owner.id}::uuid`;
+      expect((await decide(device, shown.confirmationToken, "confirm")).status).toBe(change === "expiry" ? 403 : 410);
+      expect(device.get("pwa_device")).toBeUndefined();
+    }
   });
 
   test("a link pairing with the typed code yields a device key and an app session that other apps accept", async () => {
@@ -227,8 +383,10 @@ suite("mobile app pairing and app sessions", () => {
     expect(await json(waiting)).toMatchObject({ state: "waiting", code: claimed.code });
 
     expect((await confirm(owner, started.id, claimed.code)).status).toBe(204);
+    phone.cookies.set("pwa_last_address", { value: encodeURIComponent("/pwa/spaces?view=mine"), path: "/pwa/", attributes: "" });
     const completed = await complete(phone);
     expect(completed.status).toBe(200);
+    expect(phone.get("pwa_last_address")).toBeUndefined();
     expect(completed.headers.get("cache-control")).toBe("no-store");
     expect(completed.headers.get("referrer-policy")).toBe("no-referrer");
     expect(phone.get("pwa_pairing")).toBeUndefined();
@@ -337,7 +495,7 @@ suite("mobile app pairing and app sessions", () => {
     expect(body).not.toContain('"device"');
   });
 
-  test("without the mobile app nothing pairs or renews, while removal and sign-out still work", async () => {
+  test("without the Cloud app nothing pairs or renews, while removal and sign-out still work", async () => {
     const owner = await person();
     const { phone, deviceId } = await pair(owner);
     shell = false;
@@ -479,7 +637,7 @@ suite("mobile app pairing and app sessions", () => {
     expect((await complete(first)).status).toBe(200);
     expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
     await sql`UPDATE auth.pwa_devices SET rotated_at = now() - interval '2 minutes' WHERE id = ${deviceId}::uuid`;
-    expect(await json(await renew(first))).toEqual({ renewed: true });
+    expect(await json(await renew(first))).toMatchObject({ renewed: true });
     expect((await probe(first)).status).toBe(200);
 
     // A retry re-checks the account like the first completion.
@@ -533,7 +691,7 @@ suite("mobile app pairing and app sessions", () => {
 
     // Renewal rotates the key and a lost completion answer recovers the phone: neither is a new phone.
     phone.cookies.delete("pwa_session");
-    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: true });
     expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
     expect(sent).toHaveLength(1);
     expect(await announce(owner.id)).toEqual([]);
@@ -632,13 +790,13 @@ suite("mobile app pairing and app sessions", () => {
     const { phone, deviceId } = await pair(owner);
     const [before] = await sql<{ last_login_local: Date }[]>`SELECT last_login_local FROM auth.users WHERE id = ${owner.id}::uuid`;
 
-    expect(await json(await renew(phone))).toEqual({ renewed: false });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: false });
     const oldKey = phone.get("pwa_device")!;
     const oldSession = phone.get("pwa_session")!;
 
     // Due: the app session is gone, so Core issues a new family and a new key.
     phone.cookies.delete("pwa_session");
-    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: true });
     const newKey = phone.get("pwa_device")!;
     expect(newKey).not.toBe(oldKey);
     expect(phone.get("pwa_session")).not.toBe(oldSession);
@@ -649,19 +807,19 @@ suite("mobile app pairing and app sessions", () => {
 
     // A parallel request with the previous key within the grace: no action.
     const stale = new Jar({ pwa_device: oldKey });
-    expect(await json(await renew(stale))).toEqual({ renewed: false });
+    expect(await json(await renew(stale))).toMatchObject({ renewed: false });
     // After the grace, the previous key recovers the phone once more, audited.
     await sql`UPDATE auth.pwa_devices SET rotated_at = now() - interval '2 minutes' WHERE id = ${deviceId}::uuid`;
-    expect(await json(await renew(stale))).toEqual({ renewed: true });
+    expect(await json(await renew(stale))).toMatchObject({ renewed: true });
     const [recover] = await sql`SELECT 1 FROM audit.events WHERE action = 'auth.pwa.device.recover' AND target_id = ${deviceId}`;
     expect(recover).toBeDefined();
 
     // The newest key confirms itself and retires the previous one.
     const latest = new Jar({ pwa_device: stale.get("pwa_device")! });
-    expect(await json(await renew(latest))).toEqual({ renewed: true });
+    expect(await json(await renew(latest))).toMatchObject({ renewed: true });
     expect(latest.get("pwa_device")).not.toBe(stale.get("pwa_device"));
     const confirmed = new Jar({ pwa_device: latest.get("pwa_device")!, pwa_session: latest.get("pwa_session")! });
-    expect(await json(await renew(confirmed))).toEqual({ renewed: false });
+    expect(await json(await renew(confirmed))).toMatchObject({ renewed: false });
     const replay = await renew(new Jar({ pwa_device: stale.get("pwa_device")! }));
     expect(replay.status).toBe(401);
     expect(await json(replay)).toMatchObject({ code: "UNPAIRED" });
@@ -720,10 +878,14 @@ suite("mobile app pairing and app sessions", () => {
     expect((await launch(phone, "https://evil.example.test/")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
     expect((await launch(phone, "/pwa/_auth/session/renew")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
     expect((await launch(phone, "/pwa//evil.example.test")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
-    expect((await launch(new Jar())).headers.get("location")).toBe("/pwa/?pwa=new");
+    const unpaired = new Jar();
+    expect((await launch(unpaired)).headers.get("location")).toBe("/pwa/?pwa=new");
+    expect(unpaired.get("pwa_ended")).toBeUndefined();
     const ended = new Jar({ pwa_device: `${crypto.randomUUID()}.${"D".repeat(43)}` });
     expect((await launch(ended)).headers.get("location")).toBe("/pwa/?pwa=ended");
     expect(ended.get("pwa_device")).toBeUndefined();
+    // Only this answer lets the next page delete the app's drafts.
+    expect(ended.get("pwa_ended")).toBe("1");
     await settings.set("user.category.login.enabled", false);
     try {
       expect((await launch(phone)).headers.get("location")).toBe("/pwa/?pwa=blocked");
@@ -756,7 +918,7 @@ suite("mobile app pairing and app sessions", () => {
     const other = await person({ name: "Grace Example" });
     const { phone } = await pair(owner, new Jar(), "android");
     phone.cookies.set("session_token", { value: other.token, path: "/", attributes: "" });
-    expect(await json(await renew(phone))).toEqual({ renewed: false, otherAccount: { name: "Grace Example" } });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: false, otherAccount: { name: "Grace Example" } });
   });
 
   test("renewal concurrent with signing out everywhere does not deadlock", async () => {
@@ -778,10 +940,12 @@ suite("mobile app pairing and app sessions", () => {
     expect((await call(owner.web, "DELETE", `${PWA_API_PATH}/devices/${crypto.randomUUID()}`)).status).toBe(404);
 
     const unpaired = await pair(owner);
+    unpaired.phone.cookies.set("pwa_last_address", { value: "/pwa/spaces?view=mine", path: "/pwa/", attributes: "" });
     unpaired.phone.cookies.set("pwa_pairing", { value: "left-over", path: `${PWA_AUTH_PATH}/pairings`, attributes: "" });
     expect((await call(unpaired.phone, "DELETE", `${PWA_AUTH_PATH}/session`)).status).toBe(204);
     expect(unpaired.phone.get("pwa_session")).toBeUndefined();
     expect(unpaired.phone.get("pwa_pairing")).toBeUndefined();
+    expect(unpaired.phone.get("pwa_last_address")).toBeUndefined();
     const [row] = await sql<
       { revocation_reason: string }[]
     >`SELECT revocation_reason FROM auth.pwa_devices WHERE id = ${unpaired.deviceId}::uuid`;
@@ -912,7 +1076,7 @@ suite("mobile app pairing and app sessions", () => {
       SELECT signing_kid FROM auth.session_families WHERE user_id = ${owner.id}::uuid AND pwa_device_id IS NOT NULL LIMIT 1`;
     await revokeIdentitySigningKey({ kid: family!.signing_kid, reason: "pwa integration test" });
     expect((await probe(phone)).status).toBe(401);
-    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: true });
     expect((await probe(phone)).status).toBe(200);
   });
 });

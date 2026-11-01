@@ -865,7 +865,7 @@ export const mailSearchWorkStatusSchema = z
 export const mailSearchAssigneeSchema = z
   .object({
     type: z.literal("assignee").describe("Assignee search expression."),
-    userId: z.string().uuid().nullable().describe("Assigned user UUID, or null for unassigned conversations."),
+    userId: z.string().uuid().nullable().describe("Assigned user or service-account UUID, or null for unassigned conversations."),
   })
   .strict();
 export const mailSearchSnoozedSchema = z
@@ -910,7 +910,7 @@ export const mailSearchUnreadSchema = publicMailSearchReferences.unread;
 export const mailSearchFlaggedSchema = publicMailSearchReferences.flagged;
 export const mailSearchLocalTagIdSchema = publicMailSearchReferences.tag;
 export const mailSearchAssignedToMeSchema = z
-  .object({ type: z.literal("assigned_to_me").describe("Match conversations assigned to the current user.") })
+  .object({ type: z.literal("assigned_to_me").describe("Match conversations assigned to the current principal.") })
   .strict();
 
 const MAX_BOOLEAN_TREE_DEPTH = 8;
@@ -1852,6 +1852,70 @@ export const workflowJsonValueSchema = z
 export const validateWorkflowInputSchema = z.object({ source: workflowSourceSchema }).strict();
 export type ValidateWorkflowInput = z.infer<typeof validateWorkflowInputSchema>;
 
+export const tryWorkflowInputSchema = z
+  .object({
+    source: workflowSourceSchema.optional(),
+    workflowId: z.string().uuid().optional(),
+    last: z.number().int().min(1).max(100).default(50),
+    cursor: z.string().max(20_000).nullable().optional(),
+    batch: z.number().int().min(1).max(25).default(10),
+  })
+  .strict()
+  .refine((input) => (input.source !== undefined) !== (input.workflowId !== undefined), {
+    message: "Provide exactly one of source or workflowId",
+  });
+export type TryWorkflowInput = z.input<typeof tryWorkflowInputSchema>;
+const workflowAiCallsSchema = z.object({ min: z.number().int().nonnegative(), max: z.number().int().nonnegative() });
+const workflowTryProblemCodeSchema = z.enum(["target_no_access", "target_missing", "effect_not_allowed"]);
+export const workflowTryPreflightSchema = z.object({
+  targets: z.array(
+    z.object({
+      kind: z.enum(["user", "group", "folder"]),
+      value: z.string(),
+      ok: z.boolean(),
+      problem: z.enum(["target_no_access", "target_missing"]).nullable(),
+    }),
+  ),
+  sends: z.boolean(),
+  writesDrafts: z.boolean(),
+  aiSteps: z.number().int().nonnegative(),
+});
+export const workflowTryItemSchema = z.object({
+  messageId: ResourceShortIdSchema,
+  conversationId: ResourceShortIdSchema,
+  from: z.object({ name: z.string().nullable(), email: z.string() }),
+  subject: z.string(),
+  receivedAt: z.string(),
+  outcome: z.enum(["match", "skipped", "none"]),
+  reason: z.object({ code: z.enum(["excluded", "already_assigned", "upper_rule"]), field: z.string().optional() }).nullable(),
+  facts: z.array(z.object({ path: z.string(), value: z.union([z.number(), z.boolean(), z.string(), z.null()]) })),
+  effects: z.array(
+    z.object({
+      kind: z.string(),
+      ai: z.boolean(),
+      params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+      dependsOnAi: z.boolean(),
+    }),
+  ),
+  stoppedAtAi: z.boolean(),
+  problems: z.array(
+    z.object({ code: workflowTryProblemCodeSchema, path: z.array(z.union([z.string(), z.number()])), target: z.string().optional() }),
+  ),
+  aiCalls: workflowAiCallsSchema,
+});
+export const workflowTryResultSchema = z.object({
+  window: z.object({ last: z.number().int(), total: z.number().int() }),
+  cursor: z.string().nullable(),
+  checked: z.number().int().nonnegative(),
+  items: z.array(workflowTryItemSchema),
+  aiCalls: workflowAiCallsSchema,
+  maxAiCallsPerDay: z.number().int().positive().nullable(),
+  preflight: workflowTryPreflightSchema,
+});
+export type WorkflowTryResult = z.infer<typeof workflowTryResultSchema>;
+export type WorkflowTryItem = z.infer<typeof workflowTryItemSchema>;
+export type WorkflowTryPreflight = z.infer<typeof workflowTryPreflightSchema>;
+
 export const autocompleteWorkflowInputSchema = z
   .object({
     source: z.string().max(200_000),
@@ -2026,7 +2090,7 @@ export const updateConversationCollaborationSchema = z
       .array(z.uuid())
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .optional()
-      .describe("Replace the complete assignee set; an empty array clears it."),
+      .describe("User or service-account UUIDs. Replace the complete assignee set; an empty array clears it."),
     completion: z.enum(["done", "open"]).optional(),
     snoozedUntil: z.string().datetime().nullable().optional(),
   })
@@ -2050,11 +2114,11 @@ export const assignConversationsSchema = z
     assigneeUserIds: z
       .array(z.uuid())
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
-      .describe("Users to add, remove, or replace; replace with an empty array clears all assignees."),
+      .describe("User or service-account UUIDs to add, remove, or replace; replace with an empty array clears all assignees."),
     mode: z.enum(["add", "remove", "replace"]).describe("Add to, remove from, or replace each conversation’s assignee set."),
   })
   .strict()
-  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export type AssignConversations = z.infer<typeof assignConversationsSchema>;
 
 export const completeConversationsSchema = z
@@ -2375,7 +2439,7 @@ export const mailAutomationActionSchema = z.discriminatedUnion("kind", [
   // addLocalTag actions; they are stored as the public ID.
   z.object({ kind: z.literal("move_to_folder"), folderId: z.string().trim().min(1).max(500) }).strict(),
   z.object({ kind: z.literal("add_local_tag"), tagId: z.string().trim().min(1).max(500) }).strict(),
-  z.object({ kind: z.literal("assign_user"), userId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal("assign_user"), userId: z.string().uuid().describe("Eligible user or service-account UUID.") }).strict(),
   z.object({ kind: z.literal("set_status"), status: conversationWorkStatusSchema }).strict(),
 ]);
 export type MailAutomationAction = z.infer<typeof mailAutomationActionSchema>;
@@ -2814,8 +2878,10 @@ export const startIncomingAutomationBackfillInputSchema = z
     operationId: z.string().uuid(),
     expectedRevision: z.number().int().positive(),
     retryFailed: z.boolean().optional(),
+    recomputeAi: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((input) => !input.recomputeAi || input.retryFailed, "recomputeAi requires retryFailed");
 export type StartIncomingAutomationBackfillInput = z.infer<typeof startIncomingAutomationBackfillInputSchema>;
 
 export const incomingAutomationBackfillSchema = z
@@ -3358,6 +3424,13 @@ export const draftSchema = z.object({
   lastEditedByDisplayName: z.string().min(1),
   recoveryCopyCount: z.number().int().nonnegative(),
   revision: z.number().int().positive(),
+  /** Optional while release N accepts responses from older lock-only pods. */
+  editMode: z.enum(["lock", "shared"]).optional(),
+  restSourceDraftId: ResourceShortIdSchema.nullable().optional(),
+  generation: z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .optional(),
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   signatureTemplateId: ResourceShortIdSchema.nullable(),
@@ -3726,3 +3799,145 @@ export type ConnectorVerification = {
   limits: ProviderLimitSnapshot;
   accounts: RemoteAccount[];
 };
+
+// Mail's user-facing, conversation-scoped automation audit contract.
+const automationTargetSchema = z.object({ kind: z.enum(["user", "group", "service_account"]), id: z.string(), name: z.string() });
+export const automationLogEffectSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("assign"), target: automationTargetSchema }),
+  z.object({ kind: z.literal("unassign") }),
+  z.object({ kind: z.literal("tag"), name: z.string() }),
+  z.object({ kind: z.literal("untag"), name: z.string() }),
+  z.object({ kind: z.literal("move"), folder: z.string() }),
+  z.object({ kind: z.literal("archive") }),
+  z.object({ kind: z.literal("status"), status: conversationWorkStatusSchema }),
+  z.object({ kind: z.literal("read") }),
+  z.object({ kind: z.literal("unread") }),
+  z.object({ kind: z.literal("flag"), flag: z.enum(["answered", "flagged", "draft"]), present: z.boolean() }),
+  z.object({ kind: z.literal("keyword"), name: z.string(), present: z.boolean() }),
+  z.object({ kind: z.literal("comment") }),
+  z.object({ kind: z.literal("summary") }),
+]);
+const automationAiChoiceSchema = z.object({ kind: z.literal("ai_choice"), value: z.string(), choices: z.array(z.string()) });
+const automationAiValueSchema = z.object({
+  kind: z.literal("ai_value"),
+  field: z.string(),
+  value: z.union([z.string(), z.number(), z.boolean()]),
+  evidence: z.string().nullable(),
+});
+export const automationLogReasonSchema = z.discriminatedUnion("kind", [
+  automationAiChoiceSchema,
+  automationAiValueSchema,
+  z.object({ kind: z.literal("comparison"), text: z.string(), met: z.boolean() }),
+  z.object({ kind: z.literal("no_target"), choice: z.string() }),
+  z.object({ kind: z.literal("condition"), text: z.string() }),
+  z.object({ kind: z.literal("skipped_upper_rule"), workflowId: z.string().uuid(), name: z.string() }),
+  z.object({ kind: z.literal("already_assigned") }),
+  z.object({ kind: z.literal("undone_before") }),
+  z.object({
+    kind: z.literal("manual"),
+    before: z.object({ kind: z.enum(["user", "group"]), name: z.string(), byRule: z.string().nullable() }).nullable(),
+    after: z.object({ kind: z.enum(["user", "group"]), name: z.string() }).nullable(),
+  }),
+]);
+export const automationLogItemSchema = z.object({
+  id: z.string().uuid(),
+  at: z.string().datetime(),
+  conversation: z.object({
+    id: ResourceShortIdSchema,
+    subject: z.string(),
+    from: z.object({ name: z.string().nullable(), email: z.string() }),
+    href: z.string(),
+  }),
+  by: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("rule"),
+      workflowId: z.string().uuid(),
+      name: z.string(),
+      position: z.number().int().positive(),
+      version: z.number().int().positive(),
+      ai: z.boolean(),
+      href: z.string(),
+    }),
+    z.object({ kind: z.literal("person"), userId: z.string(), name: z.string() }),
+  ]),
+  outcome: z.enum(["assigned", "uncertain", "nobody", "skipped", "effects", "manual_change", "failed"]),
+  effects: z.array(automationLogEffectSchema),
+  reasons: z.array(automationLogReasonSchema),
+  undo: z.object({
+    state: z.enum(["available", "done", "not_possible", "none"]),
+    kept: z
+      .array(
+        z.object({
+          kind: z.enum(["assign", "unassign", "tag", "untag", "move", "archive", "status", "read", "unread", "flag", "keyword"]),
+          reason: z.enum(["changed_by_person", "gone"]),
+        }),
+      )
+      .optional()
+      .describe(
+        "Effects preserved by a partial undo; empty when every reversible effect was reverted. Legacy snapshots may omit this field.",
+      ),
+    reverted: z.array(automationLogEffectSchema).optional().describe("Effects actually reverted, or reapplied by redo."),
+    reason: z.enum(["changed_by_person", "conversation_gone", "provider_pending"]).nullable(),
+    by: z.object({ userId: z.string(), name: z.string() }).nullable(),
+    at: z
+      .string()
+      .datetime()
+      .nullable()
+      .describe("Undo time when done; latest known manual assignment-change time when not_possible/changed_by_person; otherwise null."),
+  }),
+});
+export const automationAuditStepSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("rule_start"),
+    name: z.string(),
+    version: z.number().int().positive(),
+    position: z.number().int().positive(),
+    preconditions: z.array(z.string()),
+  }),
+  automationAiChoiceSchema,
+  automationAiValueSchema,
+  z.object({
+    kind: z.literal("fixed_row"),
+    text: z.string(),
+    target: automationTargetSchema.pick({ kind: true, name: true }).nullable(),
+  }),
+  z.object({ kind: z.literal("result"), effects: z.array(automationLogEffectSchema), unchanged: z.array(z.string()) }),
+]);
+export const automationLogQuerySchema = z.object({
+  day: z.string().date().optional(),
+  filter: z.enum(["all", "assignments", "uncertain", "skipped", "manual"]).default("all"),
+  q: z.string().trim().max(200).optional(),
+  before: z.string().max(1000).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+});
+export const automationLogPageSchema = z.object({
+  day: z.string().date(),
+  counts: z.object({
+    all: z.number().int().nonnegative(),
+    assignments: z.number().int().nonnegative(),
+    uncertain: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+    manual: z.number().int().nonnegative(),
+  }),
+  items: z.array(automationLogItemSchema),
+  nextCursor: z.string().nullable(),
+});
+export const automationLogDetailSchema = automationLogItemSchema.extend({
+  chain: z.array(automationAuditStepSchema),
+  aiCalls: z.object({
+    run: z.number().int().nonnegative(),
+    today: z.number().int().nonnegative(),
+    limit: z.number().int().nonnegative().nullable(),
+  }),
+});
+export const automationLogUndoConflictSchema = z.object({
+  code: z.literal("mail.automation.undo_not_possible"),
+  reason: z.enum(["changed_by_person", "conversation_gone", "provider_pending"]),
+  item: automationLogItemSchema,
+});
+export type AutomationLogItem = z.infer<typeof automationLogItemSchema>;
+export type AutomationLogPage = z.infer<typeof automationLogPageSchema>;
+export type AutomationLogDetail = z.infer<typeof automationLogDetailSchema>;
+export type AuditStep = z.infer<typeof automationAuditStepSchema>;
+export type AutomationLogQuery = z.input<typeof automationLogQuerySchema>;
+export { type KeptConversationExport, KeptConversationExportSchema } from "./kept-conversation-export";

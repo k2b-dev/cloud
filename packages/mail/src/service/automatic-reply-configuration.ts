@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, i18n, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { stringify } from "yaml";
 import { z } from "zod";
 import {
@@ -245,7 +245,7 @@ type AutomaticReplyConfigurationRow = {
 
 type ConfigurationActor = { kind: "user" | "service_account"; id: string };
 
-const configurationColumns = sql`
+const configurationColumns = () => sql`
   configuration.id,
   configuration.short_id,
   configuration.mailbox_id,
@@ -502,7 +502,7 @@ const loadConfiguration = async (
   lock = false,
 ): Promise<Result<AutomaticReplyConfiguration>> => {
   const [row] = await db<AutomaticReplyConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.automatic_reply_configurations configuration
     WHERE configuration.id = ${configurationId}::uuid
       AND configuration.mailbox_id = ${mailboxId}::uuid
@@ -625,7 +625,7 @@ export const listAutomaticReplyConfigurations = async (
   const allowed = await requireMailboxPermission(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<AutomaticReplyConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.automatic_reply_configurations configuration
     WHERE configuration.mailbox_id = ${mailboxId}::uuid
     ORDER BY configuration.enabled DESC, configuration.normalized_name, configuration.id
@@ -812,10 +812,13 @@ export const updateAutomaticReplySetup = async (params: {
         unwrap(await lockMailboxForAutomaticReply(params.context, params.mailboxId, tx));
         const current = unwrap(await loadConfiguration(params.mailboxId, params.configurationId, tx, true));
         const configurationId = params.configurationId;
-        if (current.revision !== automaticReply.expectedRevision) {
+        const changes = automaticReplyChanges(current, automaticReply, schedule.data, name);
+        if (
+          current.revision !== automaticReply.expectedRevision &&
+          (changes.changed || automaticReply.expectedRevision > current.revision)
+        ) {
           unwrap(fail(err.conflict("Automatic reply was changed")));
         }
-        const changes = automaticReplyChanges(current, automaticReply, schedule.data, name);
         let workflowSenderIdentityId: string | null = null;
         if (automaticReply.enabled || changes.senderChanged) {
           workflowSenderIdentityId = unwrap(await requireAutomationSender(tx, params.mailboxId, automaticReply.senderIdentityId));

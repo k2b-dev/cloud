@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1080
 description: Choose account types, configure sign-in and manage account lifecycle.
 tags: [accounts, administration, authentication]
-updated: 2026-09-27
+updated: 2026-10-28
 ---
 
 # Accounts and sign-in
@@ -20,7 +20,7 @@ The password reset for FreeIPA accounts answers the same way. While the database
 or notification store is overloaded, Cloud drops such requests with a warning in
 the logs instead of queueing them without limit; the confirmation stays the same.
 
-Configure installation-wide policy in **Administration → Accounts & sign-in**.
+Configure installation-wide policy in **Administration → Sign-in & security**.
 Create and manage individual users, groups and requests in **Accounts**.
 People manage their own devices in **My account → Security**.
 
@@ -38,7 +38,7 @@ an email link, FreeIPA, a passkey or a paired app. Until you confirm, you cannot
 open applications or use the new session for API access. You can cancel and
 sign out instead. Later sign-ins continue directly to your destination.
 
-Operators configure the documents under **Administration → Legal**. Configure
+Operators configure the documents under **Administration → Base settings → Legal** (`/admin/base/legal`). Configure
 them before inviting users. Existing sessions remain valid after an upgrade;
 accounts without a recorded acceptance are asked at their next sign-in.
 

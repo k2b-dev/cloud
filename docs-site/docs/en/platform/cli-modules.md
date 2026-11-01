@@ -23,6 +23,20 @@ usage of a built-in or module command and change nothing. `help` as the value
 of a flag stays a value: `cld logout --profile help` signs out the profile
 named `help`.
 
+## Administrator operations
+
+A person with the current administrator role can read diagnostics with ordinary
+OAuth `read` scope and configure routine settings with `write`. The default
+`cld login` requests both. Use the same permission-aware services as the UI,
+protect secret input with files or stdin, and require confirmation for changes.
+Every administrator setting needs a CLI command; the monorepo enforces this
+with `admin-cli-settings`. Structured configuration keeps its owning API so
+validation, audit and live hooks run on both paths.
+
+See [CLI administration](/en/docs/operations/cli-administration) for setting
+discovery, named commands and approved short-lived `admin` scope for dangerous
+actions. This does not grant standalone OAuth clients a person's role.
+
 ## Select a locale
 
 `cld` resolves one locale per invocation: `--locale <BCP-47-tag>` wins over
@@ -396,6 +410,15 @@ module.
 
 ## Design commands
 
+The platform's `cld events` module follows these patterns for declared app
+events: `ls`, `subscriptions`, `deliveries`, `status`, and confirmed
+`redeliver`. `record <eventType> --shape-only [--limit 100] [--out <path>]`
+exports synthetic JSONL fixtures. `replay <fixtures> --handler <path[#export]>`
+validates them against the current catalog and calls a local handler; it
+never sends fixture envelopes to a server. See
+[App events](/en/docs/platform/app-events) and
+[Operate app events](/en/docs/operations/app-events).
+
 Every `cld` module uses the same verbs, addresses, and
 flags, so a user or agent who knows one module can guess the basics of the
 next one.
@@ -618,7 +641,7 @@ The adapter accepts:
 | `list`, `grant`, `update`, `revoke` | Yes | Call the resource's access API |
 | `allowedPermissions` | No | Limit grants; defaults to `read`, `write`, and `admin` |
 | `allowPublic` | No | Add public-principal commands; defaults to `false` |
-| `allowServiceAccounts` | No | Add service-account commands; defaults to `false` |
+| `allowServiceAccounts` | No | Include service-account commands; defaults to `true`. Set `false` only for a documented resource restriction |
 | `scopes` | No | Parts of the resource a grant can cover, the whole resource first; adds `--scope` |
 | `resourceArgLabel` | No | Value label shown for resource arguments |
 | `resourceArgDescription` | No | Help text for resource arguments |

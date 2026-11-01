@@ -4,9 +4,10 @@
  *   bun run test                    every suite (integration files skip without CLOUD_TEST_*)
  *   bun run test --integration      bootstrap the CLOUD_TEST_ database, then only files that import scripts/fixtures/test-infra
  *   bun run test --browser          only non-integration files that start a browser through packages/ui/test/browser
- *   bun run test --filter gateway   suites whose name or path contains "gateway"
+ *   bun run test --filter gateway   suites whose name or path contains "gateway" (repeat for a union)
  *   bun run test --exclude grids    everything except suites matching "grids"
  *   bun run test --shard 2/4        slice balanced by measured suite time in scripts/test-weights.json
+ *   bun run test --list             print the selected suite names without running or connecting
  *   bun run test --max-minutes 20   fail the run when it takes longer than 20 minutes, even when every suite passed
  *
  * Browser behavior tests (`*.behavior.test.{ts,tsx}`) belong to this runner:
@@ -38,8 +39,8 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { closeMigratedDatabaseTemplate, integrationSchemaHash, retainMigratedDatabaseTemplate } from "./fixtures/test-database-template";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
-import { sweepStaleTestNamespaces } from "./fixtures/test-sync";
 import { runUnderHeavyLock } from "./heavy-lock";
 import committedWeights from "./test-weights.json";
 
@@ -58,12 +59,14 @@ export type TestSuite = {
 export type TestWeights = {
   browser: Record<string, number>;
   unit: Record<string, number>;
+  integration: Record<string, number>;
 };
 
 export type Options = {
   integration: boolean;
   browser?: boolean;
-  filter?: string;
+  list?: boolean;
+  filters?: string[];
   exclude?: string;
   shard?: { index: number; total: number };
   maxMinutes?: number;
@@ -73,6 +76,8 @@ const ignoredTestPaths = ["node_modules/", "dist/", "build/", "_ssr/"];
 const testFiles = new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx}");
 const integrationImport = /scripts\/fixtures\/test-infra/;
 const browserImport = /\/test\/browser["']/;
+/** A fresh WebKit needs seconds for this, so this budget only catches an engine that hangs; a suite's own limits stay untouched. */
+const browserWarmupMs = 120_000;
 /** Browser behavior tests, which this runner runs with browser conditions and the Solid DOM preload. */
 export const behaviorTest = /\.behavior\.test\.tsx?$/;
 /** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
@@ -207,9 +212,9 @@ export const selectSuites = (
   let selected = suites;
   const matches = (suite: TestSuite, needle: string): boolean =>
     suite.name.includes(needle) || relative(workspaceRoot, suite.cwd).includes(needle);
-  if (options.filter) {
-    const needle = options.filter;
-    selected = selected.filter((suite) => matches(suite, needle));
+  const filters = options.filters;
+  if (filters?.length) {
+    selected = selected.filter((suite) => filters.some((needle) => matches(suite, needle)));
   }
   if (options.exclude) {
     const needle = options.exclude;
@@ -217,7 +222,9 @@ export const selectSuites = (
   }
   if (options.shard) {
     const { index, total } = options.shard;
-    selected = planShards(selected, total, options.browser ? weights.browser : weights.unit)[index - 1]!.suites;
+    selected = planShards(selected, total, options.integration ? weights.integration : options.browser ? weights.browser : weights.unit)[
+      index - 1
+    ]!.suites;
   }
   return selected;
 };
@@ -228,8 +235,13 @@ export const parseArgs = (argv: string[]): Options => {
     const arg = argv[i]!;
     if (arg === "--integration") options.integration = true;
     else if (arg === "--browser") options.browser = true;
-    else if (arg === "--filter") options.filter = argv[++i];
-    else if (arg === "--exclude") options.exclude = argv[++i];
+    else if (arg === "--list") options.list = true;
+    else if (arg === "--filter") {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("--")) throw new Error("--filter expects a workspace substring");
+      options.filters ??= [];
+      options.filters.push(value);
+    } else if (arg === "--exclude") options.exclude = argv[++i];
     else if (arg === "--shard") {
       const match = /^(\d+)\/(\d+)$/.exec(argv[++i] ?? "");
       const index = Number(match?.[1]);
@@ -245,24 +257,159 @@ export const parseArgs = (argv: string[]): Options => {
       options.maxMinutes = minutes;
     } else throw new Error(`unknown argument "${arg}"`);
   }
-  if (options.filter === undefined && argv.includes("--filter")) throw new Error("--filter expects a workspace substring");
   return options;
 };
 
+/** How long a stopped suite's descendants get to exit after SIGKILL, and how often that is checked. */
+const descendantExitMs = 2_000;
+const descendantPollMs = 25;
+
+/** Stop a timed-out suite and its descendants before GitHub cancels the job without a runner error. */
+export const runTestCommand = async (suite: TestSuite, env: Record<string, string | undefined>, timeoutMs?: number): Promise<number> => {
+  if (timeoutMs !== undefined && timeoutMs <= 0) throw new Error("test run exceeded its time budget");
+  const grouped = timeoutMs !== undefined && process.platform !== "win32";
+  const child = Bun.spawn(suite.command, {
+    cwd: suite.cwd,
+    env,
+    detached: grouped,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if (timeoutMs === undefined) return child.exited;
+  let expired = false;
+  let interrupted: "SIGINT" | "SIGTERM" | undefined;
+  let force: ReturnType<typeof setTimeout> | undefined;
+  // Playwright starts browsers in their own sessions. Remember descendants before
+  // signalling the suite, since they can be reparented as soon as it exits.
+  // lstart prevents a recycled PID from becoming a cleanup target.
+  const descendants = new Map<number, string>();
+  const kill = (signal: NodeJS.Signals) => {
+    if (!grouped) {
+      child.kill(signal);
+      return;
+    }
+    const result = Bun.spawnSync(["ps", "-eo", "pid=,ppid=,lstart="], { stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode !== 0) throw new Error(`Cannot inspect test descendants: ${result.stderr.toString()}`);
+    const processes = result.stdout
+      .toString()
+      .trim()
+      .split("\n")
+      .flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+        return match ? [{ pid: Number(match[1]), parent: Number(match[2]), started: match[3]! }] : [];
+      });
+    const leader = processes.find((entry) => entry.pid === child.pid);
+    if (leader && (!descendants.has(child.pid) || descendants.get(child.pid) === leader.started)) {
+      const pending = [child.pid];
+      for (const pid of pending) {
+        const entry = processes.find((entry) => entry.pid === pid);
+        if (entry) descendants.set(pid, entry.started);
+        pending.push(...processes.filter((entry) => entry.parent === pid).map((entry) => entry.pid));
+      }
+    }
+    for (const [pid, started] of [...descendants].reverse()) {
+      if (!processes.some((entry) => entry.pid === pid && entry.started === started)) continue;
+      try {
+        process.kill(pid, signal);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+      }
+    }
+  };
+  /**
+   * Waits until every recorded descendant has exited (a zombie counts as gone). SIGKILL is delivered, not awaited, so
+   * a check right after kill() can still see a dying process (#2208). Returns the PIDs still running after the wait.
+   */
+  const descendantsGone = async (waitMs: number): Promise<number[]> => {
+    const deadline = performance.now() + waitMs;
+    for (;;) {
+      const result = Bun.spawnSync(["ps", "-eo", "pid=,stat=,lstart="], { stdout: "pipe", stderr: "pipe" });
+      const running = result.stdout
+        .toString()
+        .trim()
+        .split("\n")
+        .flatMap((line) => {
+          const match = /^\s*(\d+)\s+(\S+)\s+(.+)$/.exec(line);
+          if (!match || match[2]!.startsWith("Z")) return [];
+          const pid = Number(match[1]);
+          return descendants.get(pid) === match[3] ? [pid] : [];
+        });
+      if (running.length === 0 || performance.now() > deadline) return running;
+      await Bun.sleep(descendantPollMs);
+    }
+  };
+  const stop = (signal: NodeJS.Signals) => {
+    kill(signal);
+    force ??= setTimeout(() => kill("SIGKILL"), 5_000);
+  };
+  const interrupt = (signal: "SIGINT" | "SIGTERM") => {
+    interrupted = signal;
+    stop(signal);
+  };
+  const onInterrupt = () => interrupt("SIGINT");
+  const onTerminate = () => interrupt("SIGTERM");
+  process.once("SIGINT", onInterrupt);
+  process.once("SIGTERM", onTerminate);
+  const timer = setTimeout(() => {
+    expired = true;
+    console.error(
+      `::error title=Test shard over its time limit::Time budget exhausted during ${suite.name}; stopping the suite and its descendants`,
+    );
+    stop("SIGTERM");
+  }, timeoutMs);
+  try {
+    const code = await child.exited;
+    if (expired || interrupted) {
+      // The direct child can exit before a descendant that ignored SIGTERM.
+      kill("SIGKILL");
+      const survivors = grouped ? await descendantsGone(descendantExitMs) : [];
+      const reason = interrupted ? `test run interrupted by ${interrupted}` : "test run exceeded its time budget";
+      throw new Error(survivors.length ? `${reason}; descendants still running after SIGKILL: ${survivors.join(", ")}` : reason);
+    }
+    return code;
+  } finally {
+    clearTimeout(timer);
+    clearTimeout(force);
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onTerminate);
+  }
+};
+
 const run = async (): Promise<void> => {
-  runUnderHeavyLock();
+  if (Bun.argv.slice(2).includes("--help")) {
+    console.log(`Usage: bun run test [options]
+
+  --filter <substring>  Keep suites whose name or workspace path contains the substring.
+                        Repeat to run the union of all matches, each suite once.
+  --exclude <substring> Remove matching suites after applying filters.
+  --integration         Run only integration suites (requires CLOUD_TEST_*).
+  --browser             Run only non-integration browser files.
+  --shard <i/n>         Run shard i of n after filtering and excluding.
+  --list                Print the selected suite names without running or connecting.
+  --max-minutes <n>     Fail when the run exceeds n minutes.
+  --help                Show this help without running tests.
+
+Example: bun run test --filter packages/core --filter packages/cloud`);
+    return;
+  }
+  const options = parseArgs(Bun.argv.slice(2));
+  if (!options.list) runUnderHeavyLock();
   const started = performance.now();
   const workspaceRoot = join(import.meta.dir, "..");
-  const options = parseArgs(Bun.argv.slice(2));
-  if (options.integration && !hasIntegrationTarget()) {
+  if (options.integration && !options.list && !hasIntegrationTarget()) {
     console.error("--integration needs at least one CLOUD_TEST_* variable (see scripts/fixtures/test-infra.ts).");
     process.exit(2);
   }
 
   const suites = await discoverTestSuites(workspaceRoot, options);
+  if (options.list) {
+    for (const suite of suites) console.log(suite.name);
+    return;
+  }
   const label = options.shard ? `shard ${options.shard.index}/${options.shard.total}` : "test run";
   if (options.shard) {
-    const table = options.browser ? committedWeights.browser : committedWeights.unit;
+    const table = options.integration ? committedWeights.integration : options.browser ? committedWeights.browser : committedWeights.unit;
     const seconds = suites.reduce((sum, suite) => sum + suiteWeight(suite.name, table), 0);
     console.log(`${label}: ${suites.length} suites, about ${(seconds / 60).toFixed(1)} min by scripts/test-weights.json`);
   }
@@ -283,65 +430,95 @@ const run = async (): Promise<void> => {
   applyTestRuntimeEnv(env);
   const failed: string[] = [];
 
+  const remainingMs = () => (options.maxMinutes === undefined ? undefined : options.maxMinutes * 60_000 - (performance.now() - started));
+
   const natsTarget = readTestTarget(process.env, "nats");
   if (natsTarget) {
-    const swept = await sweepStaleTestNamespaces();
-    if (swept.namespaces > 0) {
-      console.log(`Removed ${swept.streams} stream(s) of ${swept.namespaces} abandoned test Sync namespace(s).`);
-    }
-  }
-
-  if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {
-    console.log("\n=== integration database bootstrap ===");
-    const bootstrap = Bun.spawn(["bun", join(workspaceRoot, "scripts", "fixtures", "integration-bootstrap.ts")], {
-      cwd: workspaceRoot,
+    console.log("\n=== integration NATS housekeeping ===");
+    const code = await runTestCommand(
+      {
+        name: "integration NATS housekeeping",
+        cwd: workspaceRoot,
+        command: ["bun", join(workspaceRoot, "scripts", "fixtures", "test-sync.ts")],
+      },
       env,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    if ((await bootstrap.exited) !== 0) {
-      console.error("integration database bootstrap failed");
-      process.exit(1);
-    }
-  }
-
-  for (const suite of suites) {
-    console.log(`\n=== ${suite.name} ===`);
-    const started = performance.now();
-    const child = Bun.spawn(suite.command, {
-      cwd: suite.cwd,
-      env: suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    if ((await child.exited) !== 0) failed.push(suite.name);
-    console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
-  }
-
-  if (!options.integration && !options.browser && !hasIntegrationTarget()) {
-    let skipped = 0;
-    for (const suite of suites) skipped += (await listIntegrationFiles(suite.cwd)).length;
-    console.log(`\n${skipped} integration test file(s) skipped: no CLOUD_TEST_* variable is set.`);
-  }
-
-  const minutes = (performance.now() - started) / 60_000;
-  const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
-  console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
-  const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
-  if (overLimit) {
-    console.log(
-      `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
+      remainingMs(),
     );
+    if (code !== 0) throw new Error("integration NATS housekeeping failed");
   }
-  if (failed.length > 0) {
-    console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
-    process.exit(1);
-  }
-  if (overLimit) process.exit(1);
 
-  console.log(`\nAll ${suites.length} test suites passed.`);
+  try {
+    if (options.integration && env.CLOUD_TEST_DATABASE_URL) {
+      env.CLOUD_TEST_DATABASE_SCHEMA_HASH = integrationSchemaHash();
+      await retainMigratedDatabaseTemplate(readTestTarget(env, "database")!, env.CLOUD_TEST_DATABASE_SCHEMA_HASH);
+    }
+    if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {
+      console.log("\n=== integration database bootstrap ===");
+      const bootstrap = await runTestCommand(
+        {
+          name: "integration database bootstrap",
+          cwd: workspaceRoot,
+          command: ["bun", join(workspaceRoot, "scripts", "fixtures", "integration-bootstrap.ts")],
+        },
+        env,
+        remainingMs(),
+      );
+      if (bootstrap !== 0) {
+        throw new Error("integration database bootstrap failed");
+      }
+    }
+
+    if (options.browser) {
+      console.log("\n=== browser warm-up ===");
+      const warmup = await runTestCommand(
+        { name: "browser warm-up", cwd: join(workspaceRoot, "packages", "ui"), command: ["bun", join("test", "browser-warmup.ts")] },
+        env,
+        Math.min(remainingMs() ?? browserWarmupMs, browserWarmupMs),
+      );
+      if (warmup !== 0) throw new Error("browser warm-up failed");
+    }
+
+    for (const suite of suites) {
+      console.log(`\n=== ${suite.name} ===`);
+      const started = performance.now();
+      const code = await runTestCommand(
+        suite,
+        suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
+        remainingMs(),
+      );
+      if (code !== 0) failed.push(suite.name);
+      console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
+    }
+
+    if (!options.integration && !options.browser && !hasIntegrationTarget()) {
+      let skipped = 0;
+      for (const suite of suites) skipped += (await listIntegrationFiles(suite.cwd)).length;
+      console.log(`\n${skipped} integration test file(s) skipped: no CLOUD_TEST_* variable is set.`);
+    }
+
+    const minutes = (performance.now() - started) / 60_000;
+    const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
+    console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
+    const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
+    if (overLimit) {
+      console.log(
+        `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
+      );
+    }
+    if (failed.length > 0) {
+      console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (overLimit) {
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(`\nAll ${suites.length} test suites passed.`);
+  } finally {
+    await closeMigratedDatabaseTemplate();
+  }
 };
 
 if (import.meta.main) await run();

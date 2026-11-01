@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { CalendarAddress, CalendarParticipationStatus, SpacesMailDestinationContext } from "../app-integration-contracts";
 import type { MailDraft } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";

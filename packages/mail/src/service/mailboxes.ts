@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import {
   type CreateMailboxInput,
@@ -94,7 +94,7 @@ export const getMailboxReceivingAddress = async (mailboxId: string): Promise<str
   return row?.email ?? null;
 };
 
-const mailboxColumns = sql`
+const mailboxColumns = () => sql`
   m.id, m.name, m.description, m.health, m.health_reason,
   m.sync_enabled, m.search_backend, m.automatic_reply_management_permission, m.deleted_at,
   m.compose_safety,
@@ -250,7 +250,7 @@ export const getMailbox = async (context: MailRequestContext, mailboxId: string)
   const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const [row] = await sql<DbMailbox[]>`
-    SELECT ${mailboxColumns}
+    SELECT ${mailboxColumns()}
     FROM mail.mailboxes m
     WHERE m.id = ${mailboxId}::uuid AND m.deleted_at IS NULL
   `;
@@ -261,7 +261,7 @@ export const getDeletedMailbox = async (context: MailRequestContext, mailboxId: 
   const allowed = await requireMailboxLifecycleAdmin(context, mailboxId);
   if (!allowed.ok) return allowed;
   const [row] = await sql<DbMailbox[]>`
-    SELECT ${mailboxColumns}
+    SELECT ${mailboxColumns()}
     FROM mail.mailboxes m
     WHERE m.id = ${mailboxId}::uuid AND m.deleted_at IS NOT NULL
   `;
@@ -287,7 +287,7 @@ export const listDeletedMailboxes = async (
 
   if (await isCurrentPlatformAdmin(context)) {
     const rows = await sql<DbMailbox[]>`
-      SELECT ${mailboxColumns}
+      SELECT ${mailboxColumns()}
       FROM mail.mailboxes m
       WHERE m.deleted_at IS NOT NULL
         AND (
@@ -304,7 +304,7 @@ export const listDeletedMailboxes = async (
   }
 
   const rows = await sql<DbMailbox[]>`
-    SELECT DISTINCT ${mailboxColumns}
+    SELECT DISTINCT ${mailboxColumns()}
     FROM mail.mailboxes m
     JOIN mail.mailbox_access ma ON ma.mailbox_id = m.id
     JOIN auth.access a ON a.id = ma.access_id
@@ -366,7 +366,7 @@ export const listMailboxes = async (
   const rows = await sql<DbMailboxListItem[]>`
     WITH ranked AS (${readableMailboxGrants(context)})
     SELECT
-      ${mailboxColumns},
+      ${mailboxColumns()},
       CASE ranked.permission_rank WHEN 3 THEN 'admin'::auth.permission_level WHEN 2 THEN 'write'::auth.permission_level ELSE 'read'::auth.permission_level END AS permission,
       ranked.scope AS access_scope,
       pc.email AS receiving_address
@@ -516,6 +516,8 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
               updated_at = now()
             WHERE id = ${mailboxId}::uuid
           `;
+          await tx`UPDATE mail.personal_mailbox_preferences SET large_view = NULL, phone_view = NULL WHERE mailbox_id = ${mailboxId}::uuid`;
+          await tx`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid AND pinned_at IS NULL AND hidden_at IS NULL`;
           await tx`
             UPDATE mail.attachment_links
             SET revoked_at = COALESCE(revoked_at, now())
@@ -570,7 +572,7 @@ export const restoreMailbox = async (context: MailRequestContext, mailboxId: str
     () =>
       sql.begin(async (tx) => {
         const [current] = await tx<DbMailbox[]>`
-          SELECT ${mailboxColumns}
+          SELECT ${mailboxColumns()}
           FROM mail.mailboxes m
           WHERE m.id = ${mailboxId}::uuid
           FOR UPDATE OF m
@@ -597,7 +599,7 @@ export const restoreMailbox = async (context: MailRequestContext, mailboxId: str
             health_reason = 'Mailbox restored; provider diagnostics are required before synchronization can resume',
             updated_at = now()
           WHERE m.id = ${mailboxId}::uuid AND m.deleted_at IS NOT NULL
-          RETURNING ${mailboxColumns}
+          RETURNING ${mailboxColumns()}
         `;
         if (!restored) throw new Error("Mailbox restore returned no row");
         transitioned = true;

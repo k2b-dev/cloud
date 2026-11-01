@@ -106,7 +106,7 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 - **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
 :::
 
-Wähle **Zuweisen**, um die zugewiesenen Personen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, die zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, einen Agenten oder ein eigenständiges Dienstkonto, das zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ### Von Handlungsbedarf aus arbeiten
 
@@ -187,23 +187,36 @@ Tippe in der Cloud-Suche `>`, um die Aktionen der Schaltflächen und Menüs als 
 - **Automatisierung für diesen Absender erstellen**, **Absender blockieren** und **Absender-Domain blockieren** öffnen den geführten Regeleditor mit eingetragenem Absender.
 - **Abmeldung verwalten** erscheint nur, wenn die Nachricht standardisierte Angaben zum Abmelden von einer Mailingliste enthält.
 
+## Von einer anderen App auf eine Mail verweisen {icon="id"}
+
+Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachricht speichern. Dafür kopierst du die Cloud-ID:
+
+- In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder mit einem Rechtsklick das Menü der Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
+- Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder mit einem Rechtsklick das Menü der Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
+- In der Liste haben die Aktionen einer Zeile **Cloud-ID der Unterhaltung kopieren**.
+- In den **Unterhaltungsdetails** wählst du im Kopf **…** und dann **Cloud-ID der Unterhaltung kopieren**. Für die neueste Nachricht wählst du unter **Mehr zu dieser Unterhaltung** › **Technische Details** den Eintrag **Cloud-ID der Nachricht kopieren**.
+
+Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
+
+Ein Rechtsklick in die Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
+
 ## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
 
 Manche E-Mails sind ein Nachweis, etwa dafür, dass eine Kundin informiert wurde. Wähle **Weitere Unterhaltungsaktionen > Aufbewahren**, um die ganze Unterhaltung zu schützen. Alle, die im Postfach schreiben dürfen, können eine Unterhaltung aufbewahren. Ein Schloss in der Unterhaltungsliste und neben dem Betreff zeigt, dass sie aufbewahrt wird. Zeigst du auf das Schloss neben dem Betreff, siehst du, wer sie seit wann aufbewahrt. Um in einem Schritt aufzubewahren, füge **Aufbewahren** unter **Weitere Unterhaltungsaktionen > Werkzeugleiste anpassen** hinzu.
 
 Der Schutz wächst mit der Unterhaltung. Antworten, die später dazukommen, werden ebenfalls aufbewahrt, ebenso Nachrichten, die jemand abtrennt oder mit einer anderen Unterhaltung zusammenführt. Die Unterhaltung, die sie aufnimmt, wird dann auch aufbewahrt, und ihre Aktivität nennt, wer die Nachrichten dorthin verschoben hat.
 
-Solange eine Unterhaltung aufbewahrt wird, lehnt Cloud es ab, ihre Nachrichten zu löschen, sie in den Papierkorb, den Spam-Ordner oder die Entwürfe zu verschieben oder einen Ordner zu löschen, der sie enthält. Das gilt für jeden Weg, auf dem Cloud E-Mails ändert: die Aktionen an Unterhaltungen und Nachrichten, eine Auswahl mehrerer Unterhaltungen, Eingangsregeln und andere Automatisierungen, Workflows, die Kommandozeile `cld` und den Assistenten. Jeder dieser Wege meldet, dass die Unterhaltung aufbewahrt wird. Archivieren, in andere Ordner verschieben, als gelesen oder markiert kennzeichnen und antworten bleiben möglich. Eine geplante Nachricht kannst du weiterhin abbrechen, denn Cloud hat sie nie gesendet. War sie die einzige Nachricht der Unterhaltung, endet die Unterhaltung mit ihr, samt Aufbewahrung.
+Solange eine Unterhaltung aufbewahrt wird, lehnt Cloud es ab, ihre Nachrichten zu löschen, sie in den Papierkorb, den Spam-Ordner oder die Entwürfe zu verschieben oder einen Ordner zu löschen, der sie enthält. Das gilt für jeden Weg, auf dem Cloud E-Mails ändert: die Aktionen an Unterhaltungen und Nachrichten, eine Auswahl mehrerer Unterhaltungen, Eingangsregeln und andere Automatisierungen, Workflows, die Kommandozeile `cld` und den Assistenten. Jeder dieser Wege meldet, dass die Unterhaltung aufbewahrt wird. Archivieren, in andere Ordner verschieben, als gelesen oder markiert kennzeichnen und antworten bleiben möglich. Eine geplante Nachricht kannst du weiterhin abbrechen, denn Cloud hat sie nie gesendet. Die Unterhaltung bleibt aufbewahrt, und Cloud behält die Kopie der abgebrochenen Nachricht; der JSON-Export kennzeichnet sie als nicht gesendet.
 
 Cloud behält von jeder aufbewahrten Nachricht eine eigene vollständige Kopie: die Originalnachricht mit ihren Anhängen. Andere E-Mail-Programme und der Mailserver liegen außerhalb von Cloud und können die Nachricht dort weiterhin löschen. Die Nachricht bleibt dann in Cloud in dem Ordner, in dem sie zuletzt lag, und trägt den Hinweis **Auf dem Server gelöscht, in Cloud aufbewahrt**. Du kannst diese Kopie lesen, durchsuchen und als `.eml` herunterladen. Archivieren, Verschieben und Markieren der Unterhaltung ändern diese Kopie nur in Cloud, denn der Mailserver hat sie nicht mehr. Hat Cloud eine Nachricht noch nicht vollständig geladen oder ist das Laden früher fehlgeschlagen, lädt das Aufbewahren sie. Von einer Nachricht, die der Server löscht, bevor Cloud sie laden konnte, etwa während das Postfach pausiert war oder ihr Ordner nicht synchronisiert wurde, oder von einer Nachricht über 128 MB hat Cloud keine Kopie.
 
 Unter **Mail > Mehr > Aufbewahrt** stehen alle aufbewahrten Unterhaltungen des Postfachs, die neuesten zuerst, aus jedem Ordner. In der Suche findet die Bedingung **Aufbewahrt** sie ebenfalls, lässt sich mit anderen Bedingungen kombinieren und als Ansicht speichern.
 
-Nur wer das Postfach verwaltet, kann den Schutz aufheben. Wähle **Weitere Unterhaltungsaktionen > Aufbewahrung aufheben** und bestätige. Danach kann die Unterhaltung in Cloud wieder gelöscht werden, und Nachrichten, von denen nur noch die Kopie in Cloud vorhanden ist, verschwinden aus dem Postfach. Bewahrt jemand die Unterhaltung später wieder auf, kehren sie nicht zurück. Aufbewahren und Aufheben werden mit Person und Zeitpunkt in der Aktivität der Unterhaltung und im Cloud-Audit-Log festgehalten. Eine aufbewahrte Unterhaltung hat kein Ablaufdatum; sie bleibt aufbewahrt, bis jemand die Aufbewahrung aufhebt.
+Nur Cloud-Admins können den Schutz aufheben. Das gilt auch für Personen, die das Postfach verwalten, und für die Person, die die Unterhaltung aufbewahrt hat: Für sie sagt das Schloss neben dem Betreff das, und das Menü bietet kein **Aufbewahrung aufheben** an. Cloud-Admins wählen **Weitere Unterhaltungsaktionen > Aufbewahrung aufheben**, können eine Begründung angeben und bestätigen, oder sie nutzen **Administration → Mail → Aufbewahrt**. Danach kann die Unterhaltung in Cloud wieder gelöscht werden, und Nachrichten, von denen nur noch die Kopie in Cloud vorhanden ist, verschwinden aus dem Postfach. Bewahrt jemand die Unterhaltung später wieder auf, kehren sie nicht zurück. Aufbewahren und Aufheben werden mit Person, Zeitpunkt und Begründung in der Aktivität der Unterhaltung und im Cloud-Audit-Log festgehalten. Eine aufbewahrte Unterhaltung hat kein Ablaufdatum; sie bleibt aufbewahrt, bis jemand die Aufbewahrung aufhebt.
 
 ## Eine einzelne Nachricht untersuchen {icon="file-search"}
 
-Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe **E-Mail-Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
+Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe unter **Mehr zu dieser Unterhaltung** die **Technischen Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
 
 - **Übersicht** zeigt Nachrichten-IDs, Ablage beim Anbieter, Standardmarkierungen, Anbieter-Schlüsselwörter, MIME-Teile, Anhänge, Synchronisierungsstatus und Warnungen beim Auswerten.
 - **Spamdiagnose** zeigt die Spam-Header des Anbieters, falls vorhanden. Cloud berechnet oder erschließt keinen eigenen Spamwert.
@@ -310,12 +323,12 @@ Wähle die Aktion:
 
 Zum Zusammenführen wählst du das Ziel aus demselben Postfach nach Absender oder Betreff. Prüfe Quelle und Ziel in der Bestätigung und führe dann zusammen.
 
-- Das Ziel behält seinen Arbeitsstatus. Die zugewiesenen Personen beider Unterhaltungen bleiben zugewiesen. Mail führt keine Unterhaltungen zusammen, die zusammen mehr als 20 zugewiesene Personen haben.
+- Das Ziel behält seinen Arbeitsstatus. Die Zuständigen beider Unterhaltungen bleiben zugewiesen. Mail führt keine Unterhaltungen zusammen, die zusammen mehr als 20 Zuständige haben.
 - Nachrichten, Kommentare, Entwürfe, lokale Tags und Referenzen der Quelle wandern zum Ziel.
 - Persönliche Erinnerungen wandern ebenfalls. Hat jemand eine Erinnerung an beiden Unterhaltungen, behält Mail die Erinnerung am Ziel.
 - Mail entfernt die Quellunterhaltung.
 
-Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue Unterhaltung mit denselben zugewiesenen Personen. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre zugewiesenen Personen und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
+Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue Unterhaltung mit denselben Zuständigen. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre Zuständigen und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
 
 Mail hält Änderungen in der Aktivität der Unterhaltung fest. Ändert eine andere Person eine der beiden Unterhaltungen, bevor du bestätigst, lehnt Mail deine veraltete Änderung ab. Lade neu und prüfe sie erneut.
 

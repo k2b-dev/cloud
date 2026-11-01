@@ -8,7 +8,6 @@ import { ErrorResponseSchema } from "../contracts";
 import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import { capabilityActionPolicy } from "../contracts/capabilities";
 import {
-  type AccessSubject,
   type AuthContext,
   auth,
   err,
@@ -37,7 +36,7 @@ import { coreSettings } from "../services/settings/api";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
-import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
+import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
@@ -67,6 +66,7 @@ import {
 } from "./http";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
+import { aiMapRoutes } from "./map-routes";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
@@ -80,6 +80,7 @@ import {
 } from "./message-queue";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
+import type { AiResourceContext } from "./projects-authorization";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
@@ -224,6 +225,8 @@ const MemoryCreateSchema = z.object({
 const MemoryUpdateSchema = MemoryCreateSchema.partial().refine((value) => Object.keys(value).length > 0, "Pass a changed field.");
 const MemoryIdSchema = z.string().regex(AI_SHORT_ID_PATTERN);
 
+const resourceContext = (c: Context<AuthContext>): AiResourceContext => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject") });
+
 const notFound = (c: Context<AuthContext>) => respond(c, fail(err.notFound("Conversation")));
 const fileNotFound = (c: Context<AuthContext>) => respond(c, fail(err.notFound("File")));
 
@@ -232,14 +235,14 @@ const publicConversation = (conversation: AiConversation, projectId: string | nu
   id: conversation.shortId,
   projectId: conversation.projectId ? projectId : null,
 });
-const publicConversations = async (conversations: AiConversation[], subject: AccessSubject) => {
+const publicConversations = async (conversations: AiConversation[], subject: AiResourceContext) => {
   const projectIds = conversations.flatMap((conversation) => (conversation.projectId ? [conversation.projectId] : []));
   const shortIds = await aiProjects.resolveShortIds(projectIds, subject);
   return conversations.map((conversation) =>
     publicConversation(conversation, conversation.projectId ? (shortIds.get(conversation.projectId) ?? null) : null),
   );
 };
-const publicConversationFor = async (conversation: AiConversation, subject: AccessSubject) =>
+const publicConversationFor = async (conversation: AiConversation, subject: AiResourceContext) =>
   (await publicConversations([conversation], subject))[0]!;
 const publicMemories = async (userId: string, memories: Awaited<ReturnType<typeof aiMemories.list>>) => {
   const sourceIds = memories.flatMap((memory) => (memory.sourceConversationId ? [memory.sourceConversationId] : []));
@@ -254,13 +257,13 @@ const publicMemory = async (userId: string, memory: Awaited<ReturnType<typeof ai
   (await publicMemories(userId, [memory]))[0]!;
 
 /** Fire-and-forget: remember the model this user actually ran a turn with (preselected for new chats). */
-const rememberLastUsedModel = (actor: RequestActor, modelProfileId: string | null | undefined): void => {
+const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-models").AiModelRequest | undefined): void => {
   const userId = aiPrefsUserId(actor);
-  if (!userId || !modelProfileId) return;
-  void aiUserPrefs.update(userId, { lastModelId: modelProfileId }).catch(() => undefined);
+  if (!userId || !model) return;
+  void aiUserPrefs.update(userId, { selection: model }).catch(() => undefined);
 };
 
-const conversationDetail = async (conversation: AiConversation, subject: AccessSubject) => {
+const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext) => {
   const [state, timeline, publicView] = await Promise.all([
     loadAiStreamState(conversation),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
@@ -297,7 +300,7 @@ const prepareConversationForMessageRetry = async (conversationId: string): Promi
 
 const prepareLaunchDraft = async (
   body: z.infer<typeof AiCreateConversationInputSchema>,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   authority: import("../server").RequestAuthority | null = null,
 ) => {
   const content = [...(body.draft?.content ?? [])];
@@ -336,6 +339,7 @@ export const aiRoutes = (() => {
       .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
+      .route("/conversations", aiMapRoutes)
       .get("/status", async (c) => {
         const [status, enabled] = await Promise.all([
           assistantAiSettingsState(c.get("accessSubject")),
@@ -348,7 +352,7 @@ export const aiRoutes = (() => {
         return c.json(await getAiChatQuotas(c.get("accessSubject")));
       })
       .get("/models", async (c) => {
-        return respond(c, ok(await listAssistantAiModels(c.get("accessSubject"))));
+        return respond(c, ok(await peopleAiModels(c.get("accessSubject"))));
       })
       .get("/prefs", async (c) => {
         const ctx = await resolveContext(c);
@@ -438,16 +442,15 @@ export const aiRoutes = (() => {
         const state = await readAiSettingsState();
         let previewProfile: ReturnType<typeof selectAiModelProfile> | null = null;
         if (state.ok && state.enabled) {
-          const models = await listAssistantAiModels(c.get("accessSubject"), ctx.modelPolicy);
-          const preferredId =
-            models.find((model) => model.id === prefs?.lastModelId)?.id ??
-            models.find((model) => model.id === state.defaultModelId)?.id ??
-            models[0]?.id;
-          if (preferredId) previewProfile = selectAiModelProfile(state, ctx.modelPolicy, preferredId);
+          try {
+            previewProfile = selectAiModelProfile(state, ctx.modelPolicy, prefs.selection ?? undefined);
+          } catch {
+            /* The prompt preview remains available without a usable model. */
+          }
         }
         const toolsSupported = Boolean(previewProfile?.capabilities.includes("tools"));
         const availableSkills = toolsSupported
-          ? (await aiSkills.list(c.get("accessSubject"), { authority: appAccessAuthority(c) })).filter((skill) => skill.enabled)
+          ? (await aiSkills.list(resourceContext(c), { authority: appAccessAuthority(c) })).filter((skill) => skill.enabled)
           : [];
         const skillCatalog = selectAiSkillCatalog(
           availableSkills.filter((skill) => !skill.manualOnly).map(({ name, description }) => ({ name, description })),
@@ -462,8 +465,8 @@ export const aiRoutes = (() => {
               })),
               ...(client?.localTools === "ask" ? [createCloudAiLocalBashTool(), ...createCloudAiLocalTools()] : []),
               ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
-              ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"), appAccessAuthority(c))] : []),
-              ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"), [], appAccessAuthority(c))] : []),
+              ...(availableSkills.length ? [createCloudAiLoadSkillTool(resourceContext(c), appAccessAuthority(c))] : []),
+              ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(resourceContext(c), [], appAccessAuthority(c))] : []),
             ]
           : [];
         const memoryToolEnabled = tools.some((tool) => tool.def.name === "memory");
@@ -546,7 +549,7 @@ export const aiRoutes = (() => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const query = c.req.valid("query");
-        const project = query.projectId ? await aiProjects.getByShortId(query.projectId, c.get("accessSubject"), "read") : null;
+        const project = query.projectId ? await aiProjects.getByShortId(query.projectId, resourceContext(c), "read") : null;
         if (query.projectId && !project) return respond(c, fail(err.notFound("Project")));
         return respond(
           c,
@@ -562,7 +565,7 @@ export const aiRoutes = (() => {
                 unassigned: query.unassigned,
                 limit: query.limit,
               }),
-              c.get("accessSubject"),
+              resourceContext(c),
             ),
           ),
         );
@@ -571,7 +574,7 @@ export const aiRoutes = (() => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const query = c.req.valid("query");
-        const project = query.projectId ? await aiProjects.getByShortId(query.projectId, c.get("accessSubject"), "read") : null;
+        const project = query.projectId ? await aiProjects.getByShortId(query.projectId, resourceContext(c), "read") : null;
         if (query.projectId && !project) return respond(c, fail(err.notFound("Project")));
         const page = await aiConversations.listConversationsPage({
           ownerUserId: ctx.ownerUserId,
@@ -584,15 +587,15 @@ export const aiRoutes = (() => {
           page: query.page ?? 1,
           perPage: query.perPage ?? 20,
         });
-        return respond(c, ok({ ...page, items: await publicConversations(page.items, c.get("accessSubject")) }));
+        return respond(c, ok({ ...page, items: await publicConversations(page.items, resourceContext(c)) }));
       })
       .post("/conversations", v("json", AiCreateConversationInputSchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const body = c.req.valid("json");
-        const project = body.projectId ? await aiProjects.getByShortId(body.projectId, c.get("accessSubject"), "read") : null;
+        const project = body.projectId ? await aiProjects.getByShortId(body.projectId, resourceContext(c), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
-        const draft = await prepareLaunchDraft(body, c.get("accessSubject"), appAccessAuthority(c));
+        const draft = await prepareLaunchDraft(body, resourceContext(c), appAccessAuthority(c));
         if (!draft.ok) return respond(c, draft);
         const requestedCapabilityTools = (body.preloadTools ?? []).filter(
           (requested): requested is { appId: string; kind: "query" | "action"; id: string } => "appId" in requested,
@@ -643,9 +646,7 @@ export const aiRoutes = (() => {
             launchedByAppId: body.launchedByAppId,
           });
           // A replay may return a conversation assigned to a Project since creation.
-          const currentProject = conversation.projectId
-            ? await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read")
-            : null;
+          const currentProject = conversation.projectId ? await aiProjects.get(conversation.projectId, resourceContext(c), "read") : null;
           if (conversation.projectId && !currentProject) return respond(c, fail(err.notFound("Project")));
           return respond(c, ok(publicConversation(conversation, currentProject?.shortId ?? null)), 201);
         } catch (error) {
@@ -660,7 +661,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        return respond(c, ok(await conversationDetail(conversation, c.get("accessSubject"))));
+        return respond(c, ok(await conversationDetail(conversation, resourceContext(c))));
       })
       .get(
         "/conversations/:conversationId/submission/:draftRevision",
@@ -670,7 +671,7 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation) return notFound(c);
-          if (conversation.projectId && !(await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read"))) return notFound(c);
+          if (conversation.projectId && !(await aiProjects.get(conversation.projectId, resourceContext(c), "read"))) return notFound(c);
           const submission = await aiConversations.getDraftSubmission({
             conversationId: conversation.id,
             ownerUserId: ctx.ownerUserId,
@@ -798,7 +799,7 @@ export const aiRoutes = (() => {
           pinned: body.pinned,
         });
         if (!updated) return notFound(c);
-        return respond(c, ok(await publicConversationFor(updated, c.get("accessSubject"))));
+        return respond(c, ok(await publicConversationFor(updated, resourceContext(c))));
       })
       .put("/conversations/:conversationId/project", v("json", ConversationProjectInputSchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -806,7 +807,7 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const body = c.req.valid("json");
-        const project = body.projectId ? await aiProjects.getByShortId(body.projectId, c.get("accessSubject"), "read") : null;
+        const project = body.projectId ? await aiProjects.getByShortId(body.projectId, resourceContext(c), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
         const result = await aiConversations.setConversationProject({
           conversationId: conversation.id,
@@ -821,7 +822,7 @@ export const aiRoutes = (() => {
           }
           return notFound(c);
         }
-        return respond(c, ok(await publicConversationFor(result.conversation, c.get("accessSubject"))));
+        return respond(c, ok(await publicConversationFor(result.conversation, resourceContext(c))));
       })
       .post("/conversations/:conversationId/pin", async (c) => {
         const ctx = await resolveContext(c);
@@ -833,7 +834,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           pinned: true,
         });
-        return updated ? respond(c, ok(await publicConversationFor(updated, c.get("accessSubject")))) : notFound(c);
+        return updated ? respond(c, ok(await publicConversationFor(updated, resourceContext(c)))) : notFound(c);
       })
       .delete("/conversations/:conversationId/pin", async (c) => {
         const ctx = await resolveContext(c);
@@ -845,7 +846,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           pinned: false,
         });
-        return updated ? respond(c, ok(await publicConversationFor(updated, c.get("accessSubject")))) : notFound(c);
+        return updated ? respond(c, ok(await publicConversationFor(updated, resourceContext(c)))) : notFound(c);
       })
       .put("/conversations/:conversationId/done", v("json", z.object({ done: z.boolean().nullable() })), async (c) => {
         const ctx = await resolveContext(c);
@@ -861,7 +862,7 @@ export const aiRoutes = (() => {
           return result.reason === "active_turn"
             ? respond(c, fail(err.conflict("Stop the current response before marking this chat done.")))
             : notFound(c);
-        return respond(c, ok(await publicConversationFor(result.conversation, c.get("accessSubject"))));
+        return respond(c, ok(await publicConversationFor(result.conversation, resourceContext(c))));
       })
       .post("/conversations/:conversationId/archive", async (c) => {
         const ctx = await resolveContext(c);
@@ -911,7 +912,7 @@ export const aiRoutes = (() => {
                 error: error instanceof Error ? error.message : String(error),
               }),
             );
-        return restored ? respond(c, ok(await publicConversationFor(restored, c.get("accessSubject")))) : notFound(c);
+        return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
       })
       .post("/conversations/:conversationId/viewed", async (c) => {
         const ctx = await resolveContext(c);
@@ -1008,7 +1009,7 @@ export const aiRoutes = (() => {
           };
         });
         const { input, message } = aiInputToUserMessage(aiTurnInputToContent({ content: turnContent }));
-        const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, c.get("accessSubject")) : null;
+        const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, resourceContext(c)) : null;
         if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
         try {
           const submission = {
@@ -1022,7 +1023,7 @@ export const aiRoutes = (() => {
             locale: getLocale(c),
             theme: readThemeFromCookieHeader(c.req.header("cookie")),
             timeZone: getTimeZone(c),
-            requestedModelId: body.modelProfileId ?? project?.defaultModelProfileId ?? undefined,
+            model: body.model ?? project?.defaultModel ?? undefined,
             modelPolicy: ctx.modelPolicy,
             project: project ?? undefined,
             clientToolIds: body.clientToolIds,
@@ -1043,7 +1044,7 @@ export const aiRoutes = (() => {
             return respond(c, ok({ queued: true }));
           }
           const result = await submitAiChatTurn(submission);
-          rememberLastUsedModel(ctx.actor, result.turn.modelProfileId);
+          rememberLastUsedModel(ctx.actor, body.model);
           return respond(
             c,
             ok({
@@ -1111,13 +1112,13 @@ export const aiRoutes = (() => {
           ? await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: target.loopId })
           : null;
         const originalProject = originalRunConfig?.kind !== "compact" ? originalRunConfig?.project : undefined;
-        const currentProject = originalProject?.id ? await aiProjects.getByShortId(originalProject.id, c.get("accessSubject")) : null;
+        const currentProject = originalProject?.id ? await aiProjects.getByShortId(originalProject.id, resourceContext(c)) : null;
         if (originalProject && !currentProject) return respond(c, fail(err.notFound("Project")));
 
         try {
-          const requestedModelId = await selectAssistantAiModelId(
+          const model = await selectAssistantAiModel(
             c.get("accessSubject"),
-            body.modelProfileId ?? originalProject?.defaultModelProfileId ?? undefined,
+            body.model ?? originalProject?.defaultModel ?? undefined,
             ctx.modelPolicy,
           );
           if ((await prepareConversationForMessageRetry(conversation.id)) === "busy") {
@@ -1134,7 +1135,7 @@ export const aiRoutes = (() => {
             locale: getLocale(c),
             theme: readThemeFromCookieHeader(c.req.header("cookie")),
             timeZone: getTimeZone(c),
-            requestedModelId,
+            model,
             modelPolicy: ctx.modelPolicy,
             systemPrompt,
             project: originalProject,
@@ -1158,7 +1159,7 @@ export const aiRoutes = (() => {
                 }
               : undefined,
           });
-          rememberLastUsedModel(ctx.actor, result.turn.modelProfileId);
+          rememberLastUsedModel(ctx.actor, body.model);
           return respond(
             c,
             ok({
@@ -1190,7 +1191,7 @@ export const aiRoutes = (() => {
         }
 
         const body = c.req.valid("json");
-        if (conversation.projectId && !(await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read"))) {
+        if (conversation.projectId && !(await aiProjects.get(conversation.projectId, resourceContext(c), "read"))) {
           return respond(c, fail(err.notFound("Project")));
         }
         const forked = await aiConversations.forkConversation({
@@ -1199,7 +1200,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           title: body.title ?? conversation.title,
         });
-        return respond(c, ok(await conversationDetail(forked, c.get("accessSubject"))));
+        return respond(c, ok(await conversationDetail(forked, resourceContext(c))));
       })
       .get("/conversations/:conversationId/enrichment", async (c) => {
         const ctx = await resolveContext(c);
@@ -1230,7 +1231,7 @@ export const aiRoutes = (() => {
           const result = await submitAiCompaction({
             conversationId: conversation.id,
             actor: ctx.actor,
-            requestedModelId: body.modelProfileId,
+            model: body.model,
             modelPolicy: ctx.modelPolicy,
           });
           return respond(c, ok({ turn: publicTurn(result.turn, conversation.shortId) }), 201);

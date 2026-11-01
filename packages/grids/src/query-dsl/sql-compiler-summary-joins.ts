@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { compileGroupQuery } from "../service/group-compiler";
 import { compileRecordMetaFilter } from "../service/record-metadata";
 import type { DslSummaryJoin } from "./resolver-summary-joins";

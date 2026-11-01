@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { DslQueryPreviewColumn, DslQueryPreviewDiagnostic, DslQueryPreviewResponse } from "../contracts";
 import { decimalStringToCanonical } from "../formula/numeric";
 import { normalizeRefKey } from "../ref-syntax";
@@ -453,7 +453,14 @@ const labelPrincipalPreviewValues = async (
       Object.entries(row.values).map(([key, value]) => {
         if (!keys.includes(key)) return [key, value];
         const principals = principalReferencesFromValue(value);
-        return [key, principals.map((principal) => labels[principal.id] ?? (principal.type === "user" ? "Private user" : "Private group"))];
+        return [
+          key,
+          principals.map(
+            (principal) =>
+              labels[principal.id] ??
+              (principal.type === "user" ? "Private user" : principal.type === "group" ? "Private group" : "Private service account"),
+          ),
+        ];
       }),
     ),
   }));

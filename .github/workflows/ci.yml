@@ -43,6 +43,11 @@ env:
   BUN_VERSION: 1.4.2
   TEST_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
+# The heavy matrix jobs (unit, webkit, integration, grids) run on the runner named by
+# the repository variable CI_HEAVY_RUNNER, or on ubuntu-24.04 when it is unset. The
+# variable switches them to a larger GitHub-hosted runner, which is billed per minute
+# against the enterprise Actions budget; delete the variable to fall back without a PR.
+
 jobs:
   changes:
     runs-on: ubuntu-24.04
@@ -87,7 +92,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD)
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|retry\.sh|start-playwright\.sh|process-crashes\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|packages/editor/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|retry\.sh|start-playwright\.sh|process-crashes\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
           # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
           browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
@@ -103,7 +108,7 @@ jobs:
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
-            echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
+            echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
             echo "webkit=$(match "$shared|^tests/fixtures/|^($browser)/")"
@@ -170,20 +175,21 @@ jobs:
 
   unit:
     needs: [setup, mirror]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Both modes balance measured suite times from scripts/test-weights.json:
+      # All three modes balance measured suite times from scripts/test-weights.json:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min (half the 30-minute job limit).
-      # Current measured maxima predict 14.6 min for the slowest of 5 unit shards.
+      # Measured maxima from runs 40503698446, 40500643888 and 40500643622
+      # predict 14.3 min for the slowest of 7 unit shards (6 need 15.2 min).
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
       # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
@@ -221,20 +227,21 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Measured maxima from green runs 39674709624, 39674708604 and
-  # 39674705547 predict 13.6 min for the slowest of 7 shards (6 need 15.9 min).
-  # Two additional WebKit runners keep the expanded suite below the 15-min target.
-  # The 20-min guard reserves
-  # the last third for setup and finalization; strategy.job-total is the divisor.
+  # locally. Measured maxima include failed run 40533200164, the Mail shell
+  # split (40561248493), and kept-mail admin (40550225615). Ten shards need
+  # 13.8 min; nine need 15.3 min.
+  # The runner tests enforce the 15-minute prediction for every heavy matrix.
+  # The 20-min guard reserves the last third for setup and finalization;
+  # strategy.job-total is the divisor.
   webkit:
     needs: [changes, setup]
     if: needs.changes.outputs.webkit == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
@@ -262,8 +269,14 @@ jobs:
 
   integration:
     needs: [setup, mirror]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Measured maxima from runs 40901942299, 40901379596 and 40901375367
+      # predict 13.9 min for the slowest of 4 integration shards (3 need 17.0 min).
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       clickhouse:
         image: ghcr.io/k2b-dev/mirror/clickhouse/clickhouse-server:26.9.19.9@sha256:bdb5c911a23d92fd364e246ab20b5a0a485f00112f3663fa626b083fb46c146b
@@ -286,6 +299,7 @@ jobs:
           # prints the service log under "Stop containers"; the log options
           # below bound it. See contributing/testing.md.
           POSTGRES_INITDB_ARGS: &postgres-diagnostics >-
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
             -c shared_preload_libraries=auto_explain
             -c "log_line_prefix=%m [%p] %q%d %a: "
             -c log_min_duration_statement=250ms
@@ -296,6 +310,7 @@ jobs:
             -c auto_explain.log_parameter_max_length=256
         ports: ["5432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=4g
           --health-cmd "pg_isready -U cloud -d cloud_ci_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
           --log-opt max-size=4m --log-opt max-file=2
@@ -314,6 +329,11 @@ jobs:
       CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
       CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
       CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
+      CLOUD_TEST_S3_ENDPOINT: http://127.0.0.1:3900
+      CLOUD_TEST_S3_BUCKET: cloud-test
+      CLOUD_TEST_S3_ACCESS_KEY_ID: GK0123456789abcdef01234567
+      CLOUD_TEST_S3_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      CLOUD_TEST_S3_REGION: garage
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -323,8 +343,9 @@ jobs:
         run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0 dxflrs/garage:v2.3.0
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
+          docker compose -f compose.test-s3.yml up -d --wait
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
       - uses: ./.github/actions/install
@@ -335,14 +356,57 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification runs in its own sharded job below.
-      - run: bun run test --integration --exclude grids
+      - name: Start Postgres storage sampler
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" sh -ec 'test "$(stat -f -c %T "$PGDATA")" = tmpfs'
+          docker exec "$POSTGRES_CONTAINER" psql -U cloud -d cloud_ci_test \
+            -c 'SHOW fsync' -c 'SHOW synchronous_commit' -c 'SHOW full_page_writes'
+          # Run inside the disposable container so the sampler survives the
+          # step boundary. The always-step below stops it and prints its log.
+          docker exec -d "$POSTGRES_CONTAINER" sh -ec '
+            exec > /tmp/cloud-pg-storage-sampler.log 2>&1
+            echo "$$" > /tmp/cloud-pg-storage-sampler.pid
+            storage_sleep=
+            stop_sampler() {
+              if [ -n "$storage_sleep" ]; then
+                kill "$storage_sleep" 2>/dev/null || true
+                wait "$storage_sleep" || true
+              fi
+              exit 0
+            }
+            trap stop_sampler TERM INT
+            while true; do
+              df -k "$PGDATA"
+              sleep 30 &
+              storage_sleep=$!
+              wait "$storage_sleep"
+            done
+          '
+      - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/4 --max-minutes 20
+      - name: Stop Postgres storage sampler and print samples
+        if: always()
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" sh -ec '
+            if [ -f /tmp/cloud-pg-storage-sampler.pid ]; then
+              kill "$(cat /tmp/cloud-pg-storage-sampler.pid)" 2>/dev/null || true
+            fi
+            cat /tmp/cloud-pg-storage-sampler.log
+            df -k "$PGDATA"
+          '
       - if: always()
-        run: docker rm --force ci-nats
+        run: |
+          docker compose -f compose.test-s3.yml logs
+          docker compose -f compose.test-s3.yml down --volumes
+          docker rm --force ci-nats
 
   grids:
     needs: [changes, setup, mirror]
     if: needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -383,9 +447,11 @@ jobs:
           # Slow statements and plans as in the integration job; PostgreSQL 15
           # has no auto_explain.log_parameter_max_length.
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
+            --tmpfs /var/lib/postgresql/data:rw,size=4g \
             --log-opt max-size=4m --log-opt max-file=2 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
             postgres:15-alpine -c max_connections=300 \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off \
             -c shared_preload_libraries=auto_explain -c "log_line_prefix=%m [%p] %q%d %a: " \
             -c log_min_duration_statement=250ms -c log_parameter_max_length=256 \
             -c auto_explain.log_min_duration=250ms -c auto_explain.log_analyze=off \
@@ -492,6 +558,7 @@ jobs:
           POSTGRES_INITDB_ARGS: *postgres-diagnostics
         ports: ["5432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=4g
           --health-cmd "pg_isready -U cloud -d cloud_packed_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
           --log-opt max-size=4m --log-opt max-file=2
@@ -633,6 +700,15 @@ jobs:
             CLOUD_RELEASE=sha-${{ github.sha }}
           cache-from: type=gha,scope=ci-pwa-auth
           cache-to: type=gha,mode=max,scope=ci-pwa-auth
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: pwas/notes/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: cloud-notes:ci
+          cache-from: type=gha,scope=ci-notes
+          cache-to: type=gha,mode=max,scope=ci-notes
       - name: Boot core and gateway against fresh infrastructure
         env:
           APP_SECRET: ${{ env.TEST_SECRET }}
@@ -641,10 +717,38 @@ jobs:
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
           docker network create cloud-smoke
           docker run --detach --name postgres --network cloud-smoke \
-            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
+            --tmpfs /var/lib/postgresql/data:rw,size=4g \
+            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
           docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
           timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
+          trap 'docker logs notes 2>&1 || true' ERR
+          docker exec postgres createdb -U ipa notes_test
+          docker run --detach --name notes --network cloud-smoke \
+            --env DATABASE_URL=postgresql://ipa:ipa@postgres:5432/notes_test \
+            --env NOTES_PUBLIC_ORIGIN=https://notes.example.test \
+            --env NOTES_STORAGE_BYTES=1073741824 --env NOTES_MAX_CONNECTIONS=50 \
+            --env NOTES_MAX_OPEN_PADS=10 cloud-notes:ci
+          timeout 60s docker exec notes bun -e 'for(;;){try{if((await fetch("http://127.0.0.1:3000/readyz")).ok)break}catch{}await Bun.sleep(1000)}'
+          docker exec notes bun -e 'for(const method of ["GET","HEAD"])for(const path of ["/admin","/admin/","/api/admin/session"]){if((await fetch("http://127.0.0.1:3000"+path,{method})).status!==404)throw new Error("admin_not_disabled")}'
+          docker exec notes bun -e 'if(process.getuid()===0)throw new Error("root");const r=await fetch("http://127.0.0.1:3000/");if(!r.ok||!(await r.text()).includes("id=\"root\""))throw new Error("missing_spa")'
+          docker exec notes bun -e '
+            const root="http://127.0.0.1:3000";
+            const html=await (await fetch(root)).text();
+            const path=html.match(/href="([^"]+\.css)"/)?.[1];
+            if(!path)throw new Error("missing_stylesheet");
+            const css=await (await fetch(new URL(path,root))).text();
+            if(!css.includes(".k2b-ui")||!css.includes(".notes-admin"))throw new Error("incomplete_stylesheet");'
+          docker exec notes bun -e '
+            const root="http://127.0.0.1:3000";
+            const created=await fetch(`${root}/api/pads`,{method:"POST",headers:{Origin:"https://notes.example.test","Content-Type":"application/json"},body:JSON.stringify({accepted:true,snapshot:"AQEBAAQBBHRleHQNIyBJbWFnZSBzbW9rZQA="})});
+            if(created.status!==201)throw new Error("create_failed");
+            const {readId}=await created.json();
+            const image=await fetch(`${root}/p/${readId}/preview.png`);
+            const png=Buffer.from(await image.arrayBuffer());
+            if(!image.ok||png.readUInt32BE(16)!==1200||png.readUInt32BE(20)!==630)throw new Error("preview_failed");'
+          trap - ERR
           # compose.dev.yml x-env with the service names of this throwaway network.
           common=(--network cloud-smoke
             --env NODE_ENV=production
@@ -681,7 +785,7 @@ jobs:
           docker logs app-core; docker logs gateway
           exit 1
       - if: always()
-        run: docker rm --force app-core gateway postgres nats valkey || true
+        run: docker rm --force notes app-core gateway postgres nats valkey || true
 
   gate:
     needs: [changes, mirror, setup, check, unit, webkit, integration, grids, ui, docs, packed, release-body, bundles, images]

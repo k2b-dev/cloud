@@ -46,6 +46,16 @@ if (process.env.NOTEBOOKS_ADMIN_SETTINGS_TEST !== "1") {
   const update = spyOn(settingsService.entry, "update");
   const reschedule = spyOn(snapshotRuntime, "reschedule").mockResolvedValue(undefined);
 
+  test("Notebooks answers a refused value with the setting's own reason, which the dialog shows at the field", async () => {
+    const response = await router.request("/admin/settings/notebooks.snapshot_allowed_targets", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Cookie: "session_token=test" },
+      body: JSON.stringify({ value: ["minio.internal", "0.0.0.0/0"] }),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { message: string }).message).toContain("/0 is forbidden");
+  });
+
   test("Notebooks forwards replacement through ordinary and snapshot-cron writes without swallowing 409", async () => {
     try {
       for (const [key, value] of [
@@ -63,12 +73,22 @@ if (process.env.NOTEBOOKS_ADMIN_SETTINGS_TEST !== "1") {
         const response = await request();
         expect(response.status).toBe(409);
         expect(await response.json()).toEqual({ code: "setting_unreadable", message: error.message });
-        expect(update).toHaveBeenLastCalledWith({ key, value, replaceUnreadable: undefined });
+        expect(update).toHaveBeenLastCalledWith({
+          key,
+          value,
+          replaceUnreadable: undefined,
+          audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+        });
         expect(reschedule).not.toHaveBeenCalled();
 
         update.mockResolvedValue(ok(undefined));
         expect((await request(true)).status).toBe(200);
-        expect(update).toHaveBeenLastCalledWith({ key, value, replaceUnreadable: true });
+        expect(update).toHaveBeenLastCalledWith({
+          key,
+          value,
+          replaceUnreadable: true,
+          audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+        });
         if (key === "notebooks.snapshot_cron") expect(reschedule).toHaveBeenCalledWith(value);
       }
     } finally {

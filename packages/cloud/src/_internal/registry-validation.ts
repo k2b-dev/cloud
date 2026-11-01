@@ -1,5 +1,7 @@
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
+import { APP_ADMIN_AREAS } from "../contracts/app";
 import { AppAccessRuleSchema } from "../contracts/app-access";
+import { validateInstallable } from "../contracts/installable";
 import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { isOwnAppPath, SAME_ORIGIN_PATH } from "./app-path";
@@ -18,6 +20,10 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   for (const field of ["id", "name", "icon", "description", "baseUrl"] as const) {
     if (!isString(value[field]) || value[field].length === 0) return invalid(field, "a non-empty string");
   }
+  if (value.public !== undefined && value.public !== true) return invalid("public", "true when present");
+  if (value.package !== undefined && (typeof value.package !== "string" || !/^[a-z][a-z0-9-]{0,79}$/.test(value.package))) {
+    return invalid("package", "a lowercase package name of 1–80 characters");
+  }
   try {
     const baseUrl = new URL(value.baseUrl as string);
     if (!(["http:", "https:"] as const).includes(baseUrl.protocol as "http:" | "https:") || baseUrl.username || baseUrl.password) {
@@ -28,6 +34,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   }
   if (!isStringArray(value.routes) || value.routes.some((route) => !route.startsWith("/"))) {
     return invalid("routes", "an array of absolute paths");
+  }
+  if (value.installable !== undefined && !validateInstallable(String(value.id), value.routes, value.installable)) {
+    return invalid("installable", "a canonical standalone surface covered by the app's own declared routes");
   }
   if (value.access !== undefined && !AppAccessRuleSchema.safeParse(value.access).success)
     return invalid("access", "a declarative app access rule");
@@ -96,7 +105,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
         (group) =>
           !isRecord(group) ||
           (group.id !== undefined && !isString(group.id)) ||
-          (group.section !== undefined && group.section !== "ai") ||
+          (group.section !== undefined && !(APP_ADMIN_AREAS as readonly unknown[]).includes(group.section)) ||
           !isString(group.label) ||
           !Array.isArray(group.links) ||
           group.links.some((link) => !isRecord(link) || !isString(link.label) || !isString(link.href) || !isString(link.icon)),
@@ -137,6 +146,12 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (value.pwa.requiresRoles !== undefined && !isStringArray(value.pwa.requiresRoles)) {
       return invalid("pwa.requiresRoles", "an array of strings");
     }
+    for (const field of ["badge", "summary"] as const) {
+      const path = value.pwa[field];
+      if (path !== undefined && (!isString(path) || !isOwnAppPath(path, value.routes))) {
+        return invalid(`pwa.${field}`, "a same-origin path below one of the app's routes");
+      }
+    }
   }
   if (value.widgets !== undefined) {
     if (
@@ -146,8 +161,8 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("widgets", "an array of valid widgets");
     }
   }
-  if (value.platformPermissions !== undefined && !PlatformPermissionSchema.array().safeParse(value.platformPermissions).success)
-    return invalid("platformPermissions", "an array of platform permissions");
+  if (value.platformPermissions !== undefined && !isStringArray(value.platformPermissions))
+    return invalid("platformPermissions", "an array of permission IDs");
   if (value.settingKeys !== undefined && !isStringArray(value.settingKeys)) return invalid("settingKeys", "an array of strings");
   if (
     value.cliModules !== undefined &&
@@ -184,5 +199,18 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   return null;
 };
 
-export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null =>
-  validateAppRegistryEntry(value) === null ? (value as AppRegistryEntry) : null;
+export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null => {
+  if (validateAppRegistryEntry(value) !== null) return null;
+  const entry = value as AppRegistryEntry;
+  return {
+    ...entry,
+    ...(entry.platformPermissions !== undefined
+      ? {
+          platformPermissions: entry.platformPermissions.flatMap((permission) => {
+            const parsed = PlatformPermissionSchema.safeParse(permission);
+            return parsed.success ? [parsed.data] : [];
+          }),
+        }
+      : {}),
+  };
+};

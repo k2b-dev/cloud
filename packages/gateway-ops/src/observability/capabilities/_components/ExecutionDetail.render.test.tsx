@@ -61,7 +61,63 @@ test("execution detail shows correlation, shape and the user's AI usage without 
   expect(html).toContain("3 items");
   expect(html).toContain("&lt;script");
   expect(html).not.toContain("<script>");
-  expect(html).toContain("/admin/settings?tab=ai-usage");
+  expect(html).toContain("/admin/ai?sec=usage");
   expect(html).toContain("5de41b38-a3ac-47f3-b47c-da6472afbb42");
   expect(html).toContain("/admin/observability/capabilities?app=contacts");
+  // K1 outline: kind line with the call's state, properties, then identifiers under "More about this call".
+  const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+  expect(kind).toContain("Capability call");
+  expect(kind).toContain("Failed");
+  expect(html).toContain("<h2>contacts · contacts.delete</h2>");
+  expect(html).not.toContain("k2b-detail-panel__section-icon");
+  const properties = html.indexOf(">Properties<");
+  const more = html.indexOf("More about this call");
+  expect(properties).toBeGreaterThan(-1);
+  expect(properties).toBeLessThan(more);
+  expect(html.slice(more)).toContain("req-full-correlation-id");
+  expect(html.slice(more)).toContain("idem-full-key");
+});
+
+test("execution detail lists several calls of one request as their own sections", () => {
+  const retry: CapabilityExecution = { ...execution, id: "retry-id", status: "succeeded", errorCode: null, idempotencyKey: "idem-retry" };
+  const html = renderToString(() =>
+    createComponent(Detail, {
+      executions: [execution, retry],
+      closeHref: "/admin/observability/capabilities?app=contacts",
+    }),
+  );
+
+  expect(html).toContain("<h2>2 calls</h2>");
+  expect(html.match(/contacts · contacts\.delete/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(html).toContain("Failed");
+  expect(html).toContain("Succeeded");
+  expect(html).toContain("idem-full-key");
+  expect(html).toContain("idem-retry");
+  expect(html).not.toContain(">Properties<");
+});
+
+test("execution detail identifies an app actor and its enrolled key without a person", () => {
+  const html = renderToString(() =>
+    createComponent(Detail, {
+      executions: [
+        {
+          ...execution,
+          origin: "app",
+          actorKind: "app",
+          actorId: null,
+          userId: null,
+          actorAppId: "vendor-web",
+          actorKeyId: "22222222-2222-4222-8222-222222222222",
+          accessSubjectType: null,
+          accessSubjectId: null,
+        },
+      ],
+      closeHref: "/admin/observability/capabilities",
+    }),
+  );
+  expect(html).toContain("vendor-web");
+  expect(html).toContain("App key ID");
+  expect(html).toContain("22222222-2222-4222-8222-222222222222");
+  expect(html).not.toContain("actor-full-id");
+  expect(html).not.toContain("/admin/ai?sec=usage");
 });

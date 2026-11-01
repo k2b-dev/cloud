@@ -13,7 +13,6 @@
 
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../config";
 import OperationalCharts from "../frontend/OperationalCharts.island";
@@ -21,6 +20,7 @@ import { alignCountSeries, prepareOperationalCharts } from "../frontend/operatio
 import RangeTabs from "../frontend/RangeTabs";
 import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "./_components/ObservabilityArea";
 import { buildOverviewSignals, type OverviewSignalSeverity, overviewVerdict } from "./overview";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "./telemetry/contracts";
 import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryRoutes } from "./telemetry/service";
@@ -109,14 +109,10 @@ export default ssr<AuthContext>(async (c) => {
   const rangeUrl = (option: TelemetryRange) =>
     option === DEFAULT_TELEMETRY_RANGE ? "/admin/observability" : `/admin/observability?range=${option}`;
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={t.observability}>
-      <div class="app-rows">
-        <div class="min-w-0">
-          <h1 class="text-base font-semibold text-primary">{t.observability}</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.observabilityDescription}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="home" attention={attention}>
+      <ObservabilityPane label={areaText(locale).home} description={t.observabilityDescription}>
         <RangeTabs
           caption={t.trafficWindow}
           label={t.trafficWindow}
@@ -172,7 +168,7 @@ export default ssr<AuthContext>(async (c) => {
             label={t.appsOnline}
             value={health.value ? `${health.value.apps.length - offlineApps.length}/${health.value.apps.length}` : "—"}
             sub={health.error ? t.unavailable : t.registeredAppsLabel}
-            href="/admin/gateway/apps"
+            href="/admin/apps"
             accent={offlineApps.length > 0 ? { tone: "red", icon: "ti ti-plug-connected-x" } : { tone: "emerald", icon: "ti ti-check" }}
           />
           <StatCell
@@ -258,7 +254,7 @@ export default ssr<AuthContext>(async (c) => {
             </ul>
           )}
         </section>
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

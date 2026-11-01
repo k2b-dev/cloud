@@ -1,4 +1,33 @@
 const messages: Record<string, [string, string]> = {
+  activity_export_range: ["Choose a date range of at most one year.", "Wähle einen Zeitraum von höchstens einem Jahr."],
+  activity_export_limit: [
+    "This export contains more than 100,000 entries. Narrow the date range or filters.",
+    "Der Export enthält mehr als 100.000 Einträge. Grenze den Zeitraum oder die Filter ein.",
+  ],
+  activity_export_failed: [
+    "The export could not be completed. Try again.",
+    "Der Export konnte nicht abgeschlossen werden. Versuche es erneut.",
+  ],
+  history_unavailable: [
+    "History is available only for local Cloud storage. This area uses Unix permissions, which history cannot check.",
+    "Der Verlauf ist nur für lokale Cloud-Ablagen verfügbar. Dieser Bereich verwendet Unix-Rechte, die der Verlauf nicht prüfen kann.",
+  ],
+  share_access_cursor_expired: [
+    "The network page expired or the date range changed. Refresh the first page of link access counts.",
+    "Die Netzseite ist abgelaufen oder der Zeitraum wurde geändert. Lade die erste Seite der Linkzugriffe neu.",
+  ],
+  invalid_activity_filter: [
+    "Check the history filters and date range. Paths require a storage base; the start must not follow the end.",
+    "Prüfe Verlaufsfilter und Zeitraum. Pfade brauchen eine Ablage; der Anfang darf nicht nach dem Ende liegen.",
+  ],
+  transfer_expired: [
+    "This transfer expired. Request a new transfer from Files.",
+    "Diese Übertragung ist abgelaufen. Fordere in Dateien eine neue Übertragung an.",
+  ],
+  machine_storage_owned: [
+    "This directory belongs to a machine account. Manage its access under Machine storage.",
+    "Dieses Verzeichnis gehört einem Maschinenkonto. Verwalte den Zugriff unter Maschinenablagen.",
+  ],
   configuration_unreadable: [
     "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
     "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",
@@ -31,6 +60,10 @@ const messages: Record<string, [string, string]> = {
   transfer_pending: [
     "Filegate has not confirmed this transfer. Review the operation before retrying.",
     "Filegate hat diese Übertragung nicht bestätigt. Prüfe den Vorgang vor einem neuen Versuch.",
+  ],
+  version_restore_changed: [
+    "The file changed since this view opened. Reload its current version before restoring.",
+    "Die Datei wurde seit dem Öffnen dieser Ansicht geändert. Lade den aktuellen Stand vor dem Wiederherstellen neu.",
   ],
   write_conflict: [
     "The file changed while it was being saved. Reload its current version before saving again.",
@@ -82,8 +115,8 @@ const messages: Record<string, [string, string]> = {
   ],
 
   local_linux_disabled: [
-    "Enable local Linux identities before enabling Cloud files.",
-    "Aktiviere lokale Linux-Identitäten, bevor du Cloud-Dateien aktivierst.",
+    "Enable local Linux identities to use personal and group Cloud storage.",
+    "Aktiviere lokale Linux-Identitäten für persönliche Cloud-Ablagen und Gruppenablagen.",
   ],
   freeipa_disabled: ["Enable FreeIPA before enabling FreeIPA files.", "Aktiviere FreeIPA, bevor du FreeIPA-Dateien aktivierst."],
   invalid_configuration: ["Check the Filegate URL and storage configuration.", "Prüfe Filegate-URL und Ablagenkonfiguration."],
@@ -211,8 +244,12 @@ const messages: Record<string, [string, string]> = {
   ],
   versioning_disabled: ["Versions are not enabled for this storage.", "Für diese Ablage sind Versionen nicht aktiviert."],
   search_limited: [
-    "This folder holds too many entries to search without an index. Search within a smaller folder.",
-    "Dieser Ordner enthält zu viele Einträge für eine Suche ohne Index. Suche in einem kleineren Ordner.",
+    "This search takes too long. Search in a smaller folder, add a filter, or search exact names.",
+    "Diese Suche dauert zu lange. Suche in einem kleineren Ordner, setze einen Filter oder suche nach genauen Namen.",
+  ],
+  search_busy: [
+    "Storage is busy with other searches. Try again in a moment.",
+    "Die Ablage ist mit anderen Suchen beschäftigt. Versuche es gleich noch einmal.",
   ],
 };
 export function errorMessage(code: string, locale: string): string {

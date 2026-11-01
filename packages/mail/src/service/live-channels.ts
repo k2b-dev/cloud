@@ -11,7 +11,7 @@ import { resolvePublicId } from "./public-resources";
  * no conversation; `mail.enqueue_live_invalidation()` writes both.
  */
 export const mailboxLiveKeys = (mailboxId: string, access: MailboxAccess): string[] =>
-  access.scope === "mailbox" ? [mailboxId] : [`${mailboxId}:${access.userId}`, `${mailboxId}:assigned`];
+  access.scope === "mailbox" ? [mailboxId] : [`${mailboxId}:${access.userId ?? access.serviceAccountId}`, `${mailboxId}:assigned`];
 
 const parseKey = (key: string): { mailboxId: string; reader: string | null } => {
   const [mailboxId = "", reader = null] = key.split(":");

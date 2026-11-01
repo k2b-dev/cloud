@@ -1,10 +1,9 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgIntArray, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
-import { sql } from "bun";
 import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
 import { remoteMessagePreconditionSchema } from "../contracts";
@@ -66,6 +65,7 @@ import {
   messageStatePayloadSchema,
   projectMailWorkflowMessagePrecondition,
 } from "./workflow-message-preconditions";
+import { authorizeMailWorkflowSend } from "./workflow-send-policy";
 
 const log = logger("mail:commands");
 const STALE_EXECUTION_MINUTES = 10;
@@ -798,6 +798,10 @@ const beginProviderEffect = async (
       throw Object.assign(new Error("Mail command lease was lost before the provider effect"), { code: "COMMAND_JOB_LEASE_LOST" });
     }
     if (command.kind === "send") {
+      if (command.actor_kind === "workflow") {
+        const allowed = await authorizeMailWorkflowSend({ db: tx, mailboxId: command.mailbox_id, workflowVersionId: command.actor_id });
+        if (!allowed.ok) throw Object.assign(new Error(allowed.error.message), allowed.error);
+      }
       if (!senderIdentityId) {
         throw Object.assign(new Error("Send command is missing its sender identity"), { code: "SENDER_IDENTITY_UNAVAILABLE" });
       }

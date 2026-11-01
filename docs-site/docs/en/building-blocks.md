@@ -40,6 +40,7 @@ import from another application.
 | Add durable workflows | Workflow definitions and runtime adapters | `@k2b/cloud/workflows` | [Workflow overview](/en/docs/automation/workflow-overview) |
 | Render application pages | SSR shells, islands, and navigation | `@k2b/cloud/ssr`, `@k2b/ssr` | [Frontend](/en/docs/frontend) |
 | Use shared components | Portable UI package | `@k2b/ui` | [UI catalog](/ui) |
+| Let people write Markdown | Editor, toolbar, bubble menu, and slash menu | `@k2b/editor` | [Editor package](/en/docs/frontend/editor) |
 | Add AI features | AI resources, models, tools, and streaming | `@k2b/cloud/ai` | [AI](/en/docs/ai) |
 
 The [API surface](/en/docs/reference/api-surface) lists every supported import,

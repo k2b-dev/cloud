@@ -11,6 +11,16 @@ export type SelectionAllowance = { file: string; subject: string; reason: string
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   {
+    file: "packages/core/src/pages/admin/apps/view.tsx",
+    subject: 'variant={text().primary ? "primary" : "secondary"}',
+    reason: "Action: a notice's way out is the app page's one filled action when the app has no valid key.",
+  },
+  {
+    file: "packages/core/src/pages/admin/apps/KeysCreate.island.tsx",
+    subject: 'variant={props.neverStarted ? "primary" : "secondary"}',
+    reason: "Action: before an app's first start, creating its key is the page's one main action.",
+  },
+  {
     file: "packages/pulse/src/frontend/workspace/base-settings-dialog.tsx",
     subject: 'background: "var(--k2b-selected)",',
     reason:
@@ -92,6 +102,11 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Control: hover feedback of a pressed formatting toolbar button.",
   },
   {
+    file: "packages/editor/src/styles.css",
+    subject: '.cm-block-source-toggle .k2b-button[aria-pressed="true"] { background }',
+    reason: "Control: pressed switch between a block's preview and its source.",
+  },
+  {
     file: "packages/cloud/src/styles/global.css",
     subject: ".dark .cloud-app-canvas { --cloud-shell-selected }",
     reason: "Shell frame: owned by shell-soft-white-canvas.",
@@ -135,11 +150,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     file: "packages/core/src/styles/app.css",
     subject: ".k2b-ui .ai-usage-filter--active .k2b-choice-trigger { background }",
     reason: "Control: the trigger of a select that shows its applied filter value; select controls keep the platform fill.",
-  },
-  {
-    file: "packages/core/src/pages/admin/settings/_components/LegalSettingsForm.island.tsx",
-    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"',
-    reason: "Status: custom value-source badge.",
   },
   {
     file: "packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx",

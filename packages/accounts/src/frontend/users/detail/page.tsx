@@ -69,6 +69,7 @@ export default ssr<AuthContext>(async (c) => {
   const categoryPolicy = await readAccountCategoryPolicy();
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
   const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
+  const cloudName = (await coreSettings.get<string>("app.name")) || "Cloud";
   const approvalConfig = await appApproval.config().catch(() => null);
 
   const listState = parseUsersListState({
@@ -91,10 +92,8 @@ export default ssr<AuthContext>(async (c) => {
       access: { userId: sessionUser.id, isAdmin: true },
       filter: { status: "pending" },
     }),
-    // The user's own memberships include their personal Linux group, like the direct list by ID below.
     accountsService.group.list({
       pagination: { page: 1, perPage: 1000 },
-      filter: { includePersonal: true },
       scope: { userId: id, mode: "member" },
     }),
     accountsService.group.list({
@@ -111,10 +110,9 @@ export default ssr<AuthContext>(async (c) => {
     }),
     // Null renders an explicit error state instead of hiding a device an admin may need to revoke.
     appApproval.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
-    // Phones in the mobile app; hidden while there are none, null renders an explicit error state.
+    // A failed load stays visible so an administrator can retry.
     pwaDevices.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
   ]);
-  const showDevices = Boolean(approvalConfig?.enabled) || devices === null || devices.length > 0;
 
   const directGroupsPage = await (directGroupIds.length > 0
     ? accountsService.group.list({
@@ -130,7 +128,7 @@ export default ssr<AuthContext>(async (c) => {
       });
 
   const allGroups = recursiveGroupsPage.items;
-  const directGroups = directGroupsPage.items;
+  const directGroups = directGroupsPage.items.filter((group) => group.personalOwner === null);
   const directGroupSet = new Set(directGroups.map((group) => group.id));
   const memberGroups = recursive ? allGroups : directGroups;
   const managedGroups = managedGroupsPage.items;
@@ -390,52 +388,58 @@ export default ssr<AuthContext>(async (c) => {
             )}
           </div>
 
-          {showDevices && (
-            <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-devices">
-              <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">{t.signInDevices}</h2>
-                {devices && <p class="mt-1 text-xs text-dimmed">{t.signInDevicesSummary({ count: devices.length })}</p>}
-              </div>
-
-              {devices === null ? (
-                <Placeholder surface="paper" state="error" description={<>{t.devicesUnavailable}</>} />
-              ) : devices.length > 0 ? (
-                <Paper class="overflow-hidden">
-                  <DataTable
-                    rows={devices}
-                    columns={deviceColumns}
-                    getRowId={(device) => device.id}
-                    hoverRows
-                    highlightColumns={false}
-                    class="overflow-x-auto"
-                    scrollPreserveKey="accounts-user-devices"
-                    renderCell={({ row: device, col }) => {
-                      if (col.id === "device")
-                        return (
-                          <div class="flex min-w-0 flex-col gap-1">
-                            <span class="truncate font-medium text-primary">{device.name}</span>
-                            {device.assisted && <span class="truncate text-xs text-dimmed">{t.pairedWithAdmin}</span>}
-                          </div>
-                        );
-                      if (col.id === "paired") return <span class="text-dimmed">{dates.formatDateTime(device.createdAt, { locale })}</span>;
-                      if (col.id === "lastUsed")
-                        return (
-                          <span class="text-dimmed">
-                            {device.lastUsedAt ? dates.formatDateTime(device.lastUsedAt, { locale }) : t.notUsedYet}
-                          </span>
-                        );
-                      if (col.id === "actions") return <RevokeUserDevice userId={user.id} deviceId={device.id} name={device.name} />;
-                      return "";
-                    }}
-                  />
-                </Paper>
-              ) : (
-                <Placeholder surface="paper" description={<>{t.noPairedDevices}</>} />
-              )}
+          <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-devices">
+            <div class="min-w-0">
+              <h2 class="text-base font-semibold text-primary">{t.cloudLogin}</h2>
+              <p class="mt-1 text-xs text-dimmed">{t.cloudLoginDescription}</p>
             </div>
-          )}
 
-          <AppDevicesSection userId={user.id} devices={phones} locale={locale} />
+            {devices === null ? (
+              <Placeholder surface="paper" state="error" description={<>{t.devicesUnavailable}</>} />
+            ) : devices.length > 0 ? (
+              <Paper class="overflow-hidden">
+                <DataTable
+                  rows={devices}
+                  columns={deviceColumns}
+                  getRowId={(device) => device.id}
+                  hoverRows
+                  highlightColumns={false}
+                  class="overflow-x-auto"
+                  scrollPreserveKey="accounts-user-devices"
+                  renderCell={({ row: device, col }) => {
+                    if (col.id === "device")
+                      return (
+                        <div class="flex min-w-0 flex-col gap-1">
+                          <span class="truncate font-medium text-primary">{device.name}</span>
+                          {device.assisted && <span class="truncate text-xs text-dimmed">{t.pairedWithAdmin}</span>}
+                        </div>
+                      );
+                    if (col.id === "paired") return <span class="text-dimmed">{dates.formatDateTime(device.createdAt, { locale })}</span>;
+                    if (col.id === "lastUsed")
+                      return (
+                        <span class="text-dimmed">
+                          {device.lastUsedAt ? dates.formatDateTime(device.lastUsedAt, { locale }) : t.notUsedYet}
+                        </span>
+                      );
+                    if (col.id === "actions") return <RevokeUserDevice userId={user.id} deviceId={device.id} name={device.name} />;
+                    return "";
+                  }}
+                />
+              </Paper>
+            ) : (
+              <Placeholder surface="paper" description={<>{t.noPairedDevices}</>} />
+            )}
+          </div>
+
+          <AppDevicesSection
+            userId={user.id}
+            name={user.displayName?.trim() || user.uid}
+            administrator={sessionUser.displayName?.trim() || sessionUser.uid}
+            cloud={cloudName}
+            blocked={isExpired || !categoryPolicy[accountCategory(user)].enabled}
+            devices={phones}
+            locale={locale}
+          />
 
           <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-memberships">
             <div class="flex flex-wrap items-end justify-between gap-2">

@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import {
   isSafeNotificationTargetHref,
   type NotificationDefinitionPresentationCatalog,
@@ -11,6 +10,7 @@ import type {
   UserNotificationPreference,
   UserNotificationPreferencesResponse,
 } from "../../contracts/user-notifications";
+import { sql } from "../../runtime/clients";
 import { normalizeLocale } from "../../shared/locale";
 import { toPgTextArray } from "../postgres";
 import { listNotificationChannels } from "./channels";
@@ -25,6 +25,8 @@ type PreferenceRow = {
   presentation: NotificationDefinitionPresentationCatalog | null;
   recommended_channels: string[];
   required_channels: string[];
+  excluded_channels: string[];
+  excluded_reason: string | null;
   channels: string[] | null;
   customized: boolean;
 };
@@ -57,12 +59,14 @@ const definitionPresentation = (
 ): { label: string; description: string } => resolveNotificationDefinitionPresentation(row, locale);
 
 const mapPreference = (row: PreferenceRow, locale?: string): UserNotificationPreference => {
-  const requiredChannels = unique(row.required_channels);
+  const excludedChannels = unique(row.excluded_channels);
+  const excluded = new Set(excludedChannels);
+  const requiredChannels = unique(row.required_channels).filter((channel) => !excluded.has(channel));
   const required = new Set(requiredChannels);
   const selectedChannels = unique(row.customized ? (row.channels ?? []) : row.recommended_channels).filter(
-    (channel) => !required.has(channel),
+    (channel) => !required.has(channel) && !excluded.has(channel),
   );
-  const presentation = definitionPresentation(row, locale);
+  const presentation = resolveNotificationDefinitionPresentation({ ...row, excludedReason: row.excluded_reason ?? undefined }, locale);
   return {
     id: row.id,
     appId: row.app_id,
@@ -71,6 +75,8 @@ const mapPreference = (row: PreferenceRow, locale?: string): UserNotificationPre
     description: presentation.description,
     recommendedChannels: unique(row.recommended_channels),
     requiredChannels,
+    excludedChannels,
+    excludedReason: presentation.excludedReason ?? null,
     selectedChannels,
     effectiveChannels: unique([...requiredChannels, ...selectedChannels]),
     customized: row.customized,
@@ -80,7 +86,7 @@ const mapPreference = (row: PreferenceRow, locale?: string): UserNotificationPre
 const listPreferences = async (userId: string, locale?: string): Promise<UserNotificationPreferencesResponse> => {
   const rows = await sql<PreferenceRow[]>`
     SELECT d.id, d.app_id, d.kind, d.label, d.description, d.presentation,
-           d.recommended_channels, d.required_channels, p.channels,
+           d.recommended_channels, d.required_channels, d.excluded_channels, d.excluded_reason, p.channels,
            (p.user_id IS NOT NULL) AS customized
     FROM notifications.definitions d
     LEFT JOIN notifications.preferences p
@@ -110,8 +116,8 @@ const setPreference = async (config: {
   channels: string[];
   locale?: string;
 }): Promise<MutationResult<UserNotificationPreference>> => {
-  const rows = await sql<{ required_channels: string[] }[]>`
-    SELECT required_channels
+  const rows = await sql<{ required_channels: string[]; excluded_channels: string[] }[]>`
+    SELECT required_channels, excluded_channels
     FROM notifications.definitions
     WHERE id = ${config.definitionId} AND active = true AND recipient_kind = 'user'
     LIMIT 1
@@ -119,8 +125,13 @@ const setPreference = async (config: {
   const definition = rows[0];
   if (!definition) return { ok: false, error: "Notification preference not found", status: 404 };
 
+  const requested = unique(config.channels.map((channel) => channel.trim()).filter(Boolean));
+  const excluded = requested.filter((channel) => definition.excluded_channels.includes(channel));
+  if (excluded.length > 0) {
+    return { ok: false, error: `Excluded notification channel: ${excluded.join(", ")}`, status: 400 };
+  }
   const required = new Set(definition.required_channels);
-  const channels = unique(config.channels.map((channel) => channel.trim()).filter(Boolean)).filter((channel) => !required.has(channel));
+  const channels = requested.filter((channel) => !required.has(channel));
   const available = new Set(listNotificationChannels());
   const unavailable = channels.filter((channel) => !available.has(channel));
   if (unavailable.length > 0) {

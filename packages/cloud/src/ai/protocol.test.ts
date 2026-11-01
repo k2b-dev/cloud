@@ -94,3 +94,18 @@ test.each<AiStoredActionReview>([reviewFixture(), { legacy: { question: "Send th
     expect(blocks[0]).toMatchObject({ status: "completed", review, check });
   },
 );
+
+test("interrupted map presentation survives a failed tool result", () => {
+  const result = { map: { id: "saved-map" }, anchor: true };
+  const blocks = buildBlocksFromMessages([
+    {
+      seq: 1,
+      message: { role: "assistant", content: [{ type: "tool_call", id: "map-call", name: "map", args: {} }] },
+      meta: { toolInterimResults: { "map-call": result } },
+    },
+    { seq: 2, message: { role: "tool_result", callId: "map-call", name: "map", result: "Interrupted", isError: true } },
+  ]);
+  const map = blocks.find((b) => b.kind === "tool");
+  expect(map?.kind === "tool" ? map.result : null).toEqual(result);
+  expect(map?.kind === "tool" ? map.status : null).toBe("failed");
+});

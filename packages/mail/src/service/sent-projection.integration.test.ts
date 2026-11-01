@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import type { FetchMessageObject, MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -10,7 +10,6 @@ import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { logoPng } from "../../test/mailbox-logo-fixtures";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
@@ -452,7 +451,6 @@ suite("mail sent message projection", () => {
   let context: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-sent-projection-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
@@ -3078,6 +3076,30 @@ suite("mail sent message projection", () => {
       expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
         expect.objectContaining({ id: imported.id, body: "Cloud edit.", revision: "2", state: "draft", recoveries: 2 }),
       ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft whose text ends in a line break keeps its revision when the sync sees Mail's own copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Typing a new line");
+      // Someone presses Enter at the end of the text; the composer saves while they keep typing.
+      const typed = "Hi\n\n\nDas ist ein test\n";
+      const saved = await editInCloud(mailbox, draft.id, draft.revision, typed);
+      await settleDraftImports(mailbox.mailboxId);
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: draft.id, body: typed, revision: String(saved.revision), state: "draft", recoveries: 0 }),
+      ]);
+      // The composer's next save still holds the current revision.
+      const next = await editInCloud(mailbox, draft.id, saved.revision, `${typed}weiter`);
+      expect(next.revision).toBe(saved.revision + 1);
+      await settleDraftImports(mailbox.mailboxId);
     } finally {
       provider.restore();
     }

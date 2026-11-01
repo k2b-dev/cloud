@@ -1,10 +1,9 @@
 import {
   aiConversations,
   aiProjects,
-  aiUserPrefs,
   assistantAiSettingsState,
   getAiChatQuotas,
-  listAssistantAiModels,
+  getLiveDictationStatus,
   loadAiStreamState,
 } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
@@ -36,18 +35,20 @@ export default ssr<AuthContext>(async (c) => {
   const approvalsOpen = url.searchParams.get("approvals") === "1" && !requestedConversationId && !requestedProjectId;
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await aiLive.cursor();
-  const [status, models, prefs, sidebar, appUrl, initialQuotas, approvals] = await Promise.all([
+  const [settings, liveDictation, sidebar, appUrl, initialQuotas, approvals] = await Promise.all([
     assistantAiSettingsState(subject),
-    listAssistantAiModels(subject),
-    aiUserPrefs.get(user.id),
-    loadAssistantSidebarSnapshot(user.id, { locale, timeZone }),
+    getLiveDictationStatus(c.get("accessSubject")),
+    loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
     // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
     loadPendingApprovals(c, { app: "assistant" }),
   ]);
+  const status = { ...settings, liveDictationAvailable: liveDictation.available };
   const { conversations } = sidebar;
-  const activeProjectRecord = requestedProjectId ? await aiProjects.getByShortId(requestedProjectId, subject) : null;
+  const activeProjectRecord = requestedProjectId
+    ? await aiProjects.getByShortId(requestedProjectId, { actor: c.get("actor"), accessSubject: c.get("accessSubject") })
+    : null;
   if (requestedProjectId && !activeProjectRecord) return ssr.error(c, 404);
   const activeProject = activeProjectRecord ? { ...activeProjectRecord, id: activeProjectRecord.shortId } : null;
   const projects = activeProject
@@ -93,7 +94,9 @@ export default ssr<AuthContext>(async (c) => {
     ? await Promise.all([
         loadAiStreamState(activeConversation),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
-        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, { timeZone }),
+        loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
+          timeZone,
+        }),
       ])
     : [null, [], null];
 
@@ -105,8 +108,7 @@ export default ssr<AuthContext>(async (c) => {
       userId={user.id}
       cloudUrl={publicCloudOrigin(appUrl)}
       status={status}
-      models={models}
-      lastModelId={prefs.lastModelId}
+      models={status.options}
       timeZone={timeZone}
       renderedAt={new Date().toISOString()}
       initialLiveCursor={initialLiveCursor}

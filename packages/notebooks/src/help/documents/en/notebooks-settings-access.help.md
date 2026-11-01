@@ -14,7 +14,7 @@ People with **View** access always see **Book**. Book is a reading view with pag
 
 In Book, page links, tag filters, search, and pagination update the content without a full reload. **Back** and **Forward** in the browser return to earlier reading positions. Saved changes refresh the page and the query results automatically. Without JavaScript, navigation still works through normal page loads.
 
-In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
+In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. Around the open page, a level first shows 20 pages; choose **… more pages** at its end or **… earlier pages** at its start to show up to 100 more. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
 
 The sidebar lists the notebook's start page first, with its sub-pages below it. This also applies when the start page is under another page. All other pages follow the notebook order on each level:
 
@@ -66,6 +66,12 @@ Notebooks saves the change immediately.
 The setting covers only deleting and locking whole notes. People and agents with **Edit** access still edit notes as before, including removing text. The version history keeps earlier versions.
 
 For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You cannot edit it or restore a version in place. You can restore a version as a copy.
+
+## Give an integration or agent access {icon="key"}
+
+Add its standalone service account or agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
+
+To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent or standalone service account can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own notebook.
 
 ## Find the right settings tab {icon="settings"}
 

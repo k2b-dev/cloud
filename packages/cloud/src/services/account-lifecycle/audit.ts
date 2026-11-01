@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { UserProfile, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 
 export type DeletedAccountReason =
   | "ipa_expired_demoted"

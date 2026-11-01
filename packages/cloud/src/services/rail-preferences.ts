@@ -1,17 +1,20 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { defaultRailPreferences, type RailPreferences, RailPreferencesSchema } from "../contracts/rail-preferences";
+import { sql } from "../runtime/clients";
 
 /** Core-owned data, read by the platform SSR seam without a process-wide cache. */
-export const createRailPreferencesService = (db: SQL = sql) => ({
-  async get(userId: string): Promise<RailPreferences> {
-    const [row] = await db<{ revision: number; visibility: unknown; shortcuts: unknown }[]>`
+export const createRailPreferencesService = (injectedDb?: SQL) => {
+  const db = () => injectedDb ?? sql;
+  return {
+    async get(userId: string): Promise<RailPreferences> {
+      const [row] = await db()<{ revision: number; visibility: unknown; shortcuts: unknown }[]>`
       SELECT revision, visibility, shortcuts FROM auth.rail_preferences WHERE user_id = ${userId}::uuid
     `;
-    return row ? RailPreferencesSchema.parse(row) : defaultRailPreferences();
-  },
-  async save(userId: string, input: RailPreferences): Promise<RailPreferences | null> {
-    const value = RailPreferencesSchema.parse(input);
-    const [row] = await db<{ revision: number; visibility: unknown; shortcuts: unknown }[]>`
+      return row ? RailPreferencesSchema.parse(row) : defaultRailPreferences();
+    },
+    async save(userId: string, input: RailPreferences): Promise<RailPreferences | null> {
+      const value = RailPreferencesSchema.parse(input);
+      const [row] = await db()<{ revision: number; visibility: unknown; shortcuts: unknown }[]>`
       INSERT INTO auth.rail_preferences (user_id, revision, visibility, shortcuts)
       SELECT ${userId}::uuid, 1, (${JSON.stringify(value.visibility)}::text)::jsonb, (${JSON.stringify(value.shortcuts)}::text)::jsonb
       WHERE ${value.revision} = 0 OR EXISTS (SELECT 1 FROM auth.rail_preferences WHERE user_id = ${userId}::uuid)
@@ -21,7 +24,8 @@ export const createRailPreferencesService = (db: SQL = sql) => ({
       WHERE auth.rail_preferences.revision = ${value.revision}
       RETURNING revision, visibility, shortcuts
     `;
-    return row ? RailPreferencesSchema.parse(row) : null;
-  },
-});
+      return row ? RailPreferencesSchema.parse(row) : null;
+    },
+  };
+};
 export const railPreferences = createRailPreferencesService();

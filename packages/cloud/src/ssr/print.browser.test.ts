@@ -18,6 +18,7 @@ const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { default: Layout } = await import("./Layout");
 const { PrintWorkspace } = await import("./print.test-fixture");
@@ -72,6 +73,7 @@ beforeAll(async () => {
   spies.push(
     spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Global print fixture CSS");

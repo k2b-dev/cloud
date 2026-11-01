@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { FieldColumnSpecSchema, RecordDisplayConfigSchema, TableAuditPolicySchema, TableMutationPolicySchema } from "../contracts";
 import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
@@ -12,7 +12,8 @@ import type { CreateTableInput, Table, UpdateTableInput } from "./types";
 
 type DbRow = Record<string, unknown>;
 
-const COLS = sql`id, short_id, base_id, kind, name, description, icon, columns, display_config, audit_policy, mutation_policy, position, disable_direct_insert, deleted_at, created_at, updated_at`;
+const COLS = () =>
+  sql`id, short_id, base_id, kind, name, description, icon, columns, display_config, audit_policy, mutation_policy, position, disable_direct_insert, deleted_at, created_at, updated_at`;
 
 const parseColumns = (raw: unknown) => {
   const parsed = FieldColumnSpecSchema.array().safeParse(raw ?? []);
@@ -203,7 +204,7 @@ export const isStaleTableVersion = (table: Pick<Table, "updatedAt">, expectedUpd
  * changes starting within one millisecond, or one that waited for the lock of a later one, would share a version at
  * the millisecond precision clients see. Staying a millisecond past the previous version keeps every change distinct.
  */
-export const NEXT_TABLE_VERSION = sql`GREATEST(now(), updated_at + interval '1 millisecond')`;
+export const NEXT_TABLE_VERSION = () => sql`GREATEST(now(), updated_at + interval '1 millisecond')`;
 
 export const create = async (input: CreateTableInput, actorId: string | null, locale?: string): Promise<Result<Table>> => {
   const messages = getGridsCrudMessages(locale);
@@ -240,7 +241,7 @@ export const create = async (input: CreateTableInput, actorId: string | null, lo
               COALESCE((SELECT MAX(position) + 1 FROM grids.tables WHERE base_id = ${input.baseId}::uuid AND deleted_at IS NULL), 0),
               ${kind === "federated"}
             )
-            RETURNING ${COLS}
+            RETURNING ${COLS()}
           `;
           if (!created) throw new Error("insert returned no row");
           return created;
@@ -326,9 +327,9 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
                 display_config = ${displayConfigParsed.data}::jsonb,
                 audit_policy = ${auditPolicyParsed.data}::jsonb,
                 disable_direct_insert = ${next.disableDirectInsert},
-                updated_at = ${NEXT_TABLE_VERSION}
+                updated_at = ${NEXT_TABLE_VERSION()}
             WHERE id = ${id}::uuid AND deleted_at IS NULL
-            RETURNING ${COLS}
+            RETURNING ${COLS()}
           `;
           return row;
         }),
@@ -400,9 +401,9 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     const result = await writeNamedResource(
       async () => {
         const [row] = await tx<DbRow[]>`
-          UPDATE grids.tables SET deleted_at = NULL, updated_at = ${NEXT_TABLE_VERSION}
+          UPDATE grids.tables SET deleted_at = NULL, updated_at = ${NEXT_TABLE_VERSION()}
           WHERE id = ${id}::uuid
-          RETURNING ${COLS}
+          RETURNING ${COLS()}
         `;
         return row;
       },

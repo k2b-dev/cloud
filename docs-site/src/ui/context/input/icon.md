@@ -37,10 +37,23 @@ The controlled `value` is the complete Tabler class string, for example
 allowed by default through `clearable`.
 
 Groups are filters, not exclusive categories. An option may belong to several
-groups, and **All** removes the group filter. Text search applies within the
-active group and matches labels plus synonyms with local fuzzy filtering.
-`searchLimit` defaults to `50` for non-empty searches. No request or
+groups, and **All** removes the group filter. The default group is only a
+starting view: the first letter typed switches to **All**, so a search finds
+every icon. A group the person picks, before or during the search, narrows the
+results. Every query word has to start a word of the label or keywords, or
+appear inside one once it has three letters; loose letter-by-letter matches do
+not count. `searchLimit` defaults to `50` for non-empty searches. No request or
 asynchronous option transition is involved.
+
+The default catalogue follows the inherited `@k2b/ui` locale: labels,
+descriptions, and group names are German under `de`, and the English names and
+keywords stay searchable in every locale. A custom `options` list is shown as
+given.
+
+The popover has its own width: at least 26rem, never wider than the viewport,
+so the filter chips and five grid columns fit beside a narrow field. On a phone
+it spans the screen width under the field. Chips that continue past an edge
+fade out there and scroll sideways.
 
 Relevant properties are `label`, `description`, `placeholder`, `value`,
 `onValueChange`, `error`, `required`, `clearable`, `disabled`, `options`,
@@ -80,7 +93,7 @@ needs its own accessible name.
 
 ## Runtime
 
-The picker uses the interactive `Select` component and local fuzzy search, so
+The picker uses the interactive `Select` component and local search, so
 it requires browser code. It performs no network request.
 
 ## Example

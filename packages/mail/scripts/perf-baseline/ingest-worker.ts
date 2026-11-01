@@ -1,5 +1,5 @@
-/** Host subprocess: the runner passes only the run URLs; Bun's default sql/redis clients connect on first use. */
-import { redis, sql } from "bun";
+/** Host subprocess: initialize platform clients against the run-owned installation. */
+import { connections, redis, sql } from "@k2b/cloud";
 import { z } from "zod";
 import { assertRunUrl, monotonicMs } from "./measure";
 
@@ -14,8 +14,10 @@ const input = z
     valkeyPort: z.number().int(),
   })
   .parse(await Bun.stdin.json());
-assertRunUrl(process.env.DATABASE_URL ?? "", input.postgresPort, "postgresql:", "cloud_perf_test");
-assertRunUrl(process.env.REDIS_URL ?? "", input.valkeyPort, "redis:");
+const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
+await initializeTestPlatform("mail");
+assertRunUrl(connections().database.url, input.postgresPort, "postgresql:", "cloud_perf_test");
+assertRunUrl(connections().valkey.url, input.valkeyPort, "redis:");
 const { ingestEnvelope } = await import("../../src/service/sync-runtime");
 let enqueuedAt = 0;
 try {

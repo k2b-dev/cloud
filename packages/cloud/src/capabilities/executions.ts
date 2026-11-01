@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { createCapabilityDeadline } from "../_internal/capability-timeout";
 import type { CapabilityOrigin } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { pruneApprovalRequests } from "../services/approvals";
 import { logger } from "../services/logging";
@@ -54,14 +54,19 @@ export const capabilityValueMeta = (value: unknown): CapabilityValueMeta => {
 export type CapabilityExecutionInput = {
   /** Correlation id shared with the invocation token, the app audit row, and request logs. */
   requestId: string;
+  invocationId?: string | null;
+  parentInvocationId?: string | null;
+  viaAppId?: string | null;
   origin: CapabilityOrigin;
   appId: string;
   /** Fully qualified capability name, such as `contacts.list`. */
   capability: string;
   kind: "query" | "action";
   destructive: boolean;
-  actorKind?: "user" | "service_account" | null;
+  actorKind?: "user" | "service_account" | "app" | null;
   actorId?: string | null;
+  actorAppId?: string | null;
+  actorKeyId?: string | null;
   userId?: string | null;
   /** Recorded only when the access subject differs from the acting principal. */
   accessSubject?: { type: "user" | "service_account"; id: string } | null;
@@ -79,13 +84,18 @@ export type CapabilityExecutionInput = {
 export type CapabilityExecution = {
   id: string;
   requestId: string;
+  invocationId?: string | null;
+  parentInvocationId?: string | null;
+  viaAppId?: string | null;
   origin: CapabilityOrigin;
   appId: string;
   capability: string;
   kind: "query" | "action";
   destructive: boolean;
-  actorKind: "user" | "service_account" | null;
+  actorKind: "user" | "service_account" | "app" | null;
   actorId: string | null;
+  actorAppId?: string | null;
+  actorKeyId?: string | null;
   userId: string | null;
   accessSubjectType: "user" | "service_account" | null;
   accessSubjectId: string | null;
@@ -115,13 +125,13 @@ export const recordCapabilityExecution = async (input: CapabilityExecutionInput)
         deadline.check();
         const [row] = await db<{ id: string }[]>`
     INSERT INTO capabilities.executions (
-      request_id, origin, app_id, capability, kind, destructive,
-      actor_kind, actor_id, user_id, access_subject_type, access_subject_id,
+      request_id, invocation_id, parent_invocation_id, via_app_id, origin, app_id, capability, kind, destructive,
+      actor_kind, actor_id, actor_app_id, actor_key_id, user_id, access_subject_type, access_subject_id,
       status, error_code, input_meta, output_meta, idempotency_key, replayed,
       started_at, completed_at, duration_ms
     ) VALUES (
-      ${input.requestId}, ${input.origin}, ${input.appId}, ${input.capability}, ${input.kind}, ${input.destructive},
-      ${input.actorKind ?? null}, ${input.actorId ?? null}, ${input.userId ?? null},
+      ${input.requestId}, ${input.invocationId ?? null}, ${input.parentInvocationId ?? null}, ${input.viaAppId ?? null}, ${input.origin}, ${input.appId}, ${input.capability}, ${input.kind}, ${input.destructive},
+      ${input.actorKind ?? null}, ${input.actorId ?? null}, ${input.actorAppId ?? null}, ${input.actorKeyId ?? null}::uuid, ${input.userId ?? null},
       ${input.accessSubject?.type ?? null}, ${input.accessSubject?.id ?? null},
       ${input.status}, ${input.errorCode ?? null},
       ${input.inputMeta ? JSON.stringify(input.inputMeta) : null}::text::jsonb,
@@ -168,9 +178,10 @@ const filterSql = (filter: CapabilityExecutionFilter) => sql`
 `;
 
 const columns = () => sql`
-  execution.id::text AS id, execution.request_id AS "requestId", execution.origin, execution.app_id AS "appId",
+  execution.id::text AS id, execution.request_id AS "requestId",
+  execution.invocation_id::text AS "invocationId", execution.parent_invocation_id::text AS "parentInvocationId", execution.via_app_id AS "viaAppId", execution.origin, execution.app_id AS "appId",
   execution.capability, execution.kind, execution.destructive,
-  execution.actor_kind AS "actorKind", execution.actor_id::text AS "actorId", execution.user_id::text AS "userId",
+  execution.actor_app_id AS "actorAppId", execution.actor_key_id::text AS "actorKeyId", execution.actor_kind AS "actorKind", execution.actor_id::text AS "actorId", execution.user_id::text AS "userId",
   execution.access_subject_type AS "accessSubjectType", execution.access_subject_id::text AS "accessSubjectId",
   execution.status, execution.error_code AS "errorCode", execution.input_meta AS "inputMeta",
   execution.output_meta AS "outputMeta", execution.idempotency_key AS "idempotencyKey", execution.replayed,

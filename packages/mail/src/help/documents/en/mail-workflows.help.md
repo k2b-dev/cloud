@@ -14,8 +14,18 @@ Workflow source is limited to 200,000 characters.
 :::reference
 - **Name:** 1–160 characters.
 - **Description:** Optional, at most 2,000 characters.
-- **Priority:** An integer from -1,000 to 1,000, default 100. When several Mail workflows accept the same event, lower numbers run first.
+- **Priority:** An integer from -1,000 to 1,000, default 100. For the same received-message event, lower numbers come first, with workflow UUID ascending as the tie-break. The order is fixed when Mail accepts the event.
 :::
+
+## Assignment and competing rules {icon="list-numbers"}
+
+For one received message, the first rule in mailbox priority order that claims assignment, placement, or status wins that effect class. Lower rules wait for upper decisions, including AI steps. An upper rule that finishes without an effect leaves that class available to lower rules. Tags, comments, and summaries may apply from all rules.
+
+After 24 hours, a lower rule may take over an unresolved upper decision. Once it does, the upper rule cannot apply a late exclusive effect; an existing claim still wins.
+
+`assignConversation` skips if the conversation has any assignee (`already_assigned`), including a manual assignment. It also skips if this workflow's assignment for the conversation was undone (`undone_before`), even on a later reply and after the 30-day log window. Only immediate redo by the same person removes that marker. A manual assignment change never edits the workflow. `user: null` leaves existing assignees in place; remove the assignment by hand or undo its rule entry.
+
+Use [the automation log](/app/mail/help/mail-automation) to inspect the decision chain and undo current rule effects. Undo needs Edit access to the whole mailbox and preserves later personal changes. The rule then skips the reverted effect classes with `undone_before`, including tags, placement, status, flags, and keywords on later replies. Comments and summaries are not undone.
 
 ## Start with a received-message workflow {icon="route"}
 
@@ -49,6 +59,24 @@ steps:
 ```
 
 Choose **Validate** before saving. Validation checks strict YAML, the Mail vocabulary, value paths, accessible catalog names, and incompatible action combinations.
+
+## Try a workflow without AI {icon="player-play"}
+
+Choose **Dry run** to check the latest 50 messages, newest first. You can check
+up to 100 messages. A dry run changes no mail, sends nothing, creates no drafts
+and makes no AI calls. Cancel stops further batches.
+
+Each result shows the condition values and the actions that would run.
+**Skipped** means an explicit exclusion matched, such as a newsletter excluded
+with `not`. **None** means the conditions did not match.
+
+AI steps show that they would start. Results and branches that depend on AI
+remain unknown. The AI call range shows the certain calls and the maximum
+possible calls across those branches. Targets are checked before the preview;
+missing targets and targets without mailbox access appear as problems.
+
+Anyone who can view a saved workflow can try its current version. Trying
+unsaved YAML requires the same mailbox administration access as saving it.
 
 ## Declare inputs {icon="point"}
 
@@ -120,17 +148,26 @@ Message paths:
 
 - `inputs.message.id`, `conversationId`, `subject`, `body`, `bodyText`, `bodyHtml`
 - `inputs.message.fromAddress`, `fromDomain`
+- `inputs.message.textLength`, `attachmentCount`, `isBulk`
 - `inputs.message.sender.0.role`, `name`, or `email`
 - `inputs.message.recipients.0.role`, `name`, or `email`
 - `inputs.message.attachments.0.id`, `filename`, `contentType`, `disposition`, `contentId`, or `sizeBytes`
 - `inputs.message.hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, `receivedAt`
+
+`textLength` counts Unicode characters in the message's plain text. It removes `>` quoted lines and their attribution, and history below original-message separators or Outlook header blocks. It removes signatures starting with a line consisting exactly of `-- ` (two hyphens and a space). Unmarked signatures remain. Line endings become `\n`; outer whitespace is trimmed. Line breaks within the reply count. For HTML-only messages, Mail counts the plain text derived during message import.
+
+Mail loads `textLength` through the same lazy body read as `bodyText` and freezes that text for retries. `attachmentCount` waits for attachment metadata and counts the same stored attachments as `hasAttachments`, including inline images stored as attachments. `hasAttachments` retains its receipt-time value; unlike `attachmentCount`, it does not wait for metadata. If the message no longer exists, a number comparison using either metric evaluates to `false`.
+
+`isBulk` is true for a non-empty `List-Id`, `Precedence: bulk`, `list`, or `junk`, or `Auto-Submitted` other than `no`. Header values ignore case and outer whitespace. Missing headers do not mark a message as bulk.
+
+`conversation.messageCount` counts all linked messages in the source snapshot, just like the conversation list. It counts messages, not provider copies. Bind `trigger.message` and `trigger.conversation` to inputs to use these fields in steps. Scheduled workflows do not supply a conversation.
 
 Mail reads `body`, `bodyText`, and `bodyHtml` when a step needs them. The step waits until Mail has loaded the message and fails if the message no longer exists. A whole message value such as `inputs.message` includes the body only when Mail has already loaded it; use a body path when a step needs the text. Run details no longer show message bodies in the event data.
 
 Conversation paths:
 
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
-- `inputs.conversation.workStatus`, `latestMessageAt`
+- `inputs.conversation.workStatus`, `latestMessageAt`, `messageCount`
 
 Mail resource IDs in a workflow are the same stable six-character IDs as in Mail URLs and capabilities. Provider references and database UUIDs are internal and are not workflow fields.
 
@@ -179,7 +216,7 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `trashMessage` | `message` | Moves the message to the mailbox trash folder |
 | `junkMessage` | `message` | Moves the message to the mailbox junk folder |
 | `addFlag` / `removeFlag` | `message`, `flag` | Changes `seen`, `answered`, `flagged`, or `draft` through the provider command journal |
-| `assignConversation` | `conversation`, `user` | Replaces the assignees with one person who can be assigned, by user name or ID; `null` removes all assignees |
+| `assignConversation` | `conversation`, `user` | Assigns one eligible person, agent, or standalone service account by exact name or UUID only when nobody is assigned; `null` leaves an unassigned conversation unassigned |
 | `setConversationStatus` | `conversation`, `status` | Sets `needs_action`, `waiting`, or `done` |
 | `setConversationSummary` | `conversation`, `summary` | Replaces the editable conversation summary |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Allocates or reuses the permanent mailbox reference and optionally stores its result |
@@ -228,7 +265,7 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 | `setVariable` | any JSON-compatible `value` | `name` receives `core.value` | none |
 | `succeed`, `fail` | operator-facing message: at most 1,000 characters | terminal state | none |
 
-`createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The `model` field accepts the ID of an enabled AI model profile, at most 120 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
+`createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The optional `model` field accepts `{ class: balanced }` or `{ id: "model:variant" }`. Classes are `fast`, `balanced`, `thorough`, and `maximum`; an explicit variant ID accepts at most 241 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
 
 On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and `removeKeyword` changes can come before at most one `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage`, or `junkMessage` for the same message. No provider action can follow that move or copy; Mail rejects such a definition with `action.sequence`. The first provider action checks the message state from the start of the run. Later ones also expect this run's confirmed changes, so a flag the workflow set itself does not stop its move. Keep these changes in one workflow: when two workflows change the same message, one of them can fail. A workflow's move, archive, trash, or junk step does not skip: it fails if the message has already left its folder or another change is moving it.
 
@@ -238,7 +275,7 @@ On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and 
 
 ## Classify mail and create drafts with AI {icon="sparkles"}
 
-Mail explicitly enables the shared AI actions. AI produces only a value. Mail actions still perform tagging, assignment, folder, draft, and send effects, with the normal mailbox access and budgets.
+Mail enables the shared AI actions for classification, tagging, assignment, summaries, and draft creation, with the normal mailbox access and budgets. Workflows containing any AI action cannot use `automaticReply` or `scheduleDraftSend`, even when the AI action is in another branch or only chooses between fixed replies. A person must review and send the resulting draft. The send review binds the complete content, recipients, attachments, and schedule.
 
 This example classifies one message into several labels. It uses exact array membership to tag and assign the conversation, and it creates a draft without sending it:
 
@@ -335,11 +372,11 @@ steps:
 
 The generic field types are `text`, `number`, `boolean`, `date_time`, and `enum`. Optional fields can be absent. The output rejects undeclared fields. The guided editor for incoming mail supplies these automatically: the fixed event field contract, an explicit IANA time zone, the time the message arrived, and the guard against invented data.
 
-An optional `model` selects an enabled profile for one action. Otherwise, Mail uses the platform workflow model, then the background model, then the platform default. Each newly created AI task uses one unit of the `maxAiCalls` budget. By default, this budget is 10 per run.
+Omitting `model` requests the `balanced` class. Only empty class assignments fall back to another class; access, budget, disabled-model, and capability failures stop the action. An explicit variant ID never falls back. Each newly created AI task uses one unit of the `maxAiCalls` budget. By default, this budget is 10 per run.
 
 AI tasks survive worker restarts. Cancelling the Mail run stops running inference where possible and discards late output. A dry run cannot predict AI output. It reports the missing value and does not continue with an invented classification or draft.
 
-Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Keep generated replies as drafts when a person needs to review them. Add `scheduleDraftSend` only when sending without review is approved on purpose.
+Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Use `createDraft` or `createReplyDraft` for generated messages, then let a person review and send them. Automatic sends also cannot read conversation summaries or copy a whole conversation into a value: another AI workflow may have written its summary. These restrictions cover the whole definition, including unused branches. Older saved versions and queued sends are checked again before sending; a refused send fails with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED`.
 
 A workflow triggered by `messageReceived` cannot use `scheduleDraftSend` at all. Replies to incoming mail must go through `automaticReply` and its loop protection.
 
@@ -404,7 +441,7 @@ You can repeat the action safely. It does not allocate a second reference for th
 
 ## Send a guarded automatic reply {icon="send"}
 
-`automaticReply` is valid only when every trigger in the workflow is `messageReceived`.
+`automaticReply` is valid only when every trigger in the workflow is `messageReceived`. Use an operator-approved template in a workflow without AI actions or conversation summary reads. Non-AI templates can still use message fields, such as the incoming subject. Generated replies must remain drafts for human review.
 
 ```yaml
 inputs:
@@ -479,11 +516,36 @@ An `if` step takes one condition and a non-empty `then` list. `else` is optional
 
 Supported comparisons:
 
+- `greaterThan` (`>`), `lessThan` (`<`), `atLeast` (`>=`), and `atMost` (`<=`) compare two numbers.
 - `equals` and `notEquals`
 - `textEquals`, `contains`, `startsWith`, and `endsWith` for normalized, case-insensitive text
 - `includes` for exact membership in an array such as `aiClassifyMany` output
 - `exists` for one raw reference
 - recursive `all`, `any`, and `not`
+
+Number comparisons require exactly two finite JSON numbers. Numeric strings are not converted. Missing or non-number values evaluate to `false`; pending message hydration still waits. Validation reports known non-number literals and reference types at their source position.
+
+For example, apply the existing local tag `Lang` to a non-bulk message with more than 150 characters of reply text or a conversation with more than three messages:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+```
 
 `equals`, `notEquals`, and `includes` compare exact values. `textEquals`, `contains`, `startsWith`, and `endsWith` normalize Unicode text and ignore letter case.
 
@@ -589,3 +651,34 @@ cld admin workflows events --app mail
 `cld admin workflows cancel <run-id> --yes` prevents later effects but does not undo completed work. Resolve an uncertain external result only after you have checked it at the provider. Then record that decision with `cld admin workflows resolve`.
 
 For setup tasks and operational consequences, see [Automate responses and mailbox work](/app/mail/help/mail-automation).
+
+## Request an AI summary in the reader
+
+The conversation reader can continue or rewrite a summary. These requests use
+your own Assistant allowance. They do not use an automation's daily limit.
+You need the same access as for editing the summary. If your
+allowance is used up, the request leaves the conversation unchanged.
+
+The summary shows who wrote it and marks AI text. It can include a next step
+and a date explicitly mentioned in the mail. Editing the text clears that
+suggestion and protects your words from later automation. Clearing the summary
+also protects it until you explicitly ask AI to write again. A rule skips a
+protected summary with `edited_by_person`. A person can explicitly ask AI to
+continue or rewrite it again.
+
+The summary service bundles automatic requests for the same conversation for
+60 seconds after the latest request. The pending request survives a restart.
+While AI is writing, another request reuses that work. New replies can produce
+one further bundled update. The reader shows waiting, writing, failure and
+daily-limit states. Failed requests can be retried manually.
+
+AI receives at most 20,000 source characters, or the lower operator-configured
+Mail workflow AI text budget. Quotes and signatures are removed. When the
+conversation is longer, the newest messages that fit are used. The reader
+shows how many messages were covered and when newer messages arrived.
+
+Automatic summary requests reserve their call before changing content. A
+source or mailbox daily limit pauses new work until midnight in the
+installation time zone. The summary text and its revision stay unchanged.
+Costs remain in Cloud's central AI accounting. This service does not add a
+workflow YAML action or a new YAML budget format.

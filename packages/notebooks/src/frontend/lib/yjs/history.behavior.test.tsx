@@ -3,21 +3,29 @@ import { history, isolateHistory, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { basicExtensions } from "../editor/basic";
-import { markdownExtension } from "../editor/markdown";
-import { asUndoStep, isolateYjsHistory } from "./history";
 
 const loading = createDomTestHarness();
-const { listCommandsExtension } = await import("../editor/list-commands");
+const { basicExtensions, markdownExtension } = await import("@k2b/editor/markdown");
+const { notebookListOptions } = await import("../editor/notebook-options");
+const { listCommandsExtension } = await import("@k2b/editor/markdown");
 const { caretFormat, insertTable } = await import("../../[id]/_components/editor/editor-actions");
 const { default: EditorToolbar } = await import("../../[id]/_components/editor/EditorToolbar");
 const { LocaleProvider } = await import("@k2b/ui");
+const { asUndoStep, createEditor } = await import("@k2b/editor");
 loading.cleanup();
+
+/** The shared editor state the toolbar formats, bound to a test view. */
+const editorFor = (view: EditorView) => {
+  const editor = createEditor();
+  editor.attach(view);
+  return editor;
+};
 
 const mount = (doc: string, extensions: Extension[] = []) => {
   const dom = createDomTestHarness();
@@ -26,7 +34,7 @@ const mount = (doc: string, extensions: Extension[] = []) => {
     state: EditorState.create({
       doc,
       selection: { anchor: doc.length },
-      extensions: [basicExtensions(), markdownExtension(), listCommandsExtension(), ...extensions],
+      extensions: [basicExtensions(), markdownExtension(), listCommandsExtension(notebookListOptions), ...extensions],
     }),
   });
   forceParsing(view, doc.length, 5000);
@@ -77,10 +85,9 @@ describe("Yjs undo boundaries", () => {
           <LocaleProvider locale="en">
             <EditorToolbar
               connected
-              editorView={clientA.view}
+              editor={editorFor(clientA.view)}
               notebookId="Book01"
               noteId="Note01"
-              initialPanelOpen={false}
               format={format()}
               onUndo={() => {
                 manager.undo();

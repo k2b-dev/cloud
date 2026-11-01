@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Release process
@@ -90,22 +90,23 @@ release-please runs on every push to `main`:
    and `npm-ssr-vX.Y.Z` as separate components with their own version lines.
 3. No workflow starts from these tags. The `main.yml` run that created them
    continues: its `images` job builds every image of the release set once
-   (one per application from `scripts/workspace.ts` plus `cloud-website` and
-   `cloud-pwa-auth`; `bun scripts/workspace.ts images` lists them) for
-   `linux/amd64` and `linux/arm64`, attests its build provenance, and tags it
+   (one per application from `scripts/workspace.ts` plus `cloud-website`,
+   `cloud-pwa-auth`, and `cloud-notes`; `bun scripts/workspace.ts images` lists them) for
+   `linux/amd64` only, attests its build provenance, and tags its image index
    `sha-<12>`, plus `vX.Y.Z` for a Cloud release. `main.yml` then calls
    `release.yml`. For a Cloud release, it reuses these images instead of
    building them again, builds the CLI binaries, and attaches the binaries
    and `release.json` to the `cloud-vX.Y.Z` GitHub release.
-4. For each new `npm-cloud-v*`, `npm-ui-v*`, or `npm-ssr-v*` tag,
-   `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, or `@k2b/ssr` with npm
-   provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
+4. For each new `npm-cloud-v*`, `npm-ui-v*`, `npm-ssr-v*`, or `npm-editor-v*`
+   tag, `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, or
+   `@k2b/editor` with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
    `next` dist-tag; a stable version publishes under `latest`. `@k2b/cloud`
-   pins exact `@k2b/ui` and `@k2b/ssr` versions, so it publishes only after
-   both are installable from npm. When the same release publishes either of
+   pins exact `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` versions, so it publishes only after
+   all three are installable from npm. When the same release publishes any of
    them, the workflow waits up to 20 minutes in total; otherwise the pinned
    version must already be on npm, or `@k2b/cloud` stays unpublished and the
-   release fails.
+   release fails. `@k2b/editor` pins an exact `@k2b/ui` version and waits for
+   it the same way.
 
 The release PR runs the `packed` check with `--release`, including in the
 merge queue, to test already published sibling pins from npm and versions
@@ -136,7 +137,8 @@ left `@k2b/ui` unbumped, so published Cloud code imported an export its pinned
 UI version did not have.
 
 Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
-with the workflow file `main.yml`. `release.yml` runs the publish, but it is a
+with the workflow file `main.yml`. Configure it for a new package, such as
+`@k2b/editor`, before its first release. `release.yml` runs the publish, but it is a
 reusable workflow, and npm checks the workflow that calls it.
 
 release-please updates exact pins between workspace packages but leaves peer
@@ -198,6 +200,11 @@ block instead of that pull request's own commit message:
 - Change a file in every component the advisory commit changed, for example
   under `packages/cloud/` when it changed `@k2b/cloud`. release-please gives
   the override only to the components of the pull request's own files.
+- When several advisory commits changed different components, use one
+  override pull request per set of components. The override gives every
+  entry to all components of its pull request, so a Mail-only fix in the
+  same block as an `@k2b/cloud` fix would also appear in the `@k2b/cloud`
+  changelog.
 - Write the marker only once, where the block starts: release-please takes
   the text after the first `BEGIN_COMMIT_OVERRIDE` in the body, also when that
   first one stands in a sentence.

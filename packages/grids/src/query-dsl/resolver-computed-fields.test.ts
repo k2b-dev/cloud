@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { Field } from "../service/types";
 import { resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "./resolver";
 import { ctx, customerLinkFieldId, customerScoreFieldId, field, fields, normalizedSql, orders, parseOk } from "./resolver-fixtures";
 import { compileDslAggregateQueryPlanToSql, compileDslGroupedQueryPlanToSql, compileDslQueryPlanToSql } from "./sql-compiler";
+
+useUnitClients();
 
 describe("GQL lookup/rollup fields (C3)", () => {
   const marginId = "ffffffff-ffff-4fff-8fff-fffffffffff5";
@@ -39,10 +42,11 @@ describe("GQL lookup/rollup fields (C3)", () => {
   const rollupCtx = () => ctx({ fieldsByTableId: { ...ctx().fieldsByTableId, [orders.id]: withRollup } });
   // The compiler is handed pre-built lookup/rollup SQL (built async + cross-table
   // in preview); here we inject a stand-in so the unit test stays DB-free.
-  const computedFieldSql = new Map([
-    [customerScoreLookupId, { sql: sql`(SELECT 3)`, type: "numeric" as const }],
-    [totalId, { sql: sql`(SELECT 7)`, type: "numeric" as const }],
-  ]);
+  const computedFieldSql = () =>
+    new Map([
+      [customerScoreLookupId, { sql: sql`(SELECT 3)`, type: "numeric" as const }],
+      [totalId, { sql: sql`(SELECT 7)`, type: "numeric" as const }],
+    ]);
   const planOf = (source: string) => {
     const resolved = resolveDslQueryToQueryPlan(parseOk(source), rollupCtx());
     expect(resolved.ok).toBe(true);
@@ -76,7 +80,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
   test("a rollup field is selectable and compiles to its injected SQL", () => {
     const compiled = compileDslQueryPlanToSql(planOf(`select amount, total`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(compiled.ok).toBe(true);
     if (compiled.ok) {
@@ -94,7 +98,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
   test("a rollup field can be filtered and sorted via the injected SQL", () => {
     const whereSql = compileDslQueryPlanToSql(planOf(`where total > 0`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(whereSql.ok).toBe(true);
     if (whereSql.ok) {
@@ -104,7 +108,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
 
     const sortSql = compileDslQueryPlanToSql(planOf(`select amount\nsort total desc`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(sortSql.ok).toBe(true);
     if (sortSql.ok) expect(normalizedSql(sortSql.query.sql)).toContain("ORDER BY (SELECT 7) DESC");
@@ -113,7 +117,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
   test("a rollup field can be used inside aggregate-only formula aggregates", () => {
     const compiled = compileDslAggregateQueryPlanToSql(planOf(`aggregate sum(formula(total + 1)) as adjusted_total`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(compiled.ok).toBe(true);
     if (compiled.ok) {
@@ -126,7 +130,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
   test("a rollup field can be aggregated directly via the injected SQL", () => {
     const compiled = compileDslAggregateQueryPlanToSql(planOf(`aggregate sum(total) as direct_total`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
@@ -140,7 +144,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
       planOf(`group by status\naggregate sum(total) as direct_total\nsort direct_total desc`),
       {
         fieldsByTableId: rollupCtx().fieldsByTableId,
-        computedFieldSql,
+        computedFieldSql: computedFieldSql(),
       },
     );
     expect(compiled.ok).toBe(true);
@@ -165,7 +169,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
 
     const compiled = compileDslGroupedQueryPlanToSql(plan, {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
@@ -192,7 +196,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
       planOf(`group by status\naggregate sum(total) as Direct_Total\nhaving direct_total > 0`),
       {
         fieldsByTableId: rollupCtx().fieldsByTableId,
-        computedFieldSql,
+        computedFieldSql: computedFieldSql(),
       },
     );
     expect(compiled.ok).toBe(true);
@@ -224,7 +228,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
   test("a rollup field can be used inside grouped formula aggregates", () => {
     const compiled = compileDslGroupedQueryPlanToSql(planOf(`group by status\naggregate sum(formula(total + 1)) as adjusted_total`), {
       fieldsByTableId: rollupCtx().fieldsByTableId,
-      computedFieldSql,
+      computedFieldSql: computedFieldSql(),
     });
     expect(compiled.ok).toBe(true);
     if (compiled.ok) {

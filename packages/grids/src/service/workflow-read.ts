@@ -1,16 +1,18 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type GridsWorkflow, GridsWorkflowSchema } from "../workflows/contracts";
 import type { SqlClient } from "./audit";
 
 type DbRow = Record<string, unknown>;
 
-const WORKFLOW_SELECT = sql.unsafe(`
+const WORKFLOW_SELECT = () =>
+  sql.unsafe(`
   p.id, p.short_id, p.base_id, w.name, w.description,
   v.source, v.plan, v.diagnostics, v.revision,
   p.enabled, p.position, p.owner_user_id, p.deleted_at, p.created_at, p.updated_at
 `);
 
-const WORKFLOW_FROM = sql.unsafe(`
+const WORKFLOW_FROM = () =>
+  sql.unsafe(`
   FROM grids.workflow_profile AS p
   JOIN workflows.workflow AS w ON w.id = p.id
   LEFT JOIN LATERAL (
@@ -46,7 +48,7 @@ const mapWorkflow = (row: DbRow): GridsWorkflow => {
 
 export const getWorkflow = async (id: string, includeDeleted = false, client: SqlClient = sql): Promise<GridsWorkflow | null> => {
   const [row] = await client<DbRow[]>`
-    SELECT ${WORKFLOW_SELECT} ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()} ${WORKFLOW_FROM()}
     WHERE p.id = ${id}::uuid AND (${includeDeleted} = TRUE OR p.deleted_at IS NULL)
   `;
   return row ? mapWorkflow(row) : null;
@@ -54,7 +56,7 @@ export const getWorkflow = async (id: string, includeDeleted = false, client: Sq
 
 export const getWorkflowByShortIdForBase = async (baseId: string, shortId: string): Promise<GridsWorkflow | null> => {
   const [row] = await sql<DbRow[]>`
-    SELECT ${WORKFLOW_SELECT} ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()} ${WORKFLOW_FROM()}
     WHERE p.base_id = ${baseId}::uuid
       AND p.deleted_at IS NULL
       AND p.short_id = ${shortId}
@@ -64,7 +66,7 @@ export const getWorkflowByShortIdForBase = async (baseId: string, shortId: strin
 
 export const listWorkflows = async (baseId: string, enabledOnly = false, includeDeleted = false): Promise<GridsWorkflow[]> => {
   const rows = await sql<DbRow[]>`
-    SELECT ${WORKFLOW_SELECT} ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()} ${WORKFLOW_FROM()}
     WHERE p.base_id = ${baseId}::uuid
       AND (${includeDeleted} = TRUE OR p.deleted_at IS NULL)
       AND (${enabledOnly} = FALSE OR p.enabled = TRUE)
@@ -85,7 +87,7 @@ export const listWorkflowScopes = async (baseId: string, includeDeleted = false)
 
 export const listScheduledWorkflows = async (): Promise<GridsWorkflow[]> => {
   const rows = await sql<DbRow[]>`
-    SELECT ${WORKFLOW_SELECT} ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()} ${WORKFLOW_FROM()}
     WHERE p.deleted_at IS NULL
       AND p.enabled = TRUE
       AND jsonb_path_exists(v.plan, '$.triggers[*] ? (@.kind == "schedule")')
@@ -97,7 +99,7 @@ export const listScheduledWorkflows = async (): Promise<GridsWorkflow[]> => {
 export const listRecordEventBaseIds = async (): Promise<string[]> => {
   const rows = await sql<Array<{ id: string }>>`
     SELECT DISTINCT p.base_id::text AS id
-    ${WORKFLOW_FROM}
+    ${WORKFLOW_FROM()}
     WHERE p.deleted_at IS NULL
       AND p.enabled = TRUE
       AND p.record_event_active_since IS NOT NULL
@@ -109,7 +111,7 @@ export const listRecordEventBaseIds = async (): Promise<string[]> => {
 
 export const listRecordEventWorkflows = async (baseId: string, occurredAt: string): Promise<GridsWorkflow[]> => {
   const rows = await sql<DbRow[]>`
-    SELECT ${WORKFLOW_SELECT} ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()} ${WORKFLOW_FROM()}
     WHERE p.base_id = ${baseId}::uuid
       AND p.deleted_at IS NULL
       AND p.enabled = TRUE

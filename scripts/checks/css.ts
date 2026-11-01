@@ -21,6 +21,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "input.css",
   "resource-search.css",
   "file-chooser.css",
+  "profile-picture.css",
   "panel.css",
 ];
 
@@ -244,8 +245,16 @@ export const rule: Rule = {
       }
     }
 
+    // Cloud imports the UI package stylesheet. Its defaults are valid owners,
+    // while Cloud and application styles may override those theme tokens.
+    const uiCustomProperties = new Set(
+      readCssFiles(uiStylesRoot).flatMap((file) =>
+        [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
+      ),
+    );
+
     for (const [property, owners] of customPropertyOwners) {
-      if (owners.size < 2) continue;
+      if (owners.size < 2 || uiCustomProperties.has(property)) continue;
       report(
         [...owners][0]!,
         `${property} has multiple owner files: ${[...owners].map((file) => relative(workspaceRoot, file)).join(", ")}`,
@@ -263,16 +272,14 @@ export const rule: Rule = {
       "--analysis-min-width", // AnalyticsView.tsx: validated layout width
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
       "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
+      "--mail-time-samples", // MailConversationList.tsx: the longest localized times that size the columns view's time column
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
+      "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height
+      "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
+      "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
+      "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
     ]);
-    // Cloud imports the UI package stylesheet. Its defaults are valid owners,
-    // while Cloud and application styles may override those theme tokens.
-    const uiCustomProperties = new Set(
-      readCssFiles(uiStylesRoot).flatMap((file) =>
-        [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
-      ),
-    );
     for (const [property, consumers] of customPropertyReferences) {
       if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;
       if (runtimePropertyPrefixes.some((prefix) => property.startsWith(prefix))) continue;

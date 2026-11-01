@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { MAIL_SEARCH_MATCHES_NOTHING } from "../search-state";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
@@ -105,7 +104,6 @@ suite("Mail flags belong to an included placement of the same message", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const [row] = await sql<{ id: string; uid: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-flags-${suffix}`}, 'local', 'user', 'Flag owner', false) RETURNING id, uid`;
     owner = {
@@ -129,7 +127,7 @@ suite("Mail flags belong to an included placement of the same message", () => {
     };
     context = { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id }, requestId: null };
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) =>
-      token === "flag-owner" ? { kind: "user", payload: {}, user: owner, scopes: [] } : null,
+      token === "flag-owner" ? { kind: "user", payload: {}, user: owner, scopes: ["read", "write"] } : null,
     );
     const remote = await addMailbox();
     for (const key of ["A", "B", "Stale"]) await addFolder(remote, key);

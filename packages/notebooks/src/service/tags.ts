@@ -9,7 +9,7 @@
  * Disambiguation from markdown headings: `# Title` (with space after `#`)
  * is a heading; `#tag` (no space, must start with a letter) is a tag.
  */
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { notebookServiceMessages } from "./messages";
 
 /** `(?:^|\s)` ensures we only match `#tag` at line-start or after whitespace,
@@ -35,9 +35,12 @@ export const extractTags = (md: string | null): string[] => {
  * apply would leave the index in an inconsistent state and is worse than
  * leaving the previous (slightly stale) state intact.
  */
-export const reindexTags = async (params: { noteId: string; notebookId: string; contentMd: string | null }): Promise<void> => {
+export const reindexTags = async (
+  params: { noteId: string; notebookId: string; contentMd: string | null },
+  transaction?: typeof sql,
+): Promise<void> => {
   const tags = extractTags(params.contentMd);
-  await sql.begin(async (tx) => {
+  const persist = async (tx: typeof sql) => {
     await tx`DELETE FROM notebooks.note_tags WHERE note_id = ${params.noteId}`;
     if (tags.length === 0) return;
     const rows = tags.map((tag) => [params.noteId, params.notebookId, tag] as const);
@@ -45,7 +48,9 @@ export const reindexTags = async (params: { noteId: string; notebookId: string; 
       INSERT INTO notebooks.note_tags ${tx(rows.map(([note_id, notebook_id, tag]) => ({ note_id, notebook_id, tag })))}
       ON CONFLICT DO NOTHING
     `;
-  });
+  };
+  if (transaction) await persist(transaction);
+  else await sql.begin(persist);
 };
 
 export type TagSummary = {

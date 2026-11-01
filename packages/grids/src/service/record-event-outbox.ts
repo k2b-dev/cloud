@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { logger, stopRuntimeJobs, trace } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { gridsLive } from "./live";
 import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEvent } from "./record-events";

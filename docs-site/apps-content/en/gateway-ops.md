@@ -17,7 +17,8 @@ delivery.
 
 ## Use Gateway Ops
 
-- Check which application instances are online, stale, degraded, or offline.
+- Supply the traffic, errors and links of every app to **Administration → Apps** as the first
+  [App status](/en/docs/platform/app-status) provider; app state lives there.
 - Confirm which application owns a route prefix and inspect its traffic and
   error counters.
 - Start an incident investigation from the overview, then narrow it with
@@ -27,8 +28,11 @@ delivery.
 - Review notification delivery and configure health webhooks for operator
   alerts.
 
-Gateway Ops requires administrator access. Removing an offline registration
-cleans the gateway registry; it does not restart or repair the application.
+Gateway Ops requires administrator access. Removing an app that is not running from
+**Administration → Apps** also makes Gateway Ops forget its registration and
+stops its offline audit; it does not restart or repair the application.
+`/admin/observability/gateway` opens **Administration → Apps** with a hint;
+**Gateway → Routes** stays the view across all route prefixes.
 
 In Logs, Jobs, Notifications, Postgres, and Redis, **Clear** resets active
 filters on desktop and mobile. Notification filters reset within the currently
@@ -115,6 +119,17 @@ cld admin routes list --errors --json
 Run `cld admin help` for logs, telemetry, jobs, workflows, notifications, and
 bounded storage diagnostics. Run `cld admin <area> <command> --help` before a
 maintenance action.
+
+## Configure NATS cluster diagnostics
+
+Set the separate system-account connection under
+**Administration → Observability → NATS → Diagnostics access**. Choose the System
+access format and paste .creds contents or a user NKey seed into the encrypted
+**System access** field. The CA field accepts PEM
+certificate contents. Changes apply to the next diagnostics connection; an
+empty server list disables cluster diagnostics. See
+[NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for permissions and migration from the deprecated `NATS_ADMIN_*` inputs.
 
 ## Deployment requirements
 

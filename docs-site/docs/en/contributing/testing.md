@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-20
+updated: 2026-10-30
 ---
 
 # Testing
@@ -211,7 +211,13 @@ answer, waits until the status names the pending line, and only then releases
 the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
-with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
+with a numeric literal in test files and browser suites (`*.test.ts(x)`,
+`*.browser-suite.ts(x)`). It also rejects a polling loop whose attempt count
+decides the outcome, such as
+`for (let i = 0; i < 100 && writes.length < 2; i++) await sleep(20)`. That
+loop is a hidden 2 s budget, and a loaded runner outlasts it
+([#2204](https://github.com/k2b-dev/cloud/issues/2204)). Wake the wait from
+the condition's own signal instead, and let the test's timeout bound it. A line comment
 `// fixed wait: <reason>` on the same line or directly above allows a wait
 whose duration is the subject of the test. The reason must be non-empty.
 Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
@@ -228,6 +234,24 @@ include navigation labels. The `animation-settle` check requires an actual
 subtree calls in tests, browser suites, and browser harnesses, or a leading
 `// animation-settle: all timelines` comment (optionally followed by a reason)
 for deliberate inspection of all timelines.
+
+Every enhanced link starts a document view transition. While one is active,
+WebKit sends pointer input to `<html>`, so a click is lost, and the transition
+can stay active after its own animations ended, so `settled()` may return
+before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
+`packages/ui/test/browser.ts` before its next click or Back. See the Info and
+thread tests in `packages/chat/src/frontend`.
+
+After a pointer move, a test waits until the target matches `:hover`, or for
+the control that the hover reveals, before it reads what the hover changes.
+WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
+changes `visibility` starts no animation for `settled()` to wait for. See
+`hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
+
+A browser test that opens its own context or page gives itself a budget, as
+the Chat suites do (`test(name, run, 30_000)`), and keeps the page's shorter
+limit for each step (`page.setDefaultTimeout(5_000)`). Bun's default of 5 s
+is meant for one step, not for a page load, a mount, and a flow.
 
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
@@ -320,6 +344,13 @@ launch carries its duration in the error. A process group still alive after
 the kill fails the hook with those timings.
 `packages/ui/test/browser.browser.test.ts` guards a hung close and the next
 launch.
+
+`bun run test --browser` first runs `packages/ui/test/browser-warmup.ts`. It
+draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
+WebKit's shader compile in a new Playwright container
+([#2149](https://github.com/k2b-dev/cloud/issues/2149)), do not fall inside the
+first test's 5 s. It starts its own browser, shares only on-disk caches with the
+suites, and has its own bounded budget. When it fails, no suite runs.
 
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
@@ -419,9 +450,19 @@ for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
+Every page from `launchBrowser()` answers Cloud's own capability catalog read
+(`GET /api/capabilities/v1/catalog`) with an empty catalog, in the page and
+without a request. Shared browser modules make this read by themselves, such as
+the file-provider discovery while a page is idle, so a fixture that serves only
+its own endpoints would see it at random. A test file that serves a catalog,
+counts its reads, or fails it on purpose launches with
+`launchBrowser({ serveShellCatalog: true })`; its pages then send the read to
+the fixture. Other methods and paths always reach the fixture.
+
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a
-`pageerror` listener of their own. While a page waits for its next document,
+`pageerror` listener of their own. The `page-errors` check enforces this rule;
+its baseline lists older suites that still have their own listener. While a page waits for its next document,
 WebKit refuses every load that the page starts, such as a stream that opens
 again after the navigation cancelled it. It logs the refusal as
 `Fetch API cannot load <url> due to access control checks.`, also for a
@@ -514,6 +555,14 @@ A navigation that commits but never fires load, or never commits, waits for a
 response that does not finish. The navigation diagnosis lists that response
 under "Requests still open". When the test server wrote the whole response,
 look at the sockets on the server's port while the page waits:
+
+A test server can record what it receives and answers with
+`recordTestServer()` from `packages/ui/test/browser.ts`: wrap its `fetch`
+with `record`, call `listen` with its URL, and `stop` when it stops. The
+navigation diagnosis then prints, under each request that is still open,
+whether the server never received it, received it without answering, or
+answered it. The Chat harness in
+`packages/chat/src/frontend/ChatWorkspace.browser-fixture.ts` does this.
 
 ```bash
 sudo ss -tnoiepm state all '( sport = :PORT or dport = :PORT )'
@@ -685,7 +734,25 @@ the mocked part in a child process, as
 when `--isolate` would make the package suite much slower. `bun run check`
 fails on a top-level `mock.module` in a suite that shares one process.
 
+The same isolation rule applies when a test installs a top-level `spyOn`,
+imports a module, and restores the spy before running its tests. The imported
+module can retain the replacement after restoration. If another file imported
+that module first, the replacement never takes effect. Even a skipped
+integration suite evaluates its static imports, so it can trigger this failure.
+The `module-mocks` check also rejects these import-time spies in shared suites.
+
 ## Run integration tests
+
+Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local
+`compose.sync-test.yml` and `compose.scale-test.yml` fixtures keep their data on
+a tmpfs capped at 4 GiB, with `fsync`, `synchronous_commit`, and
+`full_page_writes` disabled. Their data is lost when the container stops; they
+do not exercise crash durability. These settings reduce storage work during
+tests but do not establish the cause of sporadic slow statements. CI
+samples the whole cluster's tmpfs usage every 30 seconds during integration tests,
+including WAL, to check capacity. Keep these settings confined to disposable
+containers: a test database name does not make a shared development server
+safe to reconfigure.
 
 Integration tests gate themselves on `CLOUD_TEST_*` variables through
 `scripts/fixtures/test-infra.ts`, which is loaded as a `bun test` preload:
@@ -700,6 +767,23 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
+| `CLOUD_TEST_S3_ENDPOINT` | `http://127.0.0.1:3900` |
+| `CLOUD_TEST_S3_BUCKET` | `cloud-test` (must end in `-test`) |
+| `CLOUD_TEST_S3_ACCESS_KEY_ID` | Test-only S3 access key |
+| `CLOUD_TEST_S3_SECRET_ACCESS_KEY` | Test-only S3 secret key |
+| `CLOUD_TEST_S3_REGION` | `garage` |
+
+The object-store suite uses a disposable Garage 2.3 instance. Start only that
+fixture with `docker compose -f compose.test-s3.yml up -d --wait`; its Compose
+file declares the test-only key, secret, bucket, and loopback port. Export those
+values as the five `CLOUD_TEST_S3_*` entries above, then run
+`bun run test --integration --filter object-store`. Stop it with
+`docker compose -f compose.test-s3.yml down --volumes`. CI and nightly do this
+automatically. Missing S3 configuration skips the suite; an endpoint with
+missing credentials, region, a bucket without the `-test` suffix, or unusable
+storage fails. The suite also needs the database and Valkey test targets. It
+writes these connection values directly to the encrypted Core settings and
+restores them afterward; production S3 environment variables do not exist.
 
 The ports are the development stack's defaults. If you moved them with
 `CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, `CLOUD_DEV_NATS_PORT`, or `CLOUD_DEV_CLICKHOUSE_PORT`
@@ -736,12 +820,11 @@ for local credentials. Installation tests in `pulse/src/migrate.integration.test
 keep their own disposable Postgres database and run in the integration runner's
 one-file process, as the previous schema test did.
 
-Run integration tests through `bun run test`: it exports those runtime
-variables into every test process before Bun starts, which is the only moment
-Bun's default `redis` handle reads `REDIS_URL`. A direct `bun test` applies
-them from the preload, too late for that handle; export `REDIS_URL` yourself
-before running it. `tests/integration/test-infra-redis-binding.integration.test.ts`
-proves the binding against a disposable Valkey on a non-default port.
+Run integration tests through `bun run test`: the infrastructure preload selects
+the explicit targets and initializes the platform's native SQL and Redis clients.
+For a direct single-file run, use `BUN_OPTIONS=--no-env-file` and the same
+`CLOUD_TEST_*` targets. `tests/integration/test-infra-redis-binding.integration.test.ts`
+proves that the platform Redis client reaches the explicit Valkey target.
 
 `bun run test` keeps the checkout's `.env` away from tests. The file
 configures the development stack, for example `APP_URL` for a stack served
@@ -781,7 +864,8 @@ delete rows; the fixture refuses any other name. Never point them at the
 development database. `bun run test --integration` connects to the `postgres`
 maintenance database on the same server and creates the target database if
 missing, before probing it and running migrations. The configured PostgreSQL
-role needs permission to create databases when the target does not exist.
+role needs permission to create databases for templates and private fixtures,
+even when the shared target already exists.
 
 Use the token when running tests from several worktrees: migrations are
 forward-only, so sharing a database lets one branch's schema changes leak into
@@ -789,7 +873,73 @@ another branch's tests. Every suite in a checkout shares its target database,
 and it keeps what earlier runs left behind. A test that asserts on a
 database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
-`useFreshDatabase()` in `scripts/fixtures/test-infra`.
+`useMigratedDatabase()` in `scripts/fixtures/test-infra`. Call `drop()` in
+`afterAll` or `finally`.
+
+The bootstrap also prepares an immutable PostgreSQL template with Core and
+**every application's migrations**, using the same migration entry point as
+the shared target. `createMigratedDatabase()` clones it without binding Bun's
+default SQL client; `useMigratedDatabase()` also binds that client before its
+first query. Mail's integration preload uses the clone before loading its
+runtime. Ordinary file setup must not replay Core setup after cloning.
+`createDisposableDatabase()` and `useFreshDatabase()` still create empty
+databases for schema migration tests and suites that build stand-in tables.
+
+Bun cannot stop the body of a test that timed out: its statements keep
+running, or its transaction keeps holding locks, and every later hook would
+wait on them. In a private database that the process owns, nothing else runs,
+so after each test the fixture ends that leftover work: a statement still
+running for more than 250 ms is cancelled, and a transaction left open is
+ended. It logs each with its statement and blocking processes, so the report
+also names what held the timed-out test. `useFreshDatabase()` and
+`useMigratedDatabase()` mark their database as owned; a preload that binds
+its own private database calls `ownTestDatabase(name)`, as Filesv2's does.
+The shared test database is never touched this way, because other processes
+may use it at the same time.
+
+With a database target configured, the preload observes test and per-test hook
+callbacks before they are registered, including parameterized tests. If the
+guard cancels or terminates work after a callback timed out, its late database
+rejection is reported as a guard warning instead of an unhandled error between
+tests. The original timeout still fails. SQL errors and cancellation during a
+running callback still fail normally. Private-database suites run serially;
+concurrent tests must not share a database that the guard owns.
+`tests/integration/test-infra-cancellation.integration.test.ts` checks active
+statements, timed-out hooks, idle transactions, and recovery of the next test.
+
+Templates are keyed by a content hash of workspace runtime sources and assets,
+the lockfile, workspace definition, and migration fixture code. Runtime inputs
+are hashed conservatively because migrations import shared helpers and assets;
+ordinary `*.test.*`, `*.spec.*`, and `*.test-fixture.*` edits do not invalidate
+them. Other runtime-adjacent fixtures are included conservatively. A PostgreSQL
+session advisory lock serializes builders across processes and shards. A template is published only
+after migrations finish and its connections close, and then refuses direct
+connections. An interrupted build is replaced by the next builder. Existing
+clones keep their schema when sources change. The runner holds a shared advisory
+lease until all its files finish, and each file holds its own lease. The last
+user drops the template; the next run also removes marked templates and builds
+whose processes died without releasing them. Cleanup takes exclusive advisory
+locks and skips active runs and builders. Templates are never cloned from the
+configured target's test data.
+
+Run through `bun run test --integration` to keep a cold template build outside
+the file's 30 s hook budget. The runner hashes sources once and forwards that
+identity to its children; file hooks only acquire a lease and clone the database.
+A direct file run without that runner may need to build the template first.
+No timeout extension is needed. The fixture regression in
+`tests/integration/test-database-template.integration.test.ts` checks that a
+migrated private database is ready within three seconds, builders serialize,
+and a migration source edit produces a new template.
+
+Each integration file must declare the settings its requests and assertions
+need. For example, call `useTestSettings({ "app.url": "http://localhost:3000" })`
+from `@k2b/cloud/services/settings/settings.test-fixture` inside the gated
+suite. It restores stored values and removes previously absent rows after the
+suite, invalidating the Valkey and identity configuration caches. A suite that
+chooses values during setup, such as a temporary server's URL, calls
+`preserveTestSettings(keys)` before registering its setup hooks. Include every
+shared setting the suite changes; a fresh process does not reset the database
+or Valkey between files.
 
 The same rule holds for NATS. The development broker keeps the application
 streams in the `DEV` account, which accepts connections without credentials,
@@ -825,7 +975,15 @@ bun run test --integration
 the suites across parallel jobs, balanced by measured suite time, which is how
 the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
 minutes. `--exclude <name>` leaves out suites whose name or path matches, and
-`--filter <name>` keeps only those.
+`--filter <name>` keeps only those. Repeat `--filter` to run suites matching
+any of the given names or workspace paths, each suite once:
+
+```bash
+bun run test --filter packages/core --filter packages/cloud
+```
+
+`--exclude` removes matches from that union before sharding. Run
+`bun run test --help` for all runner options.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
@@ -861,7 +1019,8 @@ Gotenberg, against the `CLOUD_TEST_*` targets.
 Mail's entry point reuses the root runner's infrastructure-gate discovery,
 including gated files without an `.integration` suffix. It also retains the
 explicitly opted-in large-mailbox performance and IMAP connector suites. All
-selected files share the existing Mail disposable database and Sync preload;
+selected files run with `--isolate`, so the Mail preload gives each file its own
+database clone and Sync runtime;
 unit and browser files run through the normal test jobs instead. Inspect the
 selection without starting infrastructure with
 `bun run --cwd packages/mail test:integration --list`.
@@ -932,6 +1091,25 @@ Never cut a random UUID or `Math.random()` to short-ID length: the small space
 repeats and fails a unique index at random. `bun run check` flags this with the
 `test-short-ids` rule.
 
+## Measure the public-site example
+
+`bun scripts/lighthouse-public-site.ts` builds
+`packages/cloud/examples/public-site` in production mode and serves it as
+`http://public-site.localhost:<port>/` on a free port through the gateway's own request handler
+(host decision, protections, compression) to the app's `app.public` surface.
+A fixed snapshot replaces only the domain table and the registry. It then runs
+Lighthouse 13.6.0 on Playwright's Chromium with mobile emulation and simulated
+throttling, prints the SEO and performance scores of `/` and `/de/`, and exits
+with 1 below SEO 100 or performance 95. Reports stay in
+`.local/lighthouse-public-site/`.
+
+The run uses the integration variables (`CLOUD_TEST_DATABASE_URL`,
+`CLOUD_TEST_VALKEY_URL`, `CLOUD_TEST_NATS_SERVERS`, and
+`CLOUD_TEST_NATS_CREDS_FILE` where needed): the measurement server starts like
+the gateway process, and its telemetry publishes to its own test namespace,
+which the script deletes. Run it before a release that changes the gateway's
+app-domain path or `app.public`; it is not part of the gate.
+
 ## Request cache checks
 
 The request-cache suites modify global settings and cache keys, so they run
@@ -947,25 +1125,65 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in five shards and WebKit tests in seven, balanced by
-`scripts/test-weights.json`: measured seconds per suite, longest first. An
-unknown suite counts as the median of its table. Each shard prints its
-predicted and actual time. It fails with an annotation when it runs longer
-than 20 of its 30 minutes, even when every suite passed. To refresh the weights,
-run `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest
-green merge-queue runs. Add a shard when the printed slowest shard exceeds
-15 minutes. One third of the job limit stays in reserve because setup and
-GitHub's job finalization count against it. Finalization took up to about
-5 minutes during a GitHub Actions incident.
+Unit tests run in seven shards, WebKit tests in ten, and integration tests in
+four. Each mode uses its own measured seconds per suite in
+`scripts/test-weights.json`, assigning the longest suites first. An unknown
+suite counts as the median of its table. The browser table contains WebKit
+measurements; Chromium runs inside the unit suites. Equal weights use the suite
+name to order suites; the least-loaded shard wins, with suite count and shard
+index breaking load ties. Integration keeps the Grids exclusion;
+Grids certification runs in its own path-filtered job. Every integration shard
+gets fresh service containers, and `gate` requires the whole matrix to succeed.
 
-The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
+The unit, WebKit, integration, and Grids jobs run on the runner that the
+repository variable `CI_HEAVY_RUNNER` names, and on `ubuntu-24.04` when it is
+unset. Maintainers set it to a larger GitHub-hosted runner when standard runner
+capacity is short; that runner is billed per minute. Deleting the variable
+returns the jobs to standard runners without a pull request.
+
+Each shard prints its predicted and actual time. Its runner stops an active
+suite and fails with an annotation at the 20-minute budget, before the
+30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
+To refresh the weights, run
+`bun scripts/test-weights.ts --run <id> <id> <id>` with recent completed runs,
+including slow or failed runs, using `gh-agent` authentication; add
+`--mode integration` to refresh only integration timings. The script keeps the
+maximum measurement in the selected runs, including completed suites from
+failed jobs. It retains previous measurements for suites an aborted job
+did not finish and removes suites no longer in the checkout. An interrupted
+suite's elapsed time is only a lower bound, so it does not replace a complete
+measurement. Later refreshes replace observed weights, so an exceptional slow
+runner does not increase them permanently. The script plans the current checkout,
+excluding Grids from integration.
+It reports the smallest shard count whose predicted slowest shard fits 15
+minutes. If one suite alone exceeds that target, split the suite. Commit the
+refreshed weights and adjust the matrix together; keep the 20-minute execution
+budget unchanged. Refresh after browser suites grow or timings drift, even
+when the jobs still pass. An outdated table can balance predicted times while
+leaving actual times far apart.
+
+The runner tests check that every unit, WebKit, and integration suite is
+assigned exactly once and each predicted shard fits 15 minutes. They also
+cover deterministic assignment and distributing unmeasured new files. These
+checks validate the measured plan rather than a future runner's speed.
+Importer tests cover failed jobs, unexecuted suites, and replacing old weights
+when the selected runs are faster. Actual times still depend on the runner: a whole
+job running several times slower cannot be bounded by historical file weights.
+Inspect a selection without
+starting services with `bun run test --integration --exclude grids --shard 1/3 --list`.
+
+One third of the job limit stays in reserve because setup and GitHub's job
+finalization count against it. Finalization took up to about 5 minutes during
+a GitHub Actions incident.
+
+The `packed` job packs `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
 fresh project outside the workspace, typechecks the public source, builds a
 page with an island using the installed production build script, and starts
 the app against disposable services. Normal pull requests use the workspace
 tarballs. On a release pull request, whose diff changes
 `.release-please-manifest.json`, it runs with `--release`, also in the merge
-queue: each pinned `@k2b/ui` and `@k2b/ssr` version already on npm comes from
+queue: each pinned `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` version already on npm comes from
 npm; only a version this release publishes comes from its tarball. The check
 fails when npm cannot be reached. Run it locally with Docker and npm available:
 
@@ -1143,7 +1361,8 @@ Hub image: `ghcr.io/k2b-dev/mirror/dbip-lite:<YYYY-MM>`. It is referenced by
 tag and pinned by the gzip checksums in the Dockerfile. `.github/mirror-images.sh`
 copies it from DB-IP while DB-IP still serves that month. It holds only data
 and is pushed for `linux/amd64`; the Dockerfile takes that manifest with
-`FROM --platform=linux/amd64`, so arm64 release builds resolve it too.
+`FROM --platform=linux/amd64`, so source builds for other architectures can
+copy the same data. Published release images target `linux/amd64` only.
 
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
 Docker Hub image directly, including through BuildKit's default SBOM generator,
@@ -1207,7 +1426,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in seven shards with `bun run test --browser`, against
+them again in WebKit in ten shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
@@ -1239,6 +1458,13 @@ reports before attributing a phase failure to a specific test.
 The smokes accept pending legal documents using the version
 rendered in the consent page's `data-legal-version` attribute; they must not read
 island props, whose encoding is internal.
+
+Grids and Chat also receive `--app-url` for the public origin. When the browser
+reaches the stack over loopback, their smokes relay the application's session
+live socket with that public origin and the fixture's session cookie. The
+application's origin checks still apply. Grids reports only known refusal
+codes and close metadata; it does not print cookies, frame bodies, or arbitrary
+close reasons.
 
 ### Read slow statements from a CI run
 

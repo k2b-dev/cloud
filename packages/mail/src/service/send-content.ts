@@ -1,9 +1,11 @@
+import { compareStreamCursor } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { sql } from "bun";
 import { z } from "zod";
 import { type ActorRef, draftEditableContentInputSchema } from "../contracts";
 import { sha256Json } from "./canonical";
 import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
+import { mailDraftDocumentLog } from "./draft-documents";
 import { mailboxLogoContentId } from "./mailbox-logos";
 import { type OutboundDraftSnapshot, outboundDraftSnapshotSchema } from "./outbound-mime";
 
@@ -12,6 +14,9 @@ const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.
   signatureTemplateId: z.string().uuid().nullable().optional(),
 });
 type SendSource = {
+  edit_mode: "lock" | "shared";
+  doc_cursor: string | null;
+  doc_history_complete: boolean;
   conversation_id: string | null;
   to_addresses: unknown;
   cc_addresses: unknown;
@@ -73,7 +78,7 @@ export const loadSendContent = async (params: {
   const accountId = params.actor.kind === "service_account" ? params.actor.serviceAccountId : null;
   const [draft] = await params.db<SendSource[]>`
     SELECT
-      d.conversation_id,
+      d.conversation_id, d.edit_mode, d.doc_cursor, d.doc_history_complete,
       signature.body_template AS signature, COALESCE(style.custom_css, '') AS custom_css,
       m.name AS mailbox_name, m.description AS mailbox_description,
       u.display_name AS actor_name, u.uid AS actor_uid, u.mail AS actor_mail, account.name AS account_name,
@@ -144,6 +149,25 @@ export const loadSendContent = async (params: {
     ${params.lock ? params.db`FOR UPDATE OF d, si` : params.db``}
   `;
   if (!draft) return fail(err.badInput("Draft or sender identity is no longer available"));
+  if (draft.edit_mode === "shared") {
+    if (!draft.doc_history_complete) return fail(sendContentChanged());
+    try {
+      const topic = mailDraftDocumentLog.topic();
+      const head = await topic.latestCursor({ tenantId: params.draftId });
+      if (head && (!draft.doc_cursor || compareStreamCursor(head, draft.doc_cursor) > 0)) {
+        // A rolled-back send leaves an inert marker, not a changed review.
+        // Real unprojected input still requires a new durable revision/review.
+        let reached = draft.doc_cursor;
+        for await (const event of topic.replay({ tenantId: params.draftId, after: draft.doc_cursor ?? topic.cursorAt(0), until: head })) {
+          if (event.data.kind !== "freeze") return fail(sendContentChanged());
+          reached = event.cursor;
+        }
+        if (reached !== head) return fail(sendContentChanged());
+      }
+    } catch {
+      return fail(sendContentChanged());
+    }
+  }
   if (actorUserId && !draft.actor_uid) return fail(err.badInput("The delegated compose user is no longer available"));
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,

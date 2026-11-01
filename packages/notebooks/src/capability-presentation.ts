@@ -2,10 +2,79 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  sentences: {
+    "annotation.create": {
+      approval: "Add a comment",
+      done: "Added a comment",
+      rejected: "Comment not added",
+      notRun: "Comment not added",
+    },
+    "annotation.reply": {
+      approval: "Reply to a comment",
+      done: "Added the reply",
+      rejected: "Reply not added",
+      notRun: "Reply not added",
+    },
+    "annotation.edit": {
+      approval: "Edit a comment",
+      done: "Edited the comment",
+      rejected: "Comment not edited",
+      notRun: "Comment not edited",
+    },
+    "annotation.delete": {
+      approval: "Delete a comment",
+      done: "Deleted the comment",
+      rejected: "Comment not deleted",
+      notRun: "Comment not deleted",
+    },
+    "annotation.restore": {
+      approval: "Restore a comment",
+      done: "Restored the comment",
+      rejected: "Comment not restored",
+      notRun: "Comment not restored",
+    },
+    "annotation.resolve": {
+      approval: "Change comment status",
+      done: "Changed the comment status",
+      rejected: "Status not changed",
+      notRun: "Status not changed",
+    },
+    "annotation.reject": {
+      approval: "Change suggestion rejection status",
+      done: "Changed the suggestion status",
+      rejected: "Suggestion status not changed",
+      notRun: "Suggestion status not changed",
+    },
+    "annotation.accept": {
+      approval: "Accept a passage suggestion",
+      done: "Accepted the suggestion",
+      rejected: "Suggestion not accepted",
+      notRun: "Suggestion not accepted",
+    },
+    "annotation.undo-accept": {
+      approval: "Undo an accepted suggestion",
+      done: "Undid the suggestion",
+      rejected: "Suggestion not undone",
+      notRun: "Suggestion not undone",
+    },
+  },
   translations: {
     de: {
       commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
+      events: {
+        "notebook.created": { title: "Notizbuch erstellt", description: "Ein Notizbuch wurde erstellt." },
+        "notebook.updated": { title: "Notizbuch geändert", description: "Metadaten oder Einstellungen eines Notizbuchs wurden geändert." },
+        "note.created": { title: "Notiz erstellt", description: "Eine Notiz wurde erstellt." },
+        "note.updated": {
+          title: "Notiz geändert",
+          description: "Gespeicherte Notizänderungen werden nach einer Ruhephase in begrenzten Durchläufen zusammengefasst.",
+        },
+      },
       types: {
+        annotation: {
+          title: "Kommentar",
+          description: "Ein Kommentar zu einer Textstelle einer Notiz, mit Antworten und optionalem Änderungsvorschlag.",
+        },
         note: {
           title: "Notiz",
           description: "Eine Markdown-Notiz in einem Notizbuch, auf das du Zugriff hast.",
@@ -15,11 +84,87 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Eine berechtigungsbezogene Sammlung von Markdown-Notizen.",
         },
         comment: {
-          title: "Notizkommentar",
-          description: "Dauerhafter Diskussionskontext zu einer zugänglichen Notiz.",
+          title: "Beitrag zur Seitendiskussion",
+          description: "Ein Beitrag in der Seitendiskussion einer zugänglichen Notiz, nicht an eine Textstelle gebunden.",
         },
       },
       queries: {
+        "notebook.containers": {
+          title: "Diskussionsorte auflisten",
+          description: "Lesbare Notizbücher mit Fortsetzung auflisten.",
+          input: {
+            query: "Optionaler Suchtext für Orte.",
+            cursor: "Fortsetzung der vorherigen Seite.",
+            limit: "Höchstens so viele Orte auf dieser Seite.",
+          },
+        },
+        "notebook.readable": {
+          title: "Leser für Notizbuch prüfen",
+          description: "Prüfen, welche aktuellen Konten dieses Notizbuch lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
+        "note.readable": {
+          title: "Leser für Notiz prüfen",
+          description: "Prüfen, welche aktuellen Konten den Eintrag im erwarteten Container lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort der Ressource.",
+            "container.type": "Deklarierter Typ des Orts.",
+            "container.id": "Öffentliche ID des Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
+        "annotation.list": {
+          title: "Kommentare zum Text auflisten",
+          description:
+            "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Vor der Seitenauswahl nach state und Hauptautor (author UUID oder me) filtern. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            state: "Genauer Threadstatus; all umfasst jeden nicht gelöschten Thread.",
+            author: "UUID des Hauptautors (Benutzer oder Dienstkonto) oder me für den angemeldeten Akteur.",
+            cursor: "Undurchsichtiger nextCursor oder repliesNextCursor der vorherigen Seite.",
+            limit: "Höchstzahl der Kommentare oder Antworten pro Seite, 1 bis 30; Bytegrenzen können die Seite kürzen.",
+          },
+        },
+        "annotation.read": {
+          title: "Kommentar zum Text lesen",
+          description:
+            "Einen notebooks.annotation-Verweis mit Antworten und aktuellen Rechten lesen. repliesNextCursor mit annotation.replies fortsetzen.",
+          input: {
+            id: "ref.id eines notebooks.annotation-Verweises aus annotation.list oder annotation.create.",
+          },
+        },
+        "annotation.replies": {
+          title: "Kommentarantworten auflisten",
+          description: "Weitere Antworten eines Kommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            cursor: "Undurchsichtiger nextCursor oder repliesNextCursor der vorherigen Seite.",
+            limit: "Höchstzahl der Kommentare oder Antworten pro Seite, 1 bis 30; Bytegrenzen können die Seite kürzen.",
+          },
+        },
+        "notebook.activity": {
+          title: "Notizereignisse lesen",
+          description:
+            "Berechtigte Änderungen an Notizen eines Notizbuchs lesen, neueste zuerst. Optional auf eine Notiz begrenzen. Kommentare und gelöschte Notizen werden ausgelassen. Dem Cursor folgen.",
+          input: {
+            container: "Öffentliche ID des Notizbuchs; die bisherige Eingabe notebook bleibt möglich.",
+            notebook: "Bisherige Eingabe für container; beide IDs müssen übereinstimmen.",
+            item: "Optional auf eine Notiz in diesem Notizbuch begrenzen.",
+            timeZone: "IANA-Zeitzone für die Datumsanzeige; ohne Angabe gilt die Zeitzone der Installation.",
+            before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",
+            after: "Nur Ereignisse, deren letztes Auftreten nach diesem ISO-Zeitpunkt liegt.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Höchstzahl der Ergebnisse von 1 bis 100; Standard ist 50.",
+          },
+        },
         "notebook.browse": {
           title: "Notizbuch auswählen",
           description:
@@ -43,7 +188,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.browse": {
-          title: "Kommentarvorschauen lesen",
+          title: "Vorschauen der Seitendiskussion lesen",
           description:
             "Kommentare anhand kurzer Vorschauen auswählen, neueste zuerst. Dem Cursor folgen. Bei previewTruncated den vollständigen Kommentar mit comment.read und ref.id lesen. canEdit und canDelete zeigen die aktuellen Bearbeitungsrechte.",
           input: { noteId: "Notiz-ID.", cursor: "Cursor der vorherigen Seite.", limit: "Höchstzahl der Kommentare." },
@@ -59,7 +204,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.list": {
-          title: "Notizkommentare auflisten",
+          title: "Seitendiskussion auflisten",
           description:
             "Vollständige Markdown-Kommentare zu einer Notiz lesen, neueste zuerst. Seiten können wegen der Antwortgröße kürzer ausfallen; immer page.nextCursor folgen. Für die Auswahl zunächst comment.browse verwenden.",
           input: {
@@ -69,7 +214,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.read": {
-          title: "Notizkommentar lesen",
+          title: "Beitrag zur Seitendiskussion lesen",
           description:
             "Einen von comment.list zurückgegebenen notebooks.comment-Verweis lesen und den Zugriff auf die zugehörige Notiz prüfen.",
           input: {
@@ -188,8 +333,167 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "annotation.create": {
+          title: "Textstelle kommentieren",
+          description:
+            "Einen Kommentar oder Änderungsvorschlag zu einer beschreibbaren Notiz hinzufügen. Wiederholte Zitate mit occurrence (ab 1), Kontext oder offsetHint unterscheiden. Idempotency-Key ist erforderlich.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            quote: "Exakt ausgewählte Markdown-Textstelle mit höchstens 2.000 UTF-16-Zeichen.",
+            prefix: "Exakter angrenzender Markdown-Kontext davor, höchstens 32 UTF-16-Zeichen.",
+            suffix: "Exakter angrenzender Markdown-Kontext danach, höchstens 32 UTF-16-Zeichen.",
+            occurrence: "Welches exakte Vorkommen des Zitats im aktuellen Markdown der Notiz gemeint ist, ab 1.",
+            offsetHint: "Optionaler UTF-16-Startversatz im Markdown der Notiz, ohne gespiegeltes Front Matter.",
+            body: "Markdown-Kommentar mit höchstens 5.000 Zeichen; darf leer sein, wenn ein Vorschlag das Zitat ändert.",
+            suggestion:
+              "Optionaler Ersatztext für die Textstelle mit höchstens 2.000 Zeichen. Leer bedeutet Löschen, null bedeutet kein Vorschlag.",
+          },
+          sentences: {
+            approval: "Kommentar hinzufügen",
+            done: "Kommentar hinzugefügt",
+            rejected: "Kommentar nicht hinzugefügt",
+            notRun: "Kommentar nicht hinzugefügt",
+          },
+        },
+        "annotation.reply": {
+          title: "Auf einen Kommentar antworten",
+          description:
+            "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto auf fremde Kommentare antworten, mit Text und/oder Änderungsvorschlag. Agents dürfen eigene Vorschläge nur auf ausdrücklichen Wunsch übernehmen. Idempotency-Key ist erforderlich.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            body: "Markdown-Antwort mit höchstens 5.000 Zeichen; darf mit einem Ersatzvorschlag leer sein.",
+            suggestion: "Ersatztext für die Textstelle des Threads; leer bedeutet Löschen, null bedeutet kein Vorschlag.",
+          },
+          sentences: {
+            approval: "Auf einen Kommentar antworten",
+            done: "Antwort hinzugefügt",
+            rejected: "Antwort nicht hinzugefügt",
+            notRun: "Antwort nicht hinzugefügt",
+          },
+        },
+        "annotation.edit": {
+          title: "Eigenen neuen Kommentar bearbeiten",
+          description: "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten mit aktuellem Schreibzugriff bearbeiten.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort-ID aus annotation.reply oder annotation.replies; weglassen, um den Hauptkommentar zu ändern.",
+            body: "Neuer Text des Kommentars oder der Antwort mit höchstens 5.000 Zeichen.",
+            suggestion:
+              "Optionaler Ersatztext für die Textstelle mit höchstens 2.000 Zeichen. Leer bedeutet Löschen, null bedeutet kein Vorschlag.",
+          },
+          sentences: {
+            approval: "Kommentar bearbeiten",
+            done: "Kommentar bearbeitet",
+            rejected: "Kommentar nicht bearbeitet",
+            notRun: "Kommentar nicht bearbeitet",
+          },
+        },
+        "annotation.delete": {
+          title: "Eigenen neuen Kommentar löschen",
+          description:
+            "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten löschen. Kommentare mit Antworten können nicht gelöscht werden.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort-ID aus annotation.reply oder annotation.replies; weglassen, um den Hauptkommentar zu ändern.",
+          },
+          sentences: {
+            approval: "Kommentar löschen",
+            done: "Kommentar gelöscht",
+            rejected: "Kommentar nicht gelöscht",
+            notRun: "Kommentar nicht gelöscht",
+          },
+        },
+        "annotation.restore": {
+          title: "Eigenen gelöschten Kommentar wiederherstellen",
+          description: "Gelöschten Kommentar oder gelöschte Antwort innerhalb des ursprünglichen Zehn-Minuten-Fensters wiederherstellen.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort-ID aus annotation.reply oder annotation.replies; weglassen, um den Hauptkommentar zu ändern.",
+          },
+          sentences: {
+            approval: "Kommentar wiederherstellen",
+            done: "Kommentar wiederhergestellt",
+            rejected: "Kommentar nicht wiederhergestellt",
+            notRun: "Kommentar nicht wiederhergestellt",
+          },
+        },
+        "annotation.resolve": {
+          title: "Kommentar erledigen oder wieder öffnen",
+          description: "Jeder mit Schreibzugriff kann Kommentare erledigen oder wieder öffnen, auch in gesperrten Notizen.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            resolved: "true erledigt den Kommentar, false öffnet ihn wieder. Übernommene Vorschläge brauchen annotation.undo-accept.",
+          },
+          sentences: {
+            approval: "Kommentarstatus ändern",
+            done: "Kommentarstatus geändert",
+            rejected: "Status nicht geändert",
+            notRun: "Status nicht geändert",
+          },
+        },
+        "annotation.reject": {
+          title: "Vorschlag ablehnen oder wieder öffnen",
+          description:
+            "Mit Schreibzugriff den Hauptvorschlag oder eine Antwort über replyId ablehnen oder mit rejected false wieder öffnen. Text und Kommentarstatus bleiben gleich.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort mit dem Vorschlag; für den Hauptvorschlag weglassen.",
+            rejected: "true lehnt den Vorschlag ab, false öffnet einen abgelehnten Vorschlag wieder. Ändert nie den Notiztext.",
+          },
+          sentences: {
+            approval: "Ablehnungsstatus des Vorschlags ändern",
+            done: "Vorschlagsstatus geändert",
+            rejected: "Vorschlagsstatus nicht geändert",
+            notRun: "Vorschlagsstatus nicht geändert",
+          },
+        },
+        "annotation.accept": {
+          title: "Änderungsvorschlag übernehmen",
+          description:
+            "Den Hauptvorschlag oder mit replyId einen Antwortvorschlag übernehmen. Kommentar und Vorschlag müssen offen sein. Nur die verankerte Textstelle einer entsperrten Notiz ersetzen. Bei unklarem Ergebnis dieselbe operationId erneut verwenden.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort mit dem zu übernehmenden Vorschlag; für den Hauptvorschlag weglassen.",
+            operationId:
+              "Stabile Vorgangs-UUID des Aufrufers. Erneut verwenden, um ein unklares Ergebnis von Übernehmen oder Rückgängig zu klären.",
+            expectedText:
+              "Erwartete aktuelle Textstelle; beim Übernehmen standardmäßig das Zitat, beim Rückgängigmachen der eingesetzte Text.",
+          },
+          sentences: {
+            approval: "Änderungsvorschlag übernehmen",
+            done: "Änderungsvorschlag übernommen",
+            rejected: "Vorschlag nicht übernommen",
+            notRun: "Vorschlag nicht übernommen",
+          },
+        },
+        "annotation.undo-accept": {
+          title: "Übernommenen Vorschlag rückgängig machen",
+          description:
+            "Nur unveränderten eingesetzten Text zurücksetzen. Benötigt Schreibzugriff und eine entsperrte Notiz. Dieselbe operationId bei Wiederholung verwenden.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            operationId:
+              "Stabile Vorgangs-UUID des Aufrufers. Erneut verwenden, um ein unklares Ergebnis von Übernehmen oder Rückgängig zu klären.",
+            expectedText:
+              "Erwartete aktuelle Textstelle; beim Übernehmen standardmäßig das Zitat, beim Rückgängigmachen der eingesetzte Text.",
+          },
+          sentences: {
+            approval: "Änderungsvorschlag rückgängig machen",
+            done: "Änderungsvorschlag rückgängig gemacht",
+            rejected: "Vorschlag nicht rückgängig gemacht",
+            notRun: "Vorschlag nicht rückgängig gemacht",
+          },
+        },
         "comment.update": {
-          title: "Notizkommentar bearbeiten",
+          title: "Beitrag zur Seitendiskussion bearbeiten",
           description:
             "Eigenen Kommentar innerhalb von zehn Minuten nach dem Erstellen ersetzen. Benötigt Schreibzugriff auf das Notizbuch.",
           input: {
@@ -198,13 +502,13 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.delete": {
-          title: "Notizkommentar löschen",
+          title: "Beitrag zur Seitendiskussion löschen",
           description:
             "Eigenen Kommentar innerhalb von zehn Minuten nach dem Erstellen löschen. Benötigt Schreibzugriff auf das Notizbuch.",
           input: { commentId: "Eigene Kommentar-ID aus comment.list oder comment.read; zehn Minuten nach dem Erstellen löschbar." },
         },
         "comment.create": {
-          title: "Notiz kommentieren",
+          title: "Beitrag zur Seitendiskussion hinzufügen",
           description: "Als aktueller Benutzer Markdown-Diskussionskontext zu einer beschreibbaren Notiz hinzufügen.",
           input: {
             noteId: "Beschreibbare Notiz-ID aus Notizsuche, Notizbaum, Lesevorgang oder einem notebooks.note-Verweis.",

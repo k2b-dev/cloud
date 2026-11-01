@@ -1,15 +1,16 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { type CatalogSubscription, projectAppEventCatalog, readCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import {
   capabilityActionReceiptIssues,
   capabilityActionReviewIssues,
   capabilityQueryChecksActionOutcome,
 } from "../_internal/capability-reviews";
 import { capabilityTimeoutMs, createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
-import { getCapability, listApps } from "../_internal/registry";
+import { getApp, getCapability, listApps } from "../_internal/registry";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
   type CapabilityClaimScope,
@@ -55,15 +56,26 @@ import {
   v,
 } from "../server/middleware";
 import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
+import { hasOAuthScope } from "../server/oauth-scope";
+import { ratelimit } from "../server/ratelimit";
 import { appAccessAuthority, canUseApp } from "../services/app-access";
+import { bootstrapRateLimit } from "../services/app-bootstrap";
 import { discoverableApps } from "../services/app-discovery";
-import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { authorityFromParentInvocation, invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
-import type { InvocationAuthority } from "../services/identity/invocation-token";
-import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import type { CloudInvocationClaims, InvocationAuthority } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId, signAppCapabilityInvocation, signAppQueryInvocation } from "../services/identity/invocation-token";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import {
+  NESTED_INVOCATION_SETUP_BUDGET_MS,
+  type NestedInvocationLease,
+  nestedInvocationLeases,
+  nestedSourceDeadline,
+} from "../services/identity/nested-invocation";
+import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
@@ -71,6 +83,9 @@ import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
+// Approved reader-check budget, shared across targets for each calling application.
+export const APP_QUERY_REQUESTS_PER_MINUTE = 1_501;
+const appQueryLimit = ratelimit({ id: "app-queries", limit: APP_QUERY_REQUESTS_PER_MINUTE, windowSecs: 60 });
 const log = logger("capabilities");
 const DEFAULT_CATALOG_LIMIT = 10;
 const MAX_CATALOG_LIMIT = 25;
@@ -104,6 +119,8 @@ const CapabilityCatalogQuerySchema = z
   .strict();
 export type CapabilityRouteDependencies = {
   listApps?: () => Promise<AppRegistryEntry[]>;
+  eventSubscriptions?: () => Promise<CatalogSubscription[]>;
+  getApp?: (appId: string) => Promise<AppRegistryEntry | null>;
   getCapability?: (appId: string) => Promise<CapabilityRegistryEntry | null>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
@@ -112,12 +129,17 @@ export type CapabilityRouteDependencies = {
   withMandateIssueAuthority?: typeof withMandateIssueAuthority;
   queryTimeoutMs?: number;
   actionTimeoutMs?: number;
+  checkAppCapabilityRate?: (appId: string) => Promise<{ limited: boolean; resetIn: number }>;
+  checkAppQueryRate?: (appId: string) => Promise<{ limited: boolean }>;
   reviewTimeoutMs?: number;
   appUrl?: () => Promise<string>;
 };
 
 export type CapabilityDispatchDependencies = Pick<
   CapabilityRouteDependencies,
+  | "checkAppCapabilityRate"
+  | "checkAppQueryRate"
+  | "getApp"
   | "getCapability"
   | "fetch"
   | "queryTimeoutMs"
@@ -157,7 +179,7 @@ const invocationAuthorityFromMandate = (authority: {
 
 export const loadCapabilityCatalogPage = async (
   query: { cursor?: string; limit: number },
-  dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability"> = {},
+  dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability" | "eventSubscriptions"> = {},
   locale?: string,
   authority: RequestAuthority | null = null,
 ): Promise<CapabilityCatalog> => {
@@ -170,6 +192,21 @@ export const loadCapabilityCatalogPage = async (
   const liveApps = entries
     .filter((entry) => entry.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
     .sort((left, right) => left.id.localeCompare(right.id));
+  const resolved = new Map<string, CapabilityRegistryEntry | null>();
+  const lookup = async (appId: string) => {
+    if (!resolved.has(appId)) resolved.set(appId, await capabilityLookup(appId));
+    return resolved.get(appId) ?? null;
+  };
+  let subscriptions: CatalogSubscription[] | undefined;
+  const loadSubscribers = async () => {
+    if (!subscriptions) {
+      const visibleApps = new Set(liveApps.map((entry) => entry.id));
+      subscriptions = (await (dependencies.eventSubscriptions ?? readCatalogSubscriptions)()).filter((subscription) =>
+        visibleApps.has(subscription.appId),
+      );
+    }
+    return subscriptions;
+  };
   const start = query.cursor ? liveApps.findIndex((entry) => entry.id > query.cursor!) : 0;
   const offset = start < 0 ? liveApps.length : start;
   const apps: CapabilityCatalog["apps"] = [];
@@ -184,22 +221,29 @@ export const loadCapabilityCatalogPage = async (
   ).byteLength;
   for (const entry of liveApps.slice(offset)) {
     if (apps.length === query.limit) break;
-    const capability = await capabilityLookup(entry.id);
+    const capability = await lookup(entry.id);
     if (!capability || capability.manifest.manifestHash !== entry.capabilities?.manifestHash) {
       lastScannedAppId = entry.id;
       continue;
     }
     const presentedEntry = locale ? resolveAppPresentation(entry, locale) : entry;
+    const manifest = locale
+      ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale)
+      : capability.manifest;
     const projected = {
       appId: capability.appId,
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest: locale ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale) : capability.manifest,
+      manifest: { ...manifest, queries: manifest.queries.filter(isPersonVisibleCapabilityQuery) },
+      ...(manifest.events ? { events: projectAppEventCatalog(manifest, manifest.events.length ? await loadSubscribers() : []) } : {}),
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;
     const separatingCommas = apps.length;
-    if (apps.length > 0 && envelopeBytes + bytes + separatingCommas + projectedBytes > CAPABILITY_MAX_CATALOG_BYTES) break;
+    if (envelopeBytes + bytes + separatingCommas + projectedBytes > CAPABILITY_MAX_CATALOG_BYTES) {
+      if (!apps.length) throw new RangeError("An app's event catalog exceeds the catalog response byte limit");
+      break;
+    }
     apps.push(projected);
     bytes += projectedBytes;
     lastScannedAppId = entry.id;
@@ -219,11 +263,17 @@ const errorResponse = (code: string, message: string, status: number, details?: 
   status,
 });
 
-const capabilityJsonResponse = (body: unknown, status: number): Response =>
-  Response.json(body, {
+const capabilityJsonResponse = (body: unknown, status: number): Response => {
+  const limited =
+    status === 429 ? z.object({ details: z.object({ retryAfter: z.number().int().positive().safe() }) }).safeParse(body) : null;
+  return Response.json(body, {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(limited?.success ? { "retry-after": String(limited.data.details.retryAfter) } : {}),
+    },
   });
+};
 
 export type CapabilityDispatchParams = {
   /** Trusted Core continuation binding; never read from client headers. */
@@ -238,10 +288,22 @@ export type CapabilityDispatchParams = {
   /** Cloud surface this invocation came from; recorded on the execution row. */
   origin: CapabilityOrigin;
   authority?: RequestAuthority;
+  /** Core-only verified parent; never constructed from app JSON. */
+  parentInvocation?: CloudInvocationClaims;
+  /** Core-only turn coordinates used to recheck allowed tools at a child exchange. */
+  assistantTurn?: { conversationId: string; turnId: string };
+  /** Core-only absolute child deadline; cannot be extended by the application. */
+  deadline?: number;
+  /** Core-only authenticated workload. Never populated from request JSON. */
+  workload?: AuthenticatedWorkload;
+  /** Verified Ed25519 app identity, separate from person and legacy workload authority. */
+  appCaller?: { appId: string; keyId: string };
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
   onUpstreamAttempt?: () => void;
+  /** Core-only aggregate budget, charged on upstream bytes before parsing or validation. */
+  consumeResponseBytes?: (bytes: number) => void;
   dependencies?: CapabilityDispatchDependencies;
 };
 
@@ -251,6 +313,8 @@ type CapabilityDispatchOutcome = { body: unknown; status: number; replayed?: boo
 type CapabilityDispatchObservation = {
   subject: { type: "user" | "service_account"; id: string } | null;
   destructive: boolean;
+  invocationId?: string;
+  leaseId?: string;
 };
 
 type CapabilityPrincipal = { type: "user" | "service_account"; id: string } | null;
@@ -302,6 +366,76 @@ const runCapabilityDispatch = async (
     );
     return error;
   }
+  if ("appOnly" in operation && operation.appOnly !== undefined && !params.workload)
+    return errorResponse("FORBIDDEN", "App authority required for this query", 403);
+  if (params.appCaller) {
+    if (
+      params.authority ||
+      params.workload ||
+      params.mandate ||
+      params.parentInvocation ||
+      params.review ||
+      !operation.appPermission ||
+      operation.stream
+    )
+      return errorResponse("FORBIDDEN", "This capability does not accept app authority", 403);
+    try {
+      const app = params.appCaller;
+      const caller = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(app.appId));
+      if (!caller) return errorResponse("APP_UNAVAILABLE", "Calling app registry entry unavailable", 503);
+      if (!caller.platformPermissions?.includes(operation.appPermission))
+        return errorResponse("APP_CAPABILITY_NOT_ADMITTED", `App caller does not declare ${operation.appPermission}`, 403);
+      // Same operator-owned per-second budget as signed app ingress; shared by all keys of the app.
+      const rate = await deadline.wait(() =>
+        (
+          params.dependencies?.checkAppCapabilityRate ??
+          (async (appId) => ratelimit({ id: "app-capabilities", limit: await bootstrapRateLimit() }).check(appId))
+        )(app.appId),
+      );
+      if (rate.limited)
+        return errorResponse("RATE_LIMITED", "App capability rate limit reached", 429, {
+          retryAfter: Math.max(1, Math.ceil(rate.resetIn / 1000)),
+        });
+    } catch {
+      deadline.check();
+      return errorResponse("APP_UNAVAILABLE", "App capability admission unavailable", 503);
+    }
+  }
+  if (params.workload) {
+    if (
+      params.authority ||
+      params.mandate ||
+      params.parentInvocation ||
+      params.review ||
+      params.kind !== "queries" ||
+      !("appOnly" in operation) ||
+      operation.appOnly !== true ||
+      operation.stream
+    )
+      return errorResponse("FORBIDDEN", "App caller is not allowed for this query", 403);
+    try {
+      const caller = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(params.workload!.appId));
+      if (!caller) return errorResponse("APP_UNAVAILABLE", "Calling app registry entry unavailable", 503);
+      if (!caller.platformPermissions?.includes("resources:readers"))
+        return errorResponse("APP_QUERY_NOT_ADMITTED", "App caller does not declare resources:readers", 403);
+    } catch {
+      deadline.check();
+      return errorResponse("APP_UNAVAILABLE", "App registry unavailable", 503);
+    }
+    try {
+      if (
+        (
+          await deadline.wait(() =>
+            (params.dependencies?.checkAppQueryRate ?? ((appId) => appQueryLimit.check(appId)))(params.workload!.appId),
+          )
+        ).limited
+      )
+        return errorResponse("RATE_LIMITED", "App query rate limit exceeded; retry after one minute", 429);
+    } catch {
+      deadline.check();
+      return errorResponse("APP_UNAVAILABLE", "App query rate limiter unavailable", 503);
+    }
+  }
   if (params.review && (params.kind !== "actions" || !("review" in operation) || operation.review !== true)) {
     const error = errorResponse(
       "CAPABILITY_NOT_FOUND",
@@ -347,7 +481,7 @@ const runCapabilityDispatch = async (
     return invalid;
   }
 
-  if (params.mandate && operation.stream)
+  if ((params.mandate || params.parentInvocation) && operation.stream)
     return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
 
   let requestBody: string;
@@ -364,6 +498,28 @@ const runCapabilityDispatch = async (
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
+  const lease: NestedInvocationLease | undefined =
+    !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
+      ? {
+          appId: params.appId,
+          deadline: Math.min(
+            Date.now() + deadline.remainingMs(),
+            nestedSourceDeadline(params.authority?.credentialProof),
+            params.authority?.actor.kind === "service_account" && params.authority.actor.credentialExpiresAt
+              ? Date.parse(params.authority.actor.credentialExpiresAt)
+              : Infinity,
+          ),
+          origin: params.origin,
+          ...(params.authority?.credentialProof ? { proof: params.authority.credentialProof } : {}),
+          ...(params.assistantTurn ? { assistantTurn: params.assistantTurn } : {}),
+        }
+      : undefined;
+  let leaseClaims: CloudInvocationClaims | undefined;
+  const observeSigned = (signed: Awaited<ReturnType<typeof signInvocationToken>>) => {
+    observed.invocationId = signed.claims.jti;
+    leaseClaims = signed.claims;
+    return signed;
+  };
   let headers: Headers;
   try {
     headers = mandate
@@ -392,16 +548,22 @@ const runCapabilityDispatch = async (
                     return (params.dependencies?.signInvocation ?? signInvocationToken)(
                       {
                         targetAppId: params.appId,
-                        callingAppId: mandate.ownerAppId,
+                        callingAppId: params.callingAppId ?? mandate.ownerAppId,
                         operation: invocationOperation,
                         schemaHash: operation.schemaHash,
-                        authority: invocationAuthorityFromMandate(mandateAuthority),
+                        authority: params.parentInvocation
+                          ? authorityFromParentInvocation(params.parentInvocation)
+                          : invocationAuthorityFromMandate(mandateAuthority),
+                        parent: params.parentInvocation,
+                        expiresAt: params.parentInvocation
+                          ? Math.floor((params.deadline ?? params.parentInvocation.exp * 1000) / 1000)
+                          : undefined,
                         requestId,
                         signer,
                         issuer: signer.issuer,
                       },
                       { db, groupsAdmin: signer.groupsAdmin },
-                    );
+                    ).then(observeSigned);
                   },
                   { db, groupsAdmin: signer.groupsAdmin },
                 );
@@ -420,6 +582,63 @@ const runCapabilityDispatch = async (
           });
         })()
       : await (async () => {
+          if (params.appCaller && operation.appPermission) {
+            const app = params.appCaller;
+            const permission = operation.appPermission;
+            return deadline.wait(() =>
+              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+                "invocation",
+                async (signer) => {
+                  deadline.check();
+                  const signed = await signAppCapabilityInvocation({
+                    app,
+                    permission,
+                    kind: params.kind === "queries" ? "query" : "action",
+                    targetAppId: params.appId,
+                    capabilityId: params.capabilityId,
+                    schemaHash: operation.schemaHash,
+                    input: input.data,
+                    requestId,
+                    signer,
+                  });
+                  observed.invocationId = signed.claims.jti;
+                  return new Headers({
+                    "content-type": "application/json",
+                    accept: "application/json",
+                    authorization: `Bearer ${signed.token}`,
+                  });
+                },
+                { signal, timeoutMs: deadline.remainingMs() },
+              ),
+            );
+          }
+          if (params.workload) {
+            const workload = params.workload;
+            return deadline.wait(() =>
+              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+                "invocation",
+                async (signer) => {
+                  deadline.check();
+                  const signed = await signAppQueryInvocation({
+                    workload,
+                    targetAppId: params.appId,
+                    capabilityId: params.capabilityId,
+                    schemaHash: operation.schemaHash,
+                    input: input.data,
+                    requestId,
+                    signer,
+                  });
+                  observed.invocationId = signed.claims.jti;
+                  return new Headers({
+                    "content-type": "application/json",
+                    accept: "application/json",
+                    authorization: `Bearer ${signed.token}`,
+                  });
+                },
+                { signal, timeoutMs: deadline.remainingMs() },
+              ),
+            );
+          }
           if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
           const authority = params.authority;
           const signed = await deadline.wait(() =>
@@ -433,13 +652,19 @@ const runCapabilityDispatch = async (
                     callingAppId: params.callingAppId ?? "core",
                     operation: invocationOperation,
                     schemaHash: operation.schemaHash,
-                    authority: invocationAuthorityFromRequest(authority),
+                    authority: params.parentInvocation
+                      ? authorityFromParentInvocation(params.parentInvocation)
+                      : invocationAuthorityFromRequest(authority),
+                    parent: params.parentInvocation,
+                    expiresAt: params.parentInvocation
+                      ? Math.floor((params.deadline ?? params.parentInvocation.exp * 1000) / 1000)
+                      : undefined,
                     requestId,
                     signer,
                     issuer: signer.issuer,
                   },
                   { db, groupsAdmin: signer.groupsAdmin },
-                );
+                ).then(observeSigned);
               },
               { signal, timeoutMs: deadline.remainingMs() },
             ),
@@ -474,6 +699,20 @@ const runCapabilityDispatch = async (
     const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
     return failure;
   }
+  // Optional exchange state belongs to the active dispatch, after the signing
+  // transaction. Losing it disables nesting without failing the original call.
+  if (lease && leaseClaims) {
+    const claims = leaseClaims;
+    observed.leaseId = claims.jti;
+    const setup = createCapabilityDeadline(NESTED_INVOCATION_SETUP_BUDGET_MS, signal);
+    try {
+      await setup.wait(() => nestedInvocationLeases.create(claims, lease, setup.signal));
+    } catch {
+      log.warn("Nested Query exchange unavailable", { invocationId: claims.jti });
+    } finally {
+      setup.clear();
+    }
+  }
   deadline.check();
   headers.set("x-request-id", requestId);
   headers.set(CAPABILITY_ORIGIN_HEADER, params.origin);
@@ -504,7 +743,11 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
-          principal: claimPrincipal ? `${claimPrincipal.type}:${claimPrincipal.id}` : "anonymous",
+          principal: params.appCaller
+            ? `app:${params.appCaller.appId}`
+            : claimPrincipal
+              ? `${claimPrincipal.type}:${claimPrincipal.id}`
+              : "anonymous",
           keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),
         }
       : null;
@@ -577,12 +820,15 @@ const runCapabilityDispatch = async (
   try {
     params.onUpstreamAttempt?.();
     const fetchResponse = () =>
-      fetchUpstream(`${entry.endpoint}/${params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`, {
-        method: "POST",
-        headers,
-        body: requestBody,
-        signal,
-      });
+      fetchUpstream(
+        `${entry.endpoint}/${params.appCaller ? `app-capabilities/${params.kind}` : params.workload ? "app-queries" : params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
+        {
+          method: "POST",
+          headers,
+          body: requestBody,
+          signal,
+        },
+      );
     // A read may be released at its deadline; Action effects retain their existing uncertainty handling.
     response = params.kind === "queries" || params.review ? await deadline.wait(fetchResponse) : await fetchResponse();
   } catch (error) {
@@ -617,7 +863,12 @@ const runCapabilityDispatch = async (
   let upstreamBody: Awaited<ReturnType<typeof readBoundedJson>>;
   try {
     upstreamBody = await deadline.wait(() =>
-      readBoundedJson(response, params.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES, signal),
+      readBoundedJson(
+        response,
+        params.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES,
+        signal,
+        params.consumeResponseBytes,
+      ),
     );
   } catch {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
@@ -755,16 +1006,31 @@ const resultDataMeta = (body: unknown) =>
  */
 export const dispatchCapability = async (params: CapabilityDispatchParams): Promise<Response> => {
   const deadline = createCapabilityDeadline(
-    capabilityTimeoutMs(params.review ? "review" : params.kind === "queries" ? "query" : "action", params.dependencies),
+    Math.min(
+      capabilityTimeoutMs(params.review ? "review" : params.kind === "queries" ? "query" : "action", params.dependencies),
+      params.deadline ? Math.max(0, params.deadline - Date.now()) : Infinity,
+    ),
     params.request.signal,
   );
+  const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
+  const revoke = () =>
+    observed.leaseId
+      ? nestedInvocationLeases.revoke(observed.leaseId).catch(() => {
+          log.error("Invocation exchange lease could not be revoked", { invocationId: observed.leaseId });
+        })
+      : Promise.resolve();
+  const onAbort = () => {
+    void revoke();
+  };
+  deadline.signal.addEventListener("abort", onAbort, { once: true });
   try {
     const requestId = normalizeInvocationRequestId(params.request.headers.get("x-request-id")) ?? crypto.randomUUID();
-    const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
     const startedAt = new Date();
     let outcome: CapabilityDispatchOutcome;
     try {
-      outcome = await runCapabilityDispatch(params, requestId, observed, deadline);
+      outcome = hasOAuthScope(params.authority, params.review || params.kind === "queries" ? "read" : "write", "admin")
+        ? await runCapabilityDispatch(params, requestId, observed, deadline)
+        : errorResponse("FORBIDDEN", "Insufficient OAuth scope", 403);
     } catch (error) {
       if (!deadline.signal.aborted) throw error;
       const cancelled = params.request.signal.aborted;
@@ -790,12 +1056,17 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
       const recording = recordCapabilityExecution({
         requestId,
         origin: params.origin,
+        invocationId: observed.invocationId,
+        parentInvocationId: params.parentInvocation?.jti,
+        viaAppId: params.appCaller?.appId ?? params.workload?.appId ?? (params.parentInvocation ? params.callingAppId : undefined),
         appId: params.appId,
         capability: `${params.appId}.${params.capabilityId}`,
         kind: params.kind === "queries" ? "query" : "action",
         destructive: observed.destructive,
-        actorKind: principal?.type ?? null,
+        actorKind: params.appCaller || params.workload ? "app" : (principal?.type ?? null),
         actorId: principal?.id ?? null,
+        actorAppId: params.appCaller?.appId ?? params.workload?.appId,
+        actorKeyId: params.appCaller?.keyId,
         userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? (principal?.type === "user" ? principal.id : null)),
         accessSubject: subject && subject.id !== principal?.id ? subject : null,
         status: executionStatus(outcome.status, errorCode),
@@ -828,6 +1099,8 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
     }
     return capabilityJsonResponse(outcome.body, outcome.status);
   } finally {
+    deadline.signal.removeEventListener("abort", onAbort);
+    void revoke();
     deadline.clear();
   }
 };
@@ -850,6 +1123,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .post(
       "/capabilities/v1/streams/:verb",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Transfer or inspect one authorized binary stream",
@@ -895,6 +1169,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/commands/:appId/:capabilityId",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Resolve an interactive Command link",
@@ -944,6 +1219,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/actions/:appId/:capabilityId/review",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Review one live app Action",
@@ -995,6 +1271,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Invoke one live app capability",

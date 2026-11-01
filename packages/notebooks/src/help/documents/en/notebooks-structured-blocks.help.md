@@ -82,7 +82,7 @@ Use the indentation of the example. Put two spaces before filter list items, col
 | `match` | `all` (default) requires every filter; `any` requires at least one. Without filters, all notes in the scope match. |
 | `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated, descending. |
 | `columns` | Fields to show, one per indented list item. Without columns, the query shows a list of linked titles. |
-| `limit` | 1–100 results, default 25. A notice shows that more notes match. Narrow your filters to see them. |
+| `limit` | 1–100, default 25. In Book and the editor, `limit` sets the rows per page, at most 20. When more notes match, the page buttons below the list show all of them; the list keeps its height. Book keeps the page in the address. A PDF shows the first `limit` rows and how many notes match. |
 
 A query has at most 32 filters and 16 different columns. A page has at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values. A filter string has at most 2,000 characters. Quote list values that contain commas, for example `["Sales, Europe", Support]`.
 
@@ -134,9 +134,9 @@ title: Sales 2026
 data: @sales
 x: Date
 y: [Revenue, Costs]
+format: EUR
 tooltip:
   label: Amount
-  format: EUR
 :::
 ```
 
@@ -163,7 +163,11 @@ y: Revenue
 
 Indent row items and tooltip fields by two spaces. Each row must match the column count. Do not combine `data` with inline rows. This is a small YAML-like format, not general YAML.
 
-The optional `tooltip` section accepts `label`, `format`, and `unit`. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix. Pie, donut, and stat also use this format for their displayed number. A single value column supplies the tooltip label by default; y column names label the series.
+Set `format` and `unit` to write the chart's values: the value axis, values at bars, tooltips, and the table. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix, such as `kg`. Pie, donut, and stat use this format for their displayed number.
+
+The chart titles its axes with the `x` column and the value name. A single value column names the value; `tooltip.label` can rename it. Two or more y columns get a legend with their names. A bar chart labels every category and shows each value next to its bar. Few short labels stand below columns. Otherwise, each category gets its own row, and the chart grows with the number of rows.
+
+The optional `tooltip` section accepts `label`, `format`, and `unit`. A tooltip `format` or `unit` applies to tooltips and the table. Without a chart `format`, it also formats the axis and the values at bars.
 
 A note can contain 20 charts. Each data list has at most 480 values, and a chart has at most 8 series. The shared chart also checks the total marks and whether the values and labels fit. Invalid settings show an error at the source line and keep the source visible. PDF export includes the chart followed by its data table.
 
@@ -184,7 +188,7 @@ Book also links to headings in lists, quotes, and notices. The editor preview ca
 
 ## Preview and refresh blocks {icon="refresh"}
 
-Rich mode shows query, contents, and chart previews that the server renders. To edit a block, move the cursor into it or choose **Show source**. Notebooks marks invalid settings on their source lines.
+Rich mode shows query, contents, and chart previews that the server renders. To edit a block, move the cursor into it or choose the code icon (**Show source**) in its corner. The same icon brings the preview back. Notebooks marks invalid settings on their source lines.
 
 A draft preview uses the query settings and headings of your draft. Queries still read saved data, even for the current note. The preview does not save the draft and does not change matching notes.
 
@@ -195,3 +199,15 @@ Book renders the same blocks on the server, without an editor. When JavaScript i
 Ordinary tables, lists, checkboxes, and named sections stay Markdown. Use table formulas for calculations in a table. Queries index only named `:::data` properties and the system fields above.
 
 Book evaluates the same table formulas as the editor, including computed columns, totals, and progress bars. A formula error stays visible in its cell. Table headers and ordinary cells also support inline formatting, links, images, and LaTeX. Formula results stay plain values.
+
+## Link places on a map {icon="map-2"}
+
+Type `/map` in a writable note to insert a map block. Search for a place above the map, choose a result, then link the pin to a note, a heading or a website. **Cancel** closes the link editor without adding the pin. A map holds up to 20 pins.
+
+Select a pin in the list or on the map. In the list, use the arrow keys or Home and End to change the selection. In **Map actions**, **Edit link** changes its destination; **Remove pin** removes it from this map. Read-only and locked notes show the saved map without editing controls.
+
+With two or more pins, open **Map actions**, choose **Save route through pins**, then choose the travel mode and confirm. The route follows the list order and stays saved with its distance, estimated time and calculation date. Reading the note does not recalculate the route. A saved route may also arrive from the Assistant.
+
+If maps are not configured or a budget is exhausted, saved pins and routes remain readable as lists with their sources. Budget notices show when requests become available again. A failed map load keeps your pins and offers **Retry**. **Show as list** lets you read links without a map.
+
+Open **Download PDF** to prepare a preview with map and route images and their sources. Print and PDF wait until all images are ready. If an image fails, retry or choose **Continue with source lists**. Closing cancels preparation. Native browser printing and exports without browser images use linked pin and route lists and report omitted images.

@@ -1,5 +1,6 @@
+import { resolveTextCursor } from "@k2b/editor/collab";
 import type { Awareness } from "y-protocols/awareness";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { type HeadingLine, headingAtLine } from "../../../../lib/note-insights";
 import type { PresenceLocationsEventDetail } from "../detail/events";
 
@@ -17,7 +18,7 @@ export const participantCursors = (awareness: Awareness, ytext: Y.Text): Map<str
     const cursor: unknown = state.cursor;
     if (cursor && typeof cursor === "object" && "head" in cursor && cursor.head && typeof cursor.head === "object") {
       try {
-        const head = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cursor.head), doc);
+        const head = resolveTextCursor(ytext, cursor.head);
         if (head?.type === ytext) position = Math.min(head.index, ytext.length);
       } catch {
         // Awareness is ephemeral and may arrive before the referenced document update.

@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
@@ -49,7 +48,6 @@ suite("mail message inspector", () => {
   let sourceBytes: Buffer;
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (role: string) => {
       const uid = `mail-inspector-${role}-${suffix}`;
       const displayName = `${role} message inspector`;

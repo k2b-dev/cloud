@@ -6,9 +6,11 @@ The application owns the content and which regions are open.
 
 For browser printing, mark the complete readable content with `data-print-region`, or provide an export hint through Cloud Layout `printHint`. See [Browser printing](/en/ui/layout/print) for the region and fallback contract.
 
-The sidebar and `Main` share one base surface, white in the light theme,
-separated by space. A Detail column is part of that surface, with no fill or
-frame and a subtle leading shadow. The bottom drawer uses the subtle surface.
+The sidebar and `Main` share one base surface, white in the light theme. A
+Detail column is part of that surface, with no fill or frame. From 48 rem, every
+column boundary (after the sidebar, between panes and levels, and before
+Detail) has the same quiet shadow and no line. The bottom drawer uses the
+subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
 own. Placeholders in `Main` draw no box, and new views add no inset cards or
@@ -46,6 +48,7 @@ views and filters in the head, the detail beside the content.
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
 | R5 Color from content | Status dots, tag colors, places, and stock carry color. The accent carries only the selection; controls stay platform blue, and only the one main action is filled. See [Colors and selection](/en/ui/surfaces/color). |
 | R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
+| R7 Quiet group headings | A heading that groups list rows by date or kind ("Today", "Yesterday", "This week") uses the `k2b-list-group-heading` class: muted ink, 0.75rem, semibold. It is one step quieter than the rows, the same in every list. |
 
 Three exceptions:
 
@@ -136,7 +139,12 @@ and Reset appear only while `filtered` is true.
 
 A head rendered on the server outside an island runs no callbacks. Give
 `primary` an `href` there, such as a command link that the page's island runs
-on load, and let that island handle a plain click in place. Filter chips with
+on load, and let that island handle a plain click in place. When that click
+opens a menu, set `popup: "menu"` (or `"dialog"` for a menu with a search
+field): server HTML then carries `aria-haspopup` and `aria-expanded`, a chevron
+follows the label, and the island adopts the link with `Dropdown`'s `attach`.
+The link still opens its address before hydration, in a new tab, or with a
+modified click. Filter chips with
 state of their own belong in an island in `filters` with their own Reset.
 
 ```ts
@@ -154,6 +162,7 @@ type AppWorkspaceHeadProps = {
     icon: string;
     href?: string;
     onClick?: (event: MouseEvent) => void;
+    popup?: "menu" | "dialog";
   };
 };
 ```
@@ -163,6 +172,28 @@ names the object on desktop; the head keeps its views while hiding the repeated
 title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
+
+### Without a head
+
+`AppWorkspace head={false}` draws no head row, for a page whose own toolbar
+already holds the head's buttons and whose title shows elsewhere, such as a
+note in its navigation. The application then gives both buttons itself, in
+any island:
+
+- a sidebar button with `data-app-workspace-sidebar-toggle` and
+  `aria-controls` set to the sidebar's ID. Below a 64 rem app host it opens the
+  overlay sidebar; where the sidebar is a column, it hides and shows a sidebar
+  with `onHiddenChange`, and a hidden sidebar comes back as the overlay where
+  it is one;
+- for each `AppWorkspace.Detail toggle={false}`, a Details button with
+  `data-app-workspace-detail-toggle` and
+  `aria-controls={appWorkspaceDetailElementId(detailId)}`. It opens and closes
+  the panel and, while the panel waits for room, slides it in as the drawer.
+
+Both stay one constant label ("Navigation", "Details"); the shared controller
+runs them and keeps their `aria-expanded` current, so the button needs no click
+handler of its own. Keep the head where a page has no such toolbar: removing it
+must not remove a way to the navigation or the details at any width.
 
 ## Compose the regions
 
@@ -202,6 +233,38 @@ home indicator. A scrolling `Main` or pane fades its last rows above the
 inset, and the inset keeps the end of that fade. A Detail column keeps its 0.5 rem inset above it. Cloud
 sets the property on the outermost workspace of its tablet and laptop shell, so
 applications need nothing.
+
+### Column boundaries
+
+From 48 rem, every boundary between two columns has the same quiet shadow: after
+the sidebar, between MainPanes, between shown levels, and before a Detail
+column. The column on the right lies slightly higher, so the shadow lies on the
+column before the boundary. It is 24 px wide, darkest at the boundary
+(`--k2b-shadow-column-edge`, through `--k2b-shadow-column-mid`), and becomes
+lighter over the final 96 px. No line, fill, or frame separates the columns.
+The shadow is paint only: it does not move content, take pointer input, or
+scroll with a column. A waiting Detail keeps its stronger drawer shadow, and a
+phone, which shows one column at a time, has none.
+
+The boundary's resize handle uses this same shadow. On hover, keyboard focus,
+and drag, the shadow darkens to `--k2b-shadow-column-active-edge` (through
+`--k2b-shadow-column-active-mid`) and keeps its top, bottom, width, and side,
+so an edge never shows a second strip.
+
+Because the shadow marks both edges of a column, a column keeps the same space
+inside both side edges, as the sidebar does. A level body and a
+`surface="navigation"` pane keep 0.5 rem on each side: a row's fill, hover, and
+selection stop 0.5 rem before either edge, and a group title and row text line
+up with the level head's 1 rem. With a mouse, the end space is the column's
+fixed 0.5 rem scroll track, so a classic scrollbar never widens one side. The
+track is there before anything overflows, so Safari, which reserves no gutter,
+shows the same space and nothing moves when a column starts to scroll. On a
+touch screen, overlay scrollbars take no room and the padding stays on both
+sides. Content in a level adds only its own space beyond the 0.5 rem, for
+example `px-2` for text that lines up with the head; it never cancels the inset
+with a negative margin. Firefox has no fixed track: it keeps the padding
+on both sides and adds its own classic scrollbar, if any, at the end. A `MainPane` outside levels without a surface adds no
+inset; its content owns its edges, like `Main`.
 
 ## Host width
 
@@ -283,6 +346,19 @@ The selected level ends the window unless the first levels already fit.
 For three levels, selecting level 3 shows level 3 on a phone, levels 2–3 at
 1024 px, and levels 1–3 at 1440 px. Selecting level 1 shows levels 1, 1–2,
 or 1–3 at those widths. An unknown id selects the first level.
+
+A level that needs more room, such as a wide log list, declares it with
+`minSize` in px. A class shows its levels only while their minimum widths fit
+its narrowest host (768 px for class 2, 1280 px for class 3); otherwise the
+shallowest of them gives way, and its back step moves to the next level. A
+first level with `minSize={280}` beside a log list with `minSize={900}` and a
+240 px middle level therefore shows levels 2–3 at 1440 px and the log list
+alone at 1024 px. Beside other levels, the last visible level keeps at least
+its `minSize` (320 px without one), and resizing an earlier level stops there;
+on a phone and in a narrow `MobileShell` a single level always takes the
+available width. Levels without `minSize` keep the table above. The
+decision depends only on the props, so the server and the first client frame
+show the same levels.
 Hidden levels stay mounted; CSS hides them without losing local state.
 
 The width classes count the host, not the room beside the sidebar: from a
@@ -314,9 +390,9 @@ description. Selecting a row keeps every visible level where it is.
 
 The levels draw no lines between them. The last visible level fills the
 remaining width, whatever its content: a long title or text in the selected
-item never narrows the levels before it. When another level shows before it,
-it is a raised surface with an 8 px inset. On a
-phone the one level is flat. Levels do not animate.
+item never narrows the levels before it. Every level is a flat column on the
+same surface, edge to edge, at every width and in both themes; the deepest
+level is never a raised or inset card. Levels do not animate.
 
 Inside a [`MobileShell`](/en/ui/layout/mobile-shell) with `scroll={false}`,
 levels follow the touch app instead: one level, with its back step, below
@@ -448,11 +524,10 @@ panel, continuing around that corner in light and dark. The drawer size and
 Main stay unchanged.
 
 The column shares the workspace surface without its own fill, frame, or radius.
-A subtle 24 px shadow extends to its left, from the workspace's top to its
-bottom. Over the final 96 px it becomes lighter while retaining a visible
-edge. The panel content keeps its 8 px top, right, and bottom inset. This
-paint does not move content or alter the resize handle; it disappears when
-Detail closes or becomes a drawer or phone sheet.
+Its boundary has the workspace's column shadow, from the workspace's top to its
+bottom (see [Column boundaries](#column-boundaries)). The panel content keeps
+its 8 px top, right, and bottom inset. The shadow disappears when Detail closes
+or becomes a drawer or phone sheet.
 
 A waiting Detail stays mounted and `open` stays true. Its **Details** button
 in the head controls it through `aria-controls` and `aria-expanded`. The head
@@ -546,7 +621,10 @@ that now shows the selection so the workspace can reveal it and return focus.
 F6 switches between the remembered item and the Detail title. Keyboard
 selection also waits for a title that arrives after loading. Pointer selection
 focuses the title only on phones. Closing returns focus to the remembered item
-when focus was inside the Detail. The application owns `open`.
+when focus was inside the Detail. Open menus and dialogs keep the workspace
+keys; passive tooltips allow J, K and F6. Tooltip and reaction hints handle Escape
+first to dismiss themselves.
+The application owns `open`.
 
 Use `scrollClass="k2b-detail-trail"` on DataTable to preserve its column widths
 beside Detail. Mark a board's horizontal scroller with `k2b-detail-trail` too.
@@ -744,6 +822,19 @@ The sidebar compound members cover these jobs:
   `NavTree` also serves a filtered list with the same rows and keys; an item's
   `description` adds a passive second line, such as a date and tags;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
+
+In the collapsed rail, every entry names itself in the hint the Cloud app rail
+uses: right beside its icon, at once, on hover and on visible keyboard focus,
+never on touch. This covers `SidebarItem` rows, `NavTree` items,
+`SidebarSwitcher`, and `SidebarIconAction`. The hint shows a row's `title`, or
+its plain text label. The rail hides labels from view but keeps them as the
+accessible names. With the sidebar expanded, a row shows the hint only when it
+says more than the visible label: a label cut off, or a `title` with details
+such as exact counts. It then opens above the row after the usual delay. A
+`title` stays in the server HTML for pages without browser code; the first
+hover or focus replaces it, so no name shows twice. `SidebarIconAction` shows
+its `label` as a hint in every state, beside the icon in the rail. Entries
+mount their hint only on the first hover or focus that needs it.
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
 not a repeated application title. Put persistent secondary navigation in
@@ -946,18 +1037,21 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
   attention, such as in a muted conversation or a channel that notifies only
   on mentions; the label keeps its regular weight;
 - `mention` adds "@" and accents the count;
-- `muted` adds a muted bell;
+- `muted` adds a muted bell and sets the item aside: its label turns to the
+  muted ink without unread weight, and a mention count loses its fill;
 - `waiting={{ count, label }}` shows how many items wait for the person, such
   as requests to approve, in the same slot instead of `unread`. `label` is the
   phrase screen readers hear, for example "3 waiting". The label keeps its
   regular weight, and `0` stays as a muted count for a count that dropped to
   zero while the row is still shown.
 
-Each mark has a fixed width and fits the label line, so the row keeps its
+Each mark reserves a fixed-width slot and fits the label line, so the row keeps its
 height in every state. Whenever the status shows anything, it reserves the
 unread slot at the end of the row, which a count and a dot share; the bell and
 then "@" sit before it. New activity, a mention, or reading therefore never
 moves another mark, and counts, dots, and bells stay aligned across rows.
+Counts grow toward the end of their reserved slot, keeping their start and text
+in place when a count gains a digit.
 Unread rows differ in weight and count, never in color alone.
 
 The marks are hidden from assistive technology; the row's accessible name gets
@@ -996,6 +1090,14 @@ Expansion can be uncontrolled with `defaultExpandedIds`, or controlled with
 `expandedIds` and `onExpandedIdsChange`. Persistence remains application-owned:
 if an application stores expansion in a cookie or another store, pass the same
 initial ids during SSR to avoid a layout shift when the component mounts.
+
+A tree too large to render whole loads a branch when it opens. Set
+`hasChildren` on a `NavTree.Item` whose children are not rendered yet: the row
+shows its disclosure and `aria-expanded`, and opening it reports the id
+through `onExpandedIdsChange`. Render a disabled item that says the rows load
+until they arrive. Show a long level a page at a time and end it with an item
+that loads the next page through `onSelect`, such as "4,900 more notes"; keep
+such items out of reordering.
 
 Branches normally keep their leading icon and receive a trailing disclosure
 chevron. For folder navigation, set both `icon` and `expandedIcon`; the leading
@@ -1147,7 +1249,8 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 
 type AppWorkspaceSidebarItemProps = {
   variant?: "row" | "card" | "object"; context?: JSX.Element; contextMeta?: JSX.Element;
-  description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
+  description?: JSX.Element; note?: JSX.Element; noteTone?: "neutral" | "warning" | "danger";
+  preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
@@ -1448,11 +1551,13 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 
 From 48 rem, 12 px of space separates adjacent MainPanes. The last pane has no
 trailing gap. Every resize handle (sidebar, panes, Detail, and drawer) shows the
-same short grip and soft shadow on the region it resizes during hover, keyboard
-focus, and drag. Keyboard focus gives the grip the focus color. Only the drawer
-also draws its edge line. These cues move no content, and their transitions stop
-under reduced motion. Set `resizeShadow={false}` on `Sidebar` or `MainPane` to
-turn its shadow off.
+same short grip during hover, keyboard focus, and drag. The sidebar, pane, and
+Detail handles darken the column shadow of their boundary; the drawer, which
+has no column shadow, shows a soft shadow on the region it resizes. Keyboard
+focus gives the grip the focus color. Only the drawer also draws its edge line.
+These cues move no content, and their transitions stop under reduced motion.
+Set `resizeShadow={false}` on `Sidebar` or `MainPane` to keep its column shadow
+at rest during these states.
 
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
@@ -1469,6 +1574,10 @@ reactive `layoutState`.
 `SidebarItem.description` supplies an optional passive second line. Compose a
 `StatusBadge`, short status text or progress there; keep interactive controls in
 `actions` or the preview. Existing one-line rows keep their compact layout.
+`note` adds a third line for the one fact about the row that needs attention,
+such as "3 deliveries failed"; `noteTone` (`warning`, `danger`) colours it. Keep
+the words complete, because the colour only repeats them. A row with several
+such facts shows the most important one and "+n" after it; the detail names all.
 Compound icon, label, metadata and action props remain reactive. Applications own
 the data source: no socket, task lifecycle or subscription belongs in the library.
 

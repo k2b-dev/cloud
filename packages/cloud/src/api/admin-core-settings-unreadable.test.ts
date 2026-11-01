@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { sql } from "../runtime/clients";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
 import * as settings from "../services/settings";
 import routes from "./admin-core-settings";
+
+useUnitClients();
 
 const key = "app.name";
 const restores: Array<{ mockRestore(): void }> = [];
@@ -77,3 +81,18 @@ test("a row becoming unreadable after preflight keeps its field-level 409", asyn
     await tx.close();
   }
 });
+
+// Version preconditions describe exactly the settings being saved.
+test.each(["legacy.setting", "ai.firecrawl_api_key", "app.locale"])(
+  "rejects unrelated version key %s before reading settings",
+  async (versionKey) => {
+    const read = spyOn(settings, "readStates").mockRejectedValue(new Error("Must not read"));
+    restores.push(read);
+    for (const updates of [{}, { [key]: "New name" }]) {
+      const response = await save({ updates, expectedUpdatedAt: { [versionKey]: null } });
+      expect(response.status).toBe(400);
+      expect((await response.json()).errors[versionKey]).toContain("updates or resets");
+    }
+    expect(read).not.toHaveBeenCalled();
+  },
+);

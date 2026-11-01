@@ -27,13 +27,15 @@ Ein Notizbuch ist ein gemeinsamer Arbeitsbereich. Eine Notiz ist ein Markdown-Qu
 :::reference
 - **Bearbeiten:** Den Markdown-Text gemeinsam mit anderen bearbeiten.
 - **Schreibgeschützt:** Arbeitsbereich und Detailbereich behalten, ohne den Notiztext zu bearbeiten.
-- **Buch:** Die Notiz als Webseite mit Navigation und Tagfiltern lesen. Buch hat keinen Editor und keinen Diskussionsbereich.
+- **Buch:** Die Notiz als Webseite mit Navigation und Tagfiltern lesen. Buch hat keinen Editor, keinen Diskussionsbereich und keine Kommentare am Text.
 :::
 
-Zugriff **Ansehen** öffnet immer die Buchansicht. Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du die Ansicht. Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht in den Einstellungen. Eine Ansicht in der URL hat Vorrang vor der Standardansicht. Gesperrte Notizen öffnen in **Schreibgeschützt** statt in **Bearbeiten**. In **Buch** öffnet **Bearbeiten** oben in der Navigation die Notiz zum Bearbeiten. Personen mit Zugriff **Bearbeiten** oder **Verwalten** sehen den Eintrag.
+Zugriff **Ansehen** öffnet die Buchansicht. Für Kommentare am Text öffnest du **Schreibgeschützt**. Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du jede Ansicht. Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht in den Einstellungen. Eine Ansicht in der URL hat Vorrang vor der Standardansicht. Gesperrte Notizen öffnen in **Schreibgeschützt** statt in **Bearbeiten**. In **Buch** öffnet **Bearbeiten** oben in der Navigation die Notiz zum Bearbeiten. Personen mit Zugriff **Bearbeiten** oder **Verwalten** sehen den Eintrag.
 
 **Verknüpfungen** unten in der Navigation öffnet den Graphen in jeder Ansicht, auch mit Zugriff **Ansehen**.
 
-In **Bearbeiten** zeigt ein farbiger Cursor, wo eine andere Person arbeitet. Ihr Name steht als kleines Fähnchen über dem Cursor. Er erscheint, während sie tippt oder den Cursor bewegt. Nach einigen Sekunden ohne Aktivität bleibt nur ein Punkt oben am Cursor. Mit Maus oder Trackpad zeigst du auf den Punkt, um den Namen wieder zu sehen.
+In **Bearbeiten** öffnet sich eine Notiz mit ihrem gespeicherten Text und verbindet sich mit deiner ersten Änderung zum gemeinsamen Bearbeiten. Bis dahin erscheinen Änderungen anderer, sobald sie gespeichert sind, und andere sehen dich nicht in der Notiz. Deine ersten Tastendrücke erscheinen sofort und bleiben erhalten: Hat jemand die Notiz inzwischen geändert, landen deine Wörter in dessen Fassung an der Stelle, an der du getippt hast.
+
+Während du bearbeitest, zeigt ein farbiger Cursor, wo eine andere Person arbeitet. Ihr Name steht als kleines Fähnchen über dem Cursor. Er erscheint, während sie tippt oder den Cursor bewegt. Nach einigen Sekunden ohne Aktivität bleibt nur ein Punkt oben am Cursor. Mit Maus oder Trackpad zeigst du auf den Punkt, um den Namen wieder zu sehen.
 
 Halte wichtige Informationen im Markdown sichtbar. Abfragen lesen gespeicherte Notizdaten. Sie führen keinen Code aus, ändern keine Seiten und erzeugen keinen versteckten Zustand.

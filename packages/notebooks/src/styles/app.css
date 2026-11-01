@@ -2,6 +2,7 @@
    layout primitives, etc.) come in via global.css. Apps must NEVER scan each
    other's source. */
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "@k2b/editor/styles.css";
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -167,6 +168,11 @@
   font-weight: 400;
 }
 /* The footer items (links, and in the workspace attachments and settings) stand below the tree as rows of the sidebar's own items. */
+/* The rows that load more notes of a level read as quieter than notes, in the same row height. */
+.k2b-ui .notebook-tree-more {
+  color: var(--k2b-text-muted);
+}
+
 .notebook-sidebar-foot {
   display: flex;
   flex-direction: column;
@@ -182,6 +188,9 @@
    wide, centered in the free space. The editor theme reads it too. */
 :root {
   --notebook-measure: 44rem;
+}
+.cm-editor {
+  --editor-measure: var(--notebook-measure);
 }
 /* The note's server preview (`NotePreview.tsx`) stands where the editor will
    put its lines: these rules repeat the editor theme (`theme.ts`) and
@@ -298,21 +307,15 @@
     --notebook-measure: 100%;
   }
 }
-/* The button that hides or shows the navigation sidebar beside the editor
-   and the graph: the sidebar is a column from a 64 rem app host. Below that
-   the workspace head's button opens it as an overlay, so this button only
-   brings a hidden navigation back (from 48 rem). Phones keep the header's
-   menu. */
+/* The navigation button in the editor's and the graph's toolbar: those pages
+   draw no workspace head, so from 48 rem it opens the overlay navigation below
+   a 64 rem app host and shows or hides the column from there. Phones keep the
+   header's menu. */
 .notebooks-navigation-toggle {
   display: none;
   flex-shrink: 0;
 }
 @media (min-width: 48rem) {
-  .notebooks-navigation-toggle[data-navigation-hidden] {
-    display: flex;
-  }
-}
-@container k2b-app-area (min-width: 64rem) {
   .notebooks-navigation-toggle {
     display: flex;
   }
@@ -327,21 +330,6 @@
   font-size: 1rem;
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-/* A rendered block in the editor, and the box the note's server preview reserves for a chart in its place. */
-.cm-query-block-widget {
-  display: block;
-  margin: 0.5rem 0;
-  padding: 0.5rem;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--k2b-radius-control);
-}
-.cm-query-block-preview.notebook-book-content {
-  max-width: none;
-  margin: 0;
-  padding: 0;
-  font-size: inherit;
-  line-height: inherit;
 }
 /* The editor's heading scale (`headingStyles` in the editor theme). */
 .notebook-book-content :where(h1, h2, h3, h4, h5, h6) {
@@ -529,79 +517,12 @@
   border-left: 3px solid var(--ui-border);
   padding: 0.75rem 1rem;
 }
-/* A chart block, flat in the text like the chart in an Assistant chat: title and subtitle as text, then a frame whose
-   height comes from the kind and never from the data. The editor's placeholder, the drawn chart and every redraw take
-   the same room, and a legend scrolls inside the frame instead of growing it. The SVG stretches to the column's width
-   through the shared `.k2b-chart` rules, which keep its text and marks at their pixel size. */
-.notebook-book-content .notebook-book-chart {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 0.5rem;
-  min-width: 0;
-  margin: 1.25rem 0;
-}
-.notebook-book-chart__header {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-/* Copy data and the table switch: two small icon buttons, as on a chart in an Assistant chat. The server reserves
-   this box empty, so the controls appear in place when the browser enhancement mounts them. */
-.notebook-book-chart__actions {
-  display: flex;
-  gap: 0.25rem;
-  width: 3.75rem;
-  height: 1.75rem;
-}
-/* The table takes the drawing's place inside the same fixed frame and scrolls there. */
-.notebook-book-chart[data-view="table"] .notebook-book-chart__viewport > :not(.notebook-book-chart__table) {
-  display: none;
-}
-/* Like every note table, it bleeds past the text on both sides so its cell text lines up with the title. */
+/* Chart frames keep their own spacing after the document's paragraph/table rules. */
 .notebook-book-content .notebook-book-chart__table {
-  flex: 1 1 0;
-  min-height: 0;
   margin-block: 0;
-  overflow: auto;
 }
-.notebook-book-chart__title {
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.5;
-}
-.notebook-book-chart__subtitle {
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-}
-.notebook-book-chart__viewport {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 0;
-  height: 18rem;
-}
-.notebook-book-chart[data-kind="stat"] .notebook-book-chart__viewport {
-  height: 10rem;
-}
-.notebook-book-chart__viewport > .k2b-chart {
-  flex: 1 1 0;
-  min-height: 60%;
-}
-.notebook-book-chart .k2b-chart__svg {
-  height: 100%;
-}
-/* Loading and failure messages stand inside the frame they wait for. */
 .notebook-book-content .notebook-book-chart__status {
   margin: auto;
-  text-align: center;
-}
-/* Book images keep their aspect ratio; the chart's SVG fills its frame instead. */
-.notebook-book-content .notebook-book-chart svg {
-  max-width: none;
-  height: 100%;
 }
 .notebook-book-content .katex-display {
   overflow-x: auto;
@@ -643,19 +564,6 @@
   }
   .notebook-book-content .notebook-book-mermaid > details {
     display: none;
-  }
-  /* Chart controls stay on screen. A chart switched to its table prints every row: the frame grows with it. */
-  .notebook-book-chart__actions {
-    display: none;
-  }
-  .notebook-book-content .notebook-book-chart {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport {
-    height: auto;
-  }
-  .notebook-book-content .notebook-book-chart__table {
-    flex: none;
   }
 }
 
@@ -874,10 +782,11 @@
    Built from the shared DetailPanel rhythm; these rules only arrange the
    panel's own pieces: the action row, the meta line states, the offline band,
    the outline depth, and the activity rows. */
+/* The actions take the row; "…" from the shared header ends it beside them. */
 .k2b-ui .notebook-detail-primary {
   display: flex;
-  width: 100%;
   min-width: 0;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 0.75rem;
 }
@@ -898,10 +807,6 @@
 
 .k2b-ui .notebook-view-menu {
   flex: 0 0 auto;
-}
-
-.k2b-ui .notebook-view-menu:only-child {
-  margin-inline-start: auto;
 }
 
 .k2b-ui .notebook-view-menu__chevron {
@@ -1117,272 +1022,6 @@
 
   .notebooks-overview-note-chevron {
     display: none;
-  }
-}
-
-/* ── Slash-command autocomplete palette ─────────────────────────────────
-   The CodeMirror autocomplete tooltip is portaled outside the editor
-   surface AND its theme is injected as a runtime `<style>` after this file
-   loads. Equal-specificity rules lose to CM's defaults (filled `aria-selected`
-   background, hardcoded option padding, section dividers) — so the overrides
-   below use `!important` for the bits that fight CM directly.
-
-   Visual baseline = the platform `Select` component (see
-   `@k2b/ui` Select): popup-style container, no
-   filled-background selected state — just `text-primary` + underline. */
-
-.cm-tooltip.cm-tooltip-autocomplete {
-  /* `popup` utility: rounded-lg, white/zinc-900 bg, zinc-200/800 border,
-     shadow-lg. Sized to feel like the platform Select dropdown — but
-     compact-density per-row so a dozen suggestions fit in the
-     viewport without scrolling. */
-  border-radius: 0.5rem !important;
-  background-color: white !important;
-  border: 1px solid rgb(228 228 231) !important;
-  box-shadow: var(--ui-shadow-float) !important;
-  padding: 0.1875rem !important;
-  min-width: 22rem;
-  font-family: inherit !important;
-  font-size: 0.75rem !important;
-  overflow: hidden;
-}
-.dark .cm-tooltip.cm-tooltip-autocomplete {
-  background-color: rgb(24 24 27) !important;
-  border-color: rgb(39 39 42) !important;
-}
-
-.cm-tooltip-autocomplete > ul {
-  font-family: inherit !important;
-  max-height: 28rem;
-  padding: 0 !important;
-  margin: 0;
-  list-style: none;
-}
-
-.cm-tooltip-autocomplete > ul > li {
-  display: flex !important;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.1875rem 0.375rem !important;
-  border-radius: 0.25rem;
-  /* Default colour. Hover paints a soft grey bg WITHOUT touching the
-     text — pure pointer affordance. Keyboard selection paints the
-     LABEL blue WITHOUT a bg — pure focus indicator. The two channels
-     (bg vs. text) don't fight, so the keyboard-selected row stays
-     unambiguous even when the mouse happens to hover a different
-     option in the list. */
-  color: rgb(113 113 122) !important;
-  cursor: pointer;
-  user-select: none;
-  border: 0 !important;
-  background: transparent !important;
-  text-decoration: none !important;
-  line-height: 1.3;
-}
-.dark .cm-tooltip-autocomplete > ul > li {
-  color: rgb(161 161 170) !important;
-}
-
-/* Hover = soft grey background, text colour unchanged. */
-.cm-tooltip-autocomplete > ul > li:hover {
-  background: var(--ui-hover) !important;
-  text-decoration: none !important;
-}
-
-/* Keyboard-selected = platform action-blue text, no background: it is a
-   control option, not a picked object. Pairs cleanly with hover (which
-   only paints bg) so a row that's both selected AND hovered shows blue
-   text on the hover bg. */
-.cm-tooltip-autocomplete > ul > li[aria-selected] {
-  color: var(--k2b-action) !important;
-  background: transparent !important;
-  text-decoration: none !important;
-}
-
-/* Selected + hovered = blue text on the hover-bg (so the user can
-   still see "this row is also under my cursor" without losing the
-   selection indicator). */
-.cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
-  background: var(--ui-hover) !important;
-}
-
-.cm-tooltip-autocomplete .cm-slash-icon {
-  flex-shrink: 0;
-  width: 0.875rem;
-  font-size: 0.8125rem;
-  color: inherit; /* picks up the row's color */
-}
-
-.cm-tooltip-autocomplete .cm-completionLabel {
-  flex: 0 0 auto;
-}
-
-/* Our custom completion detail renderer — short signature or one-line
-   description shown inline next to the label. Dimmed so the label
-   reads as primary. Truncates with ellipsis at the popup edge. */
-.cm-tooltip-autocomplete .cm-completion-detail {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-left: 0.375rem;
-  font-size: 0.625rem;
-  color: rgb(161 161 170); /* zinc-400 */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completion-detail {
-  /* Selected row turns blue; keep the detail subtler — still
-     readable but visually secondary. Hover does NOT tint the detail
-     (hover is just a soft bg, see the rule above). */
-  color: rgb(96 165 250 / 0.85); /* blue-400 / 85% */
-}
-.dark .cm-tooltip-autocomplete .cm-completion-detail {
-  color: rgb(113 113 122); /* zinc-500 */
-}
-
-/* Hide every "extra" element CM emits — descriptions, section dividers,
-   section headings, AND the per-option info side panel. KISS palette:
-   just `[icon] Label  detail` rows, in registry order.
-
-   Why hide `.cm-tooltip.cm-completionInfo` too: CM renders it as a
-   floating panel on the selected option (the long-form `info` text).
-   When there's no room to the right of the popup it falls back to
-   rendering INSIDE the option list — observed as a "subbox" cutting
-   off the description mid-sentence. We already surface a one-liner
-   inline via `cm-completion-detail`, so the verbose info panel is dead
-   weight; killing it removes the cutoff bug and keeps the popup
-   compact + consistent. */
-.cm-tooltip-autocomplete .cm-completionDetail,
-.cm-tooltip-autocomplete .cm-completionSectionLabel,
-.cm-tooltip-autocomplete completion-section,
-.cm-tooltip-autocomplete .cm-completionListIncompleteTop,
-.cm-tooltip-autocomplete .cm-completionListIncompleteBottom,
-.cm-tooltip.cm-completionInfo {
-  display: none !important;
-}
-
-.md-block-handle {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  margin: 0.35rem 0 0.15rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
-  background: rgb(239 246 255);
-  color: rgb(37 99 235);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.dark .md-block-handle {
-  background: rgb(30 58 138 / 0.25);
-  color: rgb(147 197 253);
-}
-
-.md-data-handle-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  width: fit-content;
-  max-width: 100%;
-}
-
-.md-data-block {
-  display: block;
-  margin: 0.5rem 0;
-}
-
-.md-data-grid {
-  display: grid;
-  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
-  overflow-x: auto;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-surface);
-}
-
-.md-data-row {
-  display: contents;
-}
-
-.md-data-row:not(:last-child) > .md-data-key,
-.md-data-row:not(:last-child) > .md-data-value {
-  border-bottom: 1px solid var(--ui-data-row-divider);
-}
-
-.md-data-key,
-.md-data-value,
-.md-data-empty {
-  --md-data-cell-base: transparent;
-  --md-data-column-highlight: transparent;
-  --md-data-row-highlight: transparent;
-
-  display: block;
-  min-height: 2rem;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: 0;
-  padding: 0.5rem 0.75rem;
-  background:
-    linear-gradient(var(--md-data-row-highlight), var(--md-data-row-highlight)),
-    linear-gradient(var(--md-data-column-highlight), var(--md-data-column-highlight)), var(--md-data-cell-base);
-  box-shadow: none;
-  font-size: 0.75rem;
-  line-height: 1rem;
-}
-
-.md-data-key {
-  --md-data-cell-base: var(--ui-data-header);
-
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.md-data-value,
-.md-data-empty {
-  min-width: 12rem;
-  overflow-wrap: anywhere;
-}
-
-.md-data-empty {
-  grid-column: 1 / -1;
-  min-width: 0;
-  color: rgb(113 113 122);
-}
-
-.md-data-chip {
-  display: inline-flex;
-  align-items: center;
-  margin-right: 0.25rem;
-  margin-bottom: 0.125rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
-  background: rgb(239 246 255);
-  color: rgb(29 78 216);
-  font-weight: 500;
-}
-
-.dark .md-data-empty {
-  color: rgb(161 161 170);
-}
-
-.dark .md-data-chip {
-  background: rgb(30 58 138 / 0.35);
-  color: rgb(147 197 253);
-}
-
-@media (hover: hover) {
-  .md-data-row:hover > :is(.md-data-key, .md-data-value) {
-    --md-data-row-highlight: var(--ui-data-row-hover);
-  }
-
-  .md-data-grid:has(.md-data-key:hover) .md-data-key,
-  .md-data-grid:has(.md-data-value:hover) .md-data-value {
-    --md-data-column-highlight: var(--ui-data-column-hover);
   }
 }
 
@@ -1805,6 +1444,22 @@
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
+/* The note that a large notebook's graph shows only the pages around one page: one quiet line above the canvas. */
+.notebook-graph__scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--ui-text-dimmed);
+}
+
+.notebook-graph__scope > i {
+  margin-top: 0.1rem;
+}
+
 .notebook-graph__body {
   position: relative;
   min-height: 0;
@@ -2318,9 +1973,6 @@
   height: 2.25rem;
   align-items: flex-end;
   padding: 0 0 0.375rem calc(var(--notebook-graph-lane) + 1.125rem);
-  color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
   white-space: nowrap;
 }
 /* Fixed height and weight: hover, focus, highlight and search change only colours, so no row ever moves. */
@@ -2475,4 +2127,715 @@
   .notebook-graph__row-meta > .notebook-graph__row-time {
     display: none;
   }
+}
+
+/* Saved geo documents share the note column. Map/list slots match the approved blocks. */
+.notebook-map { line-height: 1.45; display: flex; flex-direction: column; gap: 10px; margin: 1em 0; min-width: 0; }
+.notebook-map__header { display: flex; align-items: center; gap: 8px; min-height: 30px; flex-wrap: nowrap; font-size: 14px; }
+.notebook-map__header > strong { font-weight: 600; margin-right: auto; min-width: 0; }
+.notebook-map--route .notebook-map__header > strong { margin-right: 0; }
+.notebook-map__summary { margin-right: auto; min-width: 0; color: var(--k2b-text-muted); font-size: 12.5px; }
+.notebook-map__body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.notebook-map__viewport { min-width: 0; }
+.notebook-map .k2b-map-view { width: 100%; }
+.k2b-ui .notebook-map .k2b-map-view { --k2b-map-accent: var(--app-accent, #eab308); --k2b-map-accent-ink: var(--ui-app-accent-text); --k2b-map-accent-on: #18181b; }
+.notebook-map__search { position: relative; }
+.k2b-ui .notebook-map__search .k2b-input-shell { min-height: 38px; }
+.notebook-map__suggestions { position: absolute; inset-inline: 0; top: calc(100% + 6px); z-index: 20; padding: 6px; border-radius: 12px; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-float); }
+.notebook-map__suggestions [role="option"] > button { width: 100%; min-height: 46px; justify-content: flex-start; text-align: start; }
+.notebook-map__suggestions [aria-selected="true"] { background: var(--ui-app-selected); border-radius: 9px; }
+.notebook-map__suggestions small { display: block; font-size: 12px; color: var(--k2b-text-muted); }
+.notebook-map__pins { display: flex; flex-direction: column; gap: 2px; min-height: 176px; margin: 0; padding: 0; list-style: none; outline-offset: 2px; }
+.notebook-map__pin { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 9px; font-size: 13.5px; cursor: pointer; }
+.notebook-map__pin[aria-selected="true"] { background: var(--ui-app-selected); }
+.notebook-map__pin:hover { background: var(--k2b-hover); }
+.notebook-map__number { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--app-accent, #eab308); color: var(--ui-app-accent-text); font-size: 11.5px; font-weight: 600; }
+.notebook-map__pin[aria-selected="true"] .notebook-map__number { background: var(--app-accent, #eab308); color: #18181b; }
+.notebook-map__name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.notebook-map__pin > a { max-width: 100%; overflow-wrap: anywhere; }
+.notebook-map__source { font-size: 11.5px; color: var(--k2b-text-muted); margin: 0; }
+.notebook-map__empty, .notebook-map__notice { padding: 12px 10px; color: var(--k2b-text-muted); font-size: 13px; }
+.notebook-map__empty p { margin: .25em 0 0; }
+.notebook-map__actions { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; }
+.notebook-map__actions > .k2b-field { max-width: 180px; }
+.notebook-map__link-editor { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--k2b-surface); border-radius: 12px; }
+.notebook-map__route-summary { font-size: 13px; margin: 0; }
+.notebook-map__placeholder { display: grid; place-items: center; background: var(--k2b-surface); color: var(--k2b-text-muted); }
+@container k2b-app-area (max-width: 600px) {
+  .notebook-map:not([data-map-print]) .k2b-map-view, .notebook-map__placeholder { height: 230px !important; }
+  .notebook-map--route:not([data-map-print]) .k2b-map-view, .notebook-map--route .notebook-map__placeholder { height: 200px !important; }
+  .notebook-map__pin > a { max-width: 135px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media print {
+  .notebook-map { break-inside: avoid; }
+  .notebook-map__header > button, .notebook-map__header > .k2b-dropdown, .notebook-map__search, .notebook-map__actions, .notebook-map__link-editor { display: none; }
+  .notebook-map__pins { min-height: 0; }
+}
+.notebook-map__print-fallback { display: none; }
+@media print {
+  .notebook-map .k2b-map-view, .notebook-map__viewport { display: none; }
+  .notebook-map__print-fallback { display: block; font-size: .85em; }
+}
+
+.notebook-map__link { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--k2b-action); font-weight: 400; text-decoration: underline; min-width: 0; }
+.notebook-map__link > span { overflow: hidden; text-overflow: ellipsis; }
+.notebook-map__link > i { flex: none; font-size: 15px; }
+
+.notebook-map__search-placeholder { height: 38px; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); }
+
+.notebook-map__image { display: block; width: 100%; height: auto; border-radius: var(--k2b-radius-control); }
+.notebook-map-export__preview { min-height: 240px; }
+.notebook-map-print-document { display: none; }
+@media print {
+  html.notebook-map-printing body > :not(.notebook-map-print-document) { display: none !important; }
+  html.notebook-map-printing .notebook-map-print-document { display: block !important; padding: 0; }
+  .notebook-map__image { display: block !important; }
+}
+
+.notebook-map-export__preview { padding: 28px; margin-top: 12px; background: #fff; color: #1f2937; border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-control); font: 12px/1.5 var(--k2b-font-sans); }
+.notebook-map-export__preview .notebook-map__pins { min-height: 0; }
+.notebook-map[data-map-print] .notebook-map__pin { display: block; min-height: 0; padding: 4px 0; cursor: auto; }
+.notebook-map[data-map-print] .notebook-map__number { display: inline-grid; margin-inline-end: 8px; }
+.notebook-map[data-map-print] .notebook-map__name { white-space: normal; overflow: visible; }
+.notebook-map[data-map-print] .notebook-map__link { max-width: none; margin-inline-start: 8px; overflow: visible; white-space: normal; }
+.notebook-map[data-map-print] .notebook-map__link > span { overflow: visible; }
+.notebook-map-export__slot { width: 100%; display: grid; align-items: center; margin-bottom: 8px; border-radius: var(--k2b-radius-control); background: #f1f5f9; }
+.notebook-map-export__slot .k2b-map-view { width: 100%; }
+/* Keep raster attribution legible on the white export sheet in either theme. */
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__slot .k2b-map-view { --k2b-map-surface: #fff; }
+
+.notebook-map-export__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* The approved map document is a compact composition; ordinary notes keep the book scale. */
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) {
+  --notebook-book-inset: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  padding-top: 8px;
+  padding-bottom: 120px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > * { margin-block: 0; }
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h1 {
+  margin-block: 6px 2px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: -.01em;
+}
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h2 {
+  margin-top: 14px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.notebook-map .notebook-map__pins { margin: 0; padding: 0; gap: 0; }
+@media (max-width: 599px) {
+  .notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) {
+    --notebook-book-inset: 16px;
+    padding-top: 6px;
+  }
+}
+
+.notebook-pdf-dialog { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.k2b-ui .k2b-panel-dialog-frame.is-workspace.notebook-map-preview-frame { width: 640px; border: 0; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog { --k2b-panel-dialog-inset: 32px; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__header {
+  gap: 8px;
+  min-height: 60px;
+  padding: 8px 32px;
+}
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__heading h2 { font-size: 15px; line-height: 1.45; letter-spacing: normal; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__body { gap: 14px; padding-top: 14px; }
+.notebook-map-export { container-type: inline-size; }
+.notebook-map-export__guidance { min-height: 44px; }
+.notebook-map-export__guidance .k2b-inline-guidance { font-size: 13.5px; line-height: 1.45; }
+.notebook-map-export__reason { font-size: 13px; color: var(--k2b-text-muted); margin: 6px 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: none;
+  /* A4 minimum; long notes grow within the same white sheet. */
+  min-height: calc(100cqi * 297 / 210);
+  padding: 7% 8%;
+  margin: 26px 0 0;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
+  color: #18181b;
+  box-shadow: 0 6px 24px -10px rgb(0 0 0 / .35), 0 0 0 1px rgb(0 0 0 / .06);
+  font-size: 11.5px;
+  line-height: 1.45;
+  --k2b-text-muted: #52525b;
+  --k2b-action: #1d4ed8;
+}
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview > * { margin-block: 0; flex-shrink: 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview h1 { font-size: 20px; line-height: 1.45; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview h2 { font-size: 14px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview p { margin: 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__header { font-size: 11.5px; min-height: 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__pin { font-size: 10.5px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__source { font-size: 9.5px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__image { height: 186px; object-fit: contain; border-radius: 4px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map--route .notebook-map__image { height: 150px; }
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog-frame.is-workspace.notebook-map-preview-frame { width: 100%; }
+  .k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog { --k2b-panel-dialog-inset: 16px; }
+  .k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__header { padding-inline: 16px; flex-wrap: wrap; }
+}
+
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button {
+  min-height: 30px;
+  padding: 0 10px;
+  gap: 7px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button[data-variant="primary"] {
+  background: var(--app-accent, #eab308);
+  --k2b-focus-on-fill: #18181b;
+  color: #18181b;
+}
+
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview .notebook-map__number { color: #a16207; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button[data-variant="primary"]:hover:not(:disabled) { background: var(--color-yellow-600); }
+
+/* Snapshot pins sit on white circles, including when the surrounding application is dark. */
+.k2b-ui .notebook-pdf-dialog[data-map-document] .notebook-map-export__preview .k2b-map-view { --k2b-map-accent-ink: #a16207; }
+
+/* A paged query: blank rows keep its last page as tall as a full one, and the page buttons sit below it. */
+.notebook-book-content .notebook-query-filler {
+  visibility: hidden;
+}
+
+.notebook-book-content .notebook-query-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.75rem;
+  color: var(--k2b-text-muted);
+}
+
+.notebook-query-pager__range {
+  min-inline-size: 8rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.notebook-query-pager__button {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  color: var(--k2b-text-secondary);
+  cursor: pointer;
+}
+
+.notebook-query-pager__button:hover:not(:disabled) {
+  background: var(--k2b-hover);
+  color: var(--k2b-text);
+}
+
+.notebook-query-pager__button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 0px);
+}
+
+.notebook-query-pager__button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Inline comments. A comment's passage is tinted in its author's person color
+   (`personColor` of @k2b/ui), the open one stronger and underlined. The editor
+   (`lib/editor/annotations.ts`) and the server preview (`NotePreview.tsx`)
+   draw the same classes, so nothing changes when the editor takes over. */
+.cm-annotation {
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--annotation-color) 20%, transparent);
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.cm-annotation[data-strong] {
+  background-color: color-mix(in srgb, var(--annotation-color) 42%, transparent);
+}
+.cm-annotation[data-active] {
+  box-shadow: inset 0 -2px 0 var(--annotation-color);
+}
+.cm-annotation[data-resolved] {
+  background-color: color-mix(in srgb, var(--k2b-text-muted) 12%, transparent);
+}
+.cm-annotation[data-resolved][data-strong] {
+  background-color: color-mix(in srgb, var(--k2b-text-muted) 26%, transparent);
+}
+.cm-annotation-draft {
+  background-color: color-mix(in srgb, var(--annotation-color) 22%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--annotation-color) 70%, transparent);
+}
+.cm-annotation-orphan {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background-color: var(--annotation-color);
+  cursor: pointer;
+}
+.cm-annotation-orphan[data-strong] {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--annotation-color) 30%, transparent);
+}
+.cm-annotation-delete,
+.cm-annotation-delete * {
+  color: var(--k2b-danger-text);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.cm-annotation-insert,
+.cm-annotation-flash {
+  border-radius: 3px;
+  color: var(--k2b-success-text);
+  background-color: var(--k2b-success-surface);
+  text-decoration: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-annotation {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .cm-annotation {
+    text-decoration: underline dotted;
+  }
+  .cm-annotation[data-active] {
+    text-decoration: underline solid;
+  }
+  .cm-annotation-orphan {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
+/* Where comments stand depends only on the width of the note's surface, never
+   on how many there are (F2): beside the centered column from 90 rem, beside
+   the column moved to the left from 69.5 rem, otherwise as dots beside the
+   lines with a popover, and in sheets on a phone. Full width and the open
+   detail panel use dots. The margin reads the layout from
+   `--notebook-comments-layout`. */
+.notebook-document-surface[data-comments] {
+  container: notebook-surface / inline-size;
+}
+.notebook-comments-host {
+  position: relative;
+  --notebook-comments-layout: phone;
+}
+@container notebook-surface (min-width: 48rem) {
+  .notebook-comments-host {
+    --notebook-comments-layout: compact;
+  }
+  /* Room for the dots beside the column. */
+  .notebook-comments-host .cm-content,
+  [data-comments] .notebook-note-preview__content {
+    max-width: min(100% - 5rem, var(--notebook-measure));
+  }
+}
+@container notebook-surface (min-width: 69.5rem) {
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host {
+    --notebook-comments-layout: shift;
+  }
+  /* The column moves left so the margin (40 + 288 px) fits beside it. */
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) :is(.notebook-comments-host .cm-content, .notebook-note-preview__content) {
+    max-width: var(--notebook-measure);
+    margin-inline: max(1.5rem, (100cqi - 66.5rem) / 2) auto;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host .cm-gutters {
+    margin-left: max(1.5rem, (100cqi - 66.5rem) / 2);
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) [data-mode="source"] .notebook-note-preview__content {
+    justify-content: start;
+    margin-inline: 0;
+    padding-inline-start: max(1.5rem, (100cqi - 66.5rem) / 2);
+  }
+}
+@container notebook-surface (min-width: 90rem) {
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host {
+    --notebook-comments-layout: wide;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) :is(.notebook-comments-host .cm-content, .notebook-note-preview__content) {
+    margin-inline: auto;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host .cm-gutters {
+    margin-left: auto;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) [data-mode="source"] .notebook-note-preview__content {
+    justify-content: center;
+    padding-inline-start: 0;
+  }
+}
+
+.notebook-comments {
+  position: absolute;
+  top: 0;
+  width: 18rem;
+  height: 100%;
+}
+.notebook-comments__head {
+  position: absolute;
+  top: 1rem;
+  inset-inline: 0;
+  display: flex;
+  min-height: 2.75rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.625rem;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comments__head b {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+.notebook-comments__hint {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: var(--k2b-text-muted);
+  opacity: 0.8;
+}
+.notebook-comments__toggle {
+  color: var(--k2b-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--k2b-border);
+}
+.notebook-comments__toggle:hover {
+  color: var(--k2b-text);
+}
+.notebook-comments__error {
+  color: var(--k2b-danger-text);
+}
+.notebook-comments__retry {
+  color: var(--k2b-action);
+  font-weight: 600;
+}
+
+.notebook-comment {
+  position: absolute;
+  left: 0;
+  width: 18rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--k2b-text-secondary);
+  transition:
+    top var(--k2b-motion-base) var(--k2b-ease-out),
+    background-color var(--k2b-motion-fast) var(--k2b-ease-out),
+    box-shadow var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.notebook-comment[data-hover] {
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+}
+.notebook-comment[data-active] {
+  z-index: 3;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  color: var(--k2b-text);
+}
+.notebook-comment[data-resolved] {
+  color: var(--k2b-text-muted);
+}
+.notebook-comment:focus-visible {
+  outline: var(--k2b-focus-width, 2px) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+.notebook-comment__who {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.notebook-comment__who > :first-child {
+  flex: none;
+  margin-block: 0.25rem;
+}
+/* One line when everything fits. Otherwise time and origin wrap below the name, and a name longer than the
+   line truncates; nothing ever reaches past the card. */
+.notebook-comment__byline {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  padding-block: 0.25rem;
+  column-gap: 0.5rem;
+}
+.notebook-comment__who b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-comment[data-resolved] .notebook-comment__who b {
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__time {
+  color: var(--k2b-text-muted);
+  white-space: nowrap;
+}
+.notebook-comment__actions {
+  display: flex;
+  flex: none;
+  margin-inline-start: auto;
+  gap: 0.125rem;
+  opacity: 0;
+}
+.notebook-comment:is([data-active], [data-hover], :focus-within) .notebook-comment__actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .notebook-comment__actions {
+    opacity: 1;
+  }
+}
+.notebook-comment__text {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.notebook-comment:not([data-active]) > .notebook-comment__text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.notebook-comment__edited {
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__orphan {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__suggestion {
+  margin-top: 0.5rem;
+  font-size: 0.84rem;
+}
+.notebook-comment__label {
+  display: block;
+  margin-bottom: 0.125rem;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment:not([data-active]) .notebook-comment__suggestion {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.notebook-comment:not([data-active]) .notebook-comment__suggestion .notebook-comment__label {
+  display: inline;
+  margin-inline-end: 0.25rem;
+}
+.notebook-comment__del {
+  border-radius: 3px;
+  padding: 0 2px;
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+  text-decoration: line-through;
+}
+.notebook-comment__ins {
+  border-radius: 3px;
+  padding: 0 2px;
+  color: var(--k2b-success-text);
+  background: var(--k2b-success-surface);
+  text-decoration: none;
+}
+.notebook-comment__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+.notebook-comment__hint {
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__row > .k2b-button:first-child + .notebook-comment__hint {
+  margin-inline-start: 0;
+}
+.notebook-comment__state {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0;
+  font-size: 0.78rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__link {
+  color: var(--k2b-action);
+  font-weight: 600;
+}
+.notebook-comment__more {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__replies {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0.625rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.notebook-comment__reply,
+.notebook-comment__compose {
+  margin-top: 0.625rem;
+}
+.notebook-comment__suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--k2b-action);
+}
+.notebook-comment__diff {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+}
+.notebook-comment__error {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--k2b-danger-text);
+}
+
+/* Dots beside the lines and the popover they open, where there is no margin. */
+.notebook-comments-dot {
+  position: absolute;
+  display: inline-flex;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-elevated);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+.notebook-comments-dot > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.notebook-comments-dot[data-active] {
+  box-shadow: 0 0 0 2px var(--k2b-action);
+}
+.notebook-comments-popover {
+  position: absolute;
+  z-index: 25;
+  width: min(21.25rem, 100%);
+}
+.notebook-comments-popover > .notebook-comment {
+  position: relative;
+  width: auto;
+}
+
+/* Comments belong to the working view only: print and PDF show the text alone. */
+@media print {
+  .cm-annotation,
+  .cm-annotation-draft,
+  .cm-annotation-flash {
+    background: none !important;
+    box-shadow: none !important;
+  }
+  .cm-annotation-orphan,
+  .notebook-comments,
+  .notebook-comments-gutter {
+    display: none !important;
+  }
+}
+
+/* Comments in a phone sheet: cards in the flow, the open card without its float. */
+.notebook-comments-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.notebook-comments-sheet .notebook-comment {
+  position: relative;
+  left: auto;
+  width: auto;
+  padding-inline: 0;
+}
+.notebook-comments-sheet .notebook-comment[data-active] {
+  box-shadow: none;
+  background: transparent;
+}
+.notebook-comments-sheet .notebook-comment:not([data-active]) > .notebook-comment__text {
+  display: block;
+}
+.notebook-comments__skeleton {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.notebook-comments__skeleton .k2b-skeleton {
+  height: 0.625rem;
+}
+.notebook-comments-open {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 4;
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  border-radius: 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-elevated);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+.notebook-comments-sheet__state {
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comments-sheet__toggle {
+  align-self: flex-start;
+  margin-bottom: 0.25rem;
+  font-size: 0.8125rem;
 }

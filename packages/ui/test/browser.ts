@@ -209,7 +209,16 @@ const probeMainThread = async (page: Page): Promise<string> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      page.evaluate(() => document.readyState).then((state) => `Main thread: answered in ${Date.now() - started} ms, readyState ${state}`),
+      page
+        .evaluate(() => ({
+          state: document.readyState,
+          // An enhanced link moves history only from inside its view transition's update.
+          transition: Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition),
+        }))
+        .then(
+          ({ state, transition }) =>
+            `Main thread: answered in ${Date.now() - started} ms, readyState ${state}, view transition ${transition ? "active" : "none"}`,
+        ),
       new Promise<string>((resolve) => {
         // Before a commit, Chromium holds page.evaluate until the pending navigation ends, so silence alone does not prove a blocked page there.
         timer = setTimeout(
@@ -246,6 +255,54 @@ type NavigationRecord = {
 const explainedPages = new WeakSet<Page>();
 /** Per page, the URL it showed when each of its running goto, reload, goBack, and goForward calls started. */
 const testNavigations = new WeakMap<Page, Set<{ from: string }>>();
+
+/** What a test server saw of each request: when it arrived, and the status it answered with, if any. */
+type ServerEntry = { method: string; url: string; received: number; answered?: number; status?: number };
+const testServers = new Map<string, ServerEntry[]>();
+
+/**
+ * Records what a test server receives and answers, so a navigation that times out says whether its open request
+ * reached the server. Wrap the server's `fetch` with `record`, call `listen` with the server's URL once it listens, and
+ * `stop` when it stops. The log keeps the last 100 requests.
+ */
+export const recordTestServer = () => {
+  const log: ServerEntry[] = [];
+  let origin: string | undefined;
+  return {
+    record:
+      <A extends unknown[], R>(fetch: (request: globalThis.Request, ...rest: A) => R | Promise<R>) =>
+      async (request: globalThis.Request, ...rest: A): Promise<R> => {
+        const entry: ServerEntry = { method: request.method, url: request.url, received: Date.now() };
+        log.push(entry);
+        if (log.length > 100) log.shift();
+        const response = await fetch(request, ...rest);
+        entry.answered = Date.now();
+        if (response instanceof Response) entry.status = response.status;
+        return response;
+      },
+    listen: (url: URL | string) => {
+      origin = new URL(url).origin;
+      testServers.set(origin, log);
+    },
+    stop: () => {
+      if (origin && testServers.get(origin) === log) testServers.delete(origin);
+    },
+  };
+};
+
+/** The recorded server's view of one open request, or nothing for a server that records nothing. */
+const serverView = (line: string, since: number): string | undefined => {
+  const [method, url] = line.split(" ");
+  if (!method || !url) return undefined;
+  const log = testServers.get(new URL(url).origin);
+  if (!log) return undefined;
+  const entry = log.findLast((candidate) => candidate.method === method && candidate.url === url && candidate.received >= since);
+  if (!entry) return `  test server: never received ${method} ${url}`;
+  const at = entry.received - since;
+  return entry.answered === undefined
+    ? `  test server: received it ${at} ms in, never answered`
+    : `  test server: received it ${at} ms in, answered ${entry.status ?? "without a Response"} after ${entry.answered - entry.received} ms`;
+};
 const explainNavigations = (page: Page): Page => {
   if (explainedPages.has(page)) return page;
   explainedPages.add(page);
@@ -283,7 +340,8 @@ const explainNavigations = (page: Page): Page => {
     for (const record of records) record.load = true;
   });
 
-  const explained = async <T>(name: string, call: () => Promise<T>): Promise<T> => {
+  // `navigation` marks a navigation the test starts, during which pageErrors() ignores WebKit's refused loads.
+  const explained = async <T>(name: string, call: () => Promise<T>, navigation = true): Promise<T> => {
     const started = Date.now();
     const before = page.url();
     const record: NavigationRecord = {
@@ -294,14 +352,14 @@ const explainNavigations = (page: Page): Page => {
       load: false,
     };
     records.add(record);
-    const navigation = { from: before };
-    navigations.add(navigation);
+    const navigationEntry = { from: before };
+    if (navigation) navigations.add(navigationEntry);
     try {
       try {
         return await call();
       } finally {
         records.delete(record);
-        navigations.delete(navigation);
+        navigations.delete(navigationEntry);
       }
     } catch (error) {
       // Every failure carries the evidence. Bun's test timeout can kill the browser before Playwright's own timeout;
@@ -324,7 +382,7 @@ const explainNavigations = (page: Page): Page => {
         responses.length === 0 ? "Responses: none" : "Responses:",
         ...responses,
         pending.length === 0 ? "Requests still open: none" : "Requests still open:",
-        ...pending.slice(0, 10),
+        ...pending.slice(0, 10).flatMap((line) => [line, serverView(line, started) ?? []].flat()),
         ...(pending.length > 10 ? [`and ${pending.length - 10} more`] : []),
         ...(failed.length > 0
           ? ["Requests failed:", ...failed.slice(0, 10), ...(failed.length > 10 ? [`and ${failed.length - 10} more`] : [])]
@@ -342,6 +400,9 @@ const explainNavigations = (page: Page): Page => {
 
   const goto = page.goto.bind(page);
   page.goto = (url, options) => explained("goto", () => goto(url, options));
+  // A click on an enhanced link changes the address later, so a wait for it explains itself too.
+  const waitForURL = page.waitForURL.bind(page);
+  page.waitForURL = (url, options) => explained("waitForURL", () => waitForURL(url, options), false);
   const reload = page.reload.bind(page);
   page.reload = (options) => explained("reload", () => reload(options));
   const goBack = page.goBack.bind(page);
@@ -351,8 +412,28 @@ const explainNavigations = (page: Page): Page => {
   return page;
 };
 
-const wrapContext = (context: BrowserContext): BrowserContext => {
+// Cloud's shell reads the capability catalog on its own, for example to discover file providers while the page is
+// idle. Whether that read happens before a test ends depends on timing, and a fixture that does not serve it answers
+// 404, counts it as its own request, or sees it refused by a navigation (#2075). So every page answers it in the page
+// with an empty catalog, before any request, unless the file launches with `serveShellCatalog: true`.
+const answerShellCatalog = () => {
+  window.fetch = new Proxy(window.fetch, {
+    apply: (network, self, args: Parameters<typeof fetch>) => {
+      const [input, init] = args;
+      const request = input instanceof Request ? input : undefined;
+      // Resolved like fetch resolves it; an address fetch cannot parse stays fetch's own error.
+      const url = URL.parse(request?.url ?? String(input), document.baseURI);
+      const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+      if (url?.origin !== location.origin || url.pathname !== "/api/capabilities/v1/catalog" || method !== "GET")
+        return Reflect.apply(network, self, args);
+      return Promise.resolve(Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } }));
+    },
+  });
+};
+
+const wrapContext = async (context: BrowserContext, servesShellCatalog: boolean): Promise<BrowserContext> => {
   tolerateKilledBrowserOnClose(context);
+  if (!servesShellCatalog) await context.addInitScript(answerShellCatalog);
   context.on("page", explainNavigations);
   const newPage = context.newPage.bind(context);
   context.newPage = async () => explainNavigations(await newPage());
@@ -373,7 +454,13 @@ const wrapContext = (context: BrowserContext): BrowserContext => {
  * Close waits at most 2 s gracefully and 2 s for a killed local process group; a surviving group fails cleanup.
  * A forced close, a launch pending after 4 s, and a failed launch carry timing evidence (#1473).
  */
-export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
+export const launchBrowser = async ({
+  serveShellCatalog = false,
+  ...options
+}: LaunchOptions & {
+  /** The test serves Cloud's capability catalog, or fails it on purpose, instead of every page answering it empty. */
+  serveShellCatalog?: boolean;
+} = {}): Promise<Browser> => {
   let current = await start(options);
   let closed = false;
   let replacement: Promise<StartedBrowser> | undefined;
@@ -423,11 +510,13 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
   };
   const newPage: Browser["newPage"] = async (pageOptions) => {
     const page = await open((browser) => browser.newPage(pageOptions));
-    wrapContext(page.context());
+    await wrapContext(page.context(), serveShellCatalog);
+    // The first document exists before the init script, so it gets the answer directly.
+    if (!serveShellCatalog) await page.evaluate(answerShellCatalog);
     return explainNavigations(page);
   };
   const newContext: Browser["newContext"] = async (contextOptions) =>
-    wrapContext(await open((browser) => browser.newContext(contextOptions)));
+    wrapContext(await open((browser) => browser.newContext(contextOptions)), serveShellCatalog);
 
   const close: Browser["close"] = async (closeOptions) => {
     closed = true;
@@ -450,6 +539,27 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
 };
 
 /**
+ * Presses the middle of `target`, runs `rebuild` while the button is down, and releases at the same point.
+ * Use it for every list whose host can rebuild equal items: a row replaced between press and release swallows
+ * the click (#2140). `rebuild` gives the page new objects with the same identity, as a host does on any change.
+ * Where a host can also drop and rebuild the list's container (a menu that closes and reopens), let `rebuild` do
+ * that too and wait until the new container shows before the release.
+ */
+export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: () => Promise<unknown>): Promise<void> => {
+  await target.waitFor();
+  await settled(page);
+  const box = await target.boundingBox();
+  if (!box) throw new Error("pressAcrossRebuild: the target has no box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  try {
+    await rebuild();
+  } finally {
+    await page.mouse.up();
+  }
+};
+
+/**
  * Guards against state sampled before it settled (#1476, #1499).
  * Waits for fonts, running finite document-timeline animations, then two frames.
  * Infinite, scroll-driven, and paused animations are not waited for. A page that
@@ -469,8 +579,23 @@ export const settled = async (page: Page): Promise<void> => {
             animation.playState === "running" &&
             Number.isFinite(animation.effect?.getComputedTiming().endTime),
         );
+    const frames = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    // A navigation the test triggered can start a document view transition a frame after it commits.
+    // Its user-agent animations belong to that navigation, not to a page that keeps animating, so they
+    // are awaited too, a bounded number of times. Any other animation that starts meanwhile still fails.
+    const viewTransition = (animation: Animation) =>
+      animation instanceof CSSAnimation &&
+      animation.animationName.startsWith("-ua-") &&
+      animation.effect instanceof KeyframeEffect &&
+      animation.effect.target === document.documentElement;
     await Promise.allSettled(running().map((animation) => animation.finished));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await frames();
+    for (let round = 0; round < 3; round++) {
+      const pending = running();
+      if (!pending.length || !pending.every(viewTransition)) break;
+      await Promise.allSettled(pending.map((animation) => animation.finished));
+      await frames();
+    }
     return running().map((animation) => {
       const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
       return {
@@ -493,6 +618,15 @@ export const settled = async (page: Page): Promise<void> => {
       `settled: the page kept animating; finite animations started while it settled: ${JSON.stringify(remaining)}. Wait for the test's own condition instead.`,
     );
   }
+};
+
+/**
+ * Waits until no document view transition is active. Every enhanced link starts one. While it is active, WebKit
+ * sends pointer input to `<html>`, so a click is lost, and it can stay active after its own animations ended, so
+ * `settled()` may return before it. Await this after a navigation before the next click or Back.
+ */
+export const viewTransitionEnded = async (page: Page): Promise<void> => {
+  await page.waitForFunction(() => !(document as Document & { activeViewTransition?: unknown }).activeViewTransition);
 };
 
 /**

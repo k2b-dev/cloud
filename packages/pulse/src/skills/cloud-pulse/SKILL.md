@@ -1,6 +1,9 @@
 ---
 name: cloud-pulse
 description: Set up Pulse bases, sources, Prometheus scrapes and filters, ingest metrics, events and states, query base measurements with SQL, save queries, inspect collection status, and guide Cloud administrators through ClickHouse setup and recovery.
+load-tools:
+  - pulse.base.list
+  - pulse.sql.run
 ---
 
 # Pulse

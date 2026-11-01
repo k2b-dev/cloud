@@ -1,5 +1,5 @@
-import { env } from "@k2b/cloud/config";
-import { RedisClient } from "bun";
+import { createRedis } from "@k2b/cloud";
+import type { RedisClient } from "bun";
 
 // One minute of burst capacity, continuous refill. Redis TIME keeps replicas on one clock.
 const SCRIPT = `
@@ -28,7 +28,9 @@ export type QuotaInput = { baseId: string; values: number; bytes: number; values
 export type IngestQuota = { consume: (input: QuotaInput) => Promise<QuotaError | null>; close: () => void };
 
 /** A dedicated connection: never queue quota decisions while disconnected. Every call has a 1 s budget. */
-export const createIngestQuota = (url?: string): IngestQuota => {
+export const createIngestQuota = (
+  createClient: () => RedisClient = () => createRedis({ enableOfflineQueue: false, connectionTimeout: 1000 }),
+): IngestQuota => {
   let client: RedisClient | undefined;
   let connecting: Promise<void> | undefined;
   const close = () => {
@@ -41,7 +43,7 @@ export const createIngestQuota = (url?: string): IngestQuota => {
     consume: async (input) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        client ??= new RedisClient(url ?? env.REDIS_URL, { enableOfflineQueue: false, connectionTimeout: 1000 });
+        client ??= createClient();
         const current = client;
         const operation = async () => {
           if (!current.connected) {

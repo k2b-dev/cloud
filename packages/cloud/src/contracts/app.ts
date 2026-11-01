@@ -1,5 +1,6 @@
 import type { Sync } from "@k2b/sync";
 import type { AppAccessRule } from "./app-access";
+import type { AppInstallable } from "./installable";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
@@ -49,9 +50,16 @@ export type AppAdminNavigationLink = {
   icon: string;
 };
 
+/** Platform admin areas an app can contribute to with `adminNav[].section`. */
+export const APP_ADMIN_AREAS = ["ai", "observability"] as const;
+export type AppAdminArea = (typeof APP_ADMIN_AREAS)[number];
+
 export type AppAdminNavigationGroup = {
-  /** Contribute links to the platform AI section instead of a separate group. */
-  section?: "ai";
+  /**
+   * Contribute links to a platform admin area instead of a separate group. The admin sidebar shows the area as one
+   * entry; the owner renders the area's columns itself. `"ai"` is the AI area, `"observability"` the Observability area.
+   */
+  section?: AppAdminArea;
   /** Stable key used only to localize this presentation group. */
   id?: string;
   label: string;
@@ -108,6 +116,10 @@ export type AppPwaPart = {
   href: string;
   /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
   requiresRoles?: Role[];
+  /** Same-origin path of a `GET` route returning an `AppNavBadge`, counted beside the part in the app's sidebar. */
+  badge?: string;
+  /** Same-origin path of a `GET` route returning a `PwaPartSummary`, the line under the part on the app's Start. */
+  summary?: string;
 };
 
 /** One same-origin panel page contributed by an application. Routes and services still authorize. */
@@ -126,6 +138,8 @@ export type AppMeta = {
   access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;
+  /** Shared object-store package; omitted means the app ID. */
+  package?: string;
   name: string;
   icon: string;
   description: string;
@@ -158,6 +172,8 @@ export type AppMeta = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's pages in the installable mobile app (preview), at `href` = `/pwa/<id>`. */
   pwa?: AppPwaPart;
+  /** One standalone installation under this app's own declared route. */
+  installable?: AppInstallable;
   panel?: AppPanel;
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
@@ -177,11 +193,14 @@ export type AppMeta = {
 
 /**
  * Response of an app's `nav.badge` route: how many items wait for the signed-in
- * person. A positive safe integer shows a count on the app's icon in the rail
- * and the app grid (above 99 as "99+"); `0`, a non-200 response, or anything
- * else shows none.
+ * person. A positive safe integer shows a count on the app's icon in the rail,
+ * the phone bar, and the app grid (above 99 as "99+"); `0`, a non-200
+ * response, or anything else shows none.
  */
 export type AppNavBadge = { count: number };
+
+/** What a part says about itself on the Cloud app's Start: a line in the reader's locale and the count behind it. */
+export type PwaPartSummary = AppNavBadge & { text: string };
 
 /** A widget endpoint and its board presentation; the handler owns resource authorization. */
 export type WidgetEndpoint = {

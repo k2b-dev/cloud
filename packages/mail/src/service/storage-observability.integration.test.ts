@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailStorageSummarySchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
@@ -44,7 +43,6 @@ suite("Mail storage observability", () => {
   let mailboxShortId: string;
 
   beforeAll(async () => {
-    await migrate();
     const users = await sql<{ id: string; uid: string; admin: boolean }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES

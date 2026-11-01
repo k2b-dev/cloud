@@ -89,7 +89,7 @@ const configuration = {
   activityRetentionDays: 730,
   url: "https://files.example.test",
   cloud: { ...area, autoCreate: false, autoArchive: true },
-  freeipa: { ...area, enabled: false, root: "freeipa" },
+  freeipa: { ...area, enabled: false, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
   tokenConfigured: true,
 };
@@ -249,11 +249,14 @@ describe("Filesv2 CLI integration", () => {
       expect(defaults.exitCode, defaults.stderr).toBe(0);
       expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({
         path: "",
-        sort: "name",
         order: "asc",
         type: "all",
         groupFolders: "true",
       });
+      // Search lets the service choose relevance for a query; browsing still defaults to name.
+      expect(requests.at(-1)!.searchParams.get("sort")).toBe(command === "search" ? null : "name");
+      if (command === "search")
+        expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ q: "report", scope: "tree", match: "fuzzy", in: "path" });
       const filtered = await run(
         [
           "--json",
@@ -364,7 +367,13 @@ describe("Filesv2 CLI integration", () => {
     const { tokenConfigured: _, ...input } = configuration;
     const secret = "private-filegate-backend-token";
     await writeFile(file, JSON.stringify({ ...input, token: secret }), { mode: 0o600 });
-    const saved = await run(["--json", "filesv2", "admin", "configuration", "set", "--input-file", file], { server: server.url.href });
+    const unconfirmed = await run(["filesv2", "admin", "configuration", "set", "--input-file", file], { server: server.url.href });
+    expect(unconfirmed.exitCode).not.toBe(0);
+    expect(unconfirmed.stderr).toContain("--yes");
+    expect(payloads).toEqual([]);
+    const saved = await run(["--json", "filesv2", "admin", "configuration", "set", "--yes", "--input-file", file], {
+      server: server.url.href,
+    });
     expect(saved.exitCode, saved.stderr).toBe(0);
     expect(JSON.parse(saved.stdout)).toEqual({ saved: true });
     expect(saved.stdout + saved.stderr).not.toContain(secret);
@@ -373,8 +382,13 @@ describe("Filesv2 CLI integration", () => {
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
       token: secret,
     });
-    for (const value of [input, { ...input, token: "" }, { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } }]) {
-      const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--stdin"], {
+    for (const value of [
+      input,
+      { ...input, token: "" },
+      { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } },
+      { ...input, freeipa: { ...input.freeipa, autoCreate: true } },
+    ]) {
+      const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--yes", "--stdin"], {
         server: server.url.href,
         stdin: JSON.stringify(value),
       });
@@ -383,13 +397,13 @@ describe("Filesv2 CLI integration", () => {
       expect(payloads.at(-1)).toEqual(value);
     }
     const count = payloads.length;
-    const malformed = await run(["filesv2", "admin", "configuration", "set", "--stdin"], {
+    const malformed = await run(["filesv2", "admin", "configuration", "set", "--yes", "--stdin"], {
       server: server.url.href,
       stdin: `{"token":"${secret}`,
     });
     expect(malformed.exitCode).not.toBe(0);
     expect(malformed.stdout + malformed.stderr).not.toContain(secret);
-    const invalid = await run(["filesv2", "admin", "configuration", "set", "--stdin"], {
+    const invalid = await run(["filesv2", "admin", "configuration", "set", "--yes", "--stdin"], {
       server: server.url.href,
       stdin: JSON.stringify({ ...input, cloud: { ...area, enabled: secret } }),
     });

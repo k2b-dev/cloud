@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
+import { z } from "zod";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
 import {
   behaviorIgnore,
   discoverTestSuites,
   parseArgs,
   planShards,
+  runTestCommand,
   selectSuites,
   suiteWeight,
   type TestSuite,
@@ -116,6 +119,23 @@ describe("root test orchestration", () => {
     expect(run.stdout.toString()).not.toContain("passed");
   });
 
+  test("a failed browser warm-up stops the run before any suite starts", () => {
+    const run = Bun.spawnSync(
+      ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--browser", "--filter", "touch-targets"],
+      {
+        cwd: workspaceRoot,
+        // An unknown engine makes the warm-up's launcher throw before it starts a browser.
+        env: { ...process.env, CLOUD_HEAVY_LOCK: "held", TEST_BROWSER: "no-such-engine" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stdout.toString()).toContain("=== browser warm-up ===");
+    expect(run.stdout.toString()).not.toContain("touch-targets");
+    expect(run.stderr.toString()).toContain("browser warm-up failed");
+  });
+
   const makeSuites = (names: string[]): TestSuite[] =>
     names.map((name) => ({
       name,
@@ -123,11 +143,66 @@ describe("root test orchestration", () => {
       command: [],
     }));
   const names = (suites: TestSuite[]) => suites.map((suite) => suite.name);
-  const weights: TestWeights = { browser: {}, unit: { a: 10, b: 1, c: 10, d: 1, e: 10, f: 1 } };
+  const weights: TestWeights = { integration: {}, browser: {}, unit: { a: 10, b: 1, c: 10, d: 1, e: 10, f: 1 } };
+
+  test("help explains repeated filters without acquiring a heavy slot or running suites", () => {
+    const run = Bun.spawnSync(["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--help"], {
+      cwd: workspaceRoot,
+      env: { ...process.env, CLOUD_HEAVY_LOCK: "", CI: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5000,
+    });
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout.toString()).toContain("Repeat to run the union of all matches, each suite once.");
+    expect(run.stdout.toString()).toContain("--exclude");
+    expect(run.stdout.toString()).not.toContain("test suites passed");
+    expect(run.stderr.toString()).toBe("");
+  });
+
+  test("repeated filters preserve every parser value", () => {
+    expect(parseArgs(["--filter", "packages/a", "--browser", "--filter", "packages/b"])).toEqual({
+      integration: false,
+      browser: true,
+      filters: ["packages/a", "packages/b"],
+    });
+    expect(parseArgs([])).toEqual({ integration: false });
+  });
+
+  test("repeated filters select the union by name or path exactly once in discovery order", () => {
+    const suites = makeSuites(["a", "b", "c"]);
+    const options = parseArgs(["--filter", "packages/b", "--filter", "named-a", "--filter", "packages/b", "--filter", "missing"]);
+    // Match named-a by name only; b matches its relative workspace path.
+    suites[0]!.name = "named-a";
+    suites[0]!.cwd = join(workspaceRoot, "other");
+    expect(names(selectSuites(suites, options, workspaceRoot))).toEqual(["named-a", "b"]);
+    expect(names(selectSuites(suites, parseArgs([]), workspaceRoot))).toEqual(["named-a", "b", "c"]);
+    expect(names(selectSuites(suites, parseArgs(["--filter", "missing"]), workspaceRoot))).toEqual([]);
+    expect(names(selectSuites(suites, parseArgs(["--filter", ""]), workspaceRoot))).toEqual(["named-a", "b", "c"]);
+  });
+
+  test("repeated filters apply exclusions to the union before sharding", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
+    const args = ["--filter", "packages/a", "--filter", "packages/b", "--filter", "packages/c", "--exclude", "packages/b"];
+    expect(names(selectSuites(suites, parseArgs(args), workspaceRoot, weights))).toEqual(["a", "c"]);
+    expect(names(selectSuites(suites, parseArgs([...args, "--shard", "1/2"]), workspaceRoot, weights))).toEqual(["a"]);
+    expect(names(selectSuites(suites, parseArgs([...args, "--shard", "2/2"]), workspaceRoot, weights))).toEqual(["c"]);
+    expect(names(selectSuites(suites, parseArgs(["--exclude", "packages/b"]), workspaceRoot))).toEqual(["a", "c", "d", "e", "f"]);
+  });
+
+  test("repeated filters reject a missing value at every occurrence", () => {
+    for (const args of [
+      ["--filter"],
+      ["--filter", "packages/a", "--filter"],
+      ["--filter", "--filter", "packages/b"],
+      ["--filter", "packages/a", "--filter", "--browser"],
+    ])
+      expect(() => parseArgs(args)).toThrow("--filter expects a workspace substring");
+  });
 
   test("filters and shards deterministically by measured suite time", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
-    expect(names(selectSuites(suites, { integration: false, filter: "packages/c" }, workspaceRoot))).toEqual(["c"]);
+    expect(names(selectSuites(suites, { integration: false, filters: ["packages/c"] }, workspaceRoot))).toEqual(["c"]);
     const select = (index: number) => selectSuites(suites, { integration: false, shard: { index, total: 2 } }, workspaceRoot, weights);
     // a -> 1, c -> 2, e -> 1, then all three 1-second suites -> 2.
     expect(names(select(1))).toEqual(["a", "e"]);
@@ -142,7 +217,7 @@ describe("root test orchestration", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
     const options = { integration: false, exclude: "packages/e", shard: { index: 1, total: 2 } };
     expect(names(selectSuites(suites, options, workspaceRoot, weights))).toEqual(["a", "b", "f"]);
-    expect(names(selectSuites(suites, { ...options, filter: "packages/c" }, workspaceRoot, weights))).toEqual(["c"]);
+    expect(names(selectSuites(suites, { ...options, filters: ["packages/c"] }, workspaceRoot, weights))).toEqual(["c"]);
   });
 
   test("covers every suite exactly once for every shard count, including empty shards", () => {
@@ -196,16 +271,35 @@ describe("root test orchestration", () => {
     expect(suiteWeight("unknown", { invalid: -1 })).toBe(1);
   });
 
+  test("spreads new unmeasured files across the least-loaded shards deterministically", () => {
+    const suites = makeSuites(["slow", "fast", ...Array.from({ length: 9 }, (_, index) => `new-${index}`)]);
+    const table = { slow: 90, fast: 10 };
+    const plan = planShards(suites, 3, table);
+    expect(planShards([...suites].reverse(), 3, table).map((shard) => names(shard.suites).toSorted())).toEqual(
+      plan.map((shard) => names(shard.suites).toSorted()),
+    );
+    expect(plan.flatMap((shard) => names(shard.suites)).toSorted()).toEqual(names(suites).toSorted());
+    expect(new Set(plan.flatMap((shard) => names(shard.suites))).size).toBe(suites.length);
+    expect(Math.max(...plan.map((shard) => shard.seconds)) - Math.min(...plan.map((shard) => shard.seconds))).toBeLessThanOrEqual(50);
+    expect(plan.every((shard) => shard.suites.some((suite) => suite.name.startsWith("new-")))).toBeTrue();
+  });
+
   test("selects weights for the requested mode", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
-    const tables: TestWeights = { unit: weights.unit, browser: { a: 1, b: 10, c: 1, d: 10, e: 1, f: 10 } };
-    const select = (browser: boolean) =>
-      [1, 2].map((index) =>
-        names(selectSuites(suites, { integration: false, browser, shard: { index, total: 2 } }, workspaceRoot, tables)),
-      );
+    const tables: TestWeights = {
+      integration: { a: 1, b: 1, c: 1, d: 10, e: 10, f: 10 },
+      unit: weights.unit,
+      browser: { a: 1, b: 10, c: 1, d: 10, e: 1, f: 10 },
+    };
+    const select = (browser: boolean, integration = false) =>
+      [1, 2].map((index) => names(selectSuites(suites, { integration, browser, shard: { index, total: 2 } }, workspaceRoot, tables)));
     expect(select(false)).toEqual([
       ["a", "e"],
       ["b", "c", "d", "f"],
+    ]);
+    expect(select(false, true)).toEqual([
+      ["d", "f"],
+      ["a", "b", "c", "e"],
     ]);
     expect(select(true)).toEqual([
       ["b", "f"],
@@ -217,7 +311,15 @@ describe("root test orchestration", () => {
     for (const maxMinutes of ["0.000001", "60"]) {
       const run = Bun.spawnSync(
         ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--filter", "no-such-suite", "--max-minutes", maxMinutes],
-        { cwd: workspaceRoot, env: { ...process.env, CLOUD_HEAVY_LOCK: "held" }, stdout: "pipe", stderr: "pipe" },
+        {
+          cwd: workspaceRoot,
+          env: {
+            ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("CLOUD_TEST_"))),
+            CLOUD_HEAVY_LOCK: "held",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
       );
       const stdout = run.stdout.toString();
       expect(stdout).toMatch(/test run took \d+\.\d min \(limit /);
@@ -234,9 +336,11 @@ describe("root test orchestration", () => {
   });
 
   test("parses arguments and rejects malformed shards", () => {
-    expect(parseArgs(["--integration", "--filter", "gateway", "--shard", "2/3"])).toEqual({
+    expect(parseArgs(["--integration", "--filter", "gateway", "--shard", "2/3", "--max-minutes", "20", "--list"])).toEqual({
       integration: true,
-      filter: "gateway",
+      filters: ["gateway"],
+      maxMinutes: 20,
+      list: true,
       shard: { index: 2, total: 3 },
     });
     expect(parseArgs(["--browser", "--shard", "1/2"])).toEqual({ integration: false, browser: true, shard: { index: 1, total: 2 } });
@@ -282,4 +386,196 @@ test("discovers ClickHouse and versioned Pulse migration files as isolated integ
   expect(suites.some((suite) => suite.name.endsWith("src/schema.integration.test.ts") && suite.name.includes("cloud-app-pulse"))).toBe(
     false,
   );
+});
+
+test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites with Mail's fixture setup", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filters: ["mail-workflow-kernel"] });
+  expect(suites).toEqual([
+    {
+      name: "@k2b/cloud test/integration/mail-workflow-kernel.integration.test.ts",
+      cwd: join(workspaceRoot, "packages/cloud"),
+      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
+    },
+  ]);
+  const source = await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text();
+  const mailPreload = 'await import("../../../mail/test/integration-preload");';
+  expect(source).toContain(mailPreload);
+  expect(source.indexOf(mailPreload)).toBeLessThan(source.indexOf('await import("../../../mail/src/'));
+});
+
+for (const mode of ["unit", "webkit", "integration"] as const) {
+  test(`CI ${mode} shards cover the selection exactly once and fit the measured budget`, async () => {
+    const matrixJob = z.object({
+      "timeout-minutes": z.number(),
+      strategy: z.object({ "fail-fast": z.boolean(), matrix: z.object({ shard: z.array(z.number().int().positive()) }) }),
+      steps: z.array(z.object({ run: z.string().optional() })),
+    });
+    const workflow = z
+      .object({
+        jobs: z.object({ unit: matrixJob, webkit: matrixJob, integration: matrixJob, gate: z.object({ needs: z.array(z.string()) }) }),
+      })
+      .parse(Bun.YAML.parse(await Bun.file(join(workspaceRoot, ".github/workflows/ci.yml")).text()));
+    const job = workflow.jobs[mode];
+    const shards = job.strategy.matrix.shard;
+    const command = job.steps.find((step) => step.run?.startsWith("bun run test "))?.run;
+    if (!command) throw new Error(`${mode} job needs its test runner command`);
+    const options = parseArgs(
+      command.replace("${{ matrix.shard }}", "1").replace("${{ strategy.job-total }}", String(shards.length)).split(" ").slice(3),
+    );
+    expect(options.integration).toBe(mode === "integration");
+    expect(Boolean(options.browser)).toBe(mode === "webkit");
+    if (options.integration) expect(options.exclude).toBe("grids");
+    expect(options.shard?.total).toBe(shards.length);
+    expect(shards).toEqual(Array.from({ length: shards.length }, (_, index) => index + 1));
+    expect(job.strategy["fail-fast"]).toBeFalse();
+    expect(options.maxMinutes).toBe(20);
+    expect(options.maxMinutes).toBeLessThan(job["timeout-minutes"]);
+    const all = await discoverTestSuites(workspaceRoot, { ...options, shard: undefined });
+    const selected = await Promise.all(
+      shards.map((index) => discoverTestSuites(workspaceRoot, { ...options, shard: { index, total: shards.length } })),
+    );
+    const names = selected.flat().map((suite) => suite.name);
+    expect(names.toSorted()).toEqual(all.map((suite) => suite.name).toSorted());
+    expect(new Set(names).size).toBe(all.length);
+    const weights = (await import("./test-weights.json")).default[mode === "webkit" ? "browser" : mode];
+    for (const shard of selected) {
+      expect(shard.length).toBeGreaterThan(0);
+      expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(15 * 60);
+    }
+    expect(workflow.jobs.gate.needs).toContain(mode);
+  });
+}
+
+test("integration --list prints the exact selection without a target, heavy slot or bootstrap", async () => {
+  const args = ["--integration", "--exclude", "grids", "--shard", "2/3", "--list"];
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("CLOUD_TEST_") && key !== "CLOUD_HEAVY_LOCK"),
+  );
+  const run = Bun.spawnSync(["bun", "--no-env-file", join(workspaceRoot, "scripts/run-tests.ts"), ...args], {
+    cwd: workspaceRoot,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(run.exitCode).toBe(0);
+  expect(run.stderr.toString()).toBe("");
+  const suites = await discoverTestSuites(workspaceRoot, parseArgs(args));
+  expect(run.stdout.toString().trim().split("\n")).toEqual(suites.map((suite) => suite.name));
+});
+
+test("an active command fails at its budget instead of waiting for the job timeout", async () => {
+  const suite: TestSuite = {
+    name: "stalled suite",
+    cwd: workspaceRoot,
+    command: [process.execPath, "--no-env-file", "-e", "setInterval(() => {}, 1000)"],
+  };
+  // Capture the expected annotation so a passing regression test does not annotate the CI job as failed.
+  const run = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `import { runTestCommand } from ${JSON.stringify(join(workspaceRoot, "scripts/run-tests.ts"))};
+     await runTestCommand(${JSON.stringify(suite)}, process.env, 50);`,
+    ],
+    { cwd: workspaceRoot, env: process.env, stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stderr] = await Promise.all([run.exited, new Response(run.stderr).text()]);
+  expect(code).toBe(1);
+  expect(stderr).toContain("::error title=Test shard over its time limit::");
+  expect(stderr).toContain("test run exceeded its time budget");
+  await expect(runTestCommand({ name: "late suite", cwd: workspaceRoot, command: [] }, process.env, 0)).rejects.toThrow("time budget");
+});
+
+test("deadline cleanup also stops descendants that start a separate session", async () => {
+  if (process.platform === "win32") return;
+  const leaf = 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);';
+  const suite: TestSuite = {
+    name: "detached browser fixture",
+    cwd: workspaceRoot,
+    command: [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `
+      const leaf = Bun.spawn([process.execPath, "--no-env-file", "-e", ${JSON.stringify(leaf)}], {
+        detached: true, stdin: "ignore", stdout: "ignore", stderr: "ignore",
+      });
+      leaf.unref();
+      console.log("OWNED_LEAF_PID=" + leaf.pid);
+      setInterval(() => {}, 1000);`,
+    ],
+  };
+  const run = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `import { runTestCommand } from ${JSON.stringify(join(workspaceRoot, "scripts/run-tests.ts"))};
+     await runTestCommand(${JSON.stringify(suite)}, process.env, 500);`,
+    ],
+    { cwd: workspaceRoot, env: process.env, stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stdout, stderr] = await Promise.all([run.exited, new Response(run.stdout).text(), new Response(run.stderr).text()]);
+  const pid = Number(/OWNED_LEAF_PID=(\d+)/.exec(stdout)?.[1]);
+  expect(pid).toBeGreaterThan(0);
+  try {
+    expect(code).toBe(1);
+    expect(stderr).toContain("test run exceeded its time budget");
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+      if (process.platform === "linux") {
+        const stat = await Bun.file(`/proc/${pid}/stat`).text();
+        alive = !["Z", "X"].includes(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]!);
+      }
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && ["ESRCH", "ENOENT"].includes(String(error.code)))) throw error;
+      alive = false;
+    }
+    expect(alive).toBeFalse();
+  } finally {
+    if (pid) {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+      }
+    }
+  }
+});
+
+test("integration NATS housekeeping is stopped by the shard deadline", async () => {
+  const sockets = new Set<Socket>();
+  // A local broker that accepts the connection but never replies to the NATS handshake.
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("missing test broker port");
+  try {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("CLOUD_TEST_")));
+    const run = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        join(workspaceRoot, "scripts/run-tests.ts"),
+        "--integration",
+        "--filter",
+        "no-such-suite",
+        "--max-minutes",
+        "0.02",
+      ],
+      { cwd: workspaceRoot, env: { ...env, CLOUD_TEST_NATS_SERVERS: `nats://127.0.0.1:${address.port}` }, stdout: "pipe", stderr: "pipe" },
+    );
+    const [code, stderr] = await Promise.all([run.exited, new Response(run.stderr).text()]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("::error title=Test shard over its time limit::Time budget exhausted during integration NATS housekeeping");
+    expect(sockets.size).toBeGreaterThan(0);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });

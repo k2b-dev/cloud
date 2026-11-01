@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-10-22
+updated: 2026-10-31
 ---
 
 # Scaling and shutdown
@@ -63,7 +63,7 @@ grow with the replica count.
 
 | Application | Several replicas | Coordinated by | Per-process limits that multiply |
 |---|---|---|---|
-| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Give each replica its own `GATEWAY_INSTANCE_ID` or `HOSTNAME`, or their operations snapshots overwrite each other | None |
+| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Each process uses a random ID for its operations snapshots. Remove the deprecated `GATEWAY_INSTANCE_ID` override; `HOSTNAME` is no longer used as an ID | None |
 | Core (`core`) | Yes | NATS schedulers and keyed jobs with Postgres claims for AI turns, outgoing mail and notifications | 8 AI turn workers, 8 SMTP send workers plus 4 bulk send workers, 4 notification workers, 2 chat PDF conversions |
 | Accounts (`accounts`) | Yes | Postgres draft rows and recipient claims | None |
 | API Docs (`api-docs`) | Yes | Specs built per request from the shared registry | None |
@@ -82,7 +82,7 @@ grow with the replica count.
 | OAuth (`oauth`) | Yes | Valkey consent state; Postgres consumes codes and refresh tokens atomically | None |
 | Proxy Auth (`proxy-auth`) | Yes | Postgres reads per verification; Valkey return state | None |
 | Pulse (`pulse`) | Yes | NATS scheduler and keyed scrape jobs; Postgres lock per source | Scrape, rollup and retention workers |
-| Mobile app (`pwa`) | Yes | Core's Postgres pairing locks | None |
+| Cloud app (`pwa`) | Yes | Core's Postgres pairing locks | None |
 | Quotes (`quotes`) | Yes | Valkey cache | None |
 | Spaces (`spaces`) | Yes | Postgres locks and outbox; Valkey link previews | None |
 | Tools (`tools`) | Yes | Postgres rows for webhook endpoints | 2 PDF conversions |
@@ -157,6 +157,26 @@ Do not use process memory for:
 
 Use [Data](/en/docs/data) and
 [Automation](/en/docs/automation) for shared state.
+
+### Notebooks reader presence
+
+Opening a note joins its participant list through the existing notebook
+workspace socket, including in Read mode and for locked notes. Editing starts
+a separate collaboration connection only when needed. Both connections count
+as one browser tab for that person; another tab counts separately. The detail
+panel shows other readers as reading until cursor awareness reports writing.
+
+Each workspace socket watches one opened note. Switching replaces that note;
+leaving or closing the socket removes its presence. Connections renew their
+shared presence leases every 10 seconds, and an abandoned lease expires after
+30 seconds. Access is checked before joining and rechecked on permission
+invalidation and the existing 10-second backstop. A workspace socket cannot
+watch a note in another notebook, even when its user may read both. If the
+opened note is deleted or moved, its reader watch ends while workspace updates
+continue.
+
+Upgrade all Notebooks replicas for reader presence. This requires no database
+migration or new service; presence remains transient shared NATS state.
 
 ## Application registration
 

@@ -22,6 +22,7 @@ test("city search forwards the caller, cancellation and German city filter to Co
             point: { lat: 48.4, lon: 9.99 },
             formatted: "Ulm, Deutschland",
             confidence: 1,
+            buildingConfidence: null,
             provenance,
           },
         ],

@@ -1,10 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { LogTableEntry } from "@k2b/ui";
-import type { Notebook, NoteTreeNode } from "../sidebar/types";
+import type { Notebook } from "../sidebar/types";
 
 export type NotebookSettingsProps = {
   notebook: Notebook;
-  tree: NoteTreeNode[];
   isAdmin: boolean;
   canWrite: boolean;
   dateConfig: DateContext;

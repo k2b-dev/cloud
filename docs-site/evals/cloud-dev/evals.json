@@ -171,7 +171,7 @@
       "expectations": [
         "The response retrieves Deployment requirements through the current documentation contract or explicitly uses reduced documentation mode.",
         "It distinguishes Core/OAuth readiness from mailbox connectivity, AI provider readiness and optional notebook S3 snapshots.",
-        "Only Core receives the identity KEK; Core and OAuth share the broker secret without an OAuth workload-credential provisioning step.",
+        "Only Core receives the identity KEK; OAuth prefers its app key for signed Core requests, retaining the deprecated broker secret only without a key during this release.",
         "It does not require Filegate or S3 for the baseline Mail or Notebooks storage, and does not treat an installed Assistant as configured AI.",
         "It identifies administrator bootstrap and production secret configuration rather than recommending development credentials.",
         "It proposes per-feature verification and makes no deployment or credential changes."
@@ -261,6 +261,81 @@
         "JavaScript availability uses watchAppHostWidth from @k2b/ui for the nearest named host and calls its stop function on cleanup.",
         "The 48 rem phone split and pointer capability rules keep their viewport semantics.",
         "Verification compares a narrow host in a wide window with a window as wide as the host and checks host-only resize."
+      ]
+    },
+    {
+      "id": 23,
+      "prompt": "Add a structured classification task to a Cloud application without hardcoding an operator model. Explain defaults and policy failures.",
+      "expected_output": "Uses model: { class: \"fast\" } explicitly for short classification, knows omitted requests mean balanced, consumes result.model, and never downgrades on access or budget failures.",
+      "files": [],
+      "expectations": [
+        "Requests a class through the supported AiModelRequest union.",
+        "Distinguishes explicit fast background work from the balanced public default.",
+        "Fallback applies only to empty assignments."
+      ]
+    },
+    {
+      "id": 24,
+      "prompt": "Make the customer counter in our Cloud application installable on a shared shop iPad. An employee pairs the iPad and opens a customer visit; the customer signs an offered document without signing into Cloud.",
+      "expected_output": "Reads the App-PWA installation and session contracts, declares one installable surface, uses scan-only pairing and visits, keeps device and customer authority separate from employee identity, and commits the signature and visit completion together with recovery after a lost response.",
+      "files": [],
+      "expectations": [
+        "Uses the current App-PWA and App-PWA sessions guides and public exports, without changing Cloud mobile-app pairing.",
+        "The employee shows each QR and the iPad scans it; the device belongs to the employee but never acts as that employee.",
+        "The application authorizes the visit subject and customer action; only declared Cloud resource operations intersect device permissions with current owner grants.",
+        "Domain writes, attempt recording and completion use the supplied transaction; a lost response is reconciled before announcing success.",
+        "Uses a neutral start and offline page, restart-only worker updates, and clears private display state and unfinished signatures when hidden or offline."
+      ]
+    },
+    {
+      "id": 25,
+      "prompt": "Move a Cloud application network allowlist from environment configuration into an administrator setting with one-time environment bootstrap.",
+      "expected_output": "Keeps the allowlist in its owning application, validates writes through the existing settings contract, preserves stored values during bootstrap, restricts changes to administrators, and retains the checked network transport.",
+      "files": [],
+      "expectations": [
+        "The administrator setting rejects malformed host, IP, CIDR and port entries.",
+        "A stored value wins over environment bootstrap, including an unreadable stored row.",
+        "Ordinary application users cannot widen the allowlist.",
+        "Requests still use createAllowedNetworkFetch or resolveAllowedNetworkAddresses."
+      ]
+    },
+    {
+      "id": 26,
+      "prompt": "Add a separate data worker to a Cloud application. It needs SQL, Valkey, Sync and object storage, plus a SQL pool limited to four connections.",
+      "expected_output": "Uses the platform startup entry before importing domain code, imports native sql and redis handles plus lazySync and storage from @k2b/cloud, and creates and closes its own SQL pool through createSql({ max: 4 }).",
+      "files": [],
+      "expectations": [
+        "Reads the platform start and connections guide through current documentation.",
+        "Initializes through @k2b/cloud/start before loading code that uses connections.",
+        "Imports sql, redis, lazySync and storage from @k2b/cloud; Bun supplies native types only.",
+        "Uses createSql for the separate pool and closes it when work ends.",
+        "Does not write connection values into process.env or add a second startup call to a standard application entrypoint."
+      ]
+    },
+    {
+      "id": 27,
+      "prompt": "Implement a durable background worker that invokes a Mail capability with an enrolled app key. The first response can be lost. Should the worker store a workload token or reuse its signed request?",
+      "expected_output": "Reads Background mandates, persists only the mandate and domain state, and lets the platform sign each final transmission with a fresh proof while preserving domain idempotency.",
+      "files": [],
+      "expectations": [
+        "Reads the canonical background mandate guide before selecting the worker transport.",
+        "Supplies mandate coordinates and context to invokeCapability without acquiring or storing a reusable credential.",
+        "Uses a fresh proof for each safe retry and preserves the domain idempotency key.",
+        "Reconciles an unknown non-idempotent Action outcome instead of retrying blindly.",
+        "Retains the legacy workload path only for apps without keys during this release and never falls back after app-key rejection."
+      ]
+    },
+    {
+      "id": 28,
+      "prompt": "Add address autocomplete to a public registration website in a third-party Cloud app. No Cloud user is signed in. Which identity and limits should the server use?",
+      "expected_output": "Reads the capability and public-site guides, declares geo:query in platformPermissions, and calls geoClient.autocomplete with appCaller after startup using the enrolled app key. Visitors spend the app budget, so the form rate-limits by IP and preserves Retry-After.",
+      "files": [],
+      "expectations": [
+        "Uses the application actor through appCaller and the existing signed app transport, without inventing a visitor principal or service account token.",
+        "Declares platformPermissions: [\"geo:query\"] and treats provider app admission as explicit per capability.",
+        "Applies rateLimit with keyBy: \"ip\"; uses clientIp for additional app-owned controls when needed.",
+        "Handles 429 and Retry-After while preserving per-app and shared operational budgets.",
+        "Keeps person-owned resource operations under an interactive identity or mandate."
       ]
     }
   ]

@@ -66,6 +66,7 @@ mock.module("./data/references", () => ({
   },
   resolveEntryRefId: async (id: string) => ids.get(id) ?? null,
 }));
+const searches: Record<string, unknown>[] = [];
 const page = async (): Promise<DirectoryResult> => {
   calls++;
   if (serviceFailure) throw serviceFailure;
@@ -115,6 +116,11 @@ mock.module("./service", () => ({
       if (serviceFailure) throw serviceFailure;
       return { state: "completed", entry: uploaded };
     },
+    uploadTarget: async () => {
+      if (serviceFailure) throw serviceFailure;
+      if (failure) throw new Error("storage unavailable");
+      return base;
+    },
     upload: async (_actor: unknown, input: { idempotencyKey: string }) => {
       if (serviceFailure) throw serviceFailure;
       uploadKeys.push(input.idempotencyKey);
@@ -158,7 +164,18 @@ mock.module("./service", () => ({
     move: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     copy: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     list: page,
-    search: page,
+    search: async (_call: unknown, input: Record<string, unknown>) => {
+      searches.push(input);
+      const result = await page();
+      return {
+        ...result,
+        query: input.q,
+        scope: "tree",
+        total: result.items.length,
+        truncated: false,
+        items: result.items.map((e) => ({ ...e, highlight: [[0, 1]] })),
+      };
+    },
     remove: async (_actor: unknown, input: { paths: string[] }) => ({
       results: input.paths.map((path) => {
         if (removeError) return { ok: false, error: removeError };
@@ -454,8 +471,39 @@ test("canonical entry reader exposes an authorized stable open link", async () =
   const result = await filesCapabilities.queries["entry.read"].run({ id: "entry-id" }, context);
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error("Expected entry");
-  expect(result.data.refs).toEqual([{ type: "filesv2.entry", id: "entry-id", title: "report" }]);
+  expect(result.data.refs).toEqual([{ type: "filesv2.entry", id: "entry-id", title: "report", context: "File in Home" }]);
   expect(result.data.links).toEqual([{ rel: "open", href: "/app/filesv2/ref/entry-id" }]);
+});
+
+test("entry.search-in-base reaches every search option of the API and rejects a search without q or filter", async () => {
+  const search = filesCapabilities.queries["entry.search-in-base"];
+  const input = {
+    baseId: base.id,
+    q: "",
+    ext: "PDF, docx",
+    minSize: 1,
+    maxSize: 10,
+    modifiedAfter: "2026-10-01T00:00:00Z",
+    modifiedBefore: "2026-11-01T00:00:00+02:00",
+    match: "exact",
+    in: "name",
+    sort: "modified",
+  };
+  searches.length = 0;
+  const found = await search.run(search.input.parse(input), context);
+  expect(found.ok).toBe(true);
+  expect(searches[0]).toMatchObject({ ...input, ext: "pdf,docx", scope: "tree" });
+  expect(search.input.safeParse({ baseId: base.id, q: "" }).success).toBe(false);
+  expect(search.input.safeParse({ baseId: base.id, ext: "pdf", sort: "relevance" }).success).toBe(false);
+  expect(search.input.safeParse({ baseId: base.id, q: "report", sort: "relevance" }).success).toBe(true);
+});
+
+test("universal search ranks each base's best hits first and keeps Filegate's word limit", async () => {
+  items = [entry("report.pdf")];
+  searches.length = 0;
+  const found = await filesCapabilities.queries["entry.search"].run({ query: "a b c d e f g h i j", tags: [], limit: 10 }, context);
+  expect(found.ok).toBe(true);
+  expect(searches.map((item) => item.q)).toEqual(searches.map(() => "a b c d e f g h"));
 });
 
 test("stable refs pass through listing, universal search and the reader unchanged", async () => {
@@ -471,7 +519,7 @@ test("stable refs pass through listing, universal search and the reader unchange
   expect(found.data.data[0]!.ref).toEqual({ type: "filesv2.entry", id: stable });
   const read = await filesCapabilities.queries["entry.read"].run({ id: stable }, context);
   if (!read.ok) throw new Error("expected reader success");
-  expect(read.data.refs).toEqual([{ type: "filesv2.entry", id: stable, title: "report" }]);
+  expect(read.data.refs).toEqual([{ type: "filesv2.entry", id: stable, title: "report", context: "File in Docs" }]);
   expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(stable)}` }]);
 });
 
@@ -495,6 +543,10 @@ for (const query of ["entry.list", "entry.search-in-base"] as const) {
     expect(first.data.data.next).toBe(next);
     expect(downloads).toEqual([]);
     expect(capabilityResultSchema(capability.data).safeParse(first.data).success).toBe(true);
+    if (query === "entry.search-in-base") {
+      expect(first.data.data).toMatchObject({ total: 2 });
+      expect(first.data.data.items[0]).not.toHaveProperty("highlight");
+    }
     for (const row of first.data.data.items) {
       expect(row.ref.type).toBe("filesv2.entry");
       expect(row.ref.id.length).toBeLessThanOrEqual(512);
@@ -1009,3 +1061,26 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     assertResourceOpenLink(result.data);
   }
 });
+
+for (const [locale, file, folder] of [
+  ["en", "File", "Folder"],
+  ["de", "Datei", "Ordner"],
+] as const) {
+  for (const directory of [false, true]) {
+    test(`entry reader describes ${directory ? "folders" : "files"} in ${locale}`, async () => {
+      for (const [path, place] of [
+        ["Docs/Planning/report", "Planning"],
+        ["report", "Home"],
+        ["Docs/Plan\nning/report", "Plan ning"],
+        [`${"x".repeat(200)}/report`, "x".repeat(200)],
+      ] as const) {
+        ids.set("entry-id", { baseId: "base", path });
+        items = [{ ...entry(path), directory }];
+        const result = await filesCapabilities.queries["entry.read"].run({ id: "entry-id" }, { ...context, locale });
+        if (!result.ok) throw new Error("Expected entry");
+        expect(result.data.refs![0]).toMatchObject({ context: `${directory ? folder : file} in ${place}`.slice(0, 200) });
+        expect(result.data.refs![0]).not.toHaveProperty("status");
+      }
+    });
+  }
+}

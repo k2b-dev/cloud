@@ -2,26 +2,26 @@
 id: core-admin
 title: Administration
 icon: ti ti-settings
-description: Administrationsübersicht nutzen, Ankündigungen veröffentlichen, Core-Einstellungen ändern und App-Zugänge rotieren.
+description: Administrationsübersicht nutzen, Ankündigungen veröffentlichen, Core-Einstellungen ändern und App-Schlüssel rotieren.
 order: 120
 ---
 
 Die Core-Administrationsseiten konfigurieren Plattformdienste. Sie verlinken außerdem die Administrationsseiten, die jede App registriert.
 
-Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische Anleitung. Sie öffnet sich in einem neuen Tab. Unter **Einstellungen → Allgemein** wählst du mit **Dokumentationsadresse** die öffentliche Dokumentation, einen eigenen Spiegel oder deinen lokalen Fibel-Server. Diese Einstellung ändert nur die Links zur Dokumentation. Sie richtet keine App-Anmeldung ein, und die integrierte Hilfe bleibt davon unabhängig.
+Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische Anleitung. Sie öffnet sich in einem neuen Tab. Unter **Grundeinstellungen → Allgemein** wählst du mit **Dokumentationsadresse** die öffentliche Dokumentation, einen eigenen Spiegel oder deinen lokalen Fibel-Server. Diese Einstellung ändert nur die Links zur Dokumentation. Sie richtet keine App-Anmeldung ein, und die integrierte Hilfe bleibt davon unabhängig.
 
 ## Administrationsseiten finden {icon="user-cog"}
 
 :::reference
 - **Übersicht:** Listet die registrierten Apps mit Administrationsseiten. Sie zählt außerdem die registrierten Apps, die Administrationsseiten, die du öffnen kannst, und die Navigationseinträge, die Personen sehen.
-- **App-Zugänge:** Erstelle einen benannten Zugang, mit dem eine App im Hintergrund andere Apps aufruft. Nutzermandate begrenzen weiterhin die Aktionen, die der Zugang ausführen kann.
+- **Apps:** Jede App mit Zustand, Zugriff, Schlüsseln und Ereignissen. Öffne eine App, um zu sehen, warum sie Aufmerksamkeit braucht und was zu tun ist. Unter **Schlüssel** stehen auch die Tokens für Apps, die auf dem Host laufen. Nutzermandate begrenzen weiterhin die Aktionen, die ein Schlüssel oder Token ausführen darf.
 - **Ankündigungen:** Erstelle und bearbeite Ankündigungen oder Banner. Ein Eintrag ist aktiv, geplant oder abgelaufen, je nach Veröffentlichungszeit und Ablaufzeit.
 - **Einstellungen:** Bearbeite die Einstellungen nach Gruppen. Jedes Feld zeigt seinen aktuellen Wert. Wo der Einstellungsdienst sie bereitstellt, zeigt es auch die Quelle des Werts.
 :::
 
 ## Kontotypen und Anmeldung steuern {icon="settings"}
 
-Unter **Accounts & Anmeldung → Anmeldung** richtest du die Kontotypen **Guest**, **Login** und **FreeIPA** getrennt ein. **Login** ist das passwortlose lokale Konto. Benenne es mit **Anzeigename** um, etwa in Firmenaccount.
+Unter **Anmeldung & Sicherheit → Anmeldung** richtest du die Kontotypen **Guest**, **Login** und **FreeIPA** getrennt ein. **Login** ist das passwortlose lokale Konto. Benenne es mit **Anzeigename** um, etwa in Firmenaccount.
 
 :::reference
 - **Guest-Accounts erlauben**, **Lokale Vollaccounts erlauben**, **FreeIPA-Accounts erlauben:** Steuern den Zugriff.
@@ -36,20 +36,20 @@ Halte einen anderen erlaubten Zugang für die Administration oder deinen Notfall
 
 Das Sperren eines Kontotyps lehnt auch spätere Anfragen bestehender Sitzungen, benutzergebundener OAuth-Tokens, persönlicher API-Schlüssel und benutzergebundener Hintergrundarbeit ab. Es löscht keine Konten und stoppt nicht den FreeIPA-Sync. Erlaubst du den Typ wieder, funktionieren ansonsten gültige Zugangsdaten wieder. Die Notfallwiederherstellung erlaubt nach ausdrücklicher Bestätigung wieder alle lokalen **Login**-Konten. Welche Typen die Anmeldeseite zeigt, ändert sie nicht.
 
-Unter **Admin → Einstellungen → Anmeldung → Ortsangaben** siehst du Quelle und Erstellungsdatum der City- und ASN-Datenbanken. Lade eine eigene `.mmdb`- oder `.mmdb.gz`-Datei hoch oder setze einen Typ auf den mitgelieferten Stand zurück. Uploads bleiben bis zum Zurücksetzen aktiv. Sind die Daten älter als etwa sechs Monate, erscheint ein Hinweis. Die Datei muss eine City- oder ASN-Datenbank mit IPv6-Suchbaum sein; beachte die Lizenz des Anbieters. Es gelten 192 MiB entpackt und 128 MiB pro Upload-Anfrage. Solange DB-IP-Daten aktiv sind, erscheint der Quellenhinweis zu DB-IP.
+Unter **Admin → Anmeldung & Sicherheit → Anmeldung → Ortsangaben** siehst du Quelle und Erstellungsdatum der City- und ASN-Datenbanken. Lade eine eigene `.mmdb`- oder `.mmdb.gz`-Datei hoch oder setze einen Typ auf den mitgelieferten Stand zurück. Uploads bleiben bis zum Zurücksetzen aktiv. Sind die Daten älter als etwa sechs Monate, erscheint ein Hinweis. Die Datei muss eine City- oder ASN-Datenbank mit IPv6-Suchbaum sein; beachte die Lizenz des Anbieters. Es gelten 192 MiB entpackt und 128 MiB pro Upload-Anfrage. Solange DB-IP-Daten aktiv sind, erscheint der Quellenhinweis zu DB-IP.
 
 ## Die weiteren Einstellungsgruppen finden {icon="settings"}
 
 :::reference
-- **Einstellungen → Allgemein:** Branding, öffentliche Links und globale Zeitpläne.
-- **Accounts & Anmeldung → Registrierung & Anfragen:** Gast-Selbstregistrierung, FreeIPA-Zugangsanfragen, Kontovorgaben, Ablauf und Erinnerungen. Bei einer Neuinstallation sind Anfragen aus, bis du sie einschaltest. Ein Upgrade behält das bisherige Verhalten. Schaltest du neue Anfragen aus, bleiben offene Anfragen zur Bearbeitung verfügbar.
+- **Grundeinstellungen:** **Allgemein** enthält Branding, öffentliche Links und globale Zeitpläne. **Rechtliches** enthält Nutzungsbedingungen, Datenschutzerklärung und Impressum. **PDF-Erstellung** enthält die Gotenberg-Verbindung, ihre Zugangsdaten und Grenzen. Dazu kommen **Orte & Karten** und **CLI**.
+- **Anmeldung & Sicherheit → Registrierung:** Gast-Selbstregistrierung, FreeIPA-Zugangsanfragen, Kontovorgaben, Ablauf und Erinnerungen. Bei einer Neuinstallation sind Anfragen aus, bis du sie einschaltest. Ein Upgrade behält das bisherige Verhalten. Schaltest du neue Anfragen aus, bleiben offene Anfragen zur Bearbeitung verfügbar.
 - **Hinweise zur Nacharbeit:** Unter **Registrierung & Anfragen** hinterlegst du eine optionale Liquid-Markdown-Vorlage für Hinweise nach erfolgreichen Benutzer- und Gruppenänderungen. Wähle mit `action` die Anweisungen für jede Änderung und prüfe die Vorschau mit Beispieldaten. Leere Ausgabe zeigt keinen Hinweis. Der Hinweis richtet sich an die Person aus Administration oder Gruppenverwaltung, die die Änderung ausführt. Er ist keine Benachrichtigung an die betroffene Person. NFS-Anweisungen sind nicht fest eingebaut.
-- **Accounts & Anmeldung → Betrieb:** Öffne gefilterte Lebenszyklus- und FreeIPA-Sync-Protokolle oder geplante Aufträge. Die Nachpflege repariert Ablaufdaten von Konten, keine Linux-Identitäten, und kann den Zugang abgelaufener Konten wiederherstellen. Ein Toast bestätigt, dass der Auftrag eingereiht ist. Den Abschluss prüfst du in seinen Protokollen. Einzelne Datensätze und die Bearbeitung von Anfragen bleiben in Konten.
-- **Accounts & Anmeldung → Linux-Identitäten:** Reserviere einen ID-Bereich und lege Standardwerte für Home und Shell fest. Bei eingeschalteter Vergabe erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Das Einschalten ändert ältere Vollkonten nicht; nutze dafür **Backfill bestehender Accounts**. Schaltest du die Vergabe aus, verschwindet die Backfill-Tabelle, und bestehende Identitäten bleiben in Konten erhalten. Linux-Identitäten schalten weder die Anmeldung am Rechner noch sudo frei.
-- **Accounts & Anmeldung → FreeIPA:** FreeIPA-Verbindungseinstellungen, Synchronisierungsregeln und Gruppenzuordnung.
+- **Anmeldung & Sicherheit → Kontovorgänge:** Öffne gefilterte Lebenszyklus- und FreeIPA-Sync-Protokolle oder geplante Aufträge. Die Nachpflege repariert Ablaufdaten von Konten, keine Linux-Identitäten, und kann den Zugang abgelaufener Konten wiederherstellen. Ein Toast bestätigt, dass der Auftrag eingereiht ist. Den Abschluss prüfst du in seinen Protokollen. Einzelne Datensätze und die Bearbeitung von Anfragen bleiben in der App Zugänge.
+- **Anmeldung & Sicherheit → Linux-Identitäten:** Reserviere einen ID-Bereich und lege Standardwerte für Home und Shell fest. Bei eingeschalteter Vergabe erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Das Einschalten ändert ältere Vollkonten nicht; nutze dafür **Backfill bestehender Accounts**. Schaltest du die Vergabe aus, verschwindet die Backfill-Tabelle, und bestehende Identitäten bleiben in der App Zugänge erhalten. Linux-Identitäten schalten weder die Anmeldung am Rechner noch sudo frei.
+- **Anmeldung & Sicherheit → FreeIPA:** FreeIPA-Verbindungseinstellungen, Synchronisierungsregeln und Gruppenzuordnung.
 - **KI:** Konfiguriere Modellprofile und Zugangsdaten der Anbieter und prüfe die Hintergrundarbeit. Mit **Skills** oder **Projekte** stellst du den Zugriff wieder her, wenn niemand mehr Zugriff **Verwalten** auf eine gemeinsam genutzte Ressource hat. Diese Wiederherstellungsseiten können Zugriff geben oder nicht mehr benötigte Ressourcen dauerhaft löschen. Einen gelöschten App-Skill installiert die App erst wieder, wenn du **Wiederherstellen** wählst.
-- **Einstellungen → Ausgehende Mail** und **Einstellungen → PDF-Erstellung:** SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung und ihre Zugangsdaten sowie Grenzen für die PDF-Erstellung. Für interne SMTP- und Bounce-IMAP-Hosts muss der Betreiber `OUTGOING_MAIL_ALLOWED_TARGETS` in Core setzen; standardmäßig sind nur öffentliche Ziele erlaubt.
-- **Einstellungen → E-Mail-Vorlagen**, **Einstellungen → Sicherheit** und **Einstellungen → Rechtliches:** Transaktionale E-Mail-Vorlagen, Ratenbegrenzungen, Standards für den Zugriffsschutz, Nutzungsbedingungen, Datenschutzerklärung und Impressum.
+- **Einstellungen → Ausgehende Mail:** SMTP-Zustellung und Absenderzugangsdaten. Für interne SMTP- und Bounce-IMAP-Hosts muss der Betreiber `OUTGOING_MAIL_ALLOWED_TARGETS` in Core setzen; standardmäßig sind nur öffentliche Ziele erlaubt.
+- **Einstellungen → E-Mail-Vorlagen** und **Anmeldung & Sicherheit → Sicherheit:** Transaktionale E-Mail-Vorlagen, Ratenbegrenzungen und Standards für den Zugriffsschutz.
 :::
 
 ## Erste Anmeldung für die Administration {icon="key"}
@@ -67,20 +67,34 @@ Bei einer neuen Installation hinterlegt der Betreiber vorübergehend `ADMIN_LOGI
 
 FreeIPA und die Gruppenzuordnung für die Administration richtest du in den Einstellungen ein. Es gibt keinen FreeIPA-Bootstrap über Umgebungsvariablen.
 
-## App-Zugang rotieren {icon="key"}
+## App-Schlüssel rotieren {icon="key"}
 
-**App-Zugänge** listet die vorhandenen Zugänge in einer Tabelle.
+Core stellt App-Schlüssel automatisch aus und rotiert sie. Öffne unter **Apps** die App,
+dann **Schlüssel → Tokens für Host-Betrieb**. Dort stehen sie als `Runtime <Instanz>`. Wenn du einen automatischen Schlüssel
+widerrufst, wird der Hintergrundzugriff aller Instanzen dieser App deaktiviert,
+auch nach einem Neustart. Wähle oben unter **Schlüssel** **Wieder
+aktivieren**, um ihn wieder freizugeben. Die App erhält dann automatisch einen
+neuen Schlüssel. Bei einem Host-Override muss ein widerrufener Schlüssel
+weiterhin manuell ersetzt werden. Die folgenden Schritte dienen einem optionalen
+Override für eine App auf dem Host.
+
+Unter **Schlüssel → Tokens für Host-Betrieb** findest du die vorhandenen Tokens.
 
 :::steps
-1. Wähle unter **App-Zugänge** die Option **Zugang erstellen**.
-2. Wähle im Dialog die **Anwendung**.
+1. Öffne unter **Apps** die App und dann **Schlüssel**.
+2. Klappe **Tokens für Host-Betrieb** auf und wähle **Token erstellen**.
 3. Gib unter **Name** einen Namen und bei Bedarf die Ablaufzeit ein.
-4. Wähle im Dialog **Zugang erstellen**.
+4. Wähle im Dialog **Token erstellen**.
 5. Kopiere den Token. Cloud zeigt ihn nur einmal; danach bleiben nur seine Metadaten und **Widerrufen** verfügbar.
-6. Hinterlege den Token über die Secret-Verwaltung des Deployments nur in der zugehörigen App als `CLOUD_APP_CREDENTIAL`.
-7. Trage Cores interne Adresse in `CLOUD_CORE_INTERNAL_ORIGIN` ein. Hintergrundaufrufe brauchen sie.
-8. Wende die Änderung an und prüfe die Hintergrundarbeit der App.
-9. Wähle beim alten Zugang **Widerrufen** und bestätige im Dialog.
 :::
 
-Der Widerruf stoppt neue Aufrufe mit diesem Zugang.
+Stelle danach die App auf den neuen Schlüssel um:
+
+:::steps
+1. Hinterlege den Token über die Secret-Verwaltung des Deployments nur in der zugehörigen App als `CLOUD_APP_CREDENTIAL`.
+2. Trage Cores interne Adresse in `CLOUD_CORE_INTERNAL_ORIGIN` ein. Hintergrundaufrufe brauchen sie.
+3. Wende die Änderung an und prüfe die Hintergrundarbeit der App.
+4. Wähle beim alten Schlüssel **Widerrufen** und bestätige im Dialog.
+:::
+
+Der Widerruf stoppt neue Aufrufe mit diesem Schlüssel.

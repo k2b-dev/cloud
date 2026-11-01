@@ -1,4 +1,4 @@
-import { anchorHash, parseNoteLink } from "../../../../lib/heading-anchors";
+import { anchorHash, parseNoteLink } from "@k2b/editor/markdown/lib/heading-anchors";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from "../../../../lib/sidebar-filter";
 import type { SoftNavigationResult } from "../../../lib/soft-navigation";

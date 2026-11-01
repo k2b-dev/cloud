@@ -237,7 +237,7 @@ Grids App queries receive a typed request context automatically. Grids binds the
 | Reference | Value |
 | --- | --- |
 | `@auth.id` | Current account UUID, or `null` for an anonymous visitor |
-| `@auth.subjects` | Flat UUID list containing the current user and all effective direct or nested groups; empty for anonymous visitors |
+| `@auth.subjects` | Flat UUID list containing the current user and all effective direct or nested groups, or the standalone/agent account’s own UUID; empty for anonymous visitors |
 | `@params.<name>` | A declared and validated page parameter |
 | `@page.id`, `@page.title`, `@page.url` | Current page identity and canonical relative URL |
 | `@app.id`, `@app.name` | Published Grids App identity |
@@ -246,7 +246,7 @@ Grids App queries receive a typed request context automatically. Grids binds the
 
 Use `@auth.id != null` when a query requires a signed-in account. Match an anonymous app request explicitly with `@auth.id = null`. Unknown namespaces and undeclared parameters are publish errors.
 
-Use `oneof(Participants, @auth.subjects)` when a principal field gives the current user, or any of their effective groups, access to a record. The server resolves effective group memberships. The query never receives group members or names. `@auth.subjects` is a list. It is therefore valid only in the membership predicates `oneof`, `noneof`, or `containsall`.
+Use `oneof(Participants, @auth.subjects)` when a principal field gives the current user, any of their effective groups, or the calling standalone/agent account access to a record. User attributes such as `@auth.id` remain null for machine callers. The server resolves effective group memberships. The query never receives group members or names. `@auth.subjects` is a list. It is therefore valid only in the membership predicates `oneof`, `noneof`, or `containsall`.
 
 ```gql
 from table Loans

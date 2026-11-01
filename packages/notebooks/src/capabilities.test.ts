@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -7,10 +7,13 @@ import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
+  discussionsIssues,
+  typeViewIssues,
   type User,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { audit } from "@k2b/cloud/services";
+import { ok } from "@k2b/stdlib";
 import {
   decodeNotebookCapabilityCursor,
   decodeNotebookTreeCursor,
@@ -36,7 +39,45 @@ import {
   TagNotesInputSchema,
 } from "./capability-contracts";
 import { notebookCapabilityMessages } from "./capability-messages";
+import type { Annotation } from "./lib/annotation-contracts";
 import { noteContentHash } from "./lib/note-edit";
+
+const annotationFixture = (): Annotation => ({
+  id: "77777777-7777-4777-8777-777777777777",
+  noteId: "abc123",
+  from: 0,
+  to: 7,
+  orphan: false,
+  startRel: "",
+  endRel: "",
+  restoreRevision: "0",
+  quote: "passage",
+  prefix: "",
+  suffix: "",
+  body: "Review",
+  suggestion: null,
+  suggestionState: null,
+  suggestionStateBy: null,
+  suggestionStateAt: null,
+  suggestionStateVia: null,
+  stateVia: null,
+  state: "open",
+  stateBy: null,
+  stateAt: null,
+  author: { kind: "user", id: "11111111-1111-4111-8111-111111111111", name: "Notebook User" },
+  via: null,
+  createdAt: "2026-10-26T12:00:00.000Z",
+  editedAt: null,
+  canEdit: true,
+  canDelete: true,
+  replies: [],
+  repliesNextCursor: null,
+  headingPath: [],
+  acceptedOperationId: null,
+});
+
+import * as activity from "./service/activity";
+import * as annotationStore from "./service/annotations";
 import * as bookStore from "./service/book";
 import * as commentStore from "./service/comments";
 import * as noteLinks from "./service/links";
@@ -59,7 +100,7 @@ test("only exposes remembered approval for bounded notebook-local note changes",
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId)
     .sort();
-  expect(rememberable).toEqual(["comment.create", "note.create", "note.edit", "note.move"]);
+  expect(rememberable).toEqual(["annotation.create", "comment.create", "note.create", "note.edit", "note.move"]);
 });
 
 const trackedSpy = <T extends { mockRestore(): void }>(spy: T): T => {
@@ -355,7 +396,12 @@ describe("notebooks capabilities", () => {
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
     const content = "\u0001".repeat(50_000);
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, contentMd: content, yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
+      ...note,
+      contentMd: content,
+      yjsSnapshot: null,
+      yjsRestoreRevision: "0",
+    });
     const operation = notebooksCapabilities.queries["note.read"];
     const first = await operation.run({ id: note.shortId, contentOffset: 0, contentLimit: 50_000 }, userContext);
     expect(first.ok).toBeTrue();
@@ -399,7 +445,7 @@ describe("notebooks capabilities", () => {
     trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" });
     const edit = trackedSpy(spyOn(noteStore, "editContent")).mockResolvedValue({
       ok: true,
       data: { note, content: note.contentMd, changed: true, beforeHash: "a", afterHash: "b", blocks: [] },
@@ -425,6 +471,12 @@ describe("notebooks capabilities", () => {
 
     edit.mockClear();
     // Scopes cap the grant, and without a grant nothing is reachable.
+    permission.mockResolvedValue("admin");
+    const readOnly = await notebooksCapabilities.queries["note.read"].run(
+      { id: note.shortId, contentOffset: 0, contentLimit: 1 },
+      agentContext(["read"]),
+    );
+    expect(readOnly.ok && readOnly.data.data.container.permission).toBe("read");
     expect((await notebooksCapabilities.actions["note.edit"].run(editInput, agentContext(["read"]))).ok).toBeFalse();
     permission.mockResolvedValue("none");
     expect(
@@ -459,11 +511,17 @@ describe("notebooks capabilities", () => {
 
   test("every declared Type has a reader open-link case or an explicit reason", async () => {
     mockCommentAccess();
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" });
     trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
     trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
     trackedSpy(spyOn(noteStore, "resolveIdsToShortIds")).mockResolvedValue(new Map([[note.id, note.shortId]]));
+    trackedSpy(spyOn(annotationStore, "readResource")).mockResolvedValue(ok(annotationFixture()));
+    trackedSpy(spyOn(annotationStore, "authorize")).mockResolvedValue(ok({ note, canWrite: true }));
     const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+      annotation: {
+        reader: "annotation.read",
+        read: async () => notebooksCapabilities.queries["annotation.read"].run({ id: annotationFixture().id }, userContext),
+      },
       notebook: {
         reader: "notebook.read",
         read: async () => notebooksCapabilities.queries["notebook.read"].run({ id: notebook.shortId }, userContext),
@@ -639,8 +697,11 @@ describe("notebooks capabilities", () => {
   });
 
   test("declares the complete bounded wiki surface", () => {
-    expect(Object.keys(notebooksCapabilities.types).sort()).toEqual(["comment", "note", "notebook"]);
+    expect(Object.keys(notebooksCapabilities.types).sort()).toEqual(["annotation", "comment", "note", "notebook"]);
     expect(Object.keys(notebooksCapabilities.queries).sort()).toEqual([
+      "annotation.list",
+      "annotation.read",
+      "annotation.replies",
       "comment.browse",
       "comment.list",
       "comment.read",
@@ -650,7 +711,9 @@ describe("notebooks capabilities", () => {
       "note.read",
       "note.search",
       "note.tree",
+      "notebook.activity",
       "notebook.browse",
+      "notebook.containers",
       "notebook.list",
       "notebook.read",
       "notebook.search",
@@ -658,6 +721,15 @@ describe("notebooks capabilities", () => {
       "tag.notes",
     ]);
     expect(Object.keys(notebooksCapabilities.actions).sort()).toEqual([
+      "annotation.accept",
+      "annotation.create",
+      "annotation.delete",
+      "annotation.edit",
+      "annotation.reject",
+      "annotation.reply",
+      "annotation.resolve",
+      "annotation.restore",
+      "annotation.undo-accept",
       "comment.create",
       "comment.delete",
       "comment.update",
@@ -670,7 +742,23 @@ describe("notebooks capabilities", () => {
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id)
         .sort(),
-    ).toEqual(["comment.create", "comment.delete", "comment.update", "note.create", "note.edit", "note.move"]);
+    ).toEqual([
+      "annotation.accept",
+      "annotation.create",
+      "annotation.delete",
+      "annotation.edit",
+      "annotation.reject",
+      "annotation.reply",
+      "annotation.resolve",
+      "annotation.restore",
+      "annotation.undo-accept",
+      "comment.create",
+      "comment.delete",
+      "comment.update",
+      "note.create",
+      "note.edit",
+      "note.move",
+    ]);
     expect(notebooksCapabilities.actions["comment.create"]).toMatchObject({
       destructive: false,
       openWorld: false,
@@ -788,6 +876,7 @@ describe("notebooks capabilities", () => {
     const getCurrentWithContent = trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
       ...note,
       yjsSnapshot: "private-snapshot",
+      yjsRestoreRevision: "0",
       historyIncomplete: true,
     });
 
@@ -800,7 +889,14 @@ describe("notebooks capabilities", () => {
     expect(getByShortId).toHaveBeenCalledWith({ shortId: note.shortId });
     expect(getCurrentWithContent).toHaveBeenCalledWith({ id: note.id });
     expect(result.data.refs).toEqual([
-      { type: "notebooks.note", id: note.shortId, title: note.title, preview: notebook.name, icon: "ti ti-file-text" },
+      {
+        type: "notebooks.note",
+        id: note.shortId,
+        title: note.title,
+        preview: notebook.name,
+        icon: "ti ti-file-text",
+        context: `Note in ${notebook.name}`,
+      },
       {
         type: "notebooks.notebook",
         id: notebook.shortId,
@@ -999,7 +1095,7 @@ describe("notebooks capabilities", () => {
 
     expect(result.ok).toBeTrue();
     if (result.ok) {
-      expect(result.data.summary).toBe(`Added a comment to “${note.title}”.`);
+      expect(result.data.summary).toBe(`Added a post to the page discussion of “${note.title}”.`);
       expect(capabilityResultSchema(notebooksCapabilities.actions["comment.create"].data).safeParse(result.data).success).toBeTrue();
       expect(result.data.data).toMatchObject({ id: createdComment.shortId, notebookId: notebook.shortId, noteId: note.shortId });
     }
@@ -1088,7 +1184,12 @@ describe("notebooks capabilities", () => {
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
 
+    trackedSpy(spyOn(annotationStore, "authorize")).mockResolvedValue(ok({ note, canWrite: true }));
     const results: CapabilityActionReviewResult[] = [
+      await notebooksCapabilities.actions["annotation.create"].review!(
+        { noteId: note.shortId, quote: "passage", body: "Review" },
+        userContext,
+      ),
       await notebooksCapabilities.actions["comment.create"].review!(
         { noteId: note.shortId, content: "A useful observation." },
         userContext,
@@ -1216,4 +1317,145 @@ test("panel place refs select the owning app's public resource reader", () => {
   const reader = resolveCapabilityResourceReader(manifest, ref);
   expect(reader?.localId).toBe("notebook.read");
   expect(notebooksCapabilities.queries["notebook.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
+});
+
+for (const [locale, prefix] of [
+  ["en", "Note in"],
+  ["de", "Notiz in"],
+] as const) {
+  test(`note reader returns its notebook context in ${locale}`, async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
+      ...note,
+      contentMd: "Plan",
+      yjsSnapshot: null,
+      yjsRestoreRevision: "0",
+    });
+    const getNotebook = trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const operation = notebooksCapabilities.queries["note.read"];
+    const read = async () => {
+      const result = await operation.run(operation.input.parse({ id: note.shortId }), { ...userContext, locale });
+      if (!result.ok) throw new Error("Expected note");
+      expect(capabilityResultSchema(NoteDetailDataSchema).safeParse(result.data).success).toBeTrue();
+      expect(result.data.data.container).toMatchObject({ ref: { type: "notebooks.notebook", id: notebook.shortId }, permission: "read" });
+      const view = assertResourceView(result.data, { type: "notebooks.notebook", id: notebook.shortId });
+      expect(view).toMatchObject({ title: note.title, permission: "read" });
+      const ref = result.data.refs![0]!;
+      if (ref.type !== "notebooks.note") throw new Error("Expected note reference");
+      expect(view.context).toBe(ref.context);
+      return ref;
+    };
+    expect(await read()).toMatchObject({ context: `${prefix} ${notebook.name}` });
+    expect(await read()).not.toHaveProperty("status");
+    getNotebook.mockResolvedValue({ ...notebook, name: "x".repeat(200) });
+    expect((await read()).context).toHaveLength(200);
+    getNotebook.mockResolvedValue({ ...notebook, name: "Team\nNotes" });
+    expect((await read()).context).toBe(`${prefix} Team Notes`);
+  });
+}
+
+test("notebook.activity bounds escaped actor labels and resumes without dropping bucket positions", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    id: String(index + 1),
+    cursor: `position-${index + 1}`,
+    notebook: { id: notebookId, shortId: notebook.shortId, name: notebook.name, icon: null },
+    note: { id: noteId, shortId: note.shortId, title: note.title },
+    noteVersionId: null,
+    actor: { kind: "user" as const, id: serviceAccountId, displayName: "\u0001".repeat(5000), avatarHash: null },
+    action: "note.edited",
+    metadata: {},
+    occurrenceCount: 1,
+    createdAt,
+    lastOccurredAt: createdAt,
+  }));
+  trackedSpy(spyOn(activity, "list")).mockImplementation(async (input) => {
+    const offset = input.cursor ? Number(input.cursor.replace("position-", "")) : 0;
+    return { items: rows.slice(offset), nextCursor: null };
+  });
+  const operation = notebooksCapabilities.queries["notebook.activity"];
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await operation.run(operation.input.parse({ notebook: notebook.shortId, limit: 100, cursor }), userContext);
+    if (!result.ok) throw new Error("Expected an activity page");
+    expect(notebookEnvelopeBytes(result.data)).toBeLessThanOrEqual(256 * 1024 - 1024);
+    expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    ids.push(...result.data.data.map((row) => row.id));
+    cursor = result.data.page?.hasMore ? result.data.page.nextCursor : undefined;
+    if (ids.length > rows.length) throw new Error("Activity cursor repeated a page");
+  } while (cursor);
+  expect(ids).toEqual(rows.map((row) => row.id));
+});
+
+test("notebook.activity stops before listing when the owning reader denies the container", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("none");
+  const list = trackedSpy(spyOn(activity, "list")).mockResolvedValue({ items: [], nextCursor: null });
+  const operation = notebooksCapabilities.queries["notebook.activity"];
+  const result = await operation.run(operation.input.parse({ notebook: notebook.shortId }), userContext);
+  expect(result.ok).toBeFalse();
+  if (!result.ok) expect(result.error.status).toBe(404);
+  expect(list).not.toHaveBeenCalled();
+});
+
+test("declares compatible discussions and standard reader views", () => {
+  const manifest = compileCapabilityManifest("notebooks", notebooksCapabilities);
+  expect(discussionsIssues(manifest)).toEqual([]);
+  for (const type of ["notebook", "note"]) expect(typeViewIssues(manifest, type)).toEqual([]);
+  expect(manifest.discussions).toEqual({ item: "note", containers: "notebook.containers", activity: "notebook.activity" });
+  expect(manifest.resourceTypes).toContainEqual({ type: "notebook", view: true, readable: true });
+  expect(manifest.resourceTypes).toContainEqual({ type: "note", container: "notebook", view: true, readable: true });
+});
+
+for (const permission of ["read", "write", "admin", "none"] as const) {
+  test(`standard notebook and note views authorize ${permission} access`, async () => {
+    trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue(permission);
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" });
+    const container = await notebooksCapabilities.queries["notebook.read"].run({ id: notebook.shortId }, { ...userContext, locale: "de" });
+    const operation = notebooksCapabilities.queries["note.read"];
+    const item = await operation.run(operation.input.parse({ id: note.shortId }), userContext);
+    expect(container.ok).toBe(permission !== "none");
+    expect(item.ok).toBe(permission !== "none");
+    if (permission === "none") return;
+    if (container.ok) expect(assertResourceView(container.data)).toEqual({ title: notebook.name, context: "Notizbuch", permission });
+    if (item.ok) expect(assertResourceView(item.data, { type: "notebooks.notebook", id: notebook.shortId }).permission).toBe(permission);
+  });
+}
+
+test("activity accepts the shared container and published notebook alias and rejects ambiguity", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+  const list = trackedSpy(spyOn(activity, "list")).mockResolvedValue({ items: [], nextCursor: null });
+  const operation = notebooksCapabilities.queries["notebook.activity"];
+  for (const input of [
+    { notebook: notebook.shortId },
+    { container: notebook.shortId },
+    { container: notebook.shortId, notebook: notebook.shortId },
+  ]) {
+    const result = await operation.run(operation.input.parse({ ...input, timeZone: "Europe/Berlin" }), userContext);
+    expect(result.ok && result.data.data).toEqual([]);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ notebookId }));
+  }
+  expect(operation.input.safeParse({}).success).toBeFalse();
+  expect(operation.input.safeParse({ container: "other1", notebook: notebook.shortId }).success).toBeFalse();
+});
+
+test("discussion containers preserve authorized list pagination", async () => {
+  trackedSpy(spyOn(notebookStore, "listWithPermission")).mockResolvedValue({ items: [{ ...notebook, permission: "read" }], total: 2 });
+  const operation = notebooksCapabilities.queries["notebook.containers"];
+  const first = await operation.run(operation.input.parse({ query: "Knowledge", limit: 1 }), userContext);
+  if (!first.ok) throw new Error("Expected containers");
+  expect(operation.data.safeParse(first.data.data).success).toBeTrue();
+  expect(first.data.data).toEqual({
+    items: [{ ref: { type: "notebooks.notebook", id: notebook.shortId }, title: notebook.name }],
+    next: expect.any(String),
+  });
+  const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
+  expect(last.ok && last.data.data.next).toBeNull();
 });

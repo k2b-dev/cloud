@@ -1,8 +1,9 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { appAudienceRoles, hasAnyAppRole } from "../../_internal/app-roles";
 import { getApp, listApps } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
 import type { RequestActor } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import type { RequestAuthority } from "../../server/middleware/auth";
 import { resolveAppPresentations } from "../../shared/app-presentation";
 import { type HelpArticleLink, helpLocaleChain, parseHelpReference } from "../../shared/help";

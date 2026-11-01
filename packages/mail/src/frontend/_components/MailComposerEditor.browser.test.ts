@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
 import { renderComposeContent } from "../../service/compose-renderer";
 import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
@@ -88,8 +88,7 @@ const phone: BrowserContextOptions = { viewport: { width: 375, height: 740 }, is
 const load = async (options: { context: BrowserContextOptions; theme: "light" | "dark"; locale: "en" | "de" }) => {
   const page = await (await browser.newContext(options.context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailComposerEditorHarnessOptions) => window.mountComposerEditor(harnessOptions), {
@@ -101,8 +100,7 @@ const load = async (options: { context: BrowserContextOptions; theme: "light" | 
 const loadComposer = async (context: BrowserContextOptions, locale: "en" | "de") => {
   const page = await (await browser.newContext(context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   await page.evaluate((options: MailComposerHarnessOptions) => window.mountComposer(options), {
     locale,
@@ -149,24 +147,24 @@ describe("Mail composer recovery", () => {
         await page.goto(server.url.href);
         if (label === "tablet dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
         await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
-        const editor = page.locator("textarea").first();
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
         await editor.fill("First autosave text");
-        await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(6, 6));
+        await page.evaluate(() => window.setComposerCaret(6));
         await page.clock.fastForward(800);
         await page.waitForURL(/Draft1/);
         await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
         expect(
-          await editor.evaluate((element: HTMLTextAreaElement) => ({
-            focused: document.activeElement === element,
-            caret: element.selectionStart,
-          })),
+          await page.evaluate(() => {
+            const { focused, caret } = window.composerEditorState();
+            return { focused, caret };
+          }),
         ).toEqual({ focused: true, caret: 6 });
         await page.evaluate(() => window.expireComposerSession());
         await editor.fill("Preserved after sign-in expires");
         await page.clock.fastForward(800);
         const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
         await signIn.waitFor();
-        expect(await editor.inputValue()).toBe("Preserved after sign-in expires");
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved after sign-in expires");
         const returnUrl = page.url();
         await Promise.all([page.waitForEvent("load"), signIn.click()]);
         expect(page.url()).toBe(returnUrl);
@@ -174,7 +172,8 @@ describe("Mail composer recovery", () => {
         await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null }));
         await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
         await page.getByRole("tab", { name: "Write", exact: true }).click();
-        expect(await page.locator("textarea").first().inputValue()).toBe("Preserved after sign-in expires");
+        await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved after sign-in expires");
       } finally {
         await page.context().close();
       }
@@ -187,16 +186,18 @@ describe("Mail composer recovery", () => {
       await page.goto(server.url.href);
       await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
       await page.evaluate(() => window.expireComposerSession());
-      await page.locator("textarea").first().fill("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).fill("Preserved before first save");
       await page.clock.fastForward(800);
       const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
       await signIn.waitFor();
       await Promise.all([page.waitForEvent("load"), signIn.click()]);
       await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
-      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+      expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved before first save");
       await page.clock.fastForward(800);
       await page.waitForURL(/Draft1/);
-      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+      expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved before first save");
     } finally {
       await page.context().close();
     }
@@ -254,6 +255,36 @@ describe("Mail composer preview", () => {
       }, 30_000);
     }
   }
+});
+
+describe("Mail composer layout", () => {
+  test("puts the formatting toolbar right under the subject and the pane tabs, aligned with the preview", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    const errors = pageErrors(page);
+    try {
+      await page.goto(server.url.href);
+      await page.evaluate(() => window.mountComposer({ locale: "de", intent: "new", signatureTemplateId: null, seed: true, split: true }));
+      const toolbar = page.getByRole("toolbar", { name: "Formatierung", exact: true });
+      await toolbar.waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const subject = await page.getByRole("textbox", { name: "Betreff", exact: true }).boundingBox();
+      const write = await page.getByRole("tab", { name: "Verfassen", exact: true }).boundingBox();
+      const preview = await page.getByRole("tab", { name: "Vorschau", exact: true }).boundingBox();
+      const bold = await toolbar.getByRole("button", { name: "Fett", exact: true }).boundingBox();
+      if (!subject || !write || !preview || !bold) throw new Error("The composer layout is not visible");
+      // No empty status row or doubled padding: subject → pane tabs → toolbar with the normal small gaps only.
+      expect(write.y - (subject.y + subject.height)).toBeLessThanOrEqual(20);
+      expect(bold.y - (write.y + write.height)).toBeLessThanOrEqual(20);
+      expect(bold.y - (subject.y + subject.height)).toBeLessThanOrEqual(64);
+      // Both panes start on the same line.
+      expect(Math.abs(preview.y - write.y)).toBeLessThanOrEqual(1);
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
+      expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });
 
 describe("Mail composer action bar", () => {
@@ -621,5 +652,101 @@ describe("Mail composer preview with a table", () => {
         await page.context().close();
       }
     }, 30_000);
+  }
+});
+
+describe("shared Mail text editor", () => {
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`loads one labeled standalone plain editor and reports its edits on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate(() => window.mountComposerEditor({ locale: "en", body: "Plain body", format: "plain" }));
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
+        await editor.waitFor();
+        expect(await editor.count()).toBe(1);
+        expect(await editor.getAttribute("contenteditable")).toBe("true");
+        expect(await page.evaluate(() => window.editorSource())).toBe("Plain body");
+        expect(await page.locator('.k2b-placeholder[data-state="loading"]').count()).toBe(0);
+        expect(await page.getByRole("tablist").count()).toBe(0);
+        await editor.fill("Edited plain body");
+        expect(await page.evaluate(() => window.editorSource())).toBe("Edited plain body");
+        expect(await page.evaluate(() => window.editorBody())).toBe("Edited plain body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test(`edits table cells, offers no Markdown view, and keeps the same text in the plain view on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const initial = "Before\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n\nAfter";
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((body) => window.mountComposerEditor({ locale: "en", body, editorActive: true }), initial);
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
+        await cell.fill("Ink");
+        const expected = initial.replace("Paper", "Ink");
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
+        expect(await page.evaluate(() => window.editorSource())).toBe(expected);
+        // The composer always edits formatted: no Formatted/Markdown switch.
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.getByRole("radio").count()).toBe(0);
+        expect(await page.locator(".k2b-text-editor").getAttribute("data-mode")).toBe("formatted");
+        await page.evaluate(() => window.setEditorFormat("plain"));
+        await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
+        expect(await page.evaluate(() => window.editorSource())).toBe(expected);
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
+        // innerText adds layout-dependent separators around empty CodeMirror lines.
+        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
+        expect(await page.locator(".k2b-ste-table").count()).toBe(0);
+        await page.evaluate(() => window.setEditorEditable(false));
+        await page.waitForSelector('.cm-content[contenteditable="false"]');
+        await page.evaluate(() => window.replaceEditorBody("Restored body"));
+        expect(await page.locator(".cm-content").innerText()).toBe("Restored body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test(`opens a draft written in the former Markdown view formatted with identical text on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      // Drafts always stored Markdown; the removed switch only changed how the editor showed it.
+      const draft = [
+        "## Angebot",
+        "",
+        "Hallo **Jana**, hier ist *unser* Angebot mit [Link](https://example.test/angebot):",
+        "",
+        "- Visitenkarten",
+        "- Versand",
+        "",
+        "| Position | Preis |",
+        "| :--- | ---: |",
+        "| Druck | 89,00 € |",
+        "",
+        "> Gilt bis Freitag.",
+        "",
+        "`Code` und ~~alt~~",
+      ].join("\n");
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((body) => window.mountComposerEditor({ locale: "de", body, editorActive: true }), draft);
+        await page.locator(".k2b-ste-table").first().waitFor();
+        expect(await page.locator(".k2b-text-editor").getAttribute("data-mode")).toBe("formatted");
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.evaluate(() => window.editorSource())).toBe(draft);
+        expect(await page.evaluate(() => window.editorBody())).toBe(draft);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
   }
 });

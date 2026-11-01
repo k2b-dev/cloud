@@ -1,8 +1,9 @@
+import { sql } from "@k2b/cloud";
 import type { MutationResult } from "@k2b/cloud/contracts";
-import { deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
+import { createAccess, deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { logger, serviceAccounts, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
+import { publishNotebooksEvent } from "../app-events";
 import { isNoteDeletePermission, type NoteDeletePermission } from "../lib/note-delete-permission";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
 import { isPresentationMode, type PresentationMode } from "../lib/presentation-mode";
@@ -10,7 +11,6 @@ import { generateUniqueShortId } from "../lib/short-id";
 import {
   buildNotebookVisibleAccessCondition,
   getNotebookPermission,
-  grantNotebookAccess,
   listNotebookAccess,
   mayReadAcrossNotebooks,
   NOTEBOOK_RESOURCE_TYPE,
@@ -19,7 +19,7 @@ import {
 import * as activity from "./activity";
 import helloMd from "./hello.md" with { type: "text" };
 import * as notes from "./notes";
-import { invalidated, notebookUpdated } from "./workspace-events";
+import { invalidated, notebookUpdated, workspaceTransaction } from "./workspace-events";
 
 // ==========================
 // Types
@@ -79,6 +79,12 @@ type DbNotebookAdmin = DbNotebook & {
 
 const log = logger("notebooks:notebooks");
 
+class NotebookCreateRefusal extends Error {
+  constructor(readonly result: Extract<MutationResult<Notebook>, { ok: false }>) {
+    super(result.error);
+  }
+}
+
 export type NotebookAdminListItem = Notebook & {
   permissionCount: number;
 };
@@ -136,18 +142,6 @@ const noteExistsInNotebook = async (noteId: string, notebookId: string): Promise
     ) AS exists
   `;
   return row?.exists ?? false;
-};
-
-const cleanupFailedCreate = async (notebookId: string, accessId?: string): Promise<void> => {
-  try {
-    await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookId}::uuid`;
-    if (accessId) await deleteAccess({ id: accessId });
-  } catch (error) {
-    log.error("Failed to remove partially created notebook", {
-      notebookId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
 };
 
 // ==========================
@@ -312,7 +306,7 @@ export const overviewStats = async (params: { notebookIds: string[] }): Promise<
     SELECT
       n.id,
       (SELECT COUNT(*)::int FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS note_count,
-      (SELECT MAX(nt.updated_at) FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS last_note_at
+      (SELECT nt.updated_at FROM notebooks.notes nt WHERE nt.notebook_id = n.id ORDER BY nt.updated_at DESC, nt.id LIMIT 1) AS last_note_at
     FROM notebooks.notebooks n
     WHERE n.id = ANY(${toPgUuidArray(params.notebookIds)}::uuid[])
   `;
@@ -486,7 +480,9 @@ export const create = async (params: {
   const seedWelcome = params.seedWelcome ?? true;
 
   const shortId = await generateUniqueShortId("notebook");
-  const [row] = await sql<DbNotebook[]>`
+  try {
+    const row = await workspaceTransaction(async (tx) => {
+      const [row] = await tx<DbNotebook[]>`
     INSERT INTO notebooks.notebooks (short_id, name, description, icon, created_by)
     VALUES (${shortId}, ${data.name}, ${data.description ?? null}, ${data.icon ?? null}, ${creatorId}::uuid)
     RETURNING
@@ -504,49 +500,27 @@ export const create = async (params: {
       created_at,
       updated_at
   `;
-
-  if (!row) {
-    return { ok: false, error: "Failed to create notebook", status: 500 };
-  }
-
-  const accessResult = await grantNotebookAccess({
-    notebookId: row.id,
-    principal: { type: "user", userId: creatorId },
-    permission: "admin",
-  });
-  if (!accessResult.ok) {
-    await cleanupFailedCreate(row.id);
-    return { ok: false, error: accessResult.error.message, status: accessResult.error.status };
-  }
-
-  try {
-    await activity.record({
-      notebookId: row.id,
-      actor: { kind: "user", id: creatorId },
-      action: "notebook.created",
+      if (!row) throw new NotebookCreateRefusal({ ok: false, error: "Failed to create notebook", status: 500 });
+      const access = await createAccess({ principal: { type: "user", userId: creatorId }, permission: "admin" }, tx);
+      if (!access.ok) throw new NotebookCreateRefusal({ ok: false, error: access.error.message, status: access.error.status });
+      await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${row.id}::uuid, ${access.data.id}::uuid)`;
+      await activity.record({ notebookId: row.id, actor: { kind: "user", id: creatorId }, action: "notebook.created" }, tx);
+      await publishNotebooksEvent(tx, "notebook.created", row.short_id, row.short_id);
+      if (seedWelcome) {
+        const created = await notes.create({ data: { notebookId: row.id, contentMd: helloMd }, creatorId, exactContent: true, tx });
+        if (!created.ok) throw new NotebookCreateRefusal(created);
+      }
+      await invalidated({ notebookId: row.id, reason: "permissions", scopes: ["permissions"] }, tx);
+      await notebookUpdated({ id: row.id }, tx);
+      return row;
     });
+
+    const notebook = mapToNotebook(row);
+    return { ok: true, data: notebook };
   } catch (error) {
-    await cleanupFailedCreate(row.id, accessResult.data.id);
+    if (error instanceof NotebookCreateRefusal) return error.result;
     throw error;
   }
-
-  if (seedWelcome) {
-    const noteResult = await notes.create({
-      data: {
-        notebookId: row.id,
-        contentMd: helloMd,
-      },
-      creatorId,
-    });
-    if (!noteResult.ok) {
-      await cleanupFailedCreate(row.id, accessResult.data.id);
-      return noteResult;
-    }
-  }
-
-  const notebook = mapToNotebook(row);
-  await notebookUpdated(notebook);
-  return { ok: true, data: notebook };
 };
 
 /**
@@ -600,7 +574,9 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
   }
 
   // Only an explicit change writes the deletion rule, so an update from a stale snapshot cannot undo an admin's choice.
-  const [row] = await sql<DbNotebook[]>`
+  const row = await workspaceTransaction(async (tx) => {
+    const [before] = await tx<DbNotebook[]>`SELECT * FROM notebooks.notebooks WHERE id = ${id}::uuid FOR UPDATE`;
+    const [row] = await tx<DbNotebook[]>`
     UPDATE notebooks.notebooks
     SET name = ${name},
         description = ${description},
@@ -626,13 +602,28 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
       created_at,
       updated_at
   `;
+    if (
+      row &&
+      before &&
+      (before.name !== row.name ||
+        before.description !== row.description ||
+        before.icon !== row.icon ||
+        before.homepage_note_id !== row.homepage_note_id ||
+        before.default_presentation_mode !== row.default_presentation_mode ||
+        before.default_note_title_template !== row.default_note_title_template ||
+        before.note_delete_permission !== row.note_delete_permission)
+    ) {
+      await publishNotebooksEvent(tx, "notebook.updated", row.short_id, row.short_id);
+    }
+    if (row) await notebookUpdated({ id: row.id }, tx);
+    return row;
+  });
 
   if (!row) {
     return { ok: false, error: "Failed to update notebook", status: 500 };
   }
 
   const notebook = (await get({ id: row.id })) ?? mapToNotebook(row);
-  await notebookUpdated(notebook);
   return { ok: true, data: notebook };
 };
 
@@ -641,10 +632,12 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
  */
 export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
   const accessEntries = await listNotebookAccess(params.id);
-  const result = await sql`
-    DELETE FROM notebooks.notebooks
-    WHERE id = ${params.id}::uuid
-  `;
+  const result = await workspaceTransaction(async (tx) => {
+    const result = await tx`DELETE FROM notebooks.notebooks WHERE id = ${params.id}::uuid`;
+    if (result.count > 0)
+      await invalidated({ notebookId: params.id, reason: "bulk", scopes: ["notebook", "tree", "tags", "references", "permissions"] }, tx);
+    return result;
+  });
 
   if (result.count === 0) {
     return { ok: false, error: "Notebook not found", status: 404 };
@@ -667,6 +660,5 @@ export const remove = async (params: { id: string }): Promise<MutationResult<voi
     resourceId: params.id,
   });
 
-  await invalidated({ notebookId: params.id, reason: "bulk", scopes: ["notebook", "tree", "tags", "references", "permissions"] });
   return { ok: true, data: undefined };
 };

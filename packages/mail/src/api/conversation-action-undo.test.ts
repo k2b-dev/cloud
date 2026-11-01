@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import * as platformServices from "@k2b/cloud/services";
 import { oauthTokens } from "@k2b/cloud/services";
-import { redis } from "bun";
 import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
 import { publicResources, triage } from "../service";
 import app, { type ApiType } from ".";
+
+useUnitClients();
 
 const base = "/mailboxes/{mailboxId}/conversations/{conversationId}";
 const user = {
@@ -78,7 +81,7 @@ describe("Mail conversation action undo route", () => {
     const conversationId = "33333333-3333-4333-8333-333333333333";
     const commandId = "44444444-4444-4444-8444-444444444444";
     const inverseId = "55555555-5555-4555-8555-555555555555";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const project = spyOn(publicResources, "publicIds");
@@ -103,7 +106,7 @@ describe("Mail conversation action undo route", () => {
   });
 
   test("rejects malformed, oversized and non-strict undo inputs before calling the service", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue("22222222-2222-4222-8222-222222222222");
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue("33333333-3333-4333-8333-333333333333");
     const undo = spyOn(triage, "undoConversationTriageCommands");

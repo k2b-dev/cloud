@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
@@ -31,6 +31,12 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
       deadlineAllDay: item.deadlineAllDay,
     })),
   };
+}
+
+/** The counts of the overview's views alone, for a line about the reader's work, such as the Cloud app's Start. */
+export async function loadOverviewCounts(params: { userId: string; dateConfig: DateContext }): Promise<OverviewWork["counts"]> {
+  const dashboard = await dashboardSnapshot({ ...params, view: "counts", todoLimit: 0 });
+  return { mine: dashboard.assignedToMeCount, today: dashboard.todayCount, upcoming: dashboard.upcomingCount };
 }
 
 export type SpaceOverviewStats = { spaceId: string; openItemCount: number };

@@ -9,6 +9,7 @@ import {
   CreateGroupSchema,
   createPagination,
   ErrorResponseSchema,
+  GroupManagerInputSchema,
   GroupMemberInputSchema,
   MessageResponseSchema,
   PaginationQuerySchema,
@@ -29,17 +30,6 @@ type MessageResponse = z.infer<typeof MessageResponseSchema>;
 const GroupPosixResponseSchema = MessageResponseSchema.extend({ gidNumber: z.number().nullable() });
 const GroupIdParamSchema = z.object({ id: z.uuid() });
 
-const requireGroupMutationContext = async (c: Context<AuthContext>, groupId: string) => {
-  const group = await accountsService.group.get({ id: groupId });
-  if (!group) {
-    return {
-      error: await respond(c, fail(err.notFound("Group not found"))),
-    };
-  }
-
-  return { group };
-};
-
 /**
  * Shared body for the four near-identical add/remove member|manager handlers.
  * Each route only differs in HTTP verb, OpenAPI metadata, the service method
@@ -49,9 +39,9 @@ const requireGroupMutationContext = async (c: Context<AuthContext>, groupId: str
 type GroupRelationMutation = (config: {
   actor: ReturnType<typeof toAccountsActor>;
   id: string;
-  provider: "local" | "ipa";
   userId?: string;
   groupId?: string;
+  serviceAccountId?: string;
 }) => Promise<Result<unknown>>;
 
 const handleGroupRelation = async (
@@ -62,20 +52,17 @@ const handleGroupRelation = async (
   verbPhrase: string,
 ) => {
   const { type, id: principalId } = input;
-  const { group, error } = await requireGroupMutationContext(c, groupId);
-  if (error || !group) return error!;
-
   return respond(c, async () => {
     const result = await mutation({
       actor: toAccountsActor(expectUserBackedActor(c)),
       id: groupId,
-      provider: group.provider,
       userId: type === "user" ? principalId : undefined,
       groupId: type === "group" ? principalId : undefined,
+      serviceAccountId: type === "service_account" ? principalId : undefined,
     });
     if (!result.ok) return result;
     return ok({
-      message: `${type === "user" ? "User" : "Group"} "${principalId}" ${verbPhrase}.`,
+      message: `${type === "user" ? "User" : type === "group" ? "Group" : "Service account"} "${principalId}" ${verbPhrase}.`,
     });
   });
 };
@@ -91,7 +78,7 @@ const app = new Hono<AuthContext>()
       summary: "List groups",
       description:
         "List groups with pagination and optional search. Use scope=managed, scope=member, or scope=all to choose the current view. " +
-        "Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless include_personal=true.",
+        "Personal Linux groups are excluded. Inspect the owning user's Linux identity for diagnostic attributes.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(GroupsListResponseSchema, "Paginated list of groups"),
@@ -106,7 +93,6 @@ const app = new Hono<AuthContext>()
         ...SearchQuerySchema.shape,
         scope: z.enum(["managed", "member", "all"]).optional(),
         provider: z.enum(["local", "ipa"]).optional(),
-        include_personal: z.enum(["true", "false"]).optional(),
       }),
     ),
     async (c) => {
@@ -116,7 +102,7 @@ const app = new Hono<AuthContext>()
 
       const groupsPage = await accountsService.group.list({
         pagination: { page: params.page, perPage: params.perPage },
-        filter: { search: query.search, includePersonal: query.include_personal === "true" },
+        filter: { search: query.search },
         scope: {
           userId: query.scope === "all" ? undefined : user.id,
           mode: query.scope ?? "member",
@@ -136,30 +122,51 @@ const app = new Hono<AuthContext>()
   // Add/remove members — accessible by full-account users (backend/provider enforces permissions)
   .post(
     "/:id/members",
-    auth.requireRole("user"),
+    auth.requireRole("authenticated"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Add member to group",
-      description: "Add a user or group as a member. Admins and group managers can perform this action where allowed.",
+      description:
+        "Add a user, group, or active standalone/agent account as a local group member. Admins, human group managers, and explicitly granted machine managers can perform this action where allowed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Member added"),
         400: jsonResponse(ErrorResponseSchema, "Failed to add member"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Group management access required"),
+        409: jsonResponse(ErrorResponseSchema, "Membership already exists or personal group relationship is unavailable"),
       },
     }),
     v("param", GroupIdParamSchema),
     v("json", GroupMemberInputSchema),
-    (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.add, "added as member"),
+    (c) => {
+      const actor = c.get("actor");
+      if (actor.kind !== "service_account" || actor.delegatedUser)
+        return handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.add, "added as member");
+      const input = c.req.valid("json");
+      return respond(c, async () => {
+        const result = await accountsService.group.member.add({
+          actor,
+          id: c.req.valid("param").id,
+          requestId: c.req.header("x-request-id"),
+          userId: input.type === "user" ? input.id : undefined,
+          groupId: input.type === "group" ? input.id : undefined,
+          serviceAccountId: input.type === "service_account" ? input.id : undefined,
+        });
+        return result.ok ? ok({ message: "Group membership updated" }) : result;
+      });
+    },
   )
   .delete(
     "/:id/members",
-    auth.requireRole("user"),
+    auth.requireRole("authenticated"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Remove member from group",
-      description: "Remove a user or group member. Admins and group managers can perform this action where allowed.",
+      description:
+        "Remove a user, group, or service account member. Admins, human group managers, and explicitly granted machine managers can perform this action where allowed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Member removed"),
@@ -170,34 +177,54 @@ const app = new Hono<AuthContext>()
     }),
     v("param", GroupIdParamSchema),
     v("json", GroupMemberInputSchema),
-    (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.remove, "removed"),
+    (c) => {
+      const actor = c.get("actor");
+      if (actor.kind !== "service_account" || actor.delegatedUser)
+        return handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.remove, "removed");
+      const input = c.req.valid("json");
+      return respond(c, async () => {
+        const result = await accountsService.group.member.remove({
+          actor,
+          id: c.req.valid("param").id,
+          requestId: c.req.header("x-request-id"),
+          userId: input.type === "user" ? input.id : undefined,
+          groupId: input.type === "group" ? input.id : undefined,
+          serviceAccountId: input.type === "service_account" ? input.id : undefined,
+        });
+        return result.ok ? ok({ message: "Group membership updated" }) : result;
+      });
+    },
   )
   .post(
     "/:id/managers",
     auth.requireRole("admin"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Add manager to group",
-      description: "Add a user or group as a member manager. This matches FreeIPA and requires admin access.",
+      description:
+        "Grant management to a user or group, or directly to an active standalone/agent account for a local group. Requires administrator access.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Manager added"),
         400: jsonResponse(ErrorResponseSchema, "Failed to add manager"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        409: jsonResponse(ErrorResponseSchema, "Manager already exists or personal group relationship is unavailable"),
       },
     }),
     v("param", GroupIdParamSchema),
-    v("json", GroupMemberInputSchema),
+    v("json", GroupManagerInputSchema),
     (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.manager.add, "added as manager"),
   )
   .delete(
     "/:id/managers",
     auth.requireRole("admin"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Remove manager from group",
-      description: "Remove a user or group member manager. This matches FreeIPA and requires admin access.",
+      description: "Revoke a user, group, or direct machine management grant. Requires administrator access.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Manager removed"),
@@ -207,7 +234,7 @@ const app = new Hono<AuthContext>()
       },
     }),
     v("param", GroupIdParamSchema),
-    v("json", GroupMemberInputSchema),
+    v("json", GroupManagerInputSchema),
     (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.manager.remove, "removed as manager"),
   )
   // All routes below require admin role

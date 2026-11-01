@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import type { Field } from "./types";

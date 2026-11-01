@@ -6,7 +6,7 @@ description: Filegate verbinden, Verzeichnisse prüfen und Archiv sowie Lebenszy
 order: 200
 ---
 
-Öffne **Dateien-Administration**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
+Öffne **Dateien-Administration**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben, Dateiaktivität und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
 
 ## Ablagen unter Einstellungen verbinden {icon="plug"}
 
@@ -14,9 +14,23 @@ Trage die **Backend-URL** und den **Backend-Token** von Filegate ein. Die Anwend
 
 Aktiviere Cloud und FreeIPA unabhängig und wähle ihre Filegate-Roots. **Erweiterte Pfade** enthält den optionalen Basispfad und die dazu relativen Nutzer-, Gruppen- und Archivpfade. Halte diese Pfade getrennt, damit sich Bereiche und reservierte Verzeichnisse nicht überschneiden.
 
-Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigte Nutzerkonten und POSIX-Gruppen haben Verzeichnisse. **Lokale Verzeichnisse automatisch erstellen** ist zunächst ausgeschaltet. Die automatische Archivierung ist standardmäßig eingeschaltet und separat deaktivierbar. Sie archiviert verwaltete Verzeichnisse gelöschter lokaler Konten oder Gruppen sowie von Gruppen mit deaktiviertem POSIX. Die Dateien bleiben wiederherstellbar. Ein unbekannter Identitätszustand gilt nie als Löschung. FreeIPA hat keine automatische Erstellung oder Archivierung: Wähle die Verzeichnisaktionen ausdrücklich aus.
+Persönliche Cloud-Ablagen und Gruppenablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigte Nutzerkonten und POSIX-Gruppen haben Verzeichnisse. **Lokale Verzeichnisse automatisch erstellen** (`cloud.autoCreate`) ist zunächst ausgeschaltet. Die automatische Archivierung ist standardmäßig eingeschaltet und separat deaktivierbar. Sie archiviert verwaltete Verzeichnisse gelöschter lokaler Konten oder Gruppen sowie von Gruppen mit deaktiviertem POSIX. Die Dateien bleiben wiederherstellbar. Ein unbekannter Identitätszustand gilt nie als Löschung.
+
+Für FreeIPA-Nutzerablagen gibt es die unabhängige Einstellung `freeipa.autoCreate`, ebenfalls standardmäßig ausgeschaltet. Aktiviere sie in der Dateien-Konfiguration, um Ablagen für aktive FreeIPA-Nutzer mit vollständiger POSIX-UID und primärer GID anzulegen. Dabei gelten Root und Pfade des FreeIPA-Bereichs sowie die Unix-Eigentümerschaft des Nutzers. Die automatische Cloud-Erstellung bleibt unabhängig und verwendet die Eigentümerschaft des Daemons. FreeIPA-Gruppenablagen und Archivierung bleiben ausdrückliche Aktionen.
+
+Neue und bestehende berechtigte Nutzer werden beim Start, nach Konfigurationsänderungen und regelmäßig in Seiten mit höchstens 50 Konten geprüft. Nach Aktivierung der jeweiligen Einstellung werden ausstehende Ablagen erneut bearbeitet. Die Administration kann den Fortschritt pro Nutzer über `GET /api/filesv2/admin/provisioning` einschließlich des Zielbereichs `area` abfragen. Filtere Einträge mit `area=cloud|freeipa` und `state`; übergib den zurückgegebenen `nextCursor` als `after`, um fortzusetzen. Die Antwort enthält außerdem die Anzahl je vorhandenem Zustand und Bereich, unabhängig von diesen Filtern, sowie Abschlusszeitpunkt, Summen für verarbeitete, fertige, ausstehende und fehlgeschlagene Nutzer und den Laufzustand des Abgleichs.
+
+`auto_create_off` bedeutet, dass die automatische Erstellung für diesen Bereich aus ist. `posix_incomplete` bedeutet, dass UID oder primäre GID fehlen; bei FreeIPA hat dieser Zustand auch bei ausgeschalteter Erstellung Vorrang. `not_configured` weist auf eine fehlende Verbindung oder einen nicht verfügbaren Bereich hin. `done` bestätigt die Bereitstellung; `failed` enthält einen Fehlercode und wird beim Abgleich erneut versucht.
 
 **Collabora Online** bindet einen Editor für Textdokumente, Tabellen und Präsentationen an. Trage die **Collabora-Adresse** ein, von der Browser den Editor laden; bleibt sie leer, ist die Bearbeitung deaktiviert. Wähle das **Format neuer Dokumente**: OpenDocument oder Microsoft Office. **Erweitert** enthält zwei optionale Adressen für Umgebungen, in denen diese Anwendung Collabora oder Collabora diese Cloud über andere Adressen erreicht als Browser. Collabora muss die Adresse dieser Cloud erreichen können und diese Anwendung Collabora.
+
+## Maschinenablagen erstellen {icon="server"}
+
+Wähle unter **Einstellungen → Maschinenablagen** einen Agenten oder ein eigenständiges Dienstkonto und dann **Ablage erstellen**. Öffne die neue Ablage und erteile benannten Nutzern, Gruppen oder Maschinen Zugriff auf einen **Relativen Pfad**. Leer bedeutet die gesamte Ablage; ein engerer Pfad umfasst diese Datei oder diesen Ordner und alle Unterordner. Wähle **Lesen**, **Lesen und schreiben** oder **Lesen, schreiben und freigeben**. Eigentum allein gewährt auch dem Eigentümer keinen Zugriff.
+
+Maschinenablagen verwenden ein eigenes Cloud-Verzeichnis und die bestehende Dienstidentität von Dateien. Sie benötigen keine lokale Linux-Einrichtung und verwenden niemals die Unix-Identität einer Person. Maschinenablagen in FreeIPA sind ohne unabhängig eingerichtete Maschinenidentität nicht verfügbar. Der menschliche Verzeichnislebenszyklus und die automatische Archivierung erfassen Maschinenablagen nicht.
+
+Mit **Entziehen** entfernst du eine Pfadberechtigung. Die nächste Übertragungsanfrage oder Upload-Veröffentlichung prüft den aktuellen Zugriff erneut. Auch das Deaktivieren eines Maschinenkontos oder Sperren seines öffentlichen Links verweigert die nächste Anfrage; eine bereits zugelassene Übertragung kann enden. Scheitert die Erstellung, korrigiere die Verbindung und versuche es mit demselben Eigentümer erneut. Dateien setzt die vorhandene Zuordnung fort.
 
 ## Übersicht lesen {icon="layout-dashboard"}
 
@@ -59,6 +73,18 @@ Das Archiv zeigt ursprüngliche Pfade und Archivierungszeitpunkte. Öffne ein ar
 
 Für Eingänge gelten standardmäßig 100 MiB pro Datei und 1 GiB kumulativ insgesamt, auch für Links, die schon vor diesem Upgrade existierten. Bestätigte Uploads und offene Reservierungen zählen gemeinsam. Das Löschen empfangener Dateien gibt das Budget nicht frei. Der Abgleich läuft auch nach Ablauf oder Sperrung des Links weiter. Bei ungeklärten Übertragungen bleibt die Reservierung bestehen, bis ein verlässliches Ergebnis vorliegt. Prüfe den angezeigten Pfad, Fehler und die Sitzung. Ein fehlender Beleg bedeutet nicht, dass keine Datei geschrieben wurde.
 
+## Aktivität prüfen und exportieren {icon="activity"}
+
+**Aktivität** listet aufgezeichnete Änderungen an Dateien und Ordnern in lokalen Cloud-Ablagen, die neuesten zuerst, mit Zeit, Person, Änderung, Element, Ablage und Weg. Auf schmalen Bildschirmen zeigt sie dieselben Einträge als Liste wie in Dateien. Sie öffnet mit den letzten 30 Tagen. Filtere nach **Ablage**, **Wer**, **Was** und **Wann**, oder suche nach einem Namen oder einem alten Pfad. Filter und Suche bleiben in der Adresse erhalten.
+
+- **Läuft:** Die Änderung hat begonnen und ist noch nicht bestätigt.
+- **Ausgang unklar:** Dateien konnte das Ergebnis nicht bestätigen. Es sucht weiter nach einem Beleg in der Ablage.
+- **Ohne Eintrag in Cloud:** Dateien hat eine Änderung außerhalb von Cloud bemerkt, etwa über ein Netzlaufwerk. Solche Einträge nennen keine Person und keine Ursache.
+
+FreeIPA und andere POSIX-Ablagen haben weder Verlauf noch Export. Ihre Verlaufsansicht zeigt einen Hinweis, weil der Verlauf ihre Unix-Rechte nicht prüfen kann. Eine Aktion über mehrere Ablagen zeigt nur ihre lokale Cloud-Seite.
+
+**Exportieren** lädt die Einträge, die zu den Filtern passen, als CSV oder JSON Lines herunter. Wähle einen Zeitraum von höchstens einem Jahr und auf Wunsch eine Ablage; die Filter für Person, Änderung und Suche aus der Liste bleiben erhalten. Die Schaltfläche zeigt, wie viele Zeilen der Export enthält. Ein Export enthält höchstens 100.000 Zeilen; für mehr grenze Zeitraum, Ablage oder Filter ein. In CSV bekommt eine Zelle, die wie eine Tabellenformel beginnt, ein vorangestelltes Apostroph. Jeder Export steht im Audit-Log, auch wenn du den Download abbrichst. Ein fehlgeschlagener Download speichert nichts; starte ihn erneut. Unter Einstellungen legst du fest, wie lange der Verlauf aufbewahrt wird, von 30 bis 3.650 Tagen.
+
 ## Papierkorb und Versionen prüfen {icon="history"}
 
 Papierkorb- und Wiederherstellungsaktionen halten ihren Fortschritt vor dem Verschieben fest. Ein uneindeutiges Ergebnis bleibt offen und wird nicht als abgeschlossen ausgegeben. Direkt im `trash` gefundene Einträge können einen unbekannten ursprünglichen Pfad oder Löschzeitpunkt haben; zum Wiederherstellen muss dann ein Ziel angegeben werden. Vorhandene Ziele werden niemals ersetzt. Mehrfachaktionen können teilweise gelingen; prüfe die Einzelergebnisse und wiederhole nur fehlgeschlagene Teile.
@@ -67,7 +93,7 @@ Historische Versionen lassen sich nur über die Versionsaktion im administrative
 
 ## Terminal verwenden {icon="terminal"}
 
-`cld filesv2 admin inventory --storage freeipa --kind groups --json` liest denselben Bestand. Übergib einen zurückgegebenen `next`-Cursor als `--after`. `cld filesv2 admin configuration get --json` liest die Konfiguration. Übermittle eine vollständige bearbeitete Konfiguration mit `cld filesv2 admin configuration set --input-file ./filesv2.json` oder `--stdin`. Ein fehlender oder leerer `token` behält das Secret bei.
+`cld filesv2 admin inventory --storage freeipa --kind groups --json` liest denselben Bestand. Übergib einen zurückgegebenen `next`-Cursor als `--after`. `cld filesv2 admin configuration get --json` liest die Konfiguration. Übermittle eine vollständige bearbeitete Konfiguration mit `cld filesv2 admin configuration set --input-file ./filesv2.json --yes` oder `--stdin`. Ein fehlender oder leerer `token` behält das Secret bei.
 
 `cld filesv2 admin shares list --json` zeigt alle Links; `admin shares revoke <share-id> --yes` sperrt einen davon. `cld filesv2 admin uploads list --json` zeigt ungeklärte Eingangsreservierungen. Mit `--after` erreichst du weitere Seiten dieser Listen.
 
@@ -75,7 +101,7 @@ Verzeichnis- und Dateibefehle adressieren ein Verzeichnis als `<ablage>/<users|g
 
 ## Vorlagen verwalten {icon="template"}
 
-Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
+Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen, Agenten, eigenständige Dienstkonten oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
 
 Nutzer wählen **Hinzufügen → Vorlage** in einem beschreibbaren Ordner. Das Vorlagenrecht ersetzt niemals das Schreibrecht im Ziel. Das Ersetzen des Vorlageninhalts oder das Löschen einer Vorlage verändert keine bereits daraus erzeugten Dateien. Auch die importierte Originaldatei kann unabhängig geändert oder entfernt werden. Vorlageninhalte und Rechte liegen in PostgreSQL und müssen in Datenbank-Backups enthalten sein.
 

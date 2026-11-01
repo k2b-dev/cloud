@@ -1,5 +1,5 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { clickhouseAdminQuery as admin, clickhouseTestAdmin } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { requireBaseWritable } from "../service/access-control";

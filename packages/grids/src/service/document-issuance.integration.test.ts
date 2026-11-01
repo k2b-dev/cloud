@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import * as pdfService from "@k2b/cloud/services/pdf";
 import { err, fail } from "@k2b/stdlib";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { z } from "zod";
 import { createDisposableDatabase, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
@@ -802,7 +803,8 @@ describe("Document issuance", () => {
         await database`CREATE SCHEMA auth`.simple();
         await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
         await database`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
-        await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+        await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY, name TEXT, kind TEXT, status TEXT)`.simple();
+        await database`CREATE TABLE auth.mandates (id UUID PRIMARY KEY)`.simple();
         await migrateCoreWorkflows(database);
         await migrate(database);
         // Simulate an unsupported writer only in this disposable database.

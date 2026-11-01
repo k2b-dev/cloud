@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit, logger } from "@k2b/cloud/services";
 import { crypto as cryptoUtils, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { ConversationReferencePreview, EnsureConversationReference, PutConversationReferenceConfiguration } from "../contracts";
 import { conversationVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
@@ -98,12 +98,12 @@ export type EnsureConversationReferenceResult = {
   created: boolean;
 };
 
-const configurationColumns = sql`
+const configurationColumns = () => sql`
   configuration.mailbox_id, configuration.pattern, configuration.next_sequence,
   configuration.enabled, configuration.include_in_reply_subjects, configuration.revision,
   configuration.created_at, configuration.updated_at
 `;
-const referenceColumns = sql`
+const referenceColumns = () => sql`
   reference.id, reference.mailbox_id, reference.conversation_id,
   reference.configuration_revision, reference.pattern_snapshot, reference.value, reference.sequence, reference.role,
   reference.allocated_by_actor_kind, reference.allocated_by_actor_id, reference.allocated_at
@@ -323,7 +323,7 @@ export const getConversationReferenceConfiguration = async (
   const allowed = await requireMailboxPermission(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const [row] = await sql<ReferenceConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.reference_number_configurations configuration
     WHERE configuration.mailbox_id = ${mailboxId}::uuid
   `;
@@ -366,24 +366,24 @@ export const putConversationReferenceConfigurationInTransaction = async (params:
   const allowed = await lockMailbox(params.context, params.mailboxId, "admin", params.db);
   if (!allowed.ok) return allowed;
   const [current] = await params.db<ReferenceConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.reference_number_configurations configuration
     WHERE configuration.mailbox_id = ${params.mailboxId}::uuid
     FOR UPDATE
   `;
-  if (current && params.input.expectedRevision !== Number(current.revision)) {
-    return fail(err.conflict("Reference number settings were changed"));
-  }
-  if (!current && params.input.expectedRevision !== null) {
-    return fail(err.conflict("Reference number settings do not exist yet"));
-  }
   const changed =
     !current ||
     current.pattern !== pattern ||
     current.enabled !== params.input.enabled ||
     current.include_in_reply_subjects !== params.input.includeInReplySubjects;
-  if (!changed && current) {
+  if (!changed && current && (params.input.expectedRevision === null || params.input.expectedRevision <= Number(current.revision))) {
     return ok({ configuration: mapConfiguration(current), activityId: null });
+  }
+  if (current && params.input.expectedRevision !== Number(current.revision)) {
+    return fail(err.conflict("Reference number settings were changed"));
+  }
+  if (!current && params.input.expectedRevision !== null) {
+    return fail(err.conflict("Reference number settings do not exist yet"));
   }
   const [row] = await params.db<ReferenceConfigurationRow[]>`
     INSERT INTO mail.reference_number_configurations (
@@ -468,7 +468,7 @@ export const listConversationReferences = async (params: {
   const visible = await requireVisibleConversation(allowed.data, params.conversationId);
   if (!visible.ok) return visible;
   const rows = await sql<ConversationReferenceRow[]>`
-    SELECT ${referenceColumns}
+    SELECT ${referenceColumns()}
     FROM mail.conversation_references reference
     WHERE reference.mailbox_id = ${params.mailboxId}::uuid
       AND reference.conversation_id = ${params.conversationId}::uuid
@@ -492,7 +492,7 @@ export const findConversationByReference = async (params: {
   const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
   const [row] = await sql<ConversationReferenceRow[]>`
-    SELECT ${referenceColumns}
+    SELECT ${referenceColumns()}
     FROM mail.conversation_references reference
     WHERE ${conversationVisibleTo(allowed.data, sql`reference.conversation_id`)}
       AND reference.mailbox_id = ${params.mailboxId}::uuid
@@ -520,7 +520,7 @@ export const ensureConversationReferenceInTransaction = async (params: {
     })[]
   >`
     SELECT
-      ${referenceColumns},
+      ${referenceColumns()},
       request.origin_conversation_id,
       current_conversation.revision AS conversation_revision
     FROM mail.conversation_reference_requests request
@@ -546,7 +546,7 @@ export const ensureConversationReferenceInTransaction = async (params: {
   `;
   if (!conversation) return fail(err.notFound("Conversation"));
   const [configuration] = await params.db<ReferenceConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.reference_number_configurations configuration
     WHERE configuration.mailbox_id = ${params.mailboxId}::uuid
       AND configuration.enabled
@@ -554,7 +554,7 @@ export const ensureConversationReferenceInTransaction = async (params: {
   `;
   if (!configuration) return fail(err.badInput("Reference numbers are not configured or are disabled"));
   const [existing] = await params.db<ConversationReferenceRow[]>`
-    SELECT ${referenceColumns}
+    SELECT ${referenceColumns()}
     FROM mail.conversation_references reference
     WHERE reference.conversation_id = ${params.conversationId}::uuid
     ORDER BY reference.role = 'primary' DESC, reference.allocated_at, reference.id

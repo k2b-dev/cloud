@@ -328,7 +328,12 @@ export default function AssistantProjectView(props: Props) {
         return references
           .map((reference) => ({ reference, title: reference.label || `${reference.ref.type} · ${reference.ref.id}` }))
           .filter(({ title }) => !normalized || title.toLocaleLowerCase().includes(normalized))
-          .map(({ reference, title }) => ({ value: reference, label: title, icon: "ti ti-link" }));
+          .map(({ reference, title }) => ({
+            id: `${reference.ref.type}:${reference.ref.id}`,
+            value: reference,
+            label: title,
+            icon: "ti ti-link",
+          }));
       },
       { title: text("References"), icon: "ti ti-link", placeholder: text("Search references…"), minQueryLength: 0, size: "small" },
     );

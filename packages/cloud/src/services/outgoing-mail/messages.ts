@@ -1,5 +1,5 @@
 import type { ObjectRef } from "@k2b/sync";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import {
   type AdminMailFilter,
@@ -14,6 +14,7 @@ import {
   MailRecordSchema,
   type MailStatus,
 } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { sanitizeEmailHtml } from "../../shared/email-html";
 import { audit } from "../audit";
 import { escapeLikePattern, parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";

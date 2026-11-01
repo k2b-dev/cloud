@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
@@ -15,7 +15,7 @@ import { migrate } from "./migrate";
 import oauthRoutes from "./oauth";
 import { oauth } from "./service/oauth";
 
-// The mobile app's session never grants access to other applications: OAuth needs the web.
+// The Cloud app's session never grants access to other applications: OAuth needs the web.
 const suite = suiteFor("database", "valkey", "nats");
 const ISSUER = "http://localhost:3000";
 const createdUsers: string[] = [];
@@ -46,7 +46,7 @@ const post = (path: string, cookie: string, values: Record<string, string>) =>
   });
 const blocked = encodeURIComponent(oauthMessages.resolve(["en"]).t.webSessionRequired);
 
-suite("OAuth refuses the mobile app's session", () => {
+suite("OAuth refuses the Cloud app's session", () => {
   beforeAll(async () => {
     await migrate();
   });

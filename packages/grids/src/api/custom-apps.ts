@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@k2b/cloud/server";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
@@ -890,6 +890,7 @@ export const createCustomAppsApi = (
     )
     .post(
       "/runtime/:shortId/:pageId/:blockId/document-previews/:templateId",
+      auth.readOnly,
       loadOptionalActor,
       requirePublicIdParam("templateId", "documentTemplate", "Document"),
       async (c) => {
@@ -953,7 +954,7 @@ export const createCustomAppsApi = (
     )
     .get("/runtime/:shortId/:pageId/:blockId/files/:token", loadOptionalActor, async (c) => {
       const runtime = await resolvePublishedRuntime(c);
-      const secret = env.APP_SECRET;
+      const secret = connections().appSecret.current;
       const token = secret ? verifyCustomAppFileToken(c.req.param("token") ?? "", secret) : null;
       if (
         !runtime ||
@@ -1029,10 +1030,13 @@ export const createCustomAppsApi = (
       });
     })
     .use(deps.requireAuthenticated ?? auth.requireRole("authenticated"))
-    .use("/runtime/*", async (c, next) => {
-      if (["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) return requireRuntimeWrite(c, next);
-      await next();
-    })
+    .use(
+      "/runtime/*",
+      auth.readOnlyMiddleware<AuthContext>(async (c, next) => {
+        if (["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) return requireRuntimeWrite(c, next);
+        await next();
+      }),
+    )
     .post("/runtime/:shortId/:pageId/:blockId/scanner", v("json", ScannerLauncherRequestSchema), async (c) => {
       const resolved = await resolveRuntimeScanner(c);
       if (!resolved) return c.json({ message: apiMessages(c).scannerNotFound }, 404);
@@ -1763,7 +1767,7 @@ export const createCustomAppsApi = (
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       return c.json(await projectCustomApp(result.data, getLocale(c)));
     })
-    .post("/validate", v("json", CustomAppDefinitionInputSchema), async (c) => {
+    .post("/validate", auth.readOnly, v("json", CustomAppDefinitionInputSchema), async (c) => {
       const input = c.req.valid("json").definition;
       const denied = await gateDefinitionAdmin(c, input);
       if (denied) return denied;
@@ -1774,7 +1778,7 @@ export const createCustomAppsApi = (
           : { valid: false, diagnostics: compilation.diagnostics },
       );
     })
-    .post("/plan", v("json", CustomAppDefinitionInputSchema), async (c) => {
+    .post("/plan", auth.readOnly, v("json", CustomAppDefinitionInputSchema), async (c) => {
       const input = c.req.valid("json").definition;
       const denied = await gateDefinitionAdmin(c, input);
       if (denied) return denied;

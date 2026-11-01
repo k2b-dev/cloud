@@ -1,15 +1,13 @@
-import { afterEach, beforeAll, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { migrate } from "../migrate";
 import { createBlobReadable, storeReadableBlob } from "./message-blobs";
 
 const chunkSize = 1024 * 1024;
 
 suiteFor("database", "nats")("Mail blob streaming", () => {
   const blobs: string[] = [];
-  beforeAll(migrate);
   afterEach(async () => {
     for (const id of blobs.splice(0)) await sql`DELETE FROM mail.message_part_blobs WHERE id = ${id}::uuid`;
   });

@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { SHORT_ID_REGEX } from "../lib/short-id";
 import type {
   Contact,

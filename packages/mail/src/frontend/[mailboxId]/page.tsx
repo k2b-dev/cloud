@@ -1,6 +1,6 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { appAccessAuthority } from "@k2b/cloud/services";
-import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
+import { appAccessAuthority, coreSettings } from "@k2b/cloud/services";
+import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { mailPageHelp } from "../../help";
@@ -13,7 +13,7 @@ import { readMailWorkspacePreferences } from "../_components/mail-workspace-pref
 import MailWorkspace from "../MailWorkspace.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
 import { mailPageMessages } from "../pages-messages";
-import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
+import { pageReadStatus, projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -36,12 +36,13 @@ export default ssr<AuthContext>(async (c) => {
   const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
   const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
   // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
-  const [internalData, spacesIntegration, sidebar] = await Promise.all([
+  const [internalData, spacesIntegration, sidebar, appUrl] = await Promise.all([
     loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
     getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
     loadMailSidebarData(context),
+    coreSettings.get<string>("app.url"),
   ]);
-  if (!internalData.ok) return ssr.error(c, internalData.error.status);
+  if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
   const data = await projectMailboxPageData(internalData.data);
   const dateConfig = getDateConfig(c);
 
@@ -59,6 +60,7 @@ export default ssr<AuthContext>(async (c) => {
       <MailWorkspace
         data={data}
         requestPath={requestPath(c)}
+        cloudUrl={publicCloudOrigin(appUrl)}
         currentUserId={user.id}
         currentUserEmail={user.mail}
         contactDirectory={directory}

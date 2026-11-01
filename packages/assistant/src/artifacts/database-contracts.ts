@@ -93,6 +93,7 @@ export const DatabaseSettings = z
   .object({
     url: z.string().max(2048).optional(),
     token: z.string().max(4096).optional(),
-    replaceUnreadable: z.array(z.enum(["assistant.rsql_url", "assistant.rsql_api_token"])).optional(),
+    allowedTargets: z.array(z.string().max(2048)).optional(),
+    replaceUnreadable: z.array(z.enum(["assistant.rsql_url", "assistant.rsql_api_token", "assistant.rsql_allowed_targets"])).optional(),
   })
   .strict();

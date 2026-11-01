@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-19
+updated: 2026-10-29
 ---
 
 # Spaces
@@ -66,13 +66,15 @@ to the same item are grouped to keep the feed useful.
 Use one Space for work that shares a team and access boundary. Create another
 when the audience or lifecycle is different.
 
-## Check off tasks in the mobile app
+## Check off tasks in the Cloud app
 
-> **Preview:** the mobile app is not released yet.
+> **Preview:** the Cloud app is not released yet.
 
 When the installation runs the
-[mobile app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
+[Cloud app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
+Start says how many tasks are for you and how many are for today, and the
+sidebar of a wide screen shows the number of tasks for you beside Spaces.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.
@@ -123,8 +125,22 @@ anyone else the address does not exist.
   saved.
 - Without write access to the Space, the task says so, and the circle and the
   checklist are off.
+- **Comment** sends a comment to the task. What you type stays on the device
+  until it is sent, also when the app is closed in between. When it cannot be
+  sent, the text stays and **Retry** safely repeats the send, including after
+  restarting the app. A late answer cannot clear a newer draft. If device
+  storage is full or blocked, the app keeps the text on screen and asks you
+  to free space before sending. Without write access to
+  the Space, there is no comment field.
 - **Open in Spaces** opens the task in Spaces on the web, to edit everything
   else.
+
+The comment API, `POST /api/spaces/:id/items/:itemId/comments`, accepts an
+optional `requestId` UUID alongside `content`. Reuse it for retries of the same
+comment. While that comment exists unchanged, a retry returns it without
+another comment or activity entry; a different author, item, occurrence, or
+content with the same request ID returns 409. The response keeps its usual
+short comment ID.
 
 ## Understand the Spaces model
 
@@ -295,7 +311,9 @@ and completion or reopening actions in the palette.
 ## Templates
 
 A Space keeps templates for new tasks and for new events, at most 100 of each,
-with names unique per kind. A template stores a title and a description that
+with names unique per kind. An optional icon appears next to its name in the
+**+** menu; without one, it uses the task or event default. Templates have no
+column. A template stores a title and a description that
 may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
 assignees or **Assign to me** for whoever creates the item, a task checklist
 and estimate, and an event's location, link, all-day flag, and duration. A due
@@ -311,7 +329,19 @@ Its date rule decides which dates the new item dialog proposes:
 
 Proposals are local calendar dates in the person's time zone, so week, month,
 and daylight-saving changes never move a proposed day. A weekday rule offers
-today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. When someone presses **+**, a Space with templates of that kind
+today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. Every **+** (the head, the phone button,
+a column's **+ Task**, an empty list, the calendar toolbar, and a calendar
+day's menu) opens one menu: the blank item first, then the templates with
+their icon and what they propose, then **Create template…**. From eight
+templates on, the menu has a search field, and a query no template matches
+becomes the blank item's title. The head's **+** stays a link to the
+`spaces.task.compose` or `spaces.event.compose` command, which also takes a
+`templateId`, so a reload, a new tab, or a page before hydration opens the
+form directly. N creates a blank item without the menu. The calendar's quick
+create offers **Template**; the selected time wins and the template fills the
+rest. **Save as template** in an item's **…** menu fills the template form
+from the item and only suggests placeholders for a week or date in its title.
+In the dialog, a Space with templates of that kind
 shows a **Template** chip row (a searchable list with more than six), and
 choosing one fills the form and shows the proposals as date chips with the
 first selected, next to **Other date…** and, for tasks, **No date**.
@@ -322,8 +352,8 @@ before a template replaces typed input. The chip rows stay on one line and
 scroll sideways on phones; hovering, focusing, or switching chips moves
 nothing.
 
-Space admins create, change, and delete templates in the Space settings under
-**Templates**; people with write access use them, and read access lists them.
+People with write access create, change, delete, and use templates in the Space
+settings under **Templates**. Read access can list and read them.
 Created items keep no link to their template. A default assignee who loses
 access to the Space drops out of the template everywhere it is read until the
 access returns. The REST API offers
@@ -369,6 +399,10 @@ cld spaces reactions remove "Product":"Fix mobile dialog" "👍🏽"
 
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
 list templates with their rule and next proposals in the local time zone.
+JSON output includes `icon` (nullable). With write access, create one with
+`cld spaces templates add "Product" --kind task --name "Weekly report"
+--title "Report {{week}}" --icon "ti ti-report" --weekdays we,th --time 16:00`.
+Use `templates add --help` for checklist, tags, estimates, and event defaults.
 `cld spaces add "Product" --template "Weekly report" [--date YYYY-MM-DD |
 --no-date]` creates an item from a template; other `add` flags override it. A
 given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
@@ -407,6 +441,14 @@ to confirm a Space already selected from an authorized list.
 Space lists may shorten descriptions to fit a full page; when
 `descriptionTruncated` is true, `space.read` returns the full description.
 
+`space.activity` reads item changes for one `space` short ID, optionally one
+`item`. Rows contain an actor, icon, localized sentence, last occurrence time,
+resource ref, and bucket count. Comments and deleted items are omitted. Pass
+`timeZone` for date presentation; follow `page.nextCursor` with `cursor`.
+`before` and `after` are exclusive ISO datetime bounds; `limit` defaults to 50
+and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
+for the shared event contract.
+
 `template.list` and `template.read` return a Space's templates with their
 rule and next proposed dates in the given `timeZone`, or in the application
 timezone without one. `task.create` and `event.create` take `templateId`,
@@ -416,7 +458,10 @@ included, and `date` picks the day, by default the first proposal. An explicit
 summary too. For "use the
 weekly report template for next Wednesday" an agent lists the templates, picks
 the matching proposal, and creates the item. `template.create`,
-`template.update`, and `template.delete` need Space admin access.
+`template.update`, and `template.delete` need Space write access. Template
+inputs accept an optional `icon`: a Tabler class such as `ti ti-report`, at most
+80 characters. Results include `icon` as a nullable field. Set it to `null` to
+restore the kind's default.
 
 `task.focus` finds open tasks across accessible Spaces without looping over
 each Space. It supports assignment, deadline, priority, blocker, and inactivity
@@ -471,6 +516,24 @@ of the response, measured as JSON-encoded UTF-8, and rolls back the
 preparation. Reduce the event content or attendees and try again. A retry of a
 stored preparation that is too large needs a new idempotency key.
 
+## Share a Space with an integration or agent
+
+Grant a standalone service account or agent access under **Sharing → Access**.
+The entry shows its account name and kind. With **Manage** (`admin`) access
+and an `admin` credential scope, either kind can list, grant, change, and
+revoke access through `/api/spaces/:id/access`. A `read` or `write` scope
+cannot manage access, even when the account has **Manage** access.
+Revoking its grant removes the access that its existing tokens received from
+that grant. Resource API keys remain confined to their own Space.
+
+To hand management over, grant the new manager first, then lower or remove
+the old manager's entry. Standalone service accounts and agents can be the
+remaining manager. A change that removes the last manager returns
+`LAST_MANAGER` (HTTP 409); grant another manager before retrying.
+[Resource authorization](/en/docs/identity/authorization#keep-at-least-one-manager)
+defines which entries count. Creating resource API keys still requires a
+user-backed identity.
+
 ## Implementation tasks and agent handoffs
 
 Spaces supports flat implementation tasks with blockers, shared progress notes,
@@ -483,6 +546,11 @@ Assignees can be people or active service accounts, including agents. People
 need direct or group access to the Space; service accounts need their own
 direct access. A Space API key can be assigned only within its own Space, and
 personal automation keys cannot be assignees. Assignment never grants access.
+The picker, item and template assignees, and active claim holders keep the
+account's kind: agents show a robot icon, standalone service accounts a key,
+and Space API keys a box. Capability reviews resolve selected assignees by
+ID within this Space, including accounts beyond the first directory page.
+Unavailable selections show “Unavailable assignee” instead of an account ID.
 
 Claiming as a person or an agent also assigns you; the claim is the working
 state of one assignee. This applies to every account that may claim, also
@@ -594,3 +662,17 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+## Integrate resource discussions
+
+The `space` and `item` capability readers return a standard localized
+`view` with the current title and caller permission. The `item` view also
+identifies its owning space and gives a one-line context. Existing reader
+fields remain available.
+
+The [discussions role](/en/docs/platform/resource-types-and-discussions)
+declares `item` inside `space`, lists authorized containers through
+`space.containers`, and reads activity through `space.activity`.
+Activity accepts `container` alongside the published `space` alias; when
+both are supplied they must identify the same space. The existing list
+and activity results remain compatible.

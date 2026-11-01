@@ -4,6 +4,7 @@ import * as logging from "@k2b/cloud/services/logging";
 import * as messages from "@k2b/cloud/services/outgoing-mail/messages";
 import * as endpoint from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import * as store from "@k2b/cloud/services/outgoing-mail/store";
+import { parseNetworkAllowlist } from "@k2b/cloud/shared";
 import { ImapFlow } from "imapflow";
 import { IMAP_SINK_CA, type ImapSinkMessage, imapSink } from "../../../../scripts/fixtures/imap-sink";
 import { headers, status, structure, wireStructure } from "./fixtures";
@@ -94,7 +95,8 @@ test("adapter connects with timeouts, uses EXAMINE and bounded BODY.PEEK queries
 const realConnect = tls.connect;
 const resolveMailHost = endpoint.resolveMailHost;
 let target: ReturnType<typeof spyOn<typeof endpoint, "resolveMailHost">>;
-let originalAllowlist: string | undefined;
+let targets: string[];
+let allowlist: ReturnType<typeof spyOn<typeof endpoint, "outgoingMailAllowlist">>;
 let trust: ReturnType<typeof spyOn<typeof tls, "connect">>;
 let credentials: ReturnType<typeof spyOn<typeof store, "resolveImapMailCredentials">>;
 let saved: ReturnType<typeof spyOn<typeof store, "saveImapMailCheck">>;
@@ -103,8 +105,8 @@ let log: ReturnType<typeof spyOn<typeof logging, "logger">>;
 const warnings = mock((_message: string, _metadata?: Record<string, unknown>) => {});
 const errors = mock(() => {});
 beforeEach(() => {
-  originalAllowlist = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-  process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+  targets = ["127.0.0.1"];
+  allowlist = spyOn(endpoint, "outgoingMailAllowlist").mockImplementation(async () => parseNetworkAllowlist(targets));
   target = spyOn(endpoint, "resolveMailHost").mockImplementation((host, signal) =>
     host === "imap.example.org"
       ? Promise.resolve({ host, addresses: [{ address: "203.0.113.8", family: 4 }], servername: host })
@@ -129,8 +131,7 @@ beforeEach(() => {
   log = spyOn(logging, "logger").mockReturnValue({ error: errors, warn: warnings, info: mock(() => {}), debug: mock(() => {}) });
 });
 afterEach(() => {
-  if (originalAllowlist === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-  else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalAllowlist;
+  allowlist.mockRestore();
   for (const spy of [trust, credentials, saved, applied, log, target]) spy.mockRestore();
 });
 const dsn = (uid: number): ImapSinkMessage => ({ uid, bodyStructure: wireStructure, sections: { "2": status, "3.HEADER": headers } });
@@ -389,11 +390,11 @@ test("mocked EXAMINE with an invalid UIDNEXT fails before searching", async () =
 
 test("blocked bounce IMAP host never constructs or connects a client", async () => {
   target.mockRestore();
-  delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+  targets = [];
   const connect = spyOn(ImapFlow.prototype, "connect");
   const mailbox = createImapBounceMailbox({ ...profile, imap: { ...profile.imap, host: "127.0.0.1" } }, new AbortController().signal);
   try {
-    await expect(mailbox.open("INBOX", { readOnly: true })).rejects.toThrow("OUTGOING_MAIL_ALLOWED_TARGETS");
+    await expect(mailbox.open("INBOX", { readOnly: true })).rejects.toThrow("outgoing_mail.allowed_targets");
     expect(connect).not.toHaveBeenCalled();
     expect(credentials).not.toHaveBeenCalled();
   } finally {

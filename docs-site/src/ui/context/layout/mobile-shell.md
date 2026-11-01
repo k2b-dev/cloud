@@ -75,19 +75,29 @@ device: an iPad in Split View narrower than 48 rem shows the tab bar.
 - The head shows the decorative `logo` and the app's `title`, as high as the
   page's header, so both titles share one line.
 - `items`, each `sections` group, and `footer` take the tab bar's items, with
-  an optional `count` after the label, such as unread messages. A group
+  an optional quiet `count` after the label, such as open tasks: a number, or
+  an element that renders one, such as a count read in the browser. An item's
+  `badge`, which calls for attention, such as unread messages, takes the
+  count's place. A group
   without items is left out. Rows are 44 px with 1rem labels; the open item is
-  in the action colour and weight. A press shows the item's page frame at
+  tinted like the selected row of a web sidebar, in the action colour and
+  weight. A press shows the item's page frame at
   once, as a tab does, and the row of a loading page pulses.
-- The sidebar is a muted surface beside the page, without a rule. Beside it,
-  the header and the content are the page's surface and run to the window's
-  edge, with a 1.25 rem gutter.
+- The sidebar lies on the page's surface, like the web's sidebar, without a
+  fill or a rule; space separates it from the page. The header and the content
+  run to the window's edge, with a 1.25 rem gutter.
 - `MobileShell.Header` takes `sidebarTitle` for a page whose title the
   sidebar's head already says, such as Start titled with the app's name on the
   phone. `back.withSidebar: false` hides Back beside the sidebar when it leads
   to a destination the sidebar lists, such as Start from Settings.
 - Toasts stand centred at the bottom of the page beside the sidebar, never over
   it.
+
+### Content that owns the bottom edge
+
+Mark an element `data-k2b-shell-bottom` when it owns the bottom edge of the
+page, such as a chat's composer. The shell counts it as the footer, so toasts
+stand above it at every width.
 
 ### Content with its own heads
 

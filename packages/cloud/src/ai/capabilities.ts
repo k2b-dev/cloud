@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
-import { resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import { isPersonVisibleCapabilityQuery, resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
 import { capabilityReviewView } from "../_internal/capability-reviews";
 import {
   CAPABILITY_APPROVAL_REASON_FIELD,
@@ -36,7 +36,7 @@ import { createCodeSourceTool } from "./code-source-tools";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
 import { addCloudResourceHrefs } from "./resource-refs";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
-import type { AiConversationService, AiRuntimeTool, AiToolPresentation } from "./types";
+import type { AiConversationService, AiLoadToolsResult, AiRuntimeTool, AiToolPresentation } from "./types";
 
 export type AiCapabilityKind = "query" | "action";
 
@@ -164,7 +164,9 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale
         : app.appName;
       return [
         ...app.manifest.actions.map((operation) => ({ app, appName, operation, kind: "action" as const })),
-        ...app.manifest.queries.map((operation) => ({ app, appName, operation, kind: "query" as const })),
+        ...app.manifest.queries
+          .filter(isPersonVisibleCapabilityQuery)
+          .map((operation) => ({ app, appName, operation, kind: "query" as const })),
       ];
     })
     .map(
@@ -295,7 +297,8 @@ export const searchAiTools = (
     .flatMap((entry) => {
       const name = normalizeSearchText(entry.name);
       const title = normalizeSearchText(entry.title);
-      const identity = `${name} ${title}`;
+      const localizedTitle = normalizeSearchText(entry.capability?.display.title ?? "");
+      const identity = `${name} ${title} ${localizedTitle}`;
       const app = normalizeSearchText(`${entry.appId ?? ""} ${entry.searchText}`);
       const description = normalizeSearchText(entry.description);
       const identityWords = searchWordForms(identity);
@@ -303,7 +306,7 @@ export const searchAiTools = (
       const descriptionWords = searchWordForms(description);
       let matchedTerms = 0;
       let score = 0;
-      if (name === phrase || title === phrase) score += 100;
+      if (name === phrase || title === phrase || localizedTitle === phrase) score += 100;
       else if (includesSearchPhrase(identity, phrase)) score += 50;
       if (!input.appId && app === phrase) score += 40;
       else if (!input.appId && includesSearchPhrase(app, phrase)) score += 20;
@@ -324,6 +327,15 @@ export const searchAiTools = (
         right.matchedTerms - left.matchedTerms || right.score - left.score || left.entry.name.localeCompare(right.entry.name),
     )
     .slice(0, DEFAULT_SEARCH_LIMIT);
+  // appId is a discovery hint, not the conversation's authorization scope. The
+  // resolver has already removed inaccessible, unoffered and disallowed tools.
+  // Keep successful scoped searches precise; recover a mistaken owner once.
+  if (matches.length === 0 && input.appId) {
+    return searchAiTools(
+      catalog.filter((entry) => entry.appId !== input.appId),
+      { query: input.query },
+    );
+  }
   return {
     tools: matches.map(({ entry }) => ({
       name: entry.name,
@@ -626,6 +638,52 @@ type ToolStateStore = Pick<AiConversationService, "loadTools">;
 /** `call` is the name to call the tool by; app operations get a provider-safe name. */
 const LoadedToolSchema = z.object({ name: z.string(), call: z.string() }).strict();
 
+/** The one path that makes catalog names callable for the next model turn: load_tools and Skills that name tools use it. */
+const createAiToolLoader =
+  (input: {
+    catalog: readonly AiToolCatalogEntry[];
+    eagerNames: ReadonlySet<string>;
+    conversationId: string;
+    store: ToolStateStore;
+    maxLoadedTools?: number;
+    unavailableReason?: (name: string) => AiToolUnavailableReason;
+  }) =>
+  async (names: readonly string[]): Promise<AiLoadToolsResult & { titles: Record<string, string> }> => {
+    const catalogByName = new Map(input.catalog.map((entry) => [entry.name, entry]));
+    // A provider name the model saw in an earlier call loads its operation, too.
+    const byProviderName = new Map(input.catalog.flatMap((entry) => (entry.capability ? [[entry.capability.providerName, entry]] : [])));
+    const requested = [...new Set(names)];
+    const found = requested.flatMap((name) => {
+      const entry = catalogByName.get(name) ?? byProviderName.get(name);
+      return entry ? [entry.name] : [];
+    });
+    const eager = [...new Set(found.filter((name) => input.eagerNames.has(name)))];
+    const valid = [...new Set(found.filter((name) => !input.eagerNames.has(name)))];
+    const unavailable = requested
+      .filter((name) => !catalogByName.has(name) && !byProviderName.has(name))
+      .map((name) => ({ name, reason: input.unavailableReason?.(name) ?? ("unknown" as const) }));
+    const updated = await input.store.loadTools({
+      conversationId: input.conversationId,
+      names: valid,
+      maxLoadedTools: input.maxLoadedTools,
+    });
+    const callable = (name: string) => ({ name, call: catalogByName.get(name)?.capability?.providerName ?? name });
+    const alreadyLoaded = [...new Set([...eager, ...updated.alreadyLoaded])];
+    const titles = Object.fromEntries(
+      [...new Set([...updated.loaded, ...alreadyLoaded, ...updated.evicted])].flatMap((name) => {
+        const entry = catalogByName.get(name);
+        return entry ? [[name, entry.title]] : [];
+      }),
+    );
+    return {
+      loaded: updated.loaded.map(callable),
+      alreadyLoaded: alreadyLoaded.map(callable),
+      unavailable,
+      evicted: updated.evicted,
+      titles,
+    };
+  };
+
 export const createAiToolMetaTools = (input: {
   apps: readonly CapabilityRegistryEntry[];
   catalog: readonly AiToolCatalogEntry[];
@@ -669,11 +727,16 @@ export const createAiToolMetaTools = (input: {
       : "";
   const search = defineAiTool({
     name: "search_tools",
-    description: `Search available Cloud tools and installed app operations by concise task terms.${liveAppDirectory} When the app is known, set its exact appId on the first attempt. Use list_apps only when the owning app is unclear. This only discovers tools; call load_tools with the exact returned names before using deferred tools.${unavailableLoadedNotice}`,
+    description: `Search available Cloud tools and installed app operations by concise task terms.${liveAppDirectory} When the app is known, set its exact appId. If that app has no matches, search also returns matching available tools from other apps or built-ins. If the owner is unclear, omit appId or use list_apps. This only discovers tools; call load_tools with the exact returned names before using deferred tools.${unavailableLoadedNotice}`,
     inputSchema: z
       .object({
         query: z.string().trim().min(1).max(200).describe("What the tool should do."),
-        appId: z.string().trim().min(1).optional().describe("Optional exact Cloud app id."),
+        appId: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Preferred exact Cloud app id; an empty scoped search falls back to other available tools."),
       })
       .strict(),
     outputSchema: z.object({ tools: z.array(ToolCatalogItemSchema).max(DEFAULT_SEARCH_LIMIT) }).strict(),
@@ -700,6 +763,7 @@ export const createAiToolMetaTools = (input: {
     };
   });
 
+  const loadTools = createAiToolLoader(input);
   const load = defineAiTool({
     name: "load_tools",
     description:
@@ -715,41 +779,7 @@ export const createAiToolMetaTools = (input: {
       })
       .strict(),
     approval: "never",
-  }).server(async ({ names }) => {
-    const catalogByName = new Map(input.catalog.map((entry) => [entry.name, entry]));
-    // A provider name the model saw in an earlier call loads its operation, too.
-    const byProviderName = new Map(input.catalog.flatMap((entry) => (entry.capability ? [[entry.capability.providerName, entry]] : [])));
-    const requested = [...new Set(names)];
-    const found = requested.flatMap((name) => {
-      const entry = catalogByName.get(name) ?? byProviderName.get(name);
-      return entry ? [entry.name] : [];
-    });
-    const eager = [...new Set(found.filter((name) => input.eagerNames.has(name)))];
-    const valid = [...new Set(found.filter((name) => !input.eagerNames.has(name)))];
-    const unavailable = requested
-      .filter((name) => !catalogByName.has(name) && !byProviderName.has(name))
-      .map((name) => ({ name, reason: input.unavailableReason?.(name) ?? ("unknown" as const) }));
-    const updated = await input.store.loadTools({
-      conversationId: input.conversationId,
-      names: valid,
-      maxLoadedTools: input.maxLoadedTools,
-    });
-    const callable = (name: string) => ({ name, call: catalogByName.get(name)?.capability?.providerName ?? name });
-    const alreadyLoaded = [...new Set([...eager, ...updated.alreadyLoaded])];
-    const titles = Object.fromEntries(
-      [...new Set([...updated.loaded, ...alreadyLoaded, ...updated.evicted])].flatMap((name) => {
-        const entry = catalogByName.get(name);
-        return entry ? [[name, entry.title]] : [];
-      }),
-    );
-    return {
-      loaded: updated.loaded.map(callable),
-      alreadyLoaded: alreadyLoaded.map(callable),
-      unavailable,
-      evicted: updated.evicted,
-      titles,
-    };
-  });
+  }).server(async ({ names }) => loadTools(names));
 
   return [search, load, listApps];
 };
@@ -990,6 +1020,14 @@ export const createAiToolResolver =
       (input.mandatePolicy?.grants !== undefined && !input.mandatePolicy.grants.some((grant) => "appId" in grant)) ||
       (allowed !== null && ![...allowed].some((name) => name.includes(".")));
     const eagerNames = new Set(builtIns.map((tool) => tool.def.name).filter((name) => !CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(name)));
+    const loadTools = createAiToolLoader({
+      catalog,
+      eagerNames,
+      conversationId: input.conversationId,
+      store: input.store,
+      maxLoadedTools: input.maxLoadedTools,
+      unavailableReason,
+    });
     const activeBuiltIns = builtIns.filter((tool) => eagerNames.has(tool.def.name) || loadedNames.includes(tool.def.name));
     const runtimeTools = [
       ...createAiToolMetaTools({
@@ -1026,6 +1064,7 @@ export const createAiToolResolver =
       ...input.runtimeContext,
       actor: input.actor,
       conversationId: input.conversationId,
+      loadTools,
     });
     const catalogByName = new Map(capabilityCatalog.map((entry) => [entry.name, entry]));
     const presentations = new Map<string, AiToolPresentation>();

@@ -14,11 +14,20 @@
 import { existsSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 
-export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse";
+/** Validate before SQL interpolation, including PostgreSQL's identifier truncation boundary. */
+export const quoteTestDatabase = (name: string): string => {
+  if (!name.endsWith("_test") || Buffer.byteLength(name) > 63 || name.includes("\0")) {
+    throw new Error("Integration database names must end in _test and fit within 63 bytes");
+  }
+  return `"${name.replaceAll('"', '""')}"`;
+};
+
+export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse" | "s3";
 
 export type InfraMapping = { test: string; runtime: string[]; unset?: string };
 
 export const infraMappings: Record<InfraKind, InfraMapping> = {
+  s3: { test: "CLOUD_TEST_S3_ENDPOINT", runtime: [] },
   database: {
     test: "CLOUD_TEST_DATABASE_URL",
     runtime: ["DATABASE_URL", "POSTGRES_URL", "PGURL"],

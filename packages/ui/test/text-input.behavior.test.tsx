@@ -34,6 +34,35 @@ test("Enter submits a single-line TextInput without submitting a surrounding for
   dom.cleanup();
 });
 
+test("the caller's key handler runs, and a key it handles does not submit", async () => {
+  const dom = createDomTestHarness();
+  const keys: string[] = [];
+  let submitted = 0;
+  const dispose = render(
+    () => (
+      <TextInput
+        label="Search"
+        type="search"
+        value=""
+        onSubmit={() => submitted++}
+        onKeyDown={(event) => {
+          keys.push(event.key);
+          if (event.key === "Enter" && event.altKey) event.preventDefault();
+        }}
+      />
+    ),
+    dom.root,
+  );
+  const input = dom.root.querySelector("input")!;
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", altKey: true, bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  expect(keys).toEqual(["Escape", "Enter", "Enter"]);
+  expect(submitted).toBe(1);
+  dispose();
+  dom.cleanup();
+});
+
 test("TextInput keeps phone keyboards from capitalizing or correcting user names, addresses, and passwords", async () => {
   const dom = createDomTestHarness();
   const dispose = render(
@@ -189,3 +218,38 @@ test.each([false, true])("external errors update without replacing the native co
     dom.cleanup();
   }
 });
+
+for (const multiline of [false, true]) {
+  test(`TextInput forwards keyboard handlers before submit for ${multiline ? "textarea" : "input"}`, () => {
+    const dom = createDomTestHarness();
+    const keys: string[] = [];
+    let submitted = 0;
+    const dispose = render(
+      () => (
+        <TextInput
+          multiline={multiline}
+          value="Spatz"
+          onSubmit={() => submitted++}
+          onKeyDown={[
+            (_data, event) => {
+              keys.push(event.key);
+              if (event.key === "Enter") event.preventDefault();
+            },
+            null,
+          ]}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector("input,textarea")!;
+      for (const key of ["Escape", "ArrowDown", "Enter"])
+        input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      expect(keys).toEqual(["Escape", "ArrowDown", "Enter"]);
+      expect(submitted).toBe(0);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+}

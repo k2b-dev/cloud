@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser, do not disturb, quiet hours]
-updated: 2026-10-20
+updated: 2026-10-28
 ---
 
 # Notifications
@@ -30,7 +30,7 @@ defines:
 - who can receive it;
 - which payload is valid;
 - what the recipient sees;
-- which delivery channels are recommended or required.
+- which delivery channels are recommended, required, or excluded.
 
 The send API accepts the bound definition. It does not accept an arbitrary
 event name.
@@ -39,7 +39,7 @@ event name.
 | --- | --- |
 | The domain event and when it has committed | Recipient resolution and user preferences |
 | The payload schema and presentation | Event and delivery persistence |
-| Whether a channel is recommended or required | Channel selection, fallback, and retries |
+| Whether a channel is recommended, required, or excluded | Channel selection, fallback, and retries |
 | Authorization for the operation that caused the event | Delivery history and operational status |
 
 A notification reports a domain change. The domain database remains the source
@@ -99,25 +99,30 @@ data at runtime.
 | `recipient` | Yes | `"user"` or `"email"`; fixes the address shape used by `send()` |
 | `label` | Yes | Non-empty name used by preference and operations surfaces |
 | `description` | Yes | Non-empty explanation of when the application emits the event |
-| `presentation` | No | Localized overlays for `label` and `description` |
+| `presentation` | No | Localized overlays for `label`, `description`, and `excludedReason` |
+| `excludedReason` | When channels are excluded | Trimmed, non-empty explanation shown beside excluded channels |
 | `data` | Yes | Zod schema used for type inference and runtime parsing |
 | `delivery.recommended` | No | Ordered, preference-aware channels; defaults to `[]` |
 | `delivery.required` | No | Channels that cannot be disabled; defaults to `[]` |
+| `delivery.excluded` | No | Channels this kind never prepares for delivery; defaults to `[]` |
 | `render` | Yes | Builds the channel-neutral presentation |
 | `email` | No | Builds an email-specific presentation when email is selected |
 
 `label` and `description` cannot be empty.
 
 When `presentation` is present, the complete `label` and `description`
-declaration belongs to `presentation.baseLocale`. Add partial overlays under
+declaration, including `excludedReason` when supplied, belongs to
+`presentation.baseLocale`. Add partial overlays under
 `presentation.translations`. Cloud canonicalizes BCP 47 locale keys and
 resolves an exact locale, then its language ancestors, then the base
 declaration. For example, `de-CH` uses a `de` overlay when no `de-CH` overlay
 exists. Notification preferences and delivery history receive this
 request-scoped presentation; stable definition IDs and keys do not change.
 
-Channel names cannot be duplicated within a delivery list or appear in both
-lists. An email-recipient definition must include `email` in
+Channel names cannot be duplicated within a delivery list or appear in more
+than one of the recommended, required, and excluded lists. Excluded channels
+require an `excludedReason`; its translations use the same per-field fallback as the
+label and description. An email-recipient definition must include `email` in
 `delivery.required`.
 
 `render` and `email` can also return a Promise.
@@ -141,6 +146,7 @@ domain payload schema. `render()` returns:
 | `targetHref` | No | Canonical same-origin absolute path beginning with `/` |
 | `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace; grouping requires an application ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens |
 | `badge` | No | Non-negative safe integer for the app badge; `0` clears it |
+| `alert` | No | Boolean, default `true`; `false` shows or replaces the browser notification without sound or vibration |
 
 `targetHref` must point to a route on the same Cloud origin. External URLs are
 rejected.
@@ -226,6 +232,7 @@ delivery: {
 | --- | --- | --- | --- |
 | `recommended` | User preferences replace the ordered defaults | The first selected channel is queued; later choices are fallbacks | Cloud activates the next choice |
 | `required` | The user cannot disable the channel | Every required delivery is processed as part of `send()` | Missing or failed required delivery makes the result an error |
+| `excluded` | Neither preferences nor fallbacks can select the channel | Cloud never prepares a delivery for it | Older saved selections are ignored |
 
 Use required delivery only when the channel is part of the protocol. Ordinary
 product updates should normally be recommended so the recipient controls how
@@ -273,6 +280,16 @@ encrypted delivery payload until the attempt succeeds or fails permanently,
 never on the event or in history. Only the browser channel receives `preview`;
 email and deployment channels never see it.
 
+Resource discussion consumers can use
+`readResourcePrincipals({ ref, container, principals })` from
+`@k2b/cloud/capabilities/server` immediately before `send()`. Declare
+`platformPermissions: ["resources:readers"]`, bind candidates to the consumer's
+own participants or followers, and handle checked, not-configured and temporary
+failure outcomes separately. The check grants no content access. See
+[App-to-app reader checks](/en/docs/platform/app-to-app-queries) for admission
+and [Chat notifications](/en/docs/operations/chat-notifications) for Chat's
+freshness and retry rules.
+
 The preview is fixed when `send()` runs. Cloud does not check access again
 before a queued, retried, or fallback browser delivery. After the push service
 accepts a push, Cloud cannot recall or change it. An offline device receives it
@@ -292,14 +309,21 @@ a newer one in the same group, for example after a delivery retry, the device
 keeps the newer notification without a new alert. Without `group`, notifications
 keep their event ID as the tag.
 
+Set `alert: false` to update a group quietly. The notification replaces the
+visible one, or appears, without sound or vibration (`silent: true` instead of
+`renotify: true`). Use it for follow-ups the person has not yet seen, for
+example the fifth unread message in a chat whose first message already
+alerted. Whether the device honours silence is up to the browser and operating
+system.
+
 Set `badge` to the application's current unread count. A positive count calls
 the Badging API; `0` clears the badge. Omitting it leaves the badge unchanged.
 The device applies a badge only when it was rendered at or after the last badge
 it applied. Badge support is optional: unsupported browsers and rejected badge
 requests silently leave it absent or unchanged, and the notification still appears.
 The badge belongs to the installed Cloud application, so applications that
-set it must decide which count to use. Email ignores `group` and `badge`.
-None of `group`, `badge`, and `preview` is stored on the notification event.
+set it must decide which count to use. Email ignores `group`, `badge`, and `alert`.
+None of `group`, `badge`, `alert`, and `preview` is stored on the notification event.
 The presentation `body` still stays out of the browser payload; applications
 opt into notification text through `preview`.
 
@@ -497,6 +521,37 @@ adds the link to the approvals page. Existing events without those fields
 keep the general notice. See [Pending approvals notification](/en/docs/identity/approvals#pending-approvals-notification)
 for eligibility and bundling.
 
+## User preferences
+
+Under **My account → Notifications**, people choose optional channels for each
+active user-recipient kind. Registered excluded channels remain visible as
+disabled, unchecked rows with the application's localized `excludedReason`.
+**Use app default** restores only the recommended channels; it never selects
+an excluded channel.
+
+`GET /api/me/notifications/preferences` returns `excludedChannels` and the
+localized `excludedReason` (or `null` when none is declared) alongside the
+recommended, required, selected, and effective channels. The selected and
+effective lists omit excluded channels, including older saved selections.
+`PUT /api/me/notifications/preferences/:definitionId` rejects an excluded
+channel with HTTP 400. Removing a saved preference with `DELETE` restores the
+app defaults.
+
+For example, a frequent update can allow browser delivery while ruling out email:
+
+```ts
+const deliveryOptions = {
+  excludedReason: "Email for every update would be too much.",
+  delivery: { recommended: ["browser"], excluded: ["email"] },
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { excludedReason: "Nicht verfügbar: Jede Aktualisierung als E-Mail wäre zu viel." },
+    },
+  },
+} as const;
+```
+
 ## Send a notification
 
 Send after the domain change commits. Use the bound definition from
@@ -575,7 +630,7 @@ failures before event creation include:
 - an empty or overlong idempotency key;
 - payload data rejected by the Zod schema;
 - an error from `render()`;
-- an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, or invalid `badge`;
+- an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, invalid `badge`, or non-boolean `alert`;
 - a user ID that does not exist;
 - an invalid direct email address.
 
@@ -705,7 +760,7 @@ failures retry, while profile and input policy errors fail immediately.
 Delivery observability includes `outgoingMailId` and `outgoingMailStatus`, so
 operators can follow the email in the send log, including a later `bounced`
 status. The ID remains after mail record retention; its status then becomes null.
-**Observability → Notifications** (`/admin/observability/notifications`) shows
+**Observability → Deliveries** (`/admin/observability/deliveries`) shows
 the mail status under the email channel, and the Accounts batch detail shows it
 under each recipient's status, whenever it adds information, such as `queued`,
 `failed`, or `bounced`. The mail ID appears as the line's tooltip.

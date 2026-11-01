@@ -39,7 +39,7 @@ const UserAppDevicesResponseSchema = z.object({ devices: z.array(PwaDeviceViewSc
 const AppDeviceRemovalResponseSchema = z.object({
   revoked: z
     .boolean()
-    .describe("True only for the call that removed the phone; repeating the call answers false until the removed phone is purged"),
+    .describe("True only for the call that removed the device; repeating the call answers false until the removed device is purged"),
 });
 
 // Admin PATCH accepts the same profile fields plus `mail`. Defined standalone
@@ -122,12 +122,19 @@ const userDeviceResult = async <T>(
   }
 };
 
-const avatarHeaders = (avatarHash: string, contentType: string, byteLength: number) => ({
-  "Cache-Control": "private, max-age=31536000, immutable",
+/**
+ * A URL that names the current hash (`?rev=`) never changes its bytes and is cached for good; any other request, such
+ * as an agent's robot linked without a hash, revalidates against the ETag. SVG avatars are drawn from fixed shapes and
+ * still get a policy that forbids scripts and external loads.
+ */
+const avatarHeaders = (avatarHash: string, contentType: string, byteLength: number, rev: string | undefined) => ({
+  "Cache-Control": rev === avatarHash ? "private, max-age=31536000, immutable" : "private, no-cache",
   "Content-Length": String(byteLength),
   "Content-Type": contentType,
   ETag: `"${avatarHash}"`,
   Vary: "Cookie, Authorization",
+  "X-Content-Type-Options": "nosniff",
+  ...(contentType === "image/svg+xml" ? { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox" } : {}),
 });
 
 const logLocalAdminMutation = (params: {
@@ -159,7 +166,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Users"],
       summary: "Get user avatar",
-      description: "Return a stored profile picture. Profile pictures are visible to user-backed authenticated actors.",
+      description:
+        "Return the picture a person or service account shows: a photo, or a built avatar as SVG. A person showing initials has no picture (404). Service accounts always have one: their photo or their robot. Profile pictures are visible to user-backed authenticated actors.",
       responses: {
         200: { description: "Avatar image" },
         304: { description: "Avatar image not modified" },
@@ -175,7 +183,7 @@ const app = new Hono<AuthContext>()
       if (!avatar) return c.json({ message: "Avatar not found" }, 404);
 
       const etag = `"${avatar.hash}"`;
-      const headers = avatarHeaders(avatar.hash, avatar.contentType, avatar.bytes.length);
+      const headers = avatarHeaders(avatar.hash, avatar.contentType, avatar.bytes.length, c.req.query("rev"));
       if (c.req.header("if-none-match") === etag) {
         return new Response(null, { status: 304, headers });
       }
@@ -391,7 +399,7 @@ const app = new Hono<AuthContext>()
       tags: ["Users"],
       summary: "Reset user password",
       description:
-        "Reset a FreeIPA user's password to a temporary generated password (admin only). Ends every sign-in of that user; Cloud Login phones stay paired. The user will be forced to change it on next login.",
+        "Reset a FreeIPA user's password to a temporary generated password (admin only). Ends every sign-in of that user; Cloud Login devices stay paired. The user will be forced to change it on next login.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(ResetPasswordResponseSchema, "Password reset"),
@@ -719,12 +727,12 @@ const app = new Hono<AuthContext>()
     "/:id/app-devices",
     describeRoute({
       tags: ["Users"],
-      summary: "List phones paired with the mobile app",
+      summary: "List devices paired with the Cloud app",
       description:
-        "List the account's active phones in the mobile app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
+        "List the account's active devices in the Cloud app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(UserAppDevicesResponseSchema, "Active phones"),
+        200: jsonResponse(UserAppDevicesResponseSchema, "Active devices"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
         404: jsonResponse(ErrorResponseSchema, "User not found"),
@@ -744,15 +752,15 @@ const app = new Hono<AuthContext>()
     "/:id/app-devices/:deviceId",
     describeRoute({
       tags: ["Users"],
-      summary: "Remove a phone from the mobile app",
+      summary: "Remove a device from the Cloud app",
       description:
-        "Remove one of the account's phones from the mobile app (preview) and end its app sessions at once (admin only). The phone shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed phone is purged, 30 days after removal at the earliest, the call answers 404.",
+        "Remove one of the account's devices from the Cloud app (preview) and end its app sessions at once (admin only). The device shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed device is purged, 30 days after removal at the earliest, the call answers 404.",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(AppDeviceRemovalResponseSchema, "Phone removed, or already removed"),
+        200: jsonResponse(AppDeviceRemovalResponseSchema, "Device removed, or already removed"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
-        404: jsonResponse(ErrorResponseSchema, "User or phone not found, or the removed phone was purged"),
+        404: jsonResponse(ErrorResponseSchema, "User or device not found, or the removed device was purged"),
       },
     }),
     v("param", UserDeviceParamSchema),

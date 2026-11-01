@@ -37,6 +37,14 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
   rewrap: async () => 0,
   revoke: async () => false,
   serviceAccounts: {
+    getByResource: async ({ appId, resourceType, resourceId }) => ({
+      ...standaloneAccount(),
+      id: SERVICE_ACCOUNT_ID,
+      kind: "resource_bound",
+      appId,
+      resourceType,
+      resourceId,
+    }),
     getOrCreateResourceBound: async ({ name, appId, resourceType, resourceId, createdBy }) =>
       ok({
         id: SERVICE_ACCOUNT_ID,
@@ -56,7 +64,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
     setStatus: async () => ok(),
   },
   credentials: {
-    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor }) =>
+    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor, access }) =>
       ok({
         credential: {
           id: CREDENTIAL_ID,
@@ -65,7 +73,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
           kind: "api_token",
           status: "active",
           tokenPrefix: "cld_standalone_preview",
-          scopes: scopes ?? [],
+          scopes: access === "models" ? ["ai:inference"] : (scopes ?? []),
           expiresAt: expiresAt ?? null,
           lastUsedAt: null,
           createdBy: actor.id,
@@ -108,10 +116,48 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
     }),
   },
   audit: { record: async () => undefined },
+  avatars: {
+    state: async () => null,
+    update: async () => ({ ok: false, error: "not stubbed", status: 400 }),
+    clear: async () => ({ ok: false, error: "not stubbed", status: 404 }),
+  },
   ...overrides,
 });
 
 describe("identity key administration", () => {
+  test("administrative mutations retain OAuth write caps", async () => {
+    let effects = 0;
+    const mutationService = dependencies({
+      rewrap: async () => {
+        effects++;
+        return 0;
+      },
+    });
+    for (const scopes of [["read"], ["write"], ["admin"]]) {
+      const scopedAdmin: MiddlewareHandler<AuthContext> = async (c, next) => {
+        c.set("user", admin);
+        c.set("oauthScopes", scopes);
+        await next();
+      };
+      const routes = createAdminIdentityRoutes(scopedAdmin, mutationService);
+      expect((await routes.request("/keys")).status).toBe(200);
+      expect((await routes.request("/keys/rewrap", { method: "POST" })).status).toBe(scopes[0] === "read" ? 403 : 200);
+      if (scopes[0] === "read") {
+        for (const [method, path] of [
+          ["POST", "/service-accounts"],
+          ["PATCH", `/service-accounts/${STANDALONE_ID}`],
+          ["POST", `/service-accounts/${STANDALONE_ID}/api-keys`],
+          ["POST", "/workloads/grids/credentials"],
+          ["PATCH", "/workloads/grids"],
+          ["DELETE", `/workloads/grids/credentials/${CREDENTIAL_ID}`],
+          ["POST", `/keys/${CREDENTIAL_ID}/revoke`],
+        ])
+          expect((await routes.request(path!, { method })).status).toBe(403);
+      }
+    }
+    expect(effects).toBe(2);
+  });
+
   test("refuses the reserved inference scope on standalone API keys", async () => {
     const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
     const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
@@ -120,6 +166,18 @@ describe("identity key administration", () => {
       body: JSON.stringify({ name: "forbidden", scopes: ["ai:inference"] }),
     });
     expect(response.status).toBe(400);
+  });
+  test("models purpose uses the administrator creation boundary and refuses mixed scopes", async () => {
+    const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
+    for (const scopes of [[], ["files:read"]]) {
+      const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Model worker", access: "models", scopes }),
+      });
+      expect(response.status).toBe(scopes.length ? 400 : 201);
+      if (!scopes.length) expect(await response.json()).toMatchObject({ credential: { scopes: ["ai:inference"] } });
+    }
   });
   test("requires an administrator by default", async () => {
     expect((await createAdminIdentityRoutes().request("/keys")).status).toBe(401);
@@ -505,4 +563,34 @@ describe("standalone service accounts", () => {
     expect(key.status).toBe(201);
     expect(await key.json()).toMatchObject({ credential: { serviceAccountId: STANDALONE_ID, scopes: [] }, token: expect.any(String) });
   });
+});
+
+test("admin can restore the exact app workload account without issuing a token", async () => {
+  const base = dependencies();
+  const writes: unknown[] = [];
+  const routes = createAdminIdentityRoutes(
+    authenticateAdmin,
+    dependencies({
+      serviceAccounts: {
+        ...base.serviceAccounts,
+        setStatus: async (input) => {
+          writes.push(input);
+          return ok();
+        },
+      },
+    }),
+  );
+  for (const status of ["disabled", "active"]) {
+    const response = await routes.request("/workloads/inventory", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ appId: "inventory", status });
+  }
+  expect(writes).toEqual([
+    { id: SERVICE_ACCOUNT_ID, status: "disabled" },
+    { id: SERVICE_ACCOUNT_ID, status: "active" },
+  ]);
 });

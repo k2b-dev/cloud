@@ -1,6 +1,8 @@
 import { startCompletion } from "@codemirror/autocomplete";
+import { serializeGeoDocument } from "@k2b/cloud/geo/document";
+import { setListKind } from "@k2b/editor/markdown";
 import { crypto as stdCrypto } from "@k2b/stdlib";
-import { setListKind } from "../../../../lib/editor/list-commands";
+import { notebookMapMessages } from "../../../../../lib/map-messages";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
 import {
@@ -75,6 +77,21 @@ const formatDateTime = (d: Date): string => `${formatDate(d)} ${formatTime(d)}`;
  *      where possible so the toolbar and slash command stay in lockstep.
  */
 export const slashCommands: SlashCommand[] = [
+  {
+    name: "map",
+    label: "Map",
+    icon: "ti-map-2",
+    section: "Insert",
+    aliases: ["karte"],
+    description: "Add linked places and a saved route",
+    run: (view, context) => {
+      if (view.state.readOnly) return;
+      const title = notebookMapMessages.resolve(context.locale ? [context.locale] : []).t.map;
+      const insert = `${serializeGeoDocument({ version: 1, title, pins: [] })}\n\n`;
+      const from = view.state.selection.main.from;
+      view.dispatch({ changes: { from, to: view.state.selection.main.to, insert }, selection: { anchor: from + insert.length } });
+    },
+  },
   // ── Formatting ───────────────────────────────────────────
   //
   // Headings 1-6. Each entry is registered separately so all six
@@ -279,12 +296,13 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     name: "table",
+    aliases: ["tabelle"],
     label: "Table",
     icon: "ti-table",
     section: "Insert",
     description: "Insert a markdown table — try /table2x4 for direct sizing",
     // Power-cmd: `/table<R>x<C>` inserts an R×C table immediately,
-    // bypassing the modal. Bare `/table` keeps the modal flow.
+    // bypassing the picker. Bare `/table` opens the shared size picker.
     params: /^(\d+)x(\d+)$/,
     run: (view, ctx, params) => {
       if (params) {
@@ -292,7 +310,7 @@ export const slashCommands: SlashCommand[] = [
         const cols = Number.parseInt(params[2]!, 10);
         return insertTable(view, { rows, cols }, ctx.locale);
       }
-      return insertTable(view, undefined, ctx.locale);
+      if (!view.state.readOnly) ctx.openTablePicker();
     },
   },
   {
