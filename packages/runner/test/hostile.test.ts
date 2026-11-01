@@ -80,12 +80,22 @@ test("filesystem, environment, child processes and loader authority are unusable
   const results: RunnerJsonValue[] = [];
   expect(
     await attack(
-      `export async function main(input, cloud) {
-        const modules = ['fs', 'node:fs', 'fs/promises', 'node:fs/promises'];
+      `export async function main(key, cloud) {
+        const modules = ['fs', 'node:fs'];
         const available = modules.filter(name => { try { return !!process.getBuiltinModule(name); } catch { return false; } });
         // workerd ships a node:child_process module whose calls must never start a process.
         const child = process.getBuiltinModule('node:child_process');
+        // node:fs/promises is workerd's virtual filesystem; host paths must stay unreachable.
+        const files = process.getBuiltinModule('node:fs/promises');
         const attempts = [
+          () => files.readFile(key),
+          () => files.readFile('/run/runner-key/source'),
+          () => files.readdir('/run/runner-key'),
+          () => files.readFile('/proc/self/environ'),
+          () => files.readFile('/proc/1/environ'),
+          () => files.readFile('/tmp/../app/runner.js'),
+          () => files.readFile('/etc/passwd'),
+          () => files.writeFile('/app/escape', 'x'),
           () => child.execSync('id'),
           () => child.execFileSync('/bin/sh', ['-c', 'id']),
           () => { const result = child.spawnSync('/bin/sh', ['-c', 'id']); if (result.error) throw result.error; },
@@ -111,6 +121,8 @@ test("filesystem, environment, child processes and loader authority are unusable
         results.push(input);
         return null;
       },
+      // The entrypoint-staged 0400 copy in runner-attacks.
+      process.env.CLOUD_APP_KEY_FILE ?? "/run/runner-key/source",
     ),
   ).toBe("succeeded");
   expect(results).toEqual([
@@ -119,7 +131,7 @@ test("filesystem, environment, child processes and loader authority are unusable
       env: [],
       bun: "undefined",
       require: "undefined",
-      authority: Array.from({ length: 8 }, () => "denied"),
+      authority: Array.from({ length: 16 }, () => "denied"),
     },
   ]);
 }, 10_000);
