@@ -3,7 +3,14 @@ import { deleteAccess } from "@k2b/cloud/server";
 import { logger, get as settingsGet } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { BaseTimezoneSchema } from "./base-settings";
-import { installAgentSourceOwnership, installBaseline, installDashboards, installOverviewAlerts, installReceiptCheckpoints, installSqlConsole } from "./schema";
+import {
+  installAgentSourceOwnership,
+  installBaseline,
+  installDashboards,
+  installOverviewAlerts,
+  installReceiptCheckpoints,
+  installSqlConsole,
+} from "./schema";
 
 const MIGRATIONS = [
   { version: 3, name: "clickhouse_baseline", up: installBaseline },

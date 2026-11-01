@@ -66,11 +66,17 @@ export const createHourlyRollup =
     let failedHour: { baseId: string; hour: Date; now: Date; generation: string; revision: string } | undefined;
     try {
       const now = clock();
-      const [candidate] = await database<{ base_id: string; hour: Date }[]>`SELECT h.base_id,h.hour FROM pulse.metric_hours h
+      // A short transaction of its own: checkpoint admission below must not hold one open.
+      const candidate = await database.begin(async (tx) => {
+        await tx`SET LOCAL statement_timeout='30s'`.simple();
+        await tx`SET LOCAL lock_timeout='30s'`.simple();
+        const [row] = await tx<{ base_id: string; hour: Date }[]>`SELECT h.base_id,h.hour FROM pulse.metric_hours h
       JOIN pulse.base_stores s ON s.base_id=h.base_id
       WHERE h.state='dirty' AND (h.lease_until IS NULL OR h.lease_until<=${now}::timestamptz) AND h.hour<${new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS)}
         AND (${baseId ?? null}::uuid IS NULL OR h.base_id=${baseId ?? null}::uuid) AND s.state='active' AND s.write_block_reason IS NULL
       ORDER BY h.hour,h.base_id LIMIT 1`;
+        return row;
+      });
       if (!candidate) return { buckets: 0, done: true };
       const checkpoint = await admitBaseWrite(candidate.base_id, connectedStore, database);
       if (!checkpoint) return { buckets: 0, done: false };
