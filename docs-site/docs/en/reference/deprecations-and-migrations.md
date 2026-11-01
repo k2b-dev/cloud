@@ -10,6 +10,29 @@ updated: 2026-11-01
 
 # Deprecations and migrations
 
+## Capability targets: major release operator note
+
+Before upgrading, back up the database and inventory third-party capability
+providers and callers. Upgrade their `@k2b/cloud` dependency and declare
+`target` on every resource Action. Remove the primary resource ID from `input`,
+put additional destinations in `refs`, and retain child IDs with containment
+checks. `code: false` marks effects that reach another application; it does
+not replace a local target. Shared foreign-provider contracts keep their
+published shapes. See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
+
+Stop all old Core, Assistant and Mail replicas and workers. Start upgraded
+Core first, then deploy converted providers and their callers together before
+starting Assistant and Mail workers. Core and Mail run the migrations below
+before starting their own workers. Refresh cached catalogs, schema hashes and
+generated clients. Do not run mixed old and new writers. A rollback requires
+the matching pre-upgrade database backup and previous application images.
+
+After startup, verify a target-bound Action, review routines marked
+`needs_attention`, re-request aborted approvals, and inspect Mail's incoming
+automations for **Needs attention**. Do not re-enable background work until its
+intended destinations are confirmed. Chats and saved definitions are retained.
+The following sections describe recovery and application-specific input changes.
+
 ## Existing Assistant routines and approvals adopt capability targets
 
 Stop every old Core and Assistant worker replica before upgrading. Start the
@@ -112,6 +135,15 @@ readers, discovery and cross-mailbox Queries keep their inputs.
 `draft.send.check` also keeps `{ mailboxId, draftId, expectedRevision }` for
 outcome recovery. Mail's REST API, `cld mail`, mailbox selection, and compose
 and send flows keep their behavior; no stored Mail data needs conversion.
+
+## Core Code Actions name the Code resource
+
+For `code.version.submit`, `code.version.approve`, `code.version.reject`,
+`code.pause` and `code.resume`, move `input.codeId` to
+`target: { type: "core.code", id: codeId }`. Chat and MCP use the flat field
+`code`. Version binding results and exported domain service schemas still
+contain `codeId`; omit it from capability decision input. Installation-wide
+`code.policy.update` keeps group selectors in its policy document.
 
 ## Service-account kind checks have separate purposes
 

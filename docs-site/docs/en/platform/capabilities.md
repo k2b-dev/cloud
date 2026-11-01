@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-27
+updated: 2026-11-01
 ---
 
 # App capabilities
@@ -138,20 +138,21 @@ export const inventoryCapabilities = defineCapabilities({
   },
   actions: {
     "item.rename": {
+      target: "item",
       title: "Rename inventory item",
       description: "Rename one inventory item the caller may edit.",
       input: z
         .object({
-          itemId: z.string().regex(/^[A-Za-z0-9]{6}$/).describe("Stable inventory item ID."),
           name: z.string().trim().min(1).max(120).describe("New item name."),
         })
         .strict(),
       data: z.object({ id: z.string().regex(/^[A-Za-z0-9]{6}$/), name: z.string() }).strict(),
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
-      review: async ({ itemId, name }, context) => {
+      review: async ({ name }, context) => {
+        const itemId = context.target?.type === "inventory.item" ? context.target.id : "";
         const item = visibleItem(itemId, context.accessSubject);
         if (!item) {
           return {
@@ -173,7 +174,8 @@ export const inventoryCapabilities = defineCapabilities({
           approvalScope: "inventory",
         });
       },
-      run: async ({ itemId, name }, context) => {
+      run: async ({ name }, context) => {
+        const itemId = context.target?.type === "inventory.item" ? context.target.id : "";
         const item = visibleItem(itemId, context.accessSubject);
         if (!item) {
           return {
@@ -1066,9 +1068,16 @@ Declare `target` when an Action acts on a resource. It names a local Type of
 this application. The caller supplies a resource ID for that fixed type;
 it cannot choose another type or containment level. A Query may also declare a
 target when it reads exactly one container. An operation without a target acts
-at application level; existing declarations continue to work during migration.
+at application level. Every Action with resource ID input must declare a target,
+except Actions implementing a shared provider role, which keep that role's input
+contract, and the platform-generated access Actions described below. Foreign
+provider-owned refs and selectors inside an application-wide document also stay
+in input: they do not select a resource owned by the Action provider to mutate.
+Third-party
+application authors follow the same contract; `code: false` alone does not
+exempt a resource Action.
 Canonical resource readers, Universal Search, Action outcome checks and shared
-file, calendar and discussion provider contracts supply only their existing
+file, calendar, app-status and discussion provider contracts supply only their existing
 domain input. They cannot declare `target` or `refs`; publish a separate Query
 when an explicit caller needs a container target. Consumer contracts may name
 a fixed local `CapabilityContract.target`; the provider must match it exactly
@@ -1187,12 +1196,33 @@ idempotency use these same coordinates. Approval services receive the complete
 normalized call as their `input`, so `approvalArgsDigest(call)` equals
 `capabilityCallDigest(call)`.
 
-Existing operations with neither `target` nor `refs` keep their earlier
-input-only approval and idempotency hashes during the additive rollout.
-The repository's `capability-targets` rule reports Actions with ID-like input
-fields but no target; this migration report is not an authorization check.
-See [Roll out capability targets](/en/docs/operations/capability-targets) before
-converting an existing published Action.
+Application-wide operations with neither `target` nor `refs` retain their
+input-only approval and idempotency hashes. The repository's
+`capability-targets` rule now fails on ID-like input fields without a target;
+there is no report-only mode. It checks declarations, not resource permissions.
+
+The repository check reviews the following domain-input exceptions in this
+workspace; this list does not replace shared provider role contracts:
+
+- `gateway-ops.app-status.forget` keeps `appId`, as required by the shared
+  [app-status contract](/en/docs/platform/app-status). The app being forgotten
+  is not a resource Type owned by the status provider.
+- `chat.discussion.post` keeps `ref.id`, whose Type is chosen by the foreign
+  discussion provider. Chat cannot declare that Type locally. See
+  [item discussions](/en/docs/platform/chat-discussions#action-targets).
+- `core.code.policy.update` keeps `definition.rules[].groupId`: these select
+  rules in the installation-wide policy document, not groups to mutate.
+  Code version and execution Actions instead target `core.code`.
+
+All three declare `code: false`. The check exempts only those named fields on
+those operations; another ID field or removal of `code: false` fails it.
+Platform-generated `code.access.set` and `code.access.rm` keep their dynamic
+`target` and grant identity in input. The check excludes their reserved
+`code.access.` namespace, which applications cannot declare themselves.
+Shared provider contracts continue to use their published shapes. Do not
+invent a local resource Type to re-label a foreign resource as the provider's.
+See [Roll out capability targets](/en/docs/operations/capability-targets) for
+upgrade order and existing-data migration.
 
 ### Retry an Action safely
 
@@ -2362,7 +2392,8 @@ cld capabilities read inventory.item k3P9xQ
 cld capabilities query inventory item.read \
   --input '{"id":"k3P9xQ"}'
 cld capabilities action inventory item.rename \
-  --input '{"itemId":"k3P9xQ","name":"Dock"}'
+  --target '{"type":"inventory.item","id":"k3P9xQ"}' \
+  --input '{"name":"Dock"}'
 ```
 
 The Capabilities playground at `/app/capabilities` lists the live catalog,

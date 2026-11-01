@@ -119,6 +119,8 @@ describe("C8 complete CodeDiff and submission contracts", () => {
     );
     expect(actions).toHaveLength(5);
     expect(actions.every((action) => action.code === false)).toBe(true);
+    expect(actions.every((action) => action.target === "code")).toBe(true);
+    for (const action of actions) expect(action.inputSchema).not.toHaveProperty("properties.codeId");
     expect(aiCapabilities.actions["code.version.approve"].policy).toEqual({ ask: "changes_access" });
     expect(aiCapabilities.actions["code.version.reject"].policy).toEqual({ ask: "changes_access" });
     expect(codeVersionMessages.check()).toEqual([]);

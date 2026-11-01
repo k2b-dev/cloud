@@ -2,12 +2,13 @@ import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } f
 import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import type { User } from "@k2b/cloud/contracts";
-import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
-import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
+import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
+import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
@@ -191,6 +192,31 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     setSystemTime();
   });
 
+  test("the Code pause Action forwards its target ID to the owning service", async () => {
+    const code = await newCode(),
+      other = await newCode();
+    await activate(code, await submitCodeVersion(input(code, "first", null, ["read"]), author));
+    await activate(other, await submitCodeVersion(input(other, "other", null, ["read"]), author));
+    const caller: CapabilityExecutionContext = {
+      authority: author.authority,
+      actor: author.authority.actor,
+      accessSubject: author.authority.accessSubject,
+      user: person(authorId),
+      locale: "de",
+      origin: "app",
+      requestId: "code-target-seam",
+      signal: new AbortController().signal,
+      target: { type: "core.code", id: code.id },
+    };
+    expect(await aiCapabilities.actions["code.pause"].run({}, caller)).toMatchObject({
+      ok: true,
+      data: { data: { state: "paused" } },
+    });
+    expect(await findCode(code.id)).toMatchObject({ state: "paused" });
+    expect(await findCode(other.id)).toMatchObject({ state: "active" });
+    expect(await aiCapabilities.actions["code.pause"].run({}, { ...caller, target: undefined })).toMatchObject({ ok: false });
+    expect(await findCode(other.id)).toMatchObject({ state: "active" });
+  });
   test("forward migration is additive and idempotent over filled version evidence", async () => {
     const code = await newCode(),
       submission = await submitCodeVersion(input(code, "one"), author);
@@ -298,6 +324,15 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       assurance: "confirm",
       details: { ask: "changes_access", content: { kind: "page" } },
     });
+    const { codeId, ...decisionInput } = next.binding;
+    expect(request?.argsDigest).toBe(
+      approvalArgsDigest({
+        capability: "core.code.version.approve",
+        target: { type: "core.code", id: codeId },
+        refs: {},
+        input: decisionInput,
+      }),
+    );
     const full = request?.details && "content" in request.details ? request.details.content : undefined;
     expect(full && full.kind === "page" ? JSON.parse(full.body).files : null).toEqual(diff.files);
     await expect(sql.begin((tx) => requireCodeVersionApproval(code, next.version.id, tx))).rejects.toMatchObject({

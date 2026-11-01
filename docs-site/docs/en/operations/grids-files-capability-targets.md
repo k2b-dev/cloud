@@ -10,10 +10,8 @@ tags: [capabilities, grids, files, upgrades]
 
 # Upgrade Grids and Files capability callers
 
-Deploy target-aware Core before upgrading Grids or Files, and refresh callers'
-cached capability catalogs. This is slice C0d of the coordinated target rollout;
-[Capability targets](/en/docs/operations/capability-targets) describes the Core
-and mandate prerequisites.
+Follow the coordinated upgrade in [Capability targets](/en/docs/operations/capability-targets),
+then refresh callers' cached catalogs when upgrading Grids and Files.
 
 - Grids GQL and `view.create` use a `grids.base` target. Record writes and
   `document.create` use `grids.table`; `workflow.record-action` uses `grids.base`.

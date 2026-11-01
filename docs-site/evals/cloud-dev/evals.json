@@ -337,6 +337,19 @@
         "Handles 429 and Retry-After while preserving per-app and shared operational budgets.",
         "Keeps person-owned resource operations under an interactive identity or mandate."
       ]
+    },
+    {
+      "id": 29,
+      "prompt": "Add an inventory.item.move Action to a third-party Cloud app. Items belong to warehouses and can move to another warehouse. One optional follow-up sends a message through another application. Where do resource IDs and Code eligibility belong?",
+      "expected_output": "Reads the App capabilities target contract, declares the source warehouse target, moves the primary warehouse ID out of input, uses a named destination ref, and retains the item ID with containment checks. Declares code:false if the Action reaches another application.",
+      "files": [],
+      "expectations": [
+        "Every resource Action declares a fixed local target Type; there is no report-only migration mode.",
+        "Primary resource coordinates are outside domain input; additional destinations use refs.",
+        "The owning service checks the item belongs to the selected source and authorizes both warehouses.",
+        "code:false excludes cross-application effects from resource-owned Code without replacing target or permission checks.",
+        "Detailed API rules are read in Fibel rather than duplicated in the skill."
+      ]
     }
   ]
 }

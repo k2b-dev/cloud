@@ -132,6 +132,8 @@ const taskInTargetChat = async (taskId: string, context: CapabilityExecutionCont
 };
 
 const skillTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.skill" ? context.target.id : "");
+const codeTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.code" ? context.target.id : "");
+const CodeVersionDecisionActionInput = codeVersionContracts.decide.input.omit({ codeId: true });
 
 const CORE_APP_ID = "core";
 
@@ -752,6 +754,11 @@ export const aiCapabilities = defineCapabilities({
   events: coreUserEvents,
   types: {
     ...coreUserEventTypes,
+    code: {
+      title: "Code",
+      description: "One independently versioned Code resource.",
+      icon: "ti ti-code",
+    },
     "ai.chat": {
       title: "AI conversation",
       description: "A private AI conversation owned by the current user.",
@@ -1377,76 +1384,78 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Save checked source and bundle against baseVersionId. Request version approval when policy requires it; leave the running version unchanged.",
       ...codeVersionContracts.submit,
+      target: "code",
+      input: codeVersionContracts.submit.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
-      async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission(input, ctx));
-        return result.ok ? ok(result.data.data) : result;
-      },
-      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion({ ...input, codeId: codeTargetId(context) }, ctx)),
     },
     "code.version.approve": {
       title: "Approve Code version",
       description: "Approve the exact source, bundle and comparison through the platform's Cloud-admin rule.",
       ...codeVersionContracts.decide,
+      target: "code",
+      input: CodeVersionDecisionActionInput,
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "changes_access" },
-      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, true, ctx));
+      async review(input: z.infer<typeof CodeVersionDecisionActionInput>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) =>
+          reviewCodeVersionDecision({ ...input, codeId: codeTargetId(context) }, true, ctx),
+        );
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, true, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion({ ...input, codeId: codeTargetId(context) }, true, ctx)),
     },
     "code.version.reject": {
       title: "Reject Code version",
       description: "Reject the exact version and comparison through the same platform request.",
       ...codeVersionContracts.decide,
+      target: "code",
+      input: CodeVersionDecisionActionInput,
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "changes_access" },
-      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, false, ctx));
+      async review(input: z.infer<typeof CodeVersionDecisionActionInput>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) =>
+          reviewCodeVersionDecision({ ...input, codeId: codeTargetId(context) }, false, ctx),
+        );
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, false, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion({ ...input, codeId: codeTargetId(context) }, false, ctx)),
     },
     "code.pause": {
       title: "Pause Code",
       description: "Pause future Code execution without replacing the running version or replaying missed events.",
       ...codeVersionContracts.pause,
+      target: "code",
+      input: codeVersionContracts.pause.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
-      async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, true, ctx));
-        return result.ok ? ok(result.data.data) : result;
-      },
-      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, true, ctx)),
+      run: (_input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), true, ctx)),
     },
     "code.resume": {
       title: "Resume Code",
       description: "Resume the active version only after checking current policy and live approval evidence.",
       ...codeVersionContracts.resume,
+      target: "code",
+      input: codeVersionContracts.resume.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "keeps_working" },
-      async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, false, ctx));
-        return result.ok ? ok(result.data.data) : result;
-      },
-      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, false, ctx)),
+      run: (_input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), false, ctx)),
     },
     "code.policy.update": {
       title: "Update Code policy",
