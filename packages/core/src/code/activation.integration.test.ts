@@ -201,17 +201,23 @@ databaseSuite()("durable Code activation", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
-    await migratePwa();
     readersSpy = spyOn(provider, "readResourcePrincipals").mockImplementation(async (input) => ({
       state: "checked",
       readable: [...input.principals],
     }));
-    await migrateAppApproval();
-    await migrateSettings();
-    await migrateAudit();
-    await migrateCode();
+    // These schemas depend only on auth. Keep session-family alterations in
+    // order, while independent schemas avoid serial migration round trips.
+    await Promise.all([
+      (async () => {
+        await migrateAppApproval();
+        await migratePwa();
+      })(),
+      migrateSettings(),
+      migrateAudit(),
+      migrateCode(),
+      migrateApprovals(),
+    ]);
     await migratePolicy();
-    await migrateApprovals();
     await migrateVersions();
     await migrateActivation();
     // Exercise upgrades before status queries cache the original table result shape.
@@ -787,6 +793,26 @@ databaseSuite()("durable Code activation", () => {
       }
     }
   });
+  test("Core outage reasons remain useful when the target is unreadable", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    targetReadable = false;
+    crashAt = "A";
+    await expect(run(activation.id)).rejects.toThrow("crash");
+    expect((await status(code, activation.id)).failure).toEqual({
+      target: { type: "example.item", id: "A" },
+      code: "activation_retry",
+      reason: "Activation is waiting for a dependency. Retry is automatic; the old version stays active.",
+    });
+    const failure = {
+      target: { type: "app", id: "example" },
+      code: "target_unavailable",
+      reason: "The target operation catalog is unavailable. Activate again after the application is ready.",
+    };
+    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
+    expect((await status(code, activation.id)).failure).toEqual(failure);
+  });
   test("saved answers without a reader decision use the current viewer's read access", async () => {
     const code = await newCode(),
       submitted = await version(code, ["B"]),
@@ -892,9 +918,7 @@ databaseSuite()("durable Code activation", () => {
     expect(live.size).toBe(0);
     await migrateActivation();
     await migrateActivation();
-    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid AND cancel_requested`).toEqual([
-      { id: activation.id },
-    ]);
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid AND cancel_requested`).toHaveLength(1);
     expect(
       (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
     ).toBeNull();

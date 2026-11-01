@@ -111,13 +111,12 @@ suite("Mail mailbox Code access", () => {
   });
 
   afterAll(async () => {
-    for (const id of mailboxIds) {
-      const rows = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${id}::uuid`;
-      await sql`DELETE FROM mail.mailboxes WHERE id = ${id}::uuid`;
-      for (const row of rows) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
-    }
-    for (const id of ordinaryAccessIds) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
-    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    const rows = await sql<
+      { access_id: string }[]
+    >`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM mail.mailboxes WHERE id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM auth.access WHERE id=ANY(${sql.array([...ordinaryAccessIds, ...rows.map((row) => row.access_id)], "uuid")})`;
+    await sql`DELETE FROM auth.service_accounts WHERE id=ANY(${sql.array(accountIds, "uuid")})`;
     if (groupId) await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     if (owner) await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
   });

@@ -84,7 +84,10 @@ const receipt = (row: ActivationRow): CodeActivation => ({
 });
 async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
   const failure = result.failure;
-  if (!failure?.target) return result;
+  // Provider presentation needs a current reader check. Core's own operational
+  // failures contain no target presentation and retain their recovery reason.
+  if (!failure?.target || (failure.readable === undefined && failure.title === undefined && failure.managerUserIds === undefined))
+    return result;
   const person = codePerson(context);
   let readable = false;
   if (failure.readable !== false && failure.target.type !== "app") {
