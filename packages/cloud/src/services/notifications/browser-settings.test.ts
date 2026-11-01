@@ -4,6 +4,7 @@ import webpush from "web-push";
 import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import { sql } from "../../runtime/clients";
 import { coreSettings } from "../settings/api";
+import * as settingsStore from "../settings/store";
 import { SettingUnreadableError } from "../settings/store";
 import { browserNotifications } from "./browser";
 import { getNotificationChannel } from "./channels";
@@ -32,9 +33,9 @@ test.each(["configuration", "start"])("unreadable VAPID keys preserve storage an
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     return await run(tx);
   });
-  const read = spyOn(coreSettings, "read");
+  const read = spyOn(settingsStore, "readKeyState");
   const get = spyOn(coreSettings, "get").mockResolvedValue("");
-  const write = spyOn(coreSettings, "set").mockRejectedValue(new Error("Must not write"));
+  const write = spyOn(settingsStore, "writeKey").mockRejectedValue(new Error("Must not write"));
   const generate = spyOn(webpush, "generateVAPIDKeys");
   const configure = spyOn(webpush, "setVapidDetails");
   const warn = spyOn(console, "warn").mockImplementation(() => {});
@@ -71,5 +72,85 @@ test("browser notification startup still rejects other configuration failures", 
     await expect(browserNotifications.start()).rejects.toBe(error);
   } finally {
     for (const spy of [begin, get]) spy.mockRestore();
+  }
+});
+
+// Keep the successful initialization last: the production key promise is cached
+// for the process lifetime; the preceding cases deliberately leave it retryable.
+test("VAPID initialization keeps settings on its lock-owning transaction and invalidates after commit", async () => {
+  const client = Object.assign(new SQL("postgres://localhost/unused_test"), {
+    savepoint: () => {
+      throw new Error("Unexpected savepoint");
+    },
+  });
+  const events: string[] = [];
+  const tx = new Proxy(client, {
+    apply: (_target, _this, args) => {
+      expect(String(args[0])).toContain("pg_advisory_xact_lock");
+      events.push("lock");
+      return Promise.resolve([]);
+    },
+  });
+  const begin = spyOn(sql, "begin").mockImplementation(async (run) => {
+    if (typeof run !== "function") throw new Error("Expected transaction callback");
+    const result = await run(tx);
+    events.push("commit");
+    return result;
+  });
+  // Pool-level reads/writes under this transaction can sit behind a concurrent
+  // index build waiting for the transaction itself. Reject any such escape.
+  const poolGet = spyOn(coreSettings, "get").mockRejectedValue(new Error("Pool get inside transaction"));
+  const poolRead = spyOn(coreSettings, "read").mockRejectedValue(new Error("Pool read inside transaction"));
+  const poolWrite = spyOn(coreSettings, "set").mockRejectedValue(new Error("Pool write inside transaction"));
+  const read = spyOn(settingsStore, "readKeyState").mockImplementation(async (key, db) => {
+    expect(db).toBe(tx);
+    events.push(`read:${key}`);
+    return { value: "", stored: "none" };
+  });
+  const write = spyOn(settingsStore, "writeKey").mockImplementation(async (key, _value, db) => {
+    expect(db).toBe(tx);
+    events.push(`write:${key}`);
+  });
+  const invalidate = spyOn(settingsStore, "invalidateSettingsCache").mockImplementation(async (keys) => {
+    expect(keys).toEqual([publicKey, privateKey]);
+    expect(events.at(-1)).toBe("commit");
+    events.push("invalidate");
+  });
+  const generated = webpush.generateVAPIDKeys();
+  const generate = spyOn(webpush, "generateVAPIDKeys").mockReturnValue(generated);
+  try {
+    // A failed second write must leave both keys uncommitted and the cache intact.
+    const failure = new Error("Private key write failed");
+    write.mockImplementationOnce(async (_key, _value, db) => {
+      expect(db).toBe(tx);
+    });
+    write.mockImplementationOnce(async (_key, _value, db) => {
+      expect(db).toBe(tx);
+      throw failure;
+    });
+    await expect(browserNotifications.configuration()).rejects.toBe(failure);
+    expect(events).not.toContain("commit");
+    expect(invalidate).not.toHaveBeenCalled();
+    events.length = 0;
+    await expect(browserNotifications.configuration()).resolves.toEqual({ publicKey: generated.publicKey });
+    expect(events).toEqual([
+      "lock",
+      `read:${publicKey}`,
+      `read:${privateKey}`,
+      `write:${publicKey}`,
+      `write:${privateKey}`,
+      "commit",
+      "invalidate",
+    ]);
+    expect(poolGet).not.toHaveBeenCalled();
+    expect(poolRead).not.toHaveBeenCalled();
+    expect(poolWrite).not.toHaveBeenCalled();
+    expect(write.mock.calls.slice(-2).map(([key, value]) => [key, value])).toEqual([
+      [publicKey, generated.publicKey],
+      [privateKey, generated.privateKey],
+    ]);
+  } finally {
+    for (const spy of [begin, poolGet, poolRead, poolWrite, read, write, invalidate, generate]) spy.mockRestore();
+    await client.close();
   }
 });

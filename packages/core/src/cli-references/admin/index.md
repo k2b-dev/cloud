@@ -813,7 +813,8 @@ filters or pagination are needed.
 `admin settings apply --from <file|-> --yes` applies Core updates and resets
 atomically. `settings reset <key> --yes` restores one Core default. Saved
 backend checks use `settings test pdf|storage|freeipa --yes`; manual AI
-enrichment uses `ai enrichment run --yes`.
+enrichment uses `ai enrichment run --yes`. On success they print `ok: true`, a
+message, and the check's details, not `saved`.
 
 Core settings, AI execution limits and instance network allowlists use
 `admin settings list|show|set`. Existing commands continue to own outgoing mail,

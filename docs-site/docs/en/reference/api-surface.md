@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # API surface
@@ -134,6 +134,13 @@ for the permission, directory, binding, and audience boundaries.
 admitted a continuing request. It does not replace resource authorization.
 See [Studio machine execution](/en/docs/identity/studio-machine-execution#call-the-api)
 for its use alongside effect checks.
+
+`ipCountry(ip: string): Promise<IpCountryResult>` and `DBIP_ATTRIBUTION` from
+`@k2b/cloud/server` provide a country-only lookup through Core for enrolled
+application principals. `IpCountryResult` contains `country`, `available`, and
+`attribution`. No additional platform permission is required. Unavailable
+lookups return a null country; DB-IP results carry the application's attribution
+duty. See [Server country lookups](/en/docs/platform#look-up-a-country-on-the-server).
 
 See [Server APIs](/en/docs/server) for the request path.
 

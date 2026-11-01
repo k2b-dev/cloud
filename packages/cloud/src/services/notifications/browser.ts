@@ -7,7 +7,7 @@ import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../
 import { sql } from "../../runtime/clients";
 import { decryptSecret, encryptSecret } from "../secrets";
 import { coreSettings } from "../settings/api";
-import { SettingUnreadableError } from "../settings/store";
+import { invalidateSettingsCache, readKeyState, SettingUnreadableError, writeKey } from "../settings/store";
 import { type NotificationDestination, registerNotificationChannel } from "./channels";
 import { NOTIFICATION_PREVIEW_LIMIT } from "./preview";
 import { sendPinnedWebPush } from "./web-push-transport";
@@ -77,11 +77,14 @@ let unregisterDriver: (() => void) | null = null;
 
 const ensureVapidConfig = (): Promise<{ publicKey: string; privateKey: string }> => {
   if (vapidConfigPromise) return vapidConfigPromise;
+  const keys = ["notifications.web_push_public_key", "notifications.web_push_private_key"] as const;
+  let created = false;
   vapidConfigPromise = sql
     .begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtextextended('notifications:web-push-vapid', 0))`;
-      const keys = ["notifications.web_push_public_key", "notifications.web_push_private_key"] as const;
-      const states = await Promise.all(keys.map((key) => coreSettings.read<string>(key)));
+      // Stay on the lock-owning connection. A pool query can queue behind a
+      // concurrent index build waiting for this transaction to finish.
+      const states = await Promise.all(keys.map((key) => readKeyState(key, tx)));
       for (const [index, state] of states.entries()) {
         if (state.stored === "unreadable") {
           const key = keys[index]!;
@@ -89,15 +92,21 @@ const ensureVapidConfig = (): Promise<{ publicKey: string; privateKey: string }>
           throw new SettingUnreadableError(key);
         }
       }
-      let [publicKey, privateKey] = states.map((state) => state.value);
+      let [publicKey, privateKey] = states.map((state) => (typeof state.value === "string" ? state.value : ""));
       if (!publicKey || !privateKey) {
         const generated = webpush.generateVAPIDKeys();
         publicKey = generated.publicKey;
         privateKey = generated.privateKey;
-        await coreSettings.set("notifications.web_push_public_key", publicKey);
-        await coreSettings.set("notifications.web_push_private_key", privateKey);
+        await writeKey(keys[0], publicKey, tx);
+        await writeKey(keys[1], privateKey, tx);
+        created = true;
       }
       return { publicKey, privateKey };
+    })
+    .then(async (config) => {
+      // Both keys commit together before other processes can refill their cache.
+      if (created) await invalidateSettingsCache(keys);
+      return config;
     })
     .catch((error) => {
       vapidConfigPromise = null;
