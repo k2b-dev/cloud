@@ -7,13 +7,14 @@ import { CodeIdSchema } from "./contracts";
 export const CodeStartRequestSchema = z
   .object({
     codeId: CodeIdSchema,
-    entrypoint: z.string().min(1).max(256),
+    entrypoint: z.string().min(1).max(256).describe("Declared entrypoint name of the active version."),
     idempotencyKey: z
       .string()
       .min(1)
       .max(96)
-      .refine((value) => new TextEncoder().encode(value).byteLength <= 96, "Key exceeds 96 UTF-8 bytes"),
-    input: z.json().default(null),
+      .refine((value) => new TextEncoder().encode(value).byteLength <= 96, "Key exceeds 96 UTF-8 bytes")
+      .describe("Request key; reuse it to recover the receipt, use a new key to run again."),
+    input: z.json().default(null).describe("JSON input passed to the entrypoint."),
   })
   .strict();
 export type CodeStartRequest = z.input<typeof CodeStartRequestSchema>;
