@@ -26,8 +26,9 @@ third-party application get the same page. It never names an application.
   again. The automation that needs it shows **Access missing**; the others keep
   running. Only the whole Code can be paused. A deleted target, all access
   removed, and paused Code each show what fails and how to recover. Internet
-  origins the Code may call with its credentials come from the bindings
-  reviewed with the version; new ones are marked.
+  origins come from the full `manifest.internet` list reviewed with each version,
+  including calls without a secret. Running and waiting versions list their own
+  origins; new ones are marked. Historical versions show their reviewed list too.
 - **Runs:** each run with its trigger, version and state, including skipped
   schedule ticks. A run lists its calls in order with their result. A run that
   failed after its first action offers **Run again**, once per failed run; a

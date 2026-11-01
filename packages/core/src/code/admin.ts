@@ -91,6 +91,8 @@ export type CodeAdminApprovalDetail = {
   decision: (CodeVersionDecision & { decidedByName: string | null }) | null;
   /** Full immutable version origin list, with or without secret bindings. */
   internet: string[];
+  /** Selected immutable bindings, independently reviewed from internet destinations. */
+  secrets: NonNullable<CodeCheckedVersionManifest["secrets"]>;
   /** Localized catalog titles for operations and target types; ids stay the fallback. */
   titles: { operations: Record<string, string>; types: Record<string, string> };
 };
@@ -465,6 +467,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
         }
       : null,
     internet: codeAdminInternet(manifest),
+    secrets: manifest?.secrets ?? [],
     titles: await operationTitles(permissions, context),
   };
 }

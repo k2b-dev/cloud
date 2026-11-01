@@ -719,11 +719,13 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
               <ul class="cloud-code__list">
                 <For each={props.state.internet.active ?? []}>
                   {(origin) => (
-                    <li class="cloud-code__row break-all font-mono text-sm">
-                      {origin}
-                      <Show when={props.state.internet.waiting?.includes(origin) && !props.state.internet.active?.includes(origin)}>
-                        <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
-                      </Show>
+                    <li class="cloud-code__row cloud-code__row--access">
+                      <span class="cloud-code__kind" aria-hidden="true">
+                        <i class="ti ti-world" />
+                      </span>
+                      <span class="cloud-code__cell">
+                        <Op>{origin}</Op>
+                      </span>
                     </li>
                   )}
                 </For>
@@ -734,11 +736,18 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
               <ul class="cloud-code__list">
                 <For each={props.state.internet.waiting ?? []}>
                   {(origin) => (
-                    <li class="cloud-code__row break-all font-mono text-sm">
-                      {origin}
-                      <Show when={props.state.internet.waiting?.includes(origin) && !props.state.internet.active?.includes(origin)}>
-                        <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
-                      </Show>
+                    <li class="cloud-code__row cloud-code__row--access">
+                      <span class="cloud-code__kind" aria-hidden="true">
+                        <i class="ti ti-world" />
+                      </span>
+                      <span class="cloud-code__cell">
+                        <Op>{origin}</Op>
+                      </span>
+                      <span class="cloud-code__right">
+                        <Show when={props.state.internet.waiting?.includes(origin) && !props.state.internet.active?.includes(origin)}>
+                          <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
+                        </Show>
+                      </span>
                     </li>
                   )}
                 </For>

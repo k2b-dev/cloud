@@ -43,6 +43,10 @@ test("approval lists every declared origin, including requests without secrets",
   expect(html).toContain("Ursprünge im Internet");
   expect(html).toContain("https://bank.example");
   expect(html).toContain("https://status.example:8443");
+  expect(html).toContain("Secret-Bindungen");
+  expect(html).toContain("BUCHHALTUNG_TOKEN");
+  expect(html).toContain("https://api.buchhaltung-beispiel.de/v1");
+  expect(html).toContain("Kopfzeilen: authorization");
 });
 
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };

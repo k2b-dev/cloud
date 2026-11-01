@@ -1,3 +1,4 @@
+import type { CodeSecretVersionBinding } from "@k2b/cloud/contracts";
 import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
@@ -26,6 +27,7 @@ export type CodeApprovalReviewProps = {
   why: string[];
   rights: CodeApprovalRight[];
   internet: string[];
+  secrets: CodeSecretVersionBinding[];
   diffHeader: string;
   files: CodeVersionDiffFile[] | null;
   decision: { approved: boolean; soleAdmin: boolean; by: string; when: string } | null;
@@ -275,6 +277,28 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
             </ul>
           </Show>
         </section>
+
+        <Show when={props.secrets.length}>
+          <section class="grid gap-2" aria-labelledby="code-review-secrets">
+            <h3 id="code-review-secrets" class="text-base font-semibold">
+              {t().secretBindings}
+            </h3>
+            <ul class="grid gap-2">
+              <For each={props.secrets}>
+                {(binding) => (
+                  <li class="grid gap-1 px-3 py-1 text-sm">
+                    <span class="font-mono break-all">{binding.name}</span>
+                    <span class="font-mono break-all">
+                      {binding.origin}
+                      {binding.pathPrefix}
+                    </span>
+                    <span class="text-(--k2b-text-muted)">{t().secretHeaders({ names: binding.headers.join(", ") })}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
 
         <section class="grid gap-2" aria-labelledby="code-review-diff" ref={diffRegion}>
           <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
