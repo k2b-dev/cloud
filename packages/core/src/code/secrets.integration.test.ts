@@ -300,6 +300,38 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       });
     expect(transported).toBe(0);
   });
+  test("redirects recheck live authority before another network effect", async () => {
+    const { codeId, binding } = await fixture();
+    const { claims } = await running(codeId, binding);
+    let sent = 0;
+    const response = await publicCall(claims, CodeHttpRequestSchema.parse({ url: destination.origin + "/start" }), async () => {
+      sent++;
+      await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+      return { status: 307, headers: {}, body: new Uint8Array(), redirectLocation: "/next" };
+    });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_not_active" } });
+    expect(sent).toBe(1);
+  });
+  test("a declared redirect still resolves and refuses private DNS answers on its next hop", async () => {
+    const { codeId, binding } = await fixture();
+    const next = "https://dns.example";
+    const { claims } = await running(codeId, binding, [destination.origin, next]);
+    let transported = 0;
+    let hops = 0;
+    const response = await publicCall(claims, CodeHttpRequestSchema.parse({ url: destination.origin + "/start" }), async (input) => {
+      if (++hops === 1) return { status: 307, headers: {}, body: new Uint8Array(), redirectLocation: next + "/final" };
+      return publicHttps(input, {
+        resolve: (host) => resolvePublicNetworkAddresses(host, async () => [{ address: "10.0.0.1", family: 4 }]),
+        request: () => {
+          transported++;
+          throw new Error("unexpected transport");
+        },
+      });
+    });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_http_failed" } });
+    expect(hops).toBe(2);
+    expect(transported).toBe(0);
+  });
   test("a redirect loop stops at the administrator call budget", async () => {
     const { codeId, binding } = await fixture();
     const { claims } = await running(codeId, binding);

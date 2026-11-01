@@ -144,68 +144,71 @@ export async function dispatchCodeSecretHttp(
     const remaining = input.claims.exp * 1000 - Date.now();
     if (remaining <= 0) return deny("runner_lease_lost");
     return await withNetworkDeadline(remaining, input.signal, new CodeBridgeRefusal("code_http_timeout"), async (signal) => {
-      const prepared = await sql.begin(async (tx) => {
-        const issued = await input.authority.withMandateIssueAuthority(
-          {
-            mandateId: input.authority.mandateId,
-            expectedRevision: input.authority.mandateRevision,
-            ownerAppId: "core",
-            targetAppId: "core",
-            operation: "runtime.http",
-            input: { url: request.url, origin: codeSecretRequestUrl(request.url, input.ownOrigins).origin, method: request.method },
-          },
-          async () => {
-            try {
-              const [version] = await tx<
-                { manifest: unknown }[]
-              >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb),'internet',COALESCE(manifest->'internet','[]'::jsonb)) AS manifest
+      const prepare = async (request: CodeHttpRequest) => {
+        const prepared = await sql.begin(async (tx) => {
+          const issued = await input.authority.withMandateIssueAuthority(
+            {
+              mandateId: input.authority.mandateId,
+              expectedRevision: input.authority.mandateRevision,
+              ownerAppId: "core",
+              targetAppId: "core",
+              operation: "runtime.http",
+              input: { url: request.url, origin: codeSecretRequestUrl(request.url, input.ownOrigins).origin, method: request.method },
+            },
+            async () => {
+              try {
+                const [version] = await tx<
+                  { manifest: unknown }[]
+                >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb),'internet',COALESCE(manifest->'internet','[]'::jsonb)) AS manifest
           FROM code.versions WHERE code_id=${input.claims.codeId} AND id=${input.claims.versionId}::uuid`;
-              const parsed = VersionSecretsSchema.safeParse(version?.manifest);
-              if (!parsed.success) return deny();
-              const bindings = parsed.data.secrets ?? [];
-              requireCodeHttpOrigin(request.url, parsed.data.internet ?? [], input.ownOrigins);
-              await validateCodeSecretBindings(input.claims.codeId, bindings, tx);
-              const plan = codeSecretHeaderPlan(request, bindings, input.ownOrigins);
-              const values = new Map<string, string>();
-              for (const name of plan.names) {
-                // Do not read the mutable binding_revision: only the manifest chooses the destination.
-                const [row] = await tx<{ encrypted: string | null }[]>`SELECT encrypted FROM code.secrets
+                const parsed = VersionSecretsSchema.safeParse(version?.manifest);
+                if (!parsed.success) return deny();
+                const bindings = parsed.data.secrets ?? [];
+                requireCodeHttpOrigin(request.url, parsed.data.internet ?? [], input.ownOrigins);
+                await validateCodeSecretBindings(input.claims.codeId, bindings, tx);
+                const plan = codeSecretHeaderPlan(request, bindings, input.ownOrigins);
+                const values = new Map<string, string>();
+                for (const name of plan.names) {
+                  // Do not read the mutable binding_revision: only the manifest chooses the destination.
+                  const [row] = await tx<{ encrypted: string | null }[]>`SELECT encrypted FROM code.secrets
             WHERE code_id=${input.claims.codeId} AND name=${name} FOR SHARE`;
-                if (!row?.encrypted) return deny("code_http_secret_unavailable");
-                let value: string;
-                try {
-                  value = purposeSecretCipher(CODE_SECRET_PURPOSE).decrypt(row.encrypted, codeSecretContext(input.claims.codeId, name));
-                } catch {
-                  return deny("code_http_secret_unavailable");
+                  if (!row?.encrypted) return deny("code_http_secret_unavailable");
+                  let value: string;
+                  try {
+                    value = purposeSecretCipher(CODE_SECRET_PURPOSE).decrypt(row.encrypted, codeSecretContext(input.claims.codeId, name));
+                  } catch {
+                    return deny("code_http_secret_unavailable");
+                  }
+                  if (!value || /[^\x20-\x7e]/.test(value)) return deny("code_http_secret_unavailable");
+                  values.set(name, value);
                 }
-                if (!value || /[^\x20-\x7e]/.test(value)) return deny("code_http_secret_unavailable");
-                values.set(name, value);
+                const inserted: { name: string; value: string; sent: string }[] = [];
+                const headers = Object.fromEntries(
+                  Object.entries(request.headers).map(([key, template]) => {
+                    const sent = template.replace(
+                      /\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]/g,
+                      (_, name: string) => values.get(name) ?? deny(),
+                    );
+                    for (const name of plan.names)
+                      if (template.includes(`[secret:${name}]`)) inserted.push({ name, value: values.get(name)!, sent });
+                    return [key.toLowerCase(), sent];
+                  }),
+                );
+                if (Buffer.byteLength(JSON.stringify(headers)) > payloadLimit) return deny("code_http_input_limit");
+                return { ok: true as const, headers, inserted, bindings, origins: parsed.data.internet ?? [] };
+              } catch (error) {
+                // Expected preparation refusals remain data, so the mandate wrapper cannot erase their codes.
+                if (error instanceof CodeBridgeRefusal) return { ok: false as const, code: error.code, origin: error.origin };
+                throw error;
               }
-              const inserted: { name: string; value: string; sent: string }[] = [];
-              const headers = Object.fromEntries(
-                Object.entries(request.headers).map(([key, template]) => {
-                  const sent = template.replace(
-                    /\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]/g,
-                    (_, name: string) => values.get(name) ?? deny(),
-                  );
-                  for (const name of plan.names)
-                    if (template.includes(`[secret:${name}]`)) inserted.push({ name, value: values.get(name)!, sent });
-                  return [key.toLowerCase(), sent];
-                }),
-              );
-              if (Buffer.byteLength(JSON.stringify(headers)) > payloadLimit) return deny("code_http_input_limit");
-              return { ok: true as const, headers, inserted, bindings, origins: parsed.data.internet ?? [] };
-            } catch (error) {
-              // Expected preparation refusals remain data, so the mandate wrapper cannot erase their codes.
-              if (error instanceof CodeBridgeRefusal) return { ok: false as const, code: error.code, origin: error.origin };
-              throw error;
-            }
-          },
-          { db: tx },
-        );
-        return issued.ok ? issued.data : { ok: false as const, code: "code_http_forbidden" };
-      });
-      if (!prepared.ok) throw new CodeBridgeRefusal(prepared.code, 200, "origin" in prepared ? prepared.origin : undefined);
+            },
+            { db: tx },
+          );
+          return issued.ok ? issued.data : { ok: false as const, code: "code_http_forbidden" };
+        });
+        if (!prepared.ok) throw new CodeBridgeRefusal(prepared.code, 200, "origin" in prepared ? prepared.origin : undefined);
+        return prepared;
+      };
       // Locks protect issuance, not the remote effect. A slow endpoint must not block pause, revoke or heartbeats.
       signal.throwIfAborted();
       // The same administrator call budget bounds network hops; a caller can instead use the final URL.
@@ -213,9 +216,8 @@ export async function dispatchCodeSecretHttp(
       let current = request;
       for (let hop = 0; hop < hopBudget; hop++) {
         signal.throwIfAborted();
-        requireCodeHttpOrigin(current.url, prepared.origins, input.ownOrigins);
-        // Reapply secret origin/path/header constraints before every hop, never forward an inserted header blindly.
-        codeSecretHeaderPlan(current, prepared.bindings, input.ownOrigins);
+        // Every hop rechecks current authority, immutable destinations and current secret values before issuance.
+        const prepared = await prepare(current);
         const response = await send({
           url: current.url,
           method: current.method,
