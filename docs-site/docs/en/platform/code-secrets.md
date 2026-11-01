@@ -178,7 +178,12 @@ Declared origins never permit private/internal hosts or private DNS answers.
 
 Redirects recheck the origin list and secret origin/path/header bindings
 before sending another request. A cross-origin redirect cannot carry a secret
-bound to the previous origin. One `http.fetch` follows at most 20 redirects,
+bound to the previous origin. Redirect destinations follow the same path
+restrictions as direct requests: fragments and percent-encoded paths are
+refused. Headers set directly by Code are reused for a declared redirect;
+secret placeholders must pass their binding checks again.
+
+One `http.fetch` follows at most 20 redirects,
 matching the Fetch redirect limit; exhaustion returns `code_http_redirect_limit`. Use the final URL to avoid a
 redirect chain. Core performs no retries. HTTP is
 recorded as a possible Action so attempt recovery cannot automatically repeat
