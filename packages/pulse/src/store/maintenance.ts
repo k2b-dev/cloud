@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { notificationLocale } from "../service/base-notifications";
 import { recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
 import { assertStoreName } from "./base-schema";
