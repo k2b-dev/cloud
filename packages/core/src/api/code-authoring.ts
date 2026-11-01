@@ -111,7 +111,12 @@ export function createCodeAuthoringRoutes() {
           if (failure.status === 500)
             logger("core:code-authoring").error("Code authoring command failed", {
               command: name,
-              error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : "unknown",
+              error:
+                name === "secretSet"
+                  ? "private secret operation failed"
+                  : error instanceof Error
+                    ? { name: error.name, message: error.message, stack: error.stack }
+                    : "unknown",
             });
           return c.json(failure.body, failure.status);
         } finally {
@@ -131,5 +136,18 @@ export function createCodeAuthoringRoutes() {
   register("diff", codeAuthoringContracts.diff, codeAuthoringServices.diff);
   register("activate", codeAuthoringContracts.activate, codeAuthoringServices.activate, true);
   register("run", codeAuthoringContracts.run, codeAuthoringServices.run, true);
+  register("pullAll", codeAuthoringContracts.pullAll, codeAuthoringServices.pullAll);
+  register("status", codeAuthoringContracts.status, codeAuthoringServices.status);
+  register("runs", codeAuthoringContracts.runs, codeAuthoringServices.runs);
+  register("runRead", codeAuthoringContracts.runRead, codeAuthoringServices.runRead);
+  register("pause", codeAuthoringContracts.pause, codeAuthoringServices.pause, true);
+  register("resume", codeAuthoringContracts.resume, codeAuthoringServices.resume, true);
+  register("policyRead", codeAuthoringContracts.policyRead, codeAuthoringServices.policyRead);
+  register("policyEffective", codeAuthoringContracts.policyEffective, codeAuthoringServices.policyEffective);
+  register("policyPreview", codeAuthoringContracts.policyPreview, codeAuthoringServices.policyPreview);
+  register("policyUpdate", codeAuthoringContracts.policyUpdate, codeAuthoringServices.policyUpdate, true);
+  register("secretSet", codeAuthoringContracts.secretSet, codeAuthoringServices.secretSet, true);
+  register("secretList", codeAuthoringContracts.secretList, codeAuthoringServices.secretList);
+  register("secretDelete", codeAuthoringContracts.secretDelete, codeAuthoringServices.secretDelete, true);
   return router;
 }

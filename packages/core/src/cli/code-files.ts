@@ -15,7 +15,7 @@ export function codeProjectFolder(config: CodeProject): string {
     ? join("me", config.codeId)
     : owner.kind === "app"
       ? join(segment(owner.appId), config.codeId)
-      : join(segment(owner.ref.type.split(".")[0]!), segment(owner.ref.id));
+      : join(segment(owner.ref.type.split(".")[0]!), /^[a-zA-Z0-9_-]+$/.test(owner.ref.id) ? owner.ref.id : `@${config.codeId}`);
 }
 /** Refuse links in every managed path, including an existing ancestor outside the project. */
 export async function assertCodePath(path: string) {
@@ -47,6 +47,7 @@ export async function assertCodeDestination(root: string, owner?: CodeOwner) {
   }
   throw new Error("The resource's local Code folder already exists. Choose a new --out directory.");
 }
+export class CodeProjectNotFoundError extends Error {}
 export async function loadCodeProject(path = ".") {
   let directory = resolve(path);
   await assertCodePath(directory);
@@ -62,7 +63,7 @@ export async function loadCodeProject(path = ".") {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     }
     const parent = dirname(directory);
-    if (parent === directory) throw new Error("No code.json found. Run cld code init or pull first.");
+    if (parent === directory) throw new CodeProjectNotFoundError("No code.json found. Run cld code init or pull first.");
     directory = parent;
   }
 }
@@ -104,10 +105,22 @@ export async function readCodeFiles(directory: string, tests = false) {
 }
 /** New pulls never overwrite a local folder. Use a new --out directory to inspect and reconcile changes. */
 export async function writeCodeProject(root: string, config: CodeProject, files: Record<string, string>) {
-  const directory = resolve(root, codeProjectFolder(config));
+  let directory = resolve(root, codeProjectFolder(config));
   await assertCodePath(directory);
   await mkdir(dirname(directory), { recursive: true });
-  await mkdir(directory); // EEXIST protects unsaved local edits and concurrent pulls.
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || config.owner.kind !== "resource") throw error;
+    const existingPath = join(directory, "code.json");
+    await assertCodePath(existingPath);
+    const existing = CodeProjectSchema.parse(JSON.parse(await readFile(existingPath, "utf8")));
+    if (existing.codeId === config.codeId) throw error;
+    // @ cannot occur in a short resource ID, so this namespace cannot collide with a normal resource folder.
+    directory = resolve(root, segment(config.owner.ref.type.split(".")[0]!), `@${config.codeId}`);
+    await assertCodePath(directory);
+    await mkdir(directory); // Refuse existing fallback checkouts too.
+  }
   for (const [path, content] of Object.entries(CodeSourceFilesSchema.parse(files))) {
     if (path === "code.json" || path === "tsconfig.json" || path.startsWith("sdk/")) throw new Error(`Reserved project path: ${path}`);
     const target = join(directory, path);
@@ -150,4 +163,51 @@ export async function writeCodeSdk(directory: string, files: Record<string, stri
       await file.close();
     }
   }
+}
+/** Discover local projects without traversing links. A project is a traversal boundary, including its generated output. */
+export async function listCodeProjects(root?: string) {
+  const defaultRoot = root === undefined;
+  if (root === undefined) {
+    try {
+      return [await loadCodeProject(".")];
+    } catch (error) {
+      if (!(error instanceof CodeProjectNotFoundError)) throw error;
+    }
+    root = "code";
+  }
+  await assertCodePath(root);
+  try {
+    if ((await lstat(root)).isFile()) return [await loadCodeProject(root)];
+  } catch (error) {
+    if (defaultRoot && error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+  const projects: Awaited<ReturnType<typeof loadCodeProject>>[] = [];
+  async function visit(directory: string) {
+    await assertCodePath(directory);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const config = entries.find((entry) => entry.name === "code.json");
+    if (config) {
+      if (!config.isFile()) throw new Error("code.json must be a regular file.");
+      projects.push(await loadCodeProject(directory));
+      return;
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.isSymbolicLink()) throw new Error("Symbolic links are not allowed in Code workspaces.");
+      if (entry.isDirectory()) await visit(join(directory, entry.name));
+    }
+  }
+  await visit(resolve(root));
+  if (!projects.length && Object.keys(await readCodeFiles(resolve(root))).length) {
+    try {
+      return [await loadCodeProject(root)];
+    } catch (error) {
+      if (!(error instanceof CodeProjectNotFoundError)) throw error;
+    }
+  }
+  projects.sort((a, b) => (a.config.codeId < b.config.codeId ? -1 : a.config.codeId > b.config.codeId ? 1 : 0));
+  if (new Set(projects.map((project) => project.config.codeId)).size !== projects.length)
+    throw new Error("Duplicate local Code IDs. Select one checkout root.");
+  return projects;
 }

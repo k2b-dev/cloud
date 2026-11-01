@@ -107,6 +107,114 @@ prevents duplicate starts when retrying after a lost response. Use a new key
 for a new intentional run. The result is a queued run receipt, not the run's
 final outcome.
 
+## Pull the instance's resource Code and inspect status
+
+```sh
+cld code pull --all --out ./instance-code --json
+cld code status ./instance-code --json
+```
+
+`pull --all` requires a Cloud administrator and downloads every resource-owned
+Code through the same source reader as a single pull. Personal and
+application-owned Code are excluded. Resource folders use short IDs, for
+example `mail/box_1234`; titles and owners remain in `code.json`. If an ID
+cannot be used as a filesystem segment or two resource types share the same
+short ID, pull uses `mail/@<code-id>` for that Code. Existing checkouts are
+never overwritten. Pull never
+activates Code. It refuses existing project folders. If a later project fails,
+earlier folders remain: inspect them and retry into a new root.
+
+Status discovers every `code.json` below the selected root, or finds the
+surrounding project from a source path. Without a path, it uses the current
+project when present; otherwise it scans `./code`, matching pull's default. It compares local source with its saved base and reports the latest
+server version, approval receipt, active version, execution state, pause reason,
+and whether a newer server base exists. An empty root returns an empty list;
+a missing default `./code` also returns an empty list.
+Duplicate local Code IDs, linked paths, unavailable Code, and unreadable files
+fail visibly. Status does not update files or advance local bases.
+
+## Inspect runs and pause execution
+
+```sh
+cld code runs ./code/example/box_1234 --limit 20 --json
+cld code runs ./code/example/box_1234 --run 11111111-1111-4111-8111-111111111111 --json
+cld code pause ./code/example/box_1234 --yes --json
+cld code resume ./code/example/box_1234 --yes --json
+```
+
+Run lists return metadata and `nextCursor`; pass it as `--cursor` to continue.
+A single run returns metadata and an ordered call page. Pass
+`contents.nextCursor` as `--call-cursor` to continue its call list. Each page
+contains at most one call. Readers receive `contents: null`; editors can also
+read inputs, outputs, calls and results. Large values have chunk flags; use
+`--content input|output|call|result`, `--ordinal` for call/result, and `--offset`
+from `contents.content.nextOffset` to continue the text. See
+[Code runs](/en/docs/platform/code-runs) for call states and uncertain outcomes.
+
+Pause and resume require `--yes` and the same execution-editor authority as
+the Code surface. Phone sessions cannot change execution authority. A version
+must already be active; resume rechecks its approval and is refused in CI. Pause stops new admissions;
+missed events are not replayed. Pending newer versions remain pending.
+
+## Read and replace policy
+
+```sh
+cld code policy read --json
+cld code policy effective --json
+cld code policy preview --revision 3 --preset admin --json
+cld code policy update --revision 3 --preset admin --yes --json
+```
+
+Read returns the visible policy and its revision. Effective resolves the
+current person's rules; `--owner owner.json` selects an owner and
+`--author-id <UUID>` selects a resource/app version author. Other owners require
+Cloud administration. Preview and update also require Cloud administration.
+Update requires a full administrative credential; phone sessions are refused.
+
+Use exactly one of `--preset off|admin|open` or `--from <file|->` for preview
+and update. A file contains the complete `{preset,rules}` definition, including
+all defaults and group overrides. Presets replace the whole table. Preview
+pages affected Code with `--cursor` and `--limit`. Update returns the new policy
+and a durable pause-job receipt; affected running Code may be paused later.
+
+Always pass the revision read before editing. If preview or update returns
+`CONFLICT`, read again, reconcile the definition and preview again. The CLI
+never silently reads a newer revision or retries a stale write.
+
+## Write secrets privately
+
+Secret commands require Code editor access. Values are write-only and never
+appear in list, set or delete responses. Keep values out of command arguments,
+source files and version control. Put the value in a private file or pipe it
+through stdin:
+
+```sh
+cld code secret set BANK_TOKEN ./code/example/box_1234 --from /private/bank-token --binding bank-binding.json --binding-revision null --json
+# Or pipe a private secret source into the same command with --from -.
+cld code secret list ./code/example/box_1234 --json
+cld code secret delete BANK_TOKEN ./code/example/box_1234 --binding-revision 11111111-1111-4111-8111-111111111111 --yes --json
+```
+
+A new name requires `--binding` with a destination definition:
+
+```json
+{"origin":"https://bank.example","pathPrefix":"/api","headers":["authorization"]}
+```
+
+For an existing name, pass its current `binding_revision` from list/set as
+`--binding-revision <UUID>`. Omit `--binding` to retain the destination.
+Changed destinations create a new immutable binding revision and require a
+new version submission. Replacing a value applies immediately to all versions
+using that name. One final newline from file/stdin is removed; other bytes
+are preserved. Values must satisfy the server's printable ASCII contract. Selected input files
+may be symlinks, including mounted secret files. Use `--from -` for pipes.
+
+List returns names, destinations, binding revisions and `configured`, with
+`nextCursor` for `--cursor`; `--limit` accepts 1–20. Delete requires `--yes`
+and the current binding revision. It removes the value for every version and
+retains binding evidence. A stale binding revision fails; read metadata and
+reconcile before retrying. No command reads a secret value.
+
 ## Stable JSON
 
 The Core shared contract is `codeAuthoringContracts` in
@@ -123,6 +231,18 @@ C19 chat tools use the same schemas and `codeAuthoringServices`.
 | diff | `{version:1, diff}` |
 | activate | `{version:1, activation}` |
 | run | `{version:1, run:{runId, duplicate}}` |
+| pull --all | `{version:1, items:[{version:1,config,files}], nextCursor:null}` |
+| status | `{version:1, items:[{code,permission,baseVersionId,baseCurrent,modified,latest}]}` |
+| runs | `{version:1, items, nextCursor}` |
+| runs --run | `{version:1, run, contents}` |
+| pause, resume | `{version:1, state}` |
+| policy read | `{version:1, policy}` |
+| policy effective | `{version:1, revision, rows}` |
+| policy preview | `{version:1, revision, total, items, nextCursor}` |
+| policy update | `{version:1, policy, pauseJobId}` |
+| secret set | `{version:1, secret}` (metadata only) |
+| secret list | `{version:1, items, nextCursor}` (metadata only) |
+| secret delete | `{version:1, deleted}` |
 
 `result` in check is `CodeCheckResultSchema`; `manifest` is the complete
 submission manifest or null on check failure. Permission rows contain
@@ -139,3 +259,11 @@ never translated. Fixed source, catalog, grants and fixtures produce the same
 check/test JSON; generated SDK files are stable. Stateful saves and starts
 return their durable IDs and timestamps. No result adds local machine paths,
 process IDs or elapsed times.
+
+Policy and binding conflicts, denied reads/writes, incomplete pulls and invalid
+local input exit 1. Status differences alone exit 0. Secret write failures
+return a generic message without private input. The shared contract adds
+`pullAll`, `status`, `runs`, `runRead`, `pause`, `resume`, `policyRead`,
+`policyEffective`, `policyPreview`, `policyUpdate`, `secretSet`, `secretList`
+and `secretDelete`; `CodeLocalStatusSchema` and `CodeWorkspaceStatusSchema`
+define the local comparison. Existing C18a keys and version 1 stay unchanged.
