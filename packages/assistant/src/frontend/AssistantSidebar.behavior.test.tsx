@@ -344,7 +344,7 @@ test("the server's approvals count renders the row from the first paint", async 
   }
 });
 
-test("the Approvals row sits above Studio while something waits and changes only on navigation", async () => {
+test("Waiting for you always keeps its place above Studio, with the live count", async () => {
   const dom = createDomTestHarness();
   const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
   const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
@@ -356,8 +356,6 @@ test("the Approvals row sits above Studio while something waits and changes only
     for (let attempt = 0; attempt < 5; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   };
   const live = createAssistantLiveHub();
-  const [pending, setPending] = createSignal(0);
-  const [selected, setSelected] = createSignal("first");
   let opened = 0;
   const dispose = render(
     () => (
@@ -365,8 +363,8 @@ test("the Approvals row sits above Studio while something waits and changes only
         timeZone="UTC"
         renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
-        activeConversationId={selected}
-        pendingApprovals={pending()}
+        activeConversationId={() => "first"}
+        pendingApprovals={0}
         onOpenApprovals={() => {
           opened++;
         }}
@@ -378,26 +376,23 @@ test("the Approvals row sits above Studio while something waits and changes only
   delegateEvents(["click"]);
   const footer = () => dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
   const row = () => footer().querySelector<HTMLAnchorElement>('a[href="/app/assistant?approvals=1"]');
+  const labels = () =>
+    Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
   const mobileIds = () =>
     readWorkspaceNavigation()!
       .navigation.items()
       .map((item) => item.id);
   const stopBadges = watchAppBadges([]);
   try {
-    // Rendered with nothing open: no row, on the desktop or on the phone.
+    // Nothing waits: the row is still there, so a later request never slides the footer under the pointer.
     await settle();
-    expect(row()).toBeNull();
-    expect(mobileIds()).not.toContain("approvals");
-    // A request that arrives while the person reads does not slide a row under the pointer.
+    expect(row()).not.toBeNull();
+    expect(row()!.querySelector("i")?.className).toContain("ti-hand-stop");
+    expect(labels()).toEqual(["Waiting for you", "Studio", "Projects", "Runs", "Personalize"]);
+    expect(mobileIds()).toContain("approvals");
     counts = { total: 2, apps: { assistant: 2 } };
     refreshAppBadges();
     await settle();
-    expect(row()).toBeNull();
-    setSelected("second");
-    expect(row()).not.toBeNull();
-    const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
-    expect(labels.indexOf("Approvals")).toBeGreaterThanOrEqual(0);
-    expect(labels.indexOf("Approvals")).toBeLessThan(labels.indexOf("Studio"));
     expect(row()!.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("2");
     const ids = mobileIds();
     expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("apps"));
@@ -406,12 +401,6 @@ test("the Approvals row sits above Studio while something waits and changes only
         .navigation.items()
         .find((item) => item.id === "approvals")?.badge,
     ).toBe(2);
-    // The last request decided elsewhere: the row stays with a muted 0 until the person navigates.
-    counts = { total: 0, apps: {} };
-    refreshAppBadges();
-    await settle();
-    expect(row()).not.toBeNull();
-    expect(row()!.querySelector('[data-waiting="zero"] .k2b-app-workspace__sidebar-status-count')?.textContent).toBe("0");
     // Modified clicks keep the link's own behavior, such as a new tab; a plain click opens the view in place.
     for (const modifier of ["metaKey", "ctrlKey", "shiftKey", "altKey"]) {
       const event = new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true });
@@ -423,13 +412,57 @@ test("the Approvals row sits above Studio while something waits and changes only
     row()!.dispatchEvent(click);
     expect(click.defaultPrevented).toBe(true);
     expect(opened).toBe(1);
-    // Navigation removes it; once the browser has read a count, that count wins over the rendered one.
-    setPending(1);
-    setSelected("first");
-    expect(row()).toBeNull();
   } finally {
     stopBadges();
     globalThis.fetch = originalFetch;
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("My apps & automations appears only for a person with Code and opens its view in place", async () => {
+  const dom = createDomTestHarness();
+  const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
+  const live = createAssistantLiveHub();
+  const [hasCode, setHasCode] = createSignal(false);
+  let opened = 0;
+  const dispose = render(
+    () => (
+      <AssistantSidebar
+        timeZone="UTC"
+        renderedAt={renderedAt}
+        conversations={() => [conversation("first", "First", null)]}
+        hasPersonalCode={hasCode}
+        onOpenCode={() => {
+          opened++;
+        }}
+        live={live}
+      />
+    ),
+    dom.root,
+  );
+  delegateEvents(["click"]);
+  const footer = () => dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
+  const row = () => footer().querySelector<HTMLAnchorElement>('a[href="/app/assistant?code=1"]');
+  const mobileIds = () =>
+    readWorkspaceNavigation()!
+      .navigation.items()
+      .map((item) => item.id);
+  try {
+    // Without Code there is no empty entry, neither on the desktop nor on the phone.
+    expect(row()).toBeNull();
+    expect(mobileIds()).not.toContain("code");
+    setHasCode(true);
+    expect(row()?.textContent).toContain("My apps & automations");
+    expect(row()!.querySelector("i")?.className).toContain("ti-stack-2");
+    const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
+    expect(labels.slice(0, 3)).toEqual(["Waiting for you", "My apps & automations", "Studio"]);
+    expect(mobileIds()).toContain("code");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    row()!.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(opened).toBe(1);
+  } finally {
     dispose();
     dom.cleanup();
   }

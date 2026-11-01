@@ -37,6 +37,12 @@ test("rejects empty panel presentation", () => {
   }
 });
 
+test("keeps a safe integer panel order and rejects any other", () => {
+  expect(defineApp({ ...inventory, panel: { ...panel, order: 2 } }).meta.panel?.order).toBe(2);
+  for (const order of [0.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])
+    expect(() => defineApp({ ...inventory, panel: { ...panel, order } })).toThrow("panel.order");
+});
+
 test("rejects panel paths reserved for framework Help redirects", () => {
   for (const basePath of ["/app/inventory", "/app/inventory/"]) {
     for (const suffix of ["", "/panel", "/x/y", "/panel?topic=stock#details", "/%2e/panel"]) {

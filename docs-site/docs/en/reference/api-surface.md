@@ -47,7 +47,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
-| `@k2b/cloud/code` | Preview, platform-owned | [Generate the SDK](/en/docs/platform/code-sdk), [check and bundle versions](/en/docs/platform/code-checker) |
+| `@k2b/cloud/code` | Preview, platform-owned | [Generate the SDK](/en/docs/platform/code-sdk), [check and bundle versions](/en/docs/platform/code-checker), [test and simulate](/en/docs/platform/test-code) |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
 | `@k2b/cloud/config` | Supported, server-only | Typed environment registries |
 

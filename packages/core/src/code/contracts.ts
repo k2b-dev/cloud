@@ -265,4 +265,13 @@ export const codeQueryContracts = {
       })
       .strict(),
   },
+  /** Runs of the caller's own personal Code created since a moment in the last 7 days. */
+  runCount: {
+    input: z
+      .object({
+        since: z.iso.datetime().describe("Start of the counted window, at most 7 days ago, such as the start of the person's day."),
+      })
+      .strict(),
+    data: z.object({ runs: z.number().int().nonnegative(), failed: z.number().int().nonnegative() }).strict(),
+  },
 } as const;

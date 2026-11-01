@@ -220,6 +220,9 @@ describe("generated runtime through the canonical call seam", () => {
     sdk.__codeSdk.bind({
       async call(operation, invocation) {
         expect(operation).toBe(invocation.call.capability);
+        // workerd RPC rejects null-prototype objects even when structuredClone accepts them.
+        expect(Object.getPrototypeOf(invocation.call.refs)).toBe(Object.prototype);
+        expect(structuredClone(invocation)).toEqual(invocation);
         calls.push(invocation);
         return { id: "created" };
       },
