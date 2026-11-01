@@ -3,6 +3,28 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.59.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.58.0...cloud-v0.59.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** migrate deployments to app key files with checked upgrade steps ([#2268](https://github.com/k2b-dev/cloud/issues/2268)) ([52c1438](https://github.com/k2b-dev/cloud/commit/52c1438cc02a7746099d672631f513cf12b4ce42))
+* **cloud:** require migration evidence before retiring app credentials ([#2266](https://github.com/k2b-dev/cloud/issues/2266)) ([b1ba1da](https://github.com/k2b-dev/cloud/commit/b1ba1dad5319622cecb6b6308446543328f30bc0))
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Bug Fixes
+
+* **mail:** preserve compose input across retries and conflicts ([#2308](https://github.com/k2b-dev/cloud/issues/2308)) ([6a3c8f0](https://github.com/k2b-dev/cloud/commit/6a3c8f0ee53deed8fa2eccedd1a494d787f8988f))
+* **mail:** the composer always edits formatted, with the toolbar right under the subject ([#2294](https://github.com/k2b-dev/cloud/issues/2294)) ([196a753](https://github.com/k2b-dev/cloud/commit/196a75306c9a4f19b8b3a61498c87755cab60711))
+* **mail:** the draft echo test waits for the save request before answering it ([#2351](https://github.com/k2b-dev/cloud/issues/2351)) ([8346242](https://github.com/k2b-dev/cloud/commit/8346242f338145971725242fedf75d15e87dd276))
+* **mail:** the draft review answers refused reads through the shared page mapping ([#2285](https://github.com/k2b-dev/cloud/issues/2285)) ([873512d](https://github.com/k2b-dev/cloud/commit/873512d1cf3abffd5e406491a447b8e2965d3a76))
+* **mail:** typing never raises a false conflict when the Drafts sync sees Mail's own copy ([#2319](https://github.com/k2b-dev/cloud/issues/2319)) ([8ce5bf1](https://github.com/k2b-dev/cloud/commit/8ce5bf1d1aa71f2a1be309cbf9085e2b0e101a0f))
+* **ui:** settings dialogs show every allowed section, so mailbox admins can rename again ([#2299](https://github.com/k2b-dev/cloud/issues/2299)) ([2d0a790](https://github.com/k2b-dev/cloud/commit/2d0a790efd19cb8b7e1592798083ea1e190e38bc))
+* **ui:** the icon picker opens wide enough, searches every group strictly, and speaks German ([#2255](https://github.com/k2b-dev/cloud/issues/2255)) ([8f0d4c5](https://github.com/k2b-dev/cloud/commit/8f0d4c534b90cf73a84287a6a919de3a0f42ea84))
+* **ui:** the StatGrid header sets itself apart by its surface, not a line ([#2315](https://github.com/k2b-dev/cloud/issues/2315)) ([1196746](https://github.com/k2b-dev/cloud/commit/11967464506569bd6ba2199477ff7b42e2d61609))
+* **ui:** the workspace drawer marks its edge with one shade, not a line ([#2321](https://github.com/k2b-dev/cloud/issues/2321)) ([a9188da](https://github.com/k2b-dev/cloud/commit/a9188dad5780f0c678beed1d8c4a5ebee774ca8b))
+
 ## [0.58.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.57.0...cloud-v0.58.0) (2026-11-01)
 
 
