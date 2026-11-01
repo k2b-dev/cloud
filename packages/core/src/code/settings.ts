@@ -1,6 +1,6 @@
 import { createSettingsAPI } from "@k2b/cloud/services";
 
-/** Storage admission budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
+/** Core-owned storage admission budgets, adjustable with `cld admin settings apply`; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
   "core.code.source_bytes": {
     kind: "number",

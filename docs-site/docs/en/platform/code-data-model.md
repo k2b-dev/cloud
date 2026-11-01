@@ -132,8 +132,9 @@ the concrete URL, request IDs, query parameters or other run input.
 ## Storage limits and retention
 
 Core declares these administrator settings. They have no environment-variable
-fallback. The Code administration surface can edit them through the settings
-service.
+fallback. Administrators edit them through Core's settings API using
+`cld admin settings apply --from ./code-limits.json --yes`. See
+[Code storage](/en/docs/operations/code-storage) for the JSON input and reset command.
 
 | Setting | Default | Maximum |
 | --- | --- | --- |
