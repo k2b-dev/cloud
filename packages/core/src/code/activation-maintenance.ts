@@ -17,6 +17,7 @@ type TargetRow = {
   operations: string[];
   activating_person: string | null;
   activated_at: Date | null;
+  activation_version_id: string;
 };
 /** Reconciliation only lists. Missing grants remain removed until someone explicitly starts another activation. */
 export async function reconcileCodeAccess(
@@ -29,7 +30,9 @@ export async function reconcileCodeAccess(
   await requireCodePermission(code, context);
   if (!code.serviceAccountId) return [];
   // The activation that created a grant names who confirmed it at the target and when it became active.
-  const rows = await sql<TargetRow[]>`SELECT g.*,a.activating_person,CASE WHEN a.state='active' THEN a.updated_at END AS activated_at
+  const rows = await sql<
+    TargetRow[]
+  >`SELECT g.*,a.activating_person,a.version_id AS activation_version_id,CASE WHEN a.state='active' THEN a.updated_at END AS activated_at
     FROM code.target_grants g JOIN code.activations a ON a.id=g.activation_id
     WHERE g.code_id=${code.id} AND g.state IN ('granted','removed')
     AND EXISTS(SELECT 1 FROM code.version_grants vg WHERE vg.grant_id=g.grant_id AND vg.version_id=${code.activeVersionId}::uuid) ORDER BY g.grant_id`;
@@ -49,6 +52,7 @@ export async function reconcileCodeAccess(
       operations: row.operations,
       activatedBy: row.activating_person,
       activatedAt: row.activated_at ? row.activated_at.toISOString() : null,
+      activatedVersionId: row.activation_version_id,
       state:
         live === null
           ? "unavailable"

@@ -17,6 +17,7 @@ const own: CodePageTarget = {
   ref: owner.ref,
   title: owner.title,
   typeTitle: "Mailbox",
+  icon: "ti ti-inbox",
   own: true,
   deleted: false,
   href: "/app/mail/Mb4kd2",
@@ -26,6 +27,7 @@ const space: CodePageTarget = {
   ref: { type: "spaces.space", id: "sp_2lg8" },
   title: "Logistik",
   typeTitle: "Space",
+  icon: "ti ti-layout-kanban",
   own: false,
   deleted: false,
   href: "/app/spaces/sp_2lg8",
@@ -74,6 +76,8 @@ const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAcc
     newOperations: [],
     activatedBy: ben,
     activatedAt: "2026-10-14T08:00:00.000Z",
+    // Reused unchanged from version 3: it does not say who switched on version 4.
+    activatedVersionId: "00000000-0000-4000-8000-000000000003",
   },
   {
     target: { ...space, deleted },
@@ -82,6 +86,7 @@ const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAcc
     newOperations: [],
     activatedBy: ben,
     activatedAt: "2026-10-28T09:00:00.000Z",
+    activatedVersionId: v4.id,
   },
 ];
 const waitingTargets: CodePageActivationRow[] = [
@@ -94,6 +99,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   code: { id: "c_3mfa", title: "Code von info@", state: "active", activeVersionId: v4.id, pauseReason: null },
   permission: "editor",
   versions: [v5, v4, version(3, "approved")],
+  versionsFailed: false,
   moreVersions: false,
   active: v4,
   waiting: null,
@@ -120,7 +126,9 @@ export const codePageFixture = (
     | "paused"
     | "runs"
     | "run-failed"
+    | "run-unclassified"
     | "versions"
+    | "versions-failed"
     | "reader"
     | "activated"
     | "empty"
@@ -164,6 +172,7 @@ export const codePageFixture = (
               newOperations: ["spaces.task.create"],
               activatedBy: null,
               activatedAt: null,
+              activatedVersionId: null,
             },
           ].filter((row, index) => index !== 1),
         }),
@@ -240,6 +249,30 @@ export const codePageFixture = (
           },
         }),
       };
+    case "run-unclassified":
+      // 20 reads loaded, more calls follow: whether an action ran is not known yet.
+      return {
+        ...base,
+        tab: "runs",
+        state: ready({
+          run: {
+            run: runs[3]!,
+            calls: Array.from({ length: 20 }, (_, index) => ({
+              ordinal: index + 1,
+              kind: "query" as const,
+              capability: "mail.conversation.list",
+              target: owner.ref,
+              state: "succeeded" as const,
+              summary: "12 Unterhaltungen",
+            })),
+            nextCallCursor: 20,
+            input: null,
+            inputTooLarge: false,
+          },
+        }),
+      };
+    case "versions-failed":
+      return { ...base, tab: "overview", state: ready({ waiting: v5, waitingTargets, versionsFailed: true }) };
     case "reader":
       return {
         ...base,

@@ -5,8 +5,9 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { summarizeCallResult } from "./calls";
+import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
+import type { CodePageInvoke } from "./data";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
@@ -14,6 +15,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
+const { permissionRef, visiblePersonIds } = await import("./load");
 const { LocaleProvider } = await import("@k2b/ui");
 
 type State = Parameters<typeof codePageFixture>[0];
@@ -120,6 +122,25 @@ describe("Code page states", () => {
     expect(text("error")).toContain("info@moebel-beispiel.de und laufende Automationen sind nicht betroffen.");
   });
 
+  test("the header credits only the activation of the running version, never an older reused grant", () => {
+    const line = html("overview").match(/<p class="cloud-code__vline">.*?<\/p>/)?.[0] ?? "";
+    expect(line).toContain("eingeschaltet von Ben Schulz am 28. Okt. 2026");
+    expect(line).not.toContain("14. Okt.");
+  });
+
+  test("a failed run whose calls are not all loaded makes no claim about its first action", () => {
+    const page = text("run-unclassified");
+    expect(page).not.toContain("Erneut ausführen");
+    expect(page).not.toContain("vor dem ersten Aufruf");
+    expect(page).toContain("Weitere Aufrufe anzeigen");
+  });
+
+  test("without the version list nothing can be switched on, and the page says so", () => {
+    const page = text("versions-failed");
+    expect(page).toContain("Die Versionen konnten nicht geladen werden.");
+    expect(page).not.toContain("Version 5 einschalten");
+  });
+
   test("the page right after switching on confirms it", () => {
     expect(text("activated")).toContain("Version 4 ist eingeschaltet.");
   });
@@ -131,6 +152,64 @@ describe("Code page states", () => {
 });
 
 describe("Code page helpers", () => {
+  test("a permission without a target is an app-wide grant, as Core plans it", () => {
+    expect(permissionRef({ operation: "spaces.space.list", target: null })).toEqual({ type: "app", id: "spaces" });
+    expect(permissionRef({ operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" } })).toEqual({
+      type: "spaces.space",
+      id: "sp_2lg8",
+    });
+    expect(permissionRef({ operation: "spaces.task.create", target: { type: "spaces.space", id: null } })).toBeNull();
+  });
+
+  test("guests see only their own name, like in directory search", () => {
+    const me = "00000000-0000-4000-8000-0000000000a1";
+    const other = "00000000-0000-4000-8000-0000000000b1";
+    expect(visiblePersonIds([me, other, null, "not-a-uuid"], { id: me, directory: true })).toEqual([me, other]);
+    expect(visiblePersonIds([me, other], { id: me, directory: false })).toEqual([me]);
+  });
+
+  test("a failed run's detail reads further calls until its first action", async () => {
+    const calls = [...Array.from({ length: 23 }, () => "query" as const), "action" as const, "query" as const];
+    const reads: number[] = [];
+    const invoke = (async (invocation) => {
+      const cursor = (invocation.input as { cursor: number }).cursor;
+      reads.push(cursor);
+      const kind = calls[cursor];
+      return {
+        ok: true,
+        data: {
+          data: {
+            data: {
+              run: {
+                id: "00000000-0000-4000-8000-000000000099",
+                versionId: "00000000-0000-4000-8000-000000000004",
+                trigger: "schedule",
+                entrypoint: "lieferungenEintragen",
+                state: "failed",
+                outcome: "failed",
+                createdAt: "2026-11-01T08:30:00.000Z",
+                startedAt: null,
+                endedAt: null,
+              },
+              contents: {
+                input: null,
+                inputChunked: false,
+                content: null,
+                calls: kind
+                  ? [{ ordinal: cursor + 1, kind, capability: "mail.conversation.list", call: null, result: null, state: "succeeded" }]
+                  : [],
+                nextCursor: cursor + 1 < calls.length ? cursor + 1 : null,
+              },
+            },
+          },
+        },
+      };
+    }) as CodePageInvoke;
+    const result = await loadCodeRunCallsForDetail(invoke, "c_3mfa", "00000000-0000-4000-8000-000000000099");
+    expect(result?.calls.some((call) => call.kind === "action")).toBe(true);
+    expect(Math.max(...reads)).toBeLessThan(40);
+  });
+
   test("schedules read as short sentences and fall back to the expression", () => {
     expect(describeCodeSchedule("0 8 * * 1-5", "de")).toBe("Mo–Fr 08:00");
     expect(describeCodeSchedule("30 6 * * *", "en")).toBe("daily 06:30");

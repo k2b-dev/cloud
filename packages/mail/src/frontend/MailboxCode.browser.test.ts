@@ -54,7 +54,7 @@ const iconFont = iconSource.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
 if (!iconFont) throw new Error("Missing Tabler WOFF2 file");
 const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolve(dirname(iconCss), iconFont) };
 /** What Core answers while the person switches on: the activation's final state. */
-let activationEnd: "active" | "not_manager" | "unavailable" = "not_manager";
+let activationEnd: "active" | "not_manager" | "unavailable" | "lost-active" = "not_manager";
 const activations: unknown[] = [];
 const server = Bun.serve({
   port: 0,
@@ -67,18 +67,21 @@ const server = Bun.serve({
     if (url.pathname === "/api/code/activate") {
       const body = (await request.json()) as { activationId: string; versionId: string };
       activations.push(body);
-      if (activationEnd === "unavailable") return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
+      // Core's answer gets lost on the way back: it may or may not have accepted.
+      if (activationEnd === "unavailable" || activationEnd === "lost-active")
+        return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
       return Response.json({ data: { id: body.activationId, versionId: body.versionId, state: "preflight", failure: null } });
     }
     if (url.pathname === "/api/code/activation/read") {
       const body = (await request.json()) as { activationId: string };
+      if (activationEnd === "unavailable") return Response.json({ code: "NOT_FOUND", message: "Activation not found." }, { status: 404 });
       return Response.json({
         data: {
           id: body.activationId,
           versionId: "00000000-0000-4000-8000-000000000005",
-          state: activationEnd === "active" ? "active" : "failed",
+          state: activationEnd === "not_manager" ? "failed" : "active",
           failure:
-            activationEnd === "active"
+            activationEnd !== "not_manager"
               ? null
               : { target: { type: "spaces.space", id: "sp_2lg8" }, code: "not_manager", reason: "Target manager authority required" },
         },
@@ -177,9 +180,11 @@ describe("Mailbox Code page in a browser", () => {
       );
       await expect(dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).resolves.toBe(true);
       await expect(dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).resolves.toBe(true);
-      expect(await confirm.isDisabled()).toBe(true);
+      // Blocked, the confirm button says only what it would do and stays disabled.
+      expect(await dialog.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
       // The confirm button keeps its place while the result appears above it only by growing the dialog downwards.
-      expect((await confirm.boundingBox())!.x).toBeCloseTo(before!.x, 0);
+      const after = await dialog.getByRole("button", { name: "Einschalten", exact: true }).boundingBox();
+      expect(after!.x + after!.width).toBeCloseTo(before!.x + before!.width, 0);
       await shoot(page, "blockiert-1440");
       await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
       await expect(page.getByRole("dialog").count()).resolves.toBe(0);
@@ -195,8 +200,23 @@ describe("Mailbox Code page in a browser", () => {
       await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
       const dialog = page.getByRole("dialog");
       await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
-      await dialog.getByText("Core nicht erreichbar").waitFor();
+      // The answer was lost, and Core knows no such activation: nothing changed, and trying again is safe.
+      await dialog.getByText("Cloud konnte das Einschalten nicht starten. Es hat sich nichts geändert.").waitFor();
       await expect(dialog.getByRole("button", { name: "Erneut versuchen" }).isEnabled()).resolves.toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("when Core's answer is lost but it switched on, the page shows the result instead of a false failure", async () => {
+    activationEnd = "lost-active";
+    activations.length = 0;
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      await page.getByRole("dialog").getByRole("button", { name: "Version 5 einschalten" }).click();
+      await page.waitForURL(/activated=5/);
+      expect(activations).toHaveLength(1);
     } finally {
       await page.context().close();
     }

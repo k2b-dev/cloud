@@ -9,7 +9,7 @@ import { coreOrigin } from "../../services/identity/core-origin";
 import { LOCALE_HEADER } from "../../shared/locale";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
-import { loadCodeRunCalls } from "./calls";
+import { loadCodeRunCallsForDetail } from "./calls";
 import {
   CodeListSchema,
   type CodePageAccessRow,
@@ -36,8 +36,8 @@ import {
 
 /** Core pages run metadata and versions in pages of 20. */
 const PAGE = 20;
-/** Manifests are small; 16 chunks of 16 KiB bound a malformed one. */
-const MANIFEST_CHUNKS = 16;
+/** Core's default manifest budget is 1 MiB: 64 chunks of 16 Ki code units. A larger manifest shows as unreadable. */
+const MANIFEST_CHUNKS = 64;
 /** Distinct targets named on one page; a version has at most 200 operations. */
 const TARGET_LIMIT = 50;
 
@@ -66,9 +66,20 @@ const callerOf = (c: Context): CapabilityCaller => ({
 const readTab = (value: string | null): CodePageTab => (value === "runs" || value === "versions" ? value : "overview");
 const uuid = z.uuid();
 
-/** Display names for the people a page mentions; unknown or deleted accounts are left out. */
-const loadPeople = async (ids: Iterable<string | null | undefined>): Promise<Map<string, CodePagePerson>> => {
-  const unique = [...new Set([...ids].filter((id): id is string => typeof id === "string" && uuid.safeParse(id).success))].slice(0, 100);
+/** Who is looking: only members may see other people's names, as in the directory. */
+export type Viewer = { id: string | null; directory: boolean };
+/**
+ * Display names for the people a page mentions; unknown or deleted accounts are left out. Like directory search,
+ * guests see only their own name.
+ */
+export const visiblePersonIds = (ids: Iterable<string | null | undefined>, viewer: Viewer): string[] =>
+  [
+    ...new Set(
+      [...ids].filter((id): id is string => typeof id === "string" && uuid.safeParse(id).success && (viewer.directory || id === viewer.id)),
+    ),
+  ].slice(0, 100);
+const loadPeople = async (ids: Iterable<string | null | undefined>, viewer: Viewer): Promise<Map<string, CodePagePerson>> => {
+  const unique = visiblePersonIds(ids, viewer);
   if (unique.length === 0) return new Map();
   const rows = await sql<{ id: string; display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
     SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${unique}::uuid[])`;
@@ -80,12 +91,26 @@ const loadPeople = async (ids: Iterable<string | null | undefined>): Promise<Map
   );
 };
 
-/** Name a target through its own app's public reader, as the person may see it. */
+type CatalogApp = Awaited<ReturnType<typeof getCapabilityCatalogApp>>;
+/** One catalog read per app and page, shared by every target of that app. */
+const catalogCache = (locale: string) => {
+  const apps = new Map<string, Promise<CatalogApp | null>>();
+  return (appId: string) => {
+    let app = apps.get(appId);
+    if (!app) {
+      app = getCapabilityCatalogApp(appId, locale).catch(() => null);
+      apps.set(appId, app);
+    }
+    return app;
+  };
+};
+
+/** Name a target through its own app's public reader, as the person may see it; its type gives the icon. */
 const loadTarget = async (
   ref: { type: string; id: string },
   owner: LoadCodePageOptions["owner"],
   invoke: CodePageInvoke,
-  locale: string,
+  catalog: ReturnType<typeof catalogCache>,
 ): Promise<CodePageTarget> => {
   const own = sameRef(ref, owner.ref);
   const base: CodePageTarget = {
@@ -93,22 +118,28 @@ const loadTarget = async (
     ref,
     title: own ? owner.title : null,
     typeTitle: null,
+    icon: null,
     own,
     deleted: false,
     href: null,
   };
-  if (own || ref.type === "app") return base;
   try {
-    const app = await getCapabilityCatalogApp(cloudResourceRefAppId(ref), locale);
-    if (!app.ok || !app.data) return base;
-    const reader = resolveCapabilityResourceReader(app.data.manifest, ref);
-    if (!reader) return base;
-    const typeTitle = app.data.manifest.types.find((type) => type.localId === ref.type.slice(app.data!.appId.length + 1))?.title ?? null;
+    if (ref.type === "app") {
+      // An app-wide grant: the receiving app as a whole.
+      const app = await catalog(ref.id);
+      return app?.ok && app.data ? { ...base, title: app.data.appName, icon: app.data.appIcon ?? null } : base;
+    }
+    const app = await catalog(cloudResourceRefAppId(ref));
+    if (!app?.ok || !app.data) return base;
+    const type = app.data.manifest.types.find((candidate) => candidate.localId === ref.type.slice(app.data!.appId.length + 1));
+    const typed = { ...base, typeTitle: type?.title ?? null, icon: type?.icon ?? null };
+    const reader = own ? null : resolveCapabilityResourceReader(app.data.manifest, ref);
+    if (!reader) return typed;
     const read = await invoke({ appId: app.data.appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } }, z.unknown());
-    if (!read.ok) return { ...base, typeTitle, deleted: read.error.status === 404 };
+    // Only "not found" means deleted; a target the person may not read keeps its ID.
+    if (!read.ok) return { ...typed, deleted: read.error.status === 404 };
     return {
-      ...base,
-      typeTitle,
+      ...typed,
       title: ReaderViewSchema.safeParse(read.data.data).data?.view.title ?? null,
       href: read.data.links?.find((link) => link.rel === "open")?.href ?? null,
     };
@@ -140,14 +171,23 @@ const loadManifest = async (invoke: CodePageInvoke, codeId: string, versionId: s
   }
 };
 
+/** Core turns a permission without a target into a grant at the receiving app; dynamic personal IDs have none. */
+export const permissionRef = (permission: { operation: string; target: { type: string; id: string | null } | null }) =>
+  permission.target === null
+    ? { type: "app", id: permission.operation.split(".")[0]! }
+    : permission.target.id === null
+      ? null
+      : { type: permission.target.type, id: permission.target.id };
+
 const versionView = (
-  receipt: z.infer<typeof VersionListSchema>["items"][number],
+  receipt: Pick<z.infer<typeof VersionListSchema>["items"][number], "version"> &
+    Partial<Pick<z.infer<typeof VersionListSchema>["items"][number], "status" | "decision">>,
   people: Map<string, CodePagePerson>,
   activeVersionId: string | null,
 ): CodePageVersion => ({
   id: receipt.version.id,
   number: receipt.version.number,
-  status: receipt.status,
+  status: receipt.status ?? null,
   createdBy: receipt.version.createdBy ? (people.get(receipt.version.createdBy) ?? null) : null,
   createdAt: receipt.version.createdAt,
   decisionLabel: receipt.decision?.label ?? null,
@@ -184,8 +224,9 @@ const loadReady = async (
   listed: z.infer<typeof CodeListSchema>["items"][number],
   tab: CodePageTab,
   url: URL,
+  viewer: Viewer,
 ): Promise<CodePageReady> => {
-  const locale = getLocale(c);
+  const catalog = catalogCache(getLocale(c));
   const code = listed;
   const [versionsResult, runsResult, accessResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), wrapped(VersionListSchema)),
@@ -207,6 +248,12 @@ const loadReady = async (
     waitingReceipt ? loadManifest(invoke, code.id, waitingReceipt.version.id) : Promise.resolve(null),
   ]);
   const numbers = new Map(receipts.map((receipt) => [receipt.version.id, receipt.version.number]));
+  // The running or a linked version can be older than the first history page; read its own metadata then.
+  const versionMeta = async (versionId: string | null | undefined) => {
+    if (!versionId || receipts.some((receipt) => receipt.version.id === versionId)) return null;
+    const read = await invoke(coreQuery("code.version.read", { codeId: code.id, versionId }), wrapped(VersionReadSchema));
+    return read.ok ? read.data.data.data.version : null;
+  };
   const runs: CodePageRun[] | null = runsResult.ok
     ? runsResult.data.data.data.items.map((run) => ({ ...run, versionNumber: numbers.get(run.versionId) ?? null }))
     : null;
@@ -221,12 +268,15 @@ const loadReady = async (
         ? versionParam
         : (waitingReceipt?.version.id ?? code.activeVersionId ?? latest?.version.id ?? null)
       : null;
-  const [runCalls, diffResult] = await Promise.all([
-    selectedRunId ? loadCodeRunCalls(invoke, code.id, selectedRunId, 0) : Promise.resolve(null),
+  const [runCalls, diffResult, olderActive, olderSelected] = await Promise.all([
+    selectedRunId ? loadCodeRunCallsForDetail(invoke, code.id, selectedRunId) : Promise.resolve(null),
     selectedVersionId
       ? invoke(coreQuery("code.version.diff", { codeId: code.id, versionId: selectedVersionId }), wrapped(VersionDiffSchema))
       : Promise.resolve(null),
+    versionMeta(code.activeVersionId),
+    selectedVersionId !== code.activeVersionId ? versionMeta(selectedVersionId) : Promise.resolve(null),
   ]);
+  for (const version of [olderActive, olderSelected]) if (version) numbers.set(version.id, version.number);
 
   // Targets: what the running version reaches, plus what the waiting version would add.
   const access = accessResult;
@@ -234,24 +284,22 @@ const loadReady = async (
   for (const row of access ?? []) if (row.state !== "removed") presentOps.set(targetKey(row.target), new Set(row.operations));
   const waitingByTarget = new Map<string, { ref: { type: string; id: string }; operations: Set<string> }>();
   for (const permission of waitingManifest?.permissions ?? []) {
-    if (!permission.target?.id) continue;
-    const ref = { type: permission.target.type, id: permission.target.id };
+    const ref = permissionRef(permission);
+    if (!ref) continue;
     const entry = waitingByTarget.get(targetKey(ref)) ?? { ref, operations: new Set<string>() };
     entry.operations.add(permission.operation);
     waitingByTarget.set(targetKey(ref), entry);
   }
   const diffPermissions = diffResult?.ok ? diffResult.data.data.data.permissions : [];
-  const refs = new Map<string, { type: string; id: string }>();
+  const refs = new Map<string, { type: string; id: string }>([[targetKey(options.owner.ref), options.owner.ref]]);
   for (const row of access ?? []) refs.set(targetKey(row.target), row.target);
   for (const entry of waitingByTarget.values()) refs.set(targetKey(entry.ref), entry.ref);
-  for (const permission of diffPermissions)
-    if (permission.target?.id)
-      refs.set(targetKey({ type: permission.target.type, id: permission.target.id }), {
-        type: permission.target.type,
-        id: permission.target.id,
-      });
+  for (const permission of diffPermissions) {
+    const ref = permissionRef(permission);
+    if (ref) refs.set(targetKey(ref), ref);
+  }
   const targets = new Map(
-    (await Promise.all([...refs.values()].slice(0, TARGET_LIMIT).map((ref) => loadTarget(ref, options.owner, invoke, locale)))).map(
+    (await Promise.all([...refs.values()].slice(0, TARGET_LIMIT).map((ref) => loadTarget(ref, options.owner, invoke, catalog)))).map(
       (target) => [target.key, target],
     ),
   );
@@ -261,15 +309,21 @@ const loadReady = async (
       ref,
       title: sameRef(ref, options.owner.ref) ? options.owner.title : null,
       typeTitle: null,
+      icon: null,
       own: sameRef(ref, options.owner.ref),
       deleted: false,
       href: null,
     };
 
-  const people = await loadPeople([
-    ...receipts.flatMap((receipt) => [receipt.version.createdBy, receipt.decision?.decidedBy]),
-    ...(access ?? []).map((row) => row.activatedBy),
-  ]).catch(() => new Map<string, CodePagePerson>());
+  const people = await loadPeople(
+    [
+      ...receipts.flatMap((receipt) => [receipt.version.createdBy, receipt.decision?.decidedBy]),
+      olderActive?.createdBy,
+      olderSelected?.createdBy,
+      ...(access ?? []).map((row) => row.activatedBy),
+    ],
+    viewer,
+  ).catch(() => new Map<string, CodePagePerson>());
   const accessRows: CodePageAccessRow[] | null = access
     ? [
         ...access.map((row) => {
@@ -282,6 +336,7 @@ const loadReady = async (
             newOperations: waiting ? [...waiting.operations].filter((operation) => !row.operations.includes(operation)) : [],
             activatedBy: row.activatedBy ? (people.get(row.activatedBy) ?? null) : null,
             activatedAt: row.activatedAt ?? null,
+            activatedVersionId: row.activatedVersionId ?? null,
           };
         }),
         ...[...waitingByTarget.values()]
@@ -293,6 +348,7 @@ const loadReady = async (
             newOperations: [...entry.operations],
             activatedBy: null,
             activatedAt: null,
+            activatedVersionId: null,
           })),
       ]
     : null;
@@ -335,6 +391,9 @@ const loadReady = async (
         ];
 
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
+  const activeVersion =
+    versions.find((version) => version.active) ??
+    (olderActive ? versionView({ version: olderActive }, people, code.activeVersionId) : null);
   let run: CodePageRunDetail | null = null;
   if (runCalls)
     run = {
@@ -347,7 +406,10 @@ const loadReady = async (
   let diff: CodePageDiff | null = null;
   if (diffResult?.ok && selectedVersionId) {
     const value = diffResult.data.data.data;
-    const selected = versions.find((version) => version.id === selectedVersionId);
+    const selected =
+      versions.find((version) => version.id === selectedVersionId) ??
+      (selectedVersionId === activeVersion?.id ? activeVersion : null) ??
+      (olderSelected ? versionView({ version: olderSelected }, people, code.activeVersionId) : null);
     if (selected)
       diff = {
         version: selected,
@@ -356,7 +418,7 @@ const loadReady = async (
         files: value.files,
         permissions: value.permissions.map((permission) => ({
           operation: permission.operation,
-          target: permission.target?.id ? targetOf({ type: permission.target.type, id: permission.target.id }) : null,
+          target: permissionRef(permission) ? targetOf(permissionRef(permission)!) : null,
           file: permission.file,
           line: permission.line,
         })),
@@ -367,8 +429,9 @@ const loadReady = async (
     code: { id: code.id, title: code.title, state: code.state, activeVersionId: code.activeVersionId, pauseReason: code.pauseReason },
     permission: code.permission,
     versions,
+    versionsFailed: !versionsResult.ok,
     moreVersions: versionsResult.ok && versionsResult.data.data.data.nextBefore !== null,
-    active: versions.find((version) => version.active) ?? null,
+    active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
     access: accessRows,
@@ -427,7 +490,9 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
   const code = listed.data.data.data.items[0];
   if (!code) return { ...base, state: { kind: options.canManageOwner ? "none" : "no-access" } };
   try {
-    return { ...base, state: await loadReady(c, options, invoke, caller, code, tab, url) };
+    // Like directory search: members see other people's names, guests only their own.
+    const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
+    return { ...base, state: await loadReady(c, options, invoke, caller, code, tab, url, viewer) };
   } catch {
     return { ...base, state: { kind: "error" } };
   }

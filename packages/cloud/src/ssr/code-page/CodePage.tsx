@@ -57,7 +57,11 @@ type ActivationRoute = "activate" | "activation/read";
 const activationRequest = async (
   route: ActivationRoute,
   body: unknown,
-): Promise<{ ok: true; data: CodeActivationStatus } | { ok: false; message: string | null }> => {
+): Promise<
+  | { ok: true; data: CodeActivationStatus }
+  /** `definite`: Core answered with a refusal, so it did not act. Otherwise the outcome is unknown. */
+  | { ok: false; message: string | null; definite: boolean; notFound?: boolean }
+> => {
   try {
     const response = await fetch(`/api/code/${route}`, {
       method: "POST",
@@ -68,12 +72,12 @@ const activationRequest = async (
     const json: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const message = json && typeof json === "object" && "message" in json && typeof json.message === "string" ? json.message : null;
-      return { ok: false, message };
+      return { ok: false, message, definite: response.status >= 400 && response.status < 500, notFound: response.status === 404 };
     }
     const parsed = wrapped(ActivationSchema).safeParse(json);
-    return parsed.success ? { ok: true, data: parsed.data.data } : { ok: false, message: null };
+    return parsed.success ? { ok: true, data: parsed.data.data } : { ok: false, message: null, definite: false };
   } catch {
-    return { ok: false, message: null };
+    return { ok: false, message: null, definite: false };
   }
 };
 
@@ -131,6 +135,17 @@ const runStateLabel = (run: CodePageRun, t: CodePageMessages) =>
   })[run.state];
 const triggerLabel = (run: CodePageRun, t: CodePageMessages) =>
   ({ schedule: t.triggerSchedule, manual: t.triggerManual, event: t.triggerEvent, path: t.triggerPath })[run.trigger];
+
+/**
+ * Switching on needs an editor, a waiting version that no administrator still has to approve, and the list of what
+ * it asks for; without that list the person could not see what they confirm.
+ */
+const switchOnReady = (state: CodePageReady) =>
+  state.permission === "editor" &&
+  state.waiting !== null &&
+  state.waiting.status !== "pending" &&
+  state.waitingTargets !== null &&
+  !state.versionsFailed;
 
 /** "Copy link" shares this page, so the person who can switch it on lands right here. */
 const copyPageLink = async (data: CodePageData, t: CodePageMessages) => {
@@ -292,7 +307,7 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
       : []),
     { label: t().copyLink, icon: "ti ti-link", action: () => void copyPageLink(props.data, t()) },
   ];
-  const canSwitchOn = () => editor() && props.state.waiting !== null && props.state.waiting.status !== "pending";
+  const canSwitchOn = () => switchOnReady(props.state);
   return (
     <>
       <header class="cloud-code__head">
@@ -353,8 +368,8 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
 function VersionLine(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
   const t = props.text.t;
   const activation = () => {
-    // The newest grant of the running version names who switched it on and when.
-    const rows = (props.state.access ?? []).filter((row) => row.activatedAt);
+    // Only a grant created by switching on this very version names who did it and when; reused grants are older.
+    const rows = (props.state.access ?? []).filter((row) => row.activatedAt && row.activatedVersionId === props.state.active?.id);
     return rows.sort((a, b) => (b.activatedAt ?? "").localeCompare(a.activatedAt ?? ""))[0];
   };
   return (
@@ -471,7 +486,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
                 .join(" ")}
             >
               <div class="cloud-code__note-actions">
-                <Show when={editor()}>
+                <Show when={switchOnReady(props.state)}>
                   <Button type="button" size="sm" variant="primary" onClick={() => props.onActivate("waiting")}>
                     <i class="ti ti-power" aria-hidden="true" />
                     {t().switchOn}
@@ -547,6 +562,9 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             </div>
           </Show>
         </NoticeCard>
+      </Show>
+      <Show when={props.state.versionsFailed}>
+        <InlineError text={t().versionsFailed} retry={t().tryAgain} />
       </Show>
       <Section id="cloud-code-automations" title={t().automations} count={props.state.automations?.length}>
         <Show when={props.state.automations} fallback={<InlineError text={t().automationsFailed} retry={t().tryAgain} />}>
@@ -719,7 +737,7 @@ function AccessRow(props: { row: CodePageAccessRow; state: CodePageReady; text: 
       data-deleted={props.row.target.deleted ? "" : undefined}
     >
       <span class="cloud-code__kind" aria-hidden="true">
-        <i class={props.row.target.own ? "ti ti-home" : "ti ti-target-arrow"} />
+        <i class={props.row.target.icon ?? (props.row.target.own ? "ti ti-home" : "ti ti-target-arrow")} />
       </span>
       <span class="cloud-code__cell">
         <span class="cloud-code__ops">
@@ -831,6 +849,8 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
   const [failed, setFailed] = createSignal(false);
   const [rerunning, setRerunning] = createSignal(false);
   const afterAction = () => (calls() ?? []).some((call) => call.kind === "action");
+  /** Only the complete call list proves that a failed run never reached an action. */
+  const beforeFirstAction = () => calls() !== null && !afterAction() && next() === null;
   const canRerun = () =>
     run().state === "failed" && afterAction() && props.state.permission === "editor" && props.state.code.state === "active";
   const loadMore = async () => {
@@ -877,7 +897,16 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
     ].find((candidate) => candidate.ref.type === call.target!.type && candidate.ref.id === call.target!.id);
     return known
       ? props.text.targetLabel(known)
-      : props.text.targetLabel({ key: "", ref: call.target, title: null, typeTitle: null, own: false, deleted: false, href: null });
+      : props.text.targetLabel({
+          key: "",
+          ref: call.target,
+          title: null,
+          typeTitle: null,
+          icon: null,
+          own: false,
+          deleted: false,
+          href: null,
+        });
   };
   return (
     <section class="cloud-code__run-detail" aria-labelledby="cloud-code-run-title">
@@ -902,7 +931,10 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
         <Show
           when={afterAction()}
           fallback={
-            <Show when={calls() !== null}>
+            <Show
+              when={beforeFirstAction()}
+              fallback={<NoticeCard tone="danger" icon="ti ti-circle-x" title={t().stateFailed} detail={outcomeText() ?? undefined} />}
+            >
               <NoticeCard
                 tone="danger"
                 icon="ti ti-circle-x"
@@ -990,11 +1022,14 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
       ? { tone: "ok", label: t().versionStatus({ status: "active" }) }
       : {
           tone: version.status === "pending" ? "info" : version.status === "rejected" ? "error" : "neutral",
-          label: t().versionStatus({ status: version.status }),
+          label: version.status ? t().versionStatus({ status: version.status }) : "",
         };
   return (
     <div class="cloud-code__body cloud-code__versions">
       <section aria-label={t().versions} class="cloud-code__run-list">
+        <Show when={props.state.versionsFailed}>
+          <InlineError text={t().versionsFailed} retry={t().tryAgain} />
+        </Show>
         <ul class="cloud-code__list">
           <For each={props.state.versions}>
             {(version) => (
@@ -1046,13 +1081,7 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
                   <p class="cloud-code__sub">{diff().version.decisionLabel}</p>
                 </Show>
               </div>
-              <Show
-                when={
-                  props.state.permission === "editor" &&
-                  props.state.waiting?.id === diff().version.id &&
-                  diff().version.status !== "pending"
-                }
-              >
+              <Show when={switchOnReady(props.state) && props.state.waiting?.id === diff().version.id}>
                 <Button type="button" variant="primary" onClick={() => props.onActivate()}>
                   <i class="ti ti-power" aria-hidden="true" />
                   {t().switchOnVersion({ version: diff().version.number })}
@@ -1069,7 +1098,7 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
                   {(permission) => (
                     <li class="cloud-code__row cloud-code__row--access">
                       <span class="cloud-code__kind" aria-hidden="true">
-                        <i class={permission.target?.own ? "ti ti-home" : "ti ti-target-arrow"} />
+                        <i class={permission.target?.icon ?? (permission.target?.own ? "ti ti-home" : "ti ti-target-arrow")} />
                       </span>
                       <span class="cloud-code__cell">
                         <Op>{permission.operation}</Op>
@@ -1093,6 +1122,8 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
 type ActivationView =
   | { kind: "idle" }
   | { kind: "progress"; state: CodeActivationStatus["state"] }
+  /** Core's answer is missing or the wait ended: the activation may still run, so nothing claims it did not. */
+  | { kind: "unknown" }
   | { kind: "failed"; failure: NonNullable<CodeActivationStatus["failure"]> | null; message: string | null };
 
 /** "Switch on": lists every operation at every target, then runs Core's durable activation and shows its result. */
@@ -1107,7 +1138,7 @@ async function openActivationDialog(params: {
   await prompts.dialog<void>((close) => <ActivationDialog {...params} close={() => close()} />, {
     title: params.mode === "waiting" ? t.activateTitle({ version: params.version.number }) : t.switchOnAgain,
     icon: "ti ti-power",
-    size: "medium",
+    size: "large",
   });
 }
 
@@ -1142,25 +1173,53 @@ function ActivationDialog(props: {
     const current = view();
     return current.kind === "failed" && current.failure?.code === "not_manager";
   };
+  // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
+  // Only a confirmed terminal result starts a new identity.
+  let activationId = crypto.randomUUID();
+  /** Applies one status; true when it ended the wait. */
+  const settle = (status: CodeActivationStatus): boolean => {
+    if (status.state === "active") {
+      props.close();
+      documentNavigate(withQuery(props.data.href, { activated: String(props.version.number) }));
+      return true;
+    }
+    if (status.state === "failed" || status.state === "cancelled") {
+      activationId = crypto.randomUUID();
+      setView({ kind: "failed", failure: status.failure, message: null });
+      return true;
+    }
+    setView({ kind: "progress", state: status.state });
+    return false;
+  };
+  const follow = async () => {
+    for (let poll = 0; poll < ACTIVATION_POLLS && !disposed; poll++) {
+      await new Promise((resolve) => setTimeout(resolve, ACTIVATION_POLL_MS));
+      if (disposed) return;
+      const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
+      if (read.ok && settle(read.data)) return;
+    }
+    if (!disposed) setView({ kind: "unknown" });
+  };
   const start = async () => {
     setView({ kind: "progress", state: "pending" });
-    const activationId = crypto.randomUUID();
     const started = await activationRequest("activate", { codeId: props.state.code.id, versionId: props.version.id, activationId });
-    if (!started.ok) return setView({ kind: "failed", failure: null, message: started.message });
-    let status = started.data;
-    for (let poll = 0; poll < ACTIVATION_POLLS && !disposed; poll++) {
-      if (status.state === "active") {
-        props.close();
-        documentNavigate(withQuery(props.data.href, { activated: String(props.version.number) }));
-        return;
-      }
-      if (status.state === "failed" || status.state === "cancelled")
-        return setView({ kind: "failed", failure: status.failure, message: null });
-      setView({ kind: "progress", state: status.state });
-      await new Promise((resolve) => setTimeout(resolve, ACTIVATION_POLL_MS));
-      const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
-      if (read.ok) status = read.data;
+    if (started.ok) {
+      if (!settle(started.data)) await follow();
+      return;
     }
+    if (started.definite) {
+      // Core refused before acting; a later attempt is a new activation.
+      activationId = crypto.randomUUID();
+      return setView({ kind: "failed", failure: null, message: started.message });
+    }
+    // The answer was lost: Core may have accepted. Its status says what happened.
+    const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
+    if (read.ok) {
+      if (!settle(read.data)) await follow();
+      return;
+    }
+    if (read.notFound) return setView({ kind: "failed", failure: null, message: null });
+    setView({ kind: "unknown" });
   };
   const targetByRef = (ref: { type: string; id: string } | null | undefined) =>
     ref ? (rows().find((row) => row.target.ref.type === ref.type && row.target.ref.id === ref.id)?.target ?? null) : null;
@@ -1194,6 +1253,7 @@ function ActivationDialog(props: {
   };
   const progressText = () => {
     const current = view();
+    if (current.kind === "unknown") return t().activationUnknown({ running: running() });
     if (current.kind !== "progress") return null;
     if (current.state === "waiting") return t().waitingTarget({ running: running() });
     if (current.state === "applying" || current.state === "rolling_back") return t().applying;
@@ -1213,10 +1273,12 @@ function ActivationDialog(props: {
           {(row) => (
             <li
               class="cloud-code__row cloud-code__row--access"
-              data-state={blocked() && failedTarget()?.id === row.target.ref.id ? "removed" : undefined}
+              data-blocked={
+                blocked() && failedTarget()?.type === row.target.ref.type && failedTarget()?.id === row.target.ref.id ? "" : undefined
+              }
             >
               <span class="cloud-code__kind" aria-hidden="true">
-                <i class={row.target.own ? "ti ti-home" : "ti ti-target-arrow"} />
+                <i class={row.target.icon ?? (row.target.own ? "ti ti-home" : "ti ti-target-arrow")} />
               </span>
               <span class="cloud-code__cell">
                 <span class="cloud-code__ops">
@@ -1282,11 +1344,15 @@ function ActivationDialog(props: {
           onClick={() => void start()}
         >
           <i class="ti ti-power" aria-hidden="true" />
-          {view().kind === "failed" && !blocked()
-            ? t().tryAgain
-            : props.mode === "waiting"
-              ? t().switchOnVersion({ version: props.version.number })
-              : t().switchOnAgain}
+          {blocked()
+            ? t().switchOn
+            : view().kind === "unknown"
+              ? t().checkStatus
+              : view().kind === "failed"
+                ? t().tryAgain
+                : props.mode === "waiting"
+                  ? t().switchOnVersion({ version: props.version.number })
+                  : t().switchOnAgain}
         </Button>
       </div>
     </div>

@@ -228,6 +228,11 @@ export const codePageMessages = i18n.define({
       accessRemovedAtTarget: ({ target }: { target: string }) =>
         `Access was removed at ${target} while switching on. Switch on again to set it once more.`,
       activationUnavailable: "Cloud could not start switching on. Nothing changed.",
+      activationUnknown: ({ running }: { running: number | null }) =>
+        running === null
+          ? "Cloud has not confirmed yet. Switching on may still finish; check the status before trying again."
+          : `Cloud has not confirmed yet. Switching on may still finish; until then version ${running} keeps running. Check the status before trying again.`,
+      checkStatus: "Check status",
       pauseFailed: "The Code could not be paused.",
       resumeFailed: "The Code could not be resumed.",
       paused: "Paused",
@@ -401,6 +406,11 @@ export const codePageMessages = i18n.define({
       accessRemovedAtTarget: ({ target }: { target: string }) =>
         `Während des Einschaltens wurde der Zugriff an ${target} entfernt. Schalte erneut ein, um ihn noch einmal zu setzen.`,
       activationUnavailable: "Cloud konnte das Einschalten nicht starten. Es hat sich nichts geändert.",
+      activationUnknown: ({ running }: { running: number | null }) =>
+        running === null
+          ? "Cloud hat noch nicht bestätigt. Das Einschalten kann noch fertig werden; prüfe den Stand, bevor du es erneut versuchst."
+          : `Cloud hat noch nicht bestätigt. Das Einschalten kann noch fertig werden; bis dahin läuft Version ${running} weiter. Prüfe den Stand, bevor du es erneut versuchst.`,
+      checkStatus: "Stand prüfen",
       pauseFailed: "Der Code konnte nicht pausiert werden.",
       resumeFailed: "Der Code konnte nicht fortgesetzt werden.",
       paused: "Pausiert",

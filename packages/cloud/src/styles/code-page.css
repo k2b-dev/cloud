@@ -127,7 +127,11 @@ a.cloud-code__row:focus-visible {
 a.cloud-code__row[aria-current="true"] {
   background: var(--ui-app-selected, var(--k2b-hover));
 }
-.cloud-code__row[data-state="removed"] .cloud-code__kind {
+.cloud-code__row[data-blocked] {
+  background: var(--k2b-danger-surface);
+}
+.cloud-code__row[data-state="removed"] .cloud-code__kind,
+.cloud-code__row[data-blocked] .cloud-code__kind {
   background: var(--k2b-danger-surface);
   color: var(--k2b-danger-text);
 }

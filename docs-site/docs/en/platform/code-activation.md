@@ -45,8 +45,8 @@ capability invocation.
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
 
 Each access observation names its grant, target, operations and state
-(`present`, `removed`, `unavailable`), plus `activatedBy` and `activatedAt`
-of the activation that created it; the [Code page](/en/docs/platform/code-page)
+(`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
+`activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
 shows them.
 
 Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;

@@ -64,3 +64,22 @@ export const loadCodeRunCalls = async (
   }
   return { run, calls, next, input: contents.inputChunked ? null : contents.input, inputTooLarge: contents.inputChunked, readable: true };
 };
+
+/** A failed run's classification needs its first action; at most this many batches are read to find it. */
+const CLASSIFY_BATCHES = 5;
+
+/**
+ * The first calls of a run for its detail. For a failed run, further batches follow until an action appears or the
+ * calls end, so "Run again" and "failed before the first call" never depend on what the person expanded.
+ */
+export const loadCodeRunCallsForDetail = async (invoke: CodePageInvoke, codeId: string, runId: string) => {
+  const first = await loadCodeRunCalls(invoke, codeId, runId, 0);
+  if (!first || !first.readable || first.run.state !== "failed") return first;
+  let result = first;
+  for (let batch = 1; batch < CLASSIFY_BATCHES && result.next !== null && !result.calls.some((call) => call.kind === "action"); batch++) {
+    const more = await loadCodeRunCalls(invoke, codeId, runId, result.next);
+    if (!more) break;
+    result = { ...result, calls: [...result.calls, ...more.calls], next: more.next };
+  }
+  return result;
+};

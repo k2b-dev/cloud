@@ -92,6 +92,7 @@ export const TargetAccessSchema = z.array(
     state: z.enum(["present", "removed", "unavailable"]),
     activatedBy: z.string().nullable().optional(),
     activatedAt: z.string().nullable().optional(),
+    activatedVersionId: z.string().nullable().optional(),
   }),
 );
 export const ActivationSchema = z.object({
@@ -125,6 +126,8 @@ export type CodePageTarget = {
   title: string | null;
   /** The target type's name in its app, such as "Space". */
   typeTitle: string | null;
+  /** The target type's icon class from its app's catalog. */
+  icon: string | null;
   /** The owner resource itself. */
   own: boolean;
   /** Its reader says it no longer exists. */
@@ -141,6 +144,8 @@ export type CodePageAccessRow = {
   newOperations: string[];
   activatedBy: CodePagePerson | null;
   activatedAt: string | null;
+  /** The version whose activation created this grant; a later version may reuse it unchanged. */
+  activatedVersionId: string | null;
 };
 /** One target the waiting version needs, for the switch-on dialog. The owner is always checked. */
 export type CodePageActivationRow = { target: CodePageTarget; operations: string[]; isNew: boolean };
@@ -175,7 +180,8 @@ export type CodePageAutomation = {
 export type CodePageVersion = {
   id: string;
   number: number;
-  status: z.infer<typeof VersionReceiptSchema>["status"];
+  /** Null for a version older than the loaded history page; its receipt was not read. */
+  status: z.infer<typeof VersionReceiptSchema>["status"] | null;
   createdBy: CodePagePerson | null;
   createdAt: string;
   decisionLabel: string | null;
@@ -195,6 +201,8 @@ export type CodePageReady = {
   code: z.infer<typeof CodeSchema>;
   permission: "editor" | "reader";
   versions: CodePageVersion[];
+  /** Core could not list the versions; switching on waits until it can. */
+  versionsFailed: boolean;
   moreVersions: boolean;
   active: CodePageVersion | null;
   /** The newest version when it is newer than the running one and not rejected, expired, or cancelled. */
