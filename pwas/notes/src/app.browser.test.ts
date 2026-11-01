@@ -455,6 +455,8 @@ describe("k2b notes · Produktions-SPA", () => {
     ]);
     const sizes = await Promise.all((await buttons.all()).map(box));
     expect(new Set(sizes.map((size) => `${size.width}×${size.height}×${size.y}`)).size).toBe(1);
+    // The widget's `estimatedHeight`: padding, title row, gap and frame. Anything unmeasured makes the note jump on scroll.
+    expect((await box(page.locator(".cm-query-block-widget").first())).height).toBe(34 + 28 + 8 + 288);
     const show = page.getByRole("button", { name: "Quelltext anzeigen", exact: true });
     // The icon font is a subset built from the bundle: the glyph has to be in it.
     expect(await show.locator("i.ti-code").evaluate((icon) => getComputedStyle(icon, "::before").content)).not.toBe("none");
