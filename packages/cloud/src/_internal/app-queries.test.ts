@@ -15,6 +15,7 @@ import {
   type CapabilityExecutionContext,
   CapabilityManifestSchema,
   CapabilityQueryManifestSchema,
+  CloudResourceReaderViewSchema,
   defineCapabilities,
   ResourceReadableInputSchema,
 } from "../contracts/capabilities";
@@ -48,6 +49,7 @@ const definitions = defineCapabilities({
     item: {
       title: "Item",
       description: "An inventory item",
+      reader: "item.read",
       access: {
         readable: async (_input, context) => {
           seen = context;
@@ -57,6 +59,17 @@ const definitions = defineCapabilities({
     },
   },
   queries: {
+    "item.read": {
+      title: "Read item",
+      description: "Read the authorized item.",
+      input: z.object({ id: z.string().min(1).max(512).describe("Resource ID.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }),
+      openWorld: false,
+      run: async () => ({
+        ok: true as const,
+        data: { data: { view: { title: "Item", permission: "read" as const } } },
+      }),
+    },
     private: {
       title: "Private query",
       description: "Requires a person.",
@@ -118,7 +131,7 @@ test("generated app-only queries validate in the registry and older readers drop
   expect(query.appOnly).toBe(true);
   expect(CapabilityQueryManifestSchema.omit({ appOnly: true }).safeParse(query).success).toBe(false);
   expect(CapabilityManifestSchema.parse({ ...compiled.manifest, queries: [query] }).resourceTypes).toEqual([
-    { type: "item", readable: true },
+    { type: "item", readable: true, view: true },
   ]);
 });
 
@@ -370,8 +383,8 @@ test("declared app queries reject person authority at dispatch and execution, wi
         getCapability: async () => entry,
       },
     );
-    expect(CapabilityCatalogSchema.parse(catalog).apps[0]!.manifest.resourceTypes).toEqual([{ type: "item", readable: true }]);
-    expect(catalog.apps[0]!.manifest.queries.map((query) => query.localId)).toEqual(["private"]);
+    expect(CapabilityCatalogSchema.parse(catalog).apps[0]!.manifest.resourceTypes).toEqual([{ type: "item", readable: true, view: true }]);
+    expect(catalog.apps[0]!.manifest.queries.map((query) => query.localId)).toEqual(["item.read", "private"]);
   } finally {
     record.mockRestore();
   }
