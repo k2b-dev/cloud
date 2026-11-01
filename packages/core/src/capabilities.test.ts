@@ -1244,3 +1244,11 @@ for (const kind of ["standalone", "agent"] as const) {
     expect(create).toHaveBeenCalledWith({ subject: machine, ...input }, machineAuthority);
   });
 }
+
+test("every Code Action with policy declares review and the Core manifest compiles", () => {
+  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
+    if (!id.startsWith("code.") || !("policy" in action)) continue;
+    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
+  }
+  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
+});
