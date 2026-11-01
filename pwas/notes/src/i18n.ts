@@ -148,6 +148,7 @@ export const messages = i18n.define({
       exportShort: "Export",
       importShort: "Import",
       clearAll: "Delete all data in this browser",
+      clearAllShort: "Delete all data",
       clearAllConfirm: "Delete all notes, images and settings in this browser? Shared versions stay on the server.",
       clearAllPhrase: "delete",
       exported: ({ filename }: { filename: string }) => `${filename} was downloaded.`,
@@ -423,6 +424,7 @@ export const messages = i18n.define({
       exportShort: "Exportieren",
       importShort: "Importieren",
       clearAll: "Alle Daten in diesem Browser löschen",
+      clearAllShort: "Alle Daten löschen",
       clearAllConfirm: "Alle Notizen, Bilder und Einstellungen in diesem Browser löschen? Geteilte Fassungen bleiben auf dem Server.",
       clearAllPhrase: "löschen",
       // export / import

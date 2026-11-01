@@ -304,6 +304,19 @@
   border-radius: var(--k2b-radius-control);
   pointer-events: none;
 }
+/* The way back from a block's source rests on its first line and takes no room from the text. */
+.cm-block-source-line {
+  position: relative;
+}
+.cm-block-source-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.cm-block-source-toggle .k2b-button[aria-pressed="true"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
 .cm-query-block-preview.notebook-book-content {
   max-width: none;
   margin: 0;
@@ -323,6 +336,10 @@
   min-width: 0;
   margin: 1.25rem 0;
 }
+/* In the editor the block's own padding is the space around the chart; a margin would add to it unmeasured. */
+.cm-query-block-preview.notebook-book-content .notebook-book-chart {
+  margin-block: 0;
+}
 .notebook-book-chart__header {
   display: flex;
   flex-direction: column;
@@ -335,6 +352,13 @@
   gap: 0.25rem;
   width: 3.75rem;
   height: 1.75rem;
+}
+/* In the editor the source switch joins them at the right end, so it stays put while the other two arrive. A failed
+   chart's Retry or Reload stands before it and takes the room it needs. */
+.cm-query-block-widget .notebook-book-chart__actions {
+  justify-content: flex-end;
+  width: auto;
+  min-width: 5.75rem;
 }
 /* The table takes the drawing's place inside the same fixed frame and scrolls there. */
 .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport > :not(.notebook-book-chart__table) {

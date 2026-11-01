@@ -2,7 +2,7 @@ import { setDiagnostics } from "@codemirror/lint";
 import { type EditorState, type Extension, type Range, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { query, timed } from "@k2b/stdlib/solid";
-import { Button } from "@k2b/ui";
+import { Button, IconButton } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import {
@@ -71,6 +71,59 @@ type QueryPagerMemory = { focus: { line: number; index: number } | null; heights
 
 const previewEffect = StateEffect.define<PreviewSnapshot>();
 
+/** The one switch between a block's preview and its source, in the preview's icon group and on the source's first line. */
+function SourceToggle(props: { label: string; pressed: boolean; onClick: () => void }) {
+  return (
+    <IconButton label={props.label} size="sm" variant="ghost" aria-pressed={props.pressed} onClick={props.onClick}>
+      <i class="ti ti-code" aria-hidden="true" />
+    </IconButton>
+  );
+}
+
+/** Rests on the revealed block's first line, without taking room from its text; pressing it brings the preview back. */
+class SourceToggleWidget extends WidgetType {
+  private dispose?: () => void;
+
+  constructor(
+    private label: string,
+    /** Where the cursor goes to leave the block. */
+    private exit: number,
+  ) {
+    super();
+  }
+
+  override eq(other: WidgetType) {
+    return other instanceof SourceToggleWidget && other.label === this.label && other.exit === this.exit;
+  }
+
+  override toDOM(view: EditorView) {
+    const host = document.createElement("span");
+    host.className = "cm-block-source-toggle";
+    this.dispose = render(
+      () => (
+        <SourceToggle
+          label={this.label}
+          pressed
+          onClick={() => {
+            view.dispatch({ selection: { anchor: this.exit } });
+            view.focus();
+          }}
+        />
+      ),
+      host,
+    );
+    host.addEventListener("mousedown", (event) => event.stopPropagation());
+    return host;
+  }
+
+  override destroy() {
+    this.dispose?.();
+  }
+  override ignoreEvent() {
+    return true;
+  }
+}
+
 class QueryBlockWidget extends WidgetType {
   private dispose?: () => void;
   private restoreCharts?: () => void;
@@ -119,8 +172,6 @@ class QueryBlockWidget extends WidgetType {
     wrapper.contentEditable = "false";
     wrapper.setAttribute("role", "group");
     wrapper.setAttribute("aria-label", t[this.block.type]);
-    const controls = document.createElement("div");
-    controls.className = "flex justify-end gap-1 mb-1";
     const content = document.createElement("div");
     content.className = "cm-query-block-preview notebook-book-content";
     if (this.html !== undefined && !this.snapshot.failed) {
@@ -148,7 +199,14 @@ class QueryBlockWidget extends WidgetType {
       content.setAttribute("role", "status");
       content.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : (this.diagnostic ?? t.loading);
     }
-    wrapper.append(controls, content);
+    // A chart's title row already holds its icon group; any other block gets a row of its own above the preview.
+    const chartActions = content.querySelector<HTMLElement>(".notebook-book-chart__actions");
+    const controls = chartActions ?? document.createElement("div");
+    if (chartActions) wrapper.append(content);
+    else {
+      controls.className = "flex justify-end gap-1 mb-1";
+      wrapper.append(controls, content);
+    }
     this.content = content;
     const memory = this.snapshot.pager;
     // A paged list never gets shorter while it stays open, so turning to a short last page moves nothing below it.
@@ -185,9 +243,7 @@ class QueryBlockWidget extends WidgetType {
               {t.retry}
             </Button>
           )}
-          <Button size="xs" variant="ghost" onClick={reveal}>
-            {t.showSource}
-          </Button>
+          <SourceToggle label={t.showSource} pressed={false} onClick={reveal} />
         </>
       ),
       controls,
@@ -246,12 +302,12 @@ class QueryBlockWidget extends WidgetType {
     return true;
   }
   override get estimatedHeight() {
-    // Widget margins, border, padding and controls (66px), the title row beside the chart's 28px controls and the
-    // kind's fixed frame (app.css).
+    // Widget margins, border and padding (34px), the title row beside the chart's 28px controls and the kind's fixed
+    // frame (app.css).
     if (this.placeholder) return this.placeholder.estimatedHeight;
-    if (this.chart) return 66 + (this.chart.subtitle ? 44 : 28) + 8 + (this.chart.kind === "stat" ? 160 : 288);
+    if (this.chart) return 34 + (this.chart.subtitle ? 44 : 28) + 8 + (this.chart.kind === "stat" ? 160 : 288);
     // Query tables have 14px / 21px text, 16px cell padding and row dividers;
-    // controls, widget padding/border and table spacing add 65px, the space around the frame 16px.
+    // the 28px source switch, widget padding/border and table spacing add 69px, the space around the frame 16px.
     // The truncated count paragraph inherits 16px / 1.6 text (25.6px) in
     // `.cm-query-block-preview.notebook-book-content` and 1rem block margins
     // from app.css. Its top margin collapses with the table's bottom margin,
@@ -263,11 +319,19 @@ class QueryBlockWidget extends WidgetType {
       : this.html?.includes('class="notebook-query-pager"')
         ? 36
         : 0;
-    return rows ? rows * 38 + 81 + countHeight : 136;
+    return rows ? rows * 38 + 85 + countHeight : 140;
   }
 }
 
-type BlockState = { decorations: DecorationSet; snapshot: PreviewSnapshot; ranges: BlockPreviewRange[] };
+type BlockState = { decorations: DecorationSet; sourceToggles: DecorationSet; snapshot: PreviewSnapshot; ranges: BlockPreviewRange[] };
+
+const sourceToggleLine = Decoration.line({ class: "cm-block-source-line" });
+
+/** The nearest place outside every block; a note that is one block alone has none, and its source stays open. */
+const blockExit = (block: BlockPreviewRange, blocks: BlockPreviewRange[], length: number) =>
+  [block.to + 1, block.from - 1].find(
+    (position) => position >= 0 && position <= length && !blocks.some((other) => position >= other.from && position <= other.to),
+  );
 
 /** A single Solid-owned canonical query serves all blocks in one editor. */
 export function createBlockPreviews(options: BlockPreviewOptions): { extension: Extension; listener: Extension } {
@@ -335,8 +399,20 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
       );
       return heights.get(line);
     };
+    const sourceToggles: Range<Decoration>[] = [];
     for (const block of blocks) {
-      if (selectionIntersectsRange(state.selection.main, block.from, block.to)) continue;
+      if (selectionIntersectsRange(state.selection.main, block.from, block.to)) {
+        const exit = blockExit(block, blocks, state.doc.length);
+        if (exit !== undefined) {
+          const line = state.doc.lineAt(block.from);
+          const label = options.messages(next.locale).showSource;
+          sourceToggles.push(
+            sourceToggleLine.range(line.from),
+            Decoration.widget({ widget: new SourceToggleWidget(label, exit), side: 1 }).range(line.to),
+          );
+        }
+        continue;
+      }
       const source = block.type === "chart" ? document.slice(block.from, block.to) : "";
       const html = result?.blocks.find((entry) => entry.line === block.line)?.html ?? (source ? drawnCharts.get(source) : undefined);
       const placeholder = options.placeholder?.(block, document.slice(block.from, block.to), next.locale, state.readOnly) ?? null;
@@ -365,7 +441,12 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
         }).range(block.from, block.to),
       );
     }
-    return { decorations: Decoration.set(ranges, true), snapshot: next, ranges: blocks };
+    return {
+      decorations: Decoration.set(ranges, true),
+      sourceToggles: Decoration.set(sourceToggles, true),
+      snapshot: next,
+      ranges: blocks,
+    };
   };
   const field = StateField.define<BlockState>({
     create: (state) => build(state, snapshot),
@@ -387,6 +468,7 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
     },
     provide: (field) => [
       EditorView.decorations.from(field, (value) => value.decorations),
+      EditorView.decorations.from(field, (value) => value.sourceToggles),
       EditorView.atomicRanges.of((view) => view.state.field(field).decorations),
     ],
   });

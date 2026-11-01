@@ -382,6 +382,100 @@ describe("k2b notes · Produktions-SPA", () => {
     }
   }, 20_000);
 
+  test("Fokusrahmen: jedes Textfeld zeigt eine einzige Form, das innere Feld zeichnet nichts", async () => {
+    await page.goto(origin);
+    const expectOneShape = async (field: Locator) => {
+      await field.focus();
+      await settled(page);
+      const look = await field.evaluate((input) => {
+        const inner = getComputedStyle(input);
+        const shell = getComputedStyle(input.closest(".k2b-input-shell")!);
+        return {
+          innerBorder: inner.borderTopWidth,
+          innerOutline: inner.outlineStyle,
+          innerRadius: inner.borderTopLeftRadius,
+          shellBorder: shell.borderTopColor,
+          shellRing: shell.boxShadow,
+        };
+      });
+      expect(look.innerBorder).toBe("0px");
+      expect(look.innerOutline).toBe("none");
+      expect(look.innerRadius).toBe("0px");
+      expect(look.shellBorder).toBe("rgba(0, 0, 0, 0)");
+      expect(look.shellRing).toContain("inset");
+    };
+
+    await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Einstellungen", exact: true }).click();
+    const settings = page.getByRole("dialog");
+    await expectOneShape(settings.getByRole("textbox").first());
+    await settings.getByRole("button", { name: "Fertig", exact: true }).click();
+    await settings.waitFor({ state: "hidden" });
+
+    // The report form opens from the footer of the overview, which needs a note.
+    await createNote("Eine Notiz");
+    await back().click();
+    await page.getByRole("button", { name: "Inhalt melden", exact: true }).click();
+    const report = page.getByRole("dialog");
+    const fields = report.getByRole("textbox");
+    expect(await fields.count()).toBe(3);
+    for (const field of await fields.all()) await expectOneShape(field);
+  }, 30_000);
+
+  for (const viewport of [
+    { width: 1280, height: 900 },
+    { width: 390, height: 844 },
+  ])
+    test(`Einstellungen ${viewport.width} px: „Alle Daten löschen“ steht links neben „Fertig“ und fragt weiter nach`, async () => {
+      await page.setViewportSize(viewport);
+      await page.goto(origin);
+      await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Einstellungen", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      const clear = await box(dialog.getByRole("button", { name: "Alle Daten löschen", exact: true }));
+      const done = await box(dialog.getByRole("button", { name: "Fertig", exact: true }));
+      expect(Math.abs(clear.y + clear.height / 2 - (done.y + done.height / 2))).toBeLessThan(1);
+      expect(clear.x + clear.width).toBeLessThanOrEqual(done.x);
+      expect(done.x + done.width).toBeLessThanOrEqual(viewport.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await dialog.getByRole("button", { name: "Alle Daten löschen", exact: true }).click();
+      await page.getByRole("heading", { name: "Alle Daten in diesem Browser löschen", exact: true }).waitFor();
+    });
+
+  test("Diagramm: Quelltext ist ein Icon neben Kopieren und Tabelle, derselbe Knopf führt zurück", async () => {
+    await context.close();
+    await openContext("block", true);
+    await page.goto(origin);
+    await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
+    const group = page.locator(".cm-query-block-widget .notebook-book-chart__actions");
+    await group.getByRole("button", { name: "Daten kopieren", exact: true }).waitFor();
+    const buttons = group.getByRole("button");
+    expect(await buttons.evaluateAll((all) => all.map((button) => button.getAttribute("aria-label")))).toEqual([
+      "Daten kopieren",
+      "Als Tabelle",
+      "Quelltext anzeigen",
+    ]);
+    const sizes = await Promise.all((await buttons.all()).map(box));
+    expect(new Set(sizes.map((size) => `${size.width}×${size.height}×${size.y}`)).size).toBe(1);
+    // The widget's `estimatedHeight`: padding, title row, gap and frame. Anything unmeasured makes the note jump on scroll.
+    expect((await box(page.locator(".cm-query-block-widget").first())).height).toBe(34 + 28 + 8 + 288);
+    const show = page.getByRole("button", { name: "Quelltext anzeigen", exact: true });
+    // The icon font is a subset built from the bundle: the glyph has to be in it.
+    expect(await show.locator("i.ti-code").evaluate((icon) => getComputedStyle(icon, "::before").content)).not.toBe("none");
+    expect(await show.getAttribute("aria-pressed")).toBe("false");
+    expect((await show.innerText()).trim()).toBe("");
+
+    await show.click();
+    await page.locator(".cm-line", { hasText: ":::chart" }).waitFor();
+    expect(await page.locator(".cm-query-block-widget").count()).toBe(0);
+    expect(await show.getAttribute("aria-pressed")).toBe("true");
+
+    await show.click();
+    await group.getByRole("button", { name: "Daten kopieren", exact: true }).waitFor();
+    expect(await page.locator(".cm-line", { hasText: ":::chart" }).count()).toBe(0);
+    expect(await show.getAttribute("aria-pressed")).toBe("false");
+  });
+
   test("Offline-Reload: aktiver Service Worker lädt die App und ihre lokalen Notizen", async () => {
     await context.close();
     await openContext("allow");

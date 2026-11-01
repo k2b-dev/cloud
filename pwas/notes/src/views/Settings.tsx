@@ -128,15 +128,13 @@ function SettingsBody(props: { close: () => void }) {
         value={includeLinks}
         onValueChange={setIncludeLinks}
       />
-      <div class="n-set">
-        <button type="button" class="n-textlink" onClick={() => void clearAll()}>
-          {t().clearAll}
-        </button>
-      </div>
       <Show when={app.storeError() === "unavailable"}>
         <p class="n-fine">{t().unavailableBody}</p>
       </Show>
       <div class="n-dialog-acts">
+        <Button class="n-clear n-left" variant="text" size="sm" onClick={() => void clearAll()}>
+          {t().clearAllShort}
+        </Button>
         <Button variant="primary" onClick={() => props.close()}>
           {t().done}
         </Button>
