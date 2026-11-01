@@ -260,7 +260,7 @@ export async function updateCodePolicy(input: z.infer<typeof codePolicyContracts
     const policy = await readCodePolicySnapshot(tx);
     const [job] = await tx<
       { id: string }[]
-    >`INSERT INTO code.policy_pause_outbox(revision,previous) VALUES(${policy.revision},${JSON.stringify(previous.definition)}::jsonb) RETURNING id`;
+    >`INSERT INTO code.policy_pause_outbox(revision,previous) VALUES(${policy.revision},${JSON.stringify(previous.definition)}::text::jsonb) RETURNING id`;
     const actor = context.authority.actor;
     await audit.record(
       {
