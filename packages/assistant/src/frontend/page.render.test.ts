@@ -588,7 +588,7 @@ test("Waiting for you lists Code of a place the person administers when it needs
               items: [
                 {
                   code: { id: "c_info02", title: "Deliveries", owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
-                  reasons: ["run_failed", "access_removed"],
+                  reasons: ["run_failed", "access_missing"],
                   lastRunAt: "2026-10-31T09:41:03.000Z",
                 },
               ],

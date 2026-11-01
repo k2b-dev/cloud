@@ -265,29 +265,6 @@ export const codeQueryContracts = {
       })
       .strict(),
   },
-  /**
-   * Owner Code that needs one of its administrators: paused, or its newest finished run failed; a failure also names
-   * a target that removed its access. Only Code the caller may edit (live owner administration or an editor share).
-   */
-  attentionList: {
-    input: z.object({ cursor: CodeIdSchema.optional().describe("Last candidate Code ID returned as nextCursor.") }).strict(),
-    data: z
-      .object({
-        items: z.array(
-          z
-            .object({
-              code: CodeSchema,
-              reasons: z.array(z.enum(["paused", "run_failed", "access_removed"])).min(1),
-              /** When the newest finished run ended; null without one. */
-              lastRunAt: timestamp.nullable(),
-            })
-            .strict(),
-        ),
-        /** More candidates remain after this bounded window; follow it even when `items` is empty. */
-        nextCursor: CodeIdSchema.nullable(),
-      })
-      .strict(),
-  },
   /** Runs of the caller's own personal Code created since a moment in the last 7 days. */
   runCount: {
     input: z

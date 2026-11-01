@@ -13,7 +13,7 @@ import {
   type CodeAccessTarget,
 } from "../contracts/code-access";
 import { sql } from "../runtime/clients";
-import { hasInstallationAdminInTransaction } from "../services/accounts/users";
+import { hasInstallationAdminInTransaction } from "../services/accounts/installation-admin";
 import { audit } from "../services/audit";
 import { codeAccessMessages } from "../shared/code-access-messages";
 import { verifyCodeAccessProof } from "./access-proof";
@@ -354,4 +354,39 @@ export const removeCodeAccess = async (
     );
     return true;
   });
+};
+
+/** Caller must first verify the bound Core proof. Always rolls back, including an adapter's accidental writes. */
+export const readCodeAccessManagers = async (
+  appId: string,
+  bindings: CodeAccessBindings,
+  claims: Pick<import("./access-proof").CodeAccessProofClaims, "target" | "principal" | "operations" | "grantId">,
+  db = sql,
+): Promise<string[] | null> => {
+  const adapter = targetAdapter(bindings, appId, claims.target);
+  if (!adapter) return null;
+  class Probe extends Error {
+    constructor(readonly managers: string[] | null) {
+      super("Code manager probe rolled back");
+    }
+  }
+  try {
+    await db.begin(async (tx) => {
+      if (!(await accountIsCode(tx, claims.principal))) throw new Probe(null);
+      const decision = CodeAccessDecisionSchema.parse(
+        await adapter.grant(tx, {
+          id: claims.target.id,
+          principal: claims.principal,
+          operations: claims.operations,
+          grantId: claims.grantId,
+          dryRun: true,
+        }),
+      );
+      throw new Probe(decision.granted ? (decision.managerUserIds ?? null) : null);
+    });
+  } catch (error) {
+    if (error instanceof Probe) return error.managers;
+    throw error;
+  }
+  return null;
 };

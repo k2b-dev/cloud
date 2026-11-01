@@ -127,7 +127,7 @@ test("attention and run counts come from Core's public queries", async () => {
             items: [
               {
                 code: { ...code("c_info02"), owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
-                reasons: ["run_failed", "access_removed"],
+                reasons: ["run_failed", "access_missing"],
                 lastRunAt: "2026-10-31T09:41:03.000Z",
               },
             ],
@@ -143,7 +143,7 @@ test("attention and run counts come from Core's public queries", async () => {
         codeId: "c_info02",
         title: "Code c_info02",
         owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
-        reasons: ["run_failed", "access_removed"],
+        reasons: ["run_failed", "access_missing"],
         lastRunAt: "2026-10-31T09:41:03.000Z",
       },
     ],

@@ -58,7 +58,7 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { codePerson } from "./code/access";
-import { listCodeAttention } from "./code/attention";
+import { codeAttentionContracts, listCodeAttention, readCodeAttention } from "./code/attention";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
@@ -81,7 +81,7 @@ import {
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
-// Shared lifecycle reviews keep the installed Core registry compilable while C8 and C13 are stacked.
+// Manual starts review the current Code and named entrypoint through the same editor permission check.
 const reviewCodeOperation = async (
   input: { codeId: string; entrypoint?: string },
   context: CapabilityExecutionContext,
@@ -814,6 +814,14 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
     },
+    "code.attention": {
+      title: "Check Code attention",
+      description:
+        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      ...codeAttentionContracts.attention,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
+    },
     "code.list": {
       title: "List Code",
       description:
@@ -855,8 +863,8 @@ export const aiCapabilities = defineCapabilities({
     "code.attention.list": {
       title: "List Code that needs you",
       description:
-        "List Code of a resource or app that the caller administers and that is paused or whose newest run failed, naming a target that removed its access. Follow nextCursor even on empty pages.",
-      ...codeQueryContracts.attentionList,
+        "Across owners, list Code of a resource or app that the caller administers and that needs them: paused, a latest run failed, access missing at a target, or a version awaiting approval. Follow nextCursor even on empty pages.",
+      ...codeAttentionContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
     },

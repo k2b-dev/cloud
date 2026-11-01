@@ -7,13 +7,13 @@ import { CodeIdSchema } from "./contracts";
 export const CodeStartRequestSchema = z
   .object({
     codeId: CodeIdSchema,
-    entrypoint: z.string().min(1).max(256).describe("Named entrypoint of the active version, as listed in its manifest."),
+    entrypoint: z.string().min(1).max(256).describe("Named entrypoint from the active checked Code manifest."),
     idempotencyKey: z
       .string()
       .min(1)
       .max(96)
       .refine((value) => new TextEncoder().encode(value).byteLength <= 96, "Key exceeds 96 UTF-8 bytes"),
-    input: z.json().default(null).describe("JSON input for this run; null when the entrypoint takes none."),
+    input: z.json().default(null).describe("JSON input passed to the entrypoint; defaults to null."),
   })
   .strict();
 export type CodeStartRequest = z.input<typeof CodeStartRequestSchema>;
@@ -47,6 +47,7 @@ export const CODE_RUN_OUTCOMES = {
   previousRunning: "previous_schedule_running",
   lost: "lease_lost",
   inactive: "code_not_active",
+  ownerNotFound: "owner_not_found",
   admissionRefused: "code_admission_refused",
   mandateMismatch: "code_mandate_mismatch",
   retryExhausted: "retry_exhausted",

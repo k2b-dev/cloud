@@ -1,5 +1,5 @@
 // Its own entry: the shared islands barrel stays free of the Code page's schemas.
-import CodePage, { type CodePageData } from "@k2b/cloud/ssr/code-page";
+import CodePage, { type CodePageData, codePageNeedsAttention } from "@k2b/cloud/ssr/code-page";
 import { navigateTo } from "@k2b/ssr/nav";
 import { AppWorkspace } from "@k2b/ui";
 import type { MailContactDirectory } from "../contact-directory-settings";
@@ -21,12 +21,8 @@ export default function MailboxCode(props: {
   contactDirectory: MailContactDirectory;
 }) {
   const preferences = createMailboxPreferences(props.sidebar);
-  const state = () => props.code.state;
-  // Paused Code or removed access needs someone who administers it.
-  const attention = () => {
-    const current = state();
-    return current.kind === "ready" && (current.code.state === "paused" || (current.access ?? []).some((row) => row.state === "removed"));
-  };
+  // The same rule as the mailbox page's dot, from the data this page already has.
+  const attention = () => codePageNeedsAttention(props.code.state);
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
       <AppWorkspace mobileSurface="flush" class="mail-workspace">

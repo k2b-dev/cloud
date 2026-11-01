@@ -16,6 +16,7 @@ import automationLogSchema from "./automation-log-schema.sql" with { type: "text
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { migrateIncomingAutomationTargets } from "./service/incoming-automation-targets-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
@@ -563,6 +564,7 @@ export const migrate = async (): Promise<void> => {
         await migrateAiDailyBudget(tx);
         await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
+        await migrateIncomingAutomationTargets(tx);
       });
       return;
     } catch (error) {

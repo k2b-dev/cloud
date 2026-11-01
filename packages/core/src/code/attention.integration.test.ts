@@ -4,6 +4,7 @@ import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
@@ -13,8 +14,8 @@ import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import * as access from "./access";
-import type { CodeActivationTransport } from "./activation-transport";
-import { listCodeAttention } from "./attention";
+import { codeActivationTransport } from "./activation-transport";
+import { clearCodeAttentionCache, listCodeAttention } from "./attention";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { countOwnCodeRuns, createCode, createCodeVersion, insertCodeRun } from "./store";
 
@@ -58,18 +59,7 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   const spies: Array<{ mockRestore(): void }> = [];
   let removedGrant = "";
-  /** The Space app lists the Code's grants; after removal it lists none. */
   let spaceGrants: "present" | "removed" = "removed";
-  const transport: CodeActivationTransport = {
-    set: async () => {
-      throw new Error("Attention never switches on");
-    },
-    remove: async () => {},
-    list: async (_appId, principal) =>
-      spaceGrants === "present"
-        ? [{ grantId: removedGrant, principal, target: { type: "spaces.space", id: "sp_2lg8" }, level: "write" }]
-        : [],
-  };
   /** Mailbox ids the manager administers; an unavailable owner throws like a provider outage. */
   const managed = new Set(["box-failed", "box-removed", "box-paused", "box-fine", "box-down"]);
   const finishedRun = async (codeId: string, versionId: string, state: "succeeded" | "failed", at: Date) => {
@@ -97,11 +87,18 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await migrateAudit();
     await migrateCode();
     await migratePolicy();
+    await migrateApprovals();
     await migrateVersions();
     await migrateActivation();
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     spies.push(
+      // The Space app lists the Code's grants; after removal it lists none.
+      spyOn(codeActivationTransport, "list").mockImplementation(async (_appId, principal) =>
+        spaceGrants === "present"
+          ? [{ grantId: removedGrant, principal, target: { type: "spaces.space", id: "sp_2lg8" }, level: "write" }]
+          : [],
+      ),
       spyOn(codeSettings, "get").mockImplementation(async (key) => {
         const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
         if (!definition) throw new Error(`Unexpected setting ${key}`);
@@ -157,32 +154,34 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
   });
 
   test("lists only Code the caller administers that is paused or failed, naming access a target removed", async () => {
-    const result = await listCodeAttention({}, ctx(ids.manager), transport);
+    const result = await listCodeAttention({}, ctx(ids.manager));
     expect(result.nextCursor).toBeNull();
     expect(result.items.map((item) => [item.code.owner.kind === "resource" ? item.code.owner.ref.id : null, item.reasons]).sort()).toEqual([
       ["box-down", ["paused"]],
       ["box-failed", ["run_failed"]],
       ["box-paused", ["paused"]],
-      ["box-removed", ["run_failed", "access_removed"]],
+      ["box-removed", ["run_failed", "access_missing"]],
     ]);
     // While the Space still lists the grant, the failure has another cause.
     spaceGrants = "present";
+    clearCodeAttentionCache();
     try {
-      const present = await listCodeAttention({}, ctx(ids.manager), transport);
+      const present = await listCodeAttention({}, ctx(ids.manager));
       expect(present.items.find((item) => item.code.title === "Code box-removed")?.reasons).toEqual(["run_failed"]);
     } finally {
       spaceGrants = "removed";
+      clearCodeAttentionCache();
     }
     expect(result.items.find((item) => item.code.title === "Code box-failed")?.lastRunAt).toBe("2026-10-31T09:41:00.000Z");
     // Someone who administers none of the owners sees nothing, also as a Cloud admin.
-    expect((await listCodeAttention({}, ctx(ids.other), transport)).items).toEqual([]);
-    expect((await listCodeAttention({}, ctx(ids.admin, true), transport)).items).toEqual([]);
+    expect((await listCodeAttention({}, ctx(ids.other))).items).toEqual([]);
+    expect((await listCodeAttention({}, ctx(ids.admin, true))).items).toEqual([]);
   });
 
   test("an owner that cannot answer skips its Code instead of failing the list", async () => {
     managed.add("down-now");
     try {
-      const result = await listCodeAttention({}, ctx(ids.manager), transport);
+      const result = await listCodeAttention({}, ctx(ids.manager));
       expect(result.items.map((item) => item.code.title).sort()).toEqual(["Code box-failed", "Code box-paused", "Code box-removed"]);
     } finally {
       managed.delete("down-now");
@@ -190,12 +189,12 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
   });
 
   test("pages the candidate window in Code ID order and continues after a page without the caller's Code", async () => {
-    const all = (await listCodeAttention({}, ctx(ids.manager), transport)).items.map((item) => item.code.id).sort();
+    const all = (await listCodeAttention({}, ctx(ids.manager))).items.map((item) => item.code.id).sort();
     const first = all[0]!;
-    const rest = await listCodeAttention({ cursor: first }, ctx(ids.manager), transport);
+    const rest = await listCodeAttention({ cursor: first }, ctx(ids.manager));
     expect(rest.items.map((item) => item.code.id).sort()).toEqual(all.slice(1));
     // Someone else's page is empty but still says where to continue when more candidates exist.
-    expect((await listCodeAttention({ cursor: all.at(-1) }, ctx(ids.other), transport)).nextCursor).toBeNull();
+    expect((await listCodeAttention({ cursor: all.at(-1) }, ctx(ids.other))).nextCursor).toBeNull();
   });
 
   test("counts the caller's own runs since the start of their day, and only theirs", async () => {

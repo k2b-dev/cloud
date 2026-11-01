@@ -1,7 +1,14 @@
 import { getApp } from "@k2b/cloud";
-import { invokeCodeAccess, signCodeAccessCleanup, signCodeAccessList, signCodeAccessProof } from "@k2b/cloud/capabilities/server";
+import {
+  invokeCodeAccess,
+  signCodeAccessCleanup,
+  signCodeAccessList,
+  signCodeAccessNotifications,
+  signCodeAccessProof,
+} from "@k2b/cloud/capabilities/server";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CODE_ACCESS_MAX_MANAGER_USER_IDS,
   type CodeAccessGrant,
   CodeAccessListDataSchema,
   type CodeAccessSetData,
@@ -11,6 +18,7 @@ import { z } from "zod";
 import type { CodeContext } from "./access";
 import type { CodeActivationTarget } from "./activation-plan";
 import { targetApp } from "./activation-plan";
+import { activationDecision } from "./activation-presentation";
 
 /** A transport refusal is definitive; unavailability or an ambiguous response retries with the persisted grantId. */
 export class CodeActivationTransportError extends Error {
@@ -75,6 +83,8 @@ export type CodeActivationTransport = {
     },
     context: CodeContext,
   ) => Promise<CodeAccessSetData>;
+  /** Server-only recipients, separately authorized; never attach them to a plan or person-visible failure. */
+  notificationManagers: (input: Omit<Parameters<CodeActivationTransport["set"]>[0], "dryRun">) => Promise<string[]>;
   list: (appId: string, principal: string) => Promise<CodeAccessGrant[]>;
   remove: (appId: string, principal: string, grantId: string) => Promise<void>;
 };
@@ -83,6 +93,7 @@ async function authorityRequest(
   operation: "list" | "rm" | "ownerTitle",
   principal: string,
   input: unknown,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const app = await getApp(appId);
   if (!app) throw new CodeActivationTransportError("target_unavailable", true);
@@ -97,7 +108,7 @@ async function authorityRequest(
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(input),
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     },
   );
 }
@@ -105,17 +116,47 @@ export const codeActivationTransport: CodeActivationTransport = {
   set: async ({ item, dryRun, ...input }, context) => {
     const appId = targetApp(item.target);
     const proof = await signCodeAccessProof(appId, { ...input, grantId: item.grantId, target: item.target, operations: item.operations });
-    return decode(
-      await invokeCodeAccess({
-        request: new Request("http://core.invalid/api/code/activate"),
-        appId,
-        operation: "set",
-        input: { proof, target: item.target, operations: item.operations, dryRun },
-        authority: context.authority,
-        locale: context.locale,
-      }),
-      CodeAccessSetDataSchema,
+    return activationDecision(
+      await decode(
+        await invokeCodeAccess({
+          request: new Request("http://core.invalid/api/code/activate"),
+          appId,
+          operation: "set",
+          input: { proof, target: item.target, operations: item.operations, dryRun },
+          authority: context.authority,
+          locale: context.locale,
+        }),
+        CodeAccessSetDataSchema,
+      ),
+      context.locale,
     );
+  },
+  notificationManagers: async ({ item, ...input }) => {
+    const appId = targetApp(item.target);
+    const app = await getApp(appId);
+    if (!app) throw new CodeActivationTransportError("target_unavailable", true);
+    const token = await signCodeAccessNotifications(appId, {
+      ...input,
+      grantId: item.grantId,
+      target: item.target,
+      operations: item.operations,
+    });
+    const response = await fetch(new URL("/api/_internal/capabilities/v1/code-authority/queries/code.access.notifications", app.baseUrl), {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.status === 422) {
+      const refusal = z.object({ code: z.enum(["MANAGERS_UNAVAILABLE", "CAPACITY_EXCEEDED"]) }).safeParse(await body(response));
+      if (!refusal.success) throw new CodeActivationTransportError("target_response_invalid", true);
+      throw new CodeActivationTransportError(
+        refusal.data.code === "MANAGERS_UNAVAILABLE" ? "managers_unavailable" : "capacity_exceeded",
+        false,
+      );
+    }
+    const data = await decode(response, z.object({ managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS) }).strict());
+    return data.managerUserIds;
   },
   list: async (appId, principal) => decode(await authorityRequest(appId, "list", principal, { principal }), CodeAccessListDataSchema),
   remove: async (appId, principal, grantId) => {
@@ -126,10 +167,14 @@ export const codeActivationTransport: CodeActivationTransport = {
   },
 };
 /** Core-only, title-only reader projection under the exact owning Code account. No session is retained. */
-export async function readCodeResourceOwnerTitle(ref: { type: string; id: string }, principal: string): Promise<string | null> {
+export async function readCodeResourceOwnerTitle(
+  ref: { type: string; id: string },
+  principal: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   return (
     await decode(
-      await authorityRequest(targetApp(ref), "ownerTitle", principal, ref),
+      await authorityRequest(targetApp(ref), "ownerTitle", principal, ref, signal),
       z.object({ title: z.string().min(1).max(500).nullable() }).strict(),
     )
   ).title;

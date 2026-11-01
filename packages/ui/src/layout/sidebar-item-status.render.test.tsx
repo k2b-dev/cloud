@@ -45,6 +45,20 @@ describe("AppWorkspace.SidebarItemStatus", () => {
     }
   });
 
+  test("attention is a warning dot with its phrase for screen readers, never a number, and reserves no count slot alone", () => {
+    const html = render({ attention: "needs attention" });
+    expect(html).toContain('data-attention="true"');
+    expect(html).toContain('class="k2b-app-workspace__sidebar-status-attention"');
+    expect(html).toContain(", needs attention<");
+    expect(html).not.toContain("k2b-app-workspace__sidebar-status-unread");
+    expect(html).not.toContain("k2b-app-workspace__sidebar-status-count");
+    // With a count, the count keeps its own slot after the dot.
+    const both = render({ unread: 2, attention: "needs attention" });
+    expect(both).toContain("k2b-app-workspace__sidebar-status-unread");
+    expect(both.indexOf("sidebar-status-attention")).toBeLessThan(both.indexOf("sidebar-status-unread"));
+    expect(both).toContain(", 2 unread, needs attention<");
+  });
+
   test("shows a count and caps what it shows and says at 99+", () => {
     const html = render({ unread: 3 });
     expect(html).toContain('data-unread="count"');

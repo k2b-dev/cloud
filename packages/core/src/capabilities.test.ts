@@ -304,6 +304,7 @@ describe("Core AI capabilities", () => {
       "ai.task.read",
       "ai.task.run.read",
       "ai.tasks.list",
+      "code.attention",
       "code.attention.list",
       "code.list",
       "code.policy.effective",
@@ -1265,6 +1266,14 @@ for (const kind of ["standalone", "agent"] as const) {
   });
 }
 
+test("every Code Action with policy declares review and the Core manifest compiles", () => {
+  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
+    if (!id.startsWith("code.") || !("policy" in action)) continue;
+    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
+  }
+  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
+});
+
 test("routine actions reject a routine in another target chat before changing state or grants", async () => {
   spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
   const update = spyOn(aiChatTasks, "update");
@@ -1283,8 +1292,8 @@ test("routine actions reject a routine in another target chat before changing st
 
 test("Core action targets replace their primary input selector in the manifest", () => {
   const manifest = compileCapabilityManifest("core", aiCapabilities);
-  // Code actions name their Code in the input until a Code target type exists; this covers Core's AI actions.
-  for (const action of manifest.actions.filter((candidate) => candidate.localId.startsWith("ai."))) {
+  for (const action of manifest.actions) {
+    if (action.localId.startsWith("code.")) continue;
     if (action.localId === "ai.skill.create") {
       expect(action.target).toBeUndefined();
       continue;
@@ -1294,12 +1303,4 @@ test("Core action targets replace their primary input selector in the manifest",
     expect(action.inputSchema.properties).not.toHaveProperty("chatId");
   }
   expect(aiCapabilities.actions["ai.skill.delete"].input.safeParse({ skillId: "Other1" }).success).toBe(false);
-});
-
-test("every Code Action with policy declares review and the Core manifest compiles", () => {
-  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
-    if (!id.startsWith("code.") || !("policy" in action)) continue;
-    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
-  }
-  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
 });

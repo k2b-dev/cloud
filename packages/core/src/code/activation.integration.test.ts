@@ -14,6 +14,7 @@ import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
@@ -73,19 +74,31 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
   types: { item: { title: "Item", description: "Fixture item.", reader: "item.read" } },
   queries: { "item.read": { ...operation, input: z.object({ id: z.string().describe("Item ID.") }).strict() } },
   actions: {
-    "item.change": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
-    "item.add": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
+    "item.change": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
+    "item.add": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
   },
 });
 
+let database: Awaited<ReturnType<typeof useFreshDatabase>>;
 databaseSuite()("durable Code activation", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
+    readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
   let ordinal = 0;
   const live = new Map<string, CodeAccessGrant>(),
@@ -93,6 +106,7 @@ databaseSuite()("durable Code activation", () => {
   const sets: Array<{ id: string; dryRun: boolean; grantId: string; person: string }> = [];
   const removals: string[] = [];
   let ownerAdministrator = ownerId;
+  let targetReadable = true;
   let denyDry: string | null = null,
     denySet: string | null = null,
     crashAt: string | null = null,
@@ -106,7 +120,14 @@ databaseSuite()("durable Code activation", () => {
         return { granted: false, reasonCode: "not_manager", reason: "Owner administrator changed." };
       if (tombstones.has(input.item.grantId)) return { granted: false, reasonCode: "removed", reason: "Removed by the target manager." };
       if (input.item.target.id === (input.dryRun ? denyDry : denySet))
-        return { granted: false, reasonCode: "not_manager", reason: "Only this target is blocked." };
+        return {
+          granted: false,
+          reasonCode: "not_manager",
+          reason: "Only this target is blocked.",
+          readable: targetReadable,
+          title: "Fixture target",
+          managerUserIds: [nextOwnerId],
+        };
       if (!input.dryRun && input.item.target.id === crashAt && !crashAfter) throw new CodeActivationTransportError("crash", true);
       const existing = live.get(input.item.grantId);
       if (existing) return { granted: true, grantId: existing.grantId, level: existing.level };
@@ -118,13 +139,22 @@ databaseSuite()("durable Code activation", () => {
           level: "write",
         });
       if (!input.dryRun && input.item.target.id === crashAt && crashAfter) throw new CodeActivationTransportError("lost_response", true);
-      return { granted: true, grantId: input.item.grantId, level: "write", managerUserIds: [ownerId] };
+      return {
+        granted: true,
+        grantId: input.item.grantId,
+        level: "write",
+        readable: targetReadable,
+        title: "Fixture target",
+        managerUserIds: [ownerId],
+      };
     },
+    notificationManagers: async () => [ownerId],
     list: async (_app, principal) => {
       if (listDown) throw new Error("Provider offline");
       return [...live.values()].filter((g) => g.principal === principal);
     },
-    remove: async (_app, _principal, grantId) => {
+    remove: async (appId, _principal, grantId) => {
+      expect(appId).toBe("example");
       removals.push(grantId);
       live.delete(grantId);
       tombstones.add(grantId);
@@ -171,14 +201,33 @@ databaseSuite()("durable Code activation", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
-    await migrateAppApproval();
-    await migrateSettings();
-    await migrateAudit();
-    await migrateCode();
+    readersSpy = spyOn(provider, "readResourcePrincipals").mockImplementation(async (input) => ({
+      state: "checked",
+      readable: [...input.principals],
+    }));
+    // These schemas depend only on auth. Keep session-family alterations in
+    // order, while independent schemas avoid serial migration round trips.
+    await Promise.all([
+      (async () => {
+        await migrateAppApproval();
+        await migratePwa();
+      })(),
+      migrateSettings(),
+      migrateAudit(),
+      migrateCode(),
+      migrateApprovals(),
+    ]);
     await migratePolicy();
-    await migrateApprovals();
     await migrateVersions();
     await migrateActivation();
+    // Exercise upgrades before status queries cache the original table result shape.
+    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
+    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
+    await migrateActivation();
+    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(
+      (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
+    ).toBeNull();
     for (const id of [ownerId, adminId, nextOwnerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',${id === adminId})`;
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
@@ -193,6 +242,7 @@ databaseSuite()("durable Code activation", () => {
   });
   beforeEach(() => {
     ownerAdministrator = ownerId;
+    targetReadable = true;
     live.clear();
     tombstones.clear();
     sets.length = 0;
@@ -203,7 +253,7 @@ databaseSuite()("durable Code activation", () => {
   afterAll(async () => {
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
-    await database?.drop();
+    readersSpy?.mockRestore();
     setSystemTime();
   });
 
@@ -699,6 +749,161 @@ databaseSuite()("durable Code activation", () => {
       "revoked",
     );
   });
+  test("owner deletion leaves the grant journal for durable lifecycle cleanup", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    await run(activation.id);
+    const grants = [...live.keys()];
+    await sql`UPDATE code.codes SET state='deleting',active_version_id=NULL WHERE id=${code.id}`;
+    await cleanupCodeActivation(code.id, transport, async () => {
+      throw new Error("Deleted Code must not send activation notices");
+    });
+    expect(removals).toEqual([]);
+    expect([...live.keys()]).toEqual(grants);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id} AND state='granted'`).toHaveLength(grants.length);
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid`).toHaveLength(1);
+  });
+  test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
+    for (const readable of [false, true]) {
+      targetReadable = readable;
+      const code = await newCode(),
+        submitted = await version(code, ["B"]),
+        activation = await start(code, submitted.version.id);
+      denyDry = "B";
+      await run(activation.id);
+      const result = await status(code, activation.id);
+      expect(result.state).toBe("failed");
+      expect(result.failure).toMatchObject({ target: { type: "example.item", id: "B" }, code: "not_manager", readable });
+      const [saved] = await sql<
+        { failure: unknown; plan: unknown }[]
+      >`SELECT failure,plan FROM code.activations WHERE id=${activation.id}::uuid`;
+      expect(JSON.stringify(saved!.plan)).not.toContain("managerUserIds");
+      expect(JSON.stringify(saved!.plan)).not.toContain("Fixture target");
+      if (readable) {
+        expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        // The page needs names; they exist only in the answer to someone who just passed the reader check.
+        expect(result.failure?.managerNames).toHaveLength(1);
+        expect(saved!.failure).not.toHaveProperty("managerNames");
+        // Losing read access also removes presentation on an existing status response.
+        readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
+        const hidden = await status(code, activation.id);
+        expect(hidden.failure).not.toHaveProperty("title");
+        expect(hidden.failure).not.toHaveProperty("managerUserIds");
+        expect(hidden.failure).not.toHaveProperty("managerNames");
+      } else {
+        expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
+        for (const value of [result, saved]) {
+          expect(JSON.stringify(value)).not.toContain("Fixture target");
+          expect(JSON.stringify(value)).not.toContain(nextOwnerId);
+          expect(JSON.stringify(value)).not.toContain("managerUserIds");
+        }
+      }
+    }
+  });
+  test("Core outage reasons remain useful when the target is unreadable", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    targetReadable = false;
+    crashAt = "A";
+    await expect(run(activation.id)).rejects.toThrow("crash");
+    expect((await status(code, activation.id)).failure).toEqual({
+      target: { type: "example.item", id: "A" },
+      code: "activation_retry",
+      reason: "Activation is waiting for a dependency. Retry is automatic; the old version stays active.",
+    });
+    const failure = {
+      target: { type: "app", id: "example" },
+      code: "target_unavailable",
+      reason: "The target operation catalog is unavailable. Activate again after the application is ready.",
+    };
+    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
+    expect((await status(code, activation.id)).failure).toEqual(failure);
+  });
+  test("saved answers without a reader decision use the current viewer's read access", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["B"]),
+      activation = await start(code, submitted.version.id);
+    denyDry = "B";
+    await run(activation.id);
+    const failure = {
+      target: { type: "example.item", id: "B" },
+      code: "not_manager",
+      reason: "Fixture target requires management",
+      title: "Fixture target",
+      managerUserIds: [nextOwnerId],
+    };
+    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
+    readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
+    const hidden = await status(code, activation.id);
+    expect(hidden.failure).toEqual({
+      target: failure.target,
+      code: failure.code,
+      reason: "Einschalten kann nur, wer dieses Ziel verwaltet",
+      readable: false,
+    });
+    expect(JSON.stringify(hidden)).not.toContain("Fixture target");
+    expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
+    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managerNames: [nextOwnerId] });
+    // A guest who may read the target learns no other person's name, as in directory search.
+    const guest = {
+      ...owner,
+      authority: { ...owner.authority, actor: { kind: "user" as const, user: { ...person(ownerId), roles: ["guest" as const] } } },
+    };
+    const asGuest = await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest);
+    expect(asGuest.failure).not.toHaveProperty("managerNames");
+  });
+  test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
+    targetReadable = false;
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id, administrator);
+    await run(activation.id);
+    expect((await status(code, activation.id)).state).toBe("active");
+    const [saved] = await sql<{ plan: unknown }[]>`SELECT plan FROM code.activations WHERE id=${activation.id}::uuid`;
+    expect(JSON.stringify(saved!.plan)).not.toContain("managerUserIds");
+    expect(JSON.stringify(saved!.plan)).not.toContain("Fixture target");
+    expect(
+      await sql`SELECT grant_id FROM code.target_grants WHERE activation_id=${activation.id}::uuid AND cardinality(manager_user_ids)>0`,
+    ).toHaveLength(0);
+    const delivered: string[] = [];
+    const notify = async (input: { userId: string; target: { id: string } }) => {
+      expect(input.userId).toBe(ownerId);
+      delivered.push(input.target.id);
+    };
+    await cleanupCodeActivation(code.id, transport, notify);
+    await cleanupCodeActivation(code.id, transport, notify);
+    expect(delivered.sort()).toEqual(["A", code.owner.kind === "resource" ? code.owner.ref.id : ""].sort());
+    expect(
+      await sql`SELECT target FROM code.activation_notices WHERE activation_id=${activation.id}::uuid AND jsonb_typeof(target)<>'object'`,
+    ).toHaveLength(0);
+  });
+  test("persisted target objects route rollback to the provider and remove every newly applied grant", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      activation = await start(code, submitted.version.id);
+    denySet = "B";
+    await run(activation.id);
+    expect((await status(code, activation.id)).state).toBe("failed");
+    const rows = await sql<
+      { target: { type: string; id: string }; state: string }[]
+    >`SELECT target,state FROM code.target_grants WHERE activation_id=${activation.id}::uuid ORDER BY target->>'id'`;
+    expect(rows.map((row) => row.target)).toEqual([
+      { type: "example.item", id: "A" },
+      { type: "example.item", id: "B" },
+    ]);
+    expect(rows.every((row) => row.state === "released")).toBe(true);
+    expect(removals).toHaveLength(2);
+    expect(live.size).toBe(0);
+    const [saved] = await sql<
+      { authority: unknown; plan: unknown; failure: unknown; mandate_policy: unknown }[]
+    >`SELECT authority,plan,failure,mandate_policy FROM code.activations WHERE id=${activation.id}::uuid`;
+    expect(Array.isArray(saved!.plan)).toBe(true);
+    expect(typeof saved!.failure).toBe("object");
+    expect(typeof saved!.mandate_policy).toBe("object");
+  });
   test("Cloud-admin activation changes no personal shares and emits one durable notice per affected target", async () => {
     const code = await newCode(),
       submitted = await version(code, ["A"]),
@@ -727,14 +932,17 @@ databaseSuite()("durable Code activation", () => {
     await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("cancelled");
     expect(live.size).toBe(0);
-    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
-    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
     await migrateActivation();
     await migrateActivation();
-    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid AND cancel_requested`).toHaveLength(1);
     expect(
       (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
     ).toBeNull();
     expect((await status(code, activation.id)).state).toBe("cancelled");
   });
+});
+
+// The session fixture's file-level cleanup runs before the private database is removed.
+afterAll(async () => {
+  await database?.drop();
 });

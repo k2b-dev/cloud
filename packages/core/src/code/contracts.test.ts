@@ -60,6 +60,7 @@ describe("Core Code data contracts", () => {
         .map((query) => query.localId)
         .sort(),
     ).toEqual([
+      "code.attention",
       "code.attention.list",
       "code.list",
       "code.policy.effective",
@@ -75,11 +76,7 @@ describe("Core Code data contracts", () => {
       "code.version.read",
     ]);
     expect(
-      manifest.actions
-        .filter((action) => action.localId.startsWith("code."))
-        .map((action) => ({ id: action.localId, code: action.code }))
-        // The manifest's order follows registration across the stacked slices; the set is the contract.
-        .sort((left, right) => left.id.localeCompare(right.id)),
+      manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
         "code.pause",

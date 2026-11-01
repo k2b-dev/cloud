@@ -496,6 +496,8 @@ export const finishCodeCall = async (
   input: { runId: string; ordinal: number; state: "succeeded" | "failed"; result: CodeCall["result"]; endedAt: Date },
   db: TransactionSQL,
 ): Promise<void> => {
+  // Match settlement's run-before-call lock order, including late authoritative results.
+  await db`SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
   let encoded: string;
   try {
     encoded = jsonText(input.result);

@@ -95,7 +95,16 @@ check current permissions in Core's Code service.
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
-| `core.code.attention.list` | optional `cursor` | Resource or application Code the caller edits that is paused or whose newest finished run failed, each with `reasons` (`paused`, `run_failed`, and `access_removed` when a target no longer lists its grant) and `lastRunAt`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
+| `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
+| `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
+
+`core.code.attention` serves an owner's navigation. The reasons per Code are
+the same for every reader, so Core keeps them for 30 seconds and computes one
+at a time; who sees which Code is checked on every request. A target app that
+does not answer within two seconds counts as no missing access.
+`core.code.attention.list` serves a person's own list when no owner is known.
+It finds candidates from stored state, so missing access shows with the failed
+run it causes, and it reuses the same reasons.
 
 Without an owner filter, a normal caller lists their personal and explicitly
 shared Code. To discover Code through live owner administration, supply the
@@ -162,8 +171,7 @@ allow" answers are untouched.
 - **Waiting for you** lists, below the questions from chats, Code of a place
   the person administers when it needs them (`core.code.attention.list`,
   following up to four candidate pages, then "Check more"). Each row leads to
-  that place, where the Code is managed. A removed target access shows once a
-  run fails because of it.
+  that place, where the Code is managed.
 
 All of these read only through the public `core.code.*` Queries with the
 person's own credentials, the same Queries any application can call.
@@ -171,8 +179,9 @@ person's own credentials, the same Queries any application can call.
 ## Storage limits and retention
 
 Core declares these administrator settings. They have no environment-variable
-fallback. The Code administration surface can edit them through the settings
-service.
+fallback. Administrators edit them through Core's settings API using
+`cld admin settings apply --from ./code-limits.json --yes`. See
+[Code storage](/en/docs/operations/code-storage) for the JSON input and reset command.
 
 | Setting | Default | Maximum |
 | --- | --- | --- |

@@ -92,13 +92,13 @@ const AttentionSchema = z.object({
           z.object({ kind: z.literal("person") }),
         ]),
       }),
-      reasons: z.array(z.enum(["paused", "run_failed", "access_removed"])),
+      reasons: z.array(z.enum(["paused", "run_failed", "access_missing", "approval_pending"])),
       lastRunAt: z.string().nullable(),
     }),
   ),
   nextCursor: z.string().nullable(),
 });
-export type CodeAttentionReason = "paused" | "run_failed" | "access_removed";
+export type CodeAttentionReason = "paused" | "run_failed" | "access_missing" | "approval_pending";
 /** Who owns Code that waits: a resource, or a whole app. */
 export type CodeAttentionOwner = { kind: "resource"; ref: CloudResourceRef } | { kind: "app"; appId: string };
 /** Code of a place the person administers that needs them. */
@@ -115,8 +115,8 @@ export type CodeAttentionPage = { items: CodeAttentionItem[]; nextCursor: string
 export const CODE_ATTENTION_WINDOWS = 4;
 
 /**
- * Code that waits for the person as an administrator of its place: paused, or failed (also because a target removed
- * its access). Core pages its candidate window; this follows up to `CODE_ATTENTION_WINDOWS` windows from `cursor`.
+ * Code that waits for the person as an administrator of its place, with Core's reasons. Core pages its candidate
+ * window; this follows up to `CODE_ATTENTION_WINDOWS` windows from `cursor`.
  */
 export const loadCodeAttention = async (invoke: CodeQueryInvoke, cursor?: string): Promise<CodeAttentionPage> => {
   const items: CodeAttentionItem[] = [];

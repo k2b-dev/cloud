@@ -261,7 +261,11 @@ suite("Code access at the target", () => {
 
   test("live grants block account deletion, cleanup releases the account and preserves replay tombstones", async () => {
     await setCodeAccess("inventory", bindings, input, context, dependencies);
-    await expect(sql`DELETE FROM auth.service_accounts WHERE id = ${principal}::uuid`).rejects.toThrow();
+    // Bun's rejection matcher observes the promise without starting a lazy SQL query.
+    await expect(sql`DELETE FROM auth.service_accounts WHERE id = ${principal}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23503",
+      constraint: "code_access_grants_live_principal_fkey",
+    });
     await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${principal}::uuid`;
     expect(await listCodeAccess("inventory", bindings, principal, { listPrincipal: principal })).toHaveLength(1);
     await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" });
@@ -292,12 +296,14 @@ suite("Code access at the target", () => {
     expect(live).toHaveLength(count + 1);
     expect(new TextEncoder().encode(JSON.stringify({ data: live })).byteLength).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
   });
-});
-
-suite("cleanup before the first set fences a delayed activation proof", async () => {
-  expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
-  expect(await setCodeAccess("inventory", bindings, input, context, dependencies)).toMatchObject({ granted: false, reasonCode: "removed" });
-  expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(0);
-  expect(await listCodeAccess("inventory", bindings, principal, listContext)).toEqual([]);
-  expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
+  test("cleanup before the first set fences a delayed activation proof", async () => {
+    expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
+    expect(await setCodeAccess("inventory", bindings, input, context, dependencies)).toMatchObject({
+      granted: false,
+      reasonCode: "removed",
+    });
+    expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(0);
+    expect(await listCodeAccess("inventory", bindings, principal, listContext)).toEqual([]);
+    expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
+  });
 });

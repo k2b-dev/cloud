@@ -47,6 +47,7 @@ export const app = defineApp({
   ],
   settings: {
     "assistant.rsql_allowed_targets": {
+      adminWrite: "application",
       kind: "string_list",
       default: ["rsql"],
       label: "rsql allowed targets",

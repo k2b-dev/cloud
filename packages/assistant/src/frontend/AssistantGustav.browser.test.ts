@@ -150,7 +150,7 @@ const attention = {
       codeId: "c_info02",
       title: "Lieferungen eintragen",
       owner: { kind: "resource" as const, ref: { type: "mail.mailbox", id: "m_info" } },
-      reasons: ["run_failed", "access_removed"] as ("run_failed" | "access_removed")[],
+      reasons: ["run_failed", "access_missing"] as ("run_failed" | "access_missing")[],
       lastRunAt: at(20),
       place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info" },
     },

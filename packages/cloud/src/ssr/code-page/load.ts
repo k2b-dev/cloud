@@ -9,11 +9,13 @@ import { coreOrigin } from "../../services/identity/core-origin";
 import { LOCALE_HEADER } from "../../shared/locale";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
-import { loadCodeRunCallsForDetail } from "./calls";
+import { AttentionSchema } from "./attention-schema";
+import { loadCodeRunCalls, loadCodeRunCallsForDetail } from "./calls";
 import {
   CodeListSchema,
   type CodePageAccessRow,
   type CodePageAutomation,
+  type CodePageCall,
   type CodePageData,
   type CodePageDiff,
   type CodePageInvoke,
@@ -39,6 +41,10 @@ import {
 const PAGE = 20;
 /** Core's default manifest budget is 1 MiB: 64 chunks of 16 Ki code units. A larger manifest shows as unreadable. */
 const MANIFEST_CHUNKS = 64;
+/** Failed automations whose last calls are read to find which one lost access, one after another. */
+const MISSING_ACCESS_CHECKS = 3;
+/** Calls read per check: a failing call to a removed target is usually among the first. */
+const MISSING_ACCESS_BATCH = 10;
 /** Distinct targets named on one page; a version has at most 200 operations. */
 const TARGET_LIMIT = 50;
 
@@ -50,7 +56,7 @@ const isOwnRef = (ref: { type: string; id: string }, owner: LoadCodePageOptions[
   return own !== null && sameRef(ref, own);
 };
 const ReaderViewSchema = z.object({ view: z.object({ title: z.string().min(1) }) });
-const targetKey = (ref: { type: string; id: string }) => `${ref.type}\u0000${ref.id}`;
+export const targetKey = (ref: { type: string; id: string }) => `${ref.type}\u0000${ref.id}`;
 const sameRef = (a: { type: string; id: string }, b: { type: string; id: string }) => a.type === b.type && a.id === b.id;
 
 export type LoadCodePageOptions = {
@@ -89,11 +95,11 @@ export const visiblePersonIds = (ids: Iterable<string | null | undefined>, viewe
       [...ids].filter((id): id is string => typeof id === "string" && uuid.safeParse(id).success && (viewer.directory || id === viewer.id)),
     ),
   ].slice(0, 100);
-const loadPeople = async (ids: Iterable<string | null | undefined>, viewer: Viewer): Promise<Map<string, CodePagePerson>> => {
+export const loadPeople = async (ids: Iterable<string | null | undefined>, viewer: Viewer): Promise<Map<string, CodePagePerson>> => {
   const unique = visiblePersonIds(ids, viewer);
   if (unique.length === 0) return new Map();
   const rows = await sql<{ id: string; display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
-    SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${unique}::uuid[])`;
+    SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${sql.array(unique, "uuid")}::uuid[])`;
   return new Map(
     rows.map((row) => [
       row.id,
@@ -209,6 +215,45 @@ const versionView = (
 /** Statuses that keep a newer version waiting to be switched on. */
 const WAITING = new Set(["submitted", "pending", "approved"]);
 
+/**
+ * Removed access: which automation needs it. Proven by a last run that failed there; the only automation needs it in
+ * any case; an automation whose last run succeeded is unaffected so far; anything else stays unknown. Readers get no
+ * call contents; editors read a few short batches, one automation after another.
+ */
+export const attributeMissingAccess = async (
+  automations: CodePageAutomation[],
+  removedKeys: ReadonlySet<string>,
+  permission: "editor" | "reader",
+  readCalls: (runId: string) => Promise<{ calls: CodePageCall[]; next: number | null } | null>,
+): Promise<void> => {
+  if (removedKeys.size === 0) return;
+  const running = automations.filter((automation) => !automation.isNew);
+  const callKeys = (call: CodePageCall) => [
+    targetKey(call.target ?? { type: "app", id: call.capability.split(".")[0]! }),
+    ...call.refs.map(targetKey),
+  ];
+  const failed = running.filter((automation) => automation.lastRun?.state === "failed");
+  const checked = permission === "editor" ? failed.slice(0, MISSING_ACCESS_CHECKS) : [];
+  for (const automation of checked) {
+    const calls = await readCalls(automation.lastRun!.id).catch(() => null);
+    const named = (list: CodePageCall[]) => [...new Set(list.flatMap(callKeys).filter((key) => removedKeys.has(key)))];
+    // Only a refusal for access proves the cause; a call that failed otherwise still shows the automation needs it.
+    const refused = named((calls?.calls ?? []).filter((call) => call.state === "failed" && call.accessRefused));
+    const used = named(calls?.calls ?? []);
+    if (refused.length > 0) {
+      automation.missingTargets = refused;
+      automation.missingProven = true;
+    } else if (used.length > 0) automation.missingTargets = used;
+    else if (!calls || calls.next !== null) automation.accessUnknown = true;
+  }
+  for (const automation of failed.filter((automation) => !checked.includes(automation))) automation.accessUnknown = true;
+  for (const automation of running.filter((automation) => !automation.lastRun)) automation.accessUnknown = true;
+  if (running.length === 1 && running[0]!.missingTargets.length === 0) {
+    running[0]!.missingTargets = [...removedKeys];
+    running[0]!.accessUnknown = false;
+  }
+};
+
 /** Core's activation routes take the person's own credentials; only Core may act on them. */
 const coreRoute = async <T extends z.ZodType>(caller: CapabilityCaller, path: string, body: unknown, schema: T) => {
   const headers = new Headers({ "content-type": "application/json", accept: "application/json" });
@@ -239,10 +284,14 @@ const loadReady = async (
 ): Promise<CodePageReady> => {
   const catalog = catalogCache(getLocale(c));
   const code = listed;
-  const [versionsResult, runsResult, accessResult] = await Promise.all([
+  const [versionsResult, runsResult, accessResult, attentionResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), wrapped(VersionListSchema)),
     invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), wrapped(RunListSchema)),
     coreRoute(caller, "/api/code/access", { codeId: code.id }, TargetAccessSchema).catch(() => null),
+    // The same answer the owner's navigation gets, so its dot and this page agree.
+    invoke(coreQuery("code.attention", { owner: { kind: "resource", ref: options.owner.ref } }), wrapped(AttentionSchema)).catch(
+      () => null,
+    ),
   ]);
   const receipts = versionsResult.ok ? versionsResult.data.data.data.items : [];
   const latest = receipts[0];
@@ -382,7 +431,9 @@ const loadReady = async (
           }),
         ]
       : null;
-  const lastRunOf = (entrypoint: string) => runs?.find((run) => run.entrypoint === entrypoint) ?? null;
+  // A skipped tick or a cancelled start is not a run's result.
+  const lastRunOf = (entrypoint: string) =>
+    runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
     manifest.entrypoints.map((entry) => ({
       entrypoint: entry.entrypoint,
@@ -390,6 +441,9 @@ const loadReady = async (
       cron: entry.cron,
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
+      missingTargets: [],
+      missingProven: false,
+      accessUnknown: false,
     }));
   const activeEntrypoints = new Set(activeManifest?.entrypoints.map((entry) => entry.entrypoint) ?? []);
   const automations =
@@ -402,6 +456,26 @@ const loadReady = async (
             : []),
         ];
 
+  if (automations)
+    await attributeMissingAccess(
+      automations,
+      new Set((access ?? []).filter((row) => row.state === "removed").map((row) => targetKey(row.target))),
+      code.permission,
+      (runId) => loadCodeRunCalls(invoke, code.id, runId, 0, MISSING_ACCESS_BATCH),
+    );
+  const originsOf = (manifest: z.infer<typeof ManifestSchema> | null) =>
+    [...new Set((manifest?.secrets ?? []).map((binding) => binding.origin))].sort();
+  const activeOrigins = originsOf(activeManifest);
+  const waitingOrigins = originsOf(waitingManifest);
+  const usesInternet = [activeManifest, waitingManifest].some((manifest) => manifest?.policyRows?.includes("internet"));
+  const internet =
+    activeOrigins.length > 0 || waitingOrigins.length > 0 || usesInternet
+      ? {
+          origins: [...new Set([...activeOrigins, ...waitingOrigins])].sort(),
+          newOrigins: waitingOrigins.filter((origin) => !activeOrigins.includes(origin)),
+          unbound: usesInternet && activeOrigins.length === 0 && waitingOrigins.length === 0,
+        }
+      : null;
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
   const activeVersion =
     versions.find((version) => version.active) ??
@@ -453,6 +527,10 @@ const loadReady = async (
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
     access: accessRows,
+    internet,
+    attentionReasons: attentionResult?.ok
+      ? (attentionResult.data.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? [])
+      : null,
     waitingTargets,
     runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.data.nextCursor } : null,
     run,

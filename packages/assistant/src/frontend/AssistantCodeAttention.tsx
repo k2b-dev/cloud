@@ -20,7 +20,7 @@ const placeOf = async (item: CodeAttentionItem): Promise<CodePlace> => {
 };
 
 /**
- * "Code you administer" under Waiting for you: only Code of a place that needs the person (failed, without access,
+ * "Code you administer" under Waiting for you: only Code of a place that needs the person (failed, without access, awaiting approval,
  * paused). It is managed at its place, so each row leads there. Nothing shows when nothing waits.
  * `initial` is the server's answer (null when Core could not answer); without it, the list loads in the browser.
  */
@@ -61,7 +61,7 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
     if (props.initial === undefined) void load();
   });
   const reasonText = (reason: CodeAttentionReason) =>
-    ({ run_failed: t().codeAttentionRunFailed, access_removed: t().codeAttentionAccessRemoved, paused: t().codeAttentionPaused })[reason];
+    ({ run_failed: t().codeAttentionRunFailed, access_missing: t().codeAttentionAccessMissing, approval_pending: t().codeAttentionApproval, paused: t().codeAttentionPaused })[reason];
   const placeName = (item: CodeView) => item.place.name ?? item.place.type ?? item.title;
   type CodeView = CodeAttentionView["items"][number];
 

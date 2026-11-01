@@ -49,6 +49,9 @@ const PermissionSchema = z.object({
 });
 /** The parts of the checked version manifest the page shows. */
 export const ManifestSchema = z.object({
+  /** Reviewed secret bindings (C11): each names the exact HTTPS origin a credential may reach. */
+  secrets: z.array(z.object({ origin: z.string() })).optional(),
+  policyRows: z.array(z.string()).optional(),
   entrypoints: z.array(z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), cron: z.string().nullable() })),
   permissions: z.array(PermissionSchema),
 });
@@ -105,10 +108,23 @@ export const ActivationSchema = z.object({
   id: z.string(),
   versionId: z.string(),
   state: z.enum(["pending", "preflight", "applying", "waiting", "rolling_back", "failed", "active", "cancelled"]),
-  failure: z.object({ target: z.object({ type: z.string(), id: z.string() }).nullable(), code: z.string(), reason: z.string() }).nullable(),
+  failure: z
+    .object({
+      target: z.object({ type: z.string(), id: z.string() }).nullable(),
+      code: z.string(),
+      reason: z.string(),
+      /** False when Core's reader check denied presentation. */
+      readable: z.boolean().optional(),
+      /** Who manages the refusing target, only for a person who may read it. */
+      managerNames: z.array(z.string()).optional(),
+    })
+    .nullable(),
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+
+/** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
+export type CodeAttention = { visible: boolean; attention: boolean };
 
 /** One caller-supplied transport: the server passes the request's credentials, the browser its session. */
 export type CodePageInvoke = <T extends z.ZodType>(
@@ -161,6 +177,10 @@ export type CodePageCall = {
   kind: "query" | "action";
   capability: string;
   target: { type: string; id: string } | null;
+  /** Additional resources the call named. */
+  refs: { type: string; id: string }[];
+  /** It failed because the target refused access, not for another reason. */
+  accessRefused: boolean;
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;
@@ -181,6 +201,15 @@ export type CodePageAutomation = {
   cron: string | null;
   /** Only the waiting version has it. */
   isNew: boolean;
+  /**
+   * Keys of targets whose access was removed and that this automation needs: proven by its failed last run, or
+   * because it is the only automation. Its runs fail there until someone switches the Code on again.
+   */
+  missingTargets: string[];
+  /** Its last run failed at one of those targets; otherwise it needs them but has not failed there yet. */
+  missingProven: boolean;
+  /** Access was removed, but whether this automation needs it could not be told. */
+  accessUnknown: boolean;
   lastRun: CodePageRun | null;
 };
 export type CodePageVersion = {
@@ -215,8 +244,15 @@ export type CodePageReady = {
   /** The newest version when it is newer than the running one and not rejected, expired, or cancelled. */
   waiting: CodePageVersion | null;
   automations: CodePageAutomation[] | null;
+  /** Core's attention reasons for this Code, the same answer the owner's navigation uses; null when unavailable. */
+  attentionReasons: string[] | null;
   /** Null when Core could not reconcile target access. */
   access: CodePageAccessRow[] | null;
+  /**
+   * Internet origins the running version may call with its credentials, from its reviewed bindings, and those the
+   * waiting version adds. `unbound` says it uses the internet without a fixed origin.
+   */
+  internet: { origins: string[]; newOrigins: string[]; unbound: boolean } | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */
   waitingTargets: CodePageActivationRow[] | null;
   runs: { items: CodePageRun[]; nextCursor: string | null } | null;

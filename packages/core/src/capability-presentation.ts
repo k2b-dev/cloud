@@ -129,6 +129,20 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
         },
+        "code.attention": {
+          title: "Aufmerksamkeit für Code prüfen",
+          description:
+            "Listet für einen genauen Besitzer den lesbaren Code, der jemanden braucht: letzter Lauf fehlgeschlagen, Zugriff an einem Ziel entfernt oder eine Version wartet auf Freigabe.",
+          input: {
+            owner: "Genauer Code-Besitzer, dessen Code die Seite zeigt.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+          },
+        },
         "code.list": {
           title: "Code auflisten",
           description:
@@ -175,7 +189,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.attention.list": {
           title: "Code auflisten, der dich braucht",
           description:
-            "Listet Code einer Ressource oder App, die du verwaltest, wenn er pausiert ist oder sein letzter Lauf fehlgeschlagen ist, und nennt ein Ziel, das ihm den Zugriff entzogen hat. Dem Cursor auch bei leeren Seiten folgen.",
+            "Listet über alle Besitzer Code einer Ressource oder App, die du verwaltest, wenn er dich braucht: pausiert, letzter Lauf fehlgeschlagen, Zugriff an einem Ziel fehlt oder eine Version wartet auf Freigabe. Dem Cursor auch bei leeren Seiten folgen.",
           input: { cursor: "Letzte geprüfte Code-ID aus nextCursor." },
         },
         "code.run.count": {
@@ -333,9 +347,9 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
           input: {
-            ...codeIdInput,
-            entrypoint: "Benannter Einstiegspunkt der aktiven Version, wie ihn ihr Manifest nennt.",
-            input: "JSON-Eingabe für diesen Lauf; null, wenn der Einstiegspunkt keine braucht.",
+            codeId: "Code-ID aus code.list oder code.read.",
+            entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
+            input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
           },
         },
         "code.version.submit": {
