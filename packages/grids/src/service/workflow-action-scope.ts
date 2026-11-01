@@ -19,6 +19,7 @@ import type { WorkflowActionContext } from "@k2b/cloud/workflows";
 import type { GridsWorkflowChannel, GridsWorkflowPrincipal } from "../workflows/contracts";
 import type { SqlClient } from "./audit";
 import type { DocumentIssuanceActor } from "./document-issuance";
+import { transactionWithRollback } from "./transaction-rollback";
 import { authorizeWorkflowBase, canAccessWorkflowBaseTable, workflowTableBelongsToBase } from "./workflow-authorization";
 import { canExecuteWorkflow, type GridsWorkflowExecutionClaim } from "./workflow-execution-authorization";
 import { type GridsWorkflowAuthorization, getWorkflowRunScope } from "./workflow-runs";
@@ -105,27 +106,32 @@ export const canExecuteRunBeforeHttp = async (scope: GridsWorkflowActionScope, s
     signal.throwIfAborted();
     connection = await pool.reserve({ signal });
     signal.throwIfAborted();
-    return await connection.begin(async (tx) => {
-      const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
-      if (!backend) throw new Error("HTTP authorization has no PostgreSQL backend");
-      const cancel = control!;
-      const cancelled = Promise.withResolvers<never>();
-      abort = () => {
-        // Close the pool only in finally, after both reserved connections are released: closing it here waits for them.
-        cancellation ??= cancel`SELECT pg_cancel_backend(${backend.pid})`.execute();
-        // The owner awaits cleanup below; keep rejection handled meanwhile.
-        void cancellation.catch(() => undefined);
-        cancelled.reject(signal.reason);
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      // Registry reads have no per-reader cancellation.
-      // Release this waiter on abort, then await our SQL cleanup in finally.
-      const decision = Promise.race([canExecuteRun(scope, tx), cancelled.promise]);
-      if (signal.aborted) abort();
-      const allowed = await decision;
-      signal.throwIfAborted();
-      return allowed;
-    });
+    const reserved = connection;
+    return await transactionWithRollback<boolean>(
+      async (tx, rollback) => {
+        const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+        if (!backend) throw new Error("HTTP authorization has no PostgreSQL backend");
+        const cancel = control!;
+        const cancelled = Promise.withResolvers<never>();
+        abort = () => {
+          // Close the pool only in finally, after both reserved connections are released: closing it here waits for them.
+          cancellation ??= cancel`SELECT pg_cancel_backend(${backend.pid})`.execute();
+          // The owner awaits cleanup below; keep rejection handled meanwhile.
+          void cancellation.catch(() => undefined);
+          cancelled.reject(signal.reason);
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        // Registry reads have no per-reader cancellation.
+        // Release this waiter on abort, then await our SQL cleanup in finally.
+        const decision = Promise.race([canExecuteRun(scope, tx), cancelled.promise]);
+        if (signal.aborted) abort();
+        const allowed = await decision;
+        signal.throwIfAborted();
+        // A denial may stand for a caught SQL error that aborted this read.
+        return allowed || rollback(false);
+      },
+      (run) => reserved.begin(run),
+    );
   } catch (error) {
     signal.throwIfAborted();
     throw error;

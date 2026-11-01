@@ -10,7 +10,7 @@ import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import type { OAuthClient } from "./contracts";
 import { ConsentDecisionSchema, completeConsent } from "./frontend/consent-action";
-import { resolveDeviceView } from "./frontend/device";
+import { resolveDeviceView } from "./frontend/device-view";
 import { completeDeviceDecision, DeviceDecisionSchema } from "./frontend/device-action";
 import { migrate } from "./migrate";
 import routes from "./oauth";

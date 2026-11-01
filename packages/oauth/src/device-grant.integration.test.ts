@@ -13,7 +13,7 @@ import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import type { DeviceApprovalView } from "./frontend/_components/DeviceApproval";
-import { resolveDeviceView } from "./frontend/device";
+import { resolveDeviceView } from "./frontend/device-view";
 import { completeDeviceDecision, DeviceDecisionSchema } from "./frontend/device-action";
 import { migrate } from "./migrate";
 import oauthRoutes from "./oauth";

@@ -102,7 +102,7 @@ async function readQuery<T>(query: SQL.Query<T>, budget?: ActivityReadBudget): P
     () => {
       const owned = connection;
       if (!owned) return;
-      // Bun's PostgreSQL query.cancel() does not interrupt the server on all supported versions.
+      // Bun before 1.4.4 does not cancel on query.cancel(), so cancel the backend directly.
       // Keep this session reserved until its cancellation completes, so it cannot hit another request.
       cancellation = (async () => {
         try {

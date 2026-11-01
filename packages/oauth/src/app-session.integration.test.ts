@@ -8,7 +8,7 @@ import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { ConsentDecisionSchema, completeConsent } from "./frontend/consent-action";
-import { resolveDeviceView } from "./frontend/device";
+import { resolveDeviceView } from "./frontend/device-view";
 import { completeDeviceDecision, DeviceDecisionSchema } from "./frontend/device-action";
 import { oauthMessages } from "./frontend/messages";
 import { migrate } from "./migrate";

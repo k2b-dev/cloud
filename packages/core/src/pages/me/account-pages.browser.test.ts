@@ -8,7 +8,6 @@ import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
-import * as cloudSsr from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { createConfig } from "@k2b/ssr";
@@ -25,6 +24,7 @@ import { launchBrowser } from "../../../../ui/test/browser";
 const root = mkdtempSync(join(tmpdir(), "core-account-pages-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
+const cloudSsr = await import("@k2b/cloud/ssr");
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 // Core's canvas paint. The tests render the pages in a stand-in for the page shell without

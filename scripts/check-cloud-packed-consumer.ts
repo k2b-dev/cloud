@@ -319,6 +319,26 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
   );
   await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Plugin-only server bundle is empty");
+  // The public server entries import without a transform, but a build that reaches JSX needs one.
+  await run(
+    "Import the public server entries without a transform",
+    [process.execPath, "-e", 'await import("@k2b/cloud"); await import("@k2b/cloud/start"); await import("@k2b/cloud/server");'],
+    consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
+  );
+  await Bun.write(join(consumer, "src/config.ts"), `export const plugin = () => ({ name: "no-transform", setup: () => undefined });\n`);
+  await Bun.write(join(consumer, "src/no-transform.tsx"), "export const view = () => <div />;\n");
+  await Bun.write(join(consumer, "src/index.ts"), `export { view } from "./no-transform.tsx";\n`);
+  const untransformed = Bun.spawnSync([process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], {
+    cwd: consumer,
+    env: cleanEnv,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const buildOutput = `${untransformed.stdout.toString()}${untransformed.stderr.toString()}`;
+  if (untransformed.exitCode === 0 || !/for import "(jsx|jsxs|jsxDEV|Fragment)"/.test(buildOutput)) {
+    throw new Error(`A build without the Solid transform must fail on the missing JSX runtime:\n${buildOutput}`);
+  }
   console.log(
     "Packed checkout installs, typechecks and builds without workspace aliases or extra transitive dependencies. Production runtime registration, HTTP and graceful shutdown pass against disposable services.",
   );

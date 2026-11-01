@@ -1,6 +1,6 @@
-### Bun 1.4.3 links Solid's missing JSX runtime for an untransformed .tsx file
+### Bun 1.4.3 no longer loads a .tsx file without the Solid transform
 
-- **What happened:** After the upgrade, the gateway bundle and image, `check:ui-catalog`, and a notebooks bundle test failed on missing `jsx`, `jsxs`, `jsxDEV`, and `Fragment` exports of `solid-js`.
-- **Root cause:** Bun 1.4.2 compiled a `.tsx` file loaded without the Solid transform to `React.createElement`, which only failed if it was called. Since Bun 1.4.3, `jsxImportSource: "solid-js"` links `solid-js/jsx-runtime`, whose module has none of these exports, as soon as the file is loaded.
-- **Error class:** A runtime upgrade changes what a shared compiler setting means for every path that skips the plugin.
-- **Guard:** The `solid-js` patch supplies these exports at the one place all such paths meet, and they throw when called, so an untransformed render still fails. The `bundles` job, the image builds, and `check:ui-catalog` cover the paths that load such files.
+- **What happened:** After the upgrade, the gateway bundle and image, `check:ui-catalog`, and 16 test files failed on missing `jsx`, `jsxs`, `jsxDEV`, and `Fragment` exports of `solid-js`.
+- **Root cause:** Bun 1.4.2 compiled such a file to `React.createElement`, which only failed if it was called. Since Bun 1.4.3, `jsxImportSource: "solid-js"` links `solid-js/jsx-runtime`, whose module has none of these exports, as soon as the file loads.
+- **Error class:** A build or test path that loads JSX without its transform and works only because nothing renders it.
+- **Guard:** Such a path now fails when it loads. The gateway uses the real transform, the entries that need one install it, and `check-cloud-packed-consumer.ts` proves that a third-party build without the transform fails while the public server entries still import.

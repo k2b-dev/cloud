@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { cloudAvatarImage } from "./Avatar";
+import "../../../ui/test/solid-ssr-preload";
+
+const { cloudAvatarImage } = await import("./Avatar");
 
 const ID = "0b2f5c7e-0000-4000-8000-000000000001";
 
