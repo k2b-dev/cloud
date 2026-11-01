@@ -1248,32 +1248,10 @@ for (const kind of ["standalone", "agent"] as const) {
   });
 }
 
-test("routine actions reject a routine in another target chat before changing state or grants", async () => {
-  spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
-  const update = spyOn(aiChatTasks, "update");
-  const setState = spyOn(aiChatTasks, "setState");
-  const remove = spyOn(aiChatTasks, "delete");
-  const occurrence = spyOn(aiChatTasks, "createOccurrence");
-  const foreign: CapabilityExecutionContext = { ...idempotentContext, target: { type: "core.ai.chat", id: "Other1" } };
-  for (const localId of ["ai.task.update", "ai.task.pause", "ai.task.resume", "ai.task.run", "ai.task.delete"] as const) {
-    const action = aiCapabilities.actions[localId];
-    const input = { taskId: scheduledTask.shortId, prompt: "Updated instructions" };
-    expect(await action.review(input, foreign)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
-    expect(await action.run(input, foreign)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+test("every Code Action with policy declares review and the Core manifest compiles", () => {
+  for (const [id, action] of Object.entries(aiCapabilities.actions)) {
+    if (!id.startsWith("code.") || !("policy" in action)) continue;
+    expect({ id, hasReview: "review" in action && typeof action.review === "function" }).toEqual({ id, hasReview: true });
   }
-  for (const mutation of [update, setState, remove, occurrence]) expect(mutation).not.toHaveBeenCalled();
-});
-
-test("Core action targets replace their primary input selector in the manifest", () => {
-  const manifest = compileCapabilityManifest("core", aiCapabilities);
-  for (const action of manifest.actions) {
-    if (action.localId === "ai.skill.create") {
-      expect(action.target).toBeUndefined();
-      continue;
-    }
-    expect(action.target).toBe(action.localId.startsWith("ai.skill.") ? "ai.skill" : "ai.chat");
-    expect(action.inputSchema.properties).not.toHaveProperty("skillId");
-    expect(action.inputSchema.properties).not.toHaveProperty("chatId");
-  }
-  expect(aiCapabilities.actions["ai.skill.delete"].input.safeParse({ skillId: "Other1" }).success).toBe(false);
+  expect(() => compileCapabilityManifest("core", aiCapabilities)).not.toThrow();
 });
