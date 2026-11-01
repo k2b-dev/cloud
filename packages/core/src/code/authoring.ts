@@ -7,13 +7,15 @@ import { activateCodeVersion } from "./activation";
 import { reconcileCodeAccess } from "./activation-maintenance";
 import { createCodeCheckRequest } from "./authoring-check";
 import type { CodeAuthoringCommand, CodeAuthoringData, CodeAuthoringInput, CodeAuthoringPermission } from "./authoring-contracts";
-import type { Code } from "./contracts";
+import { type Code, codeQueryContracts } from "./contracts";
+import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 import { startCodeRun } from "./scheduling";
-import { createCode, readCode, readCodeVersion } from "./store";
+import { deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
+import { codeSourceHash, createCode, listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
-import { diffCodeVersion, listCodeVersions, submitCodeVersion } from "./versions";
+import { diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
 
 const initialSource =
   'import { app } from "@sdk";\n\napp.schedule("0 8 * * 1", async () => {\n}, { name: "monday" });\nexport default app;\n';
@@ -142,6 +144,78 @@ export const codeAuthoringServices = {
     };
   },
   pull: (input: CodeAuthoringInput<"pull">, context: CodeContext) => pull(input.codeId, context),
+  async pullAll(input: CodeAuthoringInput<"pullAll">, context: CodeContext): Promise<CodeAuthoringData<"pullAll">> {
+    if (!codePerson(context).roles.includes("admin")) throw new CodeDataError("FORBIDDEN", "Cloud administration required for pull --all.");
+    // One resource Code per page bounds source material; other owner kinds are excluded in the store.
+    const page = await listCodes({ ownerKind: "resource", cursor: input.cursor, limit: 1 }, context);
+    const items = [];
+    for (const code of page.items) if (code.owner.kind === "resource") items.push(await pull(code.id, context));
+    return { version: 1, items, nextCursor: page.nextCursor };
+  },
+  async status(input: CodeAuthoringInput<"status">, context: CodeContext): Promise<CodeAuthoringData<"status">> {
+    const { code, permission } = await readCode(input.config.codeId, context);
+    const latest = (await listCodeVersions({ codeId: code.id, limit: 1 }, context)).items[0] ?? null;
+    const base =
+      input.config.baseVersionId === null
+        ? null
+        : (
+            await readCodeVersion(
+              {
+                codeId: code.id,
+                versionId: input.config.baseVersionId,
+                offset: 0,
+                length: 1,
+              },
+              context,
+            )
+          ).version;
+    return {
+      version: 1,
+      items: [
+        {
+          code,
+          permission,
+          baseVersionId: input.config.baseVersionId,
+          baseCurrent: (latest?.version.id ?? null) === input.config.baseVersionId,
+          modified: base ? base.sourceHash !== codeSourceHash(input.files, input.config.entry) : Object.keys(input.files).length > 0,
+          latest,
+        },
+      ],
+    };
+  },
+  async runs(input: CodeAuthoringInput<"runs">, context: CodeContext): Promise<CodeAuthoringData<"runs">> {
+    return { version: 1, ...(await listCodeRuns(input, context)) };
+  },
+  async runRead(input: CodeAuthoringInput<"runRead">, context: CodeContext): Promise<CodeAuthoringData<"runRead">> {
+    return { version: 1, ...codeQueryContracts.runRead.data.parse(await readCodeRun(input, context)) };
+  },
+  async pause(input: CodeAuthoringInput<"pause">, context: CodeContext): Promise<CodeAuthoringData<"pause">> {
+    return { version: 1, ...(await setCodePaused(input.codeId, true, context)) };
+  },
+  async resume(input: CodeAuthoringInput<"resume">, context: CodeContext): Promise<CodeAuthoringData<"resume">> {
+    return { version: 1, ...(await setCodePaused(input.codeId, false, context)) };
+  },
+  async policyRead(_input: CodeAuthoringInput<"policyRead">, context: CodeContext): Promise<CodeAuthoringData<"policyRead">> {
+    return { version: 1, ...(await readCodePolicy(context)) };
+  },
+  async policyEffective(input: CodeAuthoringInput<"policyEffective">, context: CodeContext): Promise<CodeAuthoringData<"policyEffective">> {
+    return { version: 1, ...(await effectiveCodePolicy(input, context)) };
+  },
+  async policyPreview(input: CodeAuthoringInput<"policyPreview">, context: CodeContext): Promise<CodeAuthoringData<"policyPreview">> {
+    return { version: 1, ...(await previewCodePolicy(input, context)) };
+  },
+  async policyUpdate(input: CodeAuthoringInput<"policyUpdate">, context: CodeContext): Promise<CodeAuthoringData<"policyUpdate">> {
+    return { version: 1, ...(await updateCodePolicy(input, context)) };
+  },
+  async secretSet(input: CodeAuthoringInput<"secretSet">, context: CodeContext): Promise<CodeAuthoringData<"secretSet">> {
+    return { version: 1, ...(await setCodeSecret(input, context)) };
+  },
+  async secretList(input: CodeAuthoringInput<"secretList">, context: CodeContext): Promise<CodeAuthoringData<"secretList">> {
+    return { version: 1, ...(await listCodeSecrets(input, context)) };
+  },
+  async secretDelete(input: CodeAuthoringInput<"secretDelete">, context: CodeContext): Promise<CodeAuthoringData<"secretDelete">> {
+    return { version: 1, ...(await deleteCodeSecret(input, context)) };
+  },
   async sdk(input: CodeAuthoringInput<"sdk">, context: CodeContext): Promise<CodeAuthoringData<"sdk">> {
     const { sdk } = await createCodeCheckRequest(input.codeId, {}, "code.ts", context);
     return {

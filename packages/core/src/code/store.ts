@@ -72,7 +72,10 @@ export const readCode = async (codeId: string, context: CodeContext) => {
   return { code, permission: await requireCodePermission(code, context) };
 };
 /** Paginate a bounded candidate window. An empty authorized page may still have nextCursor. */
-export const listCodes = async (input: { owner?: CodeOwner; limit: number; cursor?: string }, context: CodeContext) => {
+export const listCodes = async (
+  input: { owner?: CodeOwner; ownerKind?: CodeOwner["kind"]; limit: number; cursor?: string },
+  context: CodeContext,
+) => {
   const user = codePerson(context);
   const isAdmin = user.roles.includes("admin");
   const ownOrShared = buildAccessPrincipalCondition({
@@ -85,7 +88,7 @@ export const listCodes = async (input: { owner?: CodeOwner; limit: number; curso
     },
   });
   const owner = input.owner;
-  const kind = owner?.kind ?? null;
+  const kind = owner?.kind ?? input.ownerKind ?? null;
   const userId = owner?.kind === "person" ? owner.userId : null;
   const type = owner?.kind === "resource" ? owner.ref.type : null;
   const id = owner?.kind === "resource" ? owner.ref.id : null;

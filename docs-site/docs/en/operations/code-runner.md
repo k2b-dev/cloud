@@ -30,6 +30,14 @@ Core and Runner must support the same job protocol. Busy requests fail visibly
 instead of building an unbounded HTTP queue. Disconnects cancel outstanding
 jobs, and authoring HTTP requests stop at the platform's 240-second budget.
 
+Cloud administrators can mirror all resource-owned Code with
+`cld code pull --all --out ./instance-code` and inspect local/server versions
+with `cld code status ./instance-code`. The module also exposes run/call pages,
+pause/resume, revision-checked policy changes, and write-only secrets. Keep
+secret values outside the repository and pass them through `secret set --from
+<file|->`. CI can check, test and push with its granted credential; it cannot
+activate Code.
+
 ## Configure the service
 
 Register an Ed25519 key for app ID `runner` using
