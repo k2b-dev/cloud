@@ -15,6 +15,12 @@ const CodeSchema = z.object({
   activeVersionId: z.string().nullable(),
   pauseReason: z.string().nullable(),
 });
+export const CodeReadSchema = z.object({
+  code: CodeSchema.extend({
+    owner: z.union([z.object({ kind: z.literal("person"), userId: z.string() }), z.object({ kind: z.enum(["resource", "app"]) })]),
+  }),
+  permission: z.enum(["editor", "reader"]),
+});
 export const CodeListSchema = z.object({
   items: z.array(CodeSchema.extend({ permission: z.enum(["editor", "reader"]) })),
   nextCursor: z.string().nullable(),
@@ -259,7 +265,18 @@ export type CodePageReady = {
 export type CodePageState = { kind: "none" } | { kind: "no-access" } | { kind: "error" } | CodePageReady;
 /** Serializable initial data from `loadCodePage`, rendered unchanged by the server and the browser. */
 export type CodePageData = {
-  owner: { ref: CloudResourceRef; title: string; typeTitle: string | null };
+  /**
+   * Whose Code this is. A resource's Code acts on behalf of `ref`; personal Code (`ref: null`) runs as its person, and
+   * `title` is then the Code's own title.
+   */
+  owner: {
+    kind: "resource" | "person";
+    ref: CloudResourceRef | null;
+    title: string;
+    typeTitle: string | null;
+    /** Personal Code of someone else, shared with the viewer: whose rights it runs with. Null for the viewer's own. */
+    runsAs?: { name: string | null } | null;
+  };
   /** This page's path; tabs and selections add query parameters, and "Copy link" shares it. */
   href: string;
   tab: CodePageTab;

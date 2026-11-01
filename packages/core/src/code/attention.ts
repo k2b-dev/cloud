@@ -1,9 +1,9 @@
 import { sql } from "@k2b/cloud";
 import { z } from "zod";
-import type { CodeContext } from "./access";
+import { type CodeContext, CodeOwnerUnavailableError, codePermission, codePerson } from "./access";
 import { reconcileCodeAccess } from "./activation-maintenance";
-import { type Code, CodeIdSchema, CodeOwnerSchema } from "./contracts";
-import { listCodes } from "./store";
+import { type Code, CodeIdSchema, CodeOwnerSchema, CodeSchema } from "./contracts";
+import { type CodeRow, listCodes, mapCode } from "./store";
 
 /** Why an owner's Code needs someone: its newest run of an entrypoint failed, a target removed access, or a version waits for approval. */
 export const CodeAttentionReasonSchema = z.enum(["run_failed", "access_missing", "approval_pending"]);
@@ -16,6 +16,29 @@ export const codeAttentionContracts = {
     data: z
       .object({
         items: z.array(z.object({ codeId: CodeIdSchema, reasons: z.array(CodeAttentionReasonSchema) }).strict()),
+      })
+      .strict(),
+  },
+  /**
+   * Across owners: resource or app Code that needs one of its administrators, for a person's own list. It shows the
+   * same reasons as `attention`, plus a pause, and only Code the caller may edit.
+   */
+  list: {
+    input: z.object({ cursor: CodeIdSchema.optional().describe("Last candidate Code ID returned as nextCursor.") }).strict(),
+    data: z
+      .object({
+        items: z.array(
+          z
+            .object({
+              code: CodeSchema,
+              reasons: z.array(z.union([CodeAttentionReasonSchema, z.literal("paused")])).min(1),
+              /** When the newest finished run ended; null without one. */
+              lastRunAt: z.iso.datetime().nullable(),
+            })
+            .strict(),
+        ),
+        /** More candidates remain after this bounded window; follow it even when `items` is empty. */
+        nextCursor: CodeIdSchema.nullable(),
       })
       .strict(),
   },
@@ -108,6 +131,52 @@ export async function readCodeAttention(input: z.infer<typeof codeAttentionContr
       .map(async (code) => ({ codeId: code.id, reasons: await cachedReasons(code, context) })),
   );
   return { items };
+}
+
+/** Candidates checked per page of the cross-owner list; each needs a live owner check. */
+export const CODE_ATTENTION_CANDIDATES = 50;
+
+/**
+ * Owner Code that needs the caller, whichever owner it has. Candidates come from stored state alone, in Code ID order:
+ * paused, a failed newest run of an entrypoint, or a pending approval. Each shows only when the caller may edit it, with
+ * the same cached reasons as `attention`. Removed access is live, so it shows with the failed run it causes. An owner
+ * that cannot answer leaves out what it cannot confirm instead of failing the list.
+ */
+export async function listCodeAttention(input: z.infer<typeof codeAttentionContracts.list.input>, context: CodeContext) {
+  codePerson(context);
+  const rows = await sql<(CodeRow & { last_run_at: Date | null })[]>`SELECT c.*,
+      (SELECT max(r.ended_at) FROM code.runs r WHERE r.code_id = c.id) AS last_run_at
+    FROM code.codes c
+    WHERE c.owner_kind <> 'person' AND c.state <> 'deleting'
+      AND (c.state = 'paused'
+        OR EXISTS(SELECT 1 FROM (SELECT DISTINCT ON (entrypoint) state FROM code.runs
+            WHERE code_id = c.id AND state IN ('succeeded','failed') ORDER BY entrypoint, created_at DESC) latest
+          WHERE latest.state = 'failed')
+        OR EXISTS(SELECT 1 FROM code.versions v JOIN code.version_submissions s ON s.version_id = v.id
+            JOIN approvals.requests r ON r.id = s.approval_id LEFT JOIN code.version_decisions d ON d.version_id = v.id
+          WHERE v.code_id = c.id AND d.version_id IS NULL AND r.status = 'pending' AND r.expires_at > statement_timestamp()))
+      AND (${input.cursor ?? null}::text IS NULL OR c.id > ${input.cursor ?? null})
+    ORDER BY c.id LIMIT ${CODE_ATTENTION_CANDIDATES + 1}`;
+  const editable: { code: Code; lastRunAt: string | null }[] = [];
+  for (const row of rows.slice(0, CODE_ATTENTION_CANDIDATES)) {
+    const code = mapCode(row);
+    const permission = await codePermission(code, context, sql, "read").catch((error: unknown) => {
+      if (error instanceof CodeOwnerUnavailableError) return null;
+      throw error;
+    });
+    if (permission === "editor") editable.push({ code, lastRunAt: row.last_run_at?.toISOString() ?? null });
+  }
+  const items = await Promise.all(
+    editable.map(async ({ code, lastRunAt }) => ({
+      code,
+      lastRunAt,
+      reasons: [...(code.state === "paused" ? (["paused"] as const) : []), ...(await cachedReasons(code, context))],
+    })),
+  );
+  return {
+    items: items.filter((item) => item.reasons.length > 0),
+    nextCursor: rows.length > CODE_ATTENTION_CANDIDATES ? rows[CODE_ATTENTION_CANDIDATES - 1]!.id : null,
+  };
 }
 
 /** Test seam: forget cached reasons. */

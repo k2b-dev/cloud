@@ -10,7 +10,7 @@ const germanText: Record<string, string> = {
   "More actions": "Weitere Aktionen",
   Routine: "Routine",
   "Routine deleted": "Routine gelöscht",
-  "Ask in the chat for a reminder or a routine.": "Bitte den Assistenten im Chat um eine Erinnerung oder eine Routine.",
+  "Ask in the chat for a reminder or a routine.": "Bitte Gustav im Chat um eine Erinnerung oder eine Routine.",
   "Set up new routines and make changes in the chat.": "Neue Routinen und Änderungen planst du im Chat.",
   "Routine unavailable": "Routine nicht verfügbar",
   "Review the result before retrying. The routine may have completed some steps.":
@@ -34,8 +34,8 @@ const germanText: Record<string, string> = {
   "Open run": "Lauf öffnen",
   "No background activity yet": "Noch keine Hintergrundaktivitäten",
   "Background activity": "Hintergrundaktivitäten",
-  "What the Assistant wants to do for you. Nothing of it happens until you approve it here or in its chat.":
-    "Was der Assistent für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
+  "What Gustav wants to do for you. Nothing of it happens until you approve it here or in its chat.":
+    "Was Gustav für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
   "Background run": "Hintergrundlauf",
   "Manage routine": "Routine verwalten",
   "Run history": "Laufverlauf",
@@ -106,9 +106,9 @@ const germanText: Record<string, string> = {
   "No apps or files yet.": "Noch keine Apps oder Dateien.",
   Ready: "Bereit",
   "Voice inputs": "Spracheingaben",
-  "Assistant routine": "Assistant-Routine",
+  "Gustav routine": "Gustav-Routine",
   "AI conversation": "KI-Chat",
-  "Assistant app": "Assistenten-App",
+  "Gustav app": "Gustav-App",
   "A reference with this name already exists.": "Eine Referenz mit diesem Namen ist bereits vorhanden.",
   "Add a durable fact about you or a preference for future answers. New entries start pinned.":
     "Füge eine dauerhafte Tatsache über dich oder eine Präferenz für künftige Antworten hinzu. Neue Einträge sind zunächst angeheftet.",
@@ -116,30 +116,30 @@ const germanText: Record<string, string> = {
   "Actions listed here can run without asking again. Revoking a decision applies immediately.":
     "Diese Aktionen können ohne erneute Freigabe ausgeführt werden. Ein Widerruf gilt sofort.",
   Add: "Hinzufügen",
-  "Add a fact or preference Assistant can use in future conversations.":
-    "Füge eine Tatsache oder Präferenz hinzu, die der Assistent in künftigen Chats verwenden kann.",
+  "Add a fact or preference Gustav can use in future conversations.":
+    "Füge eine Tatsache oder Präferenz hinzu, die Gustav in künftigen Chats verwenden kann.",
   "Add personalization": "Personalisierung hinzufügen",
   "Add skill": "Skill hinzufügen",
   "Add supporting context.": "Ergänzende Informationen hinzufügen.",
-  "Add supporting information Assistant can read when this Skill needs it.":
-    "Füge Informationen hinzu, die der Assistent bei Bedarf für diesen Skill lesen kann.",
-  "Add the supporting information Assistant may need for this workflow.":
-    "Ergänze Informationen, die der Assistent für diesen Ablauf benötigen kann.",
+  "Add supporting information Gustav can read when this Skill needs it.":
+    "Füge Informationen hinzu, die Gustav bei Bedarf für diesen Skill lesen kann.",
+  "Add the supporting information Gustav may need for this workflow.":
+    "Ergänze Informationen, die Gustav für diesen Ablauf benötigen kann.",
   Added: "Hinzugefügt",
   "All chats": "Alle Chats",
   Approvals: "Freigaben",
-  "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
-    "Der Assistent sieht Name und Beschreibung, bevor er einen Skill lädt. Beschreibe die Aufgabe und wann der Skill verwendet werden soll.",
-  "Assistant settings": "Assistenten-Einstellungen",
+  "Gustav sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
+    "Gustav sieht Name und Beschreibung, bevor er einen Skill lädt. Beschreibe die Aufgabe und wann der Skill verwendet werden soll.",
+  "Gustav settings": "Gustav-Einstellungen",
   "Available skills": "Verfügbare Skills",
   Changes: "Änderungen",
   "Chat context": "Chatkontext",
   "Chat history pages": "Seiten des Chatverlaufs",
   "Choose a future date and time.": "Wähle ein Datum und eine Uhrzeit in der Zukunft.",
-  "Choose how Assistant uses and learns durable context about you.":
-    "Lege fest, wie der Assistent dauerhafte Informationen über dich verwendet und lernt.",
+  "Choose how Gustav uses and learns durable context about you.":
+    "Lege fest, wie Gustav dauerhafte Informationen über dich verwendet und lernt.",
   Close: "Schließen",
-  "Close Assistant settings": "Assistenten-Einstellungen schließen",
+  "Close Gustav settings": "Gustav-Einstellungen schließen",
   "Close Project settings": "Projekt-Einstellungen schließen",
   "Close learning run details": "Details des Lernlaufs schließen",
   "Close personalization learning activity": "Lernaktivität der Personalisierung schließen",
@@ -160,29 +160,28 @@ const germanText: Record<string, string> = {
   "Create weekly status reports from recent work. Use when asked for progress updates.":
     "Erstelle wöchentliche Statusberichte aus der letzten Arbeit. Verwende diesen Skill bei Fragen nach dem Fortschritt.",
   "Create skill": "Skill erstellen",
-  "Create, import, and share reusable Assistant workflows.":
-    "Wiederverwendbare Abläufe für den Assistenten erstellen, importieren und teilen.",
-  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Assistant should work.":
-    "Beschreibe das erwartete Ergebnis, wichtige Einschränkungen und den Ablauf. Nimm nur Hinweise auf, die die Arbeitsweise des Assistenten verändern.",
+  "Create, import, and share reusable Gustav workflows.": "Wiederverwendbare Abläufe für Gustav erstellen, importieren und teilen.",
+  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Gustav should work.":
+    "Beschreibe das erwartete Ergebnis, wichtige Einschränkungen und den Ablauf. Nimm nur Hinweise auf, die die Arbeitsweise von Gustav verändern.",
   "Description controls when this Skill loads": "Die Beschreibung bestimmt, wann dieser Skill geladen wird",
   Details: "Details",
   Disabled: "Deaktiviert",
   Done: "Fertig",
   "Download SKILL.md": "SKILL.md herunterladen",
-  "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Assistant to use.":
-    "Jeder Skill verbindet wiederverwendbare Anweisungen mit optionalen Zusatzinformationen. Geteilte Skills sind zunächst aktiviert; deaktiviere Skills, die der Assistent nicht verwenden soll.",
+  "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Gustav to use.":
+    "Jeder Skill verbindet wiederverwendbare Anweisungen mit optionalen Zusatzinformationen. Geteilte Skills sind zunächst aktiviert; deaktiviere Skills, die Gustav nicht verwenden soll.",
   "Edit personalization": "Personalisierung bearbeiten",
   "Edit skill": "Skill bearbeiten",
   "Edit this personalization entry.": "Diesen Personalisierungseintrag bearbeiten.",
   "Effective instructions": "Wirksame Anweisungen",
   "Enter a five-field cron expression.": "Gib einen Cron-Ausdruck mit fünf Feldern ein.",
-  "Enter what Assistant should do.": "Beschreibe, was der Assistent erledigen soll.",
+  "Enter what Gustav should do.": "Beschreibe, was Gustav erledigen soll.",
   "Evidence chat": "Quellchat",
   "Explain the workflow, constraints, and expected output.": "Beschreibe Ablauf, Einschränkungen und erwartetes Ergebnis.",
   "Export ZIP": "ZIP exportieren",
   "Extra info": "Zusatzinformationen",
-  "Facts, preferences, and workflow defaults Assistant may carry into future conversations.":
-    "Tatsachen, Präferenzen und Abläufe, die der Assistent in künftigen Chats berücksichtigen kann.",
+  "Facts, preferences, and workflow defaults Gustav may carry into future conversations.":
+    "Tatsachen, Präferenzen und Abläufe, die Gustav in künftigen Chats berücksichtigen kann.",
   "Failed to add personalization": "Personalisierung konnte nicht hinzugefügt werden",
   "Failed to create Project": "Projekt konnte nicht erstellt werden",
   "Failed to delete personalization": "Personalisierung konnte nicht gelöscht werden",
@@ -202,7 +201,7 @@ const germanText: Record<string, string> = {
   "File is no longer available.": "Die Datei ist nicht mehr verfügbar.",
   General: "Allgemein",
   "Go to source": "Quelle öffnen",
-  "How should Assistant work in this Project?": "Wie soll der Assistent in diesem Projekt arbeiten?",
+  "How should Gustav work in this Project?": "Wie soll Gustav in diesem Projekt arbeiten?",
   "Import skill": "Skill importieren",
   "Inspect the complete instructions and context applied to new chats.": "Vollständige Anweisungen und Kontext für neue Chats prüfen.",
   Instructions: "Anweisungen",
@@ -219,10 +218,9 @@ const germanText: Record<string, string> = {
   "Loading skills": "Skills werden geladen",
   "Loading system prompt": "System-Prompt wird geladen",
   "Manage access": "Zugriff verwalten",
-  "Manage actions Assistant may run without asking each time.":
-    "Aktionen verwalten, die der Assistent ohne erneute Nachfrage ausführen darf.",
-  "Manage supporting information Assistant can read when this Skill needs it.":
-    "Informationen verwalten, die der Assistent bei Bedarf für diesen Skill lesen kann.",
+  "Manage actions Gustav may run without asking each time.": "Aktionen verwalten, die Gustav ohne erneute Nachfrage ausführen darf.",
+  "Manage supporting information Gustav can read when this Skill needs it.":
+    "Informationen verwalten, die Gustav bei Bedarf für diesen Skill lesen kann.",
   "Memories changed by this learning run": "Durch diesen Lernlauf geänderte Personalisierung",
   Merged: "Zusammengeführt",
   "Name is required.": "Ein Name ist erforderlich.",
@@ -237,8 +235,8 @@ const germanText: Record<string, string> = {
   "No chats yet.": "Noch keine Chats.",
   "No extra info yet": "Noch keine Zusatzinformationen",
   "No failed chats.": "Keine fehlgeschlagenen Chats.",
-  "No learning runs yet. Activity appears after Assistant checks a completed private-chat turn.":
-    "Noch keine Lernläufe. Aktivität erscheint, nachdem der Assistent eine abgeschlossene Anfrage in einem privaten Chat geprüft hat.",
+  "No learning runs yet. Activity appears after Gustav checks a completed private-chat turn.":
+    "Noch keine Lernläufe. Aktivität erscheint, nachdem Gustav eine abgeschlossene Anfrage in einem privaten Chat geprüft hat.",
   "No matching knowledge.": "Kein passendes Wissen gefunden.",
   "No matching personalization. Try a different search.": "Keine passende Personalisierung gefunden. Ändere den Suchbegriff.",
   "No new responses.": "Keine neuen Antworten.",
@@ -296,15 +294,15 @@ const germanText: Record<string, string> = {
   "Search chats…": "Chats durchsuchen…",
   "Search personalization": "Personalisierung durchsuchen",
   "Search skills": "Skills durchsuchen",
-  "See when Assistant learned from completed private-chat turns, consolidated workflows, and exactly what changed.":
-    "Zeigt, wann der Assistent aus abgeschlossenen privaten Chats und zusammengeführten Abläufen gelernt hat und was geändert wurde.",
+  "See when Gustav learned from completed private-chat turns, consolidated workflows, and exactly what changed.":
+    "Zeigt, wann Gustav aus abgeschlossenen privaten Chats und zusammengeführten Abläufen gelernt hat und was geändert wurde.",
   "Share this skill through Cloud permissions. At least one administrator must remain.":
     "Teile diesen Skill über Cloud-Berechtigungen. Mindestens eine Person muss Administrator bleiben.",
   Sharing: "Teilen",
   "Skill deleted": "Skill gelöscht",
   "Skill name": "Name des Skills",
   Skills: "Skills",
-  "Skills teach Assistant how to handle specific tasks": "Skills erklären dem Assistenten, wie er bestimmte Aufgaben erledigt",
+  "Skills teach Gustav how to handle specific tasks": "Skills erklären Gustav, wie er bestimmte Aufgaben erledigt",
   Sources: "Quellen",
   "Start with an action and say when to use it. Keep it short, direct, and specific.":
     "Beginne mit einer Handlung und beschreibe, wann der Skill verwendet werden soll. Formuliere kurz, direkt und konkret.",
@@ -323,12 +321,12 @@ const germanText: Record<string, string> = {
     "Verwende einen kurzen, handlungsorientierten Namen aus Kleinbuchstaben, Zahlen und Bindestrichen.",
   "Use a short, recognizable name such as product-rules.": "Verwende einen kurzen, eindeutigen Namen wie product-rules.",
   "Use personalization": "Personalisierung verwenden",
-  "Use personalization in Assistant chats": "Personalisierung in Assistenten-Chats verwenden",
+  "Use personalization in Gustav chats": "Personalisierung in Gustav-Chats verwenden",
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",
-  "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.":
-    "Solange dies eingeschaltet ist, kann der Assistent aus deinen nicht archivierten privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
+  "While this is on, Gustav may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.":
+    "Solange dies eingeschaltet ist, kann Gustav aus deinen nicht archivierten privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   Type: "Typ",
   "You can view and export it, but you cannot change it.": "Du kannst ihn ansehen und exportieren, aber nicht ändern.",
   "The app keeps this Skill up to date. You can view and export it.":
@@ -407,7 +405,7 @@ const germanText: Record<string, string> = {
   Completed: "Abgeschlossen",
   Queued: "Vorgemerkt",
   Prompt: "Auftrag",
-  "What should Assistant do?": "Was soll der Assistent erledigen?",
+  "What should Gustav do?": "Was soll Gustav erledigen?",
   Schedule: "Zeitplan",
   Once: "Einmalig",
   Recurring: "Wiederkehrend",
@@ -497,8 +495,8 @@ const germanText: Record<string, string> = {
   "Some files are not imported": "Einige Dateien werden nicht übernommen",
   "Only when selected": "Nur bei Auswahl",
   "Start only when selected": "Nur bei Auswahl starten",
-  "Assistant does not choose this Skill on its own. Select it with / in a message.":
-    "Der Assistent wählt diesen Skill nicht selbst aus. Wähle ihn in einer Nachricht mit / aus.",
+  "Gustav does not choose this Skill automatically. Select it with / in a message.":
+    "Gustav wählt diesen Skill nicht selbst aus. Wähle ihn in einer Nachricht mit / aus.",
   "Choose a SKILL.md or a skill ZIP.": "Wähle eine SKILL.md oder ein Skill-ZIP.",
   "Delete personalization": "Personalisierung löschen",
   "Personalization unpinned": "Personalisierung nicht mehr angeheftet",
@@ -533,17 +531,17 @@ const germanText: Record<string, string> = {
   Enable: "Aktivieren",
   "Create reference": "Referenz erstellen",
   "View supporting context for this Skill.": "Zusatzinformationen zu diesem Skill ansehen.",
-  "Add supporting context Assistant can read when needed.": "Zusatzinformationen hinzufügen, die der Assistent bei Bedarf liest.",
+  "Add supporting context Gustav can read when needed.": "Zusatzinformationen hinzufügen, die Gustav bei Bedarf liest.",
   "Skill saved": "Skill gespeichert",
   "Skill created": "Skill erstellt",
   "You can view and export this shared Skill.": "Du kannst diesen geteilten Skill ansehen und exportieren.",
   "Define reusable instructions and optional supporting references.":
-    "Lege fest, wie der Assistent eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
+    "Lege fest, wie Gustav eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
   "Save skill": "Skill speichern",
   "For example, IT support": "Zum Beispiel IT-Support",
   "API access": "API-Zugang",
-  "Use your Assistant models in other apps through an OpenAI-compatible API.":
-    "Nutze die Modelle des Assistenten in anderen Apps über eine OpenAI-kompatible API.",
+  "Use your Gustav models in other apps through an OpenAI-compatible API.":
+    "Nutze die Modelle von Gustav in anderen Apps über eine OpenAI-kompatible API.",
   Connection: "Verbindung",
   "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.":
     "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API-Schlüssel und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
@@ -554,8 +552,8 @@ const germanText: Record<string, string> = {
     "Erstelle in deinem Profil einen Schlüssel mit dem Zugriff „Nur KI-Modelle“.",
   "Create API key": "API-Schlüssel erstellen",
   Models: "Modelle",
-  "Use one of these model IDs. Requests count toward your Assistant usage limits.":
-    "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits im Assistenten.",
+  "Use one of these model IDs. Requests count toward your Gustav usage limits.":
+    "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits bei Gustav.",
   "No AI model is available to you. An administrator can grant model access in the AI settings.":
     "Dir steht kein KI-Modell zur Verfügung. Eine Administratorin oder ein Administrator kann dir in den KI-Einstellungen Zugriff geben.",
   Hosted: "Gehostet",

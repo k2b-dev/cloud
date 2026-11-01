@@ -285,7 +285,7 @@ test("Studio lists open details with all management actions; publication and ver
     await page.waitForURL("**/app/assistant*");
     await page
       .getByRole("dialog", { name: "Studio", exact: true })
-      .getByText("No apps yet. Ask Assistant to build one.", { exact: true })
+      .getByText("No apps yet. Ask Gustav to build one.", { exact: true })
       .waitFor();
     expect(new URL(page.url()).pathname).toBe("/app/assistant");
     expect(errors).toEqual([]);

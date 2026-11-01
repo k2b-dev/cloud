@@ -107,5 +107,13 @@ import { CodeNavStatus } from "@k2b/cloud/ssr/code-nav-status";
 
 The Code page itself always shows the real state.
 
+The same page shows one personal Code: pass `owner: { codeId }` instead of a
+resource. Core reads that Code by ID; a Code the person may not see, or Code
+of a resource or app, shows the "no access" state. Personal Code runs as its
+person, so the page leads with the Code's title, says "runs as you" (or names
+the owner when the Code is shared with the viewer) and lists no target access,
+because the Code never gets access of its own. Gustav uses this at
+`/app/assistant/code/<codeId>`.
+
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
 appears as **Edit with <panel>** on the page and on an empty page.
