@@ -1,21 +1,34 @@
+import { z } from "zod";
 import { actionReview } from "../capabilities/reviews";
-import { codeAccessBindings, codeAccessPersonAllowed, listCodeAccess, removeCodeAccess, setCodeAccess } from "../code/access";
+import {
+  codeAccessBindings,
+  codeAccessPersonAllowed,
+  listCodeAccess,
+  readCodeAccessManagers,
+  removeCodeAccess,
+  setCodeAccess,
+} from "../code/access";
+import { verifyCodeAccessProof } from "../code/access-proof";
 import type {
   CapabilityActionDefinition,
   CapabilityDefinitions,
+  CapabilityExecutionContext,
   CapabilityPresentationCatalog,
   CapabilityQueryDefinition,
 } from "../contracts/capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import {
   CodeAccessListDataSchema,
   CodeAccessListInputSchema,
   CodeAccessRemoveDataSchema,
   CodeAccessRemoveInputSchema,
+  type CodeAccessSetData,
   CodeAccessSetDataSchema,
   CodeAccessSetInputSchema,
 } from "../contracts/code-access";
 import { codeAccessMessages } from "../shared/code-access-messages";
 import { canonicalLocale } from "../shared/locale";
+import { activeResourcePrincipals } from "./resource-principals";
 
 /** Author mistakes fail startup, including dynamically assembled or JavaScript declarations. */
 export const validateCodeAccess = (definitions: CapabilityDefinitions): void => {
@@ -77,6 +90,72 @@ export const codeAccessOperationsAllowed = (
     );
   });
 
+/** A dry-run answer uses the same Type reader rule as every other platform surface. */
+export const presentCodeAccessDecision = async (
+  appId: string,
+  definitions: CapabilityDefinitions,
+  input: z.infer<typeof CodeAccessSetInputSchema>,
+  decision: CodeAccessSetData,
+  context: CapabilityExecutionContext,
+): Promise<CodeAccessSetData> => {
+  const copy = codeAccessMessages(context.locale);
+  const base: CodeAccessSetData = decision.granted
+    ? { granted: true, grantId: decision.grantId, level: decision.level, readable: false }
+    : { granted: false, reasonCode: decision.reasonCode, reason: copy.managerRequired, readable: false };
+  if (
+    !codeAccessPersonAllowed(context, "set") ||
+    context.actor.kind !== "user" ||
+    (!decision.granted && ["proof_invalid", "origin_forbidden", "unsupported_target", "operations_invalid"].includes(decision.reasonCode))
+  )
+    return base;
+  const type = input.target.type.startsWith(`${appId}.`) ? definitions.types?.[input.target.type.slice(appId.length + 1)] : undefined;
+  const readable = type?.access?.readable;
+  if (!readable) return base;
+  const userId = context.actor.user.id;
+  const principals = await activeResourcePrincipals([{ type: "user", userId }]);
+  if (!principals.length) return base;
+  const readers = await readable(
+    { id: input.target.id, principals },
+    {
+      actor: { kind: "app", appId: "core" },
+      accessSubject: { type: "none" },
+      user: null,
+      locale: context.locale,
+      requestId: context.requestId,
+      origin: context.origin,
+      signal: context.signal,
+    },
+  );
+  if (!readers.some((principal) => principal.type === "user" && principal.userId === userId)) return base;
+  const result: CodeAccessSetData = { ...base, readable: true, ...(!decision.granted ? { reason: decision.reason } : {}) };
+  // Actual writes need no presentation snapshot. Dry runs and refusals can explain a readable target.
+  if (input.dryRun || !decision.granted) {
+    const reader = type.reader ? definitions.queries?.[type.reader] : undefined;
+    const parsed = reader && reader.input.safeParse({ id: input.target.id });
+    if (reader && parsed?.success) {
+      const read = await reader.run(parsed.data, { ...context, target: input.target });
+      const view = read.ok && z.object({ view: CloudResourceReaderViewSchema }).safeParse(read.data.data);
+      if (view && view.success) result.title = view.data.view.title;
+    }
+    let managers = decision.managerUserIds;
+    if (managers === undefined && !decision.granted && decision.reasonCode === "not_manager") {
+      const claims = await verifyCodeAccessProof(input.proof, {
+        appId,
+        target: input.target,
+        operations: input.operations,
+        activatingPerson: userId,
+      });
+      if (claims) managers = (await readCodeAccessManagers(appId, codeAccessBindings(appId, definitions), claims)) ?? undefined;
+    }
+    if (managers !== undefined) result.managerUserIds = managers;
+  }
+  // Presentation shares the existing complete envelope budget, including refusal metadata.
+  const receipt = { text: result.granted ? (input.dryRun ? copy.setAvailable : copy.setDone) : result.reason };
+  if (new TextEncoder().encode(JSON.stringify({ data: result, receipt })).byteLength > CAPABILITY_MAX_RESULT_BYTES)
+    return { granted: false, reasonCode: "capacity_exceeded", reason: copy.managerRequired, readable: false };
+  return result;
+};
+
 /** Generated capabilities share ordinary schemas, policy, validation, routing and execution auditing. */
 export const generatedCodeAccess = (
   appId: string,
@@ -134,9 +213,10 @@ export const generatedCodeAccess = (
       run: async (input, context) => {
         if (!codeAccessPersonAllowed(context, "set")) return forbidden();
         const copy = codeAccessMessages(context.locale);
-        const data = await setCodeAccess(appId, bindings, input, context, undefined, () =>
+        const decision = await setCodeAccess(appId, bindings, input, context, undefined, () =>
           codeAccessOperationsAllowed(appId, definitions, input.target, input.operations),
         );
+        const data = await presentCodeAccessDecision(appId, definitions, input, decision, context);
         return {
           ok: true,
           data: {

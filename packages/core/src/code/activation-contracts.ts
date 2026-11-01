@@ -1,4 +1,4 @@
-import { CodeAccessTargetSchema } from "@k2b/cloud/contracts";
+import { CODE_ACCESS_MAX_MANAGER_USER_IDS, CodeAccessTargetSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CodeIdSchema } from "./contracts";
 
@@ -16,7 +16,14 @@ export const CodeActivationStateSchema = z.enum([
 export type CodeActivationState = z.infer<typeof CodeActivationStateSchema>;
 /** Exactly one failed target, with its stable refusal and provider-authored explanation. No permission request is created. */
 export const CodeActivationFailureSchema = z
-  .object({ target: CodeAccessTargetSchema.nullable(), code: z.string(), reason: z.string() })
+  .object({
+    target: CodeAccessTargetSchema.nullable(),
+    code: z.string(),
+    reason: z.string(),
+    readable: z.boolean().optional(),
+    title: z.string().max(500).optional(),
+    managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS).optional(),
+  })
   .strict();
 export type CodeActivationFailure = z.infer<typeof CodeActivationFailureSchema>;
 /** Stable status for C10/C18a/C23/C25. A process ID survives retries and is also the idempotency identity. */

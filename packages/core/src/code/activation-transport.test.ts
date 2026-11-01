@@ -129,3 +129,58 @@ test("the HTTP transport bounds response bytes and retries ambiguous provider er
   await expect(codeActivationTransport.list("example", principal)).rejects.toMatchObject({ code: "target_http_503", retryable: true });
   await expect(codeActivationTransport.list("example", principal)).rejects.toMatchObject({ code: "target_http_403", retryable: false });
 });
+
+test("set transport strips unreadable presentation before forwarding and preserves readable presentation", async () => {
+  const sign = spyOn(access, "signCodeAccessProof").mockResolvedValue("proof"),
+    invoke = spyOn(access, "invokeCodeAccess");
+  restores.push(
+    () => sign.mockRestore(),
+    () => invoke.mockRestore(),
+  );
+  for (const readable of [false, true])
+    for (const granted of [false, true]) {
+      invoke.mockResolvedValue(
+        Response.json({
+          data: {
+            ...(granted
+              ? { granted: true, grantId, level: "write" }
+              : { granted: false, reasonCode: "not_manager", reason: "Fixture target requires its manager" }),
+            readable,
+            title: "Fixture target",
+            managerUserIds: [user.id],
+          },
+        }),
+      );
+      const result = await codeActivationTransport.set({ ...input, dryRun: true }, { ...context, locale: "de" });
+      if (readable) expect(result).toMatchObject({ title: "Fixture target", managerUserIds: [user.id] });
+      else {
+        expect(result).not.toHaveProperty("title");
+        expect(result).not.toHaveProperty("managerUserIds");
+        expect(JSON.stringify(result)).not.toContain("Fixture target");
+        if (!result.granted) expect(result.reason).toBe("Einschalten kann nur, wer dieses Ziel verwaltet");
+      }
+    }
+});
+test("notification transport binds a separate Core-only proof and never uses interactive credentials", async () => {
+  inspection();
+  const sign = spyOn(access, "signCodeAccessNotifications").mockResolvedValue("notification-token"),
+    requests = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ data: { managerUserIds: [user.id] } }));
+  restores.push(
+    () => sign.mockRestore(),
+    () => requests.mockRestore(),
+  );
+  const { dryRun: _, ...request } = input;
+  expect(await codeActivationTransport.notificationManagers(request)).toEqual([user.id]);
+  expect(sign).toHaveBeenCalledWith("example", {
+    codeId: input.codeId,
+    versionId: input.versionId,
+    activationId: input.activationId,
+    activatingPerson: user.id,
+    principal,
+    grantId,
+    target: item.target,
+    operations: item.operations,
+  });
+  expect(String(requests.mock.calls[0]![0])).toEndWith("/code-authority/queries/code.access.notifications");
+  expect(requests.mock.calls[0]![1]?.headers).toEqual({ authorization: "Bearer notification-token" });
+});

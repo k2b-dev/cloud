@@ -73,9 +73,6 @@ export type CodeAccessGrant = z.infer<typeof CodeAccessGrantSchema>;
  * Normal target share lists must expose grantId on each Code share so the rights editor
  * can call code.access.rm directly; ordinary shares never carry it.
  * A grantId identifies an explicit Code-only grant; revoke never removes ordinary shares.
- * Successful dry-run decisions identify current human managers in managerUserIds for
- * Core Cloud-admin activation notices; real and replayed sets may omit this metadata. Include direct and group administrators;
- * Core refuses Cloud-admin activation when this metadata is unavailable.
  * Keep grants with different IDs independent, including overlapping grants for the same
  * account and target. Activation rollback removes only its new IDs, preserving older grants.
  */
@@ -119,11 +116,22 @@ export const CodeAccessRefusalCodeSchema = z.enum([
 ]);
 export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
 
+/** Presentation is optional and follows the target Type's readable rule, independently of manager authority. */
+const codeAccessPresentation = {
+  readable: z.boolean().optional(),
+  title: z.string().min(1).max(500).optional(),
+  managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS).optional(),
+};
 export const CodeAccessSetDataSchema = z.discriminatedUnion("granted", [
+  z.object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, ...codeAccessPresentation }).strict(),
   z
-    .object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, managerUserIds: managerUserIdsSchema.optional() })
+    .object({
+      granted: z.literal(false),
+      reasonCode: CodeAccessRefusalCodeSchema,
+      reason: z.string().min(1).max(1000),
+      ...codeAccessPresentation,
+    })
     .strict(),
-  z.object({ granted: z.literal(false), reasonCode: CodeAccessRefusalCodeSchema, reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessSetData = z.infer<typeof CodeAccessSetDataSchema>;
 export const CodeAccessListInputSchema = z
