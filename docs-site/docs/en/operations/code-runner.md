@@ -134,10 +134,10 @@ actual workerd process's UID, session and filter, tries to read the key and
 `/proc/<pid>/{environ,mem,fd}`, signal/ptrace the supervisor and a sibling,
 connect to a sibling socket, replace IPC paths, open IP sockets and regain
 privileges, then
-executes workerd in the same PID. C14 extends this attack coverage with hostile
-bundles and the real bridge. It must retain these OS-context checks and the
-CPU-loop watchdog test; sandbox JavaScript API checks alone do not cover a
-native escape. Unprivileged unit runs skip the native files; the image check
+executes workerd in the same PID. [Verify the isolation
+boundary](#verify-the-isolation-boundary) adds hostile bundles and the real
+bridge. Sandbox JavaScript API checks alone do not cover a native escape, so
+these OS-context checks and the CPU-loop watchdog test stay required. Unprivileged unit runs skip the native files; the image check
 runs them with isolation enabled.
 
 ## Add replicas
