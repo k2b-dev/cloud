@@ -634,7 +634,6 @@ export const createMailDraftSession = (options: {
     if (options.isDisposed()) return null;
     markSaved(draftEditableContent(currentDraft));
     setDraft(currentDraft);
-    setInitialized(true);
     if (acquired) setStatus("preparing");
     let recovered = false;
     try {
@@ -643,6 +642,14 @@ export const createMailDraftSession = (options: {
       if (error instanceof MailUserDraftStorageEndedError) throw error;
       setLocalCopyFailed(true);
     }
+    if (options.isDisposed()) return null;
+    const transition = lifecycleTransition();
+    if (transition && serializedContent() !== lastSavedContent) {
+      // A peer may close the draft while recovery awaits its digest. The
+      // recovered input still needs the closed-draft Copy / Save as new actions.
+      setLifecycleTransition({ ...transition, hasUnsavedChanges: true });
+    }
+    setInitialized(true);
     if (recovered) options.onRecovered();
     try {
       const storage = draftStorage();
@@ -655,7 +662,7 @@ export const createMailDraftSession = (options: {
       if (error instanceof MailUserDraftStorageEndedError) throw error;
       setLocalCopyFailed(true);
     }
-    if (acquired) {
+    if (acquired && lease() && !lifecycleTransition() && !authenticationRequired()) {
       setStatus("saved");
       setStatusMessage("");
       if (revisionConflict()) {
@@ -668,8 +675,8 @@ export const createMailDraftSession = (options: {
 
   const ensureDraft = (): Promise<MailDraft | null> => {
     if (authenticationRequired()) return Promise.resolve(null);
-    if (draft() && (lease() || shared())) return Promise.resolve(draft());
     if (initializePromise) return initializePromise;
+    if (draft() && (lease() || shared())) return Promise.resolve(draft());
     initializePromise = initialize()
       .catch((error: unknown) => {
         if (!options.isDisposed() && !authenticationRequired()) {
@@ -692,6 +699,9 @@ export const createMailDraftSession = (options: {
 
   const runPersist = async (): Promise<MailDraft | null> => {
     return await serializeMutation(async () => {
+      // A granted lease does not mean browser recovery has finished. Never
+      // persist the initial server snapshot while its local journal is loading.
+      if (initializePromise && !(await initializePromise)) return null;
       if (lifecycleTransition() || authenticationRequired() || revisionConflict()) return null;
       if (isShared()) {
         const current = await ensureDraft();
@@ -779,6 +789,7 @@ export const createMailDraftSession = (options: {
         currentDraft = await ensureDraft();
       }
       if (!currentDraft || !lease()) return null;
+      if (revisionConflict() || lifecycleTransition() || authenticationRequired()) return null;
       // Resolve the exact uncertain PUT before saving newer typing. Reusing
       // its input lets the server confirm a committed save without overwriting.
       const nextContent = pendingSave?.content ?? options.content();

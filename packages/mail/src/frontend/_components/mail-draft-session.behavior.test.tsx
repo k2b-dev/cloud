@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers";
 import * as sharedText from "@k2b/cloud/browser/shared-text";
-import { encoding } from "@k2b/stdlib";
+import { crypto as cryptoUtils, encoding } from "@k2b/stdlib";
 import { createRenderEffect, createRoot, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
 import * as Y from "yjs";
@@ -1373,6 +1373,107 @@ describe("Mail draft session", () => {
       expect(state.current().body).toBe(stored.body);
       expect(state.session.lease()).toBeNull();
       expect(JSON.parse(storage.getItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID))!).content.body).toBe("Other tab's pending text");
+    });
+
+    test("a granted lease cannot bypass journal recovery while its native hash is pending", async () => {
+      const journal = openMailUserDraftStorage(localStorage, "Usr001");
+      const pending = content("Unsaved input awaiting recovery", "local@example.test");
+      const key = mailDraftJournalKey(MAILBOX_ID, DRAFT_ID);
+      journal.setItem(key, JSON.stringify({ revision: 1, content: pending }));
+      const hashing = Promise.withResolvers<void>();
+      const proceed = Promise.withResolvers<void>();
+      const originalHash = cryptoUtils.common.hash;
+      const hash = spyOn(cryptoUtils.common, "hash").mockImplementation(async (...args) => {
+        hashing.resolve();
+        await proceed.promise;
+        return originalHash(...args);
+      });
+      try {
+        const state = await mountSession();
+        await hashing.promise;
+        expect(state.session.lease()).not.toBeNull();
+        expect(state.session.status()).toBe("preparing");
+        let ready = false;
+        const initialized = state.session.ensureDraft().then(() => {
+          ready = true;
+        });
+        const saving = state.session.persist();
+        await flush();
+        expect(ready).toBe(false);
+        expect(JSON.parse(journal.getItem(key)!).content).toEqual(pending);
+        expect(requests.filter((r) => r.method === "PUT" && !r.url.endsWith("/lease"))).toHaveLength(0);
+        proceed.resolve();
+        await initialized;
+        expect(state.current()).toEqual(pending);
+        expect(state.session.revisionConflict()).toBe(true);
+        expect(await saving).toBeNull();
+        expect(requests.filter((r) => r.method === "PUT" && !r.url.endsWith("/lease"))).toHaveLength(0);
+      } finally {
+        proceed.resolve();
+        hash.mockRestore();
+      }
+    });
+
+    test("persist rechecks a conflict discovered while reacquiring its own lease", async () => {
+      const state = await mountSession();
+      await state.session.ensureDraft();
+      state.session.setLease(null);
+      const pending = content("Offline input from an older revision", "local@example.test");
+      openMailUserDraftStorage(localStorage, "Usr001").setItem(
+        mailDraftJournalKey(MAILBOX_ID, DRAFT_ID),
+        JSON.stringify({ revision: 1, content: pending }),
+      );
+      expect(await state.session.persist()).toBeNull();
+      expect(state.current()).toEqual(pending);
+      expect(state.session.revisionConflict()).toBe(true);
+      expect(requests.filter((r) => r.method === "PUT" && !r.url.endsWith("/lease"))).toHaveLength(0);
+      expect(stored.body).toBe("Local text");
+    });
+
+    test.each(["sign-in expired", "peer sent"] as const)("journal recovery preserves %s during its pending hash", async (change) => {
+      openMailUserDraftStorage(localStorage, "Usr001").setItem(
+        mailDraftJournalKey(MAILBOX_ID, DRAFT_ID),
+        JSON.stringify({ revision: 1, content: content("Offline input", "local@example.test") }),
+      );
+      const hashing = Promise.withResolvers<void>();
+      const proceed = Promise.withResolvers<void>();
+      const originalHash = cryptoUtils.common.hash;
+      const hash = spyOn(cryptoUtils.common, "hash").mockImplementation(async (...args) => {
+        hashing.resolve();
+        await proceed.promise;
+        return originalHash(...args);
+      });
+      try {
+        const state = await mountSession();
+        await hashing.promise;
+        const initialized = state.session.ensureDraft();
+        respondWith(() =>
+          change === "sign-in expired"
+            ? Response.json({ message: "Session expired" }, { status: 401 })
+            : Response.json({ ...stored, state: "sent", revision: 4 }),
+        );
+        const socket = FakeWebSocket.instances.at(-1)!;
+        socket.open();
+        socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+        socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: "Conv01" } });
+        await flush();
+        expect(state.session.status()).toBe("readonly");
+        const message = state.session.statusMessage();
+        proceed.resolve();
+        await initialized;
+        expect(state.session.status()).toBe("readonly");
+        expect(state.session.statusMessage()).toBe(message);
+        expect(state.session.lease()).toBeNull();
+        expect(state.session.authenticationRequired()).toBe(change === "sign-in expired");
+        expect(Boolean(state.session.lifecycleTransition())).toBe(change === "peer sent");
+        expect(state.current().body).toBe("Offline input");
+        if (change === "peer sent") expect(state.session.lifecycleTransition()?.hasUnsavedChanges).toBe(true);
+        await advance(1_000);
+        expect(requests.filter((r) => r.method === "PUT" && !r.url.endsWith("/lease"))).toHaveLength(0);
+      } finally {
+        proceed.resolve();
+        hash.mockRestore();
+      }
     });
 
     test("an older journal keeps newer input visible and blocks overwriting the server across reloads", async () => {
