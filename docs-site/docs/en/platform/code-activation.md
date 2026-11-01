@@ -157,3 +157,7 @@ access and must not be exposed through a generic caller transport.
 Core starts both outbox workers with
 its normal lifecycle. Their failed jobs retain attempts and the last error;
 cleanup runs separately so a draining version does not block new activations.
+
+Owner deletion stops activation and durably removes its grants. See
+[Code lifecycle](/en/docs/platform/code-lifecycle) for the deletion helper,
+owner checks and the cleanup read model.

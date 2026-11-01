@@ -6,6 +6,7 @@ import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
+import { codeAccessCleanupOutbox, codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
 import { startCodeScheduling } from "./code/scheduling-runtime";
@@ -13,6 +14,7 @@ import { startCodeVersionApprovals } from "./code/versions";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
 import { migrate as migrateCodeActivation } from "./migrate/core/code-activation";
+import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
 import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
@@ -156,6 +158,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
+    { name: "code-lifecycle", run: migrateCodeLifecycle },
     { name: "app-events", run: migrateAppEvents },
     { name: "weather", run: migrateWeather },
     { name: "geo", run: migrateGeo },
@@ -191,6 +194,9 @@ export const startCoreServices = async (
     stopCodeScheduling = await startCodeScheduling();
     codeActivationOutbox.start();
     codeActivationCleanupOutbox.start();
+    codeOwnerDeletedOutbox.start();
+    codeAccessCleanupOutbox.start();
+    codeDeletionOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -249,6 +255,9 @@ export const startCoreServices = async (
     await codePolicyPauseOutbox.stop();
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
+    await codeOwnerDeletedOutbox.stop();
+    await codeAccessCleanupOutbox.stop();
+    await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
     stopWorkflowEventRetention?.();
@@ -297,6 +306,9 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await codePolicyPauseOutbox.stop();
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
+    await codeOwnerDeletedOutbox.stop();
+    await codeAccessCleanupOutbox.stop();
+    await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
     stopWorkflowEventRetention?.();

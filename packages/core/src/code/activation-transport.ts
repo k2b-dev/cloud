@@ -78,13 +78,19 @@ export type CodeActivationTransport = {
   list: (appId: string, principal: string) => Promise<CodeAccessGrant[]>;
   remove: (appId: string, principal: string, grantId: string) => Promise<void>;
 };
-async function authorityRequest(appId: string, operation: "list" | "rm", principal: string, input: unknown): Promise<Response> {
+async function authorityRequest(
+  appId: string,
+  operation: "list" | "rm" | "ownerTitle",
+  principal: string,
+  input: unknown,
+  signal?: AbortSignal,
+): Promise<Response> {
   const app = await getApp(appId);
   if (!app) throw new CodeActivationTransportError("target_unavailable", true);
-  const token = operation === "list" ? await signCodeAccessList(appId, principal) : await signCodeAccessCleanup(appId, principal);
+  const token = operation === "rm" ? await signCodeAccessCleanup(appId, principal) : await signCodeAccessList(appId, principal);
   return fetch(
     new URL(
-      `/api/_internal/capabilities/v1/code-authority/${operation === "list" ? "queries" : "actions"}/code.access.${operation}`,
+      `/api/_internal/capabilities/v1/code-authority/${operation === "rm" ? "actions" : "queries"}/${operation === "ownerTitle" ? "code.owner.title" : `code.access.${operation}`}`,
       app.baseUrl,
     ),
     {
@@ -92,7 +98,7 @@ async function authorityRequest(appId: string, operation: "list" | "rm", princip
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(input),
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     },
   );
 }
@@ -120,3 +126,16 @@ export const codeActivationTransport: CodeActivationTransport = {
       throw new CodeActivationTransportError("target_cleanup_refused", true);
   },
 };
+/** Core-only, title-only reader projection under the exact owning Code account. No session is retained. */
+export async function readCodeResourceOwnerTitle(
+  ref: { type: string; id: string },
+  principal: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  return (
+    await decode(
+      await authorityRequest(targetApp(ref), "ownerTitle", principal, ref, signal),
+      z.object({ title: z.string().min(1).max(500).nullable() }).strict(),
+    )
+  ).title;
+}

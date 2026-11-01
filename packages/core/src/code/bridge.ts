@@ -63,7 +63,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
     SELECT bundle_hash,source_hash,created_by,jsonb_build_object(
       'version',manifest->'version','hashes',manifest->'hashes',
       'policyRows',manifest->'policyRows') AS manifest,
-      manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::jsonb AS entrypoint_valid
+      manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::text::jsonb AS entrypoint_valid
     FROM code.versions WHERE id=${call.claims.versionId}::uuid AND code_id=${code.id}`;
   if (!version || version.bundle_hash !== call.claims.bundleHash) denied("code_bundle_mismatch");
   const manifest = CallVersionSchema.safeParse(version.manifest);

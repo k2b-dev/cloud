@@ -322,9 +322,9 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
           input: {
-            ...codeIdInput,
-            entrypoint: "Benannter Einstiegspunkt der aktiven Version, wie ihn ihr Manifest nennt.",
-            input: "JSON-Eingabe für diesen Lauf; null, wenn der Einstiegspunkt keine braucht.",
+            codeId: "Code-ID aus code.list oder code.read.",
+            entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
+            input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
           },
         },
         "code.version.submit": {

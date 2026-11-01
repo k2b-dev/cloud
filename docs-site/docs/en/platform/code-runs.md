@@ -112,3 +112,15 @@ importing Core source.
 
 For runner capacity, lease recovery, and shutdown, see
 [Scaling runners](/en/docs/operations/code-runner).
+
+After a claim commits, Core checks the current owner outside dispatch locks,
+then signs the runner lease. A missing owner pauses Code with “Owner not found”
+(“Besitzer nicht gefunden”) and skips the claimed run without issuing a token.
+Owner checks run concurrently, once per Code in a fetch batch, within one
+heartbeat period and the remaining poll budget. Core renews a still-valid
+lease after that check without reviving an expired generation. A failed reader
+only withholds that Code's lease; healthy leases in the batch are returned.
+An unavailable owner reader leaves its claim to expire. Automatic retry retains
+the original deadline and consumes the next attempt in the configured budget.
+This uses `checkCodeOwnerBeforeRun(code)`; its optional signal cancels the owner
+transport request.
