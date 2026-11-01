@@ -9,10 +9,10 @@ import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "t
 import browserNotificationServiceWorker from "../browser-notifications/service-worker.js" with { type: "text" };
 import { ssr } from "../config";
 import aiAdminPage from "./admin/ai/page";
-import codeAdminPage from "./admin/code/page";
 import announcementsAdminPage from "./admin/announcements/page";
 import appsAccessPage from "./admin/apps/page";
 import { cliPage, generalPage, legalPage, pdfPage, placesPage } from "./admin/base/page";
+import codeAdminPage from "./admin/code/page";
 import outgoingMailPage from "./admin/outgoing-mail/page";
 import adminPage from "./admin/page";
 import railAdminPage from "./admin/rail/page";

@@ -2,11 +2,11 @@ import { LocaleProvider } from "@k2b/ui";
 import { fromJSON } from "seroval";
 import type { Component } from "solid-js";
 import { createComponent, render } from "solid-js/web";
+import CoreSettingsForm from "../settings/_components/CoreSettingsForm.island.tsx";
 import CodeApprovalReview from "./CodeApprovalReview.island.tsx";
 import CodeListFilters from "./CodeListFilters.island.tsx";
 import CodePolicyEditor from "./CodePolicyEditor.island.tsx";
 import CodePolicyPicker from "./CodePolicyPicker.island.tsx";
-import CoreSettingsForm from "../settings/_components/CoreSettingsForm.island.tsx";
 
 /** Mounts every Code area island the way @k2b/ssr does: the server-rendered wrapper carries its props. */
 const islands: Record<string, Component<never>> = {

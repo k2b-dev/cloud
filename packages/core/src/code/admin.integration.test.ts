@@ -45,7 +45,11 @@ const catalog = compileCapabilityManifest("example", {
       policy: { silent: "shared" },
       review: () => ({
         ok: true as const,
-        data: { locale: "en", slots: {}, sentence: { action: "Change", running: "Changing", done: "Changed", confirm: "Confirm", decline: "Cancel" } },
+        data: {
+          locale: "en",
+          slots: {},
+          sentence: { action: "Change", running: "Changing", done: "Changed", confirm: "Confirm", decline: "Cancel" },
+        },
       }),
     },
   },
@@ -75,7 +79,12 @@ const person = (id: string): User => ({
   managesGroupIds: [],
 });
 const context = (id: string): CodeContext => ({
-  authority: { actor: { kind: "user", user: person(id) }, accessSubject: { type: "user", userId: id }, credentialKind: "session", scopes: [] },
+  authority: {
+    actor: { kind: "user", user: person(id) },
+    accessSubject: { type: "user", userId: id },
+    credentialKind: "session",
+    scopes: [],
+  },
   locale: "de",
 });
 const author = context(authorId),

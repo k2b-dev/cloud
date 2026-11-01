@@ -34,7 +34,8 @@ export const createCodeAdminRoutes = () => {
           { code: error.code, message: error.message },
           { status: error.code === "FORBIDDEN" ? 403 : error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : 400 },
         );
-      if (error instanceof z.ZodError) return Response.json({ code: "BAD_INPUT", message: "Invalid Code administration input." }, { status: 400 });
+      if (error instanceof z.ZodError)
+        return Response.json({ code: "BAD_INPUT", message: "Invalid Code administration input." }, { status: 400 });
       throw error;
     }
   };
@@ -70,7 +71,13 @@ export const createCodeAdminRoutes = () => {
         run(async () => {
           const ctx = context(c);
           const preview = await previewCodePolicy(c.req.valid("json"), ctx);
-          return { ...preview, owners: await codeAdminOwnerNames(preview.items.map((item) => item.codeId), ctx) };
+          return {
+            ...preview,
+            owners: await codeAdminOwnerNames(
+              preview.items.map((item) => item.codeId),
+              ctx,
+            ),
+          };
         }),
     )
     .post(

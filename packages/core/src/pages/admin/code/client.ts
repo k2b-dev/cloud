@@ -14,7 +14,12 @@ export class CodeAdminRequestError extends Error {
 const FailureSchema = z.object({ code: z.string().optional(), message: z.string().optional() });
 
 /** POST JSON to `/api/code/admin/*` and return `data` checked against its contract, or throw with status and code. */
-export const postCodeAdmin = async <T extends z.ZodType>(path: string, body: unknown, data: T, signal?: AbortSignal): Promise<z.output<T>> => {
+export const postCodeAdmin = async <T extends z.ZodType>(
+  path: string,
+  body: unknown,
+  data: T,
+  signal?: AbortSignal,
+): Promise<z.output<T>> => {
   const response = await fetch(`/api/code/admin/${path}`, {
     method: "POST",
     credentials: "same-origin",

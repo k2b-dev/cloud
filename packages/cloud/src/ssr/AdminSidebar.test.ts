@@ -120,7 +120,13 @@ describe("buildAdminGroups", () => {
       }),
     ]);
     const area = groups.find((group) => group.label === "Cloud")!;
-    expect(area.links.map((link) => link.href)).toEqual(["/admin/base", "/admin/signin", "/admin/ai", "/admin/code", "/admin/observability"]);
+    expect(area.links.map((link) => link.href)).toEqual([
+      "/admin/base",
+      "/admin/signin",
+      "/admin/ai",
+      "/admin/code",
+      "/admin/observability",
+    ]);
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "App administration")).toBe(false);
     const links = groups.flatMap((group) => group.links);
@@ -132,7 +138,7 @@ describe("buildAdminGroups", () => {
       buildAdminGroups([], "de")
         .find((group) => group.label === "Cloud")
         ?.links.map((link) => link.label),
-    ).toEqual(["Grundeinstellungen", "Anmeldung & Sicherheit", "KI"]);
+    ).toEqual(["Grundeinstellungen", "Anmeldung & Sicherheit", "KI", "Code"]);
   });
 
   it("opens the first contributed Observability page when no app owns the area start", () => {

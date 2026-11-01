@@ -8,7 +8,14 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { CODE_FIXTURE_STATES, codeFixtureData, FIXTURE_PEOPLE, fixtureApprovalDetail, fixtureCodeDetail, fixtureData } from "./CodeArea.fixture-data";
+import {
+  CODE_FIXTURE_STATES,
+  codeFixtureData,
+  FIXTURE_PEOPLE,
+  fixtureApprovalDetail,
+  fixtureCodeDetail,
+  fixtureData,
+} from "./CodeArea.fixture-data";
 
 const user: User = {
   id: FIXTURE_PEOPLE.ben,
@@ -148,7 +155,12 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       const detail = fixtureApprovalDetail();
       return Response.json({
         data: {
-          version: { ...fixtureCodeDetail().versions[0]!.version, id: detail.version.id, codeId: detail.code.id, number: detail.version.number },
+          version: {
+            ...fixtureCodeDetail().versions[0]!.version,
+            id: detail.version.id,
+            codeId: detail.code.id,
+            number: detail.version.number,
+          },
           binding: detail.binding,
           status: decision ? "approved" : "rejected",
           approvalId: detail.approvalId,

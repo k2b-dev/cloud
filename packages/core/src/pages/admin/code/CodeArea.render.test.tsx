@@ -42,7 +42,17 @@ const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
 
 test("the area column names every section with waiting counts", () => {
   const html = render({});
-  for (const label of ["Freigaben", "Code in dieser Cloud", "Richtlinien", "Standard", "Gruppen", "Wirksam für …", "Aufräumen", "Grenzen", "Runner"])
+  for (const label of [
+    "Freigaben",
+    "Code in dieser Cloud",
+    "Richtlinien",
+    "Standard",
+    "Gruppen",
+    "Wirksam für …",
+    "Aufräumen",
+    "Grenzen",
+    "Runner",
+  ])
     expect(html).toContain(label);
   expect(html).toContain("4 Versionen warten auf Freigabe");
   const english = render({}, "normal", "en");
@@ -144,11 +154,19 @@ test("cleanup, limits and runners render their data, empty and error states", ()
   expect(cleanup).toContain("letzter Fehler: target_unreachable");
   expect(render({ sec: "cleanup" }, "empty")).toContain("Nichts aufzuräumen");
   const limits = render({ sec: "limits" });
-  for (const label of ["Wanduhr je Lauf (ms)", "Brückenaufrufe je Lauf", "Datenbank je Code (Bytes)", "KI-Referenzbudget je Lauf (USD)", "Gleichzeitige Läufe je Code", "Gleichzeitige Läufe je Besitzer"])
+  for (const label of [
+    "Wanduhr je Lauf (ms)",
+    "Brückenaufrufe je Lauf",
+    "Datenbank je Code (Bytes)",
+    "KI-Referenzbudget je Lauf (USD)",
+    "Gleichzeitige Läufe je Code",
+    "Gleichzeitige Läufe je Besitzer",
+  ])
     expect(limits).toContain(label);
   const runners = render({ sec: "runners" });
   expect(runners).toContain('data-section="code-runners"');
-  for (const label of ["Instanzen", "Freie Plätze", "Warteschlange", "Längste Wartezeit", "4 s", "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60"]) expect(runners).toContain(label);
+  for (const label of ["Instanzen", "Freie Plätze", "Warteschlange", "Längste Wartezeit", "4 s", "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60"])
+    expect(runners).toContain(label);
   const none = render({ sec: "runners" }, "empty");
   expect(none).toContain("Kein Runner meldet sich");
   expect(none).toContain("2 Min.");

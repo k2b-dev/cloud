@@ -11,13 +11,15 @@ import type {
 } from "../../../code/admin";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import { codePolicyPreset } from "../../../code/policy-contracts";
-import { CODE_SETTINGS } from "../../../code/settings";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
+import { CODE_SETTINGS } from "../../../code/settings";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { CODE_LIMIT_KEYS } from "./area";
 import type { CodeAreaData } from "./view";
 
 const h = (seed: string) => seed.repeat(64).slice(0, 64);
+/** Freshness values are relative to now, so screenshots read "4 minutes ago" on any day. */
+const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 export const FIXTURE_PEOPLE = {
   ben: "11111111-1111-4111-8111-111111111111",
   lea: "22222222-2222-4222-8222-222222222222",
@@ -148,7 +150,9 @@ const diffLines = () => {
   const old = before.split("\n");
   const neu = after.split("\n");
   const rows: { kind: "same" | "add" | "del"; text: string }[] = [];
-  rows.push(...neu.slice(0, 6).map((text, i) => ({ kind: i === 0 ? ("del" as const) : ("same" as const), text: i === 0 ? old[0]! : text })));
+  rows.push(
+    ...neu.slice(0, 6).map((text, i) => ({ kind: i === 0 ? ("del" as const) : ("same" as const), text: i === 0 ? old[0]! : text })),
+  );
   rows.splice(1, 0, { kind: "add", text: neu[0]! });
   rows.push({ kind: "add", text: neu[6]! });
   rows.push({ kind: "same", text: neu[7]! }, { kind: "same", text: neu[8]! });
@@ -158,18 +162,30 @@ const diffLines = () => {
   return rows;
 };
 
-export const fixtureApprovalDetail = (variant: "normal" | "first" | "newer" | "own" | "sole" | "difffail" | "approved" = "normal"): CodeAdminApprovalDetail => {
+export const fixtureApprovalDetail = (
+  variant: "normal" | "first" | "newer" | "own" | "sole" | "difffail" | "approved" = "normal",
+): CodeAdminApprovalDetail => {
   const first = variant === "first";
   return {
     approvalId: "e0000000-0000-4000-8000-000000000001",
     status: variant === "approved" ? "approved" : "pending",
-    code: { id: first ? "c_liefer" : "c_rueck", title: first ? "Lieferzeit beantworten" : "Rückruf bestätigen", owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, state: "active" },
+    code: {
+      id: first ? "c_liefer" : "c_rueck",
+      title: first ? "Lieferzeit beantworten" : "Rückruf bestätigen",
+      owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
+      state: "active",
+    },
     ownerName: null,
     version: {
       id: first ? V.lieferzeit1 : V.rueckruf3,
       number: first ? 1 : 3,
       submittedAt: first ? "2026-11-01T08:10:00.000Z" : "2026-11-01T11:10:00.000Z",
-      author: variant === "own" || variant === "sole" ? { id: FIXTURE_PEOPLE.ben, name: "Ben Schulz" } : first ? { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel" } : { id: FIXTURE_PEOPLE.lea, name: "Lea Muster" },
+      author:
+        variant === "own" || variant === "sole"
+          ? { id: FIXTURE_PEOPLE.ben, name: "Ben Schulz" }
+          : first
+            ? { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel" }
+            : { id: FIXTURE_PEOPLE.lea, name: "Lea Muster" },
     },
     binding: {
       codeId: first ? "c_liefer" : "c_rueck",
@@ -189,7 +205,13 @@ export const fixtureApprovalDetail = (variant: "normal" | "first" | "newer" | "o
           ? [{ path: "code.ts", lines: before.split("\n").map((text) => ({ kind: "add" as const, text })) }]
           : [
               { path: "code.ts", lines: diffLines() },
-              { path: "code.test.ts", lines: ['import { test } from "@sdk/test";', "", 'test("Rückruf", async () => {});'].map((text) => ({ kind: "same" as const, text })) },
+              {
+                path: "code.test.ts",
+                lines: ['import { test } from "@sdk/test";', "", 'test("Rückruf", async () => {});'].map((text) => ({
+                  kind: "same" as const,
+                  text,
+                })),
+              },
             ],
     staleComparison: false,
     permissions: first
@@ -199,19 +221,33 @@ export const fixtureApprovalDetail = (variant: "normal" | "first" | "newer" | "o
         ]
       : [
           { operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" }, file: "code.ts", line: 11, change: "added" },
-          { operation: "mail.conversation.tag", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 12, change: "added" },
+          {
+            operation: "mail.conversation.tag",
+            target: { type: "mail.mailbox", id: "m_info" },
+            file: "code.ts",
+            line: 12,
+            change: "added",
+          },
           { operation: "mail.message.list", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 5, change: "same" },
           { operation: "mail.draft.create", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 10, change: "removed" },
         ],
     why: [{ row: "ask_involves_people", source: "default", groups: [] }],
     ai: true,
-    newer: variant === "newer" ? { versionId: V.rueckruf4, number: 4, author: "Lea Muster", submittedAt: "2026-11-01T11:40:00.000Z" } : null,
+    newer:
+      variant === "newer" ? { versionId: V.rueckruf4, number: 4, author: "Lea Muster", submittedAt: "2026-11-01T11:40:00.000Z" } : null,
     canApprove: variant !== "own",
     own: variant === "own" || variant === "sole",
     soleAdminNotice: variant === "sole" ? "Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft." : null,
     decision:
       variant === "approved"
-        ? { approved: true, soleAdmin: false, decidedBy: FIXTURE_PEOPLE.ben, decidedAt: "2026-11-01T12:20:00.000Z", label: "", decidedByName: "Ben Schulz" }
+        ? {
+            approved: true,
+            soleAdmin: false,
+            decidedBy: FIXTURE_PEOPLE.ben,
+            decidedAt: "2026-11-01T12:20:00.000Z",
+            label: "",
+            decidedByName: "Ben Schulz",
+          }
         : null,
     titles: {
       operations: {
@@ -244,14 +280,37 @@ const code = (
   lastRun: lastRun ? { at: lastRun, state: "succeeded" } : null,
 });
 export const fixtureCodes = (): CodeAdminCode[] => [
-  code("c_anfrag", "Anfragen sortieren", { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, null, "active", "2026-11-01T11:56:00.000Z"),
-  code("c_auftrag", "Auftragsboard", { kind: "person", userId: FIXTURE_PEOPLE.mia }, "Mia Koch", "active", "2026-11-01T10:00:00.000Z"),
+  code("c_anfrag", "Anfragen sortieren", { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, null, "active", ago(4)),
+  code("c_auftrag", "Auftragsboard", { kind: "person", userId: FIXTURE_PEOPLE.mia }, "Mia Koch", "active", ago(70)),
   code("c_portal", "Kundenportal-Eingang", { kind: "app", appId: "werkstatt" }, null, "draft", null),
-  code("c_liefer", "Lieferschein bei Abschluss", { kind: "person", userId: FIXTURE_PEOPLE.tom }, "Tom Beispiel", "paused", "2026-10-30T16:00:00.000Z", "policy_changed"),
-  code("c_rechn", "Rechnungen an die Buchhaltung", { kind: "resource", ref: { type: "mail.mailbox", id: "m_rechn" } }, null, "waiting", "2026-11-01T07:42:00.000Z"),
-  code("c_rueck", "Rückruf bestätigen", { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, null, "waiting", "2026-11-01T11:50:00.000Z"),
-  code("c_termin", "Termin-Antworten", { kind: "person", userId: FIXTURE_PEOPLE.lea }, "Lea Muster", "active", "2026-11-01T11:00:00.000Z"),
-  code("c_woche", "Wochenbericht Vertrieb", { kind: "person", userId: FIXTURE_PEOPLE.lea }, "Lea Muster", "paused", "2026-10-27T07:00:00.000Z", "policy_changed"),
+  code(
+    "c_liefer",
+    "Lieferschein bei Abschluss",
+    { kind: "person", userId: FIXTURE_PEOPLE.tom },
+    "Tom Beispiel",
+    "paused",
+    ago(60 * 26),
+    "policy_changed",
+  ),
+  code(
+    "c_rechn",
+    "Rechnungen an die Buchhaltung",
+    { kind: "resource", ref: { type: "mail.mailbox", id: "m_rechn" } },
+    null,
+    "waiting",
+    ago(12),
+  ),
+  code("c_rueck", "Rückruf bestätigen", { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, null, "waiting", ago(9)),
+  code("c_termin", "Termin-Antworten", { kind: "person", userId: FIXTURE_PEOPLE.lea }, "Lea Muster", "active", ago(60)),
+  code(
+    "c_woche",
+    "Wochenbericht Vertrieb",
+    { kind: "person", userId: FIXTURE_PEOPLE.lea },
+    "Lea Muster",
+    "paused",
+    ago(60 * 24 * 5),
+    "policy_changed",
+  ),
 ];
 export const fixtureCodeDetail = (): CodeAdminCodeDetail => {
   const base = fixtureCodes()[4]!;
@@ -313,12 +372,40 @@ export const fixtureCodeDetail = (): CodeAdminCodeDetail => {
         },
         status: "approved",
         approvalId: null,
-        decision: { approved: true, soleAdmin: true, decidedBy: FIXTURE_PEOPLE.ben, decidedAt: "2026-10-20T10:00:00.000Z", label: "Selbst freigegeben (einziger Admin)" },
+        decision: {
+          approved: true,
+          soleAdmin: true,
+          decidedBy: FIXTURE_PEOPLE.ben,
+          decidedAt: "2026-10-20T10:00:00.000Z",
+          label: "Selbst freigegeben (einziger Admin)",
+        },
       },
     ],
     runs: [
-      { id: "90000000-0000-4000-8000-000000000001", codeId: base.id, versionId: "c0000000-0000-4000-8000-000000000001", trigger: "schedule", entrypoint: "default", state: "succeeded", outcome: "succeeded", createdAt: "2026-11-01T07:42:00.000Z", startedAt: "2026-11-01T07:42:01.000Z", endedAt: "2026-11-01T07:42:03.000Z" },
-      { id: "90000000-0000-4000-8000-000000000002", codeId: base.id, versionId: "c0000000-0000-4000-8000-000000000001", trigger: "manual", entrypoint: "default", state: "failed", outcome: "failed", createdAt: "2026-10-31T16:10:00.000Z", startedAt: "2026-10-31T16:10:01.000Z", endedAt: "2026-10-31T16:10:02.000Z" },
+      {
+        id: "90000000-0000-4000-8000-000000000001",
+        codeId: base.id,
+        versionId: "c0000000-0000-4000-8000-000000000001",
+        trigger: "schedule",
+        entrypoint: "default",
+        state: "succeeded",
+        outcome: "succeeded",
+        createdAt: "2026-11-01T07:42:00.000Z",
+        startedAt: "2026-11-01T07:42:01.000Z",
+        endedAt: "2026-11-01T07:42:03.000Z",
+      },
+      {
+        id: "90000000-0000-4000-8000-000000000002",
+        codeId: base.id,
+        versionId: "c0000000-0000-4000-8000-000000000001",
+        trigger: "manual",
+        entrypoint: "default",
+        state: "failed",
+        outcome: "failed",
+        createdAt: "2026-10-31T16:10:00.000Z",
+        startedAt: "2026-10-31T16:10:01.000Z",
+        endedAt: "2026-10-31T16:10:02.000Z",
+      },
     ],
     cleanup: [],
   };
@@ -336,7 +423,17 @@ export const fixturePolicy = (): CodeAdminPolicy => {
   return {
     policy: { revision: 7, definition, updatedBy: FIXTURE_PEOPLE.jana, updatedAt: "2026-10-30T14:00:00.000Z" },
     updatedByName: "Jana Probe",
-    usage: { read: 7, silent_you: 3, silent_draft: 2, silent_shared: 4, ask_deletes: 1, ask_involves_people: 2, ask_keeps_working: 1, ai: 5, internet: 2 },
+    usage: {
+      read: 7,
+      silent_you: 3,
+      silent_draft: 2,
+      silent_shared: 4,
+      ask_deletes: 1,
+      ask_involves_people: 2,
+      ask_keeps_working: 1,
+      ai: 5,
+      internet: 2,
+    },
     groups: [
       { id: FIXTURE_GROUPS.buchhaltung, name: "Buchhaltung", rules: 2, members: 6, parents: ["Verwaltung"] },
       { id: FIXTURE_GROUPS.praktikum, name: "Praktikum", rules: 2, members: 3, parents: [] },
@@ -407,9 +504,9 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
         instances: 3,
         freeSlots: 5,
         runners: [
-          { instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60", freeSlots: 1, lastSeenAt: "2026-11-01T12:09:52.000Z" },
-          { instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071", freeSlots: 0, lastSeenAt: "2026-11-01T12:09:55.000Z" },
-          { instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182", freeSlots: 4, lastSeenAt: "2026-11-01T12:09:58.000Z" },
+          { instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60", freeSlots: 1, lastSeenAt: new Date(Date.now() - 8_000).toISOString() },
+          { instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071", freeSlots: 0, lastSeenAt: new Date(Date.now() - 5_000).toISOString() },
+          { instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182", freeSlots: 4, lastSeenAt: new Date(Date.now() - 2_000).toISOString() },
         ],
         nextCursor: null,
       };
@@ -447,7 +544,6 @@ export const CODE_FIXTURE_STATES = [
   "saving",
 ] as const;
 export type CodeFixtureState = (typeof CODE_FIXTURE_STATES)[number];
-
 
 const limitEntries = (locale: string): SettingFieldDef[] =>
   [...CODE_LIMIT_KEYS].map((key) => {
@@ -487,14 +583,28 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       policy: data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? { ...data.policy, groups: [] } : data.policy,
     };
   if (state === "fail")
-    return { ...data, approvals: "failed", decided: "failed", codes: "failed", policy: "failed", cleanup: "failed", runners: "failed", limits: "failed" };
+    return {
+      ...data,
+      approvals: "failed",
+      decided: "failed",
+      codes: "failed",
+      policy: "failed",
+      cleanup: "failed",
+      runners: "failed",
+      limits: "failed",
+    };
   if (query.sec === "approvals" && query.id) {
     const variant = query.id === FIXTURE_VERSIONS.lieferzeit1 ? "first" : state;
     data.approval =
       state === "missing"
         ? "missing"
         : fixtureApprovalDetail(
-            variant === "first" || variant === "newer" || variant === "own" || variant === "sole" || variant === "difffail" || variant === "approved"
+            variant === "first" ||
+              variant === "newer" ||
+              variant === "own" ||
+              variant === "sole" ||
+              variant === "difffail" ||
+              variant === "approved"
               ? variant
               : "normal",
           );
@@ -503,9 +613,12 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
   if (query.sec === "code" && query.status) {
     const codes = data.codes;
     if (codes !== null && codes !== "failed" && codes !== "missing")
-      data.codes = { ...codes, items: codes.items.filter((code) => code.status === query.status), total: codes.items.filter((code) => code.status === query.status).length };
+      data.codes = {
+        ...codes,
+        items: codes.items.filter((code) => code.status === query.status),
+        total: codes.items.filter((code) => code.status === query.status).length,
+      };
   }
   if (query.sec === "effective" && query.id) data.effective = state === "missing" ? "missing" : fixtureEffective();
   return data;
 }
-

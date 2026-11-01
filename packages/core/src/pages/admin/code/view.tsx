@@ -115,10 +115,7 @@ export function approvalReviewProps(
   list: readonly CodeAdminApproval[],
   when: (iso: string) => string,
 ): CodeApprovalReviewProps {
-  const who =
-    detail.code.owner.kind === "person"
-      ? (detail.ownerName ?? t.unknownAuthor)
-      : (detail.version.author.name ?? t.unknownAuthor);
+  const who = detail.code.owner.kind === "person" ? (detail.ownerName ?? t.unknownAuthor) : (detail.version.author.name ?? t.unknownAuthor);
   const others = list.filter((item) => item.versionId !== detail.version.id);
   const index = list.findIndex((item) => item.versionId === detail.version.id);
   const next = (index >= 0 ? list.slice(index + 1).concat(list.slice(0, index)) : others)[0];
@@ -626,7 +623,10 @@ export function CodeAreaView(props: Props) {
         <div class="px-2 pb-2">
           <CodePolicyPicker kind="group" existing={policy.groups.map((group) => group.id)} />
         </div>
-        <Show when={policy.groups.length} fallback={<Placeholder icon="ti ti-users-group" title={t.noGroups} description={t.noGroupsSub} />}>
+        <Show
+          when={policy.groups.length}
+          fallback={<Placeholder icon="ti ti-users-group" title={t.noGroups} description={t.noGroupsSub} />}
+        >
           <AppWorkspace.SidebarSection>
             <For each={policy.groups}>
               {(group) => (
@@ -634,7 +634,10 @@ export function CodeAreaView(props: Props) {
                   variant="object"
                   href={codeAreaHref({ sec: "groups", id: group.id })}
                   active={query.id === group.id}
-                  description={[t.groupRules({ rules: group.rules, members: group.members }), ...group.parents.map((p) => t.subgroupOf({ p }))].join(" · ")}
+                  description={[
+                    t.groupRules({ rules: group.rules, members: group.members }),
+                    ...group.parents.map((p) => t.subgroupOf({ p })),
+                  ].join(" · ")}
                 >
                   <AppWorkspace.SidebarItemIcon icon="ti ti-users" />
                   <AppWorkspace.SidebarItemLabel>{group.name}</AppWorkspace.SidebarItemLabel>
@@ -751,7 +754,9 @@ export function CodeAreaView(props: Props) {
               <div class="min-w-0">
                 <p class="text-sm font-medium">{row.kind === "code.access.rm" ? t.jobRemove : t.jobDelete}</p>
                 <Show when={row.target}>
-                  {(target) => <p class="text-xs text-(--k2b-text-muted)">{t.atTargetPlain({ target: `${target().type} ${target().id}` })}</p>}
+                  {(target) => (
+                    <p class="text-xs text-(--k2b-text-muted)">{t.atTargetPlain({ target: `${target().type} ${target().id}` })}</p>
+                  )}
                 </Show>
               </div>
             );
@@ -872,9 +877,9 @@ export function CodeAreaView(props: Props) {
       }[section]
     : t.area;
   const sectionDescription = (): string | undefined => {
-    if (section === "approvals")
-      return summary?.approvals ? t.nWaiting({ n: summary.approvals }) : t.nothingOpen;
-    if (section === "code") return ok(data.codes) ? (data.codes.total ? t.allSub({ n: data.codes.total, p: data.codes.owners }) : t.noneYet) : undefined;
+    if (section === "approvals") return summary?.approvals ? t.nWaiting({ n: summary.approvals }) : t.nothingOpen;
+    if (section === "code")
+      return ok(data.codes) ? (data.codes.total ? t.allSub({ n: data.codes.total, p: data.codes.owners }) : t.noneYet) : undefined;
     if (section === "policy") return policyHead();
     if (section === "groups") return policy ? t.groupsSub({ n: policy.groups.length }) : undefined;
     if (section === "effective") return t.effectiveSub;
@@ -884,7 +889,13 @@ export function CodeAreaView(props: Props) {
     return undefined;
   };
   const wideContent = (): JSX.Element =>
-    section === "policy" ? policyStandard() : section === "cleanup" ? cleanupSection() : section === "runners" ? runnersSection() : limitsSection();
+    section === "policy"
+      ? policyStandard()
+      : section === "cleanup"
+        ? cleanupSection()
+        : section === "runners"
+          ? runnersSection()
+          : limitsSection();
   const secondColumn = (): JSX.Element =>
     section === "approvals"
       ? approvalsList()
@@ -925,13 +936,23 @@ export function CodeAreaView(props: Props) {
     if (section === "code" && ok(data.code)) return ownerLabel(t, data.code.code.owner, data.code.code.ownerName, props.appNames);
     if (section === "groups" && query.id) return t.groupDeviates;
     if (section === "effective" && ok(data.effective))
-      return data.effective.groups.map((group) => (group.parents.length ? `${group.name} (${t.subgroupOf({ p: group.parents.join(", ") })})` : group.name)).join(", ");
+      return data.effective.groups
+        .map((group) => (group.parents.length ? `${group.name} (${t.subgroupOf({ p: group.parents.join(", ") })})` : group.name))
+        .join(", ");
     return undefined;
   };
 
   return (
     <AppWorkspace.Main level={isWideCodeSection(section) ? (level === "area" ? "area" : "section") : level}>
-      <AppWorkspace.MainPane id="area" label={t.area} description={t.areaSub} href={codeAreaHref({})} defaultSize={264} minSize={232} maxSize={360}>
+      <AppWorkspace.MainPane
+        id="area"
+        label={t.area}
+        description={t.areaSub}
+        href={codeAreaHref({})}
+        defaultSize={264}
+        minSize={232}
+        maxSize={360}
+      >
         {ok(data.summary) || data.summary === null ? areaColumn : failure}
       </AppWorkspace.MainPane>
       {isWideCodeSection(section) ? (
@@ -944,7 +965,9 @@ export function CodeAreaView(props: Props) {
             id="section"
             label={sectionLabel}
             description={sectionDescription()}
-            href={section ? codeAreaHref({ sec: section, tab: query.tab, status: query.status, app: query.app, q: query.q }) : codeAreaHref({})}
+            href={
+              section ? codeAreaHref({ sec: section, tab: query.tab, status: query.status, app: query.app, q: query.q }) : codeAreaHref({})
+            }
             defaultSize={320}
             minSize={280}
             maxSize={480}

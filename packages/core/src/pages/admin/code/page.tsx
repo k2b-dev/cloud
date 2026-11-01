@@ -2,7 +2,7 @@ import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/ser
 import { coreSettings } from "@k2b/cloud/services";
 import { isAdminUser } from "@k2b/cloud/shared";
 import { AdminLayout, getLocalizedRuntimeContext, requestPath } from "@k2b/cloud/ssr";
-import { CodeDataError, type CodeContext } from "../../../code/access";
+import { type CodeContext, CodeDataError } from "../../../code/access";
 import {
   listCodeAdminApprovals,
   listCodeAdminCleanup,
@@ -48,10 +48,16 @@ export default ssr<AuthContext>(async (c) => {
     try {
       const summary = await attempt(() => readCodeAdminSummary(context));
       const sec = query.sec;
-      const limitKeys = [...CODE_LIMIT_KEYS, ...Object.keys(CODE_SETTINGS).filter((key) => !CODE_LIMIT_KEYS.some((limit) => limit === key))];
+      const limitKeys = [
+        ...CODE_LIMIT_KEYS,
+        ...Object.keys(CODE_SETTINGS).filter((key) => !CODE_LIMIT_KEYS.some((limit) => limit === key)),
+      ];
       data = {
         summary,
-        approvals: sec === "approvals" ? await attempt(() => (query.tab === "decided" ? Promise.resolve([]) : listCodeAdminApprovals(context))) : null,
+        approvals:
+          sec === "approvals"
+            ? await attempt(() => (query.tab === "decided" ? Promise.resolve([]) : listCodeAdminApprovals(context)))
+            : null,
         decided: sec === "approvals" && query.tab === "decided" ? await attempt(() => listCodeAdminDecided(context)) : null,
         approval: sec === "approvals" && query.id ? await attempt(() => readCodeAdminApproval(query.id ?? "", context)) : null,
         codes:

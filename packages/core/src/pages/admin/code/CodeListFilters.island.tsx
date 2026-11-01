@@ -42,7 +42,9 @@ export default function CodeListFilters(props: {
           label={t().app}
           icon="ti ti-apps"
           showValue
-          options={[{ options: [{ value: "person", label: t().personal }, ...props.apps.map((app) => ({ value: app.id, label: app.name }))] }]}
+          options={[
+            { options: [{ value: "person", label: t().personal }, ...props.apps.map((app) => ({ value: app.id, label: app.name }))] },
+          ]}
           value={props.app ? [props.app] : []}
           onValueChange={(value) => go({ app: value[0] })}
         />

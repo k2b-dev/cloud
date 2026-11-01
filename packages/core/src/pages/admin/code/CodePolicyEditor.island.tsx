@@ -6,8 +6,8 @@ import {
   type CodePolicyDefinition,
   type CodePolicyRow,
   type CodePolicyRule,
-  type CodePolicyValue,
   CodePolicySchema,
+  type CodePolicyValue,
   codePolicyContracts,
   codePolicyPreset,
 } from "../../../code/policy-contracts";
@@ -167,7 +167,10 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       const current = await postCodeAdmin("policy/read", {}, z.object({ policy: CodePolicySchema }));
       const before = baseline();
       const mine = draft();
-      const groups = new Set<string | null>([null, ...[...before.rules, ...mine.rules].flatMap((rule) => (rule.groupId ? [rule.groupId] : []))]);
+      const groups = new Set<string | null>([
+        null,
+        ...[...before.rules, ...mine.rules].flatMap((rule) => (rule.groupId ? [rule.groupId] : [])),
+      ]);
       let next: CodePolicyDefinition = current.policy.definition;
       const preset = mine.preset;
       if (preset !== "custom" && preset !== before.preset) next = codePolicyPreset(preset);
@@ -200,14 +203,14 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   ];
 
   const options = () => [
-    ...(props.groupId ? [{ value: "inherit" as const, label: t().inherit }] : []),
+    ...(props.groupId ? [{ value: "inherit" as const, label: <span class="whitespace-nowrap">{t().inherit}</span> }] : []),
     ...VALUES.map((value) => ({
       value,
       icon: VALUE_ICON[value],
       label: (
         <>
-          <span class="hidden whitespace-nowrap md:inline">{t().value({ value })}</span>
-          <span class="whitespace-nowrap md:hidden">{t().valueShort({ value })}</span>
+          <span class="hidden whitespace-nowrap @3xl:inline">{t().value({ value })}</span>
+          <span class="whitespace-nowrap @3xl:hidden">{t().valueShort({ value })}</span>
         </>
       ),
       disabled: false,
@@ -277,7 +280,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
           <div class="grid gap-1">
             <SegmentedControl
               label={t().presets}
-              options={presetOptions().map((option) => ({ value: option.value, label: option.label, icon: option.icon, disabled: option.value === "custom" }))}
+              options={presetOptions().map((option) => ({ value: option.value, label: option.label, icon: option.icon }))}
               value={() => draft().preset}
               onValueChange={(preset) => {
                 if (preset !== "custom") edit(codePolicyPreset(preset));
@@ -288,7 +291,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
           </div>
         </Show>
 
-        <div class="grid gap-1" role="table" aria-label={props.groupId ? t().groupDeviates : t().standard}>
+        <div class="@container grid gap-1" role="table" aria-label={props.groupId ? t().groupDeviates : t().standard}>
           <For each={CODE_POLICY_ROW_GROUPS}>
             {(group) => (
               <div role="rowgroup" class="grid gap-1">
@@ -304,7 +307,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                     return (
                       <div
                         role="row"
-                        class="grid grid-cols-1 items-center gap-2 rounded-lg px-3 py-2 md:grid-cols-[minmax(0,1fr)_7rem_auto]"
+                        class="grid grid-cols-1 items-center gap-2 rounded-lg px-3 py-2 @lg:grid-cols-[minmax(0,1fr)_max-content] @4xl:grid-cols-[minmax(0,1fr)_6rem_max-content]"
                         classList={{ "bg-(--k2b-warning-surface)": changed() }}
                         data-row={row}
                         data-changed={changed() ? "true" : undefined}
@@ -312,22 +315,24 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                         <span role="cell" class="min-w-0">
                           <span class="flex flex-wrap items-baseline gap-x-2">
                             <span class="text-sm font-semibold">{t().rowLabel({ row })}</span>
-                            <code class="hidden text-xs text-(--k2b-text-muted) md:inline">{codePolicyRowCode(row)}</code>
+                            <code class="hidden text-xs text-(--k2b-text-muted) @3xl:inline">{codePolicyRowCode(row)}</code>
                           </span>
                           <span class="block text-xs text-(--k2b-text-muted)">
                             <Show when={changed()}>
-                              <b class="font-semibold">
-                                {t().before({ value: cellLabel(before()) })}
-                              </b>
+                              <b class="font-semibold">{t().before({ value: cellLabel(before()) })}</b>
                               {" · "}
                             </Show>
                             {t().rowExample({ row })}
+                            <span class="@4xl:hidden"> · {t().usage({ n: props.usage[row] ?? 0 })}</span>
                           </span>
                         </span>
-                        <span role="cell" class="text-xs text-(--k2b-text-muted)">
+                        <span role="cell" class="hidden text-xs text-(--k2b-text-muted) @4xl:block">
                           {t().usage({ n: props.usage[row] ?? 0 })}
                         </span>
-                        <span role="cell">
+                        <span
+                          role="cell"
+                          class={props.groupId ? "block w-full @lg:w-[20rem] @3xl:w-[27rem]" : "block w-full @lg:w-[18rem] @3xl:w-[21rem]"}
+                        >
                           <SegmentedControl
                             size="sm"
                             ariaLabel={t().valueFor({ label: t().rowLabel({ row }) })}
@@ -352,10 +357,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         <Show when={dirty()}>
           <span class="text-sm">{t().changes({ n: changeCount() })}</span>
           <span class="text-sm font-medium" classList={{ "text-(--k2b-warning-text)": (preview()?.total ?? 0) > 0 }}>
-            <Show
-              when={previewState() === "idle" && preview()}
-              fallback={previewState() === "failed" ? t().previewFailed : t().checking}
-            >
+            <Show when={previewState() === "idle" && preview()} fallback={previewState() === "failed" ? t().previewFailed : t().checking}>
               {(result) => (
                 <>
                   <i class="ti ti-player-pause" aria-hidden="true" /> {t().pauses({ n: result().total })}
@@ -375,4 +377,3 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
     </div>
   );
 }
-

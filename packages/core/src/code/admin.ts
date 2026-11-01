@@ -307,12 +307,15 @@ async function operationTitles(
   context: CodeContext,
 ): Promise<CodeAdminApprovalDetail["titles"]> {
   const titles: CodeAdminApprovalDetail["titles"] = { operations: {}, types: {} };
-  const apps = new Set(permissions.flatMap((permission) => [permission.operation, permission.target?.type ?? ""].map((id) => id.split(".")[0] ?? "")));
+  const apps = new Set(
+    permissions.flatMap((permission) => [permission.operation, permission.target?.type ?? ""].map((id) => id.split(".")[0] ?? "")),
+  );
   for (const appId of [...apps].filter(Boolean).slice(0, 20)) {
     const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority).catch(() => null);
     const manifest = catalog?.ok ? catalog.data?.manifest : null;
     if (!manifest) continue;
-    for (const operation of [...manifest.queries, ...manifest.actions]) titles.operations[`${appId}.${operation.localId}`] = operation.title;
+    for (const operation of [...manifest.queries, ...manifest.actions])
+      titles.operations[`${appId}.${operation.localId}`] = operation.title;
     for (const type of manifest.types ?? []) titles.types[`${appId}.${type.localId}`] = type.title;
   }
   return titles;
@@ -460,7 +463,8 @@ const mapListRow = (row: CodeListRow): CodeAdminCode => ({
   pauseReason: row.pause_reason,
   lastRun: row.last_run_at && row.last_run_state ? { at: iso(row.last_run_at), state: row.last_run_state } : null,
 });
-const codeListBase = () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+const codeListBase =
+  () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
     COALESCE(NULLIF(u.display_name,''),u.uid) AS owner_name,
     EXISTS(SELECT 1 FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
       WHERE s.code_id=c.id AND r.status='pending' AND r.expires_at>now()) AS waiting,
@@ -468,7 +472,8 @@ const codeListBase = () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.crea
   FROM code.codes c LEFT JOIN auth.users u ON u.id=c.owner_user_id
     LEFT JOIN LATERAL (SELECT created_at,state FROM code.runs r WHERE r.code_id=c.id ORDER BY created_at DESC,id DESC LIMIT 1) last ON true
     LEFT JOIN code.versions active ON active.id=c.active_version_id`;
-const codeListSelect = () => sql`SELECT b.*,CASE WHEN b.state='deleting' THEN 'deleting' WHEN b.waiting THEN 'waiting' ELSE b.state END AS status
+const codeListSelect =
+  () => sql`SELECT b.*,CASE WHEN b.state='deleting' THEN 'deleting' WHEN b.waiting THEN 'waiting' ELSE b.state END AS status
   FROM (${codeListBase()}) b`;
 
 /** All Code of this installation, title-ordered with an opaque cursor. Cloud admins see every Code (modell 7). */
@@ -551,7 +556,9 @@ export async function readCodeAdminPolicy(context: CodeContext): Promise<CodeAdm
         FROM auth.groups g WHERE g.id=ANY(${tx.array(ruleGroups, "uuid")}) ORDER BY lower(g.name)`
       : [];
     const [updatedBy] = policy.updatedBy
-      ? await tx<{ name: string }[]>`SELECT COALESCE(NULLIF(display_name,''),uid) AS name FROM auth.users WHERE id=${policy.updatedBy}::uuid`
+      ? await tx<
+          { name: string }[]
+        >`SELECT COALESCE(NULLIF(display_name,''),uid) AS name FROM auth.users WHERE id=${policy.updatedBy}::uuid`
       : [];
     const usage: Partial<Record<CodePolicyRow, number>> = {};
     for (const entry of usageRows) {

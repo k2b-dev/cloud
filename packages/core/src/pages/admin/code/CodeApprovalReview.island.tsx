@@ -1,6 +1,6 @@
 import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
-import { codeVersionContracts, type CodeVersionBinding, type CodeVersionDiffFile } from "../../../code/version-contracts";
+import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { codeAdminMessages } from "./messages";
 
@@ -105,7 +105,14 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
               )}
             </Show>
             <div class="mt-2 flex flex-wrap gap-2">
-              <Show when={props.nextHref} fallback={<ButtonLink size="sm" variant="secondary" href={props.listHref}>{t().backToList}</ButtonLink>}>
+              <Show
+                when={props.nextHref}
+                fallback={
+                  <ButtonLink size="sm" variant="secondary" href={props.listHref}>
+                    {t().backToList}
+                  </ButtonLink>
+                }
+              >
                 {(href) => (
                   <ButtonLink size="sm" href={href()}>
                     {t().nextVersion}
@@ -261,7 +268,12 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           </span>
         </span>
         <Show when={pending() && (!props.own || props.soleAdminNotice)}>
-          <Button variant="secondary" disabled={!mayDecide() || busy() !== null} loading={busy() === "reject"} onClick={() => void decide(false)}>
+          <Button
+            variant="secondary"
+            disabled={!mayDecide() || busy() !== null}
+            loading={busy() === "reject"}
+            onClick={() => void decide(false)}
+          >
             {t().reject}
           </Button>
           <Show when={blocked() ?? (props.staleComparison ? t().staleTitle : null)}>

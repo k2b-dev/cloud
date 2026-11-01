@@ -175,7 +175,8 @@ export const codeAdminMessages = i18n.define({
       confirmTail: "It runs again once an admin approves a version under the new policy. Events during the pause are not replayed.",
       confirmSave: ({ n }: N) => (n === 1 ? "Save and pause 1" : `Save and pause ${n}`),
       savedTitle: "Saved.",
-      savedPaused: ({ n }: N) => (n === 1 ? "1 Code is pausing because it now needs an approval." : `${n} Code is pausing because it now needs an approval.`),
+      savedPaused: ({ n }: N) =>
+        n === 1 ? "1 Code is pausing because it now needs an approval." : `${n} Code is pausing because it now needs an approval.`,
       savedNone: "No Code pauses.",
       showPaused: "Show paused Code",
       saveFailedTitle: "Not saved.",
@@ -212,8 +213,7 @@ export const codeAdminMessages = i18n.define({
       noGroupRule: "no group has a rule",
       personMissing: "This person no longer exists.",
       // All Code
-      allSub: ({ n, p }: { n: number; p: number }) =>
-        `${n === 1 ? "1 Code" : `${n} Code`} of ${p === 1 ? "1 owner" : `${p} owners`}`,
+      allSub: ({ n, p }: { n: number; p: number }) => `${n === 1 ? "1 Code" : `${n} Code`} of ${p === 1 ? "1 owner" : `${p} owners`}`,
       noneYet: "none yet",
       emptyCode: "No Code yet",
       emptyCodeSub: "As soon as someone submits an automation, it shows here. Admins see all of it, except secret values.",
@@ -406,7 +406,8 @@ export const codeAdminMessages = i18n.define({
       cancel: "Abbrechen",
       decideFailed: "Nicht entschieden. Nichts wurde geändert.",
       decideConflict: "Diese Version hat sich inzwischen geändert. Lade neu, um den aktuellen Stand zu sehen.",
-      decideForbidden: "Mit dieser Anmeldung kannst du diese Version nicht entscheiden. Melde dich im Browser neu an und versuche es erneut.",
+      decideForbidden:
+        "Mit dieser Anmeldung kannst du diese Version nicht entscheiden. Melde dich im Browser neu an und versuche es erneut.",
       reload: "Neu laden",
       approvedState: "Freigegeben",
       rejectedState: "Abgelehnt",
@@ -457,7 +458,8 @@ export const codeAdminMessages = i18n.define({
       saveFailedSub: "Die Tabelle ist unverändert, kein Code wurde pausiert. Deine Änderung bleibt hier stehen.",
       retrySave: "Erneut speichern",
       conflictTitle: "Ein anderer Admin hat die Richtlinie inzwischen geändert.",
-      conflictSub: "Deine Änderung ist nicht gespeichert und bleibt hier stehen. Lade neu, um die andere Änderung zu sehen, und prüfe deine erneut.",
+      conflictSub:
+        "Deine Änderung ist nicht gespeichert und bleibt hier stehen. Lade neu, um die andere Änderung zu sehen, und prüfe deine erneut.",
       showTheirs: "Aktuelle Richtlinie laden",
       recheckMine: "Meine Änderung neu prüfen",
       ownerUnknown: "Ressource",
@@ -550,7 +552,8 @@ export const codeAdminMessages = i18n.define({
       emptyCleanupSub: "Gelöschter Code und sein Zugriff sind weg. Aufträge stehen hier nur, solange eine Ziel-App nicht erreichbar ist.",
       jobRemove: "Zugriff entfernen",
       jobDelete: "Code löschen",
-      jobState: ({ s }: { s: string }) => ({ pending: "In der Warteschlange", running: "Läuft", waiting: "Wartet auf Wiederholung" })[s] ?? s,
+      jobState: ({ s }: { s: string }) =>
+        ({ pending: "In der Warteschlange", running: "Läuft", waiting: "Wartet auf Wiederholung" })[s] ?? s,
       attempts: ({ n }: N) => (n === 1 ? "1 Versuch" : `${n} Versuche`),
       nextAttempt: ({ when }: { when: string }) => `nächster Versuch ${when}`,
       lastError: ({ code }: { code: string }) => `letzter Fehler: ${code}`,
