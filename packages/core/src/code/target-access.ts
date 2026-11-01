@@ -67,13 +67,16 @@ const ManifestUsesSchema = z.object({
   ),
 });
 /** Entrypoints of the version whose calls use one of these operations at exactly this target, from the checker. */
-const automationsAt = (manifest: unknown, target: { type: string; id: string }, operations: string[]) => {
+export const automationsAt = (manifest: unknown, target: { type: string; id: string }, operations: string[]) => {
   const parsed = ManifestUsesSchema.safeParse(manifest);
   if (!parsed.success) return [];
   const names = new Set<string>();
-  for (const permission of parsed.data.permissions)
-    if (operations.includes(permission.operation) && permission.target?.type === target.type && permission.target.id === target.id)
+  for (const permission of parsed.data.permissions) {
+    // Activation grants an app-wide operation at { type: "app", id: <app> }; the checker writes it without a target.
+    const at = permission.target ?? { type: "app", id: permission.operation.split(".")[0]! };
+    if (operations.includes(permission.operation) && at.type === target.type && at.id === target.id)
       for (const name of permission.entrypoints ?? []) names.add(name);
+  }
   return [...names].sort();
 };
 

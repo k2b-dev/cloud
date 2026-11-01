@@ -155,6 +155,7 @@ test("each permission names the schedules whose handler makes the call, and neve
         `app.schedule("0 10 * * 1", shared, { name: "morning" });`,
         `app.schedule("0 11 * * 1", shared, { name: "evening" });`,
         `app.schedule("0 12 * * 1", swappable, { name: "noon" });`,
+        `app.schedule("0 14 * * 1", async () => { await Promise.all(["a"].map((key) => owner.item.create({ title: key, idempotencyKey: "nested" }))); }, { name: "nested" });`,
         `export default app;`,
       ].join("\n"),
       "jobs.ts": `import { owner } from "@sdk";\nexport async function nightly() {\n  await owner.item.create({ title: "Nightly", idempotencyKey: "nightly" });\n}`,
@@ -172,8 +173,18 @@ test("each permission names the schedules whose handler makes the call, and neve
     ["code.ts", 4, ["evening", "morning"]],
     ["code.ts", 5, null],
     ["code.ts", 6, ["weekly"]],
+    // A nested callback runs when its caller decides, not because the handler runs.
+    ["code.ts", 11, null],
   ]);
   expect(CodeVersionManifestSchema.parse(result.manifest)).toEqual(result.manifest);
+});
+
+test("a schedule's named function declaration cannot be swapped for another body", async () => {
+  // Attribution relies on this: a declaration always runs its own body.
+  const result = await check(
+    `import { app, owner } from "@sdk";\nfunction weekly() {}\nweekly = async () => {};\napp.schedule("0 8 * * 1", weekly, { name: "weekly" });\nexport default app;`,
+  );
+  expect(result).toMatchObject({ ok: false, diagnostics: [expect.objectContaining({ code: "TS2630", line: 3 })] });
 });
 
 test("enumerates const tuple targets and permits dynamic personal IDs", async () => {
