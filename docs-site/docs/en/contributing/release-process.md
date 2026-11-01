@@ -90,8 +90,8 @@ release-please runs on every push to `main`:
    and `npm-ssr-vX.Y.Z` as separate components with their own version lines.
 3. No workflow starts from these tags. The `main.yml` run that created them
    continues: its `images` job builds every image of the release set once
-   (one per application from `scripts/workspace.ts` plus `cloud-website` and
-   `cloud-pwa-auth`; `bun scripts/workspace.ts images` lists them) for
+   (one per application from `scripts/workspace.ts` plus `cloud-website`,
+   `cloud-pwa-auth`, and `cloud-notes`; `bun scripts/workspace.ts images` lists them) for
    `linux/amd64` only, attests its build provenance, and tags its image index
    `sha-<12>`, plus `vX.Y.Z` for a Cloud release. `main.yml` then calls
    `release.yml`. For a Cloud release, it reuses these images instead of
