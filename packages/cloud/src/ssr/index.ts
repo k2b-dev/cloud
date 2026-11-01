@@ -19,6 +19,8 @@ export {
   visiblePanelProviders,
   visiblePwaParts,
 } from "./app-navigation";
+export type { CodePageData, CodePageTab } from "./code-page/data";
+export { type LoadCodePageOptions, loadCodePage } from "./code-page/load";
 export { hintOpen, markHintSeen } from "./hints";
 export { default as Layout } from "./Layout";
 export { LayoutHelpPanel, type LayoutHelpPanelProps } from "./LayoutHelpPanel.server";

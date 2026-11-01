@@ -425,7 +425,14 @@ databaseSuite()("durable Code activation", () => {
     tombstones.add(active);
     sets.length = 0;
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      expect.objectContaining({ grantId: active, state: "removed" }),
+      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({
+        grantId: active,
+        state: "removed",
+        activatedBy: expect.any(String),
+        activatedAt: expect.any(String),
+        activatedVersionId: expect.any(String),
+      }),
     );
     expect(sets).toHaveLength(0);
     expect(live.has(active)).toBe(false);

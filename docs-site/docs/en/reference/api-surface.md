@@ -508,6 +508,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
 | `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
+| `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
 | `@k2b/cloud/ssr/layout-runtime` | Supported, browser | `layout.update()` and `layout.handleUp()` for islands that navigate in place | [Layout and navigation](/en/docs/frontend/layout-and-navigation) |
