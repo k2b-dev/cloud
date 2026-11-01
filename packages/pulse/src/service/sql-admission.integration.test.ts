@@ -51,6 +51,18 @@ suite("SQL admission is atomic across replicas", () => {
       for (const lease of held) await lease.release();
     }
   });
+  test("a dashboard read may share a base, but never passes the Cloud limit or takes the slot from other work", async () => {
+    const { a, b } = setup();
+    const panel = (baseId: string, runId: string) => ({ ...input(baseId, runId, false), baseSlots: 2 });
+    await a.acquire(panel("base-a", "panel-1"));
+    await b.acquire(panel("base-a", "panel-2"));
+    await expect(a.acquire(panel("base-a", "panel-3"))).rejects.toMatchObject({ code: "BUSY" });
+    // The default run still finds its base full, while another base keeps the Cloud's third slot.
+    await expect(a.acquire(input("base-a", "question"))).rejects.toMatchObject({ code: "BUSY" });
+    await b.acquire(panel("base-b", "panel-4"));
+    await expect(a.acquire(panel("base-c", "panel-5"))).rejects.toMatchObject({ code: "BUSY" });
+  });
+
   test("five seconds waiting is BUSY; expired leases free all slots", async () => {
     const { a, b, advance } = setup();
     const first = await a.acquire(input("a", "first"));

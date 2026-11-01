@@ -2713,10 +2713,44 @@ suite("mail lifecycle control plane", () => {
     `;
     if (!message) throw new Error("Operator projection fixture was not created");
 
+    const [hydrationWork] = await sql<{ job_id: string | null; delivery_id: string | null }[]>`
+      INSERT INTO mail.hydration_work (mailbox_id, queue_wait_ms, lease_wait_ms, batch_ms, batch_finished_at)
+      VALUES (${mailboxId}::uuid, 1234, 567, 321, '2026-01-01T00:00:00Z'::timestamptz)
+      ON CONFLICT (mailbox_id) DO UPDATE SET
+        queue_wait_ms = EXCLUDED.queue_wait_ms, lease_wait_ms = EXCLUDED.lease_wait_ms,
+        batch_ms = EXCLUDED.batch_ms, batch_finished_at = EXCLUDED.batch_finished_at
+      RETURNING job_id, delivery_id
+    `;
     const before = await getMailboxOperations(adminContext, mailboxId);
     expect(before.ok).toBe(true);
     if (!before.ok) return;
     expect(before.data.mailboxId).toBe(mailboxShortId);
+    expect(before.data.coverage.hydration.timing).toEqual({
+      queueWaitMs: 1234,
+      leaseWaitMs: 567,
+      batchMs: 321,
+      batchFinishedAt: "2026-01-01T00:00:00.000Z",
+    });
+    // The operator projection exposes measurements, never durable job/delivery state.
+    const serialized = JSON.stringify(before.data);
+    for (const field of [
+      "job_id",
+      "jobId",
+      "delivery_id",
+      "deliveryId",
+      "queued_at",
+      "queuedAt",
+      "foreground_requested",
+      "foregroundRequested",
+      "retry_bodies",
+      "retryBodies",
+      "published_at",
+      "publishedAt",
+    ]) {
+      expect(serialized).not.toContain(`"${field}"`);
+    }
+    if (hydrationWork?.job_id) expect(serialized).not.toContain(hydrationWork.job_id);
+    if (hydrationWork?.delivery_id) expect(serialized).not.toContain(hydrationWork.delivery_id);
     expect(before.data.folders.every((folder) => /^[0-9A-Za-z]{6}$/.test(folder.id))).toBe(true);
     expect(before.data.coverage.search.covered).toBeLessThan(before.data.coverage.search.total);
     expect(before.data.coverage.threads.covered).toBeLessThan(before.data.coverage.threads.total);
@@ -2733,7 +2767,12 @@ suite("mail lifecycle control plane", () => {
     expect(platform.data.mailboxes[0]).toMatchObject({
       mailboxId: mailboxShortId,
       mailboxName: `Lifecycle ${suffix}`,
-      coverage: before.data.coverage,
+      // Platform summaries retain counts; per-mailbox timings belong to the detail read.
+      coverage: {
+        hydration: { total: before.data.coverage.hydration.total, covered: before.data.coverage.hydration.covered },
+        search: before.data.coverage.search,
+        threads: before.data.coverage.threads,
+      },
     });
     expect(JSON.stringify(platform.data)).not.toContain("Operator projection fixture");
 

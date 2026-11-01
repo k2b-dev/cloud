@@ -11,10 +11,10 @@ import { clearBaseData, listBases, listDeletingBases } from "../service/base-man
 import { ingestBatch } from "../service/ingest-writer";
 import { adminFixtureIdentity } from "./admin-identity.test-fixture";
 import { READ_VIEWS } from "./base-schema";
-import { loadStoreRow } from "./base-store";
+import { BaseOperationSuperseded, loadStoreRow } from "./base-store";
 import { cleanupFixtureBase, fixtureBase, fixtureClock, fixtureStore, installFixtureStore } from "./base-store.test-fixture";
 import { clickhouseQuery } from "./client";
-import { acceptCheckpoint, measureBaseUsage, measureInstanceDisk, verifyBaseCheckpoint } from "./maintenance";
+import { acceptCheckpoint, insertCheckpoint, measureBaseUsage, measureInstanceDisk, verifyBaseCheckpoint } from "./maintenance";
 import { settingsFixture } from "./settings.test-fixture";
 import { quoteIdentifier as q } from "./validation";
 
@@ -321,11 +321,13 @@ suite("Pulse accounting and restore checkpoints", () => {
       await createBaseLifecycle(store)(base.id);
       const checkpoint = "11111111-1111-4111-8111-111111111111";
       await sql`UPDATE pulse.base_stores SET pending_checkpoint_id=${checkpoint}::uuid WHERE base_id=${base.id}::uuid`;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const row = await loadStoreRow(base.id);
-        if (!row) throw new Error("MISSING_STORE");
-        await acceptCheckpoint(row, sql, store.clock);
-      }
+      const row = await loadStoreRow(base.id);
+      if (!row) throw new Error("MISSING_STORE");
+      const inserted = await insertCheckpoint(row, store);
+      await acceptCheckpoint(row, sql, inserted, store.clock);
+      const current = await loadStoreRow(base.id);
+      if (!current) throw new Error("MISSING_STORE");
+      await expect(acceptCheckpoint(current, sql, inserted, store.clock)).rejects.toBeInstanceOf(BaseOperationSuperseded);
       expect((await loadStoreRow(base.id))?.checkpoint_id).toBe(checkpoint);
     } finally {
       await cleanupFixtureBase(base);
