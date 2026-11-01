@@ -151,7 +151,7 @@ function handle(appId, type, id) {
       if (!bridge) throw new Error("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("code_sdk_invalid_input");
       const input = { ...args };
-      const refs = node();
+      const refs = {};
       for (const [field, refType] of Object.entries(op.refs)) {
         refs[field] = coordinate(input[field], refType);
         delete input[field];
