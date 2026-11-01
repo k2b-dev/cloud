@@ -315,8 +315,9 @@ afterEach(() => mock.restore());
 describe("mail capabilities", () => {
   test("declares mailbox targets separately from domain input and keeps chat/MCP fields flat", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
-    expect(manifest.actions).toHaveLength(28);
-    for (const action of manifest.actions) {
+    const mailboxActions = manifest.actions.filter((action) => !action.localId.startsWith("code.access."));
+    expect(mailboxActions).toHaveLength(28);
+    for (const action of mailboxActions) {
       expect(action.target).toBe("mailbox");
       expect(action.inputSchema.properties).not.toHaveProperty("mailboxId");
       expect(action.inputSchema.properties).not.toHaveProperty("mailbox");
@@ -872,8 +873,12 @@ describe("mail capabilities", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     expect(manifest.appId).toBe("mail");
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
-    expect(manifest.queries).toHaveLength(Object.keys(mailCapabilities.queries).length);
-    expect(manifest.actions).toHaveLength(Object.keys(mailCapabilities.actions).length);
+    expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
+      [...Object.keys(mailCapabilities.queries), "code.access.list", "mailbox.readable"].sort(),
+    );
+    expect(manifest.actions.map((action) => action.localId).sort()).toEqual(
+      [...Object.keys(mailCapabilities.actions), "code.access.set", "code.access.rm"].sort(),
+    );
     const mailboxReader = manifest.queries.find((query) => query.localId === "mailbox.read");
     expect(mailboxReader?.inputSchema).toHaveProperty("properties.id.description", expect.stringContaining("List mailboxes"));
     expect(mailCapabilities.queries["mailbox.list"].description).toContain("Normal entry for mailbox-scoped Mail work");
