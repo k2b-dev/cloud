@@ -2,6 +2,24 @@ import { createSettingsAPI } from "@k2b/cloud/services";
 
 /** Storage and execution budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
+  "core.code.job_pending": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 10000,
+    default: 100,
+    label: "Pending check and test jobs",
+    description: "Installation-wide queued and running authoring jobs; further requests return busy.",
+  },
+  "core.code.job_wait_ms": {
+    kind: "number",
+    integer: true,
+    min: 1000,
+    max: 120000,
+    default: 30000,
+    label: "Authoring job queue wait (ms)",
+    description: "Queue allowance added to the isolated role execution budget.",
+  },
   "core.code.source_bytes": {
     kind: "number",
     integer: true,

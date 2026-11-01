@@ -1,0 +1,20 @@
+/** Image-only probe executed as the credential-free job namespace init. */
+import { readdir, stat } from "node:fs/promises";
+
+let network = false;
+try {
+  await fetch("http://192.0.2.1/", { signal: AbortSignal.timeout(500) });
+  network = true;
+} catch {
+  /* New network namespace has no routes. */
+}
+console.log(
+  JSON.stringify({
+    pid: process.pid,
+    parent: process.ppid,
+    tmpOwner: (await stat("/tmp")).uid,
+    environment: Object.keys(process.env),
+    processes: (await readdir("/proc")).filter((p) => /^\d+$/.test(p)),
+    network,
+  }),
+);

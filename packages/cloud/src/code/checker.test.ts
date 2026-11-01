@@ -10,7 +10,7 @@ import { generateCodeSdk } from "./generator";
 import { sdkFixture } from "./sdk.test-fixture";
 
 let directory: string;
-let host: CodeCheckHost;
+let host: Extract<CodeCheckHost, { bun: string }>;
 const sdk = generateCodeSdk([sdkFixture()], {
   mode: "resource",
   owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },

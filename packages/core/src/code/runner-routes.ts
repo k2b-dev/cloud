@@ -1,26 +1,39 @@
 import { sql } from "@k2b/cloud";
 import { authenticateSignedAppRequest, CodeBridgeRefusal, type CodeRunnerDispatchDependencies } from "@k2b/cloud/api";
+import { CODE_CHECK_LIMITS } from "@k2b/cloud/code";
 import { verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import {
   RUNNER_PATHS,
   RunnerBundleRequestSchema,
   RunnerCompleteRequestSchema,
   RunnerFetchRequestSchema,
+  RunnerJobCompleteSchema,
+  RunnerJobProofSchema,
+  RunnerLeaseLostError,
   RunnerLeaseProofSchema,
 } from "@k2b/cloud/code/runner";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, ratelimit, setRequestTimeout } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { requireCodeRunFence } from "./bridge";
+import { completeCodeJob, heartbeatCodeJob, readCodeJobInput } from "./runner-jobs";
 import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
 import { fetchCodeRuns, readCodeRunnerConfig } from "./scheduling-runtime";
 
 /** Private, signed runner-only routes. Every Core replica uses the same durable lease fence and signing key ring. */
 export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependencies, "appProof" | "token"> = {}) {
   const router = new Hono();
-  for (const path of [RUNNER_PATHS.config, RUNNER_PATHS.fetch, RUNNER_PATHS.bundle, RUNNER_PATHS.heartbeat, RUNNER_PATHS.complete]) {
+  for (const path of [
+    RUNNER_PATHS.config,
+    RUNNER_PATHS.fetch,
+    RUNNER_PATHS.bundle,
+    RUNNER_PATHS.heartbeat,
+    RUNNER_PATHS.complete,
+    RUNNER_PATHS.jobInput,
+  ]) {
     router.post(path, async (c) => {
       const signed = await authenticateSignedAppRequest(c, "identity:invoke", {
+        maxBodyBytes: path === RUNNER_PATHS.complete ? CODE_CHECK_LIMITS.outputBytes + 1024 : undefined,
         // The enrolled app key is shared by the fleet; per-Code/run limits, not one key's bootstrap rate, own admission.
         admit: async (keyId, appId) =>
           appId === "runner"
@@ -48,6 +61,21 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
             setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
           }
         }
+        if (body && typeof body === "object" && "jobId" in body) {
+          const proof = RunnerJobProofSchema.safeParse(body);
+          if (path === RUNNER_PATHS.complete) {
+            const complete = RunnerJobCompleteSchema.safeParse(body);
+            if (!complete.success) return c.json({ code: "code_invalid_call" }, 400);
+            await completeCodeJob(complete.data, complete.data.result);
+            return c.body(null, 204);
+          }
+          if (!proof.success) return c.json({ code: "code_invalid_call" }, 400);
+          if (path === RUNNER_PATHS.heartbeat) return c.json(await heartbeatCodeJob(proof.data));
+          if (path === RUNNER_PATHS.jobInput)
+            return c.body(await readCodeJobInput(proof.data), 200, { "Content-Type": "application/json" });
+          return c.json({ code: "code_invalid_call" }, 400);
+        }
+        if (path === RUNNER_PATHS.jobInput) return c.json({ code: "code_invalid_call" }, 400);
         const proof = RunnerLeaseProofSchema.safeParse(
           body && typeof body === "object"
             ? {
@@ -85,6 +113,7 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
         c.header("Content-Type", "text/javascript; charset=utf-8");
         return c.body(bundle);
       } catch (error) {
+        if (error instanceof RunnerLeaseLostError) return c.json({ code: "runner_lease_lost" }, 409);
         if (error instanceof CodeBridgeRefusal) return c.json({ code: error.code }, error.status);
         if (error instanceof SyntaxError) return c.json({ code: "code_invalid_call" }, 400);
         return c.json({ code: "code_runner_unavailable" }, 503);

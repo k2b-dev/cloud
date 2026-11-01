@@ -242,3 +242,74 @@ test("identical bundles retain independent lease failures across organizations",
     jest.useRealTimers();
   }
 });
+
+test("C13b jobs and runs consume one shared advertised slot budget", async () => {
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([]);
+  let polls = 0;
+  const started: string[] = [];
+  const finish = Promise.withResolvers<void>();
+  const bridge: RunnerBridge = {
+    ...mock.bridge,
+    fetch: async ({ freeSlots }, signal) => {
+      polls++;
+      expect(freeSlots).toBe(2);
+      if (polls === 1)
+        return {
+          runs: [lease()],
+          jobs: [
+            {
+              kind: "check",
+              jobId: "11111111-1111-4111-8111-111111111111",
+              generation: 1,
+              leaseKey: "a".repeat(64),
+              deadlineAt: NOW + 5000,
+              leaseExpiresAt: NOW + 5000,
+              heartbeatMs: 100,
+              inputBytes: 2,
+              outputBytes: 1000,
+            },
+          ],
+        };
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      return { runs: [] };
+    },
+    jobInput: async () => "{}",
+    jobHeartbeat: async () => ({ leaseExpiresAt: NOW + 5000 }),
+    jobComplete: async () => {},
+  };
+  const engine: RunnerEngine = {
+    load: async () => {},
+    run: async () => {
+      started.push("run");
+      await finish.promise;
+      return "succeeded";
+    },
+    kill: async () => {},
+    close: async () => {},
+  };
+  const runner = new Runner(
+    bridge,
+    engine,
+    () => {},
+    async () => {
+      started.push("check");
+      await finish.promise;
+      return { kind: "check", result: { ok: false, diagnostics: [] } };
+    },
+  );
+  const running = runner.start();
+  try {
+    await waitFor(() => started.length === 2);
+    expect(polls).toBe(1);
+    runner.stop();
+    finish.resolve();
+    await running;
+    expect(started.sort()).toEqual(["check", "run"]);
+  } finally {
+    runner.stop();
+    finish.resolve();
+    await running;
+    jest.useRealTimers();
+  }
+});

@@ -7,6 +7,7 @@ import { audit, coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
+import { codeAdmissionLock } from "./admission";
 import { requireCodeRunFence } from "./bridge";
 import {
   CODE_RUN_HEARTBEAT_MS,
@@ -23,11 +24,6 @@ import { codeSettings } from "./settings";
 import { findCode, insertCodeRun, lockCodeForEdit } from "./store";
 import { CodeVersionError, requireCodeVersionApproval } from "./versions";
 
-/** All Core replicas take this short database admission lock; no network work runs while holding it. */
-const admissionLock = async (db: SQL) => {
-  await db`SELECT set_config('statement_timeout','5000',true)`;
-  await db`SELECT pg_advisory_xact_lock(hashtextextended('core.code.dispatch',0))`;
-};
 export async function readCodeRunLimits(): Promise<CodeRunLimits> {
   return {
     perCode: await codeSettings.get("core.code.concurrency_per_code"),
@@ -167,11 +163,16 @@ type ClaimedRun = {
 /** Fair DB admission, triggered by a Sync queue delivery. Tickets wake the fleet; they do not pin a worker to a busy Code.
  * Database rows and the generation fence guarantee one active lease despite repeated/delayed queue delivery.
  */
-export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits, instanceId?: string): Promise<ClaimedRun[]> {
+export async function claimCodeRuns(
+  freeSlots: number,
+  limits: CodeRunLimits,
+  instanceId?: string,
+  transaction?: SQL,
+): Promise<ClaimedRun[]> {
   const slots = Math.min(freeSlots, await codeSettings.get("core.code.runner_slots"));
   if (!Number.isSafeInteger(slots) || slots < 1) throw new RangeError("Invalid runner capacity");
-  return sql.begin(async (db) => {
-    await admissionLock(db);
+  const claim = async (db: SQL) => {
+    await codeAdmissionLock(db);
     await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const claimed: ClaimedRun[] = [];
     // At most the configured slots are examined. Fairness is per Code, including Codes of the same owner.
@@ -227,7 +228,8 @@ export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits, in
       }
     }
     return claimed;
-  });
+  };
+  return transaction ? claim(transaction) : sql.begin(claim);
 }
 /** Signing happens after commit. Failed/lost HTTP responses recover through the same lease expiry path. */
 export async function codeRunnerLease(run: ClaimedRun, sign: typeof signCodeRunToken = signCodeRunToken): Promise<RunnerLease> {

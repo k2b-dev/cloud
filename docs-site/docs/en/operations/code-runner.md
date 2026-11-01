@@ -292,3 +292,39 @@ It uses the production workerd engine with a fake-only bridge and no app key
 or Core connection. Core checks the source first and sends the immutable
 bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
 for the request, result schema, and isolation requirements.
+
+## Check and test on the runner pool
+
+The same signed long-poll now carries `check`, `test` and `simulate` jobs.
+Core alternates authoring jobs with eligible production runs and counts both
+against each replica's advertised slots. Scaling needs no additional service
+or per-replica configuration. Queue admission defaults to 100 pending jobs
+installation-wide, bounded also by the owner's concurrency setting. The
+queue allowance defaults to 30 seconds, followed by the role's work budget.
+Change these under Administration > Code. `code_job_busy` asks the caller to
+retry later; cancellation and time limits leave a visible failure.
+
+The runner image contains both isolated roles and the compiler. Core needs
+none of these binaries. Each role receives only its input over stdin and
+returns bounded JSON over stdout. It runs as PID 1 with private user, PID,
+mount and network namespaces, an empty environment, private `/proc` and
+bounded `/tmp`. The job's separate lease key stays in the supervisor; no
+bridge token reaches the job or is issued for it.
+
+Use the checked-in `packages/runner/seccomp.json` profile from both Compose
+templates. It permits the launcher's specific namespace creation and mount
+setup without host `SYS_ADMIN`; workerd's own mandatory filter still applies.
+The templates disable Docker's outer AppArmor profile for this service so
+namespace-local mounts can succeed. Hosts must permit unprivileged user
+namespaces and namespace-local proc/tmpfs mounts; an AppArmor policy that
+restricts user namespaces needs an operator-managed exception for this image.
+The launcher fails closed if any namespace or mount cannot be established.
+CI's native image tests use this same envelope and exercise check, fake test,
+simulation and namespace placement.
+
+`RunnerFetchResponse.jobs` contains `RunnerJobLease` values. The signed
+`RUNNER_PATHS.jobInput` route returns bounded input; the existing heartbeat
+and complete routes accept `RunnerJobProof` and `RunnerJobComplete`.
+`RunnerJobResultSchema` validates check/test/simulate results in both runner
+and Core. Job generations and random lease keys are fenced in Postgres, so
+any Core replica can serve them. Retries retain the original deadline.

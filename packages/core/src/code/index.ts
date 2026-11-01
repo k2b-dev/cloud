@@ -1,12 +1,15 @@
 /** Core-owned Code data contracts and permission-aware services for subsequent Code slices. */
 
 export * from "./access";
+export { createCodeCheckRequest } from "./authoring-check";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
+export { CodeJobError } from "./job-errors";
 export * from "./policy";
 export * from "./policy-contracts";
 export * from "./policy-effective";
 export { codeRunMessages } from "./run-messages";
+export { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 export { processCodeScheduleTick, readCodeRunnerMetrics, startCodeRun } from "./scheduling";
 export * from "./scheduling-contracts";
 export { CODE_SETTINGS, codeSettings } from "./settings";

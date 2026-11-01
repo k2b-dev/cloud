@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import * as catalogProvider from "@k2b/cloud/capabilities/server";
 import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { CODE_CHECK_LIMITS, type CodeCheckResult, generateCodeSdk } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
+import { RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import type { CapabilityExecutionContext, CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
@@ -14,12 +17,22 @@ import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateJobs } from "../migrate/core/code-jobs";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import { verifyCodeSubmission } from "./authoring-check";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
+import { claimCodeWork } from "./dispatch";
+import {
+  completeCodeJob,
+  createRunnerCodeCheckHost,
+  createRunnerCodeTestingHost,
+  readCodeJobInput,
+  reconcileCodeJobs,
+} from "./runner-jobs";
 import {
   claimCodeRuns,
   codeRunnerLease,
@@ -31,7 +44,13 @@ import {
   reconcileCodeRuns,
   startCodeRun,
 } from "./scheduling";
-import { type CodeRunWakeup, createCodeRunOutbox, createCodeScheduleReconciler, fetchCodeRuns } from "./scheduling-runtime";
+import {
+  type CodeRunWakeup,
+  createCodeJobOutbox,
+  createCodeRunOutbox,
+  createCodeScheduleReconciler,
+  fetchCodeRuns,
+} from "./scheduling-runtime";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertCodeRun, readCodeRun } from "./store";
 
@@ -129,10 +148,10 @@ suiteFor(
       VALUES('user',${userId}::uuid,'core','code.version',${version.id},'{"version":1}'::jsonb)`;
     return { codeId, versionId: version.id, entrypoint: "weekly" };
   }
-  async function enqueueMany(code: Awaited<ReturnType<typeof fixture>>, count: number) {
+  async function enqueueMany(code: Awaited<ReturnType<typeof fixture>>, count: number, trigger: "manual" | "schedule" = "manual") {
     const ids: string[] = [];
     for (let index = 0; index < count; index++) {
-      const id = await insertCodeRun({ ...code, trigger: "manual", input: null });
+      const id = await insertCodeRun({ ...code, trigger, input: null });
       ids.push(id);
       await queue.send({ data: { runId: id } });
     }
@@ -160,7 +179,9 @@ suiteFor(
     await migratePolicy();
     await migrateVersions();
     await migrateScheduling();
+    await migrateJobs();
     await migrateScheduling();
+    await migrateJobs();
     for (const id of [owner, other])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
@@ -180,6 +201,8 @@ suiteFor(
   beforeEach(async () => {
     await sql`DELETE FROM code.codes`;
     await sql`DELETE FROM code.runner_instances`;
+    await sql`DELETE FROM code.jobs`;
+    await sql`UPDATE code.dispatch_turn SET job_last=FALSE`;
     overrides.clear();
     const sync = createSync({ connection, namespace: testSyncNamespace("c13"), application: "core", defaults: { replicas: 1 } });
     syncs.push(sync);
@@ -212,6 +235,179 @@ suiteFor(
     const rerun = await startCodeRun({ ...request, idempotencyKey: "invoice:001:rerun" }, context());
     expect(rerun.runId).not.toBe(results[0]!.runId);
     await expect(startCodeRun(request, context(other))).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+  const checkRequest = () => ({
+    files: { "code.ts": "source" },
+    entry: "code.ts",
+    sdk: generateCodeSdk([], { mode: "personal" }),
+    aiOperations: [],
+  });
+  async function pendingJob() {
+    const deadline = performance.now() + 3000;
+    while (performance.now() < deadline) {
+      const rows = await sql`SELECT id FROM code.jobs WHERE state='queued'`;
+      if (rows.length) return;
+      await Bun.sleep(5);
+    }
+    throw new Error("No committed authoring job");
+  }
+  test("C13b check round-trip preserves permissions and source lines without a bridge token", async () => {
+    const expected: CodeCheckResult = {
+      ok: true,
+      diagnostics: [],
+      bundle: "export {}",
+      manifest: {
+        version: 1,
+        entrypoints: [],
+        permissions: [{ operation: "example.read", target: null, file: "code.ts", line: 7 }],
+        ai: false,
+        hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+      },
+      permissions: [{ operation: "example.read", target: null, file: "code.ts", line: 7, status: "new" }],
+    };
+    const response = createRunnerCodeCheckHost(context()).check(checkRequest());
+    await pendingJob();
+    const outbox = createCodeJobOutbox(() => queue);
+    expect(await outbox.reconcile()).toBe(1);
+    const fetched = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, { queue, sign });
+    expect(fetched.runs).toHaveLength(0);
+    const job = fetched.jobs![0]!;
+    expect("token" in job).toBe(false);
+    expect(
+      JSON.parse(await readCodeJobInput({ jobId: job.jobId, generation: job.generation, leaseKey: job.leaseKey })).request.files,
+    ).toEqual(checkRequest().files);
+    await completeCodeJob(job, { kind: "check", result: expected });
+    expect(await response).toEqual(expected);
+  });
+  test.each(["test", "simulate"] as const)("C13b production testing host transports %s results through the shared queue", async (mode) => {
+    const cancel = new AbortController();
+    const host = await createRunnerCodeTestingHost({ ...context(), signal: cancel.signal });
+    const pending = host.execute({
+      mode,
+      bundle: "export {}",
+      sdk: checkRequest().sdk,
+      manifest: {
+        version: 1,
+        entrypoints: [],
+        permissions: [],
+        ai: false,
+        hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+      },
+      cases: [],
+    });
+    const settled = pending.catch((error) => error);
+    try {
+      await pendingJob();
+      await createCodeJobOutbox(() => queue).reconcile();
+      const fetched = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, cancel.signal, { queue, sign });
+      const job = fetched.jobs![0]!;
+      expect(job.kind).toBe(mode);
+      const input = JSON.parse(await readCodeJobInput(job));
+      expect(input.execution.mode).toBe(mode);
+      expect(input.limits).toEqual(host.limits);
+      const result = { version: 1 as const, mode, ok: true, error: null, diagnostics: [], cases: [] };
+      await completeCodeJob(job, { kind: mode, result });
+      expect(await pending).toEqual(result);
+    } finally {
+      cancel.abort();
+      await settled;
+    }
+  });
+  test.each(["matching", "bundle", "evidence"] as const)("C13b binding server check refuses forged %s submissions", async (variant) => {
+    const code = await fixture();
+    const [stored] = await sql<
+      { source_files: Record<string, string>; bundle: string; manifest: CodeCheckedVersionManifest }[]
+    >`SELECT source_files,bundle,manifest FROM code.versions WHERE id=${code.versionId}::uuid`;
+    const cancel = new AbortController();
+    const catalog = spyOn(catalogProvider, "listCapabilityCatalog").mockResolvedValue({
+      ok: true,
+      data: { protocolVersion: 2, apps: [], page: { hasMore: false } },
+    });
+    const pending = verifyCodeSubmission(
+      { codeId: code.codeId, sourceFiles: stored!.source_files, bundle: stored!.bundle, manifest: stored!.manifest },
+      { ...context(), signal: cancel.signal },
+    );
+    const settled = pending.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    try {
+      await pendingJob();
+      const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      const { entry: _entry, policyRows: _rows, ...evidence } = stored!.manifest;
+      await completeCodeJob(job, {
+        kind: "check",
+        result: {
+          ok: true,
+          diagnostics: [],
+          bundle: variant === "bundle" ? "forged bundle" : stored!.bundle,
+          manifest: { ...evidence, ai: variant === "evidence" ? !evidence.ai : evidence.ai },
+          permissions: [],
+        },
+      });
+      if (variant === "matching") expect(await settled).toBeNull();
+      else expect(await settled).toMatchObject({ code: "CONFLICT" });
+    } finally {
+      cancel.abort();
+      await settled;
+      catalog.mockRestore();
+    }
+  });
+  test("C13b killed checker requeues; the old generation cannot read or complete", async () => {
+    const controller = new AbortController();
+    const pending = createRunnerCodeCheckHost({ ...context(), signal: controller.signal }).check(checkRequest());
+    const settled = pending.catch((error) => error);
+    await pendingJob();
+    const first = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+    await sql`UPDATE code.jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${first.jobId}::uuid`;
+    await reconcileCodeJobs();
+    const second = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+    expect(second.generation).toBe(first.generation + 1);
+    expect(second.leaseKey).not.toBe(first.leaseKey);
+    await expect(readCodeJobInput(first)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    await expect(completeCodeJob(first, { kind: "check", result: { ok: false, diagnostics: [] } })).rejects.toBeInstanceOf(
+      RunnerLeaseLostError,
+    );
+    await completeCodeJob(second, { kind: "check", result: { ok: false, diagnostics: [] } });
+    expect(await settled).toEqual({ ok: false, diagnostics: [] });
+  });
+  test("C13b refuses oversized input and overload, and cancellation fences a lease", async () => {
+    await expect(
+      createRunnerCodeCheckHost(context()).check({ ...checkRequest(), files: { "code.ts": "x".repeat(CODE_CHECK_LIMITS.requestBytes) } }),
+    ).rejects.toMatchObject({ code: "code_job_request_limit" });
+    expect(await sql`SELECT id FROM code.jobs`).toHaveLength(0);
+    overrides.set("core.code.job_pending", 1);
+    const cancel = new AbortController();
+    const waiting = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal })
+      .check(checkRequest())
+      .catch((error) => error);
+    await pendingJob();
+    await expect(createRunnerCodeCheckHost(context()).check(checkRequest())).rejects.toMatchObject({ code: "code_job_busy" });
+    const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+    cancel.abort();
+    expect(await waiting).toMatchObject({ code: "code_job_cancelled" });
+    await expect(readCodeJobInput(job)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+  });
+  test("C13b a burst of checks cannot starve scheduled work with a single free slot", async () => {
+    const code = await fixture();
+    const ids = await enqueueMany(code, 3, "schedule");
+    const input = JSON.stringify({ kind: "check", request: checkRequest() });
+    for (let index = 0; index < 20; index++)
+      await sql`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at) VALUES('check',${owner}::uuid,${input},${Buffer.byteLength(input)},1000,clock_timestamp()+interval '1 minute')`;
+    const kinds: string[] = [];
+    for (let index = 0; index < 6; index++) {
+      const work = await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits());
+      if (work.jobs.length) {
+        kinds.push("job");
+        await completeCodeJob(work.jobs[0]!, { kind: "check", result: { ok: false, diagnostics: [] } });
+      } else {
+        kinds.push("run");
+        const run = await codeRunnerLease(work.runs[0]!, sign);
+        await completeCodeRun(await claims(run), "succeeded");
+      }
+    }
+    expect(kinds).toEqual(["job", "run", "job", "run", "job", "run"]);
+    expect(await sql`SELECT id FROM code.runs WHERE id IN ${sql(ids)} AND state='succeeded'`).toHaveLength(3);
   });
   test("the public manual-run Action shares durable admission across callers", async () => {
     const code = await fixture();

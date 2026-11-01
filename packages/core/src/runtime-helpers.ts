@@ -11,6 +11,7 @@ import { startCodeScheduling } from "./code/scheduling-runtime";
 import { startCodeVersionApprovals } from "./code/versions";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
+import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
 import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
@@ -133,6 +134,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "code-policy", run: migrateCodePolicy },
     { name: "code-versions", run: migrateCodeVersions },
     { name: "code-scheduling", run: migrateCodeScheduling },
+    { name: "code-jobs", run: migrateCodeJobs },
     { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },

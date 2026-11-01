@@ -714,7 +714,8 @@ jobs:
         run: |
           runner_limits=(--rm --network none --read-only --cap-drop ALL
             --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE
-            --security-opt no-new-privileges --memory 1g --pids-limit 256
+            --security-opt no-new-privileges --security-opt seccomp=packages/runner/seccomp.json
+            --security-opt apparmor=unconfined --memory 1g --pids-limit 256
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777)
           docker run "${runner_limits[@]}" cloud-runner:ci \
             bun --no-env-file test /app/engine.test.js /app/isolation.test.js /app/shutdown.test.js

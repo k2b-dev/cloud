@@ -11,6 +11,7 @@ import {
   CodeTestResultSchema,
   codeTestFailure,
 } from "@k2b/cloud/code";
+import { CodeJobError } from "./job-errors";
 
 /** Core's test service dependencies. check connects to the authoritative isolated checker role;
  * execute connects to Runner's fake-only test role. Neither accepts the production bridge or run scheduler.
@@ -36,8 +37,11 @@ async function execute(
   let checked: CodeCheckResult;
   try {
     checked = await host.check(code, signal);
-  } catch {
-    return codeTestFailure(mode, signal?.aborted ? "code_test_cancelled" : "code_test_checker_unavailable");
+  } catch (error) {
+    return codeTestFailure(
+      mode,
+      error instanceof CodeJobError ? error.code : signal?.aborted ? "code_test_cancelled" : "code_test_checker_unavailable",
+    );
   }
   if (!checked.ok) {
     const failure = codeTestFailure(mode, "code_test_check_failed", checked.diagnostics);
@@ -49,8 +53,11 @@ async function execute(
     );
     if (Buffer.byteLength(JSON.stringify(result)) > host.limits.outputBytes) return codeTestFailure(mode, "code_test_output_limit");
     return result;
-  } catch {
-    return codeTestFailure(mode, signal?.aborted ? "code_test_cancelled" : "code_test_runner_unavailable");
+  } catch (error) {
+    return codeTestFailure(
+      mode,
+      error instanceof CodeJobError ? error.code : signal?.aborted ? "code_test_cancelled" : "code_test_runner_unavailable",
+    );
   }
 }
 /** Check the exact source, then run sorted declarative cases through Runner. Bad JSON fails visibly before execution. */

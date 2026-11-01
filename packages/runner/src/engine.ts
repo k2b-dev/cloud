@@ -4,6 +4,7 @@ import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "
 import { RunnerCallError } from "@k2b/cloud/code/runner";
 import { z as schema } from "zod";
 import { readBytes } from "./bridge";
+import { allocateRunnerIdentities } from "./identities";
 
 /** Only bridge calls can leave a sandbox. No run token or app key crosses this interface. */
 export type SandboxCall = (operation: string, input: RunnerJsonValue) => Promise<RunnerJsonValue>;
@@ -39,7 +40,6 @@ type Group = {
 const CallSchema = schema.object({ runId: schema.string(), operation: schema.string().min(1), input: schema.json() }).strict();
 
 // Never reuse identities within this supervisor, including across engine instances.
-let nextUid = 20000;
 
 /** One workerd process per organization and trust tier, independent of the number of replicas. */
 export class WorkerdEngine implements RunnerEngine {
@@ -53,11 +53,10 @@ export class WorkerdEngine implements RunnerEngine {
   }
   async #spawn(config: RunnerConfig, retire: () => void): Promise<Group> {
     if (process.platform !== "linux" || process.getuid?.() !== 0) throw new Error("runner_isolation_requires_root");
-    if (nextUid > 0x7fffffff) throw new Error("runner_isolation_uid_exhausted");
     const temporary = await lstat("/tmp");
     if (!temporary.isDirectory() || temporary.uid !== 0 || (temporary.mode & 0o1777) !== 0o1777)
       throw new Error("runner_isolation_requires_root_owned_sticky_tmp");
-    const uid = nextUid++;
+    const uid = allocateRunnerIdentities();
     const directory = await mkdtemp("/tmp/cloud-workerd-");
     const socket = join(directory, "workerd.sock");
     const bridgeSocket = join(directory, "bridge.sock");

@@ -57,7 +57,7 @@ services:
     cap_drop: [ALL]
     # DAC_OVERRIDE is entrypoint-only; the supervisor retains the other four.
     cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
-    security_opt: [no-new-privileges:true]
+    security_opt: ["no-new-privileges:true", "seccomp=./packages/runner/seccomp.json", "apparmor=unconfined"]
     mem_limit: 1g
     pids_limit: 256
     # Keep this above the largest Code wall-clock budget plus completion transport time.

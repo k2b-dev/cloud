@@ -16,6 +16,8 @@ import { touchAppKey } from "../services/app-keys";
 import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 
 type Dependencies = {
+  /** Trusted route-owned body budget; defaults to the capability request budget. */
+  maxBodyBytes?: number;
   db?: SQL;
   ingress?: (peer: string) => Promise<RateLimitResult>;
   admit?: (keyId: string, appId: string) => Promise<RateLimitResult>;
@@ -49,15 +51,16 @@ export const authenticateSignedAppRequest = async (
     const header = c.req.header("Authorization") ?? "";
     if (!header.startsWith("Bearer ")) return reject(401, "invalid_proof", "A valid app proof is required");
     inspectAppProof(header.slice(7));
+    const maxBodyBytes = dependencies.maxBodyBytes ?? CAPABILITY_MAX_REQUEST_BYTES;
     const tooLarge = () => reject(413, "body_too_large", "App request exceeds the byte limit");
-    if (Number(c.req.header("Content-Length")) > CAPABILITY_MAX_REQUEST_BYTES) {
+    if (Number(c.req.header("Content-Length")) > maxBodyBytes) {
       void c.req.raw.body?.cancel().catch(() => undefined);
       return tooLarge();
     }
     signal.throwIfAborted();
     const copy = c.req.raw.clone();
     const reader = copy.body?.getReader();
-    const bytes = new Uint8Array(CAPABILITY_MAX_REQUEST_BYTES);
+    const bytes = new Uint8Array(maxBodyBytes);
     let total = 0;
     if (reader) {
       const cancel = () => {
