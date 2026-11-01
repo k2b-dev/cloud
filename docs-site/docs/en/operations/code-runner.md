@@ -416,7 +416,10 @@ sudo apparmor_parser -r packages/runner/apparmor.profile
 ```
 
 Both Compose templates require that named policy and the checked-in seccomp
-profile. They remove Docker's locked system-path submounts so a job can mount
+profile. When copying a Compose template into a deployment directory, also copy
+`packages/runner/seccomp.json` to that same relative path, or update its
+`security_opt` path to the installed file. The templates remove Docker's locked
+system-path submounts so a job can mount
 its private procfs; the named policy preserves read-only kernel controls and
 blocks access to sensitive proc/sysfs paths. It permits only the proc/tmpfs
 mount targets, private shared-memory/queue directories and private-mount propagation needed by job setup. No host
