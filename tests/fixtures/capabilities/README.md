@@ -19,6 +19,15 @@ query results, conflict protection, and durable issuance replay. The independent
 required-idempotency inventory and normal evolution check remain active for
 future changes; this is not a blanket exemption for Grids.
 
+The coordinated Code container migration intentionally moves Grids GQL, View
+creation and workflow actions to a `grids.base` target, and record writes and
+document issuance to a `grids.table` target. The Grids baseline includes this
+reviewed input/target change; normal evolution checks and the required-idempotency
+inventory remain active. Files is covered by its owning capability tests, not
+this provider inventory. See the
+[Grids and Files target migration](../../../docs-site/docs/en/operations/grids-files-capability-targets.md)
+for caller changes.
+
 The Mail send migration intentionally requires `expectedContentHash` on
 `draft.send` and returns `contentHash` from `draft.send.review`. These two schema
 entries and their hashes are updated for the approved breaking contract; other
@@ -50,3 +59,14 @@ The combined Spaces target and default-column contract makes `task.create`
 `input.spaceId`. Only that column schema, its description, and the corresponding
 hashes change in the Spaces baseline. Omitted columns select the first open
 column in numeric rank and public-ID order; other evolution checks remain active.
+
+The coordinated Code target migration moves Notebooks, Pulse, Venue, and
+Weather Actions from resource IDs in input to their declared resource target.
+These baselines update only the existing Actions' target declarations, removed
+container-ID fields, and corresponding hashes; result schemas and safety
+contracts remain frozen. Unrelated additive changes stay out of the baseline
+and are still checked as additive evolution. See the application target guides for
+[Notebooks](../../../docs-site/apps-content/en/notebooks.md#capability-action-targets),
+[Pulse](../../../docs-site/apps-content/en/pulse.md#capability-action-targets),
+[Venue](../../../docs-site/apps-content/en/venue.md#capability-action-targets), and
+[Weather](../../../docs-site/apps-content/en/weather.md#capability-action-targets).

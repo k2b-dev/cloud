@@ -112,7 +112,7 @@ the discovered `filesv2.content.create` action:
 export default async (_input, {files}) => {
   const document = await files[0].file();
   const target = await cloud.capabilities.run("filesv2.content.create", {
-    baseId: "<exact ID from filesv2.bases.list>",
+    entry: "<exact data.items[].ref.id from filesv2.bases.list>",
     path: "Offers/offer.pdf",
     size: document.size,
     mediaType: "application/pdf",

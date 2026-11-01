@@ -419,8 +419,8 @@ tokens and authenticated API writes; create a new source for `ingest.write`.
 | Action | Input and approval |
 | --- | --- |
 | `base.create` | `name`, optional `description`; rememberable approval |
-| `ingest.write` | `baseId`, `sourceId`, `expectedRevision`, `batch`; whole input at most 192 KiB; rememberable approval per source |
-| `base.clear_data` | `baseId`, exact `expectedUpdatedAt` from a fresh `base.read`; base admin; always asks |
+| `ingest.write` | Base target, `sourceId`, `expectedRevision`, `batch`; whole input at most 192 KiB; rememberable approval per source |
+| `base.clear_data` | Base target, exact `expectedUpdatedAt` from a fresh `base.read`; base admin; always asks |
 | `base.delete` | Same revision and admin requirements; always asks |
 
 All four require an idempotency key. Reuse the same key and unchanged input
@@ -736,3 +736,11 @@ Only Cloud admins change quotas and profiles in **Administration → Pulse → B
 After a quota refusal, the console reloads current usage. If that fails, it
 keeps the quota block and offers **Retry** for the usage read.
 Closing the modal returns to the underlying view.
+
+## Capability action targets
+
+Every Action except `base.create` targets `pulse.base`. Pass the Base ref as
+`target` and omit `baseId` from `input`. Chat tools and MCP use the flat field
+`base`. Source, saved-query and alert-rule IDs stay in `input` and must belong
+to that Base, including during review. Existing revision and permission checks
+still apply. Queries retain `baseId`; `base.create` acts at the application.
