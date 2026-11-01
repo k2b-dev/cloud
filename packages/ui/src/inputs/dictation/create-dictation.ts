@@ -167,7 +167,8 @@ export function createDictation(options: DictationOptions): DictationController 
     restarting = false;
     if (!next) close();
     if (message) announce(message);
-    focusLater(isBarNotice(next) ? "continue" : "microphone");
+    // A card takes the focus itself and returns it to the microphone when it closes.
+    if (!next || isBarNotice(next)) focusLater(next ? "continue" : "microphone");
   };
 
   const run = async (current: DictationSession, signal: AbortSignal) => {
