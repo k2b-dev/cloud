@@ -1186,12 +1186,11 @@ export default function ItemDetailPanel(props: Props) {
             />
           </Show>
 
-          <ItemHistorySection
-            spaceId={props.spaceId}
-            itemId={props.commentTarget.itemId}
-            version={props.item.updatedAt}
-            dateConfig={props.dateConfig}
-          />
+          <Show when={props.commentTarget.itemId} keyed>
+            {(itemId) => (
+              <ItemHistorySection spaceId={props.spaceId} itemId={itemId} version={props.item.updatedAt} dateConfig={props.dateConfig} />
+            )}
+          </Show>
 
           <Show when={props.canWrite || commentsPage().total > 0}>
             <CommentsSection

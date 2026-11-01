@@ -2914,7 +2914,19 @@ const app = new Hono<AuthContext>()
         });
         const locale = getLocale(c);
         const authority = auth.getAuthority(c);
-        const origins = await presentActivityOrigins(page.items, authority, locale);
+        const origins = await presentActivityOrigins(
+          page.items,
+          authority,
+          {
+            cookie: c.req.header("Cookie"),
+            authorization: c.req.header("Authorization"),
+            requestId: c.req.header("X-Request-Id"),
+            traceparent: c.req.header("traceparent"),
+            tracestate: c.req.header("tracestate"),
+            signal: c.req.raw.signal,
+          },
+          locale,
+        );
         const subject = c.get("accessSubject");
         const viewer: SpaceActivityIdentity =
           subject.type === "user" ? { kind: "user", id: subject.userId } : { kind: "service_account", id: subject.serviceAccountId };
@@ -2930,7 +2942,7 @@ const app = new Hono<AuthContext>()
                 viewer,
                 assigneeId,
                 locale,
-                timeZone: getDateConfig(c).timeZone,
+                timeZone: getTimeZone(c),
                 origin: origins.get(event.id),
               }),
             })),

@@ -33,17 +33,16 @@ export const isAppSessionActor = (actor: RequestActor | undefined): boolean => a
 
 /**
  * The durable work behind an actor, for a domain's own history: the resource `<owning app>.<workload type>` that the
- * owning app's reader can present, and whom it works for at this moment. Null for a person or credential acting
- * directly. It grants nothing; a reader still decides per viewer what it shows. Any app with a mandate workload and a
- * Type of that name gets this, without the consuming app knowing it.
+ * owning app's reader can present. Null for a person or credential acting directly, and for a call another app continued,
+ * whose immediate caller no longer owns the work. It grants nothing; the reader decides per viewer what it shows. Any app
+ * with a mandate workload and a Type of that name gets this, without the consuming app knowing it.
  */
-export const actorWorkload = (actor: RequestActor | undefined): { type: string; id: string; owner?: string } | null => {
+export const actorWorkload = (actor: RequestActor | undefined): { type: string; id: string } | null => {
   const delegation = actor?.delegation;
-  if (!delegation?.workloadType || !delegation.workloadId) return null;
+  if (!delegation?.workloadType || !delegation.workloadId || delegation.parentInvocationId) return null;
   return {
     type: `${delegation.callingAppId}.${delegation.workloadType}`,
     id: delegation.workloadRun ? `${delegation.workloadId}~${delegation.workloadRun}` : delegation.workloadId,
-    ...(delegation.workloadOwner ? { owner: delegation.workloadOwner } : {}),
   };
 };
 

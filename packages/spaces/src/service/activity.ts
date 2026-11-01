@@ -5,7 +5,7 @@ import { buildSpacePrincipalCondition } from "./access";
 type SqlExecutor = typeof sql;
 
 /** The durable work behind a change (`actorWorkload`), kept with the row so the history can present it later. */
-export type SpaceActivityOrigin = { type: string; id: string; owner?: string };
+export type SpaceActivityOrigin = { type: string; id: string };
 
 export type SpaceActivityIdentity = {
   kind: "user" | "service_account" | "system";
@@ -17,7 +17,8 @@ export type SpaceActivityEvent = {
   id: string;
   space: { id: string; shortId: string; name: string; color: string };
   item: { id: string; shortId: string; title: string; kind?: "task" | "event" } | null;
-  actor: SpaceActivityIdentity & { displayName: string; avatarHash: string | null };
+  /** `gone`: a service account that no longer exists. */
+  actor: SpaceActivityIdentity & { displayName: string; avatarHash: string | null; gone?: boolean };
   action: string;
   metadata: Record<string, unknown>;
   occurrenceCount: number;
@@ -51,6 +52,7 @@ type ActivityRow = {
   actor_id: string | null;
   actor_display_name: string;
   actor_avatar_hash: string | null;
+  actor_gone: boolean;
   action: string;
   metadata: Record<string, unknown> | string;
   occurrence_count: number;
@@ -100,13 +102,15 @@ export const record = async (
   const action = params.action.trim();
   if (!action || action.length > 200) throw new Error("Activity action must be between 1 and 200 characters");
   const occurredAt = params.occurredAt ?? new Date();
+  // Each piece of work keeps its own row: merged into an hour's bucket, it would speak for edits it did not make.
+  const bucketStartedAt = params.actor.origin ? null : (params.bucketStartedAt ?? null);
   const [row] = await db<{ id: string | number }[]>`
     INSERT INTO spaces.activity_events (
       space_id, item_id, actor_kind, actor_id, action, metadata,
       bucket_started_at, created_at, last_occurred_at
     ) VALUES (
       ${params.spaceId}::uuid, ${params.itemId ?? null}::uuid, ${params.actor.kind}, ${params.actor.id}::uuid,
-      ${action}, ${{ ...params.metadata, ...(params.actor.origin ? { origin: params.actor.origin } : {}) }}::jsonb, ${params.bucketStartedAt ?? null}, ${occurredAt}, ${occurredAt}
+      ${action}, ${{ ...params.metadata, ...(params.actor.origin ? { origin: params.actor.origin } : {}) }}::jsonb, ${bucketStartedAt}, ${occurredAt}, ${occurredAt}
     )
     ON CONFLICT (item_id, actor_kind, actor_id, action, bucket_started_at)
       WHERE bucket_started_at IS NOT NULL
@@ -148,7 +152,8 @@ export const list = async (params: {
       COALESCE(NULLIF(actor_user.display_name, ''), actor_user.uid, actor_service.name,
         CASE activity.actor_kind WHEN 'system' THEN 'System' WHEN 'user' THEN 'Former user' ELSE 'Former service account' END
       ) AS actor_display_name,
-      actor_user.avatar_hash AS actor_avatar_hash, activity.action, activity.metadata,
+      actor_user.avatar_hash AS actor_avatar_hash,
+      (activity.actor_kind = 'service_account' AND actor_service.id IS NULL) AS actor_gone, activity.action, activity.metadata,
       activity.occurrence_count, activity.created_at, activity.last_occurred_at, activity.last_occurred_at::text AS cursor_at
     FROM spaces.activity_events activity
     JOIN spaces.spaces space ON space.id = activity.space_id
@@ -179,7 +184,13 @@ export const list = async (params: {
         row.item_id && row.item_short_id && row.item_title
           ? { id: row.item_id, shortId: row.item_short_id, title: row.item_title, kind: row.item_kind }
           : null,
-      actor: { kind: row.actor_kind, id: row.actor_id, displayName: row.actor_display_name, avatarHash: row.actor_avatar_hash },
+      actor: {
+        kind: row.actor_kind,
+        id: row.actor_id,
+        displayName: row.actor_display_name,
+        avatarHash: row.actor_avatar_hash,
+        gone: row.actor_gone,
+      },
       action: row.action,
       metadata: typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata,
       occurrenceCount: row.occurrence_count,

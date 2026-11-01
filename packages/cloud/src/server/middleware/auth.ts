@@ -39,7 +39,6 @@ export type InvocationProvenance = {
   workloadType?: string;
   workloadId?: string;
   workloadRun?: string;
-  workloadOwner?: string;
 };
 
 export type UserRequestActor = {

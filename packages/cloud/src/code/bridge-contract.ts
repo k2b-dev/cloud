@@ -23,8 +23,6 @@ export type CodeBridgeAuthority = {
   mandateId: string;
   mandateRevision: number;
   ownerAppId: "core";
-  /** The owner's title from its last check, for the history of what this call changes; null until one ran. */
-  ownerTitle?: string | null;
   /** Rechecks the current lease/policy and mandate binding inside the invocation issuance transaction. */
   withMandateIssueAuthority: NonNullable<CapabilityDispatchDependencies["withMandateIssueAuthority"]>;
 };

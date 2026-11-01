@@ -15,7 +15,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * Reader for the `core.code.version` resource a Code call names as its workload (`actorWorkload`). The id is the
  * version, followed by `~<run>` when the call belongs to a run. Apps show the result in their history without knowing
- * Code. Whoever may not read the Code, and any Code that is gone, get the same NOT_FOUND.
+ * Code. Whoever may not read the Code, and any Code that is gone, get the same NOT_FOUND; the Code page link comes only for those who may read its owner.
  */
 export const codeWorkloadReaderContract = {
   input: z.object({ id: z.string().min(1).max(100).describe("Version UUID, optionally followed by ~ and a run UUID.") }).strict(),
@@ -44,7 +44,9 @@ export async function readCodeWorkload(
   const [run] = runId
     ? await sql<{ entrypoint: string }[]>`SELECT entrypoint FROM code.runs WHERE id=${runId}::uuid AND version_id=${versionId}::uuid`
     : [];
-  const page = await pageOf(code, context);
+  // Reading the Code does not prove the viewer may open its owner, whose page checks that itself.
+  const ownerName = await codeAccountDisplayName(code, context).catch(() => null);
+  const page = ownerName ? await pageOf(code, context) : null;
   const links: CapabilitySemanticLink[] = page
     ? [
         { rel: "open", href: page },
@@ -54,7 +56,7 @@ export async function readCodeWorkload(
     : [];
   return {
     view: {
-      title: ((await codeAccountDisplayName(code, context)) ?? code.title).slice(0, 500),
+      title: (ownerName ?? code.title).slice(0, 500),
       ...(run ? { context: run.entrypoint.slice(0, 200) } : {}),
       permission: permission === "editor" ? "write" : "read",
     },

@@ -46,10 +46,7 @@ export async function checkCodeOwnerBeforeRun(code: Code, signal?: AbortSignal):
   return sql.begin(async (tx) => {
     const [current] = await tx<{ state: string }[]>`SELECT state FROM code.codes WHERE id=${code.id} FOR UPDATE`;
     if (!current || current.state === "deleting") return false;
-    if (title !== null) {
-      await tx`UPDATE code.codes SET owner_title=${title} WHERE id=${code.id} AND owner_title IS DISTINCT FROM ${title}`;
-      return current.state === "active";
-    }
+    if (title !== null) return current.state === "active";
     await tx`UPDATE code.codes SET state='paused',pause_reason='owner_not_found',pause_rows='{}',pause_policy_revision=NULL
       WHERE id=${code.id} AND state<>'deleting'`;
     await tx`UPDATE code.runs SET state='skipped',outcome='owner_not_found',ended_at=clock_timestamp()

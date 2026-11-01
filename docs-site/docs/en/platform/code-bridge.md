@@ -153,16 +153,19 @@ capability envelope and cannot select an upstream URL.
 Every capability call a Code run makes carries its workload as provenance. To
 show it in your own history, call `actorWorkload(context.actor)` from
 `@k2b/cloud/server` when you record the change and keep the result with your
-row. It returns `{ type, id, owner? }`, or null when a person or credential acts
-directly. It works for any application's mandate workload, not only Code:
-`type` is `<owning app>.<workload type>`, and `owner` is whom the work was for
-when the call was issued.
+row. It returns `{ type, id }`, or null when a person or credential acts
+directly or another app continued the call. It works for any application's
+mandate workload, not only Code: `type` is `<owning app>.<workload type>`, and
+`id` is the workload ID, followed by `~<run>` when the call names a run. Your
+own workload names its run with `mandate.run` on the capability caller; declare
+a Type of that name with a reader to present it.
 
 Later, present it through the [resource reader](/en/docs/platform/resource-references)
-of that type under the viewer's own authority. For `core.code.version`, the
-reader returns the title, the automation as `context`, the Code page as the
-`open` link and the run as the `status` link. A viewer who may not read the Code
-gets the same refusal as for missing Code, so fall back to the kept `owner` and
-show no link. An account that no longer exists means the work was deleted.
-`actorWorkload` grants nothing and says nothing about the viewer. Spaces shows
-its item history this way, without knowing Code.
+of that type with the viewer's own credentials. For `core.code.version`, the
+reader returns the title, the automation as `context`, and, for those who may
+read the owner, the Code page as the `open` link and the run as the `status`
+link. A viewer who may not read the Code gets the same refusal as for missing
+Code: show the kind of work from the Type's title and no name, because the
+owner's name is not theirs to learn. An account that no longer exists means the
+work was deleted. `actorWorkload` grants nothing. Spaces shows its item history
+this way, without knowing Code.

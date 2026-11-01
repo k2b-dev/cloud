@@ -55,6 +55,27 @@ suite("Spaces mutations record presentation facts in their transaction", () => {
     expect((await items.setAssignees({ id, actor, userIds: [] })).ok).toBeTrue();
     expect((await recorded(id, "item.assignees.updated")).metadata).toMatchObject({ added: [], removed: [userId] });
   });
+  test("work behind a change stays with its row, marks the created item and never merges with manual edits", async () => {
+    const origin = { type: "example.job", id: "j1~r1" };
+    const created = await items.create({
+      spaceId,
+      data: { columnId: columns[0]!, title: "From a job" },
+      createdBy: userId,
+      actor: { ...actor, origin },
+    });
+    if (!created.ok) throw new Error("Item not created");
+    const id = created.data.internalId ?? created.data.id;
+    expect((await recorded(id, "task.created")).metadata).toMatchObject({ origin });
+    const [row] = await sql<{ created_by_workload: boolean }[]>`SELECT created_by_workload FROM spaces.items WHERE id = ${id}::uuid`;
+    expect(row?.created_by_workload).toBeTrue();
+
+    expect((await items.update({ id, actor: { ...actor, origin }, data: { description: "By the job" } })).ok).toBeTrue();
+    expect((await items.update({ id, actor, data: { description: "By hand" } })).ok).toBeTrue();
+    const updates = await sql<{ origin: unknown }[]>`SELECT metadata->'origin' AS origin FROM spaces.activity_events
+      WHERE item_id = ${id}::uuid AND action = 'task.updated' ORDER BY id`;
+    expect(updates).toHaveLength(2);
+    expect(updates[1]?.origin).toBeNull();
+  });
   test("attachments preserve filename and actual actor on add and delete", async () => {
     const id = await task();
     const uploaded = await attachments.upload({

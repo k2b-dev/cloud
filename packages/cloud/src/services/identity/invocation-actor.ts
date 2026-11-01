@@ -52,7 +52,6 @@ export type InvocationPrincipalClaims = Pick<
   | "workload_type"
   | "workload_id"
   | "workload_run"
-  | "workload_owner"
   | "code_access"
   | "parent_invocation_id"
 >;
@@ -72,7 +71,6 @@ const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor
         workloadType: claims.workload_type,
         workloadId: claims.workload_id,
         ...(claims.workload_run ? { workloadRun: claims.workload_run } : {}),
-        ...(claims.workload_owner ? { workloadOwner: claims.workload_owner } : {}),
       }
     : {}),
 });

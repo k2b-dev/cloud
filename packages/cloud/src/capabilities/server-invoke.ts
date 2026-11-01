@@ -47,7 +47,12 @@ export type CapabilityCaller = {
   /** App authority authenticated only by the configured Ed25519 app key. */
   app?: { appId: string };
   /** Durable background authority. The platform authenticates each transmission to Core. */
-  mandate?: { id: string; revision: number; callingAppId: string };
+  mandate?: {
+    id: string;
+    revision: number;
+    callingAppId: string /** Which run of this workload the call belongs to; history links reach it through your reader. */;
+    run?: string;
+  };
 };
 
 /** Call as the started application, without a person, service account token, or mandate. */
@@ -180,6 +185,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
               ...(invocation.target ? { target: invocation.target } : {}),
               ...(invocation.refs ? { refs: invocation.refs } : {}),
               ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
+              ...(caller.mandate?.run ? { workloadRun: caller.mandate.run } : {}),
               ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
               ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
                 ? {

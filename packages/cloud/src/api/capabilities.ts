@@ -298,8 +298,8 @@ export type CapabilityDispatchParams = {
   codeAccess?: "set" | "list" | "rm";
   /** Set only by the verified runner bridge. Generic mandate brokers cannot invoke Code versions. */
   codeRun?: true;
-  /** Which run of the mandate's workload this call belongs to, stated by the bridge that verified the run. */
-  workloadDetail?: { run: string; owner: string | null };
+  /** Which run of the mandate's workload this call belongs to, stated by the workload's own app or the verified runner bridge. */
+  workloadRun?: string;
   /** Trusted Core continuation binding; never read from client headers. */
   continuation?: string;
   request: Request;
@@ -619,8 +619,7 @@ const runCapabilityDispatch = async (
                           ? authorityFromParentInvocation(params.parentInvocation)
                           : {
                               ...invocationAuthorityFromMandate(mandateAuthority),
-                              ...(params.workloadDetail ? { workload_run: params.workloadDetail.run } : {}),
-                              ...(params.workloadDetail?.owner ? { workload_owner: params.workloadDetail.owner.slice(0, 200) } : {}),
+                              ...(params.workloadRun ? { workload_run: params.workloadRun } : {}),
                             },
                         parent: params.parentInvocation,
                         expiresAt: params.parentInvocation
@@ -1523,7 +1522,7 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
           input: sdk.data.call.input,
           origin: "app",
           codeRun: true,
-          workloadDetail: { run: claims.runId, owner: authority.ownerTitle ?? null },
+          workloadRun: claims.runId,
           callingAppId: "core",
           deadline: claims.exp * 1000,
           mandate: { mandateId: authority.mandateId, mandateRevision: authority.mandateRevision, ownerAppId: "core" },

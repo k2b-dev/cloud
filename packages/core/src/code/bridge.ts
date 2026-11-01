@@ -186,12 +186,10 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           }
           return mandates.withIssueAuthority(input, use, options);
         };
-        const [owner] = await sql<{ owner_title: string | null }[]>`SELECT owner_title FROM code.codes WHERE id=${call.claims.codeId}`;
         response = await execute({
           mandateId: call.claims.mandateId,
           mandateRevision: call.claims.mandateRevision,
           ownerAppId: "core",
-          ownerTitle: owner?.owner_title ?? null,
           withMandateIssueAuthority: fencedIssue,
         });
         if (issuanceRefusal) response = refusalResponse(issuanceRefusal);

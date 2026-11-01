@@ -45,7 +45,12 @@ export const validateCodeAccess = (definitions: CapabilityDefinitions): void => 
   };
   const code = definitions.code;
   if (code) {
-    for (const key of Object.keys(code)) if (!["access", "owners"].includes(key)) throw new Error(`code: unsupported field ${key}`);
+    for (const key of Object.keys(code))
+      if (!["access", "owners", "pages"].includes(key)) throw new Error(`code: unsupported field ${key}`);
+    for (const [type, page] of Object.entries(code.pages ?? {})) {
+      if (!code.owners?.includes(type)) throw new Error(`code.pages: ${type} is not a declared owner`);
+      if (!/^\/[^\\\u0000-\u001f\u007f]*\{id\}/.test(page)) throw new Error(`code.pages: ${type} needs a path with {id}`);
+    }
     if (code.access) {
       for (const key of Object.keys(code.access)) if (key !== "app") throw new Error(`code.access: unsupported field ${key}`);
       if (code.access.app) check(code.access.app, "code.access.app", false);

@@ -92,6 +92,8 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 5. **Close finished work:** Move completed items out of active views, so open lists stay useful.
 :::
 
+A card's **History** shows who created and changed it, also when that was Code, such as "Created by Code of info@". If you may read that Code, its name leads to it and **Open run** to the run.
+
 You can edit or delete your own comment for 10 minutes after you post it. Comments of other people stay unchanged, even for people with **Manage** access.
 
 ## React with an emoji {icon="mood-plus"}

@@ -35,16 +35,19 @@ describe("actorWorkload", () => {
       type: "billing.sync.job",
       id: "j1",
     });
-    expect(
-      actorWorkload(
-        delegated({ callingAppId: "core", workloadType: "code.version", workloadId: "v1", workloadRun: "r1", workloadOwner: "info@" }),
-      ),
-    ).toEqual({ type: "core.code.version", id: "v1~r1", owner: "info@" });
+    expect(actorWorkload(delegated({ callingAppId: "core", workloadType: "code.version", workloadId: "v1", workloadRun: "r1" }))).toEqual({
+      type: "core.code.version",
+      id: "v1~r1",
+    });
   });
 
   test("someone acting directly has no work behind them", () => {
     expect(actorWorkload(undefined)).toBeNull();
     expect(actorWorkload(person)).toBeNull();
     expect(actorWorkload(delegated({ callingAppId: "chat", credentialKind: "session" }))).toBeNull();
+    // The app continuing a call does not own the work.
+    expect(
+      actorWorkload(delegated({ callingAppId: "spaces", workloadType: "job", workloadId: "j1", parentInvocationId: "p1" })),
+    ).toBeNull();
   });
 });

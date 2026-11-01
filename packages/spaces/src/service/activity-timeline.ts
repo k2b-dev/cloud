@@ -82,12 +82,12 @@ export const spaceActivityRow = (
   const { t } = activityTimelineMessages.resolve([options.locale]);
   const self = event.actor.kind === options.viewer.kind && event.actor.id !== null && event.actor.id === options.viewer.id;
   const origin = activityOrigin(event);
-  // Work behind a person speaks as itself too; "you" stays for what the viewer did by hand.
+  // Work behind a person speaks as itself too; "you" stays for what the viewer did by hand. Without the reader's answer the
+  // row names only what the viewer can already see here: the kind of work and a person's name, never the work's owner.
+  const workKind = options.origin?.typeTitle ?? t.automation;
   const workName = origin
     ? (options.origin?.name ??
-      (origin.owner
-        ? t.workOf({ type: options.origin?.typeTitle ?? t.automation, owner: origin.owner })
-        : (options.origin?.typeTitle ?? t.automation)))
+      (event.actor.kind === "user" ? t.workOf({ type: workKind, owner: event.actor.displayName.slice(0, 200) }) : workKind))
     : null;
   const workLabel = workName && (options.origin?.deleted ? t.deleted({ name: workName }) : workName);
   const actor = workLabel

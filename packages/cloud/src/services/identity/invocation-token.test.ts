@@ -254,7 +254,7 @@ describe("Cloud invocation JWT", () => {
     expect(await verify(partial)).toBeNull();
   });
 
-  test("carries a workload's run and owner only with its mandate", async () => {
+  test("carries a workload's run only with its mandate", async () => {
     const detailed = await token({
       ...baseClaims(),
       credential_kind: "mandate",
@@ -263,11 +263,9 @@ describe("Cloud invocation JWT", () => {
       workload_type: "code.version",
       workload_id: "10ec1c74-858b-4a98-9ba7-ab2276754c70",
       workload_run: "10ec1c74-858b-4a98-9ba7-ab2276754c71",
-      workload_owner: "info@ · Möbel",
     });
-    expect(await verify(detailed)).toMatchObject({ workload_run: "10ec1c74-858b-4a98-9ba7-ab2276754c71", workload_owner: "info@ · Möbel" });
+    expect(await verify(detailed)).toMatchObject({ workload_run: "10ec1c74-858b-4a98-9ba7-ab2276754c71" });
     expect(await verify(await token({ ...baseClaims(), workload_run: "r1" }))).toBeNull();
-    expect(await verify(await token({ ...baseClaims(), workload_owner: "info@" }))).toBeNull();
   });
 
   test("rejects wrong audience, operation, and schema binding", async () => {
