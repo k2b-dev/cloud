@@ -671,6 +671,9 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       history: "failed",
       runners: "failed",
       limits: "failed",
+      ...(query.sec === "code" && query.id
+        ? { code: fixtureCodeDetail(query.id), source: query.version ? ("failed" as const) : null }
+        : {}),
     };
   if (query.sec === "approvals" && query.id) {
     const variant = query.id === FIXTURE_VERSIONS.lieferzeit1 ? "first" : state;
@@ -691,16 +694,14 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.id && query.version)
     data.source =
-      state === "fail"
-        ? "failed"
-        : state === "missing"
-          ? "missing"
-          : {
-              versionId: query.version,
-              number: 2,
-              bundleHash: h("bb"),
-              files: [{ path: "code.ts", lines: before.split("\n").map((text) => ({ kind: "add" as const, text })) }],
-            };
+      state === "missing"
+        ? "missing"
+        : {
+            versionId: query.version,
+            number: 2,
+            bundleHash: h("bb"),
+            files: [{ path: "code.ts", lines: before.split("\n").map((text) => ({ kind: "add" as const, text })) }],
+          };
   if (query.sec === "code" && query.status) {
     const codes = data.codes;
     if (codes !== null && codes !== "failed" && codes !== "missing")

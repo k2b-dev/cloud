@@ -19,6 +19,8 @@ export type MailboxAdminSettingsContext = {
   accessEntries: AccessEntry[];
   /** Null when Core did not answer; settings and the delete dialog then speak without numbers. */
   code: MailboxCodeSummary | null;
+  /** Mails in this mailbox, each once; null when they could not be counted. */
+  messageCount: number | null;
   bindings: ProviderBinding[];
   connections: ProviderConnection[];
   folders: MailAdminFolderView[];

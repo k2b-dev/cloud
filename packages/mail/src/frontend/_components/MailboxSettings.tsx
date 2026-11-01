@@ -21,7 +21,7 @@ import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, FolderDisplay, Mailbox } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
-import { codeSummaryText, MailboxDeleteDialog } from "./MailboxDeleteDialog";
+import { codeSummaryText, MailboxDeleteDialog, type MailboxDeleteOutcome } from "./MailboxDeleteDialog";
 import MailCalendarSettings from "./MailCalendarSettings";
 import MailComposeSettings from "./MailComposeSettings";
 import { MailConnectionSettings } from "./MailConnectionSettings";
@@ -333,27 +333,37 @@ export default function MailboxSettings(props: {
   const openDeleteDialog = async () => {
     const admin = props.context.admin;
     const address = props.context.compose?.identities[0]?.fromAddress ?? props.context.mailbox.name;
+    let dismissed = false;
+    const finishedLate = (outcome: MailboxDeleteOutcome) => {
+      if (!dismissed) return;
+      if (outcome === "deleted") props.onDeleted();
+      else toast.error(outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody);
+    };
     const deleted = await prompts.dialog<boolean>(
       (close) => (
         <MailboxDeleteDialog
           address={address}
-          mails={(admin?.folders ?? []).reduce((sum, folder) => sum + folder.total, 0)}
+          mails={admin?.messageCount ?? null}
           folders={admin?.folders.length ?? 0}
           accessEntries={admin?.accessEntries.length ?? 0}
           code={admin?.code ?? null}
           close={close}
-          remove={async (signal) => {
-            const response = await apiClient.mailboxes[":mailboxId"].$delete(
-              { param: { mailboxId: props.context.mailbox.id } },
-              { init: { signal } },
-            );
-            if (response.ok) return "deleted";
-            return response.status >= 400 && response.status < 500 ? "refused" : "unknown";
+          remove={async () => {
+            let outcome: MailboxDeleteOutcome = "unknown";
+            try {
+              const response = await apiClient.mailboxes[":mailboxId"].$delete({ param: { mailboxId: props.context.mailbox.id } });
+              outcome = response.ok ? "deleted" : response.status >= 400 && response.status < 500 ? "refused" : "unknown";
+            } catch {
+              // A lost answer may follow a committed delete.
+            }
+            finishedLate(outcome);
+            return outcome;
           }}
         />
       ),
       { title: messages().deleteMailboxTitle({ address }), icon: "ti ti-trash", size: "medium" },
     );
+    dismissed = true;
     if (deleted) props.onDeleted();
   };
   onCleanup(() => {

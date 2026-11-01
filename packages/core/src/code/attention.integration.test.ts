@@ -179,16 +179,20 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
   });
 
   test("summarizes an owner's Code in numbers, and only for those who may read it", async () => {
-    const owner = { kind: "resource" as const, ref: { type: "mail.mailbox", id: "box-failed" } };
-    const [row] = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE owner_type='mail.mailbox' AND owner_id='box-failed'`;
+    managed.add("box-summary");
+    const ref = { type: "mail.mailbox", id: "box-summary" };
+    const code = await createCode({ owner: { kind: "resource", ref }, title: "Code box-summary" }, ctx(ids.manager));
     const entrypoints = [
       { kind: "schedule", entrypoint: "sort", cron: "0 7 * * 1", file: "code.ts", line: 1 },
       { kind: "manual", entrypoint: "again", cron: null, file: "code.ts", line: 2 },
     ];
-    await sql`UPDATE code.versions SET manifest=${JSON.stringify({ entrypoints })}::text::jsonb WHERE code_id=${row!.id}`;
-    const summary = await readCodeSummary({ owner }, ctx(ids.manager));
-    expect(summary.items).toHaveLength(1);
-    expect(summary.items[0]).toMatchObject({ codeId: row!.id, automations: 2 });
+    await createCodeVersion(
+      { codeId: code.id, sourceFiles: { "code.ts": "export {};" }, bundle: "export {};", manifest: { entrypoints }, baseVersionId: null },
+      ctx(ids.manager),
+    );
+    const summary = await readCodeSummary({ owner: { kind: "resource", ref } }, ctx(ids.manager));
+    expect(summary.items).toEqual([{ codeId: code.id, automations: 2, access: [] }]);
+    managed.delete("box-summary");
     expect(
       (await readCodeSummary({ owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-none" } } }, ctx(ids.manager))).items,
     ).toEqual([]);

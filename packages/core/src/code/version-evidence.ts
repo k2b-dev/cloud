@@ -1,9 +1,6 @@
 import type { CodeTestResult } from "@k2b/cloud/code";
 import { z } from "zod";
 
-/** Operations listed per version; a version names a bounded set, and the list stays small enough for the approval page. */
-const TRIAL_OPERATION_LIMIT = 50;
-
 /**
  * What Core itself saw when a version was submitted, never what its author claims: `check` always passed, because
  * submission refuses anything else. `tests` and `trial` come from the author's test/*.json fixtures, which ran against
@@ -55,7 +52,7 @@ export const unavailableEvidence = (error: string): CodeVersionEvidence => ({
   trial: null,
 });
 
-/** Reduce a complete test result to the facts a reviewer needs. Call contents stay out: only operations and counts. */
+/** Reduce a complete test result to the facts a reviewer needs: only operations and counts, with no call contents. The test output budget bounds it. */
 export function codeVersionEvidence(result: CodeTestResult): CodeVersionEvidence {
   if (!result.ok && !result.cases.length && result.error && NOT_RUN.has(result.error)) return unavailableEvidence(result.error);
   const counts = new Map<string, number>();
@@ -79,8 +76,7 @@ export function codeVersionEvidence(result: CodeTestResult): CodeVersionEvidence
           runs,
           calls: [...counts]
             .map(([operation, count]) => ({ operation, count }))
-            .sort((a, b) => b.count - a.count || a.operation.localeCompare(b.operation))
-            .slice(0, TRIAL_OPERATION_LIMIT),
+            .sort((a, b) => b.count - a.count || a.operation.localeCompare(b.operation)),
         }
       : null,
   };

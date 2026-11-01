@@ -102,6 +102,7 @@ const waitFor = async (condition: () => boolean, description: string) => {
 const admin = (identities: SenderIdentity[]): MailboxAdminSettingsContext => ({
   accessEntries: [],
   code: null,
+  messageCount: null,
   bindings: [binding],
   connections: [],
   folders: [],

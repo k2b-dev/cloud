@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
+import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
@@ -18,28 +18,17 @@ import * as savedViews from "./saved-views";
 import * as senderIdentities from "./sender-identities";
 
 const CodeSummarySchema = z.object({
-  data: z.object({
-    items: z.array(
-      z.object({
-        automations: z.number(),
-        access: z.array(z.object({ title: z.string(), count: z.number() })),
-      }),
-    ),
-  }),
+  items: z.array(z.object({ automations: z.number(), access: z.array(z.object({ title: z.string(), count: z.number() })) })),
 });
-/** Settings open without this number when Core is slow; the same budget as the Code entry's attention dot. */
-const CODE_SUMMARY_TIMEOUT_MS = 800;
+/** Settings open without these numbers when Core is slow. Core asks this app back about the owner, so it needs a moment. */
+const CODE_SUMMARY_TIMEOUT_MS = 2_000;
 
-/** Asks Core through its public query, like any application. It never fails the settings: no answer means null. */
-const loadMailboxCodeSummary = async (
-  mailboxId: string,
-  authority: RequestAuthority | null,
-  locale?: string,
-): Promise<MailboxCodeSummary | null> => {
-  if (!authority) return null;
+/** Asks Core through its public query with the person's own credentials, like any application. No answer means null. */
+const loadMailboxCodeSummary = async (mailboxId: string, caller: CapabilityCaller, locale?: string): Promise<MailboxCodeSummary | null> => {
   try {
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     if (!row) return null;
+    const timeout = AbortSignal.timeout(CODE_SUMMARY_TIMEOUT_MS);
     const result = await invokeCapabilityWithDataSchema(
       {
         appId: "core",
@@ -48,10 +37,10 @@ const loadMailboxCodeSummary = async (
         input: { owner: { kind: "resource", ref: { type: "mail.mailbox", id: row.short_id } } },
       },
       CodeSummarySchema,
-      { authority, locale, signal: AbortSignal.timeout(CODE_SUMMARY_TIMEOUT_MS) },
+      { ...caller, locale, signal: caller.signal ? AbortSignal.any([caller.signal, timeout]) : timeout },
     );
     if (!result.ok) return null;
-    const items = result.data.data.data.items;
+    const items = result.data.data.items;
     const access = new Map<string, number>();
     for (const item of items) for (const entry of item.access) access.set(entry.title, (access.get(entry.title) ?? 0) + entry.count);
     return {
@@ -64,10 +53,27 @@ const loadMailboxCodeSummary = async (
   }
 };
 
+/** Mails in this mailbox, each once however many folders hold it, without drafts. Null keeps the settings usable. */
+const countMailboxMessages = async (mailboxId: string): Promise<number | null> => {
+  try {
+    const [row] = await sql<{ count: number }[]>`
+      SELECT COUNT(DISTINCT placement.message_id)::int AS count
+      FROM mail.message_placements placement
+      JOIN mail.folders f ON f.id = placement.folder_id
+      JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+      WHERE rr.mailbox_id = ${mailboxId}::uuid AND placement.deleted_at IS NULL AND f.role <> 'drafts'
+    `;
+    return row?.count ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export const loadMailboxSettingsContext = async (
   context: MailRequestContext,
   mailboxId: string,
   authority: RequestAuthority | null,
+  caller: CapabilityCaller = {},
   locale?: string,
 ): Promise<Result<MailboxSettingsContext>> => {
   const permission = await mailboxAccess.getMailboxPermission(context, mailboxId);
@@ -114,12 +120,13 @@ export const loadMailboxSettingsContext = async (
     return ok({ mailbox: mailboxResult.data, permission, integrations, organization, compose, admin: null });
   }
 
-  const [accessResult, connectionResult, bindingResult, adminFolderResult, code] = await Promise.all([
+  const [accessResult, connectionResult, bindingResult, adminFolderResult, code, messageCount] = await Promise.all([
     mailboxAccess.listMailboxAccess(context, mailboxId),
     providerConnections.listProviderConnections(context, mailboxId),
     bindings.listProviderBindings(context, mailboxId),
     folders.listAdminFolders(context, mailboxId),
-    loadMailboxCodeSummary(mailboxId, authority, locale),
+    loadMailboxCodeSummary(mailboxId, caller, locale),
+    countMailboxMessages(mailboxId),
   ]);
   if (!accessResult.ok) return fail(accessResult.error);
   if (!connectionResult.ok) return fail(connectionResult.error);
@@ -134,6 +141,7 @@ export const loadMailboxSettingsContext = async (
     admin: {
       accessEntries: accessResult.data,
       code,
+      messageCount,
       connections: connectionResult.data,
       bindings: bindingResult.data,
       folders: adminFolderResult.data,

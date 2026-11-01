@@ -167,6 +167,8 @@ export const mailSettingsMessages = i18n.define({
       deleteMailboxLead: "The mailbox is paused and hidden. An administrator can restore it; only its Code does not come back.",
       deleteCascadeMail: ({ mails, folders }: { mails: string; folders: string }) =>
         `${mails} mails in ${folders} folders and all drafts stay retained for restoring, out of reach until then`,
+      deleteCascadeMailUnknown: ({ folders }: { folders: string }) =>
+        `The mails in ${folders} folders and all drafts stay retained for restoring, out of reach until then`,
       deleteCascadeAccess: ({ entries }: { entries: string }) => `${entries} people and groups lose access until the mailbox is restored`,
       deleteCascadeCode: ({ detail }: { detail: string }) => `Permanently deletes this mailbox's Code (${detail}). This cannot be undone.`,
       deleteCascadeCodeUnknown: "Permanently deletes this mailbox's Code, if it has any. This cannot be undone.",
@@ -1050,6 +1052,8 @@ export const mailSettingsMessages = i18n.define({
         "Das Postfach wird pausiert und ausgeblendet. Ein Admin kann es wiederherstellen, nur sein Code kommt nicht zurück.",
       deleteCascadeMail: ({ mails, folders }: { mails: string; folders: string }) =>
         `${mails} Mails in ${folders} Ordnern und alle Entwürfe bleiben zum Wiederherstellen erhalten, bis dahin unerreichbar`,
+      deleteCascadeMailUnknown: ({ folders }: { folders: string }) =>
+        `Die Mails in ${folders} Ordnern und alle Entwürfe bleiben zum Wiederherstellen erhalten, bis dahin unerreichbar`,
       deleteCascadeAccess: ({ entries }: { entries: string }) =>
         `${entries} Personen und Gruppen verlieren den Zugang, bis das Postfach wiederhergestellt ist`,
       deleteCascadeCode: ({ detail }: { detail: string }) =>

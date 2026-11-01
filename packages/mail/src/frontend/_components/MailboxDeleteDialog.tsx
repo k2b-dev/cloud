@@ -16,17 +16,18 @@ export type MailboxDeleteOutcome = "deleted" | "refused" | "unknown";
 
 type MailboxDeleteDialogProps = {
   address: string;
-  mails: number;
+  mails: number | null;
   folders: number;
   accessEntries: number;
   code: MailboxCodeSummary | null;
-  remove: (signal: AbortSignal) => Promise<MailboxDeleteOutcome>;
+  remove: () => Promise<MailboxDeleteOutcome>;
   close: (deleted: boolean) => void;
 };
 
 /**
  * Says what goes along, in numbers, and asks for the address. Failures stay inside the dialog with the address still
- * typed, because repeating the request is safe: a mailbox that is already deleted stays deleted.
+ * typed, because repeating the request is safe: a mailbox that is already deleted stays deleted. The request is never
+ * aborted: closing the dialog meanwhile cannot hide that the mailbox and its Code are gone.
  */
 export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
   const locale = useLocale();
@@ -35,8 +36,10 @@ export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
   const [typed, setTyped] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [failure, setFailure] = createSignal<"refused" | "unknown" | null>(null);
-  const abort = new AbortController();
-  onCleanup(() => abort.abort());
+  let open = true;
+  onCleanup(() => {
+    open = false;
+  });
   const matches = () => typed().trim().toLowerCase() === props.address.trim().toLowerCase();
 
   const submit = async (event: SubmitEvent) => {
@@ -44,8 +47,9 @@ export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
     if (!matches() || busy()) return;
     setBusy(true);
     setFailure(null);
-    const outcome = await props.remove(abort.signal).catch((): MailboxDeleteOutcome => "unknown");
-    if (abort.signal.aborted) return;
+    const outcome = await props.remove().catch((): MailboxDeleteOutcome => "unknown");
+    // Dismissed meanwhile: whoever opened the dialog hears the outcome from `remove`.
+    if (!open) return;
     setBusy(false);
     if (outcome === "deleted") props.close(true);
     else setFailure(outcome);
@@ -57,7 +61,11 @@ export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
       <ul class="grid gap-2 text-sm">
         <li class="flex items-start gap-3">
           <i class="ti ti-mail mt-0.5 text-(--k2b-text-muted)" aria-hidden="true" />
-          <span>{t().deleteCascadeMail({ mails: number(props.mails), folders: number(props.folders) })}</span>
+          <span>
+            {props.mails === null
+              ? t().deleteCascadeMailUnknown({ folders: number(props.folders) })
+              : t().deleteCascadeMail({ mails: number(props.mails), folders: number(props.folders) })}
+          </span>
         </li>
         <li class="flex items-start gap-3">
           <i class="ti ti-users mt-0.5 text-(--k2b-text-muted)" aria-hidden="true" />
@@ -75,12 +83,14 @@ export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
       </Show>
       <Show when={failure()}>
         {(kind) => (
-          <NoticeCard
-            tone="danger"
-            icon="ti ti-alert-triangle"
-            title={t().deleteFailedTitle}
-            detail={kind() === "refused" ? t().deleteFailedBody : t().deleteUnknownBody}
-          />
+          <div role="alert">
+            <NoticeCard
+              tone="danger"
+              icon="ti ti-alert-triangle"
+              title={t().deleteFailedTitle}
+              detail={kind() === "refused" ? t().deleteFailedBody : t().deleteUnknownBody}
+            />
+          </div>
         )}
       </Show>
       <TextInput
@@ -95,7 +105,7 @@ export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
         required
       />
       <div class="flex items-center justify-end gap-2">
-        <Button variant="secondary" size="sm" type="button" onClick={() => props.close(false)}>
+        <Button variant="secondary" size="sm" type="button" disabled={busy()} onClick={() => props.close(false)}>
           {t().deleteCancel}
         </Button>
         <Button variant="danger" size="sm" type="submit" disabled={!matches()} loading={busy()}>

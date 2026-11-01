@@ -236,16 +236,20 @@ export async function reviewCodeVersionSubmission(
     throw new CodeDataError("BAD_INPUT", "The complete submission review exceeds the approval content budget.");
   return review;
 }
+const SUBMISSION_EVIDENCE_MS = 15_000;
 /** Run the author's fixtures once for reviewers. Their result informs the decision; a failure never refuses the version. */
 async function submissionEvidence(
   input: { codeId: string; sourceFiles: Record<string, string>; manifest: { entry: string }; tests?: Record<string, string> },
   context: CodeContext,
 ): Promise<CodeVersionEvidence> {
   if (!input.tests || !Object.keys(input.tests).length) return NO_TESTS_EVIDENCE;
+  // Fixtures may never cost the submission itself: capability Actions end after 30 seconds, and the checks ran before this.
+  const budget = AbortSignal.timeout(SUBMISSION_EVIDENCE_MS);
+  const bounded: CodeContext = { ...context, signal: context.signal ? AbortSignal.any([context.signal, budget]) : budget };
   try {
-    const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, context);
+    const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, bounded);
     return codeVersionEvidence(
-      await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(context), context.signal),
+      await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(bounded), bounded.signal),
     );
   } catch (error) {
     if (context.signal?.aborted) throw error;
