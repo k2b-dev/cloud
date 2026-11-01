@@ -258,11 +258,14 @@ suite("Mail mailbox Code access", () => {
 
   test("Code cannot receive admin or replace the last mailbox administrator", async () => {
     const target = await mailbox();
-    await expect(sql`INSERT INTO auth.access (service_account_id, permission)
-      VALUES (${principal(code)}::uuid, 'admin')`).rejects.toMatchObject({ code: "23514" });
+    // Bun SQL queries are lazy; start them before a rejection matcher observes their state.
+    await expect(
+      sql`INSERT INTO auth.access (service_account_id, permission)
+      VALUES (${principal(code)}::uuid, 'admin')`.execute(),
+    ).rejects.toMatchObject({ errno: "23514" });
     const write = await grant(target.shortId, code, ["mail.draft.create"]);
-    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`).rejects.toMatchObject({
-      code: "23514",
+    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
     });
     const [admin] = await sql<{ id: string }[]>`SELECT a.id FROM mail.mailbox_access ma JOIN auth.access a ON a.id = ma.access_id
       WHERE ma.mailbox_id = ${target.id}::uuid AND a.user_id = ${owner.id}::uuid`;
@@ -478,7 +481,7 @@ suite("Mail mailbox Code access", () => {
     await sql.begin(async (writer) => {
       await writer`LOCK TABLE auth.groups, auth.user_groups_v2, auth.group_groups_v2 IN ROW EXCLUSIVE MODE`;
       await expect(sql.begin((tx) => mailboxCodeAccess.manages(tx, capabilityContext(ownerContext), target.shortId))).rejects.toMatchObject(
-        { code: "55P03" },
+        { errno: "55P03" },
       );
       // Admin authority is checked by the platform, so the adapter only needs
       // its target lock and a single-snapshot manager list during preflight.
