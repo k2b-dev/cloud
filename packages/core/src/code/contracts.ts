@@ -266,11 +266,11 @@ export const codeQueryContracts = {
       .strict(),
   },
   /**
-   * Owner Code that needs one of its administrators: paused, its newest finished run failed, or a target removed its
-   * access. Only Code whose owner the caller currently administers (or Code explicitly shared for editing).
+   * Owner Code that needs one of its administrators: paused, or its newest finished run failed; a failure also names
+   * a target that removed its access. Only Code the caller may edit (live owner administration or an editor share).
    */
   attentionList: {
-    input: z.object({}).strict(),
+    input: z.object({ cursor: CodeIdSchema.optional().describe("Last candidate Code ID returned as nextCursor.") }).strict(),
     data: z
       .object({
         items: z.array(
@@ -283,8 +283,8 @@ export const codeQueryContracts = {
             })
             .strict(),
         ),
-        /** More candidates than one bounded check; the list is not complete. */
-        truncated: z.boolean(),
+        /** More candidates remain after this bounded window; follow it even when `items` is empty. */
+        nextCursor: CodeIdSchema.nullable(),
       })
       .strict(),
   },

@@ -58,22 +58,14 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { codePerson } from "./code/access";
+import { listCodeAttention } from "./code/attention";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
 import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
-import {
-  countOwnCodeRuns,
-  listCodeAttention,
-  listCodeRuns,
-  listCodes,
-  lockCodeForEdit,
-  readCode,
-  readCodeRun,
-  readCodeVersion,
-} from "./code/store";
+import { countOwnCodeRuns, listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -863,10 +855,10 @@ export const aiCapabilities = defineCapabilities({
     "code.attention.list": {
       title: "List Code that needs you",
       description:
-        "List Code of a resource or app that the caller administers and that is paused, whose newest run failed, or that lost access at a target.",
+        "List Code of a resource or app that the caller administers and that is paused or whose newest run failed, naming a target that removed its access. Follow nextCursor even on empty pages.",
       ...codeQueryContracts.attentionList,
       openWorld: false,
-      run: (_input, context) => runCodeQuery(context, (ctx) => listCodeAttention(ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
     },
     "code.run.count": {
       title: "Count own Code runs",

@@ -175,7 +175,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.attention.list": {
           title: "Code auflisten, der dich braucht",
           description:
-            "Listet Code einer Ressource oder App, die du verwaltest, wenn er pausiert ist, sein letzter Lauf fehlgeschlagen ist oder ihm an einem Ziel der Zugriff entzogen wurde.",
+            "Listet Code einer Ressource oder App, die du verwaltest, wenn er pausiert ist oder sein letzter Lauf fehlgeschlagen ist, und nennt ein Ziel, das ihm den Zugriff entzogen hat. Dem Cursor auch bei leeren Seiten folgen.",
+          input: { cursor: "Letzte geprüfte Code-ID aus nextCursor." },
         },
         "code.run.count": {
           title: "Eigene Code-Läufe zählen",

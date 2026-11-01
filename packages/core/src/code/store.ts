@@ -4,15 +4,7 @@ import { type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
-import {
-  type CodeContext,
-  CodeDataError,
-  CodeOwnerUnavailableError,
-  codePermission,
-  codePerson,
-  readCodeOwner,
-  requireCodePermission,
-} from "./access";
+import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner, requireCodePermission } from "./access";
 import {
   CODE_INLINE_JSON_BYTES,
   CODE_RESULT_STORAGE_BYTES,
@@ -32,7 +24,7 @@ import { CODE_SETTINGS, codeSettings } from "./settings";
 
 /** C8/C13 pass their transaction for domain-row operations; admission settings use the registered settings API. */
 export type CodeDb = SQL;
-type CodeRow = {
+export type CodeRow = {
   id: string;
   owner_kind: CodeOwner["kind"];
   owner_user_id: string | null;
@@ -49,7 +41,7 @@ type CodeRow = {
   created_by: string | null;
   created_at: Date;
 };
-const mapCode = (row: CodeRow): Code => ({
+export const mapCode = (row: CodeRow): Code => ({
   id: row.id,
   owner: CodeOwnerSchema.parse(
     row.owner_kind === "person"
@@ -117,42 +109,6 @@ export const listCodes = async (input: { owner?: CodeOwner; limit: number; curso
     items: items.map(({ code, permission }) => ({ ...code, permission })),
     nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.id : null,
   };
-};
-/** Candidates checked per attention read; each needs a live owner check, so the window stays small. */
-export const CODE_ATTENTION_CANDIDATES = 50;
-type AttentionRow = CodeRow & { paused_flag: boolean; run_failed: boolean; access_removed: boolean; last_run_at: Date | null };
-/**
- * Owner Code that needs its administrators. Candidates are found by state alone; each is shown only when the caller
- * may edit it (live owner administration or an explicit share). An owner that cannot answer skips its Code.
- */
-export const listCodeAttention = async (context: CodeContext) => {
-  codePerson(context);
-  const rows = await sql<AttentionRow[]>`SELECT c.*, c.state = 'paused' AS paused_flag,
-      COALESCE(last.state = 'failed', false) AS run_failed, last.ended_at AS last_run_at,
-      EXISTS (SELECT 1 FROM code.target_grants g WHERE g.code_id = c.id AND g.state = 'removed') AS access_removed
-    FROM code.codes c
-    LEFT JOIN LATERAL (SELECT r.state, r.ended_at FROM code.runs r WHERE r.code_id = c.id AND r.ended_at IS NOT NULL
-      ORDER BY r.created_at DESC, r.id DESC LIMIT 1) last ON true
-    WHERE c.owner_kind <> 'person' AND c.state <> 'deleting'
-      AND (c.state = 'paused' OR last.state = 'failed'
-        OR EXISTS (SELECT 1 FROM code.target_grants g WHERE g.code_id = c.id AND g.state = 'removed'))
-    ORDER BY last.ended_at DESC NULLS LAST, c.id LIMIT ${CODE_ATTENTION_CANDIDATES + 1}`;
-  const items = [];
-  for (const row of rows.slice(0, CODE_ATTENTION_CANDIDATES)) {
-    const code = mapCode(row);
-    const permission = await codePermission(code, context, sql, "read").catch((error: unknown) => {
-      if (error instanceof CodeOwnerUnavailableError) return null;
-      throw error;
-    });
-    if (permission !== "editor") continue;
-    const reasons = [
-      ...(row.paused_flag ? (["paused"] as const) : []),
-      ...(row.run_failed ? (["run_failed"] as const) : []),
-      ...(row.access_removed ? (["access_removed"] as const) : []),
-    ];
-    items.push({ code, reasons, lastRunAt: row.last_run_at?.toISOString() ?? null });
-  }
-  return { items, truncated: rows.length > CODE_ATTENTION_CANDIDATES };
 };
 /** Longest counted window: the person's day in any time zone, with room for a late start. */
 const RUN_COUNT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
