@@ -64,7 +64,7 @@ suite("Spaces mutations record presentation facts in their transaction", () => {
       actor: { ...actor, origin },
     });
     if (!created.ok) throw new Error("Item not created");
-    const id = created.data.internalId ?? created.data.id;
+    const id = created.data.id;
     expect((await recorded(id, "task.created")).metadata).toMatchObject({ origin });
     const [row] = await sql<{ created_by_workload: boolean }[]>`SELECT created_by_workload FROM spaces.items WHERE id = ${id}::uuid`;
     expect(row?.created_by_workload).toBeTrue();
