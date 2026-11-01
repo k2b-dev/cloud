@@ -169,7 +169,12 @@ describe("identity key administration", () => {
   });
   test("a general key must name its scopes", async () => {
     const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
-    for (const body of [{ name: "ci" }, { name: "ci", access: "full" }, { name: "ci", scopes: [] }, { name: "ci", access: "full", scopes: [] }]) {
+    for (const body of [
+      { name: "ci" },
+      { name: "ci", access: "full" },
+      { name: "ci", scopes: [] },
+      { name: "ci", access: "full", scopes: [] },
+    ]) {
       const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -572,7 +577,10 @@ describe("standalone service accounts", () => {
       body: JSON.stringify({ name: "ci", scopes: ["read"] }),
     });
     expect(key.status).toBe(201);
-    expect(await key.json()).toMatchObject({ credential: { serviceAccountId: STANDALONE_ID, scopes: ["read"] }, token: expect.any(String) });
+    expect(await key.json()).toMatchObject({
+      credential: { serviceAccountId: STANDALONE_ID, scopes: ["read"] },
+      token: expect.any(String),
+    });
   });
 });
 
