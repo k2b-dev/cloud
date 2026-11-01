@@ -85,4 +85,3 @@ test("a conditional tab that comes or goes keeps the open panel and its unsaved 
     dom.cleanup();
   }
 });
-

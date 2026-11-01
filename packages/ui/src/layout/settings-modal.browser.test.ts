@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Which box a focus scrolls is decided by layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
@@ -189,6 +189,7 @@ describe("@k2b/ui SettingsModal category labels", () => {
           `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
             `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${groupedModal()}</div></body></html>`,
         );
+        await settled(page);
         const label = await page
           .locator('[role="tab"]', { hasText: "Konten und Identitäten" })
           .locator("span")
