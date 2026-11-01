@@ -289,6 +289,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       "e0000000-0000-4000-8000-000000000009",
     ])
       await expect(readCodeWorkload(id, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 
   test("a version's check record, explanation and source read through the admin gate, without an open approval", async () => {
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES('c_check1','person',${authorId}::uuid,'Prüfbericht',${authorId}::uuid,${fixed})`;

@@ -157,6 +157,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Liest Titel, Automation und Links des Codes, der eine Änderung gemacht hat, aus einem core.code.version-Verweis im Verlauf einer anderen App. Nichts für alle, die diesen Code nicht lesen dürfen.",
           input: { id: "Versions-UUID, optional gefolgt von ~ und einer Lauf-UUID." },
+        },
         "code.summary": {
           title: "Code eines Besitzers zusammenfassen",
           description:
