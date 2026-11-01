@@ -14,6 +14,7 @@ import { isKeptConversation, isKeptMessage } from "./conversation-keep-rules";
 import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
 import {
+  type AggregatedViewScope,
   type FolderDisplayState,
   folderDisplayStates,
   loadAggregatedViewScope,
