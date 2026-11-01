@@ -46,7 +46,8 @@ import { mandates } from "../services/mandates";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
 
-let now: Date;
+// real clock: Postgres fences use its own clock, so the frozen JS clock starts from the real time of this run.
+const now = new Date(Math.floor(Date.now() / 1000) * 1000);
 const issuer = "https://cloud.example";
 const userId = "11111111-1111-4111-8111-111111111111";
 const kid = "22222222-2222-4222-8222-222222222222";
@@ -194,12 +195,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(fetched).toBe(before);
   };
   beforeAll(async () => {
-    database = await useFreshDatabase("code_bridge_c4");
-    // Freeze the application clock at the database clock: heartbeat persists token expiry in PostgreSQL.
-    // An unrelated fixed calendar date would expire leases and replay evidence as the test ages.
-    const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
-    now = clock!.now;
     setSystemTime(now);
+    database = await useFreshDatabase("code_bridge_c4");
     await migrateAuth();
     await migrateRailPreferences();
     await migrateRailShortcuts();
