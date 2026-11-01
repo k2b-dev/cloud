@@ -13,7 +13,7 @@ type DictationState = {
 };
 
 const dictatedMark = Decoration.mark({ class: "k2b-dictation-dictated" });
-const freshMark = Decoration.mark({ class: "k2b-dictation-fresh" });
+const freshMark = (at: number) => Decoration.mark({ class: "k2b-dictation-fresh", at });
 
 class MarkWidget extends WidgetType {
   override eq() {
@@ -31,8 +31,9 @@ class MarkWidget extends WidgetType {
 }
 
 const open = StateEffect.define<number>();
-const inserted = StateEffect.define<{ from: number; to: number }>();
-const settle = StateEffect.define<null>();
+const inserted = StateEffect.define<{ from: number; to: number; mark: number }>();
+/** Removes the tint of words older than the given time. */
+const settle = StateEffect.define<number>();
 const close = StateEffect.define<null>();
 
 const empty: DictationState = { mark: null, dictated: Decoration.none, fresh: Decoration.none };
@@ -51,14 +52,16 @@ const dictationField = StateField.define<DictationState>({
     for (const effect of tr.effects) {
       if (effect.is(open)) next = { ...next, mark: effect.value };
       else if (effect.is(inserted)) {
-        const { from, to } = effect.value;
+        const { from, to, mark } = effect.value;
         next = {
-          mark: to,
+          mark,
           dictated: next.dictated.update({ add: [dictatedMark.range(from, to)] }),
-          fresh: next.fresh.update({ add: [freshMark.range(from, to)] }),
+          fresh: next.fresh.update({ add: [freshMark(Date.now()).range(from, to)] }),
         };
-      } else if (effect.is(settle)) next = { ...next, fresh: Decoration.none };
-      else if (effect.is(close)) next = empty;
+      } else if (effect.is(settle)) {
+        const before = effect.value;
+        next = { ...next, fresh: next.fresh.update({ filter: (_from, _to, value) => (value.spec.at as number) > before }) };
+      } else if (effect.is(close)) next = empty;
     }
     return next;
   },
@@ -82,7 +85,6 @@ export const dictationExtension = () => dictationField;
  * remote edits; Discard removes exactly the dictated ranges in one step, including what the person typed inside them.
  */
 export function codeMirrorDictationTarget(editorView: () => EditorView | undefined): DictationTarget {
-  let timer: ReturnType<typeof setTimeout> | undefined;
   /** The first words of each session get one space from earlier text, never two. */
   let sessionStart = false;
   const view = () => {
@@ -101,7 +103,8 @@ export function codeMirrorDictationTarget(editorView: () => EditorView | undefin
     insert: (text) => {
       const current = view();
       const mark = current?.state.field(dictationField).mark;
-      if (!current || mark === null || mark === undefined) return;
+      // A view that turned read-only takes no more words; the host ends the dictation.
+      if (!current || mark === null || mark === undefined || current.state.readOnly) return;
       let chunk = text;
       if (sessionStart) {
         const before = current.state.doc.sliceString(Math.max(0, mark - 1), mark);
@@ -109,14 +112,18 @@ export function codeMirrorDictationTarget(editorView: () => EditorView | undefin
         else if (chunk && !space.test(chunk[0]!)) chunk = ` ${chunk}`;
       }
       if (!chunk) return;
+      // The first words right before existing text keep one space to it; the mark stays before that space.
+      const after = current.state.doc.sliceString(mark, mark + 1);
+      const gap = sessionStart && after && !space.test(after) && !space.test(chunk[chunk.length - 1]!) ? " " : "";
       sessionStart = false;
       current.dispatch({
-        changes: { from: mark, insert: chunk },
-        effects: inserted.of({ from: mark, to: mark + chunk.length }),
+        changes: { from: mark, insert: chunk + gap },
+        effects: inserted.of({ from: mark, to: mark + chunk.length + gap.length, mark: mark + chunk.length }),
         annotations: [Transaction.userEvent.of("input.dictate"), Transaction.addToHistory.of(true)],
       });
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => view()?.dispatch({ effects: settle.of(null) }), freshMs);
+      // Each chunk keeps its tint for the same time, also while speech goes on.
+      const at = Date.now();
+      setTimeout(() => view()?.dispatch({ effects: settle.of(at) }), freshMs);
     },
     discard: () => {
       const current = view();
@@ -131,7 +138,6 @@ export function codeMirrorDictationTarget(editorView: () => EditorView | undefin
       });
     },
     end: () => {
-      if (timer) clearTimeout(timer);
       view()?.dispatch({ effects: close.of(null), annotations: isolateHistory.of("after") });
     },
   };

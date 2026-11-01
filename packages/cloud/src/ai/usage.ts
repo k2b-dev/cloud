@@ -261,7 +261,7 @@ export const aiUsage = {
       sql<
         AiUsagePoint[]
       >`SELECT date_trunc(${q.range === "24h" ? "hour" : "day"},created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
-        count(*)::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(cost)::double precision AS cost
+        count(*) FILTER (WHERE kind<>'live-transcription')::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(cost)::double precision AS cost
         FROM (${inference}) e GROUP BY 1 ORDER BY 1`,
       sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
         AND ${globalFilter({ ...q, userId: undefined })}`,

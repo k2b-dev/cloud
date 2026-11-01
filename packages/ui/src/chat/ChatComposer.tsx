@@ -17,16 +17,6 @@ import {
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
-import { replaceTextareaRange } from "../inputs/editor-dom";
-import {
-  completedEmojiShortcode,
-  type EmojiIndex,
-  emojiInTone,
-  emojiName,
-  emojiShortcodeQuery,
-  loadEmojiIndex,
-  suggestEmoji,
-} from "../inputs/emoji/emoji-index";
 import { createDictation } from "../inputs/dictation/create-dictation";
 import { DictationBar, DictationButton, dictationBarShown } from "../inputs/dictation/Dictation";
 import {
@@ -39,6 +29,16 @@ import {
   type TextDictationState,
 } from "../inputs/dictation/text-dictation";
 import type { DictationAlternative, DictationSource } from "../inputs/dictation/types";
+import { replaceTextareaRange } from "../inputs/editor-dom";
+import {
+  completedEmojiShortcode,
+  type EmojiIndex,
+  emojiInTone,
+  emojiName,
+  emojiShortcodeQuery,
+  loadEmojiIndex,
+  suggestEmoji,
+} from "../inputs/emoji/emoji-index";
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleInlineMarker } from "../inputs/markdown/actions";
 import { openCodeFence } from "../inputs/markdown/code-zone";
@@ -966,7 +966,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       syncCaret();
     });
   };
+  /** Whether the person placed the caret in this field yet; before that, dictation starts at the end. */
+  let caretPlaced = false;
   const syncCaret = () => {
+    caretPlaced = true;
     // One update, so no effect sees a half-moved selection (it would read as "no `/` here" and reopen a closed list).
     batch(() => {
       setCaret(textareaRef?.selectionStart ?? props.value.length);
@@ -1032,6 +1035,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     get alternative() {
       return props.dictation?.alternative;
     },
+    disabled: () => !props.dictation || editBlocked(),
     target: {
       begin: () => {
         if (dictated) {
@@ -1039,8 +1043,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           return;
         }
         const field = textareaRef;
-        const used = field && (field.ownerDocument.activeElement === field || field.selectionEnd > 0);
-        dictated = beginTextDictation(used ? field.selectionEnd : props.value.length);
+        dictated = beginTextDictation(field && caretPlaced ? Math.min(field.selectionEnd, props.value.length) : props.value.length);
         dictatedValue = props.value;
         freshWords = [];
         showDictation();
@@ -1063,8 +1066,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         dictated = undefined;
         writeDictated(next.value, (offset) => {
           let moved = offset;
-          for (const [from, to] of state.ranges) if (offset >= to) moved -= to - from;
-          else if (offset > from) moved -= offset - from;
+          for (const [from, to] of state.ranges)
+            if (offset >= to) moved -= to - from;
+            else if (offset > from) moved -= offset - from;
           return moved;
         });
         showDictation();
@@ -1079,6 +1083,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (freshTimer) clearTimeout(freshTimer);
   });
   const dictating = () => Boolean(props.dictation) && dictationBarShown(liveDictation);
+  // Dictation belongs to one draft in one editable field: another draft, a field that turns read-only or a host that
+  // drops the source ends it; the words so far stay.
+  createEffect(
+    on(
+      () => [props.draftKey, Boolean(props.dictation), editBlocked()] as const,
+      () => liveDictation.end(),
+      { defer: true },
+    ),
+  );
   /** Closes the list opened from "+"; `refocus` gives the field its focus and the selection it had when "+" was pressed. */
   const endAddSearch = (refocus: boolean) => {
     const search = addSearch();
@@ -1136,7 +1149,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
   const submittable = () =>
-    !busy() && !props.submitDisabled && hasDraft() && !(props.dictation && liveDictation.active()) && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+    !busy() &&
+    !props.submitDisabled &&
+    hasDraft() &&
+    !(props.dictation && liveDictation.active()) &&
+    !(running() && runningSubmitIntent() === "steer" && mentions().length);
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
@@ -2160,7 +2177,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     <div class="k2b-chat-composer__input" role="group" aria-label={chatMessages().messageInput}>
       <Show when={mentions().length > 0 || dictationView()}>
         <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
-          <For each={splitDictationSegments(chatMentionSegments(props.value, mentions()), dictationView()?.fresh ?? [], dictationView()?.mark)}>
+          <For
+            each={splitDictationSegments(chatMentionSegments(props.value, mentions()), dictationView()?.fresh ?? [], dictationView()?.mark)}
+          >
             {(part) =>
               part.mark ? (
                 <span class="k2b-dictation-mark" />

@@ -44,32 +44,41 @@ export const mapTextDictation = (state: TextDictationState, previous: string, ne
 const space = /\s/;
 
 /** Append `text` at the mark. The first words of a session get one space from earlier text, never two. */
-export const insertTextDictation = (state: TextDictationState, value: string, text: string): { state: TextDictationState; value: string } => {
+export const insertTextDictation = (
+  state: TextDictationState,
+  value: string,
+  text: string,
+): { state: TextDictationState; value: string } => {
   const mark = Math.min(state.mark, value.length);
   let chunk = text;
+  /** A space after the first words when they land right before existing text; the mark stays before it. */
+  let gap = "";
   if (state.fresh) {
     const before = value[mark - 1];
     if (before === undefined || space.test(before)) chunk = chunk.replace(/^[^\S\n]+/, "");
     else if (chunk && !space.test(chunk[0]!)) chunk = ` ${chunk}`;
+    const after = value[mark];
+    if (chunk && after !== undefined && !space.test(after) && !space.test(chunk[chunk.length - 1]!)) gap = " ";
   }
   if (!chunk) return { state: { ...state, fresh: state.fresh && !text }, value };
-  const length = chunk.length;
+  const length = chunk.length + gap.length;
   const ranges: [number, number][] = [];
   let joined = false;
   for (const [from, to] of state.ranges) {
-    if (to === mark && !joined) {
+    if (from > mark) ranges.push([from + length, to + length]);
+    else if (to >= mark && !joined) {
+      // The range around the mark grows by the new words.
       ranges.push([from, to + length]);
       joined = true;
-    } else if (from >= mark) ranges.push([from + length, to + length]);
-    else ranges.push([from, to]);
+    } else ranges.push([from, to]);
   }
   if (!joined) {
     ranges.push([mark, mark + length]);
     ranges.sort((a, b) => a[0] - b[0]);
   }
   return {
-    state: { mark: mark + length, ranges, fresh: false },
-    value: value.slice(0, mark) + chunk + value.slice(mark),
+    state: { mark: mark + chunk.length, ranges, fresh: false },
+    value: value.slice(0, mark) + chunk + gap + value.slice(mark),
   };
 };
 

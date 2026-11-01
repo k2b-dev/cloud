@@ -61,10 +61,10 @@ export function DictationButton(props: DictationButtonProps): JSX.Element {
         label={props.dictation.offline() ? t().dictateOffline : t().dictate}
         tooltip={props.dictation.offline() ? t().offline : t().dictate}
         aria-pressed={props.dictation.active() ? "true" : "false"}
-        aria-disabled={props.dictation.offline() ? "true" : undefined}
+        aria-disabled={props.dictation.offline() || (!props.dictation.active() && props.dictation.disabled()) ? "true" : undefined}
         data-notice={card()?.kind}
         onClick={() => {
-          if (props.dictation.offline()) return;
+          if (props.dictation.offline() || (!props.dictation.active() && props.dictation.disabled())) return;
           if (props.dictation.active()) void props.dictation.stop();
           else props.dictation.start();
         }}
@@ -72,9 +72,7 @@ export function DictationButton(props: DictationButtonProps): JSX.Element {
         <i class={`ti ${card()?.kind === "blocked" ? "ti-microphone-off" : "ti-microphone"}`} aria-hidden="true" />
       </IconButton>
       <Show when={card()}>
-        {(notice) => (
-          <DictationCard dictation={props.dictation} notice={notice()} anchor={props.cardAnchor?.() ?? button()} />
-        )}
+        {(notice) => <DictationCard dictation={props.dictation} notice={notice()} anchor={props.cardAnchor?.() ?? button()} />}
       </Show>
     </>
   );
@@ -159,7 +157,12 @@ function DictationCard(props: { dictation: DictationController; notice: Dictatio
         <Show
           when={content().retry}
           fallback={
-            <Button size="sm" variant="ghost" class={props.notice.kind === "elsewhere" ? "k2b-dictation-card__primary" : undefined} onClick={() => props.dictation.dismiss()}>
+            <Button
+              size="sm"
+              variant="ghost"
+              class={props.notice.kind === "elsewhere" ? "k2b-dictation-card__primary" : undefined}
+              onClick={() => props.dictation.dismiss()}
+            >
               {t().ok}
             </Button>
           }
@@ -218,15 +221,18 @@ export function DictationBar(props: DictationBarProps): JSX.Element {
   const deviceItems = () => [
     {
       sectionLabel: t().microphone,
-      items: (props.dictation.devices().length ? props.dictation.devices() : props.dictation.device() ? [props.dictation.device()!] : []).map(
-        (device) => ({
-          choice: "radio" as const,
-          icon: `ti ${deviceIcon(device)}`,
-          label: device.id === "default" ? `${device.label || t().microphone} · ${t().systemDefault}` : device.label || t().microphone,
-          checked: () => (props.dictation.deviceId() ?? props.dictation.device()?.id) === device.id,
-          action: () => props.dictation.chooseDevice(device.id),
-        }),
-      ),
+      items: (props.dictation.devices().length
+        ? props.dictation.devices()
+        : props.dictation.device()
+          ? [props.dictation.device()!]
+          : []
+      ).map((device) => ({
+        choice: "radio" as const,
+        icon: `ti ${deviceIcon(device)}`,
+        label: device.id === "default" ? `${device.label || t().microphone} · ${t().systemDefault}` : device.label || t().microphone,
+        checked: () => (props.dictation.deviceId() ?? props.dictation.device()?.id) === device.id,
+        action: () => props.dictation.chooseDevice(device.id),
+      })),
     },
   ];
 
@@ -268,11 +274,7 @@ export function DictationBar(props: DictationBarProps): JSX.Element {
                 if (open) void props.dictation.loadDevices();
               }}
             >
-              <Dropdown.Trigger
-                appearance="plain"
-                class="k2b-dictation-bar__device"
-                label={t().microphoneNamed({ name: deviceLabel() })}
-              >
+              <Dropdown.Trigger appearance="plain" class="k2b-dictation-bar__device" label={t().microphoneNamed({ name: deviceLabel() })}>
                 <i class={`ti ${deviceIcon(props.dictation.device())}`} aria-hidden="true" />
                 <span class="k2b-dictation-bar__device-name">{deviceLabel()}</span>
                 <i class="ti ti-chevron-down k2b-dictation-bar__device-chevron" aria-hidden="true" />
@@ -300,17 +302,31 @@ export function DictationBar(props: DictationBarProps): JSX.Element {
             const long = () =>
               !ended() ? t().interrupted : ended()!.reason === "silence" ? t().silenceDone : t().maxDone({ minutes: minutes() });
             const short = () =>
-              !ended() ? t().interruptedShort : ended()!.reason === "silence" ? t().silenceDoneShort : t().maxDoneShort({ minutes: minutes() });
+              !ended()
+                ? t().interruptedShort
+                : ended()!.reason === "silence"
+                  ? t().silenceDoneShort
+                  : t().maxDoneShort({ minutes: minutes() });
             return (
               <div class="k2b-dictation-bar__row" data-state="notice">
                 <div class="k2b-dictation-bar__status" data-tone={ended() ? undefined : "danger"} role="status">
                   <i class={`ti ${ended() ? "ti-clock" : "ti-alert-circle"}`} aria-hidden="true" />
-                  <span class="k2b-dictation-bar__message k2b-dictation-bar__message--long">{long()}</span>
+                  {/* The full message is read on every width; the visible text shortens on narrow rows. */}
+                  <span class="k2b-sr-only">{long()}</span>
+                  <span class="k2b-dictation-bar__message k2b-dictation-bar__message--long" aria-hidden="true">
+                    {long()}
+                  </span>
                   <span class="k2b-dictation-bar__message k2b-dictation-bar__message--short" aria-hidden="true">
                     {short()}
                   </span>
                 </div>
-                <Button ref={bindContinue} size="sm" variant="ghost" class="k2b-dictation-bar__continue" onClick={() => props.dictation.start()}>
+                <Button
+                  ref={bindContinue}
+                  size="sm"
+                  variant="ghost"
+                  class="k2b-dictation-bar__continue"
+                  onClick={() => props.dictation.start()}
+                >
                   {t().continue}
                 </Button>
                 <IconButton size="sm" label={t().dismiss} class="k2b-dictation-bar__icon" onClick={() => props.dictation.dismiss()}>

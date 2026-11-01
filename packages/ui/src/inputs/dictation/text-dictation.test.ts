@@ -68,12 +68,15 @@ describe("text dictation", () => {
 
   test("splits overlay segments at fresh words and the mark", () => {
     const parts = splitDictationSegments([{ text: "Hallo Welt heute" }], [[6, 10]], 10);
-    expect(parts).toEqual([
-      { text: "Hallo " },
-      { text: "Welt", fresh: true },
-      { text: "", mark: true },
-      { text: " heute" },
-    ]);
+    expect(parts).toEqual([{ text: "Hallo " }, { text: "Welt", fresh: true }, { text: "", mark: true }, { text: " heute" }]);
     expect(splitDictationSegments([{ text: "ab" }], [], 2).at(-1)).toEqual({ text: "", mark: true });
+  });
+});
+
+describe("text dictation before existing text", () => {
+  test("keeps one space to the following word and writes on before it", () => {
+    const { state, text } = dictate("existing", 0, "First", " words");
+    expect(text).toBe("First words existing");
+    expect(discardTextDictation(state, text).value).toBe("existing");
   });
 });

@@ -91,7 +91,10 @@ const accounting: LiveDictationAccounting = {
   },
   async finish(input) {
     try {
-      await finishAiCall(input.id, input.usage, input.status, { audioMs: input.audioMs, cancelled: input.status === "aborted" });
+      await finishAiCall(input.id, input.usage, input.status === "aborted" ? "ok" : input.status, {
+        audioMs: input.audioMs,
+        cancelled: input.status === "aborted",
+      });
     } finally {
       await safelyRecordStructuredRun({
         task: "live-dictation",
@@ -103,8 +106,8 @@ const accounting: LiveDictationAccounting = {
         durationMs: input.durationMs,
         audioMs: input.audioMs,
         usage: input.usage,
-        status: input.status === "ok" ? "ok" : "failed",
-        errorCode: input.code,
+        status: input.status === "failed" ? "failed" : "ok",
+        errorCode: input.status === "failed" ? input.code : undefined,
         attempts: 1,
       });
     }
@@ -140,6 +143,7 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
   let reserved = false;
   let app = "";
   let callId: string | undefined;
+  let accountingFinished = false;
   let startedAt: number | undefined;
   let lastChargedAt: number | undefined;
   let text = "";
@@ -152,7 +156,6 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
   let stopDeadline: (() => void) | undefined;
   let connectDeadline: (() => void) | undefined;
   let checking = false;
-  let lastCheckedAt = clock.now();
   let lastAccessAt = clock.now();
   let cleanupPromise = Promise.resolve();
   let startPromise = Promise.resolve();
@@ -192,6 +195,21 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
     chargeTail = chargeTail.then(() => limits.charge(options.userId, token, from, now, options.timeZone));
     return chargeTail;
   };
+  const finishAccounting = async (status: "ok" | "failed" | "aborted", code?: LiveDictationCode) => {
+    if (!callId || accountingFinished) return;
+    accountingFinished = true;
+    await ledger.finish({
+      id: callId,
+      profile: options.profile,
+      userId: options.userId,
+      app,
+      durationMs: startedAt === undefined ? 0 : clock.now() - startedAt,
+      audioMs: Math.round(audioBytes / 32),
+      usage,
+      status,
+      code,
+    });
+  };
   const end = (status: "ok" | "failed" | "aborted", code?: LiveDictationCode) => {
     if (phase === "ended") return;
     phase = "ended";
@@ -209,18 +227,7 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
             await limits.release(options.userId, token);
           }
         } finally {
-          if (callId)
-            await ledger.finish({
-              id: callId,
-              profile: options.profile,
-              userId: options.userId,
-              app,
-              durationMs: startedAt === undefined ? 0 : clock.now() - startedAt,
-              audioMs: Math.round(audioBytes / 32),
-              usage,
-              status,
-              code,
-            });
+          await finishAccounting(status, code);
         }
       }
     })().catch(() => {
@@ -258,7 +265,7 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
     checking = true;
     try {
       const renewedAt = clock.now();
-      if (!(await limits.renew(options.userId, token, renewedAt))) {
+      if (!(await limits.renew(options.userId, token))) {
         fail("connection_lost", true);
         return;
       }
@@ -274,8 +281,7 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
           return;
         }
       }
-      if (clock.now() - lastCheckedAt >= 10_000 && phase === "live") {
-        lastCheckedAt = clock.now();
+      if (phase === "live") {
         const balance = await charge();
         if (controller.signal.aborted) return;
         if (!balance) {
@@ -284,8 +290,6 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
         }
         if (balance.usedSeconds >= options.minutesPerDay * 60) stop("daily_limit");
       }
-      if (phase === "live" && startedAt !== undefined && clock.now() - startedAt >= 540_000)
-        send({ type: "warning", code: "time_left", ms: Math.max(0, LIVE_DICTATION_MAX_MS - (clock.now() - startedAt)) });
     } catch {
       fail("connection_lost", true);
     } finally {
@@ -301,11 +305,13 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
     lastChargedAt = startedAt;
     send({ type: "ready", maxMs: LIVE_DICTATION_MAX_MS });
     silenceDeadline = schedule(120_000, () => stop("silence"));
+    schedule(540_000, () => {
+      if (phase === "live") send({ type: "warning", code: "time_left", ms: 60_000 });
+    });
     schedule(LIVE_DICTATION_MAX_MS, () => stop("max_duration"));
   };
   const start = async () => {
     try {
-      connectDeadline = schedule(5_000, () => fail("provider_failed", true));
       const reservation = await limits.reserve({
         userId: options.userId,
         token,
@@ -328,15 +334,7 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
       schedule(5_000, () => tick());
       callId = await ledger.begin(options.profile, options.userId, app);
       if (controller.signal.aborted) {
-        await ledger.finish({
-          id: callId,
-          profile: options.profile,
-          userId: options.userId,
-          app,
-          durationMs: 0,
-          audioMs: 0,
-          status: "aborted",
-        });
+        await finishAccounting("aborted");
         return;
       }
       const key = await liveDictationCredential(options.profile);
@@ -371,17 +369,15 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
         };
       };
       const provider: RealtimeTranscriptionProvider = createAiLiveTranscriptionProvider(options.profile, key ?? undefined, webSocket);
+      connectDeadline = schedule(5_000, () => fail("provider_failed", true));
       for await (const event of provider.stream({ audio, signal: controller.signal })) {
         if (phase === "ended") break;
         if (event.type === "delta") {
           text += event.text;
           send({ type: "delta", text: event.text });
         } else {
-          if (phase !== "finishing" || !event.text.startsWith(text)) {
-            fail("provider_failed", true);
-            break;
-          }
-          text = event.text;
+          if (phase !== "finishing") stop();
+          if (event.text.startsWith(text)) text = event.text;
           usage = event.usage;
           stopDeadline?.();
           done();
@@ -462,7 +458,7 @@ export const createLiveDictationSession = (options: LiveDictationOptions) => {
     },
     abort() {
       if (phase === "ended") return;
-      end("aborted", "connection_lost");
+      end("aborted");
       options.close(1000);
     },
     settled: async () => {

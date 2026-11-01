@@ -186,20 +186,20 @@ export const createLiveDictationSource = ({ app }: { app: string }): DictationSo
             error("microphone_unavailable");
             return;
           }
-          let selected = deviceId;
-          if (selected) {
-            const known = await navigator.mediaDevices.enumerateDevices();
-            if (!known.some((item) => item.kind === "audioinput" && item.deviceId === selected)) selected = undefined;
-          }
-          if (ended) return;
           const constraints = { channelCount: 1, echoCancellation: true, noiseSuppression: true };
           try {
             stream = await navigator.mediaDevices.getUserMedia({
-              audio: { ...constraints, ...(selected ? { deviceId: { exact: selected } } : {}) },
+              audio: { ...constraints, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
             });
           } catch (failure) {
             if (ended) return;
-            if (selected && failure instanceof DOMException && ["OverconstrainedError", "NotFoundError"].includes(failure.name))
+            if (
+              deviceId &&
+              typeof failure === "object" &&
+              failure !== null &&
+              "name" in failure &&
+              (failure.name === "OverconstrainedError" || failure.name === "NotFoundError")
+            )
               stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
             else throw failure;
           }
@@ -215,11 +215,7 @@ export const createLiveDictationSource = ({ app }: { app: string }): DictationSo
           }
           device = { id: track.getSettings().deviceId ?? "", label: track.label };
           track.addEventListener("ended", () => error("microphone_unavailable"), { once: true });
-          try {
-            context = new AudioContext({ sampleRate: 16_000 });
-          } catch {
-            context = new AudioContext();
-          }
+          context = new AudioContext();
           const audioContext = context;
           const workletUrl = URL.createObjectURL(new Blob([liveDictationWorklet()], { type: "text/javascript" }));
           try {
@@ -282,8 +278,8 @@ export const createLiveDictationSource = ({ app }: { app: string }): DictationSo
               error("connection_lost");
             }
           };
-          socket.onclose = () => {
-            if (!ended) error("connection_lost");
+          socket.onclose = (event) => {
+            if (!ended) error(event.code === 1008 && isErrorCode(event.reason) ? event.reason : "connection_lost", event.code !== 1008);
           };
           socket.onerror = () => {
             if (!ended) error("connection_lost");

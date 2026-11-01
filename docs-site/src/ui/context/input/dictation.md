@@ -19,6 +19,10 @@ turns speech into text, and a `DictationTarget`, which places the text.
   and so does text the person typed outside the dictated words.
 - The person can type anywhere while dictating. New words land at the
   dictation mark, which moves along with edits before it.
+- Undo groups dictated words like typing. Words that Undo removed and Redo
+  brought back count as typed text, so Discard leaves them.
+- Another draft, a field that turns read-only, or a host that drops the source
+  ends dictation at once; the words so far stay.
 - From one minute before the maximum the time counts down. At the end the bar
   says so and offers "Continue dictating" at the same mark.
 

@@ -213,6 +213,22 @@ describe("live dictation in the composer", () => {
     }
   });
 
+  test("a caret placed before the text is a valid start, also at offset zero", async () => {
+    const page = await open({ draft: "existing text" });
+    try {
+      await page.locator("textarea").click();
+      await page.keyboard.press("Home");
+      await page.keyboard.press("Control+Home");
+      await start(page);
+      await page.evaluate(() => emit({ type: "text", text: "First" }));
+      await page.evaluate(() => emit({ type: "text", text: " words" }));
+      // Words before existing text keep one space to it.
+      await page.waitForFunction(() => draft() === "First words existing text");
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("stop finishes with the last words, then the microphone has the focus again", async () => {
     const page = await open({ draft: "" });
     try {
@@ -254,7 +270,7 @@ describe("live dictation in the composer", () => {
       await page.evaluate(() => emit({ type: "text", text: "One" }));
       await page.evaluate(() => emit({ type: "error", code: "connection_lost", retryable: true }));
       await page.getByRole("button", { name: "Continue dictating" }).waitFor();
-      expect(await page.getByText("Dictation interrupted. The text so far stays.").isVisible()).toBe(true);
+      expect(await page.locator(".k2b-dictation-bar__message--long").textContent()).toBe("Dictation interrupted. The text so far stays.");
       await page.getByRole("button", { name: "Continue dictating" }).click();
       await page.evaluate(() => {
         emit({ type: "state", state: "live", maxMs: 600_000 });
@@ -349,7 +365,9 @@ describe("live dictation in the composer", () => {
     const page = await open({ locale: "de" });
     try {
       await page.getByRole("button", { name: "Diktieren" }).click();
-      await page.evaluate(() => emit({ type: "state", state: "live", maxMs: 600_000, device: { id: "default", label: "MacBook-Mikrofon" } }));
+      await page.evaluate(() =>
+        emit({ type: "state", state: "live", maxMs: 600_000, device: { id: "default", label: "MacBook-Mikrofon" } }),
+      );
       await page.getByRole("button", { name: "Mikrofon: MacBook-Mikrofon" }).click();
       await page.getByRole("menuitemradio", { name: "AirPods Pro" }).click();
       await page.getByRole("group", { name: "Diktat wird abgeschlossen" }).waitFor();

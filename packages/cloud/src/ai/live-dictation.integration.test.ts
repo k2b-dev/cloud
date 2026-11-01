@@ -3,10 +3,13 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { redis, sql } from "../runtime/clients";
+import type { AuthContext } from "../server/middleware/auth";
+import { session as browserSession } from "../services/session";
+import { buildProjectedUser } from "../services/session/user";
 import * as credentials from "./credentials";
 import { createLiveDictationLimits, liveDictationDay } from "./live-dictation-limits";
 import { getLiveDictationStatus, resolveLiveDictationModel } from "./live-dictation-model";
-import { aiDictationRoutes, liveDictationOriginAllowed } from "./live-dictation-routes";
+import { aiDictationRoutes, createLiveDictationRevalidator, liveDictationOriginAllowed } from "./live-dictation-routes";
 import {
   createLiveDictationSession,
   LIVE_DICTATION_PROVIDER_BUFFER_BYTES,
@@ -16,6 +19,7 @@ import {
 } from "./live-dictation-runtime";
 import { aiModelAccess } from "./model-access";
 import { aiModelCatalog } from "./model-catalog";
+import { migrateAiQuotas } from "./quotas-migrate";
 import * as aiSettings from "./settings";
 import type { AiModelProfile } from "./types";
 import { aiUsage } from "./usage";
@@ -79,6 +83,8 @@ suite("live dictation server", () => {
   let providerClosed = 0;
   let finishProvider = true;
   let providerGreets = true;
+  let finalText = "hello world";
+  let earlyDone = false;
   let starts = 0;
   const active: ReturnType<typeof createLiveDictationSession>[] = [];
   const namespaces = new Set<string>();
@@ -100,16 +106,19 @@ suite("live dictation server", () => {
         message(ws, data) {
           const event = JSON.parse(String(data));
           providerFrames.push(event);
-          if (event.type === "input_audio_buffer.append") ws.send(JSON.stringify({ type: "transcription.delta", delta: "hello " }));
+          if (event.type === "input_audio_buffer.append") {
+            ws.send(JSON.stringify({ type: "transcription.delta", delta: "hello " }));
+            if (earlyDone) ws.send(JSON.stringify({ type: "transcription.done", text: finalText }));
+          }
           if (event.type === "input_audio_buffer.commit" && event.final && finishProvider)
-            ws.send(JSON.stringify({ type: "transcription.done", text: "hello world" }));
+            ws.send(JSON.stringify({ type: "transcription.done", text: finalText }));
         },
         close() {
           providerClosed++;
         },
       },
     });
-  }, 120_000);
+  }, 30_000);
   afterAll(async () => {
     for (const session of active) session.abort();
     await Promise.all(active.map((session) => session.settled()));
@@ -288,8 +297,30 @@ suite("live dictation server", () => {
     expect((await limits.reserve({ ...input, token: "new", now: now + 16000 })).result).toBe("ok");
     await limits.release(userId, "old");
     expect(await redis.get(`${namespace}:person:${userId}`)).toBe("new");
-    expect(await limits.renew(userId, "old", now + 16000)).toBe(false);
+    expect(await limits.renew(userId, "old")).toBe(false);
     await limits.release(userId, "new");
+  });
+  test("replica clock skew cannot evict an active semaphore slot or prevent renewal", async () => {
+    const current = setup({ concurrency: 1 });
+    await current.start();
+    const limits = current.options.limits!;
+    expect(await limits.renew(current.options.userId, (await redis.get(`${current.namespace}:person:${current.options.userId}`))!)).toBe(
+      true,
+    );
+    const blocked = await limits.reserve({
+      userId: crypto.randomUUID(),
+      token: "skewed",
+      now: current.clock.now() + 86_400_000,
+      concurrency: 1,
+      minutesPerDay: 60,
+      timeZone: "UTC",
+    });
+    expect(blocked.result).toBe("overloaded");
+    const token = (await redis.get(`${current.namespace}:person:${current.options.userId}`))!;
+    await redis.send("ZADD", [`${current.namespace}:slots`, "0", token]);
+    expect(await limits.renew(current.options.userId, token)).toBe(false);
+    current.session.abort();
+    await current.session.settled();
   });
   test("stop drains Nessi's final commit and delivers the last words before close", async () => {
     const current = setup();
@@ -316,6 +347,88 @@ suite("live dictation server", () => {
     await until(() => providerClosed > before);
     expect(current.messages.some((event) => event.type === "done")).toBe(false);
     expect(current.booked[0]?.status).toBe("aborted");
+  });
+  for (const early of [false, true]) {
+    test(`a normalized final transcript preserves streamed text and succeeds${early ? " before stop" : ""}`, async () => {
+      finalText = "hello";
+      earlyDone = early;
+      const current = setup();
+      try {
+        await current.start();
+        current.session.receive(voiced());
+        await until(() => current.messages.some((event) => event.type === "delta"));
+        if (!early) current.session.receive('{"type":"stop"}');
+        await current.session.settled();
+        expect(current.messages.at(-1)).toEqual({ type: "done", text: "hello ", audioMs: 100 });
+        expect(current.messages.filter((event) => event.type === "delta")).toEqual([{ type: "delta", text: "hello " }]);
+        expect(current.booked).toHaveLength(1);
+        expect(current.booked[0]?.status).toBe("ok");
+        expect(current.closes.at(-1)?.code).toBe(1000);
+      } finally {
+        finalText = "hello world";
+        earlyDone = false;
+        current.session.abort();
+        await current.session.settled();
+      }
+    });
+  }
+  test("provider completion before stop can append its final suffix", async () => {
+    earlyDone = true;
+    const current = setup();
+    try {
+      await current.start();
+      current.session.receive(voiced());
+      await current.session.settled();
+      expect(current.messages.slice(-2)).toEqual([{ type: "finishing" }, { type: "done", text: "hello world", audioMs: 100 }]);
+      expect(current.booked[0]?.status).toBe("ok");
+    } finally {
+      earlyDone = false;
+      current.session.abort();
+      await current.session.settled();
+    }
+  });
+  test("abort during accounting begin claims finish once even while lease release is pending", async () => {
+    const begin = Promise.withResolvers<string>();
+    const release = Promise.withResolvers<void>();
+    let beginning = false;
+    let releasing = false;
+    const booked: Parameters<LiveDictationAccounting["finish"]>[0][] = [];
+    const current = setup({
+      accounting: {
+        async begin() {
+          beginning = true;
+          return begin.promise;
+        },
+        async finish(input) {
+          booked.push(input);
+        },
+      },
+    });
+    const limits = current.options.limits!;
+    const realRelease = limits.release.bind(limits);
+    const releasingLease = spyOn(limits, "release").mockImplementation(async (userId, token) => {
+      releasing = true;
+      await release.promise;
+      await realRelease(userId, token);
+    });
+    try {
+      current.session.receive('{"type":"start","app":"notebooks"}');
+      await until(() => beginning);
+      current.session.abort();
+      await until(() => releasing);
+      begin.resolve(crypto.randomUUID());
+      await until(() => booked.length === 1);
+      release.resolve();
+      await current.session.settled();
+      expect(booked).toHaveLength(1);
+      expect(booked[0]).toMatchObject({ status: "aborted", durationMs: 0, audioMs: 0 });
+    } finally {
+      begin.resolve(crypto.randomUUID());
+      release.resolve();
+      current.session.abort();
+      await current.session.settled();
+      releasingLease.mockRestore();
+    }
   });
   test("a failed client send releases the lease and leaves no session timers", async () => {
     const current = setup({
@@ -370,6 +483,23 @@ suite("live dictation server", () => {
       providerGreets = true;
     }
   });
+  test("audio after start but before provider readiness closes with 1008", async () => {
+    providerGreets = false;
+    const current = setup();
+    const before = starts;
+    try {
+      current.session.receive('{"type":"start","app":"chat"}');
+      await until(() => starts > before);
+      current.session.receive(voiced());
+      await current.session.settled();
+      expect(current.closes.at(-1)).toEqual({ code: 1008, reason: "connection_lost" });
+      expect(current.messages.some((event) => event.type === "ready")).toBe(false);
+    } finally {
+      providerGreets = true;
+      current.session.abort();
+      await current.session.settled();
+    }
+  });
   test("provider backpressure aborts instead of growing the model socket queue", async () => {
     const current = setup({
       webSocket(url) {
@@ -382,6 +512,34 @@ suite("live dictation server", () => {
     await current.session.settled();
     expect(current.messages.at(-1)?.code).toBe("overloaded");
     expect(current.session.signal.aborted).toBe(true);
+  });
+  test("model connection gets five seconds after slow reservation, accounting and credential reads", async () => {
+    const current = setup();
+    const reserve = current.options.limits!.reserve.bind(current.options.limits!);
+    const begin = current.options.accounting!.begin.bind(current.options.accounting!);
+    const reserved = spyOn(current.options.limits!, "reserve").mockImplementation(async (input) => {
+      await current.clock.advance(6000);
+      return reserve(input);
+    });
+    const begun = spyOn(current.options.accounting!, "begin").mockImplementation(async (...args) => {
+      await current.clock.advance(6000);
+      return begin(...args);
+    });
+    credentialRead.mockImplementation(async () => {
+      await current.clock.advance(6000);
+      return null;
+    });
+    try {
+      await current.start();
+      expect(current.clock.now()).toBe(Date.parse("2026-11-01T12:00:18Z"));
+      expect(current.messages.some((event) => event.type === "error")).toBe(false);
+    } finally {
+      current.session.abort();
+      await current.session.settled();
+      reserved.mockRestore();
+      begun.mockRestore();
+      credentialRead.mockResolvedValue(null);
+    }
   });
   test("failed access revalidation and a lost lease abort the stream", async () => {
     const denied = setup({ revalidate: async () => false });
@@ -397,6 +555,47 @@ suite("live dictation server", () => {
     await lost.session.settled();
     expect(lost.messages.at(-1)?.code).toBe("connection_lost");
   });
+  for (const failure of ["authentication", "settings", "model access"] as const) {
+    test(`a transient ${failure} error in the real revalidation probe is retryable`, async () => {
+      const current = setup();
+      const user = buildProjectedUser({ id: current.options.userId, uid: "dictation-test", provider: "local", profile: "user" });
+      const authenticated = spyOn(browserSession, "authenticateRequest").mockResolvedValue({
+        user,
+        data: { userId: user.id, sid: "test", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z", kind: "web" },
+      });
+      const read = spyOn(aiSettings, "readAiSettingsState");
+      const access = spyOn(aiModelAccess, "assertAllowed");
+      const probe = new Hono<AuthContext>().get("*", (c) => {
+        current.options.revalidate = createLiveDictationRevalidator(c, profile.id, user.id);
+        return c.body(null, 204);
+      });
+      try {
+        await probe.request("/api/ai/dictation/live", { headers: { cookie: "session_token=test" } });
+        if (failure === "authentication") authenticated.mockRejectedValue(new Error("Temporary authentication failure"));
+        else if (failure === "settings") read.mockRejectedValue(new Error("Temporary settings failure"));
+        else {
+          const state = await aiSettings.readAiSettingsState();
+          read.mockResolvedValue({
+            ...state,
+            enabled: true,
+            profiles: [profile],
+            assignments: state.assignments.map((row) => (row.slot === "liveAudio" ? { ...row, variantId: profile.id } : row)),
+          });
+          access.mockRejectedValue(new Error("Temporary model access failure"));
+        }
+        await current.start();
+        await current.clock.advance(30_000);
+        await current.session.settled();
+        expect(current.messages.at(-1)).toEqual({ type: "error", code: "connection_lost", retryable: true });
+      } finally {
+        current.session.abort();
+        await current.session.settled();
+        authenticated.mockRestore();
+        read.mockRestore();
+        access.mockRestore();
+      }
+    });
+  }
   test("two silent minutes stop; finalization is bounded to five seconds", async () => {
     finishProvider = false;
     try {
@@ -423,7 +622,7 @@ suite("live dictation server", () => {
         current.session.receive(voiced());
         await current.clock.advance(60_000);
       }
-      expect(current.messages.some((event) => event.type === "warning" && event.ms === 60000)).toBe(true);
+      expect(current.messages.filter((event) => event.type === "warning")).toEqual([{ type: "warning", code: "time_left", ms: 60000 }]);
       expect(current.messages.at(-1)?.type).toBe("finishing");
       await current.clock.advance(5000);
       await current.session.settled();
@@ -431,6 +630,26 @@ suite("live dictation server", () => {
     } finally {
       finishProvider = true;
     }
+  });
+  test("the daily allowance is checked on the first five-second charge", async () => {
+    const current = setup({ minutesPerDay: 1 });
+    const day = liveDictationDay(current.clock.now(), current.options.timeZone).day;
+    await redis.set(`${current.namespace}:day:${current.options.userId}:${day}`, "55");
+    await current.start();
+    await current.clock.advance(5000);
+    await current.session.settled();
+    expect(current.messages.at(-1)).toMatchObject({ type: "done", reason: "daily_limit" });
+  });
+  test("quota migration upgrades the old kind constraint once and preserves the current one", async () => {
+    await sql`ALTER TABLE ai.inference_calls DROP CONSTRAINT inference_calls_kind_check`;
+    await sql`ALTER TABLE ai.inference_calls ADD CONSTRAINT inference_calls_kind_check CHECK(kind IN ('chat','background'))`;
+    await migrateAiQuotas();
+    const read = () => sql<{ oid: number; definition: string }[]>`SELECT oid::int,pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid='ai.inference_calls'::regclass AND conname='inference_calls_kind_check'`;
+    const before = await read();
+    expect(before[0]?.definition).toContain("live-transcription");
+    await migrateAiQuotas();
+    expect(await read()).toEqual(before);
   });
   test("daily allowance stops a live session, blocks another start, and resets at local midnight", async () => {
     finishProvider = false;
@@ -490,8 +709,23 @@ suite("live dictation server", () => {
       const report = await aiUsage.report("24h", { userId });
       expect(report.chat.runs).toBe(0);
       expect(report.background.runs).toBe(0);
+      expect(report.timeline.every((point) => point.turns === 0)).toBe(true);
       expect(report.users.items[0]?.dictationMinutes).toBeCloseTo(100 / 60000);
       expect(report.apps.items.find((row) => row.id === "notebooks")?.dictationMinutes).toBeCloseTo(100 / 60000);
+      const discarded = setup({ userId, accounting: undefined });
+      await discarded.start();
+      discarded.session.abort();
+      await discarded.session.settled();
+      const calls = await sql`SELECT status,cancelled,error_code FROM ai.inference_calls WHERE user_id=${userId}::uuid ORDER BY started_at`;
+      expect(calls).toEqual([
+        { status: "ok", cancelled: false, error_code: null },
+        { status: "ok", cancelled: true, error_code: null },
+      ]);
+      const runs = await sql`SELECT status,error_code FROM ai.structured_runs WHERE user_id=${userId}::uuid`;
+      expect(runs).toEqual([
+        { status: "ok", error_code: null },
+        { status: "ok", error_code: null },
+      ]);
     } finally {
       await sql`DELETE FROM ai.inference_calls WHERE user_id=${userId}::uuid`;
       await sql`DELETE FROM ai.structured_runs WHERE user_id=${userId}::uuid`;

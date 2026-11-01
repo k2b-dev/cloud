@@ -46,6 +46,20 @@ export type {
   DurationPreset,
 } from "./DatePicker";
 export { DatePicker, DateRangePicker, DateTimePicker } from "./DatePicker";
+export type { DictationController, DictationNotice, DictationOptions, DictationStatus } from "./dictation/create-dictation";
+export { createDictation } from "./dictation/create-dictation";
+export type { DictationBarProps, DictationButtonProps } from "./dictation/Dictation";
+export { DictationBar, DictationButton, dictationBarShown } from "./dictation/Dictation";
+export type {
+  DictationAlternative,
+  DictationDevice,
+  DictationEndReason,
+  DictationErrorCode,
+  DictationEvent,
+  DictationSession,
+  DictationSource,
+  DictationTarget,
+} from "./dictation/types";
 export type { EmojiPickerPopoverProps, EmojiPickerProps } from "./emoji/EmojiPicker";
 export { EmojiPicker } from "./emoji/EmojiPicker";
 export type { EmojiSkinTone } from "./emoji/emoji-index";
@@ -128,17 +142,3 @@ export {
 } from "./TemplateEditor";
 export type { TextInputProps } from "./TextInput";
 export { TextInput } from "./TextInput";
-export type { DictationButtonProps, DictationBarProps } from "./dictation/Dictation";
-export { DictationBar, DictationButton, dictationBarShown } from "./dictation/Dictation";
-export type { DictationController, DictationNotice, DictationOptions, DictationStatus } from "./dictation/create-dictation";
-export { createDictation } from "./dictation/create-dictation";
-export type {
-  DictationAlternative,
-  DictationDevice,
-  DictationEndReason,
-  DictationErrorCode,
-  DictationEvent,
-  DictationSession,
-  DictationSource,
-  DictationTarget,
-} from "./dictation/types";

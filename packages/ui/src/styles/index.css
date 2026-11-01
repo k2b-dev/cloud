@@ -13591,7 +13591,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   flex: 1;
   min-width: 0;
-  height: 1.75rem;
+  height: min(1.75rem, var(--k2b-dictation-control));
   align-items: center;
   justify-content: flex-end;
   gap: 3px;
@@ -13605,7 +13605,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 2px;
   background: var(--k2b-text);
   transform: scaleY(var(--k2b-dictation-level, 0.1));
-  transition: transform var(--k2b-motion-fast) linear;
+  transition: transform var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-dictation-bar__row[data-state="starting"] .k2b-dictation-bar__wave > span {
@@ -13632,7 +13632,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 14rem;
-  height: 1.875rem;
+  height: min(1.875rem, var(--k2b-dictation-control));
   align-items: center;
   gap: 0.375rem;
   padding: 0 0.625rem;

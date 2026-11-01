@@ -24,8 +24,13 @@ export async function migrateAiQuotas() {
       CHECK(cost IS NULL OR cost>=0), CHECK(reserved>=0),
       CHECK(input IS NULL OR input>=0), CHECK(output IS NULL OR output>=0)
     )`;
-    await db`ALTER TABLE ai.inference_calls DROP CONSTRAINT IF EXISTS inference_calls_kind_check`;
-    await db`ALTER TABLE ai.inference_calls ADD CONSTRAINT inference_calls_kind_check CHECK(kind IN ('chat','background','live-transcription'))`;
+    await db`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'ai.inference_calls'::regclass
+        AND conname = 'inference_calls_kind_check' AND position('''live-transcription''' in pg_get_constraintdef(oid)) = 0) THEN
+        ALTER TABLE ai.inference_calls DROP CONSTRAINT inference_calls_kind_check;
+        ALTER TABLE ai.inference_calls ADD CONSTRAINT inference_calls_kind_check CHECK(kind IN ('chat','background','live-transcription'));
+      END IF;
+    END $$`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS audio_ms INTEGER`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS credential_id UUID`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
