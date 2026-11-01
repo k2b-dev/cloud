@@ -226,6 +226,15 @@ describe("@k2b/ui SettingsModal separation", () => {
         };
       });
       expect(fade).toEqual({ overflows: true, masked: true, reachesPastPadding: true });
+
+      // Selecting a category scrolls it into view the way the modal does; it must stop outside the fade.
+      const revealed = await page.locator(".k2b-settings__tabs").evaluate((row) => {
+        const tab = row.querySelectorAll<HTMLElement>('[role="tab"]')[5]!;
+        tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const fadeSize = Number.parseFloat(getComputedStyle(row).getPropertyValue("--scroll-fade-size")) * 16;
+        return tab.getBoundingClientRect().right <= row.getBoundingClientRect().right - fadeSize + 1;
+      });
+      expect(revealed).toBe(true);
     } finally {
       await page.close();
     }

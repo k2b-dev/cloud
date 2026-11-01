@@ -388,8 +388,10 @@
   padding: 0.5rem 0.75rem;
   scrollbar-width: thin;
   /* The fade has to reach past the row's end padding into the last label, or
-     that label ends at a hard edge. */
+     that label ends at a hard edge. A category scrolled into view stops
+     outside the fade. */
   --scroll-fade-size: 2.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
 /* In the row, space separates groups (no divider line); their labels need the
