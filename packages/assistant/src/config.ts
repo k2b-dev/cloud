@@ -17,26 +17,28 @@ export const app = defineApp({
     ],
   }),
   cli: { assistant: { module: "src/cli.ts", references: "src/cli-references" } },
-  name: "Assistant",
-  icon: "ti ti-sparkles",
+  name: "Gustav",
+  icon: "ti ti-moustache",
   description: "General-purpose AI assistant for writing, rewriting, summarizing, and questions.",
   presentation: {
     baseLocale: "en",
     translations: {
       de: {
-        name: "Assistent",
-        panelLabel: "Assistent",
+        name: "Gustav",
+        panelLabel: "Gustav",
         adminLinks: { "/admin/assistant": "Apps" },
         description: "KI-Assistent zum Schreiben, Überarbeiten, Zusammenfassen und Beantworten von Fragen.",
       },
     },
   },
+  // Plum: away from Chat violet and the AI cyan.
   appearance: {
-    accent: "#14b8a6",
+    accent: "#8e1b6f",
     background: {
-      from: "#14b8a6",
-      to: "#3b82f6",
+      from: "#8e1b6f",
+      to: "#62378d",
       angle: 135,
+      strength: 14,
     },
   },
   adminHref: "/admin/assistant",
@@ -119,7 +121,7 @@ export const app = defineApp({
     section: "primary",
     requiresAuth: true,
   },
-  panel: { href: "/app/assistant/panel", label: "Assistant", icon: "ti ti-sparkles", code: true },
+  panel: { href: "/app/assistant/panel", label: "Gustav", icon: "ti ti-moustache", order: 0 },
   openapi: "/api/assistant/openapi.json",
   routes: ["/api/assistant", "/app/assistant", "/public/assistant", "/admin/assistant"],
 });

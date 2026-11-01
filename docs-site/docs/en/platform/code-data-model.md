@@ -131,6 +131,26 @@ version text. Readers still receive `contents: null` with any selector.
 `entrypoint` is the declared handler name. For a path handler it never contains
 the concrete URL, request IDs, query parameters or other run input.
 
+## Where people see Code
+
+People meet Code in Gustav, the product name of the Assistant application.
+Only the name, the icon `ti-moustache` and the plum app color changed: the
+application ID stays `assistant`, its addresses stay under `/app/assistant`,
+and chats, settings, files, Projects, memories, Skills and saved "always
+allow" answers are untouched.
+
+- **My apps & automations** (`/app/assistant?code=1`) lists the person's own
+  Code with its state and newest run. The sidebar shows the entry only when
+  `core.code.list` with the person as owner returns an item; when Core cannot
+  answer, the entry stays so the list can show its error with a retry.
+- **Code of …** sits at the top of the Gustav panel when the page's place
+  owns Code the person may read. It lists that Code with its newest run and
+  status, folds to one line while a chat is open, and shows an error with a
+  retry when Core cannot list it. A place without readable Code shows nothing.
+
+Both read only through `core.code.list` and `core.code.run.list` with the
+person's own credentials, the same public Queries any application can call.
+
 ## Storage limits and retention
 
 Core declares these administrator settings. They have no environment-variable

@@ -21,6 +21,7 @@ export const assistantConversationHref = (currentHref: string, conversationId: s
   else url.searchParams.delete("conversation");
   url.searchParams.delete("project");
   url.searchParams.delete("approvals");
+  url.searchParams.delete("code");
   url.searchParams.delete("q");
   if (previousConversationId !== conversationId) {
     url.searchParams.delete("artifact");
@@ -38,6 +39,7 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
   url.searchParams.delete("approvals");
+  url.searchParams.delete("code");
   url.searchParams.delete("q");
   return relativeHref(url);
 };
@@ -89,3 +91,12 @@ export const assistantMessageSeqFromHref = (href: string): number | null => {
 export const ASSISTANT_APPROVALS_HREF = "/app/assistant?approvals=1";
 
 export const assistantApprovalsOpenFromHref = (href: string): boolean => new URL(href, URL_BASE).searchParams.get("approvals") === "1";
+
+/** The person's own Code: `?code=1`, without a chat or project, so reload and Back keep it. */
+export const ASSISTANT_CODE_HREF = "/app/assistant?code=1";
+
+/** Same precedence as the server: a chat, a Project or the approvals view wins over the Code list. */
+export const assistantCodeOpenFromHref = (href: string): boolean => {
+  const params = new URL(href, URL_BASE).searchParams;
+  return params.get("code") === "1" && !params.has("conversation") && !params.has("project") && params.get("approvals") !== "1";
+};

@@ -62,8 +62,7 @@ export type PanelProvider = {
   href: string;
   appName: string;
   consent: boolean;
-  /** The panel works on a resource's Code with the person; shared Code pages offer it as "Edit with …". */
-  code?: true;
+  order?: number;
 };
 
 /** Authorized presentation only: the panel route still authorizes every request. */
@@ -83,10 +82,15 @@ export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: Use
               href: panel.href,
               appName: presentation.name,
               consent: panelProviderNeedsConsent(app.id),
-              ...(app.panel.code === true ? { code: true as const } : {}),
+              ...(app.panel.order !== undefined ? { order: app.panel.order } : {}),
             },
           ]
         : [];
     })
-    .sort((a, b) => a.label.localeCompare(b.label, locale) || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY) ||
+        a.label.localeCompare(b.label, locale) ||
+        a.id.localeCompare(b.id),
+    );
 };
