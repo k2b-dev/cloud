@@ -35,3 +35,14 @@ The Weather geo migration removes only `city.search` from its baseline. Call
 Core `address.autocomplete` with `type: "city"` and pass the selected coordinates
 to Weather. The remaining evolution checks stay active. See the
 [Weather migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#weather-city-search-uses-core-geo).
+
+The coordinated Code target migration moves Notebooks, Pulse, Venue, and
+Weather Actions from resource IDs in input to their declared resource target.
+These baselines update only the existing Actions' target declarations, removed
+container-ID fields, and corresponding hashes; result schemas and safety
+contracts remain frozen. Unrelated additive changes stay out of the baseline
+and are still checked as additive evolution. See the application target guides for
+[Notebooks](../../../docs-site/apps-content/en/notebooks.md#capability-action-targets),
+[Pulse](../../../docs-site/apps-content/en/pulse.md#capability-action-targets),
+[Venue](../../../docs-site/apps-content/en/venue.md#capability-action-targets), and
+[Weather](../../../docs-site/apps-content/en/weather.md#capability-action-targets).
