@@ -75,6 +75,8 @@ test("browser notification startup still rejects other configuration failures", 
   }
 });
 
+// Keep the successful initialization last: the production key promise is cached
+// for the process lifetime; the preceding cases deliberately leave it retryable.
 test("VAPID initialization keeps settings on its lock-owning transaction and invalidates after commit", async () => {
   const client = Object.assign(new SQL("postgres://localhost/unused_test"), {
     savepoint: () => {
@@ -97,6 +99,7 @@ test("VAPID initialization keeps settings on its lock-owning transaction and inv
   });
   // Pool-level reads/writes under this transaction can sit behind a concurrent
   // index build waiting for the transaction itself. Reject any such escape.
+  const poolGet = spyOn(coreSettings, "get").mockRejectedValue(new Error("Pool get inside transaction"));
   const poolRead = spyOn(coreSettings, "read").mockRejectedValue(new Error("Pool read inside transaction"));
   const poolWrite = spyOn(coreSettings, "set").mockRejectedValue(new Error("Pool write inside transaction"));
   const read = spyOn(settingsStore, "readKeyState").mockImplementation(async (key, db) => {
@@ -139,6 +142,7 @@ test("VAPID initialization keeps settings on its lock-owning transaction and inv
       "commit",
       "invalidate",
     ]);
+    expect(poolGet).not.toHaveBeenCalled();
     expect(poolRead).not.toHaveBeenCalled();
     expect(poolWrite).not.toHaveBeenCalled();
     expect(write.mock.calls.slice(-2).map(([key, value]) => [key, value])).toEqual([
@@ -146,7 +150,7 @@ test("VAPID initialization keeps settings on its lock-owning transaction and inv
       [privateKey, generated.privateKey],
     ]);
   } finally {
-    for (const spy of [begin, poolRead, poolWrite, read, write, invalidate, generate]) spy.mockRestore();
+    for (const spy of [begin, poolGet, poolRead, poolWrite, read, write, invalidate, generate]) spy.mockRestore();
     await client.close();
   }
 });
