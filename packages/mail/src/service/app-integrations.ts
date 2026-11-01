@@ -1,7 +1,7 @@
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import { type CapabilityResult, ContactDirectoryResolveDataSchema } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   type CalendarAddress,
   type CalendarParticipationStatus,
@@ -31,9 +31,10 @@ const REQUIRED_SPACES_INVITATION_QUERIES = [
 ] as const;
 const REQUIRED_SPACES_INVITATION_ACTIONS = ["calendar-invitation.import", "calendar-invitation.response.commit"] as const;
 const REQUIRED_SPACES_SETTINGS_QUERIES = ["calendar-destination.list"] as const;
-const REQUIRED_SPACES_COMPOSER_QUERIES = ["calendar-destination.list", "space.read", "event.list"] as const;
+const REQUIRED_SPACES_COMPOSER_QUERIES = ["calendar-destination.list", "space.read", "event.list", "item.read"] as const;
 const REQUIRED_SPACES_COMPOSER_ACTIONS = ["event.create", "event.invitation.prepare", "event.invitation.commit"] as const;
 const REQUIRED_SPACES_CONTEXT_QUERIES = [
+  "item.read",
   "item.reference.find",
   "item.link-candidate.search",
   "space.read",
@@ -113,9 +114,8 @@ export const linkSpaceItemResource = (
   request: AppIntegrationRequest,
   idempotencyKey?: string,
 ) =>
-  fetchAppCapability({
-    appId: "spaces",
-    kind: "action",
+  fetchSpaceItemAction({
+    itemId: input.itemId,
     capabilityId: "item.reference.add",
     request,
     dataSchema: spacesItemResourceReferenceSchema,
@@ -123,21 +123,27 @@ export const linkSpaceItemResource = (
     ...(idempotencyKey ? { idempotencyKey } : {}),
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
-export const createSpaceEventOnce = (input: Record<string, unknown>, idempotencyKey: string, request: AppIntegrationRequest) =>
-  fetchAppCapability({
+export const createSpaceEventOnce = (
+  input: { spaceId: string } & Record<string, unknown>,
+  idempotencyKey: string,
+  request: AppIntegrationRequest,
+) => {
+  const { spaceId, ...data } = input;
+  return fetchAppCapability({
     appId: "spaces",
     kind: "action",
     capabilityId: "event.create",
     request,
     dataSchema: spacesItemMutationDataSchema,
-    input,
+    target: { type: "spaces.space", id: spaceId },
+    input: data,
     idempotencyKey,
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
+};
 
 export const unlinkSpaceItemResource = (input: { itemId: string; ref: { type: string; id: string } }, request: AppIntegrationRequest) =>
-  fetchAppCapability({
-    appId: "spaces",
-    kind: "action",
+  fetchSpaceItemAction({
+    itemId: input.itemId,
     capabilityId: "item.reference.remove",
     request,
     dataSchema: spacesItemReferenceRemoveDataSchema,
@@ -167,12 +173,14 @@ const fetchAppCapability = async <T>(params: {
   dataSchema: z.ZodType<T>;
   input: unknown;
   idempotencyKey?: string;
+  target?: { type: string; id: string };
 }): Promise<AppIntegrationResult<CapabilityResult<T>>> => {
   const result = await invokeCapabilityWithDataSchema(
     {
       appId: params.appId,
       capabilityId: params.capabilityId,
       kind: params.kind,
+      target: params.target,
       input: params.input,
       idempotencyKey: params.idempotencyKey,
     },
@@ -181,6 +189,32 @@ const fetchAppCapability = async <T>(params: {
   );
   if (!result.ok) return projectAppCapabilityError(result.error);
   return { ok: true, data: result.data };
+};
+
+/** Resolve the owning Space from its canonical reader before a target-bound item Action. */
+const fetchSpaceItemAction = async <T>(params: {
+  itemId: string;
+  capabilityId: string;
+  request: AppIntegrationRequest;
+  dataSchema: z.ZodType<T>;
+  input: unknown;
+  idempotencyKey?: string;
+}): Promise<AppIntegrationResult<CapabilityResult<T>>> => {
+  const item = await fetchAppCapability({
+    appId: "spaces",
+    kind: "query",
+    capabilityId: "item.read",
+    request: params.request,
+    dataSchema: z.object({ spaceId: z.string().min(1) }).loose(),
+    input: { id: params.itemId },
+  });
+  if (!item.ok) return item;
+  return fetchAppCapability({
+    ...params,
+    appId: "spaces",
+    kind: "action",
+    target: { type: "spaces.space", id: item.data.data.spaceId },
+  });
 };
 
 const contactDirectoryUnavailable: AppIntegrationFailure = {
@@ -287,16 +321,19 @@ export const createCalendarEvent = (
     allDay?: boolean;
   },
   request: AppIntegrationRequest,
-) =>
-  fetchAppCapability({
+) => {
+  const { spaceId, ...data } = input;
+  return fetchAppCapability({
     appId: "spaces",
     kind: "action",
     capabilityId: "event.create",
     request,
     dataSchema: calendarEventSchema,
-    input,
+    target: { type: "spaces.space", id: spaceId },
+    input: data,
     idempotencyKey: request.requestId || crypto.randomUUID(),
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
+};
 
 export const prepareEventInvitation = (
   input: {
@@ -310,9 +347,8 @@ export const prepareEventInvitation = (
   request: AppIntegrationRequest,
   idempotencyKey: string,
 ) =>
-  fetchAppCapability({
-    appId: "spaces",
-    kind: "action",
+  fetchSpaceItemAction({
+    itemId: input.itemId,
     capabilityId: "event.invitation.prepare",
     request,
     dataSchema: eventInvitationPrepareDataSchema,
@@ -320,14 +356,13 @@ export const prepareEventInvitation = (
     idempotencyKey,
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
-export const commitEventInvitation = (input: { deliveryId: string }, request: AppIntegrationRequest) =>
-  fetchAppCapability({
-    appId: "spaces",
-    kind: "action",
+export const commitEventInvitation = (input: { deliveryId: string; itemId: string }, request: AppIntegrationRequest) =>
+  fetchSpaceItemAction({
+    itemId: input.itemId,
     capabilityId: "event.invitation.commit",
     request,
     dataSchema: eventInvitationCommitDataSchema,
-    input,
+    input: { deliveryId: input.deliveryId },
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
 export const previewCalendarInvitation = (
@@ -352,15 +387,18 @@ export const importCalendarInvitation = (
     conversation: { ref: { type: "mail.conversation"; id: string }; label: string };
   },
   request: AppIntegrationRequest,
-) =>
-  fetchAppCapability({
+) => {
+  const { spaceId, ...data } = input;
+  return fetchAppCapability({
     appId: "spaces",
     kind: "action",
     capabilityId: "calendar-invitation.import",
     request,
     dataSchema: calendarInvitationImportResultSchema,
-    input,
+    target: { type: "spaces.space", id: spaceId },
+    input: data,
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
+};
 
 export const buildCalendarInvitationResponse = (
   input: {

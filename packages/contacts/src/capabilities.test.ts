@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { capabilityCallFromTool, normalizeCapabilityCall } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
@@ -76,6 +77,7 @@ const context = {
   locale: "en",
   requestId: "req-test",
   origin: "app",
+  target: { type: "contacts.book", id: publicBookId },
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -309,7 +311,6 @@ describe("contacts capabilities", () => {
   test("keeps advertised contact writes below the capability transport envelope", () => {
     const text = (length: number) => "x".repeat(length);
     const input = {
-      bookId: publicBookId,
       label: "A",
       emails: Array.from({ length: CONTACT_COLLECTION_LIMIT }, () => ({ label: text(100), email: `${text(50)}@example.com` })),
       phones: Array.from({ length: CONTACT_COLLECTION_LIMIT }, () => ({ label: text(100), phone: text(100) })),
@@ -341,7 +342,6 @@ describe("contacts capabilities", () => {
     expect(Buffer.byteLength(JSON.stringify({ input }))).toBeLessThan(200_000);
     expect(
       ContactCreateInputSchema.safeParse({
-        bookId: publicBookId,
         firstName: "Ada",
         emails: Array(CONTACT_COLLECTION_LIMIT + 1).fill({ email: "a@b.co" }),
       }).success,
@@ -487,7 +487,7 @@ describe("contacts capabilities", () => {
       context,
     );
     const results: CapabilityActionReviewResult[] = [
-      await contactsCapabilities.actions["contact.create"].review!({ bookId: publicBookId, label: "New contact" }, context),
+      await contactsCapabilities.actions["contact.create"].review!({ label: "New contact" }, context),
       await contactsCapabilities.actions["contact.update"].review!(
         { contactId: publicContactId, expectedUpdatedAt: timestamp, firstName: "Grace" },
         context,
@@ -915,4 +915,98 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
     assertResourceOpenLink(result.data);
   }
+});
+
+test("contact Actions bind their book and moving requires both explicit coordinates", () => {
+  const manifest = compileCapabilityManifest("contacts", contactsCapabilities);
+  for (const action of manifest.actions) {
+    expect(action.target).toBe("book");
+    expect(action.inputSchema.properties).not.toHaveProperty("bookId");
+    expect(action.inputSchema.properties).not.toHaveProperty("targetBookId");
+  }
+  const move = manifest.actions.find((action) => action.localId === "contact.move")!;
+  expect(move.refs).toEqual({ targetBookId: "book" });
+  const input = { contactId: publicContactId, expectedUpdatedAt: timestamp };
+  const target = { type: "contacts.book", id: publicBookId };
+  const refs = { targetBookId: { type: "contacts.book", id: "Book02" } };
+  expect(() => normalizeCapabilityCall("contacts", move, { input, target })).toThrow();
+  expect(() => normalizeCapabilityCall("contacts", move, { input, refs })).toThrow();
+  expect(capabilityCallFromTool("contacts", move, { ...input, book: publicBookId, targetBookId: "Book02" })).toEqual({
+    capability: "contacts.contact.move",
+    target,
+    refs,
+    input,
+  });
+  expect(ContactCreateInputSchema.safeParse({ bookId: publicBookId, label: "New" }).success).toBe(false);
+});
+
+test("contact mutations and reviews reject a contact outside the selected book", async () => {
+  spyOn(contacts, "findBookId").mockResolvedValue("99999999-9999-4999-8999-999999999999");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const update = spyOn(contactsService.contact, "update");
+  const input = { contactId: publicContactId, expectedUpdatedAt: timestamp, label: "Changed" };
+  expect(await contactsCapabilities.actions["contact.update"].run(input, context)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(await contactsCapabilities.actions["contact.update"].review!(input, context)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(update).not.toHaveBeenCalled();
+});
+
+test("moving a contact needs write access to both the source and destination book", async () => {
+  const destinationId = "99999999-9999-4999-8999-999999999999";
+  const destination = { ...book, id: destinationId, name: "Destination" };
+  spyOn(publicResources, "resolvePublicId").mockImplementation(async (table, value) => {
+    if (table === "books") return value === publicBookId ? bookId : value === "Book02" ? destinationId : null;
+    return table === "contacts" && value === publicContactId ? contactId : null;
+  });
+  spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+  spyOn(contacts, "get").mockResolvedValue(contact);
+  spyOn(books, "get").mockImplementation(async ({ id }) => (id === bookId ? book : destination));
+  const permission = spyOn(access, "getActorBookPermission");
+  const move = spyOn(contacts, "move").mockResolvedValue({ ok: true, data: { ...contact, bookId: destinationId } });
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const moveContext = { ...context, refs: { targetBookId: { type: "contacts.book", id: "Book02" } } };
+  const input = { contactId: publicContactId, expectedUpdatedAt: timestamp };
+  for (const deniedId of [bookId, destinationId]) {
+    permission.mockImplementation(async ({ bookId: id }) => (id === deniedId ? "read" : "write"));
+    expect((await contactsCapabilities.actions["contact.move"].run(input, moveContext)).ok).toBe(false);
+    expect((await contactsCapabilities.actions["contact.move"].review!(input, moveContext)).ok).toBe(false);
+    expect(move).not.toHaveBeenCalled();
+  }
+  permission.mockResolvedValue("write");
+  expect((await contactsCapabilities.actions["contact.move"].run(input, moveContext)).ok).toBe(true);
+  expect(move).toHaveBeenCalledWith(expect.objectContaining({ sourceBookId: bookId, targetBookId: destinationId }));
+});
+
+test("contact creation's domain replay hash includes the selected book", async () => {
+  const otherBookId = "99999999-9999-4999-8999-999999999999";
+  spyOn(publicResources, "resolvePublicId").mockImplementation(async (table, value) =>
+    table === "books" ? (value === publicBookId ? bookId : otherBookId) : null,
+  );
+  spyOn(contacts, "get").mockResolvedValue(contact);
+  spyOn(books, "get").mockResolvedValue(book);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const create = spyOn(contactsService.contact, "createIdempotent").mockResolvedValue({
+    ok: true,
+    data: { id: contactId, bookId, label: "Ada", replayed: false },
+  });
+  const input = { firstName: "Ada" };
+  for (const id of [publicBookId, "Book02"]) {
+    expect(
+      (
+        await contactsCapabilities.actions["contact.create"].run(input, {
+          ...context,
+          target: { type: "contacts.book", id },
+          idempotencyKey: "same-key",
+        })
+      ).ok,
+    ).toBe(true);
+  }
+  expect(create.mock.calls[0]?.[0].idempotencyKeyHash).toBe(create.mock.calls[1]?.[0].idempotencyKeyHash);
+  expect(create.mock.calls[0]?.[0].requestHash).not.toBe(create.mock.calls[1]?.[0].requestHash);
 });

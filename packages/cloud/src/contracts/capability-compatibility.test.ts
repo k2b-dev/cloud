@@ -118,8 +118,10 @@ describe("capabilityContractIssues", () => {
     const manifest = manifestOf(
       defineCapabilities({
         protocolVersion: 2,
+        types: { book: { title: "Book", description: "Address book." } },
         actions: {
           "customer.create": {
+            target: "book",
             title: "Create",
             description: "Create.",
             input: contactDirectory.create.input,
@@ -194,4 +196,17 @@ describe("capabilityContractIssues", () => {
       capabilityContractIssues(contract, provider(z.object({ size: z.literal(0), weight: z.literal(1) }).strict(), narrowInput)),
     ).toEqual([{ code: "input", path: "$.size", message: "value 0 is out of range" }]);
   });
+});
+
+test("a target-aware consumer matches exactly its declared Type and no extra refs", () => {
+  const provider = suggestProvider(ContactDirectorySuggestInputSchema, z.array(ProviderSuggestionSchema).max(10));
+  const contract = { ...contactDirectory.suggest, target: "book" };
+  expect(capabilityContractIssues(contract, { ...provider, operation: { ...provider.operation, target: "book" } })).toEqual([]);
+  for (const coordinates of [{}, { target: "contact" }, { target: "book", refs: { destination: "book" } }]) {
+    expect(capabilityContractIssues(contract, { ...provider, operation: { ...provider.operation, ...coordinates } })).toContainEqual({
+      code: "input",
+      path: "$",
+      message: "Expected target book without additional refs",
+    });
+  }
 });

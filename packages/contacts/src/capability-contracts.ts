@@ -328,7 +328,6 @@ const ContactFieldsShape = {
 
 export const ContactCreateInputSchema = z
   .object({
-    bookId: ResourceShortIdSchema.describe("Public address-book ID that will own the contact."),
     ...ContactFieldsShape,
   })
   .strict()
@@ -352,7 +351,6 @@ export const ContactUpdateInputSchema = z
 export const ContactMoveInputSchema = z
   .object({
     contactId: ResourceShortIdSchema.describe("Stable public contact ID to move."),
-    targetBookId: ResourceShortIdSchema.describe("Public writable destination address-book ID."),
     expectedUpdatedAt: TimestampSchema.describe("updatedAt value returned by the last read; prevents stale moves."),
   })
   .strict();
