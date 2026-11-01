@@ -335,8 +335,9 @@ Successful jobs reuse their range only after the namespace is empty. A helper
 that dies abnormally does not release its range. Exhausting identities stops
 acquisition and exits the supervisor so its container can restart.
 
-The runner probes isolation before polling. A missing profile, unsupported
-namespace/mount setup or failed mandatory filter logs
+Docker refuses to start the container when the named profile is missing.
+The runner probes isolation before polling. Unsupported namespace/mount
+setup or a failed mandatory filter logs
 `runner_job_isolation_unavailable` and refuses startup. CI uses the same
 profile and container envelope. The local profile syntax check cannot replace
 this image verification.
