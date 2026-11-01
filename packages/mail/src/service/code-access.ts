@@ -1,4 +1,5 @@
 import { type CodeAccessAdapter, type CodeAccessDecision, sql } from "@k2b/cloud";
+import { listUsersWithAccess } from "@k2b/cloud/server";
 import { ResourceShortIdSchema } from "../contracts";
 import { requireMailboxPermission } from "./access";
 
@@ -99,6 +100,27 @@ export const mailboxCodeAccess: CodeAccessAdapter = {
       SELECT id FROM mail.mailboxes WHERE short_id = ${input.id} AND deleted_at IS NULL FOR UPDATE
     `;
     if (!mailbox) return { granted: false, reason: "Mailbox not found." };
+    const access = await tx<{ access_id: string }[]>`SELECT ma.access_id FROM mail.mailbox_access ma
+      JOIN auth.access a ON a.id=ma.access_id WHERE ma.mailbox_id=${mailbox.id}::uuid AND a.permission='admin'`;
+    // Page concrete people through the shared access resolver. Its 500-person page
+    // bound does not truncate the notification audience, including nested groups.
+    const managerUserIds: string[] = [];
+    let cursor: string | null = null;
+    while (true) {
+      const people: { id: string }[] = await tx`SELECT id FROM auth.users WHERE (${cursor}::uuid IS NULL OR id>${cursor}::uuid)
+        AND (account_expires IS NULL OR account_expires>statement_timestamp()) ORDER BY id LIMIT 500`;
+      if (!people.length) break;
+      const managers = await listUsersWithAccess({
+        accessIds: access.map((entry) => entry.access_id),
+        userIds: people.map((person) => person.id),
+        minimumPermission: "admin",
+        limit: 500,
+        db: tx,
+      });
+      managerUserIds.push(...managers.map((person) => person.id));
+      cursor = people.at(-1)!.id;
+    }
+    const result = { ...decision, managerUserIds };
     const [account] = await tx`
       SELECT id FROM auth.service_accounts WHERE id = ${input.principal}::uuid AND kind = 'code' AND status = 'active' FOR SHARE
     `;
@@ -112,14 +134,14 @@ export const mailboxCodeAccess: CodeAccessAdapter = {
     `;
     if (existing) {
       return existing.service_account_id === input.principal && existing.mailbox_id === mailbox.id && existing.permission === decision.level
-        ? decision
+        ? result
         : { granted: false, reason: "Grant identity already belongs to another share." };
     }
-    if (input.dryRun) return decision;
+    if (input.dryRun) return result;
     await tx`INSERT INTO auth.access (id, service_account_id, permission)
       VALUES (${input.grantId}::uuid, ${input.principal}::uuid, ${decision.level}::auth.permission_level)`;
     await tx`INSERT INTO mail.mailbox_access (mailbox_id, access_id) VALUES (${mailbox.id}::uuid, ${input.grantId}::uuid)`;
-    return decision;
+    return result;
   },
   revoke: async (tx, { id, grantId }) => {
     // Include soft-deleted mailboxes: Core must still be able to clean up their grants.

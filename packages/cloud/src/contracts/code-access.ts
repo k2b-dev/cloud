@@ -30,7 +30,7 @@ export const CodeAccessLevelSchema = z
   .max(120)
   .refine((level) => level.toLowerCase() !== "admin", "Code never receives admin");
 export const CodeAccessDecisionSchema = z.discriminatedUnion("granted", [
-  z.object({ granted: z.literal(true), level: CodeAccessLevelSchema }).strict(),
+  z.object({ granted: z.literal(true), level: CodeAccessLevelSchema, managerUserIds: z.array(z.uuid()).optional() }).strict(),
   z.object({ granted: z.literal(false), reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessDecision = z.infer<typeof CodeAccessDecisionSchema>;
@@ -51,6 +51,9 @@ export type CodeAccessGrant = z.infer<typeof CodeAccessGrantSchema>;
  * Normal target share lists must expose grantId on each Code share so the rights editor
  * can call code.access.rm directly; ordinary shares never carry it.
  * A grantId identifies an explicit Code-only grant; revoke never removes ordinary shares.
+ * Successful grant decisions identify current human managers in managerUserIds for
+ * Core Cloud-admin activation notices. Include direct and group administrators;
+ * Core refuses Cloud-admin activation when this metadata is unavailable.
  * Keep grants with different IDs independent, including overlapping grants for the same
  * account and target. Activation rollback removes only its new IDs, preserving older grants.
  */
@@ -95,7 +98,9 @@ export const CodeAccessRefusalCodeSchema = z.enum([
 export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
 
 export const CodeAccessSetDataSchema = z.discriminatedUnion("granted", [
-  z.object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema }).strict(),
+  z
+    .object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, managerUserIds: z.array(z.uuid()).optional() })
+    .strict(),
   z.object({ granted: z.literal(false), reasonCode: CodeAccessRefusalCodeSchema, reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessSetData = z.infer<typeof CodeAccessSetDataSchema>;
