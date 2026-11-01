@@ -332,8 +332,17 @@ export function createDictation(options: DictationOptions): DictationController 
     stop,
     discard,
     dismiss: () => {
+      const card = notice() && !isBarNotice(notice());
       setNotice(null);
       close();
+      // A closed card gives the focus back to the microphone, unless the person moved it elsewhere meanwhile.
+      if (card)
+        queueMicrotask(() =>
+          requestAnimationFrame(() => {
+            const active = document.activeElement;
+            if (!active || active === document.body || !active.isConnected) elements.microphone?.focus({ preventScroll: true });
+          }),
+        );
     },
     end: () => {
       restarting = false;

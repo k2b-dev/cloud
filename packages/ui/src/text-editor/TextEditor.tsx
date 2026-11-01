@@ -377,6 +377,8 @@ export function TextEditor(props: TextEditorProps) {
   let root!: HTMLDivElement;
   let mount!: HTMLDivElement;
   let editor: TextEditorController | undefined;
+  // The view is read-only while it loads or recovers, too; dictation only runs where words can land.
+  const dictationWritable = () => !props.readOnly && !props.loading && ready() && recovery() === undefined && mode() !== "plain";
   const dictation = createDictation({
     source: {
       start: (options) => props.dictation!.source.start(options),
@@ -386,11 +388,11 @@ export function TextEditor(props: TextEditorProps) {
       return props.dictation?.alternative;
     },
     target: codeMirrorDictationTarget(() => editor?.view),
-    disabled: () => !props.dictation || Boolean(props.readOnly) || mode() === "plain",
+    disabled: () => !props.dictation || !dictationWritable(),
   });
   // A field that turns read-only or plain hides the toolbar; dictation then ends and the words so far stay.
   // A memo compares the value, so ordinary edits never end it.
-  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${Boolean(props.readOnly)}:${mode() === "plain"}`);
+  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${dictationWritable()}`);
   createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
   const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
   const menuBlocked = () => !!props.loading || !ready() || recovery() !== undefined;
