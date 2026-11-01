@@ -105,6 +105,7 @@ const markup = () =>
     }),
     createComponent(StatGrid, {
       columns: 2,
+      title: "Contracts",
       get children() {
         return createComponent(StatCell, { label: "Expiring in 30 days", value: 4 });
       },
@@ -156,6 +157,12 @@ const measure = () => {
     groupedSections: sections.map((element) => getComputedStyle(element).backgroundColor),
     groupGap: sections[1]!.getBoundingClientRect().top - sections[0]!.getBoundingClientRect().bottom,
     statLabel: { transform: style(".k2b-stat-cell__label").textTransform, tracking: style(".k2b-stat-cell__label").letterSpacing },
+    statHeader: {
+      rule: style(".k2b-stat-grid__header").borderBottomStyle,
+      // The header and the first cell meet directly, so their surfaces alone draw the edge.
+      gap: box(".k2b-stat-cell").top - box(".k2b-stat-grid__header").bottom,
+      surfaceStep: style(".k2b-stat-grid__header").backgroundColor !== style(".k2b-stat-cell").backgroundColor,
+    },
   };
 };
 
@@ -190,6 +197,7 @@ describe("@k2b/ui one frame per surface", () => {
           expect(result.groupGap).toBe(0);
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
+          expect(result.statHeader).toEqual({ rule: "none", gap: 0, surfaceStep: true });
           expect(result.sectionGap).toBe(32);
 
           // Actions share the heading row on a desktop and wrap below it on a phone.
