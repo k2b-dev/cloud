@@ -109,7 +109,7 @@ jobs:
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|packages/runner/|pwas/|compose[^/]*\.yml)')"
-            echo "runner=$(match '^(packages/runner/|packages/cloud/src/(code/|api/capabilities\.ts|services/(app-keys/|identity/)|server/ratelimit\.ts)|packages/core/src/(code/|migrate/core/(code[^/]*|app-keys|app-bootstrap)\.ts)|scripts/fixtures/(test-infra|app-key-fixtures)|package\.json|bun\.lock|\.github/workflows/ci\.yml)')"
+            echo "runner=$(match '^(packages/runner/|packages/cloud/src/(code/|api/(capabilities|authenticate-app-request)\.ts|app-(key|proof)\.ts|runtime/bootstrap-protocol\.ts|services/(app-keys/|identity/)|server/ratelimit\.ts)|packages/core/src/(code/|migrate/core/(code[^/]*|app-keys|app-bootstrap)\.ts)|scripts/fixtures/(test-infra|app-key-fixtures)|package\.json|bun\.lock|compose[^/]*\.yml|\.dockerignore|\.github/workflows/ci\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"

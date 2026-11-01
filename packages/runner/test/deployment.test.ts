@@ -87,4 +87,20 @@ test("hostile runner CI is path-filtered and required by the gate", async () => 
   expect(commands).toContain("--network host");
   expect(commands).toContain("--read-only --cap-drop ALL");
   expect(commands).toContain("--security-opt no-new-privileges");
+  const changes = workflow.jobs.changes!.steps!.map((step) => step.run ?? "").join("\n");
+  const pattern = /echo "runner=\$\(match '([^']+)'\)"/.exec(changes)?.[1];
+  expect(pattern).toBeDefined();
+  const affected = new RegExp(pattern!);
+  for (const file of [
+    "packages/runner/native/isolate.c",
+    "packages/cloud/src/api/capabilities.ts",
+    "packages/cloud/src/api/authenticate-app-request.ts",
+    "packages/cloud/src/runtime/bootstrap-protocol.ts",
+    "packages/cloud/src/code/run-token.ts",
+    "packages/core/src/code/bridge.ts",
+    "packages/core/src/migrate/core/code-scheduling.ts",
+    "compose.prod.yml",
+    ".github/workflows/ci.yml",
+  ])
+    expect(affected.test(file)).toBe(true);
 });
