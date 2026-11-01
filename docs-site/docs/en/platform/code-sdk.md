@@ -184,3 +184,22 @@ credential clients.
 The [Code checker](/en/docs/platform/code-checker) consumes this generation
 manifest to produce the immutable `CodeVersionManifest`, source locations,
 permission changes, and the runner's ESM bundle.
+
+## One-off chat runs
+
+Gustav's one-off `code_run` compiler supplies the same `generateCodeSdk` output
+with `mode: "code_run"`. It binds normalized targets, refs and idempotency
+metadata to the existing capability host, preserving its access checks and
+approvals. SDK methods return domain data; the older `cloud.capabilities.run`
+keeps returning its capability envelope. This mode has no `app` or `owner`,
+and accepts dynamic IDs. The host also exports its existing `cloud.sheet`
+helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
+
+See [Gustav Code tools](/en/docs/platform/gustav-code-tools) for a one-call CSV
+example and the lasting-Code workflow.
+
+The existing `cloud.capabilities.run(name, input, options?)` also accepts explicit
+normalized `target`, `refs` and `idempotencyKey` in its optional third argument.
+A key is allowed only for an Action declaring required idempotency; retain it
+for retries of the same effect. Omitting it preserves the existing per-call
+key. Scripts and Studio apps keep the same permissions and approvals.

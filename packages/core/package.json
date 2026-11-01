@@ -24,6 +24,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@k2b/nessi": "catalog:",
     "@types/bun": "catalog:",
     "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
