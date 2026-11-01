@@ -14,6 +14,7 @@ import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
@@ -73,18 +74,29 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
   types: { item: { title: "Item", description: "Fixture item.", reader: "item.read" } },
   queries: { "item.read": { ...operation, input: z.object({ id: z.string().describe("Item ID.") }).strict() } },
   actions: {
-    "item.change": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
-    "item.add": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
+    "item.change": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
+    "item.add": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "draft" } },
   },
 });
 
+let database: Awaited<ReturnType<typeof useFreshDatabase>>;
 databaseSuite()("durable Code activation", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
     readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -193,14 +205,29 @@ databaseSuite()("durable Code activation", () => {
       state: "checked",
       readable: [...input.principals],
     }));
-    await migrateAppApproval();
-    await migrateSettings();
-    await migrateAudit();
-    await migrateCode();
+    // These schemas depend only on auth. Keep session-family alterations in
+    // order, while independent schemas avoid serial migration round trips.
+    await Promise.all([
+      (async () => {
+        await migrateAppApproval();
+        await migratePwa();
+      })(),
+      migrateSettings(),
+      migrateAudit(),
+      migrateCode(),
+      migrateApprovals(),
+    ]);
     await migratePolicy();
-    await migrateApprovals();
     await migrateVersions();
     await migrateActivation();
+    // Exercise upgrades before status queries cache the original table result shape.
+    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
+    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
+    await migrateActivation();
+    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(
+      (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
+    ).toBeNull();
     for (const id of [ownerId, adminId, nextOwnerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',${id === adminId})`;
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
@@ -227,7 +254,6 @@ databaseSuite()("durable Code activation", () => {
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
-    await database?.drop();
     setSystemTime();
   });
 
@@ -716,6 +742,23 @@ databaseSuite()("durable Code activation", () => {
       "revoked",
     );
   });
+  test("owner-deletion cleanup removes target grants before deleting the activation journal", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    await run(activation.id);
+    const grants = [...live.keys()];
+    await sql`UPDATE code.codes SET state='deleting',active_version_id=NULL WHERE id=${code.id}`;
+    await cleanupCodeActivation(code.id, transport, async () => {});
+    await cleanupCodeActivation(code.id, transport, async () => {});
+    expect(removals).toEqual(grants);
+    expect(live.size).toBe(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id} AND state<>'released'`).toHaveLength(0);
+    expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE workload_id=${submitted.version.id}`)[0]!.state).toBe(
+      "revoked",
+    );
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid`).toHaveLength(1);
+  });
   test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
     for (const readable of [false, true]) {
       targetReadable = readable;
@@ -749,6 +792,26 @@ databaseSuite()("durable Code activation", () => {
         }
       }
     }
+  });
+  test("Core outage reasons remain useful when the target is unreadable", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    targetReadable = false;
+    crashAt = "A";
+    await expect(run(activation.id)).rejects.toThrow("crash");
+    expect((await status(code, activation.id)).failure).toEqual({
+      target: { type: "example.item", id: "A" },
+      code: "activation_retry",
+      reason: "Activation is waiting for a dependency. Retry is automatic; the old version stays active.",
+    });
+    const failure = {
+      target: { type: "app", id: "example" },
+      code: "target_unavailable",
+      reason: "The target operation catalog is unavailable. Activate again after the application is ready.",
+    };
+    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
+    expect((await status(code, activation.id)).failure).toEqual(failure);
   });
   test("saved answers without a reader decision use the current viewer's read access", async () => {
     const code = await newCode(),
@@ -853,14 +916,17 @@ databaseSuite()("durable Code activation", () => {
     await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("cancelled");
     expect(live.size).toBe(0);
-    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
-    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
     await migrateActivation();
     await migrateActivation();
-    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid AND cancel_requested`).toHaveLength(1);
     expect(
       (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
     ).toBeNull();
     expect((await status(code, activation.id)).state).toBe("cancelled");
   });
+});
+
+// The session fixture's file-level cleanup runs before the private database is removed.
+afterAll(async () => {
+  await database?.drop();
 });

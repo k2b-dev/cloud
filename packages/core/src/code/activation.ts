@@ -84,7 +84,10 @@ const receipt = (row: ActivationRow): CodeActivation => ({
 });
 async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
   const failure = result.failure;
-  if (!failure?.target) return result;
+  // Provider presentation needs a current reader check. Core's own operational
+  // failures contain no target presentation and retain their recovery reason.
+  if (!failure?.target || (failure.readable === undefined && failure.title === undefined && failure.managerUserIds === undefined))
+    return result;
   const person = codePerson(context);
   let readable = false;
   if (failure.readable !== false && failure.target.type !== "app") {
@@ -305,7 +308,7 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
     await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(built.policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-        VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${item.operations}::text[],'planned')`;
+        VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${tx.array(item.operations, "text")},'planned')`;
   });
   return plan;
 }

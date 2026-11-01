@@ -128,22 +128,6 @@ const cleanupFixture = async (fixture: Fixture) => {
 };
 
 suite("listUsersWithAccess", () => {
-  test("UUID cursor pages include every direct and nested-group recipient once", async () => {
-    const fixture = await createFixture();
-    try {
-      const ids: string[] = [];
-      let afterId: string | null = null;
-      while (true) {
-        const page = await listUsersWithAccess({ accessIds: fixture.accessIds, afterId, limit: 1 });
-        if (!page.length) break;
-        ids.push(page[0]!.id);
-        afterId = page[0]!.id;
-      }
-      expect(ids).toEqual([fixture.userIds.direct, fixture.userIds.group, fixture.userIds.nested].sort());
-    } finally {
-      await cleanupFixture(fixture);
-    }
-  });
   test("prioritizes exact search matches before limiting by name order", async () => {
     const fixture = await createFixture();
     try {

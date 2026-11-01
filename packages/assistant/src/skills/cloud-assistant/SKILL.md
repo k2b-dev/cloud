@@ -1,6 +1,10 @@
 ---
 name: cloud-assistant
 description: 'Use for work involving Cloud Assistant itself: finding or reading earlier conversations, recovering resources used in chats, messaging another conversation, or creating and managing reminders and recurring scheduled chat work. Also use when a request refers to earlier work, such as "like last time", "as last week", or "the report you made me".'
+load-tools:
+  - core.ai.chats.search
+  - core.ai.chat.read
+  - core.ai.chat.search
 ---
 
 # Work with Cloud Assistant

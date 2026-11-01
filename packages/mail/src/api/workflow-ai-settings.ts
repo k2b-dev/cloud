@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { jsonResponse, requiresAuth, v } from "@k2b/cloud/server";
+import { expectUserBackedActor, jsonResponse, requiresAuth, v } from "@k2b/cloud/server";
 import { settingsService } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -34,7 +34,17 @@ export default new Hono<MailApiContext>().put(
   v("json", workflowAiSettingsSchema),
   async (c) => {
     const { bodyMaxChars, replaceUnreadable } = c.req.valid("json");
-    const result = await settingsService.entry.update({ key: WORKFLOW_AI_BODY_MAX_CHARS_KEY, value: bodyMaxChars, replaceUnreadable });
+    const result = await settingsService.entry.update({
+      key: WORKFLOW_AI_BODY_MAX_CHARS_KEY,
+      value: bodyMaxChars,
+      replaceUnreadable,
+      audit: {
+        action: "settings.update",
+        outcome: "allowed",
+        actor: { userId: expectUserBackedActor(c).id },
+        target: { type: "setting", id: WORKFLOW_AI_BODY_MAX_CHARS_KEY },
+      },
+    });
     if (!result.ok) return c.json({ message: result.error.message }, result.error.status === 400 ? 400 : 500);
     return c.json({ bodyMaxChars }, 200);
   },

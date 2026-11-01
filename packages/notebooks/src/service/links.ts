@@ -104,10 +104,10 @@ export const extractNoteLinks = (contentMd: string | null): string[] => {
  * cross-notebook short-ids that don't resolve are silently dropped.
  * Self-links are filtered both in JS and in the SQL `<>` guard.
  */
-export const reindexLinks = async (sourceNoteId: string, contentMd: string | null): Promise<void> => {
+export const reindexLinks = async (sourceNoteId: string, contentMd: string | null, db: typeof sql = sql): Promise<void> => {
   const targetShortIds = extractNoteLinks(contentMd);
 
-  await sql`
+  await db`
     DELETE FROM notebooks.note_links
     WHERE source_note_id = ${sourceNoteId}::uuid
   `;
@@ -115,7 +115,7 @@ export const reindexLinks = async (sourceNoteId: string, contentMd: string | nul
   if (targetShortIds.length === 0) return;
 
   const arr = toPgTextArray(targetShortIds);
-  await sql`
+  await db`
     INSERT INTO notebooks.note_links (source_note_id, target_note_id)
     SELECT ${sourceNoteId}::uuid, n.id
     FROM notebooks.notes n

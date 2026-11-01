@@ -184,12 +184,20 @@ const app = new Hono<AuthContext>()
     return c.json(await settingsListLegacyKeys(await liveSettingKeys()));
   })
   .delete("/legacy", auth.requireRole("admin"), async (c) => {
-    return c.json(await settingsDeleteLegacyKeys(await liveSettingKeys()));
+    const result = await settingsDeleteLegacyKeys(await liveSettingKeys());
+    await audit.record({
+      action: "settings.legacy.delete",
+      outcome: "allowed",
+      actor: { userId: c.get("user").id },
+      metadata: { keys: result.deleted },
+    });
+    return c.json(result);
   })
   .post("/run-ai-enrichment", auth.requireRole("admin"), async (c) => {
     try {
       // Small manual batch — the cron handles bulk; this is "kick it now".
       const summary = await enrichDirtyAiConversations({ limit: 25 });
+      await audit.record({ action: "ai.enrichment.run", outcome: "allowed", actor: { userId: c.get("user").id } });
       return c.json({ ok: true, summary });
     } catch (error) {
       return c.json({ message: error instanceof Error ? error.message : "AI enrichment run failed" }, 500);
@@ -198,6 +206,7 @@ const app = new Hono<AuthContext>()
   .post("/test-pdf", auth.requireRole("admin"), async (c) => {
     try {
       const result = await testGotenberg();
+      await audit.record({ action: "settings.test.pdf", outcome: "allowed", actor: { userId: c.get("user").id } });
       return c.json({ ok: true, bytes: result.bytes, contentType: result.contentType });
     } catch (error) {
       if (error instanceof GotenbergRenderError) {
@@ -222,6 +231,7 @@ const app = new Hono<AuthContext>()
       c.header("Cache-Control", "no-store");
       try {
         await testObjectStoreConnection();
+        await audit.record({ action: "settings.test.storage", outcome: "allowed", actor: { userId: c.get("user").id } });
         return c.json({ ok: true as const });
       } catch (error) {
         return c.json(
@@ -238,7 +248,10 @@ const app = new Hono<AuthContext>()
   )
   .post("/test-freeipa", auth.requireRole("admin"), async (c) => {
     const result = await testFreeIpaConnection();
-    if (result.ok) return c.json({ ok: true });
+    if (result.ok) {
+      await audit.record({ action: "settings.test.freeipa", outcome: "allowed", actor: { userId: c.get("user").id } });
+      return c.json({ ok: true });
+    }
     return c.json({ message: result.error, kind: result.kind }, result.status);
   })
   .put(
@@ -343,11 +356,25 @@ const app = new Hono<AuthContext>()
           for (const key of resets) {
             try {
               await settings.remove(key, tx);
+              await audit.record(
+                { action: "settings.reset", outcome: "allowed", actor: { userId: c.get("user").id }, target: { type: "setting", id: key } },
+                tx,
+              );
             } catch (error) {
               fieldErrors[key] = `Failed to reset ${key}`;
               throw error;
             }
           }
+          await audit.record(
+            {
+              action: "settings.update",
+              outcome: "allowed",
+              actor: { userId: c.get("user").id },
+              target: { type: "settings", id: "core" },
+              metadata: { keys, resets },
+            },
+            tx,
+          );
           const categoryKeys = keys.filter((key) => key.startsWith("user.category."));
           if (categoryKeys.length > 0)
             await audit.record(
@@ -413,6 +440,10 @@ const app = new Hono<AuthContext>()
       await sql.begin(async (tx) => {
         await assertGeoBudgetPair(tx, {}, [key]);
         await settings.remove(key, tx);
+        await audit.record(
+          { action: "settings.reset", outcome: "allowed", actor: { userId: c.get("user").id }, target: { type: "setting", id: key } },
+          tx,
+        );
         if (key.startsWith("user.category."))
           await audit.record(
             {

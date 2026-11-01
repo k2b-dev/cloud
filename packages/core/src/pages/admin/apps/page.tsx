@@ -8,7 +8,7 @@ import {
   accounts,
   appAdminFacts,
   appDetails,
-  canRepairAppAccess,
+  canReadAppAdministration,
   coreSettings,
   latestGatewayRouteSnapshot,
   logger,
@@ -123,7 +123,7 @@ const startsWithEnv = (app: AppRegistryDetail | null | undefined): boolean | nul
 
 export default ssr<AuthContext>(async (c) => {
   const authority = auth.getAuthority(c);
-  if (!canRepairAppAccess(authority)) return ssr.error(c, 403);
+  if (!canReadAppAdministration(authority)) return ssr.error(c, 403);
   const locale = getLocale(c);
   const dateContext = getDateConfig(c);
   const format = appsFormat(dateContext);

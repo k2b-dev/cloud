@@ -132,6 +132,8 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
  * stays application state, so the controller only requests the change.
  */
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
+/** Asks the owning `AppWorkspace.Sidebar` to show again; its `onHiddenChange` decides. */
+export const APP_WORKSPACE_SIDEBAR_SHOW_EVENT = "k2b-app-workspace-sidebar-show";
 /** Asks the owning Detail to reopen its current available object. */
 export const APP_WORKSPACE_DETAIL_OPEN_EVENT = "k2b-app-workspace-detail-open";
 /** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
@@ -483,6 +485,13 @@ const overlayRegions = (root: HTMLElement, sidebar: HTMLElement) =>
     )
     .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== sidebar && !child.contains(sidebar));
 
+/**
+ * A sidebar button tells whether its sidebar shows: as an open overlay where the sidebar is one, otherwise as a
+ * column that is not hidden.
+ */
+const sidebarShown = (root: HTMLElement, sidebar: HTMLElement) =>
+  sidebarForm(root) === "overlay" ? root.dataset.sidebarOverlay === "open" : !sidebar.hidden;
+
 export const installAppWorkspaceController = (options: AppWorkspaceControllerOptions = {}): (() => void) => {
   const eventRoot = options.root ?? document;
   // A document has no owner document; an element root listens on its own.
@@ -491,12 +500,26 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   let overlay: OpenOverlay | null = null;
   // A server-rendered head names the sidebar before the sidebar renders; the button learns its real id now.
   for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) overlayTarget(toggle);
+  /** Every sidebar button, the workspace head's and an application's own, states whether its sidebar shows. */
+  const syncSidebarToggles = () => {
+    for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) {
+      const root = workspaceRoot(toggle);
+      const sidebar = root ? sidebarElement(root) : null;
+      if (!root || !sidebar) continue;
+      // The head's button only opens the overlay; an application's button also shows and hides the column.
+      const expanded = String(
+        toggle.closest(".k2b-app-workspace__head") ? root.dataset.sidebarOverlay === "open" : sidebarShown(root, sidebar),
+      );
+      if (toggle.getAttribute("aria-expanded") !== expanded) toggle.setAttribute("aria-expanded", expanded);
+    }
+  };
   const openOverlay = (target: OverlaySidebar) => {
     if (overlay) closeOverlay("none");
     const inerted = overlayRegions(target.root, target.sidebar).filter((region) => !region.hasAttribute("inert"));
     overlay = { ...target, inerted };
     target.root.dataset.sidebarOverlay = "open";
     target.toggle.setAttribute("aria-expanded", "true");
+    syncSidebarToggles();
     inerted.forEach((region) => region.setAttribute("inert", ""));
     // Focus starts on the current destination, so the reader knows where they
     // are: on its own tab stop, or on the tree item around it.
@@ -522,6 +545,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     overlay = null;
     delete closing.root.dataset.sidebarOverlay;
     closing.toggle.setAttribute("aria-expanded", "false");
+    // Escape, the scrim or a chosen destination also close it: every sidebar button of the workspace says so.
+    syncSidebarToggles();
     closing.inerted.forEach((region) => region.removeAttribute("inert"));
     if (focus === "none") return;
     const active = document.activeElement;
@@ -557,11 +582,28 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     const toggle = target?.closest<HTMLElement>(TOGGLE_SELECTOR);
     if (toggle) {
+      if (claimedToggleClicks.has(event)) return;
+      const root = workspaceRoot(toggle);
+      const sidebar = root ? sidebarElement(root) : null;
+      // A sidebar the person hid comes back first; where it is an overlay, it then opens.
+      if (root && sidebar?.hidden && sidebarHideable(root)) {
+        claimedToggleClicks.add(event);
+        sidebar.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_SHOW_EVENT));
+        ownerWindow.requestAnimationFrame(() => {
+          const next = !sidebar.hidden && sidebarForm(root) === "overlay" ? overlayTarget(toggle) : null;
+          if (next) openOverlay(next);
+          syncSidebarToggles();
+        });
+        return;
+      }
       const next = overlayTarget(toggle);
-      if (!next || claimedToggleClicks.has(event)) return;
+      if (!next) return;
       claimedToggleClicks.add(event);
       if (overlay?.sidebar === next.sidebar) closeOverlay("button");
       else if (sidebarForm(next.root) === "overlay") openOverlay(next);
+      // A column: an application's own button hides a sidebar it lets people hide.
+      else if (sidebarHideable(next.root)) next.sidebar.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_HIDE_EVENT));
+      syncSidebarToggles();
       return;
     }
     if (!overlay || !target) return;
@@ -657,7 +699,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     for (const root of allRoots()) {
       for (const aside of rootElements(root, detailSelector)) {
         const toggle = detailToggle(aside);
-        if (toggle?.dataset.workspaceDetailReopen !== "true") continue;
+        // The panel decides whether it reopens; its button may be the workspace's own or an application's.
+        if (!toggle || aside.dataset.workspaceDetailReopen !== "true") continue;
         const expanded = !aside.hidden && (!wide?.matches || !detailWaiting(aside) || detailDrawer(aside));
         const value = String(expanded);
         if (toggle.getAttribute("aria-expanded") !== value) toggle.setAttribute("aria-expanded", value);
@@ -773,7 +816,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     const shared = detailToggle(aside);
     if (
-      shared?.dataset.workspaceDetailReopen === "true" &&
+      shared &&
+      aside.dataset.workspaceDetailReopen === "true" &&
       phone?.matches &&
       phonePage(aside) &&
       !aside.hidden &&
@@ -787,7 +831,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     if (detailControlVisible(control)) return;
     detailControlFocus = null;
-    if (shared?.dataset.workspaceDetailReopen !== "true") {
+    if (!shared || aside.dataset.workspaceDetailReopen !== "true") {
       // Selection-only details keep their existing returning-column title target.
       if (control === shared && !aside.hidden && !detailWaiting(aside)) requestTitle(aside);
       return;
@@ -799,6 +843,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     replacement?.focus({ preventScroll: true });
   };
   const syncHostState = () => {
+    syncSidebarToggles();
     rescueDetailControlFocus();
     if (pendingDetail && !canOpenPendingDetail(pendingDetail.aside)) cancelPendingDetail();
     if (overlay && sidebarForm(overlay.root) !== "overlay") closeOverlay("none");
@@ -1297,7 +1342,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       const toggle = detailToggle(aside);
       const returnControl = detailReturnControl(aside);
       if (
-        toggle?.dataset.workspaceDetailReopen === "true" &&
+        toggle &&
+        aside.dataset.workspaceDetailReopen === "true" &&
         returnControl &&
         (aside.contains(focused) || (focused === ownerDocument.body && aside.contains(lastFocus.get(root) ?? null)))
       ) {
@@ -2111,6 +2157,20 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
             )
           )
             syncDetailRequestControls();
+          // A sidebar shown or hidden, or a sidebar button added: the buttons state it.
+          if (
+            records.some(
+              (record) =>
+                (record.type === "attributes" &&
+                  record.attributeName === "hidden" &&
+                  record.target instanceof Element &&
+                  record.target.matches(".k2b-app-workspace__sidebar")) ||
+                [...record.addedNodes].some(
+                  (node) => node instanceof Element && (node.matches(TOGGLE_SELECTOR) || node.querySelector(TOGGLE_SELECTOR)),
+                ),
+            )
+          )
+            syncSidebarToggles();
           syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
           if (
@@ -2185,6 +2245,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   syncPhonePages();
   syncObservedRoots();
   syncDetailRequestControls();
+  syncSidebarToggles();
   mutationObserver?.observe(eventRoot, {
     attributes: true,
     attributeOldValue: true,
