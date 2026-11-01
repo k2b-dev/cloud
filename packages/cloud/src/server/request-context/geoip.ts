@@ -282,7 +282,7 @@ export const createGeoIp = (
   const databases: Partial<Record<GeoIpKind, GeoIpDatabase | null>> = {};
   const generations = { city: 0, asn: 0 };
   const unreadable: Partial<Record<GeoIpKind, string>> = {};
-  const lastCheck = { city: -Infinity, asn: -Infinity };
+  let lastCheck = -Infinity;
   let pending: Promise<void> | undefined;
   const logged = new Set<string>();
   const logOnce = (key: string, message: string) => {
@@ -319,7 +319,7 @@ export const createGeoIp = (
     if (database) databases[kind] = database;
     else delete databases[kind];
   };
-  const refresh = (kinds: readonly GeoIpKind[] = ["city", "asn"]): Promise<void> => {
+  const refresh = (): Promise<void> => {
     if (!uploads) return Promise.resolve();
     if (pending) return pending;
     const started = { ...generations };
@@ -327,7 +327,7 @@ export const createGeoIp = (
       try {
         const versions = await uploads.versions();
         const replacements: Partial<Record<GeoIpKind, GeoIpDatabase | null>> = {};
-        for (const kind of kinds) {
+        for (const kind of ["city", "asn"] as const) {
           if (started[kind] !== generations[kind]) continue;
           const sha256 = versions[kind];
           if (sha256 === databases[kind]?.info.sha256 || (sha256 && sha256 === unreadable[kind])) continue;
@@ -346,14 +346,14 @@ export const createGeoIp = (
             replacements[kind] = database;
           }
         }
-        for (const kind of kinds) {
+        for (const kind of ["city", "asn"] as const) {
           if (started[kind] !== generations[kind] || !(kind in replacements)) continue;
           install(kind, replacements[kind] ?? null);
         }
       } catch {
         logOnce("uploads", "GeoIP uploads could not be refreshed; keeping current sign-in databases");
       } finally {
-        for (const kind of kinds) lastCheck[kind] = now();
+        lastCheck = now();
         pending = undefined;
       }
     });
@@ -368,7 +368,7 @@ export const createGeoIp = (
     }
   };
   return {
-    refresh: () => refresh(),
+    refresh,
     install,
     status() {
       const city = load("city");
@@ -378,7 +378,7 @@ export const createGeoIp = (
       return { city: info(city), asn: info(asn) };
     },
     country(address) {
-      if (now() - lastCheck.city >= refreshIntervalMs) void refresh(["city"]);
+      if (now() - lastCheck >= refreshIntervalMs) void refresh();
       const city = load("city");
       const result: IpCountryResult = { country: null, available: city !== null, attribution: city?.attribution ?? null };
       const publicAddress = address.length <= 45 && isIP(address) ? publicClientAddress(address) : null;
@@ -386,7 +386,7 @@ export const createGeoIp = (
       return result;
     },
     lookup(address, locale = "en") {
-      if ([lastCheck.city, lastCheck.asn].some((checked) => now() - checked >= refreshIntervalMs)) void refresh();
+      if (now() - lastCheck >= refreshIntervalMs) void refresh();
       const city = load("city");
       const asn = load("asn");
       const result: GeoIpLookup = { cityDatabase: city !== null, asnDatabase: asn !== null, country: null, city: null, network: null };

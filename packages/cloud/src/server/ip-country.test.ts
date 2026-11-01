@@ -288,28 +288,31 @@ describe("Core country route authorization", () => {
   });
 });
 
-test("country-only refresh reads no ASN upload and follows a changed City upload", async () => {
+test("a country lookup follows changed uploads of both databases, so sign-ins never keep a stale one", async () => {
   let now = NOW;
   let version = "first";
-  const read = mock<geoip.GeoIpUploads["read"]>(async () =>
-    mmdbFixture("city", { databaseType: "GeoLite2-City", description: "Example dataset" }),
+  const read = mock<geoip.GeoIpUploads["read"]>(async (kind) =>
+    kind === "city" ? mmdbFixture("city", { databaseType: "GeoLite2-City", description: "Example dataset" }) : mmdbFixture("asn"),
   );
   const geo = geoip.createGeoIp({
     paths: { cityPath: "/missing-country-test/city.mmdb", asnPath: "/missing-country-test/asn.mmdb" },
     now: () => now,
-    uploads: { versions: async () => ({ city: version, asn: "unneeded" }), read },
+    uploads: { versions: async () => ({ city: version, asn: version }), read },
   });
   geo.install("city", database());
   expect(geo.country("8.8.8.8").attribution).toEqual(DBIP_ATTRIBUTION);
   await geo.refresh(); // joins the country lookup's in-flight refresh
-  expect(read.mock.calls).toEqual([["city", "first"]]);
+  expect(read.mock.calls).toEqual([
+    ["city", "first"],
+    ["asn", "first"],
+  ]);
   expect(geo.country("8.8.8.8").attribution).toBeNull();
   now += 60_000;
   version = "second";
   geo.country("8.8.8.8");
   await geo.refresh();
-  expect(read.mock.calls).toEqual([
-    ["city", "first"],
+  expect(read.mock.calls.slice(2)).toEqual([
     ["city", "second"],
+    ["asn", "second"],
   ]);
 });
