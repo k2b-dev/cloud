@@ -66,7 +66,9 @@ update, and `admin settings reset <key> --yes` to restore a default. The
 `admin settings legacy list|delete` commands inspect and remove obsolete
 entries. Connection checks use `admin settings test pdf|storage|freeipa --yes`;
 `admin ai enrichment run --yes` starts enrichment. Checks and triggers have
-effects and require confirmation.
+effects and require confirmation. On success they print `ok: true`, a message
+such as `Object written, read and deleted`, and the check's details; on failure
+the command fails with the server's message.
 
 Structured configuration uses named commands so the same validation and
 side effects as the UI run:
