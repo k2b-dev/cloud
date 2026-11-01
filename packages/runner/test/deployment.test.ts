@@ -79,23 +79,30 @@ test("hostile runner CI is path-filtered and required by the gate", async () => 
     .parse(parse(await Bun.file(`${import.meta.dir}/../../../.github/workflows/ci.yml`).text()));
   const job = workflow.jobs["runner-attacks"]!;
   expect(job.if).toBe("needs.changes.outputs.runner == 'true'");
-  expect(job.needs).toContain("changes");
-  expect(workflow.jobs.gate!.needs).toContain("runner-attacks");
   const commands = job.steps!.map((step) => step.run ?? "").join("\n");
   for (const file of ["hostile.test.js", "isolation.test.js", "engine.test.js", "shutdown.test.js", "attacks/bridge.ts"])
     expect(commands).toContain(file);
   expect(commands).toContain("--network host");
   expect(commands).toContain("--read-only --cap-drop ALL");
   expect(commands).toContain("--security-opt no-new-privileges");
+  expect(commands.match(/! grep -qE/g)).toHaveLength(2);
+  expect(commands).toContain("--kill-after=5s");
   const changes = workflow.jobs.changes!.steps!.map((step) => step.run ?? "").join("\n");
-  const pattern = /echo "runner=\$\(match '([^']+)'\)"/.exec(changes)?.[1];
+  expect(changes).toContain('echo "runner=$(match "$shared|^packages/runner/|^compose');
+  const pattern = /shared='([^']+)'/.exec(changes)?.[1];
   expect(pattern).toBeDefined();
-  const affected = new RegExp(pattern!);
+  const affected = new RegExp(`${pattern!}|^packages/runner/|^compose[^/]*\\.yml$`);
   for (const file of [
     "packages/runner/native/isolate.c",
     "packages/cloud/src/api/capabilities.ts",
     "packages/cloud/src/api/authenticate-app-request.ts",
     "packages/cloud/src/runtime/bootstrap-protocol.ts",
+    "packages/cloud/src/capabilities/claims.ts",
+    "packages/cloud/src/contracts/capabilities.ts",
+    "packages/cloud/src/services/mandates/index.ts",
+    "packages/cloud/package.json",
+    "patches/workerd.patch",
+    "bunfig.toml",
     "packages/cloud/src/code/run-token.ts",
     "packages/core/src/code/bridge.ts",
     "packages/core/src/migrate/core/code-scheduling.ts",

@@ -260,16 +260,18 @@ The suite requires these results:
 | Signal, SIGCONT, ptrace, or read sibling memory | `EPERM`; sibling finishes its real bundle |
 | Connect to either sibling IPC socket; replace a trusted path | `EACCES` or `EPERM`; supervisor paths remain intact |
 | Public, metadata, live loopback/Core, or named-host network requests | JavaScript network refusal; zero canary requests |
-| Native IPv4/IPv6 TCP or DNS/UDP sockets | `EAFNOSUPPORT` before any connection or DNS query |
-| Access filesystem, environment, subprocess, or loader APIs from Code | APIs absent, environment empty |
+| Native IPv4/IPv6 TCP, DNS/UDP, alternate network families or IP socketpair | `EAFNOSUPPORT` before any connection or DNS query |
+| Access filesystem, environment, subprocess, or loader APIs from Code | Filesystem/subprocess APIs absent; environment empty; loader and credential RPC attempts reject |
 | Write image files or traverse out of `/tmp` into the image | `EACCES` or `EROFS` |
-| Fork bomb | Each of 32 bounded fork attempts gets `EPERM` |
+| Fork bomb, vfork, or clone3 bypass | Fork/vfork get `EPERM`; clone3 gets `ENOSYS` |
+| io_uring, namespace, mount, BPF, or pidfd bypass | `EPERM` |
 | Memory bomb; CPU loop | `memory_limit`; `stalled`; another organization continues |
 | Giant bridge input or result | `runner_bridge_unavailable`; oversized input never reaches the callback |
 | Giant return value or console output | Return discarded; diagnostics discarded without a growing pipe or file |
 | Concurrent bridge flood | `runner_bridge_busy`; only the configured number admitted |
 | Sustained calls through real Core and Valkey | `code_rate_limited`, with bounded failed call observations |
-| Old generation; forged run token with a real runner signature | HTTP 409 `runner_lease_lost`; HTTP 403 `code_invalid_token`; no observation or provider call |
+| Calls beyond the saved per-run budget | `code_call_limit`; observation count stops at the budget |
+| Old generation, completed run or replay against another run; forged run token | HTTP 409 `runner_lease_lost`; HTTP 403 `code_invalid_token`; no observation or provider call |
 | `code.access.*`, streams, or `code: false` | `code_access_forbidden`, `code_stream_forbidden`, or `code_disabled`; no provider call |
 | SIGTERM while a bundle waits forever | Acquisition stops; `wall_clock_limit`; runner exits successfully after reporting |
 
@@ -282,7 +284,8 @@ without relying on a disconnected container. Production adds the internal
 `runner-core` network described above.
 
 The native/bundle step has a 90-second limit; the bridge step has a 180-second
-limit. Individual attempts also retain their own transport and run deadlines.
+limit, both with forced termination after a further five seconds. Skipped
+attacks fail the job. Individual attempts retain their transport and run deadlines.
 The job removes its containers on failure or cancellation. Its test output is
 the result for that exact commit and pinned engine version; expected outcomes
 in this table are not a claim that an untested commit passed.

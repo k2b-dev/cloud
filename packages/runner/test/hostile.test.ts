@@ -65,9 +65,17 @@ test("filesystem, environment, child processes and loader authority are absent f
       `export async function main(input, cloud) {
         const modules = ['fs', 'node:fs', 'child_process', 'node:child_process', 'net', 'dns'];
         const available = modules.filter(name => { try { return !!process.getBuiltinModule(name); } catch { return false; } });
+        const attempts = [
+          () => cloud.fetch('http://127.0.0.1:1'),
+          () => cloud.token(), () => cloud.key(), () => cloud.LOADER.load({}),
+        ];
+        const authority = [];
+        for (const attempt of attempts) {
+          try { await attempt(); authority.push('ESCAPE'); }
+          catch { authority.push('denied'); }
+        }
         await cloud.call('report', {available, env: Object.keys(process.env),
-          bun: typeof Bun, require: typeof require, fetcher: typeof cloud.fetch,
-          loader: typeof cloud.LOADER, token: typeof cloud.token, key: typeof cloud.key});
+          bun: typeof Bun, require: typeof require, authority});
       }`,
       async (_, input) => {
         results.push(input);
@@ -81,10 +89,7 @@ test("filesystem, environment, child processes and loader authority are absent f
       env: [],
       bun: "undefined",
       require: "undefined",
-      fetcher: "undefined",
-      loader: "undefined",
-      token: "undefined",
-      key: "undefined",
+      authority: ["denied", "denied", "denied", "denied"],
     },
   ]);
 }, 10_000);

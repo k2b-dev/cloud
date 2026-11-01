@@ -137,7 +137,18 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     setSystemTime();
   });
 
-  async function execute(source: string, options: { stale?: boolean; forged?: boolean; drain?: boolean } = {}) {
+  async function execute(
+    source: string,
+    options: {
+      stale?: boolean;
+      forged?: boolean;
+      drain?: boolean;
+      ended?: boolean;
+      replay?: boolean;
+      callsLimit?: number;
+      flood?: boolean;
+    } = {},
+  ) {
     const codeId = `c_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const hash = codeBundleHash(source);
     const files = { "code.ts": source };
@@ -157,8 +168,9 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       ${Buffer.byteLength(source)},${Buffer.byteLength(source)},${userId}::uuid) RETURNING id`;
     const [run] = await sql<{ id: string }[]>`
       INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
-      VALUES(${codeId},${version!.id}::uuid,'manual','main','running',clock_timestamp(),clock_timestamp()+interval '1 minute',${options.stale ? 2 : 1},32768,200)
+      VALUES(${codeId},${version!.id}::uuid,'manual','main','running',clock_timestamp(),clock_timestamp()+interval '1 minute',${options.stale ? 2 : 1},32768,${options.callsLimit ?? 200})
       RETURNING id`;
+    if (options.ended) await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${run!.id}::uuid`;
     const claims: CodeRunTokenInput = {
       codeId,
       versionId: version!.id,
@@ -170,6 +182,9 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       mandateRevision: 1,
     };
     const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: NOW + 10_000 });
+    // Reuse an otherwise valid token against another run identity. The sandbox
+    // never receives this token; this attacks the signed transport boundary.
+    if (options.replay) claims.runId = crypto.randomUUID();
     const lease: RunnerLease = {
       runId: claims.runId,
       codeId,
@@ -219,7 +234,8 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
         }
         // Acquisition is a deterministic fixture. Calls use unmodified C4 auth,
         // signatures, run-token verification, C13 SQL fences and Valkey budgets.
-        if (path === RUNNER_PATHS.config) return Response.json({ ...config, slots: 1 });
+        if (path === RUNNER_PATHS.config)
+          return Response.json({ ...config, slots: 1, bridgeConcurrency: options.flood ? 33 : config.bridgeConcurrency });
         if (path === RUNNER_PATHS.fetch) {
           if (++fetches === 1) return Response.json({ runs: [lease] });
           await new Promise<void>((done) => {
@@ -298,16 +314,20 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
         await docker("kill", "--signal", "TERM", name);
       }
       const result = await bounded(complete.promise);
-      const atStop = fetches;
       if (!options.drain) await docker("kill", "--signal", "TERM", name);
       expect(await bounded(docker("wait", name))).toBe("0");
-      expect(fetches).toBe(atStop);
+      // Ordinary runs may free a slot and begin another poll before Docker
+      // delivers TERM. Drain is signalled while the accepted attempt is active.
+      if (options.drain) expect(fetches).toBe(1);
       expect(providerCalls).toBe(0);
       const rows = await sql<{ result: unknown }[]>`SELECT result FROM code.calls WHERE run_id=${run!.id}::uuid ORDER BY ordinal`;
       return { outcome: result.outcome, responses, observations: rows.map((row) => row.result) };
     } finally {
-      await docker("rm", "--force", name);
-      await core.stop(true);
+      try {
+        await docker("rm", "--force", name);
+      } finally {
+        await core.stop(true);
+      }
     }
   }
 
@@ -335,22 +355,53 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     expect(result.observations).toEqual(expected);
   }, 30_000);
 
-  test("a real Valkey call flood is refused and bounded in the run observations", async () => {
+  test("a real Valkey call flood receives rate refusals", async () => {
     rate = 1;
     try {
       const result = await execute(
-        deniedBundle([
-          ["example.person", "code_disabled"],
-          ...Array.from({ length: 32 }, (): [string, string] => ["example.person", "code_rate_limited"]),
-        ]),
+        `export async function main(input, cloud) {
+        const errors = await Promise.all(Array.from({length: 33}, async () => {
+          try {
+            await cloud.call('example.person', {call: {capability: 'example.person', target: null, refs: {}, input: {}}, metadata: {}});
+            return 'ESCAPE';
+          } catch (error) { return error.message; }
+        }));
+        if (!errors.includes('code_rate_limited') || errors.some(error => !['code_disabled', 'code_rate_limited'].includes(error)))
+          throw new Error('unexpected rate flood result');
+      }`,
+        { flood: true },
       );
       expect(result.outcome).toBe("succeeded");
-      const expected = [refusal("code_disabled"), ...Array.from({ length: 32 }, () => refusal("code_rate_limited"))];
-      expect(result.observations).toEqual(expected);
-      expect(result.responses).toEqual(expected.map((body) => ({ status: 200, body })));
+      expect(result.observations).toHaveLength(33);
+      expect(result.responses).toHaveLength(33);
+      expect(result.responses.some((response) => JSON.stringify(response.body) === JSON.stringify(refusal("code_rate_limited")))).toBe(
+        true,
+      );
+      for (const response of result.responses) {
+        expect(response.status).toBe(200);
+        expect([refusal("code_disabled"), refusal("code_rate_limited")].map((body) => JSON.stringify(body))).toContain(
+          JSON.stringify(response.body),
+        );
+      }
     } finally {
       rate = 1000;
     }
+  }, 30_000);
+
+  test("call observations stop at the saved budget even when Code keeps calling", async () => {
+    const result = await execute(
+      deniedBundle([
+        ...Array.from({ length: 10 }, (): [string, string] => ["example.person", "code_disabled"]),
+        ...Array.from({ length: 3 }, (): [string, string] => ["example.person", "code_call_limit"]),
+      ]),
+      { callsLimit: 10 },
+    );
+    expect(result.outcome).toBe("succeeded");
+    expect(result.observations).toEqual(Array.from({ length: 10 }, () => refusal("code_disabled")));
+    expect(result.responses.map((response) => response.body)).toEqual([
+      ...Array.from({ length: 10 }, () => refusal("code_disabled")),
+      ...Array.from({ length: 3 }, () => refusal("code_call_limit")),
+    ]);
   }, 30_000);
 
   test("a stale C13 generation is fenced before any observation or provider call", async () => {
@@ -367,9 +418,18 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     expect(result.observations).toEqual([]);
   }, 30_000);
 
+  for (const attack of ["ended", "replay"] as const) {
+    test(`a valid token cannot be reused against an ${attack === "ended" ? "ended" : "unrelated"} run`, async () => {
+      const result = await execute(deniedBundle([["example.person", "runner_lease_lost"]]), { [attack]: true });
+      expect(result.outcome).toBe("lease_lost");
+      expect(result.responses).toEqual([{ status: 409, body: refusal("runner_lease_lost") }]);
+      expect(result.observations).toEqual([]);
+    }, 30_000);
+  }
+
   test("SIGTERM drain cannot extend a timer-stalled bundle beyond its original deadline", async () => {
     const source = `${deniedBundle([["example.person", "code_disabled"]]).replace("export async function main", "async function probe")}
-      export async function main(input, cloud) { await probe(input, cloud); await new Promise(() => {}); }`;
+      export async function main(input, cloud) { await probe(input, cloud); await new Promise(resolve => setTimeout(resolve, 60_000)); }`;
     const result = await execute(source, { drain: true });
     expect(result.outcome).toBe("wall_clock_limit");
     expect(result.responses).toEqual([{ status: 200, body: refusal("code_disabled") }]);

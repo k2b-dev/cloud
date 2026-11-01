@@ -109,7 +109,7 @@ jobs:
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|packages/runner/|pwas/|compose[^/]*\.yml)')"
-            echo "runner=$(match '^(packages/runner/|packages/cloud/src/(code/|api/(capabilities|authenticate-app-request)\.ts|app-(key|proof)\.ts|runtime/bootstrap-protocol\.ts|services/(app-keys/|identity/)|server/ratelimit\.ts)|packages/core/src/(code/|migrate/core/(code[^/]*|app-keys|app-bootstrap)\.ts)|scripts/fixtures/(test-infra|app-key-fixtures)|package\.json|bun\.lock|compose[^/]*\.yml|\.dockerignore|\.github/workflows/ci\.yml)')"
+            echo "runner=$(match "$shared|^packages/runner/|^compose[^/]*\.yml$")"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
@@ -831,7 +831,6 @@ jobs:
           load: true
           tags: cloud-runner:attacks
           cache-from: type=gha,scope=ci-runner
-          cache-to: type=gha,mode=max,scope=ci-runner-attacks
       - name: Attack the workerd shell and native process boundary
         run: |
           set -euo pipefail
@@ -839,7 +838,7 @@ jobs:
           # Public RFC 8032 vector; 0444 deliberately tests protection of the mount's parent.
           install -m 0444 packages/runner/test/runner-key.fixture "$RUNNER_TEMP/runner-attacks.key"
           trap 'docker rm --force code-c14-native >/dev/null 2>&1 || true' EXIT
-          timeout --signal=TERM 90s docker run --rm --name code-c14-native --network host --read-only --cap-drop ALL \
+          timeout --kill-after=5s --signal=TERM 90s docker run --rm --name code-c14-native --network host --read-only --cap-drop ALL \
             --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE \
             --security-opt no-new-privileges --memory 1g --pids-limit 256 \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
@@ -847,9 +846,15 @@ jobs:
             --volume "$RUNNER_TEMP/runner-attacks.key:/run/runner-key/source:ro" \
             --volume "$RUNNER_TEMP/hostile.test.js:/app/hostile.test.js:ro" \
             cloud-runner:attacks bun --no-env-file test \
-            /app/hostile.test.js /app/isolation.test.js /app/engine.test.js /app/shutdown.test.js
+            /app/hostile.test.js /app/isolation.test.js /app/engine.test.js /app/shutdown.test.js 2>&1 | tee "$RUNNER_TEMP/runner-native.log"
+          ! grep -qE '\(skip\)|[1-9][0-9]* skip' "$RUNNER_TEMP/runner-native.log"
       - name: Attack the real signed bridge and bounded SIGTERM drain
-        run: timeout --signal=TERM 180s bun --no-env-file test ./packages/runner/attacks/bridge.ts
+        run: |
+          set -euo pipefail
+          test -n "$CLOUD_TEST_DATABASE_URL"
+          test -n "$CLOUD_TEST_VALKEY_URL"
+          timeout --kill-after=5s --signal=TERM 180s bun --no-env-file test ./packages/runner/attacks/bridge.ts 2>&1 | tee "$RUNNER_TEMP/runner-bridge.log"
+          ! grep -qE '\(skip\)|[1-9][0-9]* skip' "$RUNNER_TEMP/runner-bridge.log"
       - name: Remove only C14 attack containers after cancellation
         if: always()
         run: |

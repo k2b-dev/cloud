@@ -99,6 +99,21 @@ int main(int argc, char **argv) {
     check(socket(AF_INET6, SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv6");
     check(socket(AF_INET, SOCK_DGRAM, 0) == -1 && errno == EAFNOSUPPORT, "no DNS UDP");
     check(socket(AF_INET6, SOCK_DGRAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv6 DNS UDP");
+    int domains[] = {AF_NETLINK, AF_PACKET, AF_VSOCK};
+    for (unsigned i = 0; i < sizeof(domains) / sizeof(domains[0]); ++i)
+      check(socket(domains[i], SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no alternate network family");
+    int pair[2];
+    check(socketpair(AF_INET, SOCK_STREAM, 0, pair) == -1 && errno == EAFNOSUPPORT, "no IP socketpair");
+    check(syscall(__NR_clone3, NULL, 0) == -1 && errno == ENOSYS, "clone3 cannot bypass clone flags");
+    pid_t child = vfork();
+    if (child == 0) _exit(124);
+    check(child == -1 && errno == EPERM, "no vfork");
+    check(syscall(__NR_io_uring_setup, 0, NULL) == -1 && errno == EPERM, "no io_uring bypass");
+    check(syscall(__NR_unshare, 0x10000000) == -1 && errno == EPERM, "no user namespace");
+    check(syscall(__NR_setns, -1, 0) == -1 && errno == EPERM, "no namespace entry");
+    check(syscall(__NR_mount, "none", "/tmp", "tmpfs", 0, NULL) == -1 && errno == EPERM, "no mounts");
+    check(syscall(__NR_pidfd_getfd, -1, -1, 0) == -1 && errno == EPERM, "no pidfd descriptor theft");
+    check(syscall(__NR_bpf, 0, NULL, 0) == -1 && errno == EPERM, "no bpf");
     for (int i = 0; i < 32; ++i) check(fork() == -1 && errno == EPERM, "fork bomb refused");
     for (int i = 0; i < 2; ++i) {
       int fd = socket(AF_UNIX, SOCK_STREAM, 0);
