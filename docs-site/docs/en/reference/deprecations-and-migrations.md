@@ -10,6 +10,13 @@ updated: 2026-10-31
 
 # Deprecations and migrations
 
+## Grids and Files capabilities name their container
+
+Move capability container IDs from domain input to `target` and refresh cached
+catalogs and schema hashes. Grids uses a base or table; Files uses a storage-root
+entry. See [Grids and Files targets](/en/docs/operations/grids-files-capability-targets)
+for the affected operations, flat tool fields, and deployment order.
+
 ## Mail capabilities name their mailbox
 
 The coordinated Code migration intentionally changes Mail's mailbox-scoped

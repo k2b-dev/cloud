@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { capabilityCallFromTool, capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -19,6 +20,7 @@ import {
   RecordCreateInputSchema,
   RecordExternalUpsertInputSchema,
 } from "./capability-contracts";
+import { capabilityOperationKey, externalUpsertRequestHash } from "./capability-idempotency";
 import { testShortId } from "./integration-test-utils";
 import { migrate } from "./migrate";
 import { gridsService } from "./service";
@@ -37,6 +39,23 @@ test("only exposes remembered approval for record changes and personal views", (
     .map(([localId]) => localId)
     .sort();
   expect(rememberable).toEqual(["record.create", "record.update", "record.upsert-external", "view.create"]);
+});
+
+test("durable capability receipt identities remain stable across target migration", () => {
+  const context = {
+    accessSubject: { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" },
+    idempotencyKey: "invoice:message-42",
+  };
+  expect(capabilityOperationKey(context, "document.create")).toBe("568dea4c821a8a574f337584da4c26a8019e0340286db71b39d58b537b44176f");
+  expect(capabilityOperationKey(context, "workflow.record-action")).toBe(
+    "b8451b290658fea4c55c2b607b447411b891ccddd49d0de813596008086ac3e2",
+  );
+  expect(
+    externalUpsertRequestHash("Table1", {
+      externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
+      values: { Field1: "value" },
+    }),
+  ).toBe("59c566cf59555385f623913b97948ce40f649e690e256f7a17825187d0ff1137");
 });
 
 const testUser = (id: string): User => ({
@@ -124,6 +143,33 @@ const resourceReaders: Record<string, string> = {
   "workflow-run": "workflow.run.read",
 };
 
+test("container targets stay out of Grids input and flat tools use the fixed type", () => {
+  const manifest = compileCapabilityManifest("grids", gridsCapabilities);
+  expect(Object.fromEntries(manifest.actions.map((action) => [action.localId, action.target]))).toEqual({
+    "document.create": "table",
+    "workflow.record-action": "base",
+    "view.create": "base",
+    "record.create": "table",
+    "record.update": "table",
+    "record.upsert-external": "table",
+  });
+  for (const operation of [...manifest.actions, ...manifest.queries.filter((query) => query.localId.startsWith("gql."))]) {
+    const fields = operation.inputSchema.properties ?? {};
+    expect(fields).not.toHaveProperty(`${operation.target}Id`);
+    const tool = capabilityToolInputSchema(operation);
+    expect(tool.properties).toHaveProperty(operation.target!);
+  }
+  const update = manifest.actions.find((action) => action.localId === "record.update")!;
+  expect(capabilityCallFromTool("grids", update, { table: "TABLE1", recordId: "RECORD", values: {}, ifVersion: 1 })).toMatchObject({
+    target: { type: "grids.table", id: "TABLE1" },
+    refs: {},
+    input: { recordId: "RECORD", values: {}, ifVersion: 1 },
+  });
+  expect(
+    gridsCapabilities.actions["record.update"].input.safeParse({ tableId: "TABLE2", recordId: "RECORD", values: {}, ifVersion: 1 }).success,
+  ).toBeFalse();
+});
+
 test("every declared Type has a reader fixture", () => {
   expect(Object.keys(resourceReaders).sort()).toEqual(Object.keys(gridsCapabilities.types).sort());
   for (const [typeId, type] of Object.entries(gridsCapabilities.types)) expect(resourceReaders[typeId]).toBe(type.reader);
@@ -151,6 +197,11 @@ describe("Grids capabilities", () => {
     const context = userContext(user);
     const outsider = userContext(testUser(uuid()));
     const baseId = uuid();
+    const foreignBaseId = uuid();
+    const foreignTableId = uuid();
+    const foreignBasePublicId = testShortId();
+    const foreignTablePublicId = testShortId();
+    const dailyFieldPublicId = testShortId();
     const tableId = uuid();
     const recordId = uuid();
     const otherRecordId = uuid();
@@ -171,6 +222,8 @@ describe("Grids capabilities", () => {
     );
     try {
       await sql`INSERT INTO grids.bases (id,short_id,name) VALUES (${baseId}::uuid,${basePublicId},'Daily capability')`;
+      await sql`INSERT INTO grids.bases (id,short_id,name) VALUES (${foreignBaseId}::uuid,${foreignBasePublicId},'Other accessible base')`;
+      await sql`INSERT INTO grids.tables (id,short_id,base_id,name) VALUES (${foreignTableId}::uuid,${foreignTablePublicId},${foreignBaseId}::uuid,'Other table')`;
       await sql`INSERT INTO grids.tables (id,short_id,base_id,name) VALUES (${tableId}::uuid,${tablePublicId},${baseId}::uuid,'TestDocs')`;
       await sql`INSERT INTO grids.records (id,short_id,table_id,data,version) VALUES (${recordId}::uuid,${recordPublicId},${tableId}::uuid,'{}'::jsonb,1),(${otherRecordId}::uuid,${otherPublicId},${tableId}::uuid,'{}'::jsonb,1)`;
       const [access] = await sql<
@@ -178,6 +231,8 @@ describe("Grids capabilities", () => {
       >`INSERT INTO auth.access (user_id,permission) VALUES (${user.id}::uuid,'write'::auth.permission_level) RETURNING id`;
       accessId = access!.id;
       await sql`INSERT INTO grids.base_access (base_id,access_id) VALUES (${baseId}::uuid,${accessId}::uuid)`;
+      await sql`INSERT INTO grids.base_access (base_id,access_id) VALUES (${foreignBaseId}::uuid,${accessId}::uuid)`;
+      expect((await invoke("query", "table.read", { id: foreignTablePublicId }, context)).ok).toBe(true);
       const created = await gridsService.document.createTemplate(
         tableId,
         {
@@ -195,20 +250,27 @@ describe("Grids capabilities", () => {
       if (!created.ok) throw created.error;
       const templateId = created.data.shortId;
       const input = { templateId, recordId: recordPublicId };
+      const wrongTable = { ...context, idempotencyKey: "wrong-container", target: { type: "grids.table", id: foreignTablePublicId } };
+      expect(await review("document.create", input, wrongTable)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      expect(await invoke("action", "document.create", input, wrongTable)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
       expect((await invoke("query", "document.templates", { tableId: tablePublicId }, outsider)).ok).toBe(false);
-      expect((await review("document.create", input, outsider)).ok).toBe(false);
+      expect((await review("document.create", input, { ...outsider, target: { type: "grids.table", id: tablePublicId } })).ok).toBe(false);
       const found = await invoke("query", "document.templates", { tableId: tablePublicId, limit: 1 }, context);
       expect(found.ok && found.data.data).toEqual({
         items: [{ id: templateId, tableId: tablePublicId, name: "Receipt", enabled: true }],
         nextOffset: null,
       });
-      const reviewed = await review("document.create", input, { ...context, locale: "de" });
+      const reviewed = await review("document.create", input, {
+        ...context,
+        locale: "de",
+        target: { type: "grids.table", id: tablePublicId },
+      });
       expect(reviewed.ok && reviewed.data.message).toContain("dauerhaftes Dokument");
       expect(renderer).not.toHaveBeenCalled();
       const keyed = { ...context, idempotencyKey: "same-request" };
-      const first = await invoke("action", "document.create", input, keyed);
+      const first = await invoke("action", "document.create", input, { ...keyed, target: { type: "grids.table", id: tablePublicId } });
       if (!first.ok) throw first.error;
-      const again = await invoke("action", "document.create", input, keyed);
+      const again = await invoke("action", "document.create", input, { ...keyed, target: { type: "grids.table", id: tablePublicId } });
       expect(again).toEqual(first);
       const document = zDocument(first.data.data);
       const read = await invoke("query", "document.read", { id: document.id }, context);
@@ -246,11 +308,20 @@ describe("Grids capabilities", () => {
       const page = await invoke("query", "document.list", { templateId, limit: 1 }, context);
       expect(page.ok && page.data.data).toEqual([document]);
       expect((await invoke("query", "document.list", { templateId, cursor: "garbage" }, context)).ok).toBe(false);
-      expect((await invoke("action", "document.create", { ...input, recordId: otherPublicId }, keyed)).ok).toBe(false);
+      expect(
+        (
+          await invoke(
+            "action",
+            "document.create",
+            { ...input, recordId: otherPublicId },
+            { ...keyed, target: { type: "grids.table", id: tablePublicId } },
+          )
+        ).ok,
+      ).toBe(false);
       expect((await invoke("query", "workflow.record-actions", { baseId: basePublicId }, outsider)).ok).toBe(false);
       const actions = await invoke("query", "workflow.record-actions", { baseId: basePublicId, limit: 1 }, context);
       expect(actions.ok && actions.data.data).toEqual({ items: [], nextOffset: null });
-      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${testShortId()},${tableId}::uuid,'Name','text','{}'::jsonb)`;
+      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${dailyFieldPublicId},${tableId}::uuid,'Name','text','{}'::jsonb)`;
       await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${testShortId()},${tableId}::uuid,'Corrects','relation',${{ targetTableId: tableId, cardinality: "single" }}::jsonb)`;
       expect((await enableDurableHistory(tableId, user.id)).ok).toBe(true);
       expect((await enableFinalization(tableId, { mode: "direct" }, user.id)).ok).toBe(true);
@@ -286,17 +357,40 @@ describe("Grids capabilities", () => {
         nextOffset: null,
       });
       const actionInput = { launcherId: launcher.data.shortId, recordId: recordPublicId, expectedRevision: workflow.data.revision };
-      expect((await review("workflow.record-action", actionInput, outsider)).ok).toBe(false);
-      const actionReview = await review("workflow.record-action", actionInput, context);
+      const wrongBase = { ...context, idempotencyKey: "wrong-container", target: { type: "grids.base", id: foreignBasePublicId } };
+      expect(await review("workflow.record-action", actionInput, wrongBase)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      expect(await invoke("action", "workflow.record-action", actionInput, wrongBase)).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND" },
+      });
+      expect(
+        (await review("workflow.record-action", actionInput, { ...outsider, target: { type: "grids.base", id: basePublicId } })).ok,
+      ).toBe(false);
+      const actionReview = await review("workflow.record-action", actionInput, {
+        ...context,
+        target: { type: "grids.base", id: basePublicId },
+      });
       expect(actionReview.ok).toBe(true);
-      expect((await review("workflow.record-action", { ...actionInput, expectedRevision: workflow.data.revision + 1 }, context)).ok).toBe(
-        false,
-      );
-      const executed = await invoke("action", "workflow.record-action", actionInput, keyed);
+      expect(
+        (
+          await review(
+            "workflow.record-action",
+            { ...actionInput, expectedRevision: workflow.data.revision + 1 },
+            { ...context, target: { type: "grids.base", id: basePublicId } },
+          )
+        ).ok,
+      ).toBe(false);
+      const executed = await invoke("action", "workflow.record-action", actionInput, {
+        ...keyed,
+        target: { type: "grids.base", id: basePublicId },
+      });
       if (!executed.ok) throw executed.error;
       const runId = executed.data.refs?.[0]?.id;
       expect(runId).toMatch(/^[A-Za-z0-9]{6}$/);
-      const repeated = await invoke("action", "workflow.record-action", actionInput, keyed);
+      const repeated = await invoke("action", "workflow.record-action", actionInput, {
+        ...keyed,
+        target: { type: "grids.base", id: basePublicId },
+      });
       expect(repeated.ok && repeated.data.refs?.[0]?.id).toBe(runId);
       const runStatus = await invoke("query", "workflow.run.read", { id: runId }, context);
       expect(runStatus.ok).toBe(true);
@@ -304,6 +398,18 @@ describe("Grids capabilities", () => {
       const viewPublicId = testShortId();
       await sql`INSERT INTO grids.views (short_id, table_id, base_id, name, source)
         VALUES (${viewPublicId}, ${tableId}::uuid, ${baseId}::uuid, 'Reader fixture', 'from table TestDocs')`;
+      expect(await invoke("query", "gql.view.execute", { viewId: viewPublicId }, wrongBase)).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND" },
+      });
+      expect(await invoke("query", "gql.context", { kind: "tables", fieldId: dailyFieldPublicId }, wrongBase)).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND" },
+      });
+      expect(await invoke("query", "gql.context", { kind: "fields", tableId: tablePublicId }, wrongBase)).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND" },
+      });
       const resourceIds: Record<string, string> = {
         base: basePublicId,
         table: tablePublicId,
@@ -320,15 +426,26 @@ describe("Grids capabilities", () => {
       }
 
       expect(JSON.stringify(runStatus)).not.toContain(recordId);
-      expect((await invoke("action", "workflow.record-action", { ...actionInput, recordId: otherPublicId }, keyed)).ok).toBe(false);
+      expect(
+        (
+          await invoke(
+            "action",
+            "workflow.record-action",
+            { ...actionInput, recordId: otherPublicId },
+            { ...keyed, target: { type: "grids.base", id: basePublicId } },
+          )
+        ).ok,
+      ).toBe(false);
       await sql`DELETE FROM grids.base_access WHERE base_id=${baseId}::uuid`;
       await expect(transfer(stream, context)).rejects.toBeDefined();
-      expect((await invoke("action", "document.create", input, keyed)).ok).toBe(false);
+      expect((await invoke("action", "document.create", input, { ...keyed, target: { type: "grids.table", id: tablePublicId } })).ok).toBe(
+        false,
+      );
       expect((await invoke("query", "document.read", { id: document.id }, context)).ok).toBe(false);
     } finally {
       renderer.mockRestore();
       // Issuance fixtures are immutable too; hide their Base instead of bypassing its retention constraints.
-      await sql`UPDATE grids.bases SET deleted_at=now() WHERE id=${baseId}::uuid`;
+      await sql`UPDATE grids.bases SET deleted_at=now() WHERE id IN (${baseId}::uuid, ${foreignBaseId}::uuid)`;
       if (accessId) await sql`DELETE FROM auth.access WHERE id=${accessId}::uuid`;
     }
   });
@@ -404,18 +521,16 @@ describe("Grids capabilities", () => {
     expect(BaseReadInputSchema.safeParse({ id: "Base01" }).success).toBeTrue();
     expect(BaseReadInputSchema.safeParse({ id: "Base1" }).success).toBeFalse();
     expect(BaseReadInputSchema.safeParse({ id: uuid() }).success).toBeFalse();
-    expect(RecordCreateInputSchema.safeParse({ tableId: "Table1", values: { Field1: "value" } }).success).toBeTrue();
-    expect(RecordCreateInputSchema.safeParse({ tableId: "Table1", values: { [uuid()]: "value" } }).success).toBeFalse();
+    expect(RecordCreateInputSchema.safeParse({ values: { Field1: "value" } }).success).toBeTrue();
+    expect(RecordCreateInputSchema.safeParse({ values: { [uuid()]: "value" } }).success).toBeFalse();
     expect(
       RecordExternalUpsertInputSchema.safeParse({
-        tableId: "Table1",
         externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
         values: { Field1: "value" },
       }).success,
     ).toBeTrue();
     expect(
       RecordExternalUpsertInputSchema.safeParse({
-        tableId: "Table1",
         externalRef: { provider: " crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
         values: { Field1: "value" },
       }).success,
@@ -424,7 +539,6 @@ describe("Grids capabilities", () => {
       const externalRef = { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" };
       expect(
         RecordExternalUpsertInputSchema.safeParse({
-          tableId: "Table1",
           externalRef: { ...externalRef, [part]: `${externalRef[part]}\0x` },
           values: { Field1: "value" },
         }).success,
@@ -551,7 +665,12 @@ describe("Grids capabilities", () => {
         expect(loadedBase.data.summary).toBe("Read Grids base “Capability Base”.");
       }
 
-      const tables = await invoke("query", "gql.context", { baseId: basePublicId, kind: "tables", limit: 25 }, context);
+      const tables = await invoke(
+        "query",
+        "gql.context",
+        { kind: "tables", limit: 25 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
+      );
       expect(tables.ok && tables.data.data).toMatchObject({ kind: "tables" });
       if (!tables.ok || tables.data.data.kind !== "tables") throw new Error("Expected the Base table catalog");
       expect(tables.data.data.items.find((item: { id: string }) => item.id === tablePublicId)).toMatchObject({
@@ -571,7 +690,12 @@ describe("Grids capabilities", () => {
       const loadedTable = await invoke("query", "table.read", { id: tablePublicId }, context);
       expect(loadedTable.ok && loadedTable.data.summary).toBe("Read Grids Table “Items”.");
 
-      const readFields = await invoke("query", "gql.context", { baseId: basePublicId, kind: "fields", tableId: tablePublicId }, context);
+      const readFields = await invoke(
+        "query",
+        "gql.context",
+        { kind: "fields", tableId: tablePublicId },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
+      );
       expect(readFields.ok).toBeTrue();
       if (readFields.ok) {
         expect(readFields.data.data).not.toHaveProperty("recordWrite");
@@ -583,8 +707,8 @@ describe("Grids capabilities", () => {
       const fields = await invoke(
         "query",
         "gql.context",
-        { baseId: basePublicId, kind: "fields", tableId: tablePublicId, limit: 25, includeWriteContext: true },
-        context,
+        { kind: "fields", tableId: tablePublicId, limit: 25, includeWriteContext: true },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(fields.ok && fields.data.data).toMatchObject({
         kind: "fields",
@@ -645,16 +769,16 @@ describe("Grids capabilities", () => {
         const fieldPage = await invoke(
           "query",
           "gql.context",
-          { baseId: basePublicId, tableId: tablePublicId, kind: "fields", fieldId: listFieldPublicId },
-          context,
+          { tableId: tablePublicId, kind: "fields", fieldId: listFieldPublicId },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(fieldPage.ok && fieldPage.data.data.items).toHaveLength(1);
         expect(fieldPage.ok && fieldPage.data.data.items[0].valueHint).toContain("list-columns");
         const first = await invoke(
           "query",
           "gql.context",
-          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId, limit: 1 },
-          context,
+          { tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId, limit: 1 },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(first.ok).toBeTrue();
         if (!first.ok) throw first.error;
@@ -666,41 +790,39 @@ describe("Grids capabilities", () => {
           "query",
           "gql.context",
           {
-            baseId: basePublicId,
             tableId: tablePublicId,
             kind: "list-columns",
             fieldId: listFieldPublicId,
             limit: 1,
             cursor: first.data.page.nextCursor,
           },
-          context,
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(next.ok && next.data.data.items[0].column.formula.expression).toBe("Amount * 2");
         expect(next.ok && next.data.page?.hasMore).toBeFalse();
         const wrongTable = await invoke(
           "query",
           "gql.context",
-          { baseId: basePublicId, tableId: secretTablePublicId, kind: "list-columns", fieldId: listFieldPublicId },
-          context,
+          { tableId: secretTablePublicId, kind: "list-columns", fieldId: listFieldPublicId },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(wrongTable.ok).toBeFalse();
         const wrongType = await invoke(
           "query",
           "gql.context",
-          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: selectFieldPublicId },
-          context,
+          { tableId: tablePublicId, kind: "list-columns", fieldId: selectFieldPublicId },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(wrongType.ok).toBeFalse();
         const denied = await invoke(
           "query",
           "gql.context",
           {
-            baseId: basePublicId,
             tableId: tablePublicId,
             kind: "list-columns",
             fieldId: listFieldPublicId,
           },
-          userContext(testUser(uuid())),
+          { ...userContext(testUser(uuid())), target: { type: "grids.base", id: basePublicId } },
         );
         expect(denied.ok).toBeFalse();
         const largeFields = Array.from({ length: 15 }, (_, index) => ({
@@ -713,8 +835,8 @@ describe("Grids capabilities", () => {
         const bounded = await invoke(
           "query",
           "gql.context",
-          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId, limit: 100 },
-          context,
+          { tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId, limit: 100 },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(bounded.ok).toBeTrue();
         if (!bounded.ok) throw bounded.error;
@@ -725,22 +847,21 @@ describe("Grids capabilities", () => {
           "query",
           "gql.context",
           {
-            baseId: basePublicId,
             tableId: tablePublicId,
             kind: "list-columns",
             fieldId: listFieldPublicId,
             limit: 100,
             cursor: bounded.data.page.nextCursor,
           },
-          context,
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(remainder.ok && remainder.data.data.items.length + bounded.data.data.items.length).toBe(15);
         await sql`UPDATE grids.fields SET config = ${{ fields: [{ ...largeFields[0], config: { regex: "a".repeat(CAPABILITY_MAX_RESULT_BYTES) } }] }}::jsonb WHERE id = ${listFieldId}::uuid`;
         const oversized = await invoke(
           "query",
           "gql.context",
-          { baseId: basePublicId, tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId },
-          context,
+          { tableId: tablePublicId, kind: "list-columns", fieldId: listFieldPublicId },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(oversized.ok).toBeFalse();
         if (!oversized.ok) expect(oversized.error.code).toBe("BAD_INPUT");
@@ -751,8 +872,8 @@ describe("Grids capabilities", () => {
       const options = await invoke(
         "query",
         "gql.context",
-        { baseId: basePublicId, kind: "options", tableId: tablePublicId, fieldId: selectFieldPublicId, limit: 1 },
-        context,
+        { kind: "options", tableId: tablePublicId, fieldId: selectFieldPublicId, limit: 1 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(options.ok && options.data.data).toMatchObject({
         kind: "options",
@@ -764,21 +885,25 @@ describe("Grids capabilities", () => {
         "query",
         "gql.context",
         {
-          baseId: basePublicId,
           kind: "options",
           tableId: tablePublicId,
           fieldId: selectFieldPublicId,
           limit: 1,
           cursor: nextCursor,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(remainingOptions.ok && remainingOptions.data.data).toMatchObject({
         kind: "options",
         items: [{ kind: "option", id: "done", fieldId: selectFieldPublicId, label: "Done" }],
       });
 
-      const views = await invoke("query", "gql.context", { baseId: basePublicId, kind: "views", limit: 25 }, context);
+      const views = await invoke(
+        "query",
+        "gql.context",
+        { kind: "views", limit: 25 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
+      );
       expect(views.ok && views.data.data).toMatchObject({
         kind: "views",
         items: [{ kind: "view", id: viewPublicId, name: "All items" }],
@@ -786,7 +911,12 @@ describe("Grids capabilities", () => {
       const loadedView = await invoke("query", "view.read", { id: viewPublicId }, context);
       expect(loadedView.ok && loadedView.data.summary).toBe("Read Grids View “All items”.");
 
-      const created = await invoke("action", "record.create", { tableId: tablePublicId, values: { [fieldPublicId]: "First" } }, context);
+      const created = await invoke(
+        "action",
+        "record.create",
+        { values: { [fieldPublicId]: "First" } },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
+      );
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.error.message);
       const record = created.data.data as { id: string; version: number };
@@ -796,17 +926,22 @@ describe("Grids capabilities", () => {
       expect(record).not.toHaveProperty("data");
 
       const externalInput = {
-        tableId: tablePublicId,
         externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "capability-1" },
         values: { [fieldPublicId]: "External capability" },
       };
       const externalContext = { ...context, idempotencyKey: "external-capability-create" };
-      const externalCreated = await invoke("action", "record.upsert-external", externalInput, externalContext);
+      const externalCreated = await invoke("action", "record.upsert-external", externalInput, {
+        ...externalContext,
+        target: { type: "grids.table", id: tablePublicId },
+      });
       expect(externalCreated).toMatchObject({
         ok: true,
         data: { data: { created: true, changed: true, replayed: false, tableId: tablePublicId, version: 1 } },
       });
-      const externalRetry = await invoke("action", "record.upsert-external", externalInput, externalContext);
+      const externalRetry = await invoke("action", "record.upsert-external", externalInput, {
+        ...externalContext,
+        target: { type: "grids.table", id: tablePublicId },
+      });
       expect(externalRetry).toMatchObject({
         ok: true,
         data: { data: { created: true, changed: true, replayed: true, tableId: tablePublicId, version: 1 } },
@@ -815,14 +950,14 @@ describe("Grids capabilities", () => {
         "action",
         "record.upsert-external",
         { ...externalInput, values: { [fieldPublicId]: "Different request" } },
-        externalContext,
+        { ...externalContext, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(externalMismatch).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
       const externalScopeMismatch = await invoke(
         "action",
         "record.upsert-external",
         { ...externalInput, externalRef: { ...externalInput.externalRef, providerAccount: "secondary" } },
-        externalContext,
+        { ...externalContext, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(externalScopeMismatch).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
       if (!externalCreated.ok) throw new Error("Expected external Record capability create");
@@ -830,13 +965,16 @@ describe("Grids capabilities", () => {
         "action",
         "record.upsert-external",
         { ...externalInput, values: { [fieldPublicId]: "External capability updated" }, ifVersion: 1 },
-        { ...context, idempotencyKey: "external-capability-update" },
+        { ...context, idempotencyKey: "external-capability-update", target: { type: "grids.table", id: tablePublicId } },
       );
       expect(externalUpdated).toMatchObject({
         ok: true,
         data: { data: { created: false, changed: true, replayed: false, version: 2 } },
       });
-      const externalOldReplay = await invoke("action", "record.upsert-external", externalInput, externalContext);
+      const externalOldReplay = await invoke("action", "record.upsert-external", externalInput, {
+        ...externalContext,
+        target: { type: "grids.table", id: tablePublicId },
+      });
       expect(externalOldReplay).toMatchObject({
         ok: true,
         data: { data: { created: true, changed: true, replayed: true, version: 1 } },
@@ -848,23 +986,46 @@ describe("Grids capabilities", () => {
         expect(loadedRecord.data.data).not.toHaveProperty("data");
         expect(loadedRecord.data.summary).toBe("Read a Record in “Items” at version 1.");
       }
-      const relatedA = await invoke("action", "record.create", { tableId: secretTablePublicId, values: {} }, context);
-      const relatedB = await invoke("action", "record.create", { tableId: secretTablePublicId, values: {} }, context);
+      const relatedA = await invoke(
+        "action",
+        "record.create",
+        { values: {} },
+        { ...context, target: { type: "grids.table", id: secretTablePublicId } },
+      );
+      const relatedB = await invoke(
+        "action",
+        "record.create",
+        { values: {} },
+        { ...context, target: { type: "grids.table", id: secretTablePublicId } },
+      );
       if (!relatedA.ok || !relatedB.ok) throw new Error("Expected related Record fixtures");
       const relatedAId = relatedA.data.data.id;
       const relatedBId = relatedB.data.data.id;
+      const wrongTableUpdate = { recordId: relatedAId, values: { [fieldPublicId]: "Wrong table" }, ifVersion: 1 };
+      const tableTarget = { ...context, target: { type: "grids.table", id: tablePublicId } };
+      expect(await review("record.update", wrongTableUpdate, tableTarget)).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND", status: 404 },
+      });
+      expect(await invoke("action", "record.update", wrongTableUpdate, tableTarget)).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND", status: 404 },
+      });
+      expect(await invoke("query", "record.read", { id: relatedAId }, context)).toMatchObject({
+        ok: true,
+        data: { data: { version: 1 } },
+      });
 
       const relationCreated = await invoke(
         "action",
         "record.create",
         {
-          tableId: tablePublicId,
           values: {
             [relationFieldPublicId]: [relatedAId, relatedBId],
             [singleRelationFieldPublicId]: relatedAId,
           },
         },
-        context,
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(relationCreated).toMatchObject({ ok: true, data: { data: { version: 1 } } });
       if (!relationCreated.ok) throw new Error(relationCreated.error.message);
@@ -873,7 +1034,6 @@ describe("Grids capabilities", () => {
         "action",
         "record.update",
         {
-          tableId: tablePublicId,
           recordId: relationCreated.data.data.id,
           values: {
             [relationFieldPublicId]: [relatedBId],
@@ -881,7 +1041,7 @@ describe("Grids capabilities", () => {
           },
           ifVersion: 1,
         },
-        context,
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(relationUpdated.ok && relationUpdated.data.data).toMatchObject({ version: 2 });
       if (relationUpdated.ok) {
@@ -897,22 +1057,22 @@ describe("Grids capabilities", () => {
       const rejectedUuidRelation = await invoke(
         "action",
         "record.create",
-        { tableId: tablePublicId, values: { [relationFieldPublicId]: [relatedInternal.id] } },
-        context,
+        { values: { [relationFieldPublicId]: [relatedInternal.id] } },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(rejectedUuidRelation).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
       const rejectedFiveCharacterRelation = await invoke(
         "action",
         "record.create",
-        { tableId: tablePublicId, values: { [singleRelationFieldPublicId]: "Ab123" } },
-        context,
+        { values: { [singleRelationFieldPublicId]: "Ab123" } },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(rejectedFiveCharacterRelation).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
       const rejectedUnknownRelation = await invoke(
         "action",
         "record.create",
-        { tableId: tablePublicId, values: { [singleRelationFieldPublicId]: "ZZZZZZ" } },
-        context,
+        { values: { [singleRelationFieldPublicId]: "ZZZZZZ" } },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(rejectedUnknownRelation).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
 
@@ -920,11 +1080,10 @@ describe("Grids capabilities", () => {
         "query",
         "gql.execute",
         {
-          baseId: basePublicId,
           query: `from table {${tablePublicId}}\nselect {${relationFieldPublicId}}, {${singleRelationFieldPublicId}}\nwhere record.id = '${relationCreated.data.data.id}'`,
           pageSize: 25,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(relationQuery.ok).toBe(true);
       if (!relationQuery.ok || !relationQuery.data.data.ok) throw new Error("Expected relation GQL rows");
@@ -943,11 +1102,10 @@ describe("Grids capabilities", () => {
           "query",
           operation,
           {
-            baseId: basePublicId,
             query: `from table {${tablePublicId}}\nselect {${relationFieldPublicId}}\nwhere record.id = @params.selected`,
             parameters: { selected: relationCreated.data.data.id },
           },
-          context,
+          { ...context, target: { type: "grids.base", id: basePublicId } },
         );
         expect(parameterized.ok).toBe(true);
         if (!parameterized.ok || !parameterized.data.data.ok) throw new Error("Expected parameterized capability rows");
@@ -960,11 +1118,10 @@ describe("Grids capabilities", () => {
         "query",
         "gql.execute",
         {
-          baseId: basePublicId,
           query: `from table {${tablePublicId}}\ngroup by {${relationFieldPublicId}}\naggregate count(*) as records`,
           pageSize: 25,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(groupedRelationQuery.ok).toBe(true);
       if (!groupedRelationQuery.ok || !groupedRelationQuery.data.data.ok) throw new Error("Expected grouped relation GQL rows");
@@ -980,8 +1137,8 @@ describe("Grids capabilities", () => {
       const preview = await invoke(
         "query",
         "gql.preview",
-        { baseId: basePublicId, query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`, pageSize: 25 },
-        context,
+        { query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`, pageSize: 25 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(preview.ok).toBe(true);
       if (!preview.ok || !preview.data.data.ok) throw new Error("Expected preview GQL rows");
@@ -1008,10 +1165,9 @@ describe("Grids capabilities", () => {
         "query",
         "gql.preview",
         {
-          baseId: basePublicId,
           query: `from table {${tablePublicId}}\nselect {${selectFieldPublicId}}\nwhere record.id = '${record.id}'`,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(statusOnly.ok).toBeTrue();
       if (statusOnly.ok) {
@@ -1022,13 +1178,18 @@ describe("Grids capabilities", () => {
       const gql = await invoke(
         "query",
         "gql.execute",
-        { baseId: basePublicId, query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`, pageSize: 100 },
-        context,
+        { query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`, pageSize: 100 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(gql.ok && gql.data.data.ok && gql.data.data.rows.some((row: { recordId?: string }) => row.recordId === record.id)).toBe(true);
       if (gql.ok) expect(gql.data.summary).toContain("Executed Grids GQL in “Capability Base”");
 
-      const savedView = await invoke("query", "gql.view.execute", { baseId: basePublicId, viewId: viewPublicId, pageSize: 100 }, context);
+      const savedView = await invoke(
+        "query",
+        "gql.view.execute",
+        { viewId: viewPublicId, pageSize: 100 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
+      );
       expect(
         savedView.ok && savedView.data.data.ok && savedView.data.data.rows.some((row: { recordId?: string }) => row.recordId === record.id),
       ).toBe(true);
@@ -1038,13 +1199,23 @@ describe("Grids capabilities", () => {
       }
 
       for (const [operation, args] of [
-        ["gql.preview", { baseId: basePublicId, query: `from table {${tablePublicId}}` }],
-        ["gql.execute", { baseId: basePublicId, query: `from table {${tablePublicId}}` }],
-        ["gql.view.execute", { baseId: basePublicId, viewId: viewPublicId }],
+        ["gql.preview", { query: `from table {${tablePublicId}}` }],
+        ["gql.execute", { query: `from table {${tablePublicId}}` }],
+        ["gql.view.execute", { viewId: viewPublicId }],
       ] as const) {
-        const hidden = await invoke("query", operation, args, context);
-        const explicitHidden = await invoke("query", operation, { ...args, showTableToUser: false }, context);
-        const visible = await invoke("query", operation, { ...args, showTableToUser: true }, context);
+        const hidden = await invoke("query", operation, args, { ...context, target: { type: "grids.base", id: basePublicId } });
+        const explicitHidden = await invoke(
+          "query",
+          operation,
+          { ...args, showTableToUser: false },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
+        );
+        const visible = await invoke(
+          "query",
+          operation,
+          { ...args, showTableToUser: true },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
+        );
         expect(hidden.ok && explicitHidden.ok && visible.ok).toBeTrue();
         if (!hidden.ok || !explicitHidden.ok || !visible.ok) throw new Error("Expected GQL results");
         expect(hidden.data.presentation).toBeUndefined();
@@ -1059,12 +1230,11 @@ describe("Grids capabilities", () => {
         "action",
         "record.update",
         {
-          tableId: tablePublicId,
           recordId: record.id,
           values: { [selectFieldPublicId]: ["open"] },
           ifVersion: record.version,
         },
-        context,
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(missingAudit).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
 
@@ -1072,13 +1242,12 @@ describe("Grids capabilities", () => {
         "action",
         "record.update",
         {
-          tableId: tablePublicId,
           recordId: record.id,
           values: { [selectFieldPublicId]: ["open"] },
           ifVersion: record.version,
           audit: { answers: { [auditQuestionId]: auditOptionId } },
         },
-        context,
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(statusUpdated.ok && statusUpdated.data.data).toMatchObject({ version: 2 });
       if (statusUpdated.ok) expect(statusUpdated.data.data).not.toHaveProperty("data");
@@ -1088,12 +1257,11 @@ describe("Grids capabilities", () => {
         "action",
         "record.update",
         {
-          tableId: tablePublicId,
           recordId: record.id,
           values: { [fieldPublicId]: "Second" },
           ifVersion: statusUpdated.data.data.version,
         },
-        context,
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(updated.ok && updated.data.data).toMatchObject({ version: 3 });
       if (updated.ok) expect(updated.data.data).not.toHaveProperty("data");
@@ -1101,16 +1269,16 @@ describe("Grids capabilities", () => {
       const stale = await invoke(
         "action",
         "record.update",
-        { tableId: tablePublicId, recordId: record.id, values: { [fieldPublicId]: "Stale" }, ifVersion: record.version },
-        context,
+        { recordId: record.id, values: { [fieldPublicId]: "Stale" }, ifVersion: record.version },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(stale).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
 
       const largeCreated = await invoke(
         "action",
         "record.create",
-        { tableId: tablePublicId, values: { [fieldPublicId]: "x".repeat(261_800) } },
-        context,
+        { values: { [fieldPublicId]: "x".repeat(261_800) } },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
       expect(largeCreated.ok).toBe(true);
       if (!largeCreated.ok) throw new Error(largeCreated.error.message);
@@ -1121,11 +1289,10 @@ describe("Grids capabilities", () => {
         "query",
         "gql.execute",
         {
-          baseId: basePublicId,
           query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}\nwhere record.id = '${largeCreated.data.data.id}'`,
           pageSize: 100,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(oversizedRow).toMatchObject({
         ok: false,
@@ -1145,14 +1312,24 @@ describe("Grids capabilities", () => {
         `${pagedQuery}\nlimit 10`,
         `from table {${tablePublicId}}\nwhere contains({${fieldPublicId}}, 'page-')\ngroup by {${fieldPublicId}}\naggregate count(*) as records`,
       ]) {
-        const capped = await invoke("query", "gql.execute", { baseId: basePublicId, query, limit: 1 }, context);
+        const capped = await invoke(
+          "query",
+          "gql.execute",
+          { query, limit: 1 },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
+        );
         expect(capped).toMatchObject({ ok: true, data: { data: { ok: true, limit: 1 }, page: { hasMore: false } } });
         if (!capped.ok || !capped.data.data.ok) throw new Error("Expected capped result");
         expect(capped.data.data.rows).toHaveLength(1);
         const editorLink = capped.data.links?.find((link: { href: string }) => link.href.includes("/query?"));
         expect(editorLink).toBeDefined();
         const editorQuery = new URL(editorLink!.href, "http://localhost").searchParams.get("q");
-        const reopened = await invoke("query", "gql.execute", { baseId: basePublicId, query: editorQuery }, context);
+        const reopened = await invoke(
+          "query",
+          "gql.execute",
+          { query: editorQuery },
+          { ...context, target: { type: "grids.base", id: basePublicId } },
+        );
         expect(reopened).toMatchObject({ ok: true, data: { page: { hasMore: false } } });
         if (!reopened.ok || !reopened.data.data.ok) throw new Error("Expected editor result");
         expect(reopened.data.data.rows).toHaveLength(1);
@@ -1160,26 +1337,30 @@ describe("Grids capabilities", () => {
       const tighterQuery = await invoke(
         "query",
         "gql.execute",
-        { baseId: basePublicId, query: `${pagedQuery}\nlimit 1`, limit: 5 },
-        context,
+        { query: `${pagedQuery}\nlimit 1`, limit: 5 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       if (!tighterQuery.ok || !tighterQuery.data.data.ok) throw new Error("Expected tighter query limit");
       expect(tighterQuery.data.data.rows).toHaveLength(1);
       expect(tighterQuery.data.page).toEqual({ hasMore: false });
-      const cappedFirst = await invoke("query", "gql.execute", { baseId: basePublicId, query: pagedQuery, pageSize: 2, limit: 3 }, context);
+      const cappedFirst = await invoke(
+        "query",
+        "gql.execute",
+        { query: pagedQuery, pageSize: 2, limit: 3 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
+      );
       if (!cappedFirst.ok || !cappedFirst.data.data.ok || !cappedFirst.data.page?.hasMore) throw new Error("Expected capped cursor");
       expect(cappedFirst.data.data.rows).toHaveLength(2);
       const cappedNext = await invoke(
         "query",
         "gql.execute",
         {
-          baseId: basePublicId,
           query: pagedQuery,
           pageSize: 2,
           limit: 3,
           cursor: cappedFirst.data.page.nextCursor,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       if (!cappedNext.ok || !cappedNext.data.data.ok) throw new Error("Expected final capped page");
       expect(cappedNext.data.data.rows).toHaveLength(1);
@@ -1188,16 +1369,20 @@ describe("Grids capabilities", () => {
         "query",
         "gql.execute",
         {
-          baseId: basePublicId,
           query: pagedQuery,
           pageSize: 2,
           limit: 4,
           cursor: cappedFirst.data.page.nextCursor,
         },
-        context,
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(changedCap.ok && changedCap.data.data.ok).toBe(false);
-      const firstPage = await invoke("query", "gql.execute", { baseId: basePublicId, query: pagedQuery, pageSize: 100 }, context);
+      const firstPage = await invoke(
+        "query",
+        "gql.execute",
+        { query: pagedQuery, pageSize: 100 },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
+      );
       expect(firstPage.ok).toBe(true);
       if (!firstPage.ok || !firstPage.data.page?.hasMore) throw new Error("Expected a byte-bounded first GQL page");
       expect(new TextEncoder().encode(JSON.stringify(firstPage.data)).byteLength).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
@@ -1207,8 +1392,8 @@ describe("Grids capabilities", () => {
       const secondPage = await invoke(
         "query",
         "gql.execute",
-        { baseId: basePublicId, query: pagedQuery, pageSize: 100, cursor: firstPage.data.page.nextCursor },
-        context,
+        { query: pagedQuery, pageSize: 100, cursor: firstPage.data.page.nextCursor },
+        { ...context, target: { type: "grids.base", id: basePublicId } },
       );
       expect(secondPage.ok).toBe(true);
       if (!secondPage.ok) throw new Error(secondPage.error.message);
@@ -1227,11 +1412,11 @@ describe("Grids capabilities", () => {
         wideValues[publicId] = `Value ${index}`;
       }
       for (const [action, input] of [
-        ["record.create", { tableId: tablePublicId, values: wideValues }],
-        ["record.update", { tableId: tablePublicId, recordId: record.id, values: wideValues, ifVersion: 3 }],
+        ["record.create", { values: wideValues }],
+        ["record.update", { recordId: record.id, values: wideValues, ifVersion: 3 }],
         ["record.upsert-external", { ...externalInput, values: wideValues, ifVersion: 3 }],
       ] as const) {
-        const checked = await review(action, input, context);
+        const checked = await review(action, input, { ...context, target: { type: "grids.table", id: tablePublicId } });
         expect(checked.ok).toBeTrue();
         if (checked.ok) {
           expect(checked.data.details!.length).toBeLessThanOrEqual(20);
@@ -1239,7 +1424,11 @@ describe("Grids capabilities", () => {
           expect(checked.data.details!.at(-1)!.value).toContain("Value 24");
         }
       }
-      const createReview = await review("record.create", { tableId: tablePublicId, values: { [fieldPublicId]: "Reviewed only" } }, context);
+      const createReview = await review(
+        "record.create",
+        { values: { [fieldPublicId]: "Reviewed only" } },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
+      );
       expect(createReview).toMatchObject({
         ok: true,
         data: { details: expect.arrayContaining([{ label: "Name", value: "Reviewed only" }]) },
@@ -1247,7 +1436,12 @@ describe("Grids capabilities", () => {
       const requestIds = [uuid(), uuid()];
       const concurrentCreates = await Promise.all(
         requestIds.map((requestId) =>
-          invoke("action", "record.create", { tableId: tablePublicId, values: { [fieldPublicId]: requestId } }, { ...context, requestId }),
+          invoke(
+            "action",
+            "record.create",
+            { values: { [fieldPublicId]: requestId } },
+            { ...context, requestId, target: { type: "grids.table", id: tablePublicId } },
+          ),
         ),
       );
       expect(concurrentCreates.every((result) => result.ok)).toBeTrue();
@@ -1260,10 +1454,13 @@ describe("Grids capabilities", () => {
       const reviewInput = { [fieldPublicId]: "changed" };
       const updateReview = await review(
         "record.update",
-        { tableId: tablePublicId, recordId: record.id, values: reviewInput, ifVersion: 3 },
-        context,
+        { recordId: record.id, values: reviewInput, ifVersion: 3 },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
       );
-      const externalReview = await review("record.upsert-external", externalInput, context);
+      const externalReview = await review("record.upsert-external", externalInput, {
+        ...context,
+        target: { type: "grids.table", id: tablePublicId },
+      });
       expect(externalReview).toMatchObject({ ok: true, data: { approvalScope: `table:${tablePublicId}` } });
       expect(updateReview.ok).toBe(true);
       expect(updateReview).toMatchObject({ ok: true, data: { approvalScope: `table:${tablePublicId}` } });
@@ -1274,31 +1471,57 @@ describe("Grids capabilities", () => {
         });
       }
       const viewInput = {
-        baseId: basePublicId,
         query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`,
         name: "Saved by Assistant",
         shared: false,
       };
-      expect(await review("view.create", viewInput, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
-      expect(await invoke("action", "view.create", viewInput, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+      expect(await review("view.create", viewInput, { ...context, target: { type: "grids.base", id: basePublicId } })).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN" },
+      });
+      expect(
+        await invoke("action", "view.create", viewInput, { ...context, target: { type: "grids.base", id: basePublicId } }),
+      ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
       await sql`UPDATE auth.access SET permission = 'admin'::auth.permission_level WHERE id = ${accessIds[0]!}::uuid`;
       const before = await gridsService.view.listForTable({ tableId, userId: user.id });
-      expect((await review("view.create", viewInput, userContext(user))).ok).toBeTrue();
-      const sharedView = await review("view.create", { ...viewInput, shared: true }, userContext(user));
+      expect(
+        (await review("view.create", viewInput, { ...userContext(user), target: { type: "grids.base", id: basePublicId } })).ok,
+      ).toBeTrue();
+      const sharedView = await review(
+        "view.create",
+        { ...viewInput, shared: true },
+        { ...userContext(user), target: { type: "grids.base", id: basePublicId } },
+      );
       expect(sharedView.ok && sharedView.data.approvalScope).toBeUndefined();
       expect(await gridsService.view.listForTable({ tableId, userId: user.id })).toHaveLength(before.length);
-      expect(await review("view.create", { ...viewInput, query: "not a query" }, userContext(user))).toMatchObject({
+      expect(
+        await review(
+          "view.create",
+          { ...viewInput, query: "not a query" },
+          { ...userContext(user), target: { type: "grids.base", id: basePublicId } },
+        ),
+      ).toMatchObject({
         ok: false,
         error: { code: "BAD_INPUT" },
       });
-      const saved = await invoke("action", "view.create", viewInput, userContext(user));
+      const saved = await invoke("action", "view.create", viewInput, {
+        ...userContext(user),
+        target: { type: "grids.base", id: basePublicId },
+      });
       expect(saved.ok).toBeTrue();
       if (!saved.ok) throw new Error(saved.error.message);
       const storedView = await gridsService.view.getByShortId(saved.data.data.id);
       expect(storedView?.ownerUserId).toBe(user.id);
       expect(storedView?.source).toContain(tablePublicId);
-      expect((await invoke("action", "view.create", viewInput, userContext(user))).ok).toBeFalse();
-      const shared = await invoke("action", "view.create", { ...viewInput, name: "Shared by Assistant", shared: true }, userContext(user));
+      expect(
+        (await invoke("action", "view.create", viewInput, { ...userContext(user), target: { type: "grids.base", id: basePublicId } })).ok,
+      ).toBeFalse();
+      const shared = await invoke(
+        "action",
+        "view.create",
+        { ...viewInput, name: "Shared by Assistant", shared: true },
+        { ...userContext(user), target: { type: "grids.base", id: basePublicId } },
+      );
       expect(shared.ok).toBeTrue();
       if (shared.ok) expect((await gridsService.view.getByShortId(shared.data.data.id))?.ownerUserId).toBeNull();
     } finally {
@@ -1382,31 +1605,53 @@ describe("Grids capabilities", () => {
       expect(listed.ok && listed.data.data).toEqual([expect.objectContaining({ id: boundBasePublicId })]);
       const crossBase = await invoke("query", "base.read", { id: otherBasePublicId }, context);
       expect(crossBase).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
-      const tables = await invoke("query", "gql.context", { baseId: boundBasePublicId, kind: "tables", limit: 25 }, context);
+      for (const kind of ["tables", "fields", "views"] as const) {
+        expect(
+          await invoke(
+            "query",
+            "gql.context",
+            { kind, tableId: otherTablePublicId },
+            {
+              ...context,
+              target: { type: "grids.base", id: boundBasePublicId },
+            },
+          ),
+        ).toMatchObject({ ok: false, error: { code: "NOT_FOUND", status: 404 } });
+      }
+      const tables = await invoke(
+        "query",
+        "gql.context",
+        { kind: "tables", limit: 25 },
+        { ...context, target: { type: "grids.base", id: boundBasePublicId } },
+      );
       expect(tables.ok && tables.data.data).toMatchObject({
         items: [{ id: tablePublicId, tableKind: "stored" }],
       });
       const fields = await invoke(
         "query",
         "gql.context",
-        { baseId: boundBasePublicId, kind: "fields", tableId: tablePublicId, limit: 25, includeWriteContext: true },
-        context,
+        { kind: "fields", tableId: tablePublicId, limit: 25, includeWriteContext: true },
+        { ...context, target: { type: "grids.base", id: boundBasePublicId } },
       );
       expect(fields.ok && fields.data.data).toMatchObject({
         items: [{ id: fieldPublicId, writable: false }],
         recordWrite: { canCreateRecords: false, canUpdateRecords: false, updateAudit: null },
       });
-      const write = await invoke("action", "record.create", { tableId: tablePublicId, values: {} }, context);
+      const write = await invoke(
+        "action",
+        "record.create",
+        { values: {} },
+        { ...context, target: { type: "grids.table", id: tablePublicId } },
+      );
       expect(write).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
       const externalWrite = await invoke(
         "action",
         "record.upsert-external",
         {
-          tableId: tablePublicId,
           externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "denied" },
           values: {},
         },
-        { ...context, idempotencyKey: "denied-external-write" },
+        { ...context, idempotencyKey: "denied-external-write", target: { type: "grids.table", id: tablePublicId } },
       );
       expect(externalWrite).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
 
@@ -1442,8 +1687,17 @@ describe("Grids capabilities", () => {
         }
         // The scope gate must run before resolving a record or issuing anything.
         const input = { templateId: template.data.shortId, recordId: "REC001" };
-        expect(await review("document.create", input, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
-        expect(await invoke("action", "document.create", input, { ...context, idempotencyKey: "denied-daily-issuance" })).toMatchObject({
+        expect(await review("document.create", input, { ...context, target: { type: "grids.table", id: publicTableId } })).toMatchObject({
+          ok: false,
+          error: { code: "FORBIDDEN", status: 403 },
+        });
+        expect(
+          await invoke("action", "document.create", input, {
+            ...context,
+            idempotencyKey: "denied-daily-issuance",
+            target: { type: "grids.table", id: publicTableId },
+          }),
+        ).toMatchObject({
           ok: false,
           error: { code: "FORBIDDEN", status: 403 },
         });

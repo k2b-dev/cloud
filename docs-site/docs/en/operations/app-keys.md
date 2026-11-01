@@ -378,3 +378,10 @@ same public key is what makes lost responses safe. Core-owned consumers read
 `getInstallationId`, `getActiveAppKey`, and `touchAppKey` from
 `@k2b/cloud/services/app-keys`; the active-key read goes directly to Postgres
 and checks account status, revocation, and expiry without a cache.
+
+## Runner connection restriction
+
+Core always refuses connection bootstrap for the reserved execution app ID
+`runner`, even when its key allows connections. It returns
+`connections_not_permitted` after verifying the proof. The app key still signs
+private run acquisition and bridge requests. See [Code runner](/en/docs/operations/code-runner).
