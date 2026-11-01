@@ -971,19 +971,20 @@ describe("Mail draft session", () => {
       }
       healthy(state);
       editableThroughout(state.trace);
-      let completeSave: ((response: Response) => void) | undefined;
+      const putStarted = Promise.withResolvers<(response: Response) => void>();
       saveAnswer = () =>
         new Promise<Response>((resolve) => {
-          completeSave = resolve;
+          putStarted.resolve(resolve);
         });
       state.setCurrent({ ...state.current(), body: "Still typing" });
       const saving = state.session.persist();
-      await flush();
+      // The PUT starts only after native SHA-256 hashing, which flushing timers and microtasks does not finish.
+      const completeSave = await putStarted.promise;
       expect(state.session.status()).toBe("saving");
       socket.message({ t: "event", id: "1", cursor: "s6t.mail.7", data: { conversationId: null } });
       await flush();
       expect(state.session.status()).toBe("saving");
-      completeSave?.(Response.json({ ...stored, ...state.current(), revision: 5 }));
+      completeSave(Response.json({ ...stored, ...state.current(), revision: 5 }));
       await saving;
       healthy(state);
       editableThroughout(state.trace);
