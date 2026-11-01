@@ -8,6 +8,7 @@ import { chatRequestContext } from "../request-context";
 import { chatService, loadChatView } from "../service";
 
 import ChatWorkspace from "./ChatWorkspace.island";
+import { chatTitle } from "./chat-title";
 import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
 
 /**
@@ -98,15 +99,7 @@ export default ssr<AuthContext>(async (c) => {
       </PanelLayout>
     );
   return () => (
-    <Layout
-      c={c}
-      fullPage
-      title={[
-        { title: t.start, href: "/" },
-        title ? { title: t.appName, href: listHref } : { title: t.appName },
-        ...(title ? [{ title }] : []),
-      ]}
-    >
+    <Layout c={c} fullPage title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}>
       {workspace()}
     </Layout>
   );

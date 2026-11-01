@@ -72,6 +72,7 @@ import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
 import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
+import { chatTitle } from "./chat-title";
 import DiscoverChannels from "./DiscoverChannels";
 import type { DeviceNotice } from "./device-notice";
 import ForYou from "./ForYou";
@@ -93,7 +94,6 @@ import {
   UNREAD_COUNT_PATH,
 } from "./route";
 import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
-
 import { openThreadDialog } from "./ThreadDialog";
 import {
   chatHasThreads,
@@ -555,11 +555,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const generalName = () => (system() ? (conversation()?.title ?? "") : t().general);
   const threadName = (view: ThreadView) => (view === "general" ? generalName() : viewName(view, openChat()?.threads ?? null, t()));
   const noAccess = () => route().chatId !== null && openChat() === null;
-  const breadcrumbs = (title?: string) => [
-    { title: t().start, href: "/" },
-    title ? { title: t().appName, href: listHref(archived() ? `${basePath}/archive` : basePath) } : { title: t().appName },
-    ...(title ? [{ title }] : []),
-  ];
+  const breadcrumbs = (title?: string) =>
+    chatTitle({
+      start: t().start,
+      appName: t().appName,
+      title,
+      listHref: listHref(archived() ? `${basePath}/archive` : basePath),
+      ownBack: !!(route().channels || route().forYou),
+    });
   // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
   // the store already holds the next chat but the address does not name it yet.
   const trailTitle = createMemo<string | undefined>((previous) => {
@@ -572,7 +575,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   });
   createEffect(
     on(
-      () => [trailTitle(), archived(), filter()] as const,
+      () => [trailTitle(), archived(), filter(), !!(route().channels || route().forYou)] as const,
       ([title]) => layout.update({ breadcrumbs: breadcrumbs(title) }),
       { defer: true },
     ),
