@@ -108,6 +108,16 @@ function bindingFor(codeId: string, version: Snapshot, comparison: Snapshot | nu
 }
 const sameBinding = (a: CodeVersionBinding, b: CodeVersionBinding) => approvalArgsDigest(a) === approvalArgsDigest(b);
 const messages = (context: Pick<CodeContext, "locale">) => codeVersionMessages.resolve(context.locale ? [context.locale] : []);
+const codeReviewSlot = (code: Code) => ({
+  kind: "object" as const,
+  title:
+    code.title
+      .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200)
+      .toWellFormed() || "—",
+});
 function reviewFor(
   code: Code,
   binding: CodeVersionBinding,
@@ -119,7 +129,7 @@ function reviewFor(
   return {
     locale,
     sentence: { action: t.action, running: t.running, done: t.done, confirm: t.confirm, decline: t.decline, rejected: t.declined },
-    slots: { code: { kind: "object", title: code.title }, version: { kind: "text", value: version.id } },
+    slots: { code: codeReviewSlot(code), version: { kind: "text", value: version.id } },
     ask: "changes_access",
     // Plain JSON is a passive complete snapshot, readable in every existing approval surface.
     // C22 additionally renders these same full rows through CodeDiff.
@@ -191,9 +201,9 @@ export async function reviewCodeVersionSubmission(
   await validateOperationRows(input.manifest, context, code.owner.kind);
   const comparison = input.baseVersionId ? await versionSnapshot(code.id, input.baseVersionId, sql) : null;
   const { t, locale } = messages(context);
-  return {
+  const review: CapabilityActionCallReview = {
     locale,
-    slots: { code: { kind: "object", title: code.title } },
+    slots: { code: codeReviewSlot(code) },
     sentence: { action: t.submitAction, running: t.submitRunning, done: t.submitDone, confirm: t.submitConfirm, decline: t.cancel },
     consequences: [{ text: t.submitEffect }],
     content: {
@@ -210,6 +220,9 @@ export async function reviewCodeVersionSubmission(
       }),
     },
   };
+  if (!CapabilityActionCallReviewSchema.safeParse(review).success)
+    throw new CodeDataError("BAD_INPUT", "The complete submission review exceeds the approval content budget.");
+  return review;
 }
 /** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
 export async function submitCodeVersion(
@@ -568,7 +581,7 @@ export async function reviewCodeExecutionChange(
     const { t, locale } = messages(context);
     return {
       locale,
-      slots: { code: { kind: "object", title: code.title } },
+      slots: { code: codeReviewSlot(code) },
       sentence: {
         action: paused ? t.pauseAction : t.resumeAction,
         running: paused ? t.pauseRunning : t.resumeRunning,
@@ -648,7 +661,7 @@ export async function reviewCodeVersionDecision(
   const { code } = await readCode(input.codeId, context);
   return {
     ...details,
-    slots: { code: { kind: "object", title: code.title }, version: { kind: "text", value: input.versionId } },
+    slots: { code: codeReviewSlot(code), version: { kind: "text", value: input.versionId } },
     locale,
     sentence: { action: t.rejectAction, running: t.rejectRunning, done: t.rejectDone, confirm: t.decline, decline: t.keepPending },
   };

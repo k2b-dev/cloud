@@ -45,14 +45,25 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
   queries: { "item.read": operation },
   actions: {
-    "item.change": { ...operation, destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    "item.person_only": { ...operation, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
-    "item.delete": { ...operation, destructive: true, idempotency: "none", policy: { ask: "deletes" } },
-    "item.send": { ...operation, destructive: false, idempotency: "none", policy: { ask: "sends" } },
+    "item.change": { ...action, destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    "item.person_only": { ...action, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
+    "item.delete": { ...action, destructive: true, idempotency: "required", policy: { ask: "deletes" } },
+    "item.send": { ...action, destructive: false, idempotency: "required", policy: { ask: "sends" } },
   },
 });
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -186,12 +197,14 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
   test("submission, execution and decision reviews identify exact targets without mutating state", async () => {
     const code = await newCode();
+    await sql`UPDATE code.codes SET title=${"🧑‍💻 Weekly\nreport\u00ad"} WHERE id=${code.id}`;
+    const reviewTitle = "🧑 💻 Weekly report";
     const draft = input(code, "review source", null, ["read"]);
     for (const locale of ["en", "de"]) {
       const ctx = { ...author, locale };
       const review = await reviewCodeVersionSubmission(draft, ctx);
       expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
-      expect(review.slots.code).toEqual({ kind: "object", title: code.title });
+      expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
       expect(review).toEqual(await reviewCodeVersionSubmission(draft, ctx));
       expect(review.content?.kind).toBe("page");
       if (review.content?.kind === "page")
@@ -206,8 +219,9 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
         const ctx = { ...author, locale };
         const review = await reviewCodeExecutionChange(code.id, paused, ctx);
         expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
-        expect(review.slots.code).toEqual({ kind: "object", title: code.title });
+        expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
         expect(review).toEqual(await reviewCodeExecutionChange(code.id, paused, ctx));
+        expect(review.content?.kind).toBe("page");
         if (review.content?.kind === "page")
           expect(JSON.parse(review.content.body)).toMatchObject({
             activeVersionId: submitted.version.id,
@@ -220,7 +234,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     for (const approved of [true, false]) {
       const review = await reviewCodeVersionDecision(pending.binding, approved, reviewer);
       expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
-      expect(review.slots.code).toEqual({ kind: "object", title: code.title });
+      expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
       expect(review.slots.version).toEqual({ kind: "text", value: pending.version.id });
     }
     expect(await approvals.get(pending.approvalId!)).toMatchObject({ status: "pending" });

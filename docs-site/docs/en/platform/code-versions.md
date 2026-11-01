@@ -27,6 +27,8 @@ The submission review names the Code and shows the exact proposed bundle,
 manifest and complete source comparison. It explains that the active version
 keeps running and older pending version requests are cancelled after a successful
 submission. Reviews only read and validate; they save no version or decision.
+If the complete submission review exceeds the platform content budget, it returns
+`BAD_INPUT`; the review is never truncated.
 
 The result contains `version`, `binding`, `status`, `approvalId` and `decision`.
 `status: "submitted"` means the current policy needs no administrator's
