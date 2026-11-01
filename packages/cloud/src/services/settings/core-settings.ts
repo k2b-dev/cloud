@@ -280,42 +280,49 @@ export const CORE_SETTINGS = {
     default: false,
   },
   "user.category.guest.enabled": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Guest accounts allowed",
     description: "Allow Guest sign-in and user-bound credentials. Disabling retains accounts and their data.",
     default: true,
   },
   "user.category.guest.visible": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Show Guest in login",
     description: "Hidden allowed accounts can still use direct login links. This does not enable self-registration.",
     default: true,
   },
   "user.category.login.enabled": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Login accounts allowed",
     description: "Allow passwordless local full accounts to sign in and use user-bound credentials.",
     default: true,
   },
   "user.category.login.visible": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Show Login in login",
     description: "Show this category in the general login page. Direct entry remains available when hidden but allowed.",
     default: true,
   },
   "user.category.login.label": {
+    adminWrite: "application",
     kind: "string",
     label: "Login account label",
     description: "Name used for local full accounts, for example Company account. Empty uses Login.",
     default: "Login",
   },
   "user.category.freeipa.enabled": {
+    adminWrite: "application",
     kind: "boolean",
     label: "FreeIPA accounts allowed",
     description: "Allow FreeIPA-backed accounts to sign in and use user-bound credentials. Directory synchronization is not stopped.",
     default: true,
   },
   "user.category.freeipa.visible": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Show FreeIPA in login",
     description: "The FreeIPA connection must also be enabled to offer this login method.",
@@ -411,6 +418,7 @@ export const CORE_SETTINGS = {
 
   // ── Places and addresses ──────────────────────────────────────────────
   "geo.api_key": {
+    adminWrite: "application",
     kind: "secret",
     label: "Geoapify API key",
     description: "Used only for HTTPS requests to the fixed EU endpoint.",
@@ -707,6 +715,7 @@ export const CORE_SETTINGS = {
     placeholder: "e.g. ipa.example.org",
   },
   "freeipa.ca_cert": {
+    adminWrite: "application",
     kind: "text",
     label: "CA Certificate (PEM)",
     default: "",
@@ -785,6 +794,7 @@ export const CORE_SETTINGS = {
     description: "Five-field cron schedule for the FreeIPA sync job in app.timezone.",
   },
   "freeipa.sync_guard.max_user_changes": {
+    adminWrite: "application",
     kind: "number",
     label: "Max User Changes",
     default: 10,
@@ -800,6 +810,7 @@ export const CORE_SETTINGS = {
     description: "Maximum percentage of existing IPA users one sync may remove from scope or demote.",
   },
   "freeipa.sync_guard.max_group_deletions": {
+    adminWrite: "application",
     kind: "number",
     label: "Max Group Deletions",
     default: 5,

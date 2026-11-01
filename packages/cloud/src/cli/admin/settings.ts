@@ -6,6 +6,7 @@ import { apiGet, apiJson } from "./shared";
 // These are the owning APIs: cron changes and other app-owned hooks must run there.
 export const APP_SETTING_PATHS: Readonly<Record<string, string>> = {
   "gateway-ops": "/api/gateway/settings/",
+  mail: "/api/mail/admin/settings/",
   notebooks: "/api/notebooks/admin/settings/",
   grids: "/api/grids/admin/settings/",
   chat: "/api/chat/admin/settings/",

@@ -1,6 +1,6 @@
 {
   "name": "@k2b/cloud",
-  "version": "0.52.0",
+  "version": "0.53.0",
   "description": "Application platform library for independently deployed Hono and SolidJS services behind a dynamic gateway.",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -119,6 +119,8 @@
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
+    "test:part:ssr-ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr src/ai",
+    "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**'",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
@@ -131,7 +133,7 @@
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "0.18.0",
     "@k2b/ssr": "0.20.2",
-    "@k2b/ui": "0.41.0",
+    "@k2b/ui": "0.42.0",
     "@k2b/stdlib": "0.30.0",
     "@k2b/sync": "7.0.1",
     "@nats-io/jetstream": "3.4.0",
@@ -163,7 +165,7 @@
     "hash-wasm": "4.12.0",
     "@types/sanitize-html": "2.16.1",
     "@types/web-push": "3.6.4",
-    "@k2b/editor": "0.4.0"
+    "@k2b/editor": "0.5.0"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",

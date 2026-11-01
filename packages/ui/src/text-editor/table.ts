@@ -278,6 +278,9 @@ const hasHeader = (t: T.Table) => t.lines[0]!.cells.some((cell) => cell.text.len
 const firstRow = (t: T.Table) => (hasHeader(t) ? 0 : 1);
 const shapeOf = (t: T.Table) => `${T.rowCount(t)}x${width(t)}:${firstRow(t)}`;
 const renderedDocuments = new WeakMap<HTMLElement, Text>();
+/** The height a table was last drawn with, handed from widget to widget while its shape stays. */
+type DrawnHeight = { shape: string; height: number | null };
+const drawnHeights = new WeakMap<HTMLElement, DrawnHeight>();
 /**
  * How far the grid may reach left of the text: its grip gutter and the first
  * cell's padding sit there, so cell text lines up with the paragraphs. It
@@ -303,9 +306,18 @@ const bleed = (view: EditorView, wrap: HTMLElement): number => {
 const measureScroll = (view: EditorView, wrap: HTMLElement) =>
   view.requestMeasure({
     key: wrap,
-    read: () => ({ left: wrap.scrollLeft, width: wrap.clientWidth, total: wrap.scrollWidth, bleed: bleed(view, wrap) }),
-    write: ({ left, width, total, bleed }) => {
+    read: () => ({
+      left: wrap.scrollLeft,
+      width: wrap.clientWidth,
+      total: wrap.scrollWidth,
+      bleed: bleed(view, wrap),
+      height: wrap.getBoundingClientRect().height / view.scaleY,
+    }),
+    write: ({ left, width, total, bleed, height }) => {
       if (!wrap.isConnected) return;
+      const drawn = drawnHeights.get(wrap);
+      // A hidden editor has no height to remember.
+      if (drawn && height > 0) drawn.height = height;
       wrap.toggleAttribute("data-scrolled", left > 0);
       wrap.toggleAttribute("data-more", left + width < total - 1);
       wrap.style.setProperty("--k2b-ste-bleed", `${bleed}px`);
@@ -316,6 +328,7 @@ class GridWidget extends WidgetType {
   constructor(
     readonly table: T.Table,
     readonly readOnly: boolean,
+    readonly drawn: DrawnHeight,
   ) {
     super();
   }
@@ -336,12 +349,14 @@ class GridWidget extends WidgetType {
       wrap.toggleAttribute("data-more", wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1);
     });
     renderedDocuments.set(wrap, view.state.doc);
+    drawnHeights.set(wrap, this.drawn);
     setEditable(wrap, !this.readOnly, view);
     measureScroll(view, wrap);
     return wrap;
   }
   override updateDOM(dom: HTMLElement, view: EditorView) {
     const act = active.get(view);
+    drawnHeights.set(dom, this.drawn);
     measureScroll(view, dom);
     if (dom.dataset.shape !== shapeOf(this.table)) {
       const focused = dom.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
@@ -396,8 +411,10 @@ class GridWidget extends WidgetType {
   override ignoreEvent() {
     return true;
   }
+  // Every rebuild replaces the widget, and CodeMirror then takes this height for tables outside the drawn range too.
+  // A guess there would shift every line below them, so a table that was drawn keeps its real height.
   override get estimatedHeight() {
-    return (T.rowCount(this.table) - firstRow(this.table)) * 41 + 16;
+    return this.drawn.height ?? (T.rowCount(this.table) - firstRow(this.table)) * 41 + 16;
   }
 }
 
@@ -1810,11 +1827,22 @@ export const htmlTableGrid = (html: string): string[][] | null => {
   return rows.filter((row) => row.length).length ? rows.filter((row) => row.length) : null;
 };
 
-const decorate = (state: EditorState): DecorationSet =>
-  Decoration.set(
-    tablesIn(state).map((t) => Decoration.replace({ widget: new GridWidget(t, state.readOnly), block: true }).range(t.from, t.to)),
+const decorate = (state: EditorState, previous: DecorationSet = Decoration.none, changes?: ChangeDesc): DecorationSet => {
+  const drawn = new Map<number, DrawnHeight>();
+  for (const cursor = previous.iter(); cursor.value; cursor.next()) {
+    const widget = cursor.value.spec.widget;
+    if (widget instanceof GridWidget) drawn.set(changes ? changes.mapPos(cursor.from, 1) : cursor.from, widget.drawn);
+  }
+  return Decoration.set(
+    tablesIn(state).map((t) => {
+      const shape = shapeOf(t);
+      const known = drawn.get(t.from);
+      const widget = new GridWidget(t, state.readOnly, known?.shape === shape ? known : { shape, height: null });
+      return Decoration.replace({ widget, block: true }).range(t.from, t.to);
+    }),
     true,
   );
+};
 
 export const tableGrid = (): Extension => [
   clipboardLoading((view) => view.state.facet(tableHost), syncCellSelection),
@@ -1852,13 +1880,13 @@ export const tableGrid = (): Extension => [
     };
   }),
   StateField.define<DecorationSet>({
-    create: decorate,
+    create: (state) => decorate(state),
     update: (value, tr) =>
       tr.docChanged ||
       tr.effects.some((e) => e.is(refreshTables)) ||
       tr.startState.readOnly !== tr.state.readOnly ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state)
-        ? decorate(tr.state)
+        ? decorate(tr.state, value, tr.changes)
         : value,
     provide: (field) => [EditorView.decorations.from(field), EditorView.atomicRanges.of((view) => view.state.field(field))],
   }),

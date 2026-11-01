@@ -50,8 +50,14 @@ afterAll(async () => {
   }
 });
 
-const open = async (width = 1280, height = 900) => {
-  context = await browser.newContext({ locale: "de-DE", viewport: { width, height }, reducedMotion: "reduce", serviceWorkers: "block" });
+const open = async (width = 1280, height = 900, touch = false) => {
+  context = await browser.newContext({
+    locale: "de-DE",
+    viewport: { width, height },
+    reducedMotion: "reduce",
+    serviceWorkers: "block",
+    ...(touch ? { hasTouch: true, isMobile: true } : {}),
+  });
   context.setDefaultTimeout(5_000);
   await context.addInitScript(() => {
     if (!localStorage.getItem("k2b-notes.preferences"))
@@ -218,6 +224,20 @@ describe("Notes: slash menu", () => {
     expect(look.rowFill).not.toBe(look.plainFill);
     expect(look.hint).toBeGreaterThan(look.label);
   }, 15_000);
+
+  test("rows stay compact with a mouse and at least 44 px tall for a finger", async () => {
+    const heights = async () => {
+      await newNote();
+      await page.keyboard.type("/");
+      await options().first().waitFor();
+      await settled(page);
+      return options().evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+    };
+    expect(Math.min(...(await heights()))).toBeLessThan(40);
+    await context.close();
+    await open(390, 844, true);
+    expect(Math.min(...(await heights()))).toBeGreaterThanOrEqual(44);
+  }, 20_000);
 
   for (const [width, height] of [
     [1280, 500],

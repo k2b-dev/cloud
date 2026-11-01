@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.53.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.52.0...npm-cloud-v0.53.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** live dictation endpoint with per-person minute limits ([#2297](https://github.com/k2b-dev/cloud/issues/2297)) ([8ae7d18](https://github.com/k2b-dev/cloud/commit/8ae7d18489f2b00279c233ec68b044ac0e5c2408))
+
+
+### Bug Fixes
+
+* **cloud:** app PWAs can be created before platform start ([#2357](https://github.com/k2b-dev/cloud/issues/2357)) ([85bd224](https://github.com/k2b-dev/cloud/commit/85bd224470b35ebf61543f17d3a39b414d454160))
+* **core:** a key generation WebKit refuses no longer blocks creating an app key ([#2354](https://github.com/k2b-dev/cloud/issues/2354)) ([f4e0184](https://github.com/k2b-dev/cloud/commit/f4e018467efa7fcd7163a7b0960c4354301b88aa))
+* **mail:** the contact directory accepts every app the admin may use ([#2374](https://github.com/k2b-dev/cloud/issues/2374)) ([ae0225c](https://github.com/k2b-dev/cloud/commit/ae0225c6092a0c2fed9a9597f8616232f6c76d75))
+* **test:** no unit shard runs into its time limit ([#2381](https://github.com/k2b-dev/cloud/issues/2381)) ([3ec64b1](https://github.com/k2b-dev/cloud/commit/3ec64b120f330318e8239bd625a8172ae391e99e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.41.0 to 0.42.0
+    * @k2b/editor bumped from 0.4.0 to 0.5.0
+
 ## [0.52.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.51.0...npm-cloud-v0.52.0) (2026-11-01)
 
 

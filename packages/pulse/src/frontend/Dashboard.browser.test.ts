@@ -217,7 +217,6 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
         await band.locator(".pulse-dashboard__status-dot").evaluate((element) => getComputedStyle(element).color),
       );
 
-      await tab.screenshot({ path: `/tmp/pulse-dashboard-actual-${width}-${dark ? "dark" : "light"}.png`, fullPage: true });
       const traefik = tab.getByRole("region", { name: "Traefik", exact: true });
       const server = tab.getByRole("region", { name: "Server", exact: true });
       expect(await traefik.locator(".ti-router").count()).toBe(1);
@@ -412,6 +411,7 @@ test("cleared data replaces the shown result, while a cache miss for the same da
   const { tab, panels } = await open({});
   try {
     await ready(tab);
+    await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
     const waiting = (variant: string): DashboardPanelResult => ({
       panelId: "req",
       status: "waiting",
@@ -421,13 +421,18 @@ test("cleared data replaces the shown result, while a cache miss for the same da
       nextRefreshAt: "2026-10-20T14:34:00.000Z",
     });
     panels.set("req", { json: waiting("fixture") });
-    const reread = tab.waitForResponse((response) => response.url().includes("/panels/req"));
-    await tab.clock.runFor(60000);
-    await reread;
-    await ready(tab);
+    // Advance the paused clock only after the whole round has settled: a panel's next deadline counts from
+    // when its answer was handled, and a timer scheduled after the jump would never fire.
+    const settledRound = async () => {
+      const answered = tab.waitForResponse((response) => response.url().includes("/panels/req"));
+      await tab.clock.runFor(60000);
+      await answered;
+      await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
+    };
+    await settledRound();
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
     panels.set("req", { json: waiting("after-clear") });
-    await tab.clock.runFor(60000);
+    await settledRound();
     await tab.locator('[data-panel="req"] .k2b-skeleton').waitFor();
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(0);
   } finally {
@@ -662,7 +667,6 @@ test("the actual SSR page and first client render preserve dashboard structure i
         ).toBeLessThanOrEqual(1);
       expect(await panels.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")))).toEqual(before);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-      await tab.screenshot({ path: `/tmp/pulse-dashboard-shell-${width}-light.png`, fullPage: true });
     } finally {
       await tab.close();
     }
@@ -882,12 +886,16 @@ test("sidebar list errors distinguish failure from emptiness and retry the first
       expect(await navigation.getByText("Noch kein Dashboard", { exact: true }).count()).toBe(0);
       expect(await navigation.getByRole("alert").count()).toBe(1);
       listReply({ status: 503, json: { code: "REQUEST_FAILED" } });
+      const listAnswer = () => tab.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/dashboards"));
+      const failedRetry = listAnswer();
       await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-      await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).waitFor({ state: "visible" });
+      await failedRetry;
       listReply({ json: { items: dashboardTestSnapshot.items, total: 2, nextOffset: null } });
       await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-      await navigation.getByRole("link", { name: dashboardTestDashboard.name, exact: true }).waitFor();
-      expect(await navigation.getByRole("alert").count()).toBe(0);
+      // The selected dashboard is listed before the answer arrives; only the list's other entry and the
+      // alert's end show that the retry has finished. The old message stays while the request runs.
+      await navigation.getByRole("link", { name: dashboardTestKinds.name, exact: true }).waitFor();
+      await navigation.getByRole("alert").waitFor({ state: "detached" });
       expect(
         requests
           .filter((request) => new URL(request.path).pathname.endsWith("/dashboards"))
