@@ -722,6 +722,7 @@ describe("Mail draft session", () => {
       await flush();
     };
     let restoreRandom = () => {};
+    let restorePendingSave = () => {};
     beforeEach(() => {
       const random = spyOn(Math, "random").mockReturnValue(0.5);
       restoreRandom = () => random.mockRestore();
@@ -729,6 +730,7 @@ describe("Mail draft session", () => {
       setSystemTime(Date.parse(now));
     });
     afterEach(() => {
+      restorePendingSave();
       restoreRandom();
       jest.useRealTimers();
     });
@@ -971,22 +973,56 @@ describe("Mail draft session", () => {
       }
       healthy(state);
       editableThroughout(state.trace);
-      let completeSave: ((response: Response) => void) | undefined;
-      saveAnswer = () =>
-        new Promise<Response>((resolve) => {
-          completeSave = resolve;
+      const saveStarted = Promise.withResolvers<void>();
+      const pendingSave = Promise.withResolvers<Response>();
+      saveAnswer = () => {
+        saveStarted.resolve();
+        return pendingSave.promise;
+      };
+      const hashing = Promise.withResolvers<void>();
+      const releaseHash = Promise.withResolvers<void>();
+      const originalHash = cryptoUtils.common.hash;
+      const hash = spyOn(cryptoUtils.common, "hash").mockImplementation(async (...args) => {
+        hashing.resolve();
+        await releaseHash.promise;
+        return originalHash(...args);
+      });
+      const cleanup = () => {
+        releaseHash.resolve();
+        pendingSave.resolve(Response.json({ ...stored, ...state.current(), revision: 5 }));
+        hash.mockRestore();
+        restorePendingSave = () => {};
+      };
+      // afterEach also releases the gates if Bun times out the test body.
+      restorePendingSave = cleanup;
+      const writesBefore = requests.filter((request) => request.method === "PUT" && !request.url.endsWith("/lease")).length;
+      try {
+        state.setCurrent({ ...state.current(), body: "Still typing" });
+        const saving = state.session.persist();
+        await hashing.promise;
+        await flush();
+        expect(state.session.status()).toBe("saving");
+        expect(requests.filter((request) => request.method === "PUT" && !request.url.endsWith("/lease"))).toHaveLength(writesBefore);
+        releaseHash.resolve();
+        // A native digest can outlast a fake-timer/microtask flush. The PUT
+        // must reach its fixture before testing an echo during that request.
+        await saveStarted.promise;
+        expect(requests.findLast((request) => request.method === "PUT" && !request.url.endsWith("/lease"))?.body).toMatchObject({
+          expectedRevision: 4,
+          draft: { body: "Still typing" },
         });
-      state.setCurrent({ ...state.current(), body: "Still typing" });
-      const saving = state.session.persist();
-      await flush();
-      expect(state.session.status()).toBe("saving");
-      socket.message({ t: "event", id: "1", cursor: "s6t.mail.7", data: { conversationId: null } });
-      await flush();
-      expect(state.session.status()).toBe("saving");
-      completeSave?.(Response.json({ ...stored, ...state.current(), revision: 5 }));
-      await saving;
-      healthy(state);
-      editableThroughout(state.trace);
+        expect(state.session.status()).toBe("saving");
+        socket.message({ t: "event", id: "1", cursor: "s6t.mail.7", data: { conversationId: null } });
+        await flush();
+        expect(state.session.status()).toBe("saving");
+        pendingSave.resolve(Response.json({ ...stored, ...state.current(), revision: 5 }));
+        expect(await saving).toMatchObject({ body: "Still typing", revision: 5 });
+        expect(state.current().body).toBe("Still typing");
+        healthy(state);
+        editableThroughout(state.trace);
+      } finally {
+        cleanup();
+      }
     });
 
     test.each(["timeout", "network"])("a lost PUT answer (%s) is confirmed before newer typing is saved", async (failure) => {
