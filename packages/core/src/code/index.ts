@@ -13,8 +13,8 @@ export {
   readCodeAttention,
 } from "./attention";
 export { codeAuthoringServices } from "./authoring";
-export * from "./authoring-contracts";
 export { createCodeCheckRequest } from "./authoring-check";
+export * from "./authoring-contracts";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";
