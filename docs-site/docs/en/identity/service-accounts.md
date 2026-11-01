@@ -89,6 +89,13 @@ API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
 Accounts app and through `cld accounts service-accounts`.
 
+A key created with **Full access**, or through the API without `scopes`, carries
+`read`, `write`, and `admin`. These scopes only cap the account's grants, so the
+key reaches exactly what the account was granted. Pass `scopes` to the API for a
+narrower key. A key created before this rule has no scopes and every application
+denies it with `app_access_denied`. Cloud does not widen issued keys: revoke such
+a key and create a new one.
+
 For an external model client, choose **AI models only** when creating a key
 in **Accounts → Service accounts → Create API key**. Grant model access to the
 machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
