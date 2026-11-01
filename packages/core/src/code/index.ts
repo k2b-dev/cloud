@@ -3,6 +3,9 @@
 export * from "./access";
 export { createCodeCheckRequest } from "./authoring-check";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
+export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+export * from "./activation-contracts";
+export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";
 export * from "./policy";

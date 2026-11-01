@@ -581,6 +581,13 @@ Cloud generates these capabilities once per app:
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
 
+Successful adapter `grant` decisions can include `managerUserIds`, the current
+human administrators of the target, including administrator group members.
+Return this field on dry runs; Core saves it before applying grants. Core requires it for Cloud-admin activation
+and sends one durable notification per affected target and manager after the
+version becomes active. See [Code activation](/en/docs/platform/code-activation).
+The four adapter functions and signed proof v1 remain unchanged.
+
 Resource targets use qualified Types, for example
 `{ type: "inventory.item", id: "item-1" }`; an app target uses
 `{ type: "app", id: "inventory" }`. Operations are unique qualified capability
