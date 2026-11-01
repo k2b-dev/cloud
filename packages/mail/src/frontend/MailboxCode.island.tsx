@@ -1,4 +1,5 @@
-import { CodePage, type CodePageData } from "@k2b/cloud/ssr/islands";
+// Its own entry: the shared islands barrel stays free of the Code page's schemas.
+import CodePage, { type CodePageData } from "@k2b/cloud/ssr/code-page";
 import { navigateTo } from "@k2b/ssr/nav";
 import { AppWorkspace } from "@k2b/ui";
 import type { MailContactDirectory } from "../contact-directory-settings";

@@ -20,6 +20,3 @@ export const Layout = {
   AppLaunchpadButton,
   AppLaunchpadProvider,
 };
-
-export { default as CodePage } from "../code-page/CodePage";
-export type { CodePageData, CodePageTab } from "../code-page/data";

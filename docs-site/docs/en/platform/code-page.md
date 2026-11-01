@@ -65,14 +65,15 @@ return () => (
 
 ```tsx
 // StoreCode.island.tsx
-import { CodePage, type CodePageData } from "@k2b/cloud/ssr/islands";
+import CodePage, { type CodePageData } from "@k2b/cloud/ssr/code-page";
 
 export default function StoreCode(props: { code: CodePageData }) {
   return <CodePage data={props.code} />;
 }
 ```
 
-`loadCodePage` reads the tab and selection from the URL (`?tab=runs&run=<id>`,
+Import the page from its own entry, `@k2b/cloud/ssr/code-page`, so other
+islands do not load its schemas. `loadCodePage` reads the tab and selection from the URL (`?tab=runs&run=<id>`,
 `?tab=versions&version=<id>`), so reload, back and shared links keep the view.
 Offer the page in your navigation to the resource's administrators. Others
 with access to its Code reach it by link or from the panel.

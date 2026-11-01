@@ -43,6 +43,8 @@ import {
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
 
+export type { CodePageData, CodePageTab } from "./data";
+
 /** The browser calls Core's public Code capabilities with the person's own session, like any page. */
 const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
 /** Pause and resume return only the new state; the page reloads to show it. */

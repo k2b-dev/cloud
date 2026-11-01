@@ -73,16 +73,20 @@ describe("Core Code data contracts", () => {
       "code.version.read",
     ]);
     expect(
-      manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
+      manifest.actions
+        .filter((action) => action.localId.startsWith("code."))
+        .map((action) => ({ id: action.localId, code: action.code }))
+        // The manifest's order follows registration across the stacked slices; the set is the contract.
+        .sort((left, right) => left.id.localeCompare(right.id)),
     ).toEqual(
       [
+        "code.pause",
+        "code.policy.update",
+        "code.resume",
         "code.run",
-        "code.version.submit",
         "code.version.approve",
         "code.version.reject",
-        "code.pause",
-        "code.resume",
-        "code.policy.update",
+        "code.version.submit",
       ].map((id) => ({ id, code: false })),
     );
   });
