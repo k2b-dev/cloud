@@ -10,6 +10,7 @@ import { openAssistantCloudReference } from "./AssistantContextContent";
 import { occurrencePresentation, openAssistantTask } from "./AssistantTasksDialog";
 import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
+import { assistantMessages } from "./messages";
 import { formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantText } from "./ui-copy";
 
@@ -301,8 +302,9 @@ export const openAssistantActivities = (live: AssistantLiveHub) =>
       </AssistantLiveProvider>
     ),
     {
-      title: assistantBrowserText("Background activity"),
-      icon: "ti ti-inbox",
+      // The sidebar calls this "Runs": routines and background runs, the same place Gustav's Code runs will join.
+      title: assistantMessages.resolve([typeof document === "undefined" ? "en" : document.documentElement.lang || "en"]).t.runs,
+      icon: "ti ti-activity",
       size: "large",
     },
   );

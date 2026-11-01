@@ -94,7 +94,8 @@ export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): 
 export const isPersonVisibleCapabilityAction = (action: CapabilityActionManifest): boolean => !action.localId.startsWith("code.access.");
 
 type JsonSchema = Record<string, unknown>;
-const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
+/** Stays below the 512 KiB registry value limit (`CAPABILITY_REGISTRY_CONFIG`), which also holds the record around the manifest. */
+const MAX_CAPABILITY_MANIFEST_BYTES = 384 * 1024;
 
 /**
  * The producer side of the shared manifest shape: an app registers exactly the fields and entries its

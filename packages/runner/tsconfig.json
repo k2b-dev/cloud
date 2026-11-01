@@ -5,5 +5,5 @@
       "@k2b/cloud/services/*": ["../cloud/src/services/*"]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "attacks/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "attacks/**/*.ts"]
 }

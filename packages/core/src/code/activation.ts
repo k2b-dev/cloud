@@ -10,6 +10,7 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import {
+  CODE_ACTIVATION_MANAGER_NAMES,
   type CodeActivation,
   type CodeActivationFailure,
   CodeActivationFailureSchema,
@@ -82,6 +83,21 @@ const receipt = (row: ActivationRow): CodeActivation => ({
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
 });
+/**
+ * Names for a person who passed the target's reader check. Like directory search, guests see only their own name.
+ * Missing names only leave the sentence out.
+ */
+const visibleManagerNames = async (managerIds: string[], person: { id: string; roles: readonly string[] }): Promise<string[]> => {
+  const ids = person.roles.includes("user") ? managerIds : managerIds.filter((id) => id === person.id);
+  if (ids.length === 0) return [];
+  try {
+    const rows = await sql<{ display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
+      SELECT display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${sql.array(ids.slice(0, CODE_ACTIVATION_MANAGER_NAMES), "uuid")}::uuid[]) ORDER BY uid`;
+    return rows.map((row) => row.display_name?.trim() || `${row.given_name ?? ""} ${row.sn ?? ""}`.trim() || row.uid);
+  } catch {
+    return [];
+  }
+};
 async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
   const failure = result.failure;
   // Provider presentation needs a current reader check. Core's own operational
@@ -105,6 +121,10 @@ async function visibleReceipt(result: CodeActivation, context: CodeContext): Pro
   }
   if (!readable)
     result.failure = { target: failure.target, code: failure.code, reason: activationManagerRequired(context.locale), readable: false };
+  else if (failure.managerUserIds?.length) {
+    const managerNames = await visibleManagerNames(failure.managerUserIds, person);
+    if (managerNames.length > 0) result.failure = { ...failure, managerNames };
+  }
   return result;
 }
 const load = async (id: string, db: SQL = sql) => (await db<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${id}::uuid`)[0];

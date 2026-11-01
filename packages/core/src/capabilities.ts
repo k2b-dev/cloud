@@ -58,6 +58,7 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
+import { codeAttentionContracts, listCodeAttention, readCodeAttention } from "./code/attention";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
@@ -66,7 +67,7 @@ import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
-import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { countOwnCodeRuns, listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -822,6 +823,14 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
     },
+    "code.attention": {
+      title: "Check Code attention",
+      description:
+        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      ...codeAttentionContracts.attention,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
+    },
     "code.list": {
       title: "List Code",
       description:
@@ -859,6 +868,21 @@ export const aiCapabilities = defineCapabilities({
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
+    "code.attention.list": {
+      title: "List Code that needs you",
+      description:
+        "Across owners, list Code of a resource or app that the caller administers and that needs them: paused, a latest run failed, access missing at a target, or a version awaiting approval. Follow nextCursor even on empty pages.",
+      ...codeAttentionContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
+    },
+    "code.run.count": {
+      title: "Count own Code runs",
+      description: "Count runs and failed runs of the caller's own personal Code since a moment within the last 7 days.",
+      ...codeQueryContracts.runCount,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => countOwnCodeRuns(input, ctx)),
     },
     "map.style": {
       title: "Show a map",

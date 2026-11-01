@@ -29,6 +29,30 @@ export {
   CodeVersionManifestSchema,
 } from "./checker-contract";
 export { generateCodeSdk } from "./generator";
+export { codeSdkHash } from "./sdk-hash";
+export { createCodeTestBridge } from "./test-bridge";
+export type {
+  CodeTestCall,
+  CodeTestCase,
+  CodeTestExecution,
+  CodeTestExecutionCase,
+  CodeTestExecutor,
+  CodeTestLimits,
+  CodeTestMock,
+  CodeTestResult,
+  CodeTestRun,
+} from "./test-contract";
+export {
+  CODE_TEST_RESULT_JSON_SCHEMA,
+  CodeTestCallSchema,
+  CodeTestCaseSchema,
+  CodeTestExecutionCaseSchema,
+  CodeTestLimitsSchema,
+  CodeTestMockSchema,
+  CodeTestResultSchema,
+  CodeTestRunSchema,
+  codeTestFailure,
+} from "./test-contract";
 export type {
   CodeSdkApp,
   CodeSdkBridge,

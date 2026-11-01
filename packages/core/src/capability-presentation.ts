@@ -146,6 +146,20 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
         },
+        "code.attention": {
+          title: "Aufmerksamkeit für Code prüfen",
+          description:
+            "Listet für einen genauen Besitzer den lesbaren Code, der jemanden braucht: letzter Lauf fehlgeschlagen, Zugriff an einem Ziel entfernt oder eine Version wartet auf Freigabe.",
+          input: {
+            owner: "Genauer Code-Besitzer, dessen Code die Seite zeigt.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+          },
+        },
         "code.list": {
           title: "Code auflisten",
           description:
@@ -188,6 +202,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             cursor: "Undurchsichtiger Laufverlauf-Cursor aus der vorherigen Seite.",
             limit: "Maximale Anzahl der Lauf-Metadaten auf dieser Seite; höchstens 50.",
           },
+        },
+        "code.attention.list": {
+          title: "Code auflisten, der dich braucht",
+          description:
+            "Listet über alle Besitzer Code einer Ressource oder App, die du verwaltest, wenn er dich braucht: pausiert, letzter Lauf fehlgeschlagen, Zugriff an einem Ziel fehlt oder eine Version wartet auf Freigabe. Dem Cursor auch bei leeren Seiten folgen.",
+          input: { cursor: "Letzte geprüfte Code-ID aus nextCursor." },
+        },
+        "code.run.count": {
+          title: "Eigene Code-Läufe zählen",
+          description: "Zählt Läufe und fehlgeschlagene Läufe deines persönlichen Codes seit einem Zeitpunkt der letzten 7 Tage.",
+          input: { since: "Beginn des gezählten Zeitraums, höchstens 7 Tage zurück, etwa der Beginn deines Tages." },
         },
         "code.run.read": {
           title: "Code-Lauf lesen",

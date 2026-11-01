@@ -181,11 +181,7 @@ test("the chat's routine list names routines in English and German", async () =>
   const { LocaleProvider } = await import("@k2b/ui");
   const expected = {
     en: ["No routines", "Ask in the chat for a reminder or a routine.", "Set up new routines and make changes in the chat."],
-    de: [
-      "Keine Routinen",
-      "Bitte den Assistenten im Chat um eine Erinnerung oder eine Routine.",
-      "Neue Routinen und Änderungen planst du im Chat.",
-    ],
+    de: ["Keine Routinen", "Bitte Gustav im Chat um eine Erinnerung oder eine Routine.", "Neue Routinen und Änderungen planst du im Chat."],
   };
   for (const [locale, [empty, hint, footer]] of Object.entries(expected)) {
     const dom = createDomTestHarness();

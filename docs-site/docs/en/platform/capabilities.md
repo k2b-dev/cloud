@@ -667,8 +667,10 @@ rows. Stable `reasonCode` values are `origin_forbidden`, `proof_invalid`,
 `capacity_exceeded`. Keep the
 application's human-facing refusal reason separate from these recovery codes.
 
-Normal target share lists expose `grantId` for each Code share so the rights
-editor can remove it directly. Cloud lists only live, ledger-backed grants and
+Normal target share lists expose `grantId` and `serviceAccountKind: "code"` for
+each Code share. The shared rights editor then lists it under
+[Code with access](/en/docs/identity/authorization#code-with-access) and removes
+it through Core and `code.access.rm`. Cloud lists only live, ledger-backed grants and
 enforces the existing 256 KiB capability result budget; adapters must keep their
 account lists within that budget. Operation IDs must belong to the receiving
 app. Actions and Queries with an explicit target must name the target Type in
@@ -1671,11 +1673,11 @@ Cloud validates the declaration at startup:
   `idempotency: "required"`;
 - every provider-owned Type used by `refs` or Universal Search is declared;
 - an app may declare at most 200 Types, 200 Queries, and 200 Actions;
-- the deterministic live manifest may not exceed 256 KiB.
+- the deterministic live manifest may not exceed 384 KiB.
 
 Every invocation transport caps the complete JSON request and result at 256
 KiB. The paginated discovery catalog has a separate 2 MiB page limit because
-one valid manifest may itself approach 256 KiB. Provider endpoints validate and
+one valid manifest may itself approach 384 KiB. Provider endpoints validate and
 serialize invocation results within the 256 KiB bound before returning them.
 Keep individual field limits comfortably below that envelope; large files,
 exports, and document bodies belong in app-owned upload or download APIs
