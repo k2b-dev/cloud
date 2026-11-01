@@ -74,7 +74,7 @@ test("setting repairs require JSON and confirmation and carry explicit replaceme
     },
   ]);
   expect((await invoke(["set", "mail.workflow_ai_body_max_chars"], { value: "12000", app: "mail", yes: true }, {})).requests).toEqual([
-    { path: "/api/admin/core/settings/env/mail/mail.workflow_ai_body_max_chars", body: { value: 12000, replaceUnreadable: false } },
+    { path: "/api/mail/admin/settings/mail.workflow_ai_body_max_chars", body: { value: 12000, replaceUnreadable: false } },
   ]);
 });
 
@@ -90,4 +90,10 @@ test("setting inventory strips every supplied value and secret writes reject arg
 test("retention composes the owning settings without exposing unrelated settings", async () => {
   const result = await invoke(["retention", "show"], {}, { days: 30 });
   expect(result.output).toEqual([{ logs: { days: 30 }, events: { days: 7 }, rollups: { days: 90 } }]);
+});
+
+test("contact directory settings use Mail's validated setter", async () => {
+  expect((await invoke(["set", "mail.contact_directory.app"], { value: '"crm"', app: "mail", yes: true }, {})).requests).toEqual([
+    { path: "/api/mail/admin/settings/mail.contact_directory.app", body: { value: "crm", replaceUnreadable: false } },
+  ]);
 });
