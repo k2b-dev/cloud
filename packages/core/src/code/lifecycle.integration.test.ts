@@ -126,7 +126,7 @@ async function grant(f: Fixture, user: User, planned = false) {
   const target = { type: "spaces.space", id: shortId },
     operations = ["spaces.task.create"];
   await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::jsonb,${operations},${planned ? "planned" : "granted"})`;
+    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::text::jsonb,${operations},${planned ? "planned" : "granted"})`;
   const claims: CodeAccessProofClaims = {
     ver: 1,
     iss: "https://cloud.example",
@@ -150,7 +150,7 @@ async function grant(f: Fixture, user: User, planned = false) {
       verifyProof: async () => claims,
     });
   if (!planned) expect(await set()).toMatchObject({ granted: true, grantId });
-  return { grantId, spaceId: space!.id, set };
+  return { grantId, spaceId: space!.id, target, set };
 }
 async function deliver() {
   const rows = await codeOwnerDeletedOutbox.claim();
@@ -213,6 +213,27 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     expect(await findCode(f.id)).toBeNull();
   });
 
+  test("owner-deletion cleanup reads persisted target objects and removes their explicit grants before deleting Code", async () => {
+    const user = await person(),
+      f = await fixture(user),
+      g = await grant(f, user);
+    const [saved] = await sql<
+      { target: unknown; kind: string }[]
+    >`SELECT target,jsonb_typeof(target) AS kind FROM code.target_grants WHERE grant_id=${g.grantId}::uuid`;
+    expect(saved).toEqual({ target: g.target, kind: "object" });
+    await sql.begin((tx) => codeOwnerDeleted(tx, f.ref));
+    await deliver();
+    const [job] = await sql<{ target: unknown }[]>`SELECT target FROM code.cleanup_jobs WHERE grant_id=${g.grantId}::uuid`;
+    expect(job!.target).toEqual(saved!.target);
+    expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(1);
+    await drainGrants();
+    expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE grant_id=${g.grantId}::uuid AND state='released'`).toHaveLength(1);
+    expect(await sql`SELECT grant_id FROM capabilities.code_access_grants WHERE grant_id=${g.grantId}::uuid AND revoked`).toHaveLength(1);
+    expect(await findCode(f.id)).toMatchObject({ state: "deleting" });
+    await drainDeletion();
+    expect(await findCode(f.id)).toBeNull();
+  });
   test("unreachable targets wait visibly, preserve cleanup authority and recover after an ambiguous reply", async () => {
     const user = await person(),
       f = await fixture(user);
@@ -333,7 +354,7 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     await deliver();
     expect((await findCode(f.id))?.state).toBe("active");
     await sql`SELECT events.enqueue(gen_random_uuid(),'core','code_owner_deleted','fixture-person',
-      ${JSON.stringify({ type: "core.user", id: user.id })}::jsonb)`;
+      ${JSON.stringify({ type: "core.user", id: user.id })}::text::jsonb)`;
     await deliver();
     expect((await findCode(personal.id))?.state).toBe("active");
   });
