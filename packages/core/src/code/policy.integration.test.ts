@@ -167,7 +167,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
     expect((await readCodePolicySnapshot()).revision).toBe(previous.revision + 1);
-    expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(1);
+    expect([...(await sql`SELECT id FROM code.policy_pause_outbox`)]).toHaveLength(1);
     await expect(previewCodePolicy({ revision: previous.revision, definition: codePolicyPreset("off"), limit: 20 }, admin)).rejects.toThrow(
       "changed",
     );
@@ -190,7 +190,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     const second = await previewCodePolicy({ revision: old.revision, definition, limit: 1, cursor: preview.nextCursor! }, admin);
     expect(second.items.map((item) => item.codeId)).toEqual([codeId(4)]);
     expect(second.nextCursor).toBeNull();
-    expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(0);
+    expect([...(await sql`SELECT id FROM code.policy_pause_outbox`)]).toHaveLength(0);
     const result = await updateCodePolicy({ revision: old.revision, definition }, admin);
     expect((await readCode(codeId(1), ctx(ownerId))).code.state).toBe("active");
     await codePolicyPauseOutbox.reconcile();
@@ -229,7 +229,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     await codePolicyPauseOutbox.dispatch(job!, async () => {
       throw new Error("retry fixture");
     });
-    expect(await sql`SELECT attempts,last_error FROM code.policy_pause_outbox`).toMatchObject([
+    expect([...(await sql`SELECT attempts,last_error FROM code.policy_pause_outbox`)]).toMatchObject([
       { attempts: 1, last_error: "retry fixture" },
     ]);
     await sql`UPDATE code.policy_pause_outbox SET next_attempt_at='2026-01-01'`;
@@ -238,12 +238,12 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     await codePolicyPauseOutbox.dispatch(retry!);
     const pending: unknown = await sql`SELECT previous,cursor FROM code.policy_pause_outbox`;
     expect(pending).toEqual([{ previous: current.definition, cursor: codeId(50) }]);
-    expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toHaveLength(50);
+    expect([...(await sql`SELECT id FROM code.codes WHERE state='paused'`)]).toHaveLength(50);
     await codePolicyPauseOutbox.reconcile();
-    expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toHaveLength(52);
-    expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(0);
+    expect([...(await sql`SELECT id FROM code.codes WHERE state='paused'`)]).toHaveLength(52);
+    expect([...(await sql`SELECT id FROM code.policy_pause_outbox`)]).toHaveLength(0);
     await codePolicyPauseOutbox.dispatch(job!); // deleted job cannot resurrect continuation work
-    expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(0);
+    expect([...(await sql`SELECT id FROM code.policy_pause_outbox`)]).toHaveLength(0);
   });
   test("superseded tightening and already covered versions do not pause", async () => {
     await active(1, ["read"]);
@@ -265,7 +265,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     expect(preview.items.map((item) => item.codeId)).toEqual([codeId(71)]);
     await updateCodePolicy({ revision: current.revision, definition }, admin);
     await codePolicyPauseOutbox.reconcile();
-    expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toMatchObject([{ id: codeId(71) }]);
+    expect([...(await sql`SELECT id FROM code.codes WHERE state='paused'`)]).toMatchObject([{ id: codeId(71) }]);
     current = await readCodePolicySnapshot();
     const veto = codePolicyPreset("open");
     veto.preset = "custom";
@@ -275,7 +275,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     ).toEqual([codeId(72), codeId(73)]);
     await updateCodePolicy({ revision: current.revision, definition: veto }, admin);
     await codePolicyPauseOutbox.reconcile();
-    expect(await sql`SELECT id FROM code.codes WHERE state='active'`).toHaveLength(0);
+    expect([...(await sql`SELECT id FROM code.codes WHERE state='active'`)]).toHaveLength(0);
   });
   test("missing classifications fail closed during tightening; a newly active different version is evaluated afresh", async () => {
     await active(81, null);
@@ -304,7 +304,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
       { authority: { ...admin.authority, credentialKind: "oauth" as const, scopes: ["core:read"] } },
     ])
       await expect(updateCodePolicy(input, context)).rejects.toThrow();
-    expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(0);
+    expect([...(await sql`SELECT id FROM code.policy_pause_outbox`)]).toHaveLength(0);
     expect((await readCodePolicy(ctx(ownerId))).policy.revision).toBe(previous.revision);
     const result = await aiCapabilities.queries["code.policy.read"].run(
       {},
