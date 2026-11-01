@@ -324,7 +324,16 @@ async function rollback(row: ActivationRow, code: Code, deps: CodeActivationDepe
         actor: row.activating_person ? { userId: row.activating_person } : null,
         target: { type: "code", id: code.id },
         requestId: row.id,
-        metadata: { versionId: row.version_id, failure: row.failure },
+        metadata: {
+          versionId: row.version_id,
+          failure:
+            row.failure === null
+              ? null
+              : {
+                  target: CodeActivationFailureSchema.parse(row.failure).target,
+                  code: CodeActivationFailureSchema.parse(row.failure).code,
+                },
+        },
       },
       tx,
     );
