@@ -11,9 +11,10 @@ export const ADMIN_STATUS_BUDGET_MS = 250;
 
 /** Open Code-version approvals for the Administration sidebar; read once per admin page like the rail snapshot. */
 export const preloadAdminCodeApprovals = async (c: Context): Promise<void> => {
-  const user = c.get("user");
-  if (!user || !isAdminUser(user) || !(c.req.path === "/admin" || c.req.path.startsWith("/admin/"))) return;
+  if (!(c.req.path === "/admin" || c.req.path.startsWith("/admin/"))) return;
   try {
+    const user = c.get("user");
+    if (!user || !isAdminUser(user)) return;
     const counts = await countPending({
       approverUserId: user.id,
       roleContext: { kind: "request", authority: auth.getAuthority(c) },
@@ -22,6 +23,6 @@ export const preloadAdminCodeApprovals = async (c: Context): Promise<void> => {
     });
     c.set("adminCodeApprovals", counts.total);
   } catch {
-    // A failed read only hides the count; Administration › Code still lists every request.
+    // Nothing about this hint may fail a page: without it, Administration › Code still lists every request.
   }
 };

@@ -42,3 +42,20 @@ test("other people, other pages and failed or cancelled reads leave the count ou
   }
   expect(count).toHaveBeenCalledTimes(1);
 });
+
+test("the hint never fails a page and reads nothing outside Administration", async () => {
+  const count = spyOn(approvals, "countPending").mockResolvedValue({ total: 1, apps: {} });
+  spies.push(count);
+  const values = new Map<string, unknown>([["user", { id: "u1" }]]);
+  const page = (path: string) =>
+    ({
+      req: { path },
+      get: (key: string) => values.get(key),
+      set: (key: string, value: unknown) => values.set(key, value),
+    }) as unknown as Context;
+  // A user without roles makes the role check throw; it stays inside the hint.
+  await preloadAdminCodeApprovals(page("/admin/code"));
+  await preloadAdminCodeApprovals(page("/app/mail"));
+  expect(values.has("adminCodeApprovals")).toBe(false);
+  expect(count).not.toHaveBeenCalled();
+});
