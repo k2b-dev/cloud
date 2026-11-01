@@ -15,7 +15,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import * as access from "./access";
 import { codeActivationTransport } from "./activation-transport";
-import { clearCodeAttentionCache, listCodeAttention } from "./attention";
+import { clearCodeAttentionCache, listCodeAttention, readCodeSummary } from "./attention";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { countOwnCodeRuns, createCode, createCodeVersion, insertCodeRun } from "./store";
 import { readCodeWorkload } from "./workload-reader";
@@ -219,5 +219,25 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     reader.mockResolvedValue(null);
     expect((await readCodeWorkload(`${versionId}~${runId}`, ctx(ids.manager))).links).toEqual([]);
     managed.delete("box-origin");
+  });
+
+  test("summarizes an owner's Code in numbers, and only for those who may read it", async () => {
+    managed.add("box-summary");
+    const ref = { type: "mail.mailbox", id: "box-summary" };
+    const code = await createCode({ owner: { kind: "resource", ref }, title: "Code box-summary" }, ctx(ids.manager));
+    const entrypoints = [
+      { kind: "schedule", entrypoint: "sort", cron: "0 7 * * 1", file: "code.ts", line: 1 },
+      { kind: "manual", entrypoint: "again", cron: null, file: "code.ts", line: 2 },
+    ];
+    await createCodeVersion(
+      { codeId: code.id, sourceFiles: { "code.ts": "export {};" }, bundle: "export {};", manifest: { entrypoints }, baseVersionId: null },
+      ctx(ids.manager),
+    );
+    const summary = await readCodeSummary({ owner: { kind: "resource", ref } }, ctx(ids.manager));
+    expect(summary.items).toEqual([{ codeId: code.id, automations: 2, access: [] }]);
+    managed.delete("box-summary");
+    expect(
+      (await readCodeSummary({ owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-none" } } }, ctx(ids.manager))).items,
+    ).toEqual([]);
   });
 });

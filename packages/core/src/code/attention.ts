@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { z } from "zod";
 import { type CodeContext, CodeOwnerUnavailableError, codePermission, codePerson } from "./access";
 import { reconcileCodeAccess } from "./activation-maintenance";
@@ -16,6 +17,26 @@ export const codeAttentionContracts = {
     data: z
       .object({
         items: z.array(z.object({ codeId: CodeIdSchema, reasons: z.array(CodeAttentionReasonSchema) }).strict()),
+      })
+      .strict(),
+  },
+  /**
+   * What one owner's readable Code is, in numbers: automations of the running version, or of the newest one before it
+   * runs, and the targets it holds access to, by type. For settings and for delete dialogs that say what goes along.
+   */
+  summary: {
+    input: z.object({ owner: CodeOwnerSchema.describe("Exact Code owner.") }).strict(),
+    data: z
+      .object({
+        items: z.array(
+          z
+            .object({
+              codeId: CodeIdSchema,
+              automations: z.number().int().nonnegative(),
+              access: z.array(z.object({ type: z.string(), title: z.string(), count: z.number().int().positive() }).strict()),
+            })
+            .strict(),
+        ),
       })
       .strict(),
   },
@@ -181,3 +202,31 @@ export async function listCodeAttention(input: z.infer<typeof codeAttentionContr
 
 /** Test seam: forget cached reasons. */
 export const clearCodeAttentionCache = () => cache.clear();
+
+/** Numbers of one owner's Code for settings and delete dialogs; only Code the caller may read. */
+export async function readCodeSummary(input: z.infer<typeof codeAttentionContracts.summary.input>, context: CodeContext) {
+  const page = await listCodes({ owner: input.owner, limit: OWNER_LIMIT }, context);
+  const ids = page.items.map((code) => code.id);
+  if (!ids.length) return { items: [] };
+  const entrypoints = await sql<{ code_id: string; automations: number }[]>`SELECT DISTINCT ON (c.id) c.id AS code_id,
+      CASE WHEN jsonb_typeof(v.manifest->'entrypoints')='array' THEN jsonb_array_length(v.manifest->'entrypoints') ELSE 0 END::int AS automations
+    FROM code.codes c JOIN code.versions v ON v.code_id=c.id
+    WHERE c.id=ANY(${sql.array(ids, "text")})
+    ORDER BY c.id, (v.id=c.active_version_id) IS TRUE DESC, v.number DESC`;
+  const grants = await sql<{ code_id: string; type: string; count: number }[]>`SELECT code_id,target->>'type' AS type,count(*)::int AS count
+    FROM code.target_grants WHERE code_id=ANY(${sql.array(ids, "text")}) AND state='granted' GROUP BY code_id,target->>'type'`;
+  const titles = new Map<string, string>();
+  for (const appId of [...new Set(grants.map((grant) => grant.type.split(".")[0] ?? ""))].filter(Boolean).slice(0, OWNER_LIMIT)) {
+    const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority).catch(() => null);
+    for (const type of (catalog?.ok ? catalog.data?.manifest.types : undefined) ?? []) titles.set(`${appId}.${type.localId}`, type.title);
+  }
+  return {
+    items: ids.map((codeId) => ({
+      codeId,
+      automations: entrypoints.find((row) => row.code_id === codeId)?.automations ?? 0,
+      access: grants
+        .filter((grant) => grant.code_id === codeId)
+        .map((grant) => ({ type: grant.type, title: titles.get(grant.type) ?? grant.type, count: grant.count })),
+    })),
+  };
+}

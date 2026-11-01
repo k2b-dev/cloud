@@ -58,7 +58,7 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
-import { codeAttentionContracts, listCodeAttention, readCodeAttention } from "./code/attention";
+import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
@@ -857,6 +857,13 @@ export const aiCapabilities = defineCapabilities({
       ...codeAttentionContracts.attention,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
+    },
+    "code.summary": {
+      title: "Summarize an owner's Code",
+      description: "For one exact owner, count the automations and the targets with access of the readable Code. No names and no contents.",
+      ...codeAttentionContracts.summary,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeSummary(input, ctx)),
     },
     "code.list": {
       title: "List Code",

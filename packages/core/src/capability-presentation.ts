@@ -27,6 +27,8 @@ const codeVersionDecisionInput = {
   comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionSubmissionInput = {
+  tests:
+    "Deklarative test/**/*.json-Fälle. Core führt sie beim Einreichen mit Testdaten aus und zeigt das Ergebnis den Prüfenden; ein fehlgeschlagener Test lehnt die Version nicht ab.",
   sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
   bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
   manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
@@ -155,6 +157,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Liest Titel, Automation und Links des Codes, der eine Änderung gemacht hat, aus einem core.code.version-Verweis im Verlauf einer anderen App. Nichts für alle, die diesen Code nicht lesen dürfen.",
           input: { id: "Versions-UUID, optional gefolgt von ~ und einer Lauf-UUID." },
+        "code.summary": {
+          title: "Code eines Besitzers zusammenfassen",
+          description:
+            "Zählt für einen genauen Besitzer die Automationen und die Ziele mit Zugriff des lesbaren Codes. Ohne Namen und Inhalte.",
+          input: {
+            owner: "Genauer Code-Besitzer.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+          },
         },
         "code.attention": {
           title: "Aufmerksamkeit für Code prüfen",
