@@ -7,6 +7,20 @@ export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS notebooks`.simple();
   console.log("  ✓ notebooks schema");
 
+  // No foreign key: deletion hints must survive removal of their notebook.
+  await sql`CREATE TABLE IF NOT EXISTS notebooks.workspace_outbox (
+    seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    notebook_id UUID NOT NULL,
+    payload JSONB NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_until TIMESTAMPTZ,
+    last_error TEXT
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS workspace_outbox_busy ON notebooks.workspace_outbox (notebook_id)
+    WHERE claimed_until IS NOT NULL OR attempts > 0`.simple();
+
   await sql`
     CREATE TABLE IF NOT EXISTS notebooks.notebooks (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

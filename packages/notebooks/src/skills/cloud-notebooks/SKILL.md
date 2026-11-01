@@ -1,6 +1,12 @@
 ---
 name: cloud-notebooks
 description: "Use for Cloud Notebooks, Markdown notes and company handbooks: finding, reading, editing, organizing and discussing pages, flexible named data, query filters, tables of contents, charts, table formulas and Book mode. Load it whenever a request involves notebooks, notes, wiki pages, note links, tags, comments, :::data, :::query, :::toc or :::chart."
+load-tools:
+  - notebooks.note.search
+  - notebooks.notebook.browse
+  - notebooks.note.read
+  - notebooks.note.edit
+  - notebooks.note.create
 ---
 
 # Work with Cloud Notebooks

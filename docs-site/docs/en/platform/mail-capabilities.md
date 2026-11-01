@@ -85,39 +85,3 @@ Spaces owns calendar events and Mail owns drafts and sending. Actions that
 cross those ownership boundaries remain subject to the calendar provider's
 `code: false` declaration for resource-owned Code. A Mail target grants no
 calendar access and does not authorize a send.
-
-## Code access at a mailbox
-
-Mail declares `mailbox` as both a Code target and a type that may own Code.
-Core manages access through `mail.code.access.set`, `mail.code.access.list`
-and `mail.code.access.rm`. Use the public mailbox ID in
-`{ type: "mail.mailbox", id }`. The platform checks Core's activation proof
-and the person's current mailbox administration rights; its Cloud-admin
-override follows the shared [Code access contract](/en/docs/platform/capabilities#code-access-at-the-target).
-
-Mail chooses the smallest mailbox level covering the requested operations:
-
-| Requested operations | Level or refusal |
-| --- | --- |
-| Read Queries | `read` |
-| Any ordinary Mail Action, or `draft.send.review` | `write` |
-| `folder.display.set` or `conversation.keep.release` | Refused: requires administration |
-| Unknown or foreign operation | Refused |
-
-One unsupported operation refuses the complete grant. An empty operation set
-is valid only for an owner dry run and creates no share. A dry run with
-operations checks the same level without saving a grant.
-
-Code receives only its own explicit mailbox access. Group membership, public
-shares and shares with all signed-in people do not add access. Code never
-counts as a mailbox administrator. People's existing Mail permissions and
-assigned-conversation access keep their behavior.
-
-Each activation grant has its own `grantId`, also returned on its entry in the
-mailbox's normal access list. Use Core and `code.access.rm` with that ID to
-remove Code access; ordinary share update and removal endpoints refuse Code
-entries. Change its level through a new activation. Removing it takes effect
-on the next permission check. Other grants at the same mailbox remain in place, including overlapping
-grants for the same Code account. Listing Code access returns only grants of
-the requested account; the platform further limits a person's list to targets
-they manage. A removed grant requires a new activation to restore it.

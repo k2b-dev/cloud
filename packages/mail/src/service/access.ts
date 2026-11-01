@@ -61,7 +61,7 @@ type DbAccess = {
 export type MailboxAccessScope = "mailbox" | "assigned";
 
 /** A mailbox grant as the access API returns it; `scope` is present only for an assigned-only grant. */
-export type MailboxAccessEntry = AccessEntry & { scope?: "assigned"; grantId?: string };
+export type MailboxAccessEntry = AccessEntry & { scope?: "assigned" };
 
 const principalFromRow = (row: DbAccess): Principal => {
   if (row.user_id) return { type: "user", userId: row.user_id };
@@ -76,7 +76,6 @@ const mapAccess = (row: DbAccess): MailboxAccessEntry => ({
   principal: principalFromRow(row),
   permission: row.permission,
   createdAt: (row.created_at instanceof Date ? row.created_at : new Date(row.created_at)).toISOString(),
-  ...(row.service_account_kind === "code" ? { grantId: row.id } : {}),
   ...(row.scope === "assigned" ? { scope: "assigned" as const } : {}),
 });
 
@@ -463,11 +462,9 @@ const authorizeAccessManagement = async (
 /** Every grant on the mailbox in both scopes with display names, managers first. Callers authorize before they read it. */
 export const loadMailboxAccessEntries = async (mailboxId: string): Promise<MailboxAccessEntry[]> => {
   const rows = await sql<DbAccess[]>`
-    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope,
-      account.kind AS service_account_kind
+    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
-    LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
     ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
   return resolveDisplayNames(rows.map(mapAccess));
@@ -594,7 +591,6 @@ const updateMailboxAccessWithAuthority = async (params: {
         const entries = await lockAccessEntries(params.mailboxId, tx);
         const current = entries.find((entry) => entry.id === params.accessId);
         if (!current) unwrap(fail(err.notFound("Mailbox access")));
-        if (current!.service_account_kind === "code") unwrap(fail(err.badInput("Manage Code access through Core using its grantId")));
         const scope = params.scope ?? current!.scope;
         unwrap(assertGrantShape(principalFromRow(current!), params.permission, scope));
         unwrap(ensureAdminRemains(entries, params.accessId, { permission: params.permission, scope }));
@@ -666,8 +662,6 @@ const revokeMailboxAccessWithAuthority = async (params: {
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         const entries = await lockAccessEntries(params.mailboxId, tx);
-        if (entries.find((entry) => entry.id === params.accessId)?.service_account_kind === "code")
-          unwrap(fail(err.badInput("Manage Code access through Core using its grantId")));
         unwrap(ensureAdminRemains(entries, params.accessId, null));
         await deleteGrantLinks(tx, params.mailboxId, params.accessId);
         unwrap(await deleteAccess({ id: params.accessId }, tx));

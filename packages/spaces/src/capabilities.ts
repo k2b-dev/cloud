@@ -434,6 +434,11 @@ const reviewItemCreate = async (
   const t = spacesMessages(context.locale);
   const access = await requireSpace(context.target?.id ?? "", context, "write");
   if (!access.ok) return access;
+  // A task without a column lands in the first open one; the person sees which before approving.
+  const defaultColumn =
+    kind === "task" && input.columnId === undefined ? await spacesService.column.firstOpen({ spaceId: access.data.internalId }) : null;
+  if (kind === "task" && input.columnId === undefined && !defaultColumn)
+    return capabilityFail(context, err.badInput("This Space has no open column for new tasks"), "noOpenSpaceColumn");
   const title = input.title ?? t.template;
   const rememberable = input.templateId === undefined && !input.assigneeIds?.length;
   return ok({
@@ -443,6 +448,7 @@ const reviewItemCreate = async (
         : t.reviewCreateEvent({ title, space: access.data.space.name }),
     details: [
       { label: t.space, value: access.data.space.name },
+      ...(defaultColumn ? [{ label: t.column, value: defaultColumn.name }] : []),
       ...(input.title !== undefined ? [{ label: t.title, value: input.title }] : []),
       ...(input.templateId !== undefined ? [{ label: t.fromTemplate, value: input.templateId }] : []),
       ...("startsAt" in input && input.startsAt ? [{ label: t.starts, value: input.startsAt, format: "date-time" as const }] : []),
@@ -1704,7 +1710,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
   audited(actionAudit(context, "task.create", "space", context.target?.id ?? ""), async () => {
     const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
-    const { templateId, date, timeZone, noDate, ...explicit } = input;
+    const { templateId, date, timeZone, noDate, columnId: requestedColumnId, ...explicit } = input;
     const filled = await fillFromTemplate(
       { templateId, date, timeZone, noDate, at: explicit.deadline },
       "task",
@@ -1713,10 +1719,14 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
     );
     if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
-      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),
+      requestedColumnId === undefined
+        ? spacesService.column.firstOpen({ spaceId: access.data.internalId }).then((column) => (column ? [column.id] : []))
+        : spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [requestedColumnId]),
       spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, explicit.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
+    if (requestedColumnId === undefined && !columnId)
+      return capabilityFail(context, err.badInput("This Space has no open column for new tasks"), "noOpenSpaceColumn");
     if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
     const draft: Partial<TemplateItemDraft> = filled.data?.item ?? {};
     const { location: _location, url: _url, startsAt: _startsAt, endsAt: _endsAt, allDay: _allDay, ...defaults } = draft;
@@ -3047,7 +3057,7 @@ export const spacesCapabilities = defineCapabilities({
       target: "space",
       title: "Create task",
       description:
-        "Create one task in an explicitly selected writable Space and column. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
+        "Create one task in an explicitly selected writable Space. Without columnId it goes to the Space's first open column, the first one in board order that is not marked done; name a column only when the user asks for one. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
       input: TaskCreateInputSchema,
       data: TaskDataSchema,
       destructive: false,
