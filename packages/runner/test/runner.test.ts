@@ -2,6 +2,8 @@ import { expect, jest, test } from "bun:test";
 import type { RunnerBridge, RunnerCompleteRequest, RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { BundleCache, bundleHash } from "../src/cache";
 import type { RunnerEngine } from "../src/engine";
+import { reserveJobIdentities } from "../src/identities";
+import { executeRunnerJob } from "../src/jobs";
 import { Runner } from "../src/runner";
 import { config, lease, source } from "./fixtures";
 
@@ -242,3 +244,145 @@ test("identical bundles retain independent lease failures across organizations",
     jest.useRealTimers();
   }
 });
+
+test("C13b jobs and runs consume one shared advertised slot budget", async () => {
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([]);
+  let polls = 0;
+  const started: string[] = [];
+  const finish = Promise.withResolvers<void>();
+  const bridge: RunnerBridge = {
+    ...mock.bridge,
+    fetch: async ({ freeSlots }, signal) => {
+      polls++;
+      expect(freeSlots).toBe(2);
+      if (polls === 1)
+        return {
+          runs: [lease()],
+          jobs: [
+            {
+              kind: "check",
+              jobId: "11111111-1111-4111-8111-111111111111",
+              generation: 1,
+              leaseKey: "a".repeat(64),
+              deadlineAt: NOW + 5000,
+              leaseExpiresAt: NOW + 5000,
+              heartbeatMs: 100,
+              inputBytes: 2,
+              outputBytes: 1000,
+            },
+          ],
+        };
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      return { runs: [] };
+    },
+    jobInput: async () => "{}",
+    jobHeartbeat: async () => ({ leaseExpiresAt: NOW + 5000 }),
+    jobComplete: async () => {},
+  };
+  const engine: RunnerEngine = {
+    load: async () => {},
+    run: async () => {
+      started.push("run");
+      await finish.promise;
+      return "succeeded";
+    },
+    kill: async () => {},
+    close: async () => {},
+  };
+  const runner = new Runner(
+    bridge,
+    engine,
+    () => {},
+    async () => {
+      started.push("check");
+      await finish.promise;
+      return { kind: "check", result: { ok: false, diagnostics: [] } };
+    },
+  );
+  const running = runner.start();
+  try {
+    await waitFor(() => started.length === 2);
+    expect(polls).toBe(1);
+    runner.stop();
+    finish.resolve();
+    await running;
+    expect(started.sort()).toEqual(["check", "run"]);
+  } finally {
+    runner.stop();
+    finish.resolve();
+    await running;
+    jest.useRealTimers();
+  }
+});
+
+test("C13b successfully reaped job ranges are reused without consuming production identities", () => {
+  const first = reserveJobIdentities();
+  const expected = first.first;
+  first.release();
+  for (let index = 0; index < 40000; index++) {
+    const next = reserveJobIdentities();
+    expect(next.first).toBe(expected);
+    next.release();
+  }
+});
+
+for (const cooperative of [true, false])
+  test(`C13b cancellation recycles only a reaped launcher receipt (cooperative: ${cooperative})`, async () => {
+    const cancel = new AbortController();
+    const input = JSON.stringify({ kind: "check", request: {} });
+    let started = false;
+    let first = 0;
+    const work = executeRunnerJob(
+      {
+        kind: "check",
+        jobId: "11111111-1111-4111-8111-111111111111",
+        generation: 1,
+        leaseKey: "a".repeat(64),
+        deadlineAt: NOW + 30000,
+        leaseExpiresAt: NOW + 15000,
+        heartbeatMs: 5000,
+        inputBytes: Buffer.byteLength(input),
+        outputBytes: 1000,
+      },
+      input,
+      config,
+      cancel.signal,
+      (command) => {
+        first = Number(command[1]);
+        return Bun.spawn(
+          [
+            process.execPath,
+            "--no-env-file",
+            "-e",
+            `process.on("SIGTERM", () => { ${cooperative ? "process.exit(124);" : ""} }); process.send("ready"); setInterval(() => {}, 1000);`,
+          ],
+          {
+            env: {},
+            stdin: "pipe",
+            stdout: "pipe",
+            stderr: "ignore",
+            ipc: () => {
+              started = true;
+            },
+          },
+        );
+      },
+    ).catch((error: unknown) => error);
+    try {
+      await waitFor(() => started);
+      cancel.abort();
+      expect(await work).toBeInstanceOf(Error);
+      expect(first).toBeGreaterThan(0);
+      const next = reserveJobIdentities();
+      try {
+        if (cooperative) expect(next.first).toBe(first);
+        else expect(next.first).not.toBe(first);
+      } finally {
+        next.release();
+      }
+    } finally {
+      cancel.abort();
+      await work;
+    }
+  }, 10000);

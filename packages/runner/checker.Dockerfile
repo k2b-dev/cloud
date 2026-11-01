@@ -11,7 +11,7 @@ COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.js
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY packages/cloud/src packages/cloud/src
 COPY packages/cloud/scripts/code-check*.ts packages/cloud/scripts/
-COPY packages/runner/native/checker-isolate.c /app/checker-isolate.c
+COPY packages/runner/native/checker-isolate.c packages/runner/native/namespace-filter.h /app/
 RUN mkdir -p /checker/node_modules/@typescript \
     && cc -O2 -Wall -Wextra -Werror /app/checker-isolate.c -o /checker/checker-isolate \
     && bun build packages/cloud/scripts/code-check.ts --target=bun --outfile=/checker/checker.js \

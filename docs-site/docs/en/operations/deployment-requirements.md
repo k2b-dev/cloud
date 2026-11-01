@@ -27,6 +27,14 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Code runner hosts
+
+Production Compose starts the Code runner service. Before starting it, install
+the matching Cloud release's AppArmor policy and seccomp file on every runner
+host. Core and runner versions must be upgraded together. See
+[runner host prerequisites](/en/docs/operations/code-runner) for the required
+Linux features, file paths and verification probe.
+
 ## App-domain routing and unknown hosts
 
 **After upgrading the gateway, unknown Host headers receive HTTP 421.**
