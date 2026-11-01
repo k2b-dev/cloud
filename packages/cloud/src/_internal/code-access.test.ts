@@ -14,6 +14,7 @@ const adapter: CodeAccessAdapter = {
   list: () => [],
 };
 const reader = {
+  codeResourceTitle: () => "Item",
   title: "Read item",
   description: "Read the authorized item.",
   input: z.object({ id: z.string().min(1).max(512).describe("Resource ID.") }).strict(),
@@ -104,6 +105,21 @@ test("generated inputs have complete German presentation for every adapter and p
   });
 });
 test("startup refuses access or owners without a declared reader and collisions", () => {
+  expect(() =>
+    compileCapabilities("inventory", {
+      ...definitions,
+      code: undefined,
+      queries: { "item.read": { ...reader, codeResourceTitle: undefined } },
+    }),
+  ).toThrow(/codeResourceTitle/);
+  expect(() =>
+    compileCapabilities("inventory", {
+      ...definitions,
+      queries: {
+        "item.read": { ...reader, codeResourceTitle: undefined },
+      },
+    }),
+  ).toThrow(/codeResourceTitle/);
   expect(() => compileCapabilities("inventory", { ...definitions, code: { owners: ["missing"] } })).toThrow(/declared type with a reader/);
   expect(() =>
     compileCapabilities("inventory", { ...definitions, types: { item: { ...definitions.types!.item!, reader: undefined } } }),

@@ -19,6 +19,7 @@ import {
 import { logger } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import type { z } from "zod";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
@@ -1062,6 +1063,11 @@ const queryDefinitions = {
     input: c.MailboxReadInputSchema,
     data: c.MailboxDataSchema,
     openWorld: false,
+    codeResourceTitle: async (tx: SQL, id: string) => {
+      if (!ResourceShortIdSchema.safeParse(id).success) return null;
+      const [mailbox] = await tx<{ name: string }[]>`SELECT name FROM mail.mailboxes WHERE short_id=${id} AND deleted_at IS NULL`;
+      return mailbox?.name ?? null;
+    },
     run: async (input: z.output<typeof c.MailboxReadInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const mailContext = requestContext(context);

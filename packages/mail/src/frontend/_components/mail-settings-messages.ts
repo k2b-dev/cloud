@@ -164,7 +164,7 @@ export const mailSettingsMessages = i18n.define({
       failedUpdateAutomaticReplyAccess: "Failed to update automatic reply access",
       automaticReplyAccessUpdated: "Automatic reply access updated",
       recentlyDeletedDescription:
-        "This pauses the mailbox and hides it from normal use. Provider mail and Cloud data remain retained so an administrator can restore it.",
+        "This pauses the mailbox and hides it from normal use. Its Code, versions, runs and Code account are permanently deleted, and all access given to that Code is removed. Restoring the mailbox does not restore its Code. Provider mail and other Cloud data remain retained so an administrator can restore the mailbox.",
       moveMailboxToRecentlyDeleted: "Move mailbox to recently deleted?",
       moveToRecentlyDeleted: "Move to recently deleted",
       failedMoveToRecentlyDeleted: "Failed to move mailbox to recently deleted",
@@ -241,7 +241,8 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lifecycle",
       dangerZone: "Danger zone",
       dangerZoneDescription: "Remove this mailbox from normal use.",
-      recentlyDeletedGroupDescription: "Pause and hide the mailbox while retaining provider mail and Cloud data for restoration.",
+      recentlyDeletedGroupDescription:
+        "Pause and hide the mailbox. Its Code is permanently deleted; provider mail and other Cloud data remain available for restoration.",
       sent: "Sent",
       drafts: "Drafts",
       archive: "Archive",
@@ -1030,7 +1031,7 @@ export const mailSettingsMessages = i18n.define({
       failedUpdateAutomaticReplyAccess: "Der Zugriff auf automatische Antworten konnte nicht aktualisiert werden",
       automaticReplyAccessUpdated: "Zugriff auf automatische Antworten aktualisiert",
       recentlyDeletedDescription:
-        "Das Postfach wird pausiert und aus der normalen Verwendung ausgeblendet. E-Mails beim Anbieter und Cloud-Daten bleiben erhalten, damit eine Person mit Verwaltungsrechten das Postfach wiederherstellen kann.",
+        "Das Postfach wird pausiert und ausgeblendet. Sein Code mit Versionen, Läufen und Code-Konto wird endgültig gelöscht. Alle Zugriffe, die dieser Code erhalten hat, werden entfernt. Beim Wiederherstellen des Postfachs kommt sein Code nicht zurück. E-Mails beim Anbieter und die übrigen Cloud-Daten bleiben zur Wiederherstellung des Postfachs erhalten.",
       moveMailboxToRecentlyDeleted: "Postfach in „Kürzlich gelöscht“ verschieben?",
       moveToRecentlyDeleted: "In „Kürzlich gelöscht“ verschieben",
       failedMoveToRecentlyDeleted: "Das Postfach konnte nicht in „Kürzlich gelöscht“ verschoben werden",
@@ -1109,7 +1110,7 @@ export const mailSettingsMessages = i18n.define({
       dangerZone: "Gefahrenbereich",
       dangerZoneDescription: "Dieses Postfach aus der normalen Verwendung entfernen.",
       recentlyDeletedGroupDescription:
-        "Pausiert das Postfach und blendet es aus. E-Mails beim Anbieter und Cloud-Daten bleiben zur Wiederherstellung erhalten.",
+        "Pausiert das Postfach und blendet es aus. Sein Code wird dauerhaft gelöscht. E-Mails beim Anbieter und andere Cloud-Daten bleiben zur Wiederherstellung erhalten.",
       sent: "Gesendet",
       drafts: "Entwürfe",
       archive: "Archiv",
