@@ -9,6 +9,8 @@ const restrictions: Record<string, string> = {
   "packages/assistant/src/artifacts/StudioPermissions.tsx": "Studio execution binds personal storage, secrets and approvals to a user.",
   "packages/filesv2/src/frontend/Templates.tsx": "Files template use requires a storage owner's user and Unix identity.",
   "packages/core/src/pages/admin/rail/RailAdmin.island.tsx": "Rail audiences select browser navigation for people, not resource authority.",
+  "packages/core/src/pages/admin/code/CodePolicyPicker.island.tsx":
+    "Code policy rules apply to groups, and the effective table resolves a person's personal Code; service accounts own no personal Code.",
   "packages/chat/src/frontend/MemberPicker.tsx":
     "Chat's existing participant model is user-backed; its membership migration owns this restriction.",
 };

@@ -1,14 +1,18 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { codeAreaBrowserFixture } from "./CodeArea.browser-fixture";
 import { FIXTURE_VERSIONS, fixtureApprovalDetail } from "./CodeArea.fixture-data";
 
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof codeAreaBrowserFixture>>;
 let page: Page;
+let errors: string[] = [];
 const goto = async (query: string, viewport = { width: 1440, height: 1000 }) => {
-  if (page) await page.close();
+  if (page) {
+    expect(errors).toEqual([]);
+    await page.close();
+  }
   page = await browser.newPage({ viewport });
   page.setDefaultTimeout(8000);
   await page.addInitScript((at) => {
@@ -18,7 +22,7 @@ const goto = async (query: string, viewport = { width: 1440, height: 1000 }) => 
       get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
     });
   }, Date.parse("2026-11-01T12:10:00.000Z"));
-  page.on("pageerror", (error) => console.error("PAGE ERROR", error.message));
+  errors = pageErrors(page);
   await page.goto(`${fixture.url}?locale=de&${query}`);
   await page.waitForSelector('body[data-ready="true"]');
 };
@@ -29,6 +33,7 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, 120_000);
 beforeEach(() => fixture.reset());
+afterEach(() => expect(errors).toEqual([]));
 afterAll(async () => {
   await page?.close();
   await browser?.close();
@@ -87,9 +92,11 @@ test("an outdated, own or unloaded version cannot be approved and says why", asy
 test("a policy change previews what pauses, confirms the list and saves at the read revision", async () => {
   await goto("sec=policy");
   const bar = page.locator('[aria-live="polite"]').last();
+  await settled(page);
   const before = await page.locator('[data-row="read"]').boundingBox();
   await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
   await bar.getByText("3 Code pausieren").waitFor();
+  await settled(page);
   expect(await page.locator('[data-row="read"]').boundingBox()).toEqual(before);
   expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
   await bar.getByRole("button", { name: "Speichern …" }).click();
@@ -125,6 +132,7 @@ test("a failed save keeps the change and offers to save again", async () => {
 
 test("a phone shows one level with its decision bar in reach", async () => {
   await goto(review, { width: 390, height: 844 });
+  await settled(page);
   const approve = await page.getByRole("button", { name: "Version 3 freigeben" }).boundingBox();
   expect(approve !== null && approve.y + approve.height <= 844).toBe(true);
   await page.getByText("Warum du freigibst").waitFor();
