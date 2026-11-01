@@ -20,6 +20,7 @@ import {
 } from "../code/authoring-contracts";
 import { CodeIdSchema } from "../code/contracts";
 import type { CodeVersionDiffFile } from "../code/version-contracts";
+import { printCodeSubmission, runCodeActivation } from "./code-activate";
 import {
   assertCodeDestination,
   assertCodePath,
@@ -271,7 +272,7 @@ export function buildCodeCli(locale?: string) {
                 },
               });
             }
-            if (!printStructured(ctx, data)) ctx.print(`${data.submission.version.id} · ${data.submission.status}`);
+            if (!printStructured(ctx, data)) printCodeSubmission(ctx, data);
           },
         }),
       ),
@@ -292,7 +293,10 @@ export function buildCodeCli(locale?: string) {
         },
       }),
       command("activate", {
-        summary: t("Activate an approved saved version", "Freigegebene gespeicherte Version einschalten"),
+        summary: t(
+          "List what a saved version gets, ask, and switch it on",
+          "Auflisten, was eine gespeicherte Version bekommt, nachfragen und einschalten",
+        ),
         args: projectArg,
         flags: {
           yes: confirmFlag(),
@@ -300,23 +304,22 @@ export function buildCodeCli(locale?: string) {
             description: t("Version UUID; defaults to code.json base", "Versions-UUID; Standard ist der Basisstand aus code.json"),
           }),
           activationId: flag.string({
-            required: true,
-            description: t("Activation UUID; reuse after a lost response", "Aktivierungs-UUID; nach verlorener Antwort erneut nutzen"),
+            description: t(
+              "Activation UUID; reuse after a lost response. Required without a terminal",
+              "Aktivierungs-UUID; nach verlorener Antwort erneut nutzen. Ohne Terminal nötig",
+            ),
           }),
         },
         async run({ ctx, args, flags }) {
-          if (ctx.options.ci) throw new Error(t("CI may push Code but cannot activate it.", "CI darf Code pushen, aber nie einschalten."));
-          if (!flags.yes) throw new Error(t("Activation requires --yes.", "Einschalten erfordert --yes."));
           const project = await loadCodeProject(args.project);
           const versionId = flags.version ?? project.config.baseVersionId;
           if (!versionId) throw new Error(t("No saved version. Push first.", "Keine gespeicherte Version. Führe zuerst push aus."));
-          const data = await request(ctx, "activate", {
+          return runCodeActivation(ctx, {
             codeId: project.config.codeId,
             versionId,
             activationId: flags.activationId,
+            yes: Boolean(flags.yes),
           });
-          if (!printStructured(ctx, data)) ctx.print(`${data.activation.id} · ${data.activation.state}`);
-          return ["failed", "cancelled"].includes(data.activation.state) ? 1 : 0;
         },
       }),
       command("run", {

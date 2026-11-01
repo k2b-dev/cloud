@@ -23,6 +23,8 @@ import {
   type CodePageReady,
   type CodePageRun,
   type CodePageRunDetail,
+  type CodePageSecret,
+  type CodePageSecrets,
   type CodePageTab,
   type CodePageTarget,
   type CodePageVersion,
@@ -30,6 +32,7 @@ import {
   coreQuery,
   ManifestSchema,
   RunListSchema,
+  SecretListSchema,
   TargetAccessSchema,
   VersionDiffSchema,
   VersionListSchema,
@@ -47,6 +50,9 @@ const MISSING_ACCESS_CHECKS = 3;
 const MISSING_ACCESS_BATCH = 10;
 /** Distinct targets named on one page; a version has at most 200 operations. */
 const TARGET_LIMIT = 50;
+/** Pages of 20 secrets read for one page view; Core bounds each page by items and bytes. */
+const SECRET_PAGES = 10;
+const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed"] as const;
 
 /** The owning resource, or null for personal Code. */
 const ownerRefOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.ref : null);
@@ -80,7 +86,8 @@ const callerOf = (c: Context): CapabilityCaller => ({
   requestId: c.req.header("x-request-id"),
 });
 
-const readTab = (value: string | null): CodePageTab => (value === "runs" || value === "versions" ? value : "overview");
+const readTab = (value: string | null): CodePageTab =>
+  value === "runs" || value === "versions" || value === "secrets" ? value : "overview";
 const uuid = z.uuid();
 
 /** Who is looking: only members may see other people's names, as in the directory. */
@@ -468,6 +475,67 @@ const loadReady = async (
       (runId) => loadCodeRunCalls(invoke, code.id, runId, 0, MISSING_ACCESS_BATCH),
     );
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
+  /** Every read goes through Core's editor-only list; a failure on any page shows as an error, never as a shorter list. */
+  const loadSecrets = async (): Promise<CodePageSecrets | null> => {
+    // Without the versions a write could not tell whether it must submit one.
+    if (!versionsResult.ok) return null;
+    const listed: z.infer<typeof SecretListSchema>["items"] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < SECRET_PAGES && (page === 0 || cursor); page++) {
+      const after: string | null = cursor;
+      const read = await invoke(
+        coreQuery("code.secret.list", { codeId: code.id, limit: PAGE, ...(after ? { cursor: after } : {}) }),
+        wrapped(SecretListSchema),
+      );
+      if (!read.ok) return null;
+      const items: z.infer<typeof SecretListSchema> = read.data.data.data;
+      listed.push(...items.items);
+      cursor = items.nextCursor;
+    }
+    const setters = await loadPeople(
+      listed.map((item) => item.valueSetBy),
+      viewer,
+    ).catch(() => new Map<string, CodePagePerson>());
+    // A rejected, expired or withdrawn submission can never run, so its binding still needs a version.
+    const latestUsable = latest && !["rejected", "expired", "cancelled"].includes(latest.status);
+    const latestManifest = !latestUsable
+      ? null
+      : latest.version.id === code.activeVersionId
+        ? activeManifest
+        : latest.version.id === waitingReceipt?.version.id
+          ? waitingManifest
+          : await loadManifest(invoke, code.id, latest.version.id);
+    const items = listed.map((item): CodePageSecret => {
+      const carries = (manifest: z.infer<typeof ManifestSchema> | null) =>
+        manifest?.secrets?.some((binding) => binding.binding_revision === item.binding_revision) ?? false;
+      return {
+        ...item,
+        valueSetBy: item.valueSetBy ? (setters.get(item.valueSetBy) ?? null) : null,
+        usedIn: [
+          ...(activeVersion && activeManifest?.secrets?.some((binding) => binding.name === item.name)
+            ? [{ number: activeVersion.number, state: "active" as const }]
+            : []),
+          ...(waitingReceipt && waitingManifest?.secrets?.some((binding) => binding.name === item.name)
+            ? [{ number: waitingReceipt.version.number, state: "waiting" as const }]
+            : []),
+        ],
+        unsubmitted:
+          !item.configured || !latest || carries(activeManifest) || carries(latestManifest)
+            ? false
+            : latestUsable && !latestManifest
+              ? null
+              : true,
+      };
+    });
+    const wanted = url.searchParams.get("secret");
+    return {
+      items,
+      more: cursor !== null,
+      selected: items.find((item) => item.name === wanted)?.name ?? items[0]?.name ?? null,
+      notice: SECRET_NOTICES.find((notice) => notice === url.searchParams.get("notice")) ?? null,
+      latest: latest ? { id: latest.version.id, number: latest.version.number } : null,
+    };
+  };
   const activeVersion =
     versions.find((version) => version.active) ??
     (olderActive ? versionView({ version: olderActive }, people, code.activeVersionId) : null);
@@ -514,6 +582,7 @@ const loadReady = async (
         })),
       };
   }
+  const secrets = tab === "secrets" && code.permission === "editor" ? await loadSecrets() : null;
   return {
     kind: "ready",
     code: { id: code.id, title: code.title, state: code.state, activeVersionId: code.activeVersionId, pauseReason: code.pauseReason },
@@ -537,6 +606,7 @@ const loadReady = async (
     run,
     diff,
     selectionFailed: Boolean((selectedRunId && !run) || (selectedVersionId && !diff)),
+    secrets,
   };
 };
 
@@ -619,7 +689,9 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
   try {
     // Like directory search: members see other people's names, guests only their own.
     const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
-    return { ...base, state: await loadReady(c, options, invoke, caller, code, tab, url, viewer, attentionOwner) };
+    // Secrets are for editors; anyone else following such a link lands on the overview.
+    const shown = tab === "secrets" && code.permission !== "editor" ? "overview" : tab;
+    return { ...base, tab: shown, state: await loadReady(c, options, invoke, caller, code, shown, url, viewer, attentionOwner) };
   } catch {
     return { ...base, state: { kind: "error" } };
   }

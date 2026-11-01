@@ -20,6 +20,7 @@ import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
+import { CodeSecretsTab } from "./CodeSecrets";
 import { loadCodeRunCalls } from "./calls";
 import {
   ActivationSchema,
@@ -360,6 +361,7 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
   const tabs = () => [
     { id: "overview", label: t().tabOverview, href: props.data.href },
     { id: "runs", label: t().tabRuns, href: withQuery(props.data.href, { tab: "runs" }) },
+    ...(editor() ? [{ id: "secrets", label: t().tabSecrets, href: withQuery(props.data.href, { tab: "secrets" }) }] : []),
     {
       id: "versions",
       label: t().tabVersions,
@@ -433,6 +435,9 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
         </Match>
         <Match when={props.data.tab === "runs"}>
           <Runs data={props.data} state={props.state} text={props.text} />
+        </Match>
+        <Match when={props.data.tab === "secrets"}>
+          <CodeSecretsTab data={props.data} state={props.state} />
         </Match>
         <Match when={props.data.tab === "versions"}>
           <Versions data={props.data} state={props.state} text={props.text} onActivate={() => activate("waiting")} />
