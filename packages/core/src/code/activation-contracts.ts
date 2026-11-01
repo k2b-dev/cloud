@@ -57,6 +57,12 @@ export const CodeTargetAccessSchema = z
     /** The version whose activation created this grant; later versions with the same permission reuse it. */
     activatedVersionId: z.uuid(),
     state: z.enum(["present", "removed", "unavailable"]),
+    /**
+     * For a removed grant: the person whose `code.access.rm` removed it and when, from that removal's audit event.
+     * Null when no such event is known, for example after audit retention or for a removal by Core's cleanup.
+     */
+    removedBy: z.uuid().nullable(),
+    removedAt: z.iso.datetime().nullable(),
   })
   .strict();
 export type CodeTargetAccess = z.infer<typeof CodeTargetAccessSchema>;

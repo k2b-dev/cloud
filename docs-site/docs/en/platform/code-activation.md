@@ -47,8 +47,12 @@ capability invocation.
 
 Each access observation names its grant, target, operations and state
 (`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
-`activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
-shows them.
+`activatedVersionId` of the activation that created it. A removed grant also
+carries `removedBy` and `removedAt`: the person and time of the newest allowed
+`code.access.rm` audit event for that grant, Code account and target. The
+platform writes that event in the same transaction as the target's removal.
+Both are `null` when no such event exists, for example after audit retention.
+The [Code page](/en/docs/platform/code-page) shows them.
 
 `/api/code/access/target` serves the share dialog's
 [Code with access](/en/docs/identity/authorization#code-with-access) section and

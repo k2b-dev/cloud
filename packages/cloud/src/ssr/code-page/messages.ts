@@ -1,6 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 
 type Name = { name: string };
+/** Who removed access at a target, when the viewer may see the name, and when: today or on a date. */
+type Removal = { name: string | null; today: boolean; date: string; time: string };
 type Version = { version: number };
 
 const OUTCOME_DE: Record<string, string> = {
@@ -141,6 +143,9 @@ export const codePageMessages = i18n.define({
       newOnSwitchOn: ({ version }: Version) => `new when version ${version} is switched on`,
       alsoNew: ({ operations }: { operations: string }) => `adds ${operations}`,
       removed: "Access removed",
+      removedRow: ({ name, today, date, time }: Removal) => `removed${name ? ` by ${name}` : ""} ${today ? "today" : `on ${date}`} at ${time}`,
+      removedSentence: ({ name, today, date, time }: Removal) =>
+        `${name ?? "Someone"} removed it ${today ? "today" : `on ${date}`} at ${time}.`,
       targetDeleted: "Target deleted",
       unavailable: "Not reachable right now",
       pagesAndRoutes: "Pages and routes",
@@ -348,6 +353,9 @@ export const codePageMessages = i18n.define({
       newOnSwitchOn: ({ version }: Version) => `neu beim Einschalten von Version ${version}`,
       alsoNew: ({ operations }: { operations: string }) => `dazu neu ${operations}`,
       removed: "Zugriff entfernt",
+      removedRow: ({ name, today, date, time }: Removal) => `${today ? "heute" : date} ${time}${name ? ` von ${name}` : ""} entfernt`,
+      removedSentence: ({ name, today, date, time }: Removal) =>
+        `${name ?? "Jemand"} hat ihn ${today ? "heute" : `am ${date}`} um ${time} entfernt.`,
       targetDeleted: "Ziel gelöscht",
       unavailable: "Gerade nicht erreichbar",
       pagesAndRoutes: "Seiten und Routen",

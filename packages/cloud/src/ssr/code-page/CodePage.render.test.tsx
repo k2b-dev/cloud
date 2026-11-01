@@ -139,9 +139,20 @@ describe("Code page states", () => {
     const removed = text("removed");
     expect(removed).toContain("Zugriff auf Space Logistik wurde entfernt.");
     expect(removed).toContain(
-      "Aufrufe an Space Logistik scheitern, bis jemand neu einschaltet. Darum ist der letzte Lauf von „lieferungenEintragen“ fehlgeschlagen. „anfragenSortieren“ läuft weiter.",
+      "Mia Koch hat ihn heute um 11:20 entfernt. Aufrufe an Space Logistik scheitern, bis jemand neu einschaltet. Darum ist der letzte Lauf von „lieferungenEintragen“ fehlgeschlagen. „anfragenSortieren“ läuft weiter.",
     );
-    expect(removed).toContain("Zugriff entfernt");
+    expect(removed).toContain("heute 11:20 von Mia Koch entfernt");
+    // A hidden name still says when; without the removal's audit event the page says only that it was removed.
+    const unnamed = text("removed-unnamed");
+    expect(unnamed).toContain("Jemand hat ihn heute um 11:20 entfernt.");
+    expect(unnamed).toContain("heute 11:20 entfernt");
+    expect(unnamed).not.toContain("Mia Koch");
+    const unknown = text("removed-unknown");
+    expect(unknown).toContain("Zugriff auf Space Logistik wurde entfernt. Aufrufe an Space Logistik scheitern");
+    expect(unknown).toContain("Zugriff entfernt");
+    expect(unknown).not.toContain("hat ihn");
+    expect(text("removed", "en")).toContain("Mia Koch removed it today at 11:20.");
+    expect(text("removed", "en")).toContain("removed by Mia Koch today at 11:20");
     expect(removed).toContain("Wieder einschalten");
     expect(removed).toContain("Mit Gustav bearbeiten");
     // Only the affected automation shows missing access; nothing is paused per automation.

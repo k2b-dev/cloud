@@ -17,6 +17,7 @@ const owner = {
 };
 const ben = { id: "00000000-0000-4000-8000-0000000000b1", name: "Ben Schulz" };
 const lea = { id: "00000000-0000-4000-8000-0000000000a1", name: "Lea Muster" };
+const mia = { id: "00000000-0000-4000-8000-0000000000c1", name: "Mia Koch" };
 const own: CodePageTarget = {
   key: "own",
   ref: owner.ref,
@@ -73,7 +74,11 @@ const runs = [
   run("2286a1b2-0000-4000-8000-000000000003", "lieferungenEintragen", "skipped", "2026-11-01T08:52:00.000Z", "previous_schedule_running"),
   run("2284a1b2-0000-4000-8000-000000000004", "lieferungenEintragen", "failed", "2026-11-01T08:30:00.000Z", "failed"),
 ];
-const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAccessRow[] => [
+const access = (
+  state: CodePageAccessRow["state"],
+  deleted = false,
+  removal: Pick<CodePageAccessRow, "removedBy" | "removedAt"> = { removedBy: null, removedAt: null },
+): CodePageAccessRow[] => [
   {
     target: own,
     operations: ["mail.conversation.tag", "mail.conversation.assign"],
@@ -83,6 +88,8 @@ const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAcc
     activatedAt: "2026-10-14T08:00:00.000Z",
     // Reused unchanged from version 3: it does not say who switched on version 4.
     activatedVersionId: "00000000-0000-4000-8000-000000000003",
+    removedBy: null,
+    removedAt: null,
   },
   {
     target: { ...space, deleted },
@@ -92,6 +99,7 @@ const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAcc
     activatedBy: ben,
     activatedAt: "2026-10-28T09:00:00.000Z",
     activatedVersionId: v4.id,
+    ...removal,
   },
 ];
 const waitingTargets: CodePageActivationRow[] = [
@@ -149,6 +157,8 @@ export const codePageFixture = (
     | "waiting"
     | "approval"
     | "removed"
+    | "removed-unnamed"
+    | "removed-unknown"
     | "deleted"
     | "paused"
     | "runs"
@@ -211,6 +221,8 @@ export const codePageFixture = (
               activatedBy: null,
               activatedAt: null,
               activatedVersionId: null,
+              removedBy: null,
+              removedAt: null,
             },
           ].filter((row, index) => index !== 1),
         }),
@@ -218,12 +230,21 @@ export const codePageFixture = (
     case "approval":
       return { ...base, tab: "overview", state: ready({ waiting: { ...v5, status: "pending" }, waitingTargets }) };
     case "removed":
+    case "removed-unnamed":
+    case "removed-unknown":
       // „lieferungenEintragen“ failed at the space whose access was removed; „anfragenSortieren“ keeps running.
+      // Mia Koch removed it at 11:20; a guest does not see her name, and without its audit event nobody knows who.
       return {
         ...base,
         tab: "overview",
         state: ready({
-          access: access("removed"),
+          access: access(
+            "removed",
+            false,
+            state === "removed-unknown"
+              ? { removedBy: null, removedAt: null }
+              : { removedBy: state === "removed" ? mia : null, removedAt: "2026-11-01T10:20:00.000Z" },
+          ),
           automations: [
             {
               entrypoint: "anfragenSortieren",

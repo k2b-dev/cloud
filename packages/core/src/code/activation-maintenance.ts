@@ -44,7 +44,7 @@ export async function reconcileCodeAccess(
       byApp.set(appId, null);
     }
   }
-  return rows.map((row) => {
+  const states = rows.map((row): CodeTargetAccess => {
     const live = byApp.get(targetApp(row.target));
     return {
       grantId: row.grant_id,
@@ -64,7 +64,33 @@ export async function reconcileCodeAccess(
               )
             ? "present"
             : "removed",
+      removedBy: null,
+      removedAt: null,
     };
+  });
+  return withRemovals(states, code.serviceAccountId);
+}
+/**
+ * Who removed a grant and when. The platform's generated `code.access.rm` writes its audit event in the same transaction
+ * as the target's tombstone; the newest allowed event for this grant, Code account and target answers it.
+ */
+async function withRemovals(rows: CodeTargetAccess[], principal: string): Promise<CodeTargetAccess[]> {
+  const removed = rows.filter((row) => row.state === "removed");
+  if (!removed.length) return rows;
+  const events = await sql<{ grant_id: string; target_type: string; target_id: string; actor_user_id: string | null; created_at: Date }[]>`
+    SELECT DISTINCT ON (metadata->>'grantId') metadata->>'grantId' AS grant_id, target_type, target_id, actor_user_id, created_at
+    FROM audit.events
+    WHERE action='code.access.rm' AND outcome='allowed'
+      AND target_id = ANY(${[...new Set(removed.map((row) => row.target.id))]}::text[])
+      AND metadata->>'grantId' = ANY(${removed.map((row) => row.grantId)}::text[])
+      AND metadata->>'principal' = ${principal}
+    ORDER BY metadata->>'grantId', created_at DESC`;
+  const byGrant = new Map(events.map((event) => [event.grant_id, event]));
+  return rows.map((row) => {
+    const event = row.state === "removed" ? byGrant.get(row.grantId) : undefined;
+    // The event must name the same target the grant was set at.
+    if (!event || event.target_type !== row.target.type || event.target_id !== row.target.id) return row;
+    return { ...row, removedBy: event.actor_user_id, removedAt: event.created_at.toISOString() };
   });
 }
 /** Cleanup waits for queued/running runs of every superseded version, then removes only unused explicit grants and revokes drained mandates. */

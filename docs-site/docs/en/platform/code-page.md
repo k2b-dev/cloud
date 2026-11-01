@@ -22,8 +22,11 @@ third-party application get the same page. It never names an application.
   and its access as operation at target. A newer version that is ready but off
   says which access it newly needs and offers **Switch on**. A version that
   waits for a Cloud administrator says so and cannot be switched on yet.
-  Removed access says which calls fail until someone switches the Code on
-  again. The automation that needs it shows **Access missing**; the others keep
+  Removed access says who removed it at the target and when ("Mia Koch
+  removed it today at 11:20"), and which calls fail until someone switches the
+  Code on again. A name the viewer may not see in the directory reads as
+  "Someone"; without the removal's audit event only the removal itself shows.
+  The automation that needs it shows **Access missing**; the others keep
   running. Only the whole Code can be paused. A deleted target, all access
   removed, and paused Code each show what fails and how to recover. Internet
   origins come from the full `manifest.internet` list reviewed with each version,

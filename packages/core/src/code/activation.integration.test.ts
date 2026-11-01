@@ -484,17 +484,32 @@ databaseSuite()("durable Code activation", () => {
     const next = await start(code, submitted.version.id);
     await run(next.id);
     const active = [...live.keys()][0]!;
+    const removedGrant = live.get(active)!;
     live.delete(active);
     tombstones.add(active);
     sets.length = 0;
+    // Without an audit event of the removal, who removed it stays unknown.
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({ grantId: active, state: "removed", removedBy: null, removedAt: null }),
+    );
+    // The platform's code.access.rm audits each removal; events for another account or target never answer.
+    const audit = (principal: string, target: { type: string; id: string }, at: string) =>
+      sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+        VALUES('code.access.rm','allowed',${ownerId}::uuid,${target.type},${target.id},
+          ${JSON.stringify({ appId: "example", grantId: active, principal })}::text::jsonb,${at}::timestamptz)`;
+    await audit(crypto.randomUUID(), removedGrant.target, "2026-10-31T11:30:00.000Z");
+    await audit(removedGrant.principal, { type: removedGrant.target.type, id: "elsewhere" }, "2026-10-31T11:40:00.000Z");
+    await audit(removedGrant.principal, removedGrant.target, "2026-10-31T11:20:00.000Z");
+    expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
+      // The Code page names who confirmed the grant and when, and who removed it at the target and when.
       expect.objectContaining({
         grantId: active,
         state: "removed",
         activatedBy: expect.any(String),
         activatedAt: expect.any(String),
         activatedVersionId: expect.any(String),
+        removedBy: ownerId,
+        removedAt: "2026-10-31T11:20:00.000Z",
       }),
     );
     expect(sets).toHaveLength(0);
