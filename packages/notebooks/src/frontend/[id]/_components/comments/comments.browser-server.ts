@@ -283,6 +283,7 @@ export const startCommentsServer = async () => {
   /** The live comments of the page served last, which the API reads and changes. */
   let scenario = SCENARIOS.base!;
   let text = NOTE;
+  let committedSnapshot = snapshot(text);
   let items: Annotation[] = [];
   const calls: Call[] = [];
   /** Keys whose first save failed on purpose ("fail once"). */
@@ -345,7 +346,19 @@ export const startCommentsServer = async () => {
       const insert = holder.suggestion ?? "";
       Object.assign(holder, { suggestionState: "accepted", suggestionStateBy: ME, suggestionStateAt: new Date(NOW).toISOString() });
       const delta = insert.length - (item.to - item.from);
-      text = text.slice(0, item.from) + insert + text.slice(item.to);
+      const committed = new Y.Doc();
+      try {
+        Y.applyUpdate(committed, Buffer.from(committedSnapshot, "base64"));
+        const content = committed.getText("codemirror");
+        committed.transact(() => {
+          content.delete(item.from, item.to - item.from);
+          content.insert(item.from, insert);
+        });
+        text = content.toString();
+        committedSnapshot = Buffer.from(Y.encodeStateAsUpdate(committed)).toString("base64");
+      } finally {
+        committed.destroy();
+      }
       for (const other of items)
         if (other !== item && other.from >= item.to) Object.assign(other, { from: other.from + delta, to: other.to + delta });
       Object.assign(item, { state: "accepted", stateBy: ME, stateAt: new Date(NOW).toISOString(), to: item.from + insert.length });
@@ -406,11 +419,20 @@ export const startCommentsServer = async () => {
         return (await file.exists()) ? new Response(file) : new Response("Not found", { status: 404 });
       }
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
+      if (url.pathname === "/api/notebooks/book01/notes/note01/document")
+        return Response.json({
+          generation: "0",
+          mode: "current",
+          historyIncomplete: false,
+          locked: false,
+          durable: { state: committedSnapshot, cursor: null },
+        });
       if (url.pathname.includes("/annotations")) return api(request, url);
       if (url.pathname.endsWith("/block-preview")) return Response.json({ markdown: text, blocks: [], diagnostics: [], headings: [] });
       if (url.pathname !== "/") return new Response("Not found", { status: 404 });
       scenario = SCENARIOS[url.searchParams.get("s") ?? "base"] ?? SCENARIOS.base!;
       text = scenario.text ?? NOTE;
+      committedSnapshot = snapshot(text);
       items = scenario.items();
       calls.length = 0;
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
@@ -469,11 +491,14 @@ export const startCommentsServer = async () => {
     },
     websocket: {
       open(socket) {
-        const updates = [{ cursor: null, payload: snapshot(text), originPeerId: null }];
+        const updates = [{ cursor: null, payload: committedSnapshot, originPeerId: null, restoreRevision: "0" }];
         socket.send(
-          JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }),
+          JSON.stringify({
+            type: notebooksYjs.wsType.syncPush,
+            payload: { noteId: "note01", restoreRevision: "0", historyIncomplete: false, updates },
+          }),
         );
-        socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01" } }));
+        socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01", restoreRevision: "0" } }));
       },
       message() {},
     },

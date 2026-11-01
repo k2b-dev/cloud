@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createPagination, ErrorResponseSchema, MessageResponseSchema, PaginationQuerySchema, parsePagination } from "../contracts";
 import { type AuthContext, auth, jsonResponse, requiresAdmin, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
-import { accountLifecycle, lifecycleJobs } from "../services";
+import { accountLifecycle, audit, lifecycleJobs } from "../services";
 
 const DeletedAccountSchema = z.object({
   id: z.uuid(),
@@ -168,14 +168,20 @@ const app = new Hono<AuthContext>()
     async (c) =>
       respond(c, async () => {
         const { kind } = c.req.valid("json");
-        switch (kind) {
-          case "ipa-backfill":
-            return ok({ message: "IPA backfill job submitted", jobId: await lifecycleJobs.submitIpaBackfill() });
-          case "local-user-backfill":
-            return ok({ message: "Local user backfill job submitted", jobId: await lifecycleJobs.submitLocalUserBackfill() });
-          case "guest-backfill":
-            return ok({ message: "Local guest backfill job submitted", jobId: await lifecycleJobs.submitGuestBackfill() });
-        }
+        const jobId =
+          kind === "ipa-backfill"
+            ? await lifecycleJobs.submitIpaBackfill()
+            : kind === "local-user-backfill"
+              ? await lifecycleJobs.submitLocalUserBackfill()
+              : await lifecycleJobs.submitGuestBackfill();
+        await audit.record({
+          action: "lifecycle.job.submit",
+          outcome: "allowed",
+          actor: { userId: c.get("user").id },
+          target: { type: "job", id: jobId },
+          metadata: { kind },
+        });
+        return ok({ message: "Lifecycle job submitted", jobId });
       }),
   )
   .get(
