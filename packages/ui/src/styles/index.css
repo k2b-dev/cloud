@@ -13744,6 +13744,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.5;
 }
 
+/* On a phone a card spans the screen with a small margin, above its control. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dictation-card {
+    width: calc(100vw - 1.25rem);
+  }
+}
+
 .k2b-ui .k2b-dictation-card__title {
   display: flex;
   align-items: center;

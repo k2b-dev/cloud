@@ -130,7 +130,7 @@ function DictationCard(props: { dictation: DictationController; notice: Dictatio
       label={content().title}
       side="above"
       align="end"
-      width="min(20rem, calc(100vw - 2.5rem))"
+      width="20rem"
       sheet={false}
       class="k2b-dictation-card"
     >
