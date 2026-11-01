@@ -34,6 +34,8 @@ export type DictationOptions = {
   target: DictationTarget;
   /** Offered beside "Try again" when live dictation is busy. */
   alternative?: DictationAlternative;
+  /** While true, dictation cannot start, such as in a read-only field; the host calls `end()` when it turns true. */
+  disabled?: () => boolean;
 };
 
 export type DictationController = {
@@ -58,6 +60,10 @@ export type DictationController = {
   discard(): void;
   /** Closes a notice; the text stays. */
   dismiss(): void;
+  /** Ends any session at once and closes the dictation; the text stays. For a field that changes or turns read-only. */
+  end(): void;
+  /** Whether dictation may start now. */
+  disabled: Accessor<boolean>;
   /** Elements that receive focus: the microphone after the end, the stop button after the start. */
   bind(role: "microphone" | "stop" | "continue", element: HTMLElement | undefined): void;
 };
@@ -128,6 +134,7 @@ export function createDictation(options: DictationOptions): DictationController 
   let timer: ReturnType<typeof setInterval> | undefined;
   let liveSince = 0;
   let disposed = false;
+  let grace: ReturnType<typeof setTimeout> | undefined;
 
   const locale = useLocale();
   const t = () => dictationMessages.resolve([locale()]).t;
@@ -146,6 +153,8 @@ export function createDictation(options: DictationOptions): DictationController 
   };
   const settle = (next: DictationNotice | null, message?: string) => {
     clearTimer();
+    if (grace) clearTimeout(grace);
+    grace = undefined;
     session = undefined;
     abort = undefined;
     setStatus("idle");
@@ -214,7 +223,7 @@ export function createDictation(options: DictationOptions): DictationController 
   };
 
   const start = () => {
-    if (disposed || offline() || status() !== "idle") return;
+    if (disposed || offline() || options.disabled?.() || status() !== "idle") return;
     setNotice(null);
     if (!restarting) setDevice(undefined);
     options.target.begin();
@@ -245,17 +254,16 @@ export function createDictation(options: DictationOptions): DictationController 
     }
     setStatus("finishing");
     clearTimer();
-    const grace = setTimeout(() => {
+    // The deadline stays until the session settled, also when stop() itself fails, so "Finishing" always ends.
+    grace = setTimeout(() => {
       if (abort !== controller) return;
       controller.abort();
-      settle(null);
+      settle({ kind: "interrupted" });
     }, stopGraceMs);
     try {
       await current.stop();
     } catch {
-      // The event stream reports how it ended.
-    } finally {
-      clearTimeout(grace);
+      // The event stream reports how it ended; the deadline covers a stream that stalls.
     }
   };
 
@@ -326,6 +334,20 @@ export function createDictation(options: DictationOptions): DictationController 
       setNotice(null);
       close();
     },
+    end: () => {
+      restarting = false;
+      if (status() === "idle" && !notice() && !open) return;
+      abort?.abort();
+      clearTimer();
+      if (grace) clearTimeout(grace);
+      grace = undefined;
+      session = undefined;
+      abort = undefined;
+      setStatus("idle");
+      setNotice(null);
+      close();
+    },
+    disabled: () => Boolean(options.disabled?.()),
     bind: (role, element) => {
       if (element) elements[role] = element;
       else delete elements[role];

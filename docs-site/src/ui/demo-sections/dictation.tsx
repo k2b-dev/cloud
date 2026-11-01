@@ -21,36 +21,50 @@ const scriptedSource = (outcome: () => Outcome): DictationSource => ({
       wake?.();
     };
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const later = (ms: number, run: () => void) => timers.push(setTimeout(run, ms));
-    signal.addEventListener("abort", () => {
+    const cleanup = () => {
       ended = true;
       for (const timer of timers) clearTimeout(timer);
+    };
+    const later = (ms: number, run: () => void) => timers.push(setTimeout(run, ms));
+    signal.addEventListener("abort", () => {
+      cleanup();
       wake?.();
     });
     const chosen = outcome();
     const codes = { blocked: "microphone_blocked", quota: "daily_limit", busy: "overloaded", elsewhere: "busy_elsewhere" } as const;
-    if (chosen in codes) later(300, () => push({ type: "error", code: codes[chosen as keyof typeof codes], retryable: chosen !== "quota" }));
+    if (chosen in codes)
+      later(300, () => push({ type: "error", code: codes[chosen as keyof typeof codes], retryable: chosen !== "quota" }));
     else {
       push({ type: "state", state: "connecting" });
       later(300, () =>
-        push({ type: "state", state: "live", maxMs: chosen === "countdown" ? 70_000 : 600_000, device: { id: "default", label: "Built-in microphone" } }),
+        push({
+          type: "state",
+          state: "live",
+          maxMs: chosen === "countdown" ? 70_000 : 600_000,
+          device: { id: "default", label: "Built-in microphone" },
+        }),
       );
       const level = setInterval(() => push({ type: "level", level: Math.random() * 0.9 }), 100);
-      signal.addEventListener("abort", () => clearInterval(level));
+      timers.push(level);
       words.forEach((word, index) => later(600 + index * 280, () => push({ type: "text", text: `${index ? " " : ""}${word}` })));
       if (chosen === "interrupted") later(600 + 6 * 280, () => push({ type: "error", code: "connection_lost", retryable: true }));
     }
     return {
       events: {
         async *[Symbol.asyncIterator]() {
-          while (!ended) {
-            const event = queue.shift();
-            if (!event) {
-              await new Promise<void>((done) => (wake = done));
-              continue;
+          // Every way out, a finish, an error or the reader leaving, stops the script's timers.
+          try {
+            while (!ended) {
+              const event = queue.shift();
+              if (!event) {
+                await new Promise<void>((done) => (wake = done));
+                continue;
+              }
+              yield event;
+              if ((event.type === "state" && event.state === "finished") || event.type === "error") return;
             }
-            yield event;
-            if ((event.type === "state" && event.state === "finished") || event.type === "error") return;
+          } finally {
+            cleanup();
           }
         },
       },

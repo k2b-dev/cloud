@@ -1,8 +1,8 @@
 import { EditorView } from "@codemirror/view";
 import {
   createDictation,
-  DictationBar,
   type DictationAlternative,
+  DictationBar,
   DictationButton,
   type DictationSource,
   Dropdown,
@@ -13,7 +13,7 @@ import {
   Toolbar as UiToolbar,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, shortcutLabel } from "./actions";
 import { dictationTarget } from "./dictation";
 import type { EditorAction, EditorHandle } from "./editor-state";
@@ -143,7 +143,16 @@ export function Toolbar(props: ToolbarProps) {
       return props.dictation?.alternative;
     },
     target: dictationTarget(props.editor),
+    disabled: () => !props.dictation || !props.editor.state() || Boolean(props.editor.state()?.readOnly),
   });
+  // A note that turns read-only, or a host that drops the source, ends dictation; the words so far stay.
+  createEffect(
+    on(
+      () => [Boolean(props.dictation), Boolean(props.editor.state()?.readOnly)] as const,
+      () => dictation.end(),
+      { defer: true },
+    ),
+  );
   const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
 
   onMount(() => {
