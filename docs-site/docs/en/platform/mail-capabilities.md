@@ -98,9 +98,10 @@ Successful adapter dry runs identify current people with mailbox-wide
 administration in `managerUserIds`, including nested manager-group members.
 Generated `mail.code.access.set` answers include the mailbox title and these IDs
 only when the activating person passes mailbox `access.readable`. This reader
-check uses the same current mailbox and assigned-only grants as Mail. Core obtains activation-notification recipients separately through the
-server-only lookup. Ordinary Mail permissions,
-assigned-only access and sending behavior are unchanged.
+check uses the same current mailbox and assigned-only grants as Mail. Core
+obtains activation-notification recipients separately through the server-only
+lookup. Ordinary Mail permissions, assigned-only access and sending behavior
+are unchanged.
 
 Mail declares `mailbox` as both a Code target and a type that may own Code.
 Core manages access through `mail.code.access.set`, `mail.code.access.list`
