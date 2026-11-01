@@ -350,6 +350,19 @@ describe("live dictation in the composer", () => {
     }
   });
 
+  test("closing a card returns the focus to the microphone", async () => {
+    const page = await open({});
+    try {
+      await page.getByRole("button", { name: "Dictate" }).click();
+      await page.evaluate(() => emit({ type: "error", code: "busy_elsewhere", retryable: false }));
+      await page.getByRole("dialog", { name: "You are dictating in another tab" }).waitFor();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Dictate");
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("offline, the microphone stays focusable and says why it waits", async () => {
     const page = await open({});
     try {
