@@ -112,6 +112,45 @@ for (const [name, options] of Object.entries(profiles))
         await context.close();
       }
     });
+    test("dictation stands in for the formatting row at its height and writes at the caret", async () => {
+      const context = await browser.newContext(options);
+      try {
+        const page = await context.newPage();
+        const errors = pageErrors(page);
+        await page.goto(server.url.href + "?state=dictation");
+        const microphone = page.getByRole("button", { name: "Diktieren", exact: true });
+        await microphone.waitFor();
+        await page.evaluate(() => {
+          const view = window.sharedComponentHarness.view;
+          view.dispatch({ selection: { anchor: view.state.doc.length } });
+        });
+        await settled(page);
+        // A person dictates while editing: the toolbar is in its active place, on a phone above the keyboard. The
+        // focused view keeps restarting its caret blink, so the rest waits for frames instead of `settled`.
+        await page.evaluate(() => window.sharedComponentHarness.view.focus());
+        const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        await frames();
+        const row = (await page.locator(".k2b-ste-toolbar").boundingBox())!;
+        // The microphone stays visible at the end of the row, also where the row scrolls on a phone.
+        const mic = (await microphone.boundingBox())!;
+        expect(mic.x + mic.width).toBeLessThanOrEqual(row.x + row.width + 1);
+        await microphone.click();
+        await page.evaluate(() => {
+          const emit = (window as unknown as { dictationEmit: (event: unknown) => void }).dictationEmit;
+          emit({ type: "state", state: "live", maxMs: 600_000 });
+          emit({ type: "text", text: "Bis bald" });
+        });
+        await page.getByRole("group", { name: "Diktat läuft" }).waitFor();
+        await page.waitForFunction(() => window.sharedComponentHarness.view.state.doc.toString().endsWith("Lena Bis bald"));
+        await frames();
+        expect((await page.locator(".k2b-ste-toolbar").boundingBox())!.height).toBe(row.height);
+        await page.getByRole("button", { name: "Diktat verwerfen" }).click();
+        await page.waitForFunction(() => window.sharedComponentHarness.view.state.doc.toString().endsWith("Lena"));
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
     test("rejected input remains copyable through notice dismissal", async () => {
       const context = await browser.newContext(options);
       try {

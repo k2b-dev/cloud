@@ -2,7 +2,20 @@ import { history, historyKeymap, redo, undo } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/solid";
-import { children, createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  children,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import {
   Dropdown,
@@ -16,10 +29,14 @@ import { SegmentedControl } from "../actions/SegmentedControl";
 import { Toolbar } from "../actions/Toolbar";
 import { Kbd } from "../content/Kbd";
 import { dialogCore } from "../feedback/dialog-core";
+import { createDictation } from "../inputs/dictation/create-dictation";
+import { DictationBar, DictationButton, dictationBarShown } from "../inputs/dictation/Dictation";
+import type { DictationAlternative, DictationSource } from "../inputs/dictation/types";
 import { NumberInput } from "../inputs/NumberInput";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 import BottomSheet, { bottomSheetAdaptiveOptions } from "../layout/BottomSheet";
+import { codeMirrorDictationTarget, dictationExtension } from "./dictation";
 import { createTextEditor, type TextEditorController, type TextEditorMode, type TextEditorOptions } from "./engine";
 import { commands, formatLabels, type InlineFormat } from "./format";
 import { findTables, inspectTableStructure } from "./markdown-table";
@@ -62,6 +79,11 @@ export type TextEditorProps = {
   onTableCheck?: (needsCheck: boolean) => void;
   /** Host-owned sync status. Its row appears only while there is a status or a table check; keep it set across transitions. */
   status?: JSX.Element;
+  /**
+   * Live dictation as the last control of the toolbar, so it never scrolls away. While it runs, the dictation bar
+   * stands in for the formatting controls in the same row. Words land at the caret as typed text does.
+   */
+  dictation?: { source: DictationSource; alternative?: DictationAlternative };
   class?: string;
 };
 
@@ -369,6 +391,24 @@ export function TextEditor(props: TextEditorProps) {
   let root!: HTMLDivElement;
   let mount!: HTMLDivElement;
   let editor: TextEditorController | undefined;
+  // The view is read-only while it loads or recovers, too; dictation only runs where words can land.
+  const dictationWritable = () => !props.readOnly && !props.loading && ready() && recovery() === undefined && mode() !== "plain";
+  const dictation = createDictation({
+    source: {
+      start: (options) => props.dictation!.source.start(options),
+      devices: () => props.dictation?.source.devices() ?? Promise.resolve([]),
+    },
+    get alternative() {
+      return props.dictation?.alternative;
+    },
+    target: codeMirrorDictationTarget(() => editor?.view),
+    disabled: () => !props.dictation || !dictationWritable(),
+  });
+  // A field that turns read-only or plain hides the toolbar; dictation then ends and the words so far stay.
+  // A memo compares the value, so ordinary edits never end it.
+  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${dictationWritable()}`);
+  createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
+  const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
   const menuBlocked = () => !!props.loading || !ready() || recovery() !== undefined;
   const blocked = () => !!props.readOnly || menuBlocked();
   const updateCheck = () => {
@@ -841,6 +881,7 @@ export function TextEditor(props: TextEditorProps) {
           if (update.docChanged) queueMicrotask(() => setDocumentRevision((revision) => revision + 1));
         }),
         props.extensions ?? [],
+        props.dictation ? dictationExtension() : [],
       ],
       host: {
         ...props.host,
@@ -1076,7 +1117,10 @@ export function TextEditor(props: TextEditorProps) {
       <Show when={!props.readOnly && mode() !== "plain" && props.toolbar !== false}>
         <div class="k2b-ste-toolbar-slot">
           <Toolbar class="k2b-ste-toolbar" label={t().formatting}>
-            <For each={[toolbar.slice(0, 3), toolbar.slice(3, 6), toolbar.slice(6)]}>
+            <Show when={dictating()}>
+              <DictationBar dictation={dictation} />
+            </Show>
+            <For each={dictating() ? [] : [toolbar.slice(0, 3), toolbar.slice(3, 6), toolbar.slice(6)]}>
               {(group) => (
                 <Toolbar.Group class="k2b-ste-tool-group">
                   <For each={group}>
@@ -1114,7 +1158,7 @@ export function TextEditor(props: TextEditorProps) {
               )}
             </For>
             {/* Editing is always formatted. Only a source view reached through the table check offers the way back. */}
-            <Show when={mode() === "source"}>
+            <Show when={mode() === "source" && !dictating()}>
               <SegmentedControl
                 class="k2b-ste-views"
                 size="sm"
@@ -1126,6 +1170,9 @@ export function TextEditor(props: TextEditorProps) {
                 ]}
                 onValueChange={selectMode}
               />
+            </Show>
+            <Show when={props.dictation && !dictating()}>
+              <DictationButton dictation={dictation} class="k2b-ste-tool k2b-ste-dictate" />
             </Show>
           </Toolbar>
         </div>

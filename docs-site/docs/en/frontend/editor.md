@@ -15,7 +15,8 @@ on the [text editor](/ui/text-editor) from `@k2b/ui` and adds building blocks
 that an application places where it wants them:
 
 - `<Editor>`: the writing surface;
-- `<Toolbar>`: a formatting toolbar, anywhere on the page;
+- `<Toolbar>`: a formatting toolbar, anywhere on the page, optionally with
+  live dictation;
 - `<BubbleMenu>`: a compact menu at selected text;
 - `<SlashMenu>`: actions that open when a person types `/`.
 
@@ -107,6 +108,28 @@ block action typed after text starts on a new line; set `inline: true` to
 insert at the caret instead. CodeMirror shows one completion popup per editor,
 so further completion sources, such as links or tags, go into `sources`. A
 source that throws drops only its own options.
+
+## Dictate into the note
+
+Pass `dictation={{ source }}` to `<Toolbar>` to add **Dictate** as the first
+control after the action row, so it never scrolls away on a phone. A Cloud
+application passes `createLiveDictationSource({ app })` from
+`@k2b/cloud/ai/browser`; any other source that follows the
+[dictation contract](/en/ui/input/dictation) works the same way. Without a
+source there is no microphone.
+
+While dictation runs and while it finishes, the dictation bar stands in for
+the action row in the same line; on a phone it fills the line. Words go into
+the document at the caret position where dictation started, as typed text
+does. In a shared note, others see them at once, and they last as long as the
+host saves typed text. The mark moves along with local and remote edits, so
+the person can type elsewhere meanwhile. **Discard** removes exactly the
+dictated ranges in one step, including what the person typed inside them.
+Undo groups dictated words as it groups typing; dictation is kept apart from
+the edits before and after it.
+
+A host with its own controls uses `dictationTarget(editor)` with
+`createDictation()`, `DictationButton`, and `DictationBar` from `@k2b/ui`.
 
 ## Add extensions later
 
