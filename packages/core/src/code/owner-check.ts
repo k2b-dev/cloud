@@ -5,7 +5,7 @@ import { readCodeResourceOwnerTitle } from "./activation-transport";
 import type { Code } from "./contracts";
 
 /** Read the current owner's title independently of whoever activated resource Code. */
-export async function readCodeRunOwnerTitle(code: Code, db: SQL = sql): Promise<string | null> {
+export async function readCodeRunOwnerTitle(code: Code, db: SQL = sql, signal?: AbortSignal): Promise<string | null> {
   if (code.owner.kind === "person") {
     const [person] = await db<{ title: string }[]>`SELECT COALESCE(NULLIF(display_name,''),uid) AS title
       FROM auth.users WHERE id=${code.owner.userId}::uuid`;
@@ -26,7 +26,7 @@ export async function readCodeRunOwnerTitle(code: Code, db: SQL = sql): Promise<
       if (removed) return null;
       throw new CodeOwnerUnavailableError("Code owner reader unavailable");
     }
-    return await readCodeResourceOwnerTitle(code.owner.ref, code.serviceAccountId);
+    return await readCodeResourceOwnerTitle(code.owner.ref, code.serviceAccountId, signal);
   } catch {
     throw new CodeOwnerUnavailableError("Code owner reader unavailable");
   }
@@ -39,8 +39,10 @@ export async function readCodeRunOwnerTitle(code: Code, db: SQL = sql): Promise<
  * or dispatch lock: network reads precede the short transaction that commits the
  * pause. On false, C13 must skip its claimed run without issuing a runner token.
  */
-export async function checkCodeOwnerBeforeRun(code: Code): Promise<boolean> {
-  const title = await readCodeRunOwnerTitle(code);
+export async function checkCodeOwnerBeforeRun(code: Code, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
+  const title = await readCodeRunOwnerTitle(code, sql, signal);
+  signal?.throwIfAborted();
   return sql.begin(async (tx) => {
     const [current] = await tx<{ state: string }[]>`SELECT state FROM code.codes WHERE id=${code.id} FOR UPDATE`;
     if (!current || current.state === "deleting") return false;

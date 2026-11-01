@@ -75,9 +75,15 @@ describe("Core Code data contracts", () => {
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
-      ["code.pause", "code.policy.update", "code.resume", "code.version.approve", "code.version.reject", "code.version.submit"].map(
-        (id) => ({ id, code: false }),
-      ),
+      [
+        "code.pause",
+        "code.policy.update",
+        "code.resume",
+        "code.run",
+        "code.version.approve",
+        "code.version.reject",
+        "code.version.submit",
+      ].map((id) => ({ id, code: false })),
     );
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
@@ -102,6 +108,22 @@ describe("Core Code data contracts", () => {
     expect(Buffer.byteLength(JSON.stringify({ text: "\u0001".repeat(input.length) }))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES / 2);
     expect(codeQueryContracts.versionRead.input.safeParse({ ...input, length: 16_385 }).success).toBe(false);
     expect(codeQueryContracts.list.input.safeParse({ limit: 51 }).success).toBe(false);
+  });
+  test("manual run requires request authority and a write credential at the capability boundary", async () => {
+    const input = { codeId: "c_8hw2", entrypoint: "weekly", input: null };
+    const action = aiCapabilities.actions["code.run"];
+    expect(await action.run(input, { ...context, idempotencyKey: "one", authority: undefined })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+    expect(
+      await action.run(input, {
+        ...context,
+        idempotencyKey: "one",
+        authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
   });
   test("missing authority and scope-limited credentials cannot fall back to the context's user", async () => {
     const result = await aiCapabilities.queries["code.read"].run({ codeId: "c_8hw2" }, { ...context, authority: undefined });
