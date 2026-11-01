@@ -67,8 +67,16 @@ test("dragging the navigation keeps the editor mounted and the text at the top o
       const port = document.querySelector<HTMLElement>(".notebook-document-surface .k2b-scroll-area")!;
       const content = document.querySelector(".cm-content")!;
       const top = port.getBoundingClientRect().top;
-      const anchor = [...content.querySelectorAll(".cm-line")].find((line) => line.getBoundingClientRect().top > top + 40)!;
-      const start = anchor.getBoundingClientRect().top;
+      // The reading point: the block at the page's top edge and how far into it the edge falls. A table there keeps the
+      // point inside it, so lines below it move with its own rewrap.
+      const left = content.getBoundingClientRect().left + 2;
+      const anchor = document.elementFromPoint(left, top + 1)!.closest(".cm-content > *")!;
+      const share = (top - anchor.getBoundingClientRect().top) / anchor.getBoundingClientRect().height;
+      const point = () => {
+        const box = anchor.getBoundingClientRect();
+        return box.top + share * box.height - port.getBoundingClientRect().top;
+      };
+      const start = point();
       state.replaced = 0;
       state.offsets = [];
       // Rendered tables and formulas are replaced only when the editor rebuilds them.
@@ -77,12 +85,10 @@ test("dragging the navigation keeps the editor mounted and the text at the top o
           for (const node of record.removedNodes)
             if (node instanceof Element && node.matches(".k2b-ste-table, .cm-katex-block, [class*='widget']")) state.replaced++;
       }).observe(content, { childList: true, subtree: true });
-      // Each frame reads what the last one painted.
-      const read = () => {
-        state.offsets.push(Math.round(anchor.getBoundingClientRect().top - start));
-        requestAnimationFrame(read);
-      };
-      requestAnimationFrame(read);
+      // Each resize of the page's scroll area reads the layout the browser paints next: this observer was created after
+      // the editor's, so it runs after the editor held its place and before the paint. A read in an animation frame
+      // could see a width the pointer set before the resize callbacks ran, a state that is never painted.
+      new ResizeObserver(() => state.offsets.push(Math.round(point() - start))).observe(port);
     });
     const handle = (await page.locator('.k2b-app-workspace__resize[data-app-workspace-resize="sidebar"]').boundingBox())!;
     await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);

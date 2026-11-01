@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Deployment requirements
@@ -319,6 +319,12 @@ minutes), and application setup**, plus the deployment's scheduling margin.
 While bootstrap waits, there is no HTTP listener or readiness response. A
 permanent credential/protocol failure exits immediately; an exhausted network
 budget exits so the container restart policy can retry.
+
+Cloud no longer rewrites an application's `DATABASE_URL` to add
+`application_name`. The platform clients (`sql` and `createSql()` from
+`@k2b/cloud`) still name their connections `cloud:<app-id>` unless the URL sets
+an operator name or startup options. An application that still uses Bun-global
+clients shows no Cloud application name in `pg_stat_activity`.
 
 **Key-only production operation is not yet supported.** Keep each app's
 infrastructure environment values until the platform-client import migration
@@ -1008,6 +1014,15 @@ needed. Verify source discovery and one authorized event read after upgrading;
 a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
+
+### Enable Code access to Spaces
+
+Deploy Spaces with the platform and Core that provide
+[Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
+Spaces registers `space` as a Code target and uses its existing access tables
+and live outbox; this adds no Spaces migration, service, or configuration.
+Verify a grant on one disposable Space, access removal, and refusal at another
+Space shared with all signed-in users. Normal person sharing keeps its behavior.
 
 ### Upgrade Spaces task deadlines
 

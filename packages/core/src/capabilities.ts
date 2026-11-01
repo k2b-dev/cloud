@@ -70,7 +70,9 @@ import {
   diffCodeVersion,
   listCodeVersions,
   readCodeVersionDiff,
+  reviewCodeExecutionChange,
   reviewCodeVersionDecision,
+  reviewCodeVersionSubmission,
   setCodePaused,
   submitCodeVersion,
 } from "./code/versions";
@@ -1320,6 +1322,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission(input, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion(input, ctx)),
     },
     "code.version.approve": {
@@ -1361,6 +1367,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, true, ctx)),
     },
     "code.resume": {
@@ -1372,6 +1382,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { ask: "keeps_working" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, false, ctx)),
     },
     "code.policy.update": {

@@ -1,6 +1,10 @@
 ---
 name: cloud-contacts
 description: "Use for work involving the user's Cloud address books or contacts: finding or resolving people and organizations, choosing exact contact points, creating or updating records, favorites, tags, moves, and contact notes. Load it whenever a request involves Cloud Contacts, an address book, a contact, or recipient identity."
+load-tools:
+  - contacts.contact.search
+  - contacts.contact.suggest
+  - contacts.contact.read
 ---
 
 # Work with Cloud Contacts

@@ -690,3 +690,8 @@ Core owns `invokeCodeAccess`, `signCodeAccessProof`, `verifyCodeAccessProof`, `C
 `CodeAccessCleanupClaims`, `signCodeAccessList`, `verifyCodeAccessList` and
 `CodeAccessListClaims` from `@k2b/cloud/capabilities/server`. Target adapters
 do not issue proofs. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
+
+Core activation services and status schemas are documented in
+[Code activation](/en/docs/platform/code-activation). These Core-owned services
+are consumed by the Code CLI, lifecycle, runner and resource UI slices; they are
+not application imports from the public platform package.

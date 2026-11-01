@@ -4795,7 +4795,13 @@ export const mailCapabilities = localizeCapabilityErrors(
         description: "A mailbox the actor may access.",
         icon: "ti ti-inbox",
         reader: "mailbox.read",
-        access: mailboxCodeAccess,
+        access: {
+          ...mailboxCodeAccess,
+          readable: async ({ id, principals }) => {
+            const scope = await resolveMailboxScope(id);
+            return scope.ok ? mailboxAccess.readableMailboxPrincipals(scope.data.id, principals) : [];
+          },
+        },
         pages: ["/app/mail/:id"],
       },
       "sender-identity": {

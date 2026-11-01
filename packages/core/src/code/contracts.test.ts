@@ -77,16 +77,9 @@ describe("Core Code data contracts", () => {
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
-      [
-        "code.secret.set",
-        "code.secret.delete",
-        "code.version.submit",
-        "code.version.approve",
-        "code.version.reject",
-        "code.pause",
-        "code.resume",
-        "code.policy.update",
-      ].map((id) => ({ id, code: false })),
+      ["code.pause", "code.policy.update", "code.resume", "code.secret.delete", "code.secret.set", "code.version.approve", "code.version.reject", "code.version.submit"].map(
+        (id) => ({ id, code: false }),
+      ),
     );
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
