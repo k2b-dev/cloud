@@ -412,6 +412,7 @@ test("cleared data replaces the shown result, while a cache miss for the same da
   const { tab, panels } = await open({});
   try {
     await ready(tab);
+    await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
     const waiting = (variant: string): DashboardPanelResult => ({
       panelId: "req",
       status: "waiting",
@@ -421,13 +422,18 @@ test("cleared data replaces the shown result, while a cache miss for the same da
       nextRefreshAt: "2026-10-20T14:34:00.000Z",
     });
     panels.set("req", { json: waiting("fixture") });
-    const reread = tab.waitForResponse((response) => response.url().includes("/panels/req"));
-    await tab.clock.runFor(60000);
-    await reread;
-    await ready(tab);
+    // Advance the paused clock only after the whole round has settled: a panel's next deadline counts from
+    // when its answer was handled, and a timer scheduled after the jump would never fire.
+    const settledRound = async () => {
+      const answered = tab.waitForResponse((response) => response.url().includes("/panels/req"));
+      await tab.clock.runFor(60000);
+      await answered;
+      await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
+    };
+    await settledRound();
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
     panels.set("req", { json: waiting("after-clear") });
-    await tab.clock.runFor(60000);
+    await settledRound();
     await tab.locator('[data-panel="req"] .k2b-skeleton').waitFor();
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(0);
   } finally {
