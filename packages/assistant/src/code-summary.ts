@@ -22,6 +22,9 @@ const RunListSchema = z.object({
   ),
 });
 
+/** A place's own name, its type's title, its link, and whether its type can own Code at all. */
+export type CodePlace = { name?: string; type?: string; href?: string; canOwnCode?: boolean };
+
 export type CodeOwnerFilter = { kind: "person"; userId: string } | { kind: "resource"; ref: CloudResourceRef };
 export type CodeRunSummary = z.infer<typeof RunListSchema>["items"][number];
 /** `lastRun` is null when the Code never ran, and undefined when Core could not read its run history. */
@@ -75,4 +78,85 @@ export const codeStatus = (code: CodeSummary): { key: "on" | "paused" | "draft" 
   if (code.state === "deleting") return { key: "deleting", tone: "neutral" };
   if (code.lastRun?.state === "failed") return { key: "failed", tone: "danger" };
   return { key: "on", tone: "success" };
+};
+
+const AttentionSchema = z.object({
+  items: z.array(
+    z.object({
+      code: z.object({
+        id: z.string(),
+        title: z.string(),
+        owner: z.object({ kind: z.string(), ref: z.object({ type: z.string(), id: z.string() }).optional() }),
+      }),
+      reasons: z.array(z.enum(["paused", "run_failed", "access_removed"])),
+      lastRunAt: z.string().nullable(),
+    }),
+  ),
+  truncated: z.boolean(),
+});
+export type CodeAttentionReason = "paused" | "run_failed" | "access_removed";
+/** Code of a place the person administers that needs them, with that place when it is a resource. */
+export type CodeAttentionItem = {
+  codeId: string;
+  title: string;
+  owner: CloudResourceRef | null;
+  reasons: CodeAttentionReason[];
+  lastRunAt: string | null;
+};
+export type CodeAttentionPage = { items: CodeAttentionItem[]; truncated: boolean };
+
+/** Code that waits for the person as an administrator of its place: paused, failed, or without access at a target. */
+export const loadCodeAttention = async (invoke: CodeQueryInvoke): Promise<CodeAttentionPage> => {
+  const result = await invoke(query("code.attention.list", {}), AttentionSchema);
+  if (!result.ok) throw new CodeSummaryError(result.error.message);
+  return {
+    items: result.data.data.items.map((item) => ({
+      codeId: item.code.id,
+      title: item.code.title,
+      owner: item.code.owner.ref ?? null,
+      reasons: item.reasons,
+      lastRunAt: item.lastRunAt,
+    })),
+    truncated: result.data.data.truncated,
+  };
+};
+
+const RunCountSchema = z.object({ runs: z.number().int(), failed: z.number().int() });
+export type CodeRunCount = z.infer<typeof RunCountSchema>;
+/** Runs and failed runs of the person's own Code since `since`. */
+export const countOwnRunsSince = async (invoke: CodeQueryInvoke, since: string): Promise<CodeRunCount> => {
+  const result = await invoke(query("code.run.count", { since }), RunCountSchema);
+  if (!result.ok) throw new CodeSummaryError(result.error.message);
+  return result.data.data;
+};
+
+const zoned = (timeZone: string, at: Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(at);
+  const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value ?? 0);
+  return { year: part("year"), month: part("month"), day: part("day"), hour: part("hour"), minute: part("minute"), second: part("second") };
+};
+/** How far the zone's wall clock is ahead of UTC at one instant, in milliseconds. */
+const offsetAt = (timeZone: string, at: Date) => {
+  const local = zoned(timeZone, at);
+  return Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - Math.floor(at.getTime() / 1000) * 1000;
+};
+/**
+ * The instant the person's current day began in their time zone, so "today" means their day on server and browser.
+ * The offset is taken at that midnight, so days on which the clocks change start at the right hour too.
+ */
+export const startOfDayIn = (timeZone: string, now: Date): string => {
+  const today = zoned(timeZone, now);
+  const midnightAsUtc = Date.UTC(today.year, today.month - 1, today.day);
+  let start = midnightAsUtc - offsetAt(timeZone, now);
+  start = midnightAsUtc - offsetAt(timeZone, new Date(start));
+  return new Date(start).toISOString();
 };

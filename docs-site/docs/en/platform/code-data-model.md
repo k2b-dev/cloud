@@ -5,7 +5,7 @@ section: Platform services
 order: 568
 description: Understand Code ownership, immutable versions, Query access and run retention.
 tags: [code, capabilities, data, permissions]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Code data model
@@ -94,6 +94,8 @@ check current permissions in Core's Code service.
 | `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
+| `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
+| `core.code.attention.list` | none | Resource or application Code the caller edits that is paused, whose newest finished run failed, or that lost access at a target, each with `reasons` and `lastRunAt`; `truncated` when more than 50 candidates exist |
 
 Without an owner filter, a normal caller lists their personal and explicitly
 shared Code. To discover Code through live owner administration, supply the
@@ -146,16 +148,23 @@ and chats, settings, files, Projects, memories, Skills and saved "always
 allow" answers are untouched.
 
 - **My apps & automations** (`/app/assistant?code=1`) lists the person's own
-  Code with its state and newest run. The sidebar shows the entry only when
-  `core.code.list` with the person as owner returns an item; when Core cannot
-  answer, the entry stays so the list can show its error with a retry.
+  Code with its state, newest run and today's run count. The sidebar shows
+  the entry only when `core.code.list` with the person as owner returns an
+  item; when Core cannot answer, the entry stays so the list can show its
+  error with a retry. Each Code opens on the shared Code page at
+  `/app/assistant/code/<codeId>`.
 - **Code of …** sits at the top of the Gustav panel when the page's place
   owns Code the person may read. It lists that Code with its newest run and
   status, folds to one line while a chat is open, and shows an error with a
-  retry when Core cannot list it. A place without readable Code shows nothing.
+  retry when Core cannot list it. A place whose type is a declared Code owner
+  (`code.owners`) but has no Code says so and offers to start with Gustav; any
+  other place shows nothing.
+- **Waiting for you** lists, below the questions from chats, Code of a place
+  the person administers when it needs them (`core.code.attention.list`).
+  Each row leads to that place, where the Code is managed.
 
-Both read only through `core.code.list` and `core.code.run.list` with the
-person's own credentials, the same public Queries any application can call.
+All of these read only through the public `core.code.*` Queries with the
+person's own credentials, the same Queries any application can call.
 
 ## Storage limits and retention
 

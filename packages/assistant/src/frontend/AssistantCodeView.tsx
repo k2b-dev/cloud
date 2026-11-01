@@ -1,6 +1,15 @@
 import { Button, Placeholder, ScrollArea, Skeleton, StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
-import { type CodeStatusTone, type CodeSummary, type CodeSummaryPage, codeStatus, loadCodeSummaries } from "../code-summary";
+import {
+  type CodeRunCount,
+  type CodeStatusTone,
+  type CodeSummary,
+  type CodeSummaryPage,
+  codeStatus,
+  countOwnRunsSince,
+  loadCodeSummaries,
+  startOfDayIn,
+} from "../code-summary";
 import { browserCodeInvoke, formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 
@@ -46,12 +55,16 @@ export default function AssistantCodeView(props: {
   userId: string;
   timeZone: string;
   initial?: CodeSummaryPage | null;
+  /** Today's runs from the server; null when Core could not count them, undefined to count in the browser. */
+  initialToday?: CodeRunCount | null;
   onCreateInChat: () => void;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const [page, setPage] = createSignal<CodeSummaryPage | null | undefined>(props.initial);
   const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
+  // A missing count leaves the line without numbers; the list itself is unaffected.
+  const [today, setToday] = createSignal<CodeRunCount | null | undefined>(props.initialToday);
   // Further pages append below; a failed page keeps what is shown and offers the same request again.
   const loadMore = async () => {
     const current = page();
@@ -75,6 +88,10 @@ export default function AssistantCodeView(props: {
   };
   onMount(() => {
     if (props.initial === undefined) void load();
+    if (props.initialToday === undefined)
+      void countOwnRunsSince(browserCodeInvoke, startOfDayIn(props.timeZone, new Date()))
+        .then(setToday)
+        .catch(() => setToday(null));
   });
   const createButton = () => (
     <Button type="button" variant="primary" onClick={() => props.onCreateInChat()}>
@@ -94,6 +111,7 @@ export default function AssistantCodeView(props: {
           <p class="assistant-code__lead min-w-0 flex-1 text-sm text-secondary">
             <i class="ti ti-moustache" aria-hidden="true" />
             {t().codeRunsAsYou}
+            <Show when={today()}>{(count) => <span>{t().codeToday(count())}</span>}</Show>
           </p>
           {createButton()}
         </header>
@@ -158,7 +176,9 @@ export default function AssistantCodeView(props: {
                             <i class="ti ti-bolt" />
                           </span>
                           <span class="flex min-w-0 flex-col">
-                            <span class="truncate font-medium text-primary">{code.title}</span>
+                            <a class="assistant-code__name truncate font-medium text-primary" href={`/app/assistant/code/${code.id}`}>
+                              {code.title}
+                            </a>
                             <span class="truncate text-sm text-secondary">{t().codeKind}</span>
                             <span class="assistant-code__narrow">
                               <CodeStatusBadge code={code} />

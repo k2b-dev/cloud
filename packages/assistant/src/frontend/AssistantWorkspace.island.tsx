@@ -48,6 +48,7 @@ import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/s
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
+import CodePage, { type CodePageData } from "@k2b/cloud/ssr/code-page";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -64,6 +65,7 @@ import {
   Placeholder,
   prompts,
   reconcileChatMentions,
+  ScrollArea,
   useLocale,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -77,7 +79,7 @@ import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
 import { appTab, contextTab, fileTab, taskTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
-import type { CodeSummaryPage } from "../code-summary";
+import type { CodeRunCount, CodeSummaryPage } from "../code-summary";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
@@ -91,6 +93,7 @@ import {
   createAssistantChatContextState,
 } from "./AssistantChatContext";
 import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
+import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
 import AssistantCodeView from "./AssistantCodeView";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
@@ -211,7 +214,17 @@ type Props = {
    * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
    * page opened on its list, and the list's first page when it did (null when Core could not list it).
    */
-  code?: { has: boolean; open: boolean; page?: CodeSummaryPage | null };
+  code?: {
+    has: boolean;
+    open: boolean;
+    page?: CodeSummaryPage | null;
+    /** One personal Code, at /app/assistant/code/<codeId>, rendered with the shared Code page. */
+    detail?: CodePageData;
+    /** Runs and failures of the person's own Code today; null when Core could not count them. */
+    today?: CodeRunCount | null;
+  };
+  /** Code of a place that needs the person, when the page opened on Waiting for you; null when Core could not answer. */
+  initialAttention?: CodeAttentionView | null;
   /** The panel's place and its Code at render time, for the "Code of …" block. */
   initialCodeBlock?: AssistantCodeBlockInitial | null;
   /** The person's open questions at render time, for "Waiting for you" above the composer. */
@@ -2726,14 +2739,31 @@ export default function AssistantWorkspace(props: Props) {
                   <>
                     <Show
                       when={codeOpen()}
-                      fallback={<AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />}
+                      fallback={
+                        <AssistantApprovalsView
+                          initial={approvalsRendered() ? props.approvals.page : undefined}
+                          initialAttention={approvalsRendered() ? props.initialAttention : undefined}
+                        />
+                      }
                     >
-                      <AssistantCodeView
-                        userId={props.userId}
-                        timeZone={props.timeZone}
-                        initial={codeRendered() ? props.code?.page : undefined}
-                        onCreateInChat={createFromCodeView}
-                      />
+                      <Show
+                        when={codeRendered() && props.code?.detail}
+                        fallback={
+                          <AssistantCodeView
+                            userId={props.userId}
+                            timeZone={props.timeZone}
+                            initial={codeRendered() ? props.code?.page : undefined}
+                            initialToday={codeRendered() ? props.code?.today : undefined}
+                            onCreateInChat={createFromCodeView}
+                          />
+                        }
+                      >
+                        {(detail) => (
+                          <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-section)]">
+                            <CodePage data={detail()} />
+                          </ScrollArea>
+                        )}
+                      </Show>
                     </Show>
                     <Show when={props.embedded}>
                       <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">

@@ -2,16 +2,14 @@ import { getContext, onContextChange } from "@k2b/cloud/browser/panel";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import { type CodeSummaryPage, codeStatus, loadCodeSummaries } from "../code-summary";
+import { type CodePlace, type CodeSummaryPage, codeStatus, loadCodeSummaries } from "../code-summary";
 import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./AssistantCodeView";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import { browserCodeInvoke } from "./code-client";
 import { assistantMessages } from "./messages";
 
-/** The place's own name, its type's title and its link, read through the place's public reader. */
-export type AssistantCodePlace = { name?: string; type?: string; href?: string };
 /** What the server knew about the panel's place: its Code page (null when Core could not list it) and the place. */
-export type AssistantCodeBlockInitial = { ref: CloudResourceRef; page: CodeSummaryPage | null; place?: AssistantCodePlace };
+export type AssistantCodeBlockInitial = { ref: CloudResourceRef; page: CodeSummaryPage | null; place?: CodePlace };
 
 type BlockState =
   | { kind: "none"; ref?: CloudResourceRef }
@@ -30,9 +28,9 @@ const stateFor = (initial: AssistantCodeBlockInitial | null | undefined): BlockS
         : { kind: "none", ref: initial.ref };
 
 /**
- * "Code of …" at the top of the panel: the Code the person may see for the place the page shows. It appears only
- * when that place has such Code, or when loading it failed, so a place without Code shows nothing extra. While a
- * chat is open it folds to one line.
+ * "Code of …" at the top of the panel: the Code the person may see for the place the page shows. A place whose type
+ * can own Code but has none says so and offers to start with Gustav; any other place without Code shows nothing.
+ * Loading errors stay visible with a retry. While a chat is open it folds to one line.
  */
 export default function AssistantCodeBlock(props: {
   initial?: AssistantCodeBlockInitial | null;
@@ -57,7 +55,7 @@ export default function AssistantCodeBlock(props: {
       setEditFailed(true);
     }
   };
-  const [place, setPlace] = createSignal<AssistantCodePlace>(props.initial?.place ?? {});
+  const [place, setPlace] = createSignal<CodePlace>(props.initial?.place ?? {});
   createEffect(
     on(
       () => props.chatOpen,
@@ -80,7 +78,8 @@ export default function AssistantCodeBlock(props: {
   const resolvePlace = async (ref: CloudResourceRef) => {
     try {
       const resource = await resolveAssistantCloudResource(ref);
-      if (sameRef(currentRef(), ref)) setPlace({ name: resource.name, type: resource.title, href: resource.href });
+      if (sameRef(currentRef(), ref))
+        setPlace({ name: resource.name, type: resource.title, href: resource.href, canOwnCode: resource.canOwnCode });
     } catch {
       // The block still works without the place's name and link.
     }
@@ -99,10 +98,10 @@ export default function AssistantCodeBlock(props: {
     onCleanup(onContextChange((context) => update(context?.scope)));
     onCleanup(() => generation++);
   });
-  // The place's name and link matter only once the block shows.
+  // The place's name, link and whether it could have Code; the server read the place it rendered.
   createEffect(
     on(
-      () => (state().kind === "none" ? undefined : state().ref),
+      () => state().ref,
       (ref, previous) => {
         // The server already read the place it rendered.
         if (!previous && props.initial?.place && sameRef(ref, props.initial.ref)) return;
@@ -124,8 +123,38 @@ export default function AssistantCodeBlock(props: {
     return first ? codeStateLabel(first, locale()) : "";
   };
 
+  const empty = () => state().kind === "none" && Boolean(state().ref) && place().canOwnCode === true;
+  const actions = (label: string) => (
+    <>
+      <div class="assistant-code-block__actions">
+        <Button type="button" size="sm" variant="secondary" disabled={props.disabled} onClick={() => void edit()}>
+          <i class="ti ti-moustache" aria-hidden="true" />
+          {label}
+        </Button>
+        <Show when={place().href}>
+          {(href) => (
+            <ButtonLink
+              href={href()}
+              size="sm"
+              variant="ghost"
+              aria-label={place().name ? t().codeOpenPlaceLabel({ title: place().name! }) : undefined}
+            >
+              <i class="ti ti-arrow-right" aria-hidden="true" />
+              {t().codeOpenPlace({ type: place().type ?? "" })}
+            </ButtonLink>
+          )}
+        </Show>
+      </div>
+      <Show when={editFailed()}>
+        <p role="alert" class="assistant-code-block__note text-sm text-danger">
+          {t().panelAttachFailed}
+        </p>
+      </Show>
+    </>
+  );
+
   return (
-    <Show when={state().kind !== "none"}>
+    <Show when={state().kind !== "none" || empty()}>
       <section class="assistant-code-block" data-state={state().kind} aria-label={`${t().codeBlock} ${heading()}`.trim()}>
         <button
           type="button"
@@ -186,32 +215,15 @@ export default function AssistantCodeBlock(props: {
                     )}
                   </For>
                 </ul>
-                <div class="assistant-code-block__actions">
-                  <Button type="button" size="sm" variant="secondary" disabled={props.disabled} onClick={() => void edit()}>
-                    <i class="ti ti-moustache" aria-hidden="true" />
-                    {t().codeEditWithGustav}
-                  </Button>
-                  <Show when={place().href}>
-                    {(href) => (
-                      <ButtonLink
-                        href={href()}
-                        size="sm"
-                        variant="ghost"
-                        aria-label={place().name ? t().codeOpenPlaceLabel({ title: place().name! }) : undefined}
-                      >
-                        <i class="ti ti-arrow-right" aria-hidden="true" />
-                        {t().codeOpenPlace({ type: place().type ?? "" })}
-                      </ButtonLink>
-                    )}
-                  </Show>
-                </div>
-                <Show when={editFailed()}>
-                  <p role="alert" class="assistant-code-block__note text-sm text-danger">
-                    {t().panelAttachFailed}
-                  </p>
-                </Show>
+                {actions(t().codeEditWithGustav)}
               </>
             )}
+          </Show>
+          <Show when={empty()}>
+            <p class="assistant-code-block__note text-sm text-secondary">
+              {place().name ? t().codeBlockEmpty({ name: place().name! }) : t().codeBlockEmptyHere}
+            </p>
+            {actions(t().codeCreateWithGustav)}
           </Show>
         </Show>
       </section>

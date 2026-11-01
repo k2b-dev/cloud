@@ -5,8 +5,11 @@ import {
   type CodeRunSummary,
   type CodeSummary,
   codeStatus,
+  countOwnRunsSince,
   hasPersonalCode,
+  loadCodeAttention,
   loadCodeSummaries,
+  startOfDayIn,
 } from "./code-summary";
 
 const code = (id: string, state = "active") => ({
@@ -101,4 +104,44 @@ test("one status per Code: paused and a failed last run come before on", () => {
   expect(codeStatus(summary("paused", "failed"))).toEqual({ key: "paused", tone: "warning" });
   expect(codeStatus(summary("draft", null))).toEqual({ key: "draft", tone: "neutral" });
   expect(codeStatus(summary("deleting", null))).toEqual({ key: "deleting", tone: "neutral" });
+});
+
+test("today starts at the person's local midnight, also across a time-zone change", () => {
+  expect(startOfDayIn("Europe/Berlin", new Date("2026-10-24T10:00:00.000Z"))).toBe("2026-10-23T22:00:00.000Z");
+  expect(startOfDayIn("Europe/Berlin", new Date("2026-11-01T10:00:00.000Z"))).toBe("2026-10-31T23:00:00.000Z");
+  // 25 October: the day began in summer time, before the clocks went back at 03:00.
+  expect(startOfDayIn("Europe/Berlin", new Date("2026-10-25T10:00:00.000Z"))).toBe("2026-10-24T22:00:00.000Z");
+  expect(startOfDayIn("UTC", new Date("2026-11-01T00:30:00.000Z"))).toBe("2026-11-01T00:00:00.000Z");
+  expect(startOfDayIn("America/New_York", new Date("2026-11-01T03:00:00.000Z"))).toBe("2026-10-31T04:00:00.000Z");
+});
+
+test("attention and run counts come from Core's public queries", async () => {
+  const core = fakeCore({
+    "code.attention.list": () => ({
+      items: [
+        {
+          code: { ...code("c_info02"), owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
+          reasons: ["run_failed", "access_removed"],
+          lastRunAt: "2026-10-31T09:41:03.000Z",
+        },
+      ],
+      truncated: false,
+    }),
+    "code.run.count": () => ({ runs: 9, failed: 1 }),
+  });
+  expect(await loadCodeAttention(core.invoke)).toEqual({
+    items: [
+      {
+        codeId: "c_info02",
+        title: "Code c_info02",
+        owner: { type: "mail.mailbox", id: "m_info" },
+        reasons: ["run_failed", "access_removed"],
+        lastRunAt: "2026-10-31T09:41:03.000Z",
+      },
+    ],
+    truncated: false,
+  });
+  expect(await countOwnRunsSince(core.invoke, "2026-10-30T23:00:00.000Z")).toEqual({ runs: 9, failed: 1 });
+  expect(core.calls.at(-1)).toEqual({ capabilityId: "code.run.count", input: { since: "2026-10-30T23:00:00.000Z" } });
+  await expect(loadCodeAttention(fakeCore({}).invoke)).rejects.toThrow("missing");
 });

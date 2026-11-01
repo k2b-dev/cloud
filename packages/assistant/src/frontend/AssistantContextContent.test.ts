@@ -182,6 +182,8 @@ describe("Assistant Cloud references", () => {
       title: "Note",
       icon: "ti ti-file-text",
       href: "/app/notebooks/JJVtWA/notes/3rQGbm",
+      // Notes declare no Code owners.
+      canOwnCode: false,
     });
     expect(resolved.name).toBeUndefined();
 

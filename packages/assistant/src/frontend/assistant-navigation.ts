@@ -1,6 +1,12 @@
 const URL_BASE = "http://assistant.local";
 
 const relativeHref = (url: URL): string => `${url.pathname}${url.search}${url.hash}`;
+/** A personal Code page lives at /app/assistant/code/<codeId>; a chat or Project opened from it lives at the app root. */
+const leaveCodePage = (url: URL) => {
+  if (!url.pathname.startsWith("/app/assistant/code/")) return;
+  url.pathname = "/app/assistant";
+  for (const key of ["tab", "run", "version", "activated"]) url.searchParams.delete(key);
+};
 export type ConversationOpenResult = "opened" | "unchanged" | "stale";
 
 export const shouldCommitConversationNavigation = (result: ConversationOpenResult, currentHref: string, targetHref: string): boolean =>
@@ -16,6 +22,7 @@ export const shouldOpenProjectConversation = (
 
 export const assistantConversationHref = (currentHref: string, conversationId: string | null): string => {
   const url = new URL(currentHref, URL_BASE);
+  leaveCodePage(url);
   const previousConversationId = url.searchParams.get("conversation");
   if (conversationId) url.searchParams.set("conversation", conversationId);
   else url.searchParams.delete("conversation");
@@ -33,6 +40,7 @@ export const assistantConversationHref = (currentHref: string, conversationId: s
 
 export const assistantProjectHref = (currentHref: string, projectId: string): string => {
   const url = new URL(currentHref, URL_BASE);
+  leaveCodePage(url);
   url.searchParams.delete("conversation");
   url.searchParams.delete("message");
   url.searchParams.delete("question");

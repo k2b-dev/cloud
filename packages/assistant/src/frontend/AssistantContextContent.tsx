@@ -206,6 +206,8 @@ export type ResolvedAssistantCloudResource = {
   href?: string;
   /** The resource's own name from its reader view, such as "info@example.test", when the reader returns one. */
   name?: string;
+  /** Its type is declared as a possible Code owner by its app. */
+  canOwnCode?: boolean;
 };
 
 const ReaderViewTitleSchema = z.object({ view: z.object({ title: z.string().min(1) }) });
@@ -243,6 +245,7 @@ export const resolveAssistantCloudResource = async (
         icon: resourceType?.icon ?? app.appIcon,
         href: result.data.links?.find((link) => link.rel === "open")?.href,
         name: ReaderViewTitleSchema.safeParse(result.data.data).data?.view.title,
+        canOwnCode: app.manifest.code?.owners.includes(localType) ?? false,
       };
     }
     cursor = catalog.data.page.hasMore ? catalog.data.page.nextCursor : undefined;

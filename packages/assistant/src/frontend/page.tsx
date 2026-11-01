@@ -1,43 +1,38 @@
 import { aiConversations, aiProjects, assistantAiSettingsState, getAiChatQuotas, loadAiStreamState } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
-import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { AuthContext } from "@k2b/cloud/server";
 import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { Layout, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
+import { Layout, loadCodePage, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
-import { z } from "zod";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
-import { type CodeQueryInvoke, hasPersonalCode, loadCodeSummaries } from "../code-summary";
+import { catalogPerApp, loadCodePlace } from "../code-place";
+import {
+  type CodeQueryInvoke,
+  countOwnRunsSince,
+  hasPersonalCode,
+  loadCodeAttention,
+  loadCodeSummaries,
+  startOfDayIn,
+} from "../code-summary";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
-import type { AssistantCodePlace } from "./AssistantCodeBlock";
+import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./chat-sidebar-layout";
 import { assistantMessages } from "./messages";
 
-const ReaderViewSchema = z.object({ view: z.object({ title: z.string().min(1) }) });
-
-/** The place's name, type and link through its own public reader, so the panel's first paint names it. */
-const loadCodePlace = async (
-  ref: CloudResourceRef,
-  invoke: CodeQueryInvoke,
-  catalog: () => ReturnType<typeof getCapabilityCatalogApp>,
-): Promise<AssistantCodePlace> => {
-  const app = await catalog();
-  if (!app.ok || !app.data) return {};
-  const reader = resolveCapabilityResourceReader(app.data.manifest, ref);
-  if (!reader) return {};
-  const read = await invoke({ appId: app.data.appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } }, z.unknown());
-  if (!read.ok) return {};
-  const localType = ref.type.slice(app.data.appId.length + 1);
+/** Code that waits for the person, each with its place's name and link, read through the place's own reader. */
+const loadCodeAttentionView = async (invoke: CodeQueryInvoke, catalog: ReturnType<typeof catalogPerApp>): Promise<CodeAttentionView> => {
+  const page = await loadCodeAttention(invoke);
   return {
-    name: ReaderViewSchema.safeParse(read.data.data).data?.view.title,
-    type: app.data.manifest.types.find((type) => type.localId === localType)?.title ?? app.data.appName,
-    href: read.data.links?.find((link) => link.rel === "open")?.href,
+    truncated: page.truncated,
+    items: await Promise.all(
+      page.items.map(async (item) => ({ ...item, place: item.owner ? await loadCodePlace(item.owner, invoke, catalog) : {} })),
+    ),
   };
 };
 
@@ -53,7 +48,12 @@ export default ssr<AuthContext>(async (c) => {
   const requestedProjectId = url.searchParams.get("project") ?? undefined;
   const initialArtifactPath = url.searchParams.get("artifact");
   const approvalsOpen = url.searchParams.get("approvals") === "1" && !requestedConversationId && !requestedProjectId;
-  const codeOpen = !approvalsOpen && url.searchParams.get("code") === "1" && !requestedConversationId && !requestedProjectId;
+  // One personal Code at /app/assistant/code/<codeId>, shown with the shared Code page in the Code view.
+  const detailCodeId = c.req.param("codeId");
+  if (detailCodeId !== undefined && !/^c_[a-z0-9]{4,16}$/.test(detailCodeId)) return ssr.error(c, 404);
+  const codeOpen =
+    detailCodeId !== undefined ||
+    (!approvalsOpen && url.searchParams.get("code") === "1" && !requestedConversationId && !requestedProjectId);
   const panelContext = embedded ? readPanelContext(c) : null;
   // Gustav reads Code through Core's public queries with the person's own credentials, like any application.
   const codeCaller = {
@@ -68,27 +68,31 @@ export default ssr<AuthContext>(async (c) => {
   const panelScope = panelContext?.scope;
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await aiLive.cursor();
-  const [status, sidebar, appUrl, initialQuotas, approvals, codeList, codeExists, codeBlockPage] = await Promise.all([
-    assistantAiSettingsState(subject),
-    loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
-    coreSettings.get<string>("app.url"),
-    getAiChatQuotas(subject).catch(() => null),
-    // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
-    loadPendingApprovals(c, { app: "assistant" }),
-    // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
-    codeOpen ? loadCodeSummaries(invokeCode, owner).catch(() => null) : undefined,
-    codeOpen ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
-    panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
-  ]);
-  // Only a block that shows needs its place's name; failures leave the block without it, as in the browser.
-  const codePlace =
-    panelScope && codeBlockPage !== undefined && (codeBlockPage === null || codeBlockPage.items.length > 0)
-      ? await loadCodePlace(panelScope, invokeCode, () =>
-          getCapabilityCatalogApp(cloudResourceRefAppId(panelScope), locale, auth.getAuthority(c)),
-        ).catch(() => ({}))
-      : undefined;
+  const catalog = catalogPerApp(locale, auth.getAuthority(c));
+  const [status, sidebar, appUrl, initialQuotas, approvals, codeList, codeExists, codeBlockPage, codeDetail, runsToday, attention] =
+    await Promise.all([
+      assistantAiSettingsState(subject),
+      loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
+      coreSettings.get<string>("app.url"),
+      getAiChatQuotas(subject).catch(() => null),
+      // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
+      loadPendingApprovals(c, { app: "assistant" }),
+      // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
+      codeOpen && !detailCodeId ? loadCodeSummaries(invokeCode, owner).catch(() => null) : undefined,
+      codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
+      panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
+      // The shared Code page reads its Code, versions, runs and switch-on state itself and shows each failure in place.
+      detailCodeId
+        ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
+        : undefined,
+      // A missing count only leaves the line without numbers.
+      codeOpen && !detailCodeId ? countOwnRunsSince(invokeCode, startOfDayIn(timeZone, new Date())).catch(() => null) : undefined,
+      approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
+    ]);
+  // The panel names its place from the first paint, and knows whether that place could have Code at all.
+  const codePlace = panelScope && codeBlockPage !== undefined ? await loadCodePlace(panelScope, invokeCode, catalog) : undefined;
   // An unknown answer keeps "My apps & automations" in the sidebar, so a failure never hides the person's Code.
-  const hasCode = codeOpen ? codeList === null || (codeList !== undefined && codeList.items.length > 0) : codeExists !== false;
+  const hasCode = codeList !== undefined ? codeList === null || codeList.items.length > 0 : codeExists !== false;
   const { conversations } = sidebar;
   const activeProjectRecord = requestedProjectId
     ? await aiProjects.getByShortId(requestedProjectId, { actor: c.get("actor"), accessSubject: c.get("accessSubject") })
@@ -187,7 +191,14 @@ export default ssr<AuthContext>(async (c) => {
       }
       initialProjectContext={projectContext}
       approvals={{ page: approvals, open: approvalsOpen }}
-      code={{ has: hasCode, open: codeOpen, ...(codeList !== undefined ? { page: codeList } : {}) }}
+      code={{
+        has: hasCode,
+        open: codeOpen,
+        ...(codeList !== undefined ? { page: codeList } : {}),
+        ...(codeDetail ? { detail: codeDetail } : {}),
+        ...(runsToday !== undefined ? { today: runsToday } : {}),
+      }}
+      {...(attention !== undefined ? { initialAttention: attention } : {})}
       initialCodeBlock={panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null}
     />
   );

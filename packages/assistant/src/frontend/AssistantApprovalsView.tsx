@@ -1,11 +1,15 @@
 import { Approvals } from "@k2b/cloud/approvals/ui";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { ScrollArea, useLocale } from "@k2b/ui";
+import AssistantCodeAttention, { type CodeAttentionView } from "./AssistantCodeAttention";
 import { assistantMessages } from "./messages";
 import { useAssistantText } from "./ui-copy";
 
-/** Everything the Assistant asked for, whichever app owns the effect. Each row links to the chat that waits for it. */
-export default function AssistantApprovalsView(props: { initial?: ApprovalPage }) {
+/**
+ * Waiting for you: what Gustav asked for in chats, whichever app owns the effect, each row linking to its chat; below,
+ * Code of a place the person administers when it needs them.
+ */
+export default function AssistantApprovalsView(props: { initial?: ApprovalPage; initialAttention?: CodeAttentionView | null }) {
   const text = useAssistantText();
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -18,7 +22,13 @@ export default function AssistantApprovalsView(props: { initial?: ApprovalPage }
             {text("What Gustav wants to do for you. Nothing of it happens until you approve it here or in its chat.")}
           </p>
         </header>
-        <Approvals app="assistant" initial={props.initial} />
+        <section class="flex flex-col gap-2" aria-labelledby="assistant-approvals-chats">
+          <h2 id="assistant-approvals-chats" class="assistant-code-attention__heading">
+            {t().codeFromChats}
+          </h2>
+          <Approvals app="assistant" initial={props.initial} />
+        </section>
+        <AssistantCodeAttention initial={props.initialAttention} />
       </div>
     </ScrollArea>
   );

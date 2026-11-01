@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
+import { codePageFixture } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
@@ -118,7 +119,43 @@ const runOf = (codeId: string) => {
   };
 };
 
-type Scenario = { codeOpen?: boolean; listFails?: boolean; panel?: boolean; panelFails?: boolean; chat?: boolean };
+type Scenario = {
+  codeOpen?: boolean;
+  listFails?: boolean;
+  panel?: boolean;
+  panelFails?: boolean;
+  /** The panel's place can own Code but has none. */
+  panelEmpty?: boolean;
+  /** One personal Code with the shared Code page. */
+  detail?: boolean;
+  /** Waiting for you, with one chat question and Code of a place that needs the person. */
+  waiting?: boolean;
+};
+const approval = {
+  id: "33333333-3333-4333-8333-333333333333",
+  app: { id: "mail", name: "Mail", icon: "ti ti-mail" },
+  action: "draft.send",
+  assurance: "confirm" as const,
+  sentence: "Mail: Angebot an Jana Probe senden",
+  review: null,
+  requester: { kind: "chat" as const, appId: "assistant", title: "Angebot an Jana Probe", href: "/app/assistant?conversation=Jana42" },
+  remember: { chat: false, always: false, website: false },
+  createdAt: at(80),
+  expiresAt: at(-1440),
+};
+const attention = {
+  truncated: false,
+  items: [
+    {
+      codeId: "c_info02",
+      title: "Lieferungen eintragen",
+      owner: { type: "mail.mailbox", id: "m_info" },
+      reasons: ["run_failed", "access_removed"] as ("run_failed" | "access_removed")[],
+      lastRunAt: at(20),
+      place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info" },
+    },
+  ],
+};
 
 const propsOf = (scenario: Scenario, url: URL) => ({
   embedded: Boolean(scenario.panel),
@@ -153,18 +190,30 @@ const propsOf = (scenario: Scenario, url: URL) => ({
   initialProject: null,
   initialProjectChats: null,
   initialProjectContext: null,
-  approvals: { page: { items: [], nextCursor: null, count: 2, elsewhere: 0 }, open: false },
+  approvals: scenario.waiting
+    ? { page: { items: [approval], nextCursor: null, count: 1, elsewhere: 0 }, open: true }
+    : { page: { items: [], nextCursor: null, count: 2, elsewhere: 0 }, open: false },
+  ...(scenario.waiting ? { initialAttention: attention } : {}),
   code: {
     has: true,
-    open: Boolean(scenario.codeOpen),
+    open: Boolean(scenario.codeOpen || scenario.detail),
     ...(scenario.codeOpen
-      ? { page: scenario.listFails ? null : { items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null } }
+      ? {
+          page: scenario.listFails ? null : { items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null },
+          today: { runs: 9, failed: 1 },
+        }
       : {}),
+    ...(scenario.detail ? { detail: personalCodePage() } : {}),
   },
   initialCodeBlock: scenario.panel
     ? {
         ref: mailbox,
-        page: scenario.panelFails ? null : { items: MAILBOX.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null },
+        page: scenario.panelFails
+          ? null
+          : { items: scenario.panelEmpty ? [] : MAILBOX.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null },
+        ...(scenario.panelEmpty
+          ? { place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info", canOwnCode: true } }
+          : {}),
       }
     : null,
 });
@@ -195,6 +244,7 @@ const mailCatalog = {
         ],
         actions: [],
         commands: [],
+        code: { access: { app: false, types: ["mailbox"] }, owners: ["mailbox"] },
       },
     },
   ],
@@ -292,7 +342,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   await page.route(`${assets.url.href}**`, async (route: Route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/harness.js" || url.pathname === "/harness.css" || url.pathname.startsWith("/ui/")) return route.continue();
-    if (url.pathname === "/app/assistant" || url.pathname === "/app/assistant/panel") {
+    if (url.pathname === "/app/assistant" || url.pathname === "/app/assistant/panel" || url.pathname.startsWith("/app/assistant/code/")) {
       const harness = { locale: "de", props: propsOf(scenario, url) };
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
@@ -327,6 +377,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
         return route.fulfill({ json: { data: { items: input.owner?.kind === "resource" ? MAILBOX : MINE, nextCursor: null } } });
       }
       if (capabilityId === "code.run.list") return route.fulfill({ json: { data: { items: [runOf(input.codeId!)], nextCursor: null } } });
+      if (capabilityId === "code.run.count") return route.fulfill({ json: { data: { runs: 9, failed: 1 } } });
     }
     if (url.pathname === "/api/capabilities/v1/catalog") return route.fulfill({ json: mailCatalog });
     if (url.pathname === "/api/assistant/workspace/sidebar")
@@ -346,6 +397,13 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   await page.goto(`${assets.url.origin}${options.path ?? "/app/assistant?code=1"}`, { timeout: 30_000 });
   return { page, errors, codeCalls, state, close: () => context.close() };
 };
+
+/** Personal Code on the shared Code page, from the shared fixture with fictional data. */
+const personalCodePage = () => ({
+  ...codePageFixture("overview", "de"),
+  owner: { kind: "person" as const, ref: null, title: "Wochenbericht Vertrieb", typeTitle: null },
+  href: "/app/assistant/code/c_woche1",
+});
 
 const shot = async (page: Page, name: string) => {
   if (!shots) return;
@@ -368,6 +426,7 @@ describe("Gustav", () => {
         await list.getByText("Wochenbericht Vertrieb").waitFor();
         expect(await list.getByRole("heading", { level: 1 }).textContent()).toBe("Meine Apps & Automationen");
         expect(await list.getByText("Dein Code läuft als du.").count()).toBe(1);
+        expect(await list.getByText("Heute 9 Läufe · 1 fehlgeschlagen").count()).toBe(1);
         // The failed run and the pause are the visible statuses; the rest are "An".
         const rows = await list
           .locator("li.assistant-code__row")
@@ -435,4 +494,52 @@ describe("Gustav", () => {
       await failed.close();
     }
   }, 90_000);
+
+  test("a personal Code opens on the shared Code page, runs as its person, and keeps My apps & automations marked", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(view, { detail: true }, { path: "/app/assistant/code/c_woche1" });
+      try {
+        const page = h.page.locator(".cloud-code");
+        await page.getByRole("heading", { level: 1, name: "Wochenbericht Vertrieb" }).waitFor();
+        expect(await page.getByText("Dein Code · läuft als du").count()).toBe(1);
+        expect(await page.getByText("Er nutzt deine Rechte, nicht mehr.", { exact: false }).count()).toBe(1);
+        if (view === desktop)
+          expect(
+            await h.page.locator('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?code=1"]').getAttribute("aria-current"),
+          ).toBe("page");
+        await shot(h.page, `c-code-detail-${view.name}-light`);
+        expect(h.errors).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
+
+  test("Waiting for you lists chat questions and Code of a place the person administers", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(view, { waiting: true }, { path: "/app/assistant?approvals=1" });
+      try {
+        const section = h.page.locator("section.assistant-code-attention");
+        await section.getByText("Code von info@moebel-beispiel.de: letzter Lauf fehlgeschlagen, Zugriff fehlt").waitFor();
+        expect(await h.page.getByRole("heading", { name: "Aus deinen Chats" }).count()).toBe(1);
+        expect(await section.getByText("„Lieferungen eintragen“ · du verwaltest info@moebel-beispiel.de").count()).toBe(1);
+        expect(await section.getByRole("link", { name: "Postfach öffnen" }).getAttribute("href")).toBe("/app/mail/m/info");
+        await shot(h.page, `d-wartet-auf-dich-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
+
+  test("a place that can own Code but has none says so in the panel and offers to start with Gustav", async () => {
+    const h = await open(panel, { panel: true, panelEmpty: true }, { path: "/app/assistant/panel" });
+    try {
+      const block = h.page.locator("section.assistant-code-block");
+      await block.getByText("info@moebel-beispiel.de hat noch keinen Code.").waitFor();
+      expect(await block.getByRole("button", { name: "Mit Gustav anlegen" }).count()).toBe(1);
+      await shot(h.page, "b-panel-code-von-leer-light");
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
 });

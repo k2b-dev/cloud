@@ -21,6 +21,9 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
+// After the Solid plugin: the shared Code page and Cloud's SSR are .tsx.
+const cloudSsr = await import("@k2b/cloud/ssr");
+const { codePageFixture } = await import("@k2b/cloud/ssr/code-page/code-page.fixture");
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -109,6 +112,7 @@ const request = (href = "https://cloud.example.test/app/assistant?project=projec
   });
   app.get("/app/assistant", ...handler);
   app.get("/app/assistant/panel", ...handler);
+  app.get("/app/assistant/code/:codeId", ...handler);
   return app.request(href);
 };
 
@@ -462,5 +466,147 @@ test("the panel names the place's Code from the first paint, through the place's
   expect(html).toContain("Sort requests");
   expect(html).toContain("of info@example.test");
   expect(html).toContain("Open Mailbox");
+  expect(html).toContain('href="/app/mail/m/info"');
+});
+
+const mailCatalog = (owners: string[]) =>
+  spyOn(capabilityServer, "getCapabilityCatalogApp").mockResolvedValue({
+    ok: true,
+    data: {
+      appId: "mail",
+      appName: "Mail",
+      appIcon: "ti ti-mail",
+      appDescription: "Mail.",
+      manifest: {
+        protocolVersion: 2,
+        appId: "mail",
+        manifestHash: "a".repeat(64),
+        types: [{ localId: "mailbox", title: "Mailbox", description: "A mailbox.", icon: "ti ti-mail", reader: "mailbox.read" }],
+        queries: [
+          {
+            localId: "mailbox.read",
+            title: "Read mailbox",
+            description: "Read one mailbox.",
+            inputSchema: {},
+            dataSchema: {},
+            schemaHash: "b".repeat(64),
+            openWorld: false,
+          },
+        ],
+        actions: [],
+        commands: [],
+        code: { access: { app: false, types: ["mailbox"] }, owners },
+      },
+    },
+  });
+const quietSidebar = () =>
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+    spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null),
+  );
+
+test("a place that can own Code but has none says so in the panel; other places show nothing", async () => {
+  quietSidebar();
+  const mailbox = { type: "mail.mailbox", id: "m_info" };
+  const catalog = mailCatalog(["mailbox"]);
+  spies.push(catalog);
+  codeInvoke.mockImplementation(async (invocation, schema) => {
+    const data = invocation.appId === "mail" ? { view: { title: "info@example.test" } } : { items: [], nextCursor: null };
+    return {
+      ok: true,
+      data: {
+        data: schema.parse(data),
+        ...(invocation.appId === "mail" ? { links: [{ rel: "open" as const, href: "/app/mail/m/info" }] } : {}),
+      },
+    };
+  });
+  const context = { v: 1, seq: 1, pageId: "88888888-8888-4888-8888-888888888888", app: "mail", scope: mailbox };
+  const panel = `https://cloud.example.test/app/assistant/panel?cloud_panel_context=${encodeURIComponent(JSON.stringify(context))}`;
+  const html = await (await request(panel)).text();
+  expect(html).toContain("info@example.test has no Code yet.");
+  expect(html).toContain("Create with Gustav");
+  catalog.mockRestore();
+  spies.push(mailCatalog([]));
+  expect(await (await request(panel)).text()).not.toContain("has no Code yet");
+});
+
+test("a personal Code opens at its own address with the shared Code page; a malformed ID is not found", async () => {
+  quietSidebar();
+  const page = spyOn(cloudSsr, "loadCodePage").mockResolvedValue({
+    ...codePageFixture("overview", "en"),
+    owner: { kind: "person", ref: null, title: "Weekly sales report", typeTitle: null },
+    href: "/app/assistant/code/c_woche1",
+  });
+  spies.push(page);
+  const response = await request("https://cloud.example.test/app/assistant/code/c_woche1");
+  expect(response.status).toBe(200);
+  expect(page).toHaveBeenCalledWith(expect.anything(), {
+    owner: { codeId: "c_woche1" },
+    href: "/app/assistant/code/c_woche1",
+    canManageOwner: false,
+  });
+  const html = await response.text();
+  expect(html).toContain("Weekly sales report");
+  expect(html).toContain("Your Code · runs as you");
+  // The sidebar marks My apps & automations while a Code is open.
+  expect(html).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
+  expect((await request("https://cloud.example.test/app/assistant/code/not-a-code")).status).toBe(404);
+});
+
+test("the Code list counts today's runs from the start of the person's day", async () => {
+  quietSidebar();
+  codeInvoke.mockImplementation(async (invocation, schema) => {
+    const data =
+      invocation.capabilityId === "code.run.count"
+        ? { runs: 9, failed: 1 }
+        : invocation.capabilityId === "code.list"
+          ? { items: [codeItem], nextCursor: null }
+          : { items: [], nextCursor: null };
+    return { ok: true, data: { data: schema.parse(data) } };
+  });
+  const html = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
+  expect(html).toContain("Today 9 runs · 1 failed");
+  expect(html).toContain('href="/app/assistant/code/c_week01"');
+  const count = codeInvoke.mock.calls.find(([invocation]) => invocation.capabilityId === "code.run.count");
+  expect(count?.[0].input).toEqual({ since: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/) });
+});
+
+test("Waiting for you lists Code of a place the person administers when it needs them", async () => {
+  quietSidebar();
+  spies.push(mailCatalog(["mailbox"]));
+  codeInvoke.mockImplementation(async (invocation, schema) => {
+    const data =
+      invocation.appId === "mail"
+        ? { view: { title: "info@example.test" } }
+        : invocation.capabilityId === "code.attention.list"
+          ? {
+              items: [
+                {
+                  code: { id: "c_info02", title: "Deliveries", owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
+                  reasons: ["run_failed", "access_removed"],
+                  lastRunAt: "2026-10-31T09:41:03.000Z",
+                },
+              ],
+              truncated: false,
+            }
+          : { items: [], nextCursor: null };
+    return {
+      ok: true,
+      data: {
+        data: schema.parse(data),
+        ...(invocation.appId === "mail" ? { links: [{ rel: "open" as const, href: "/app/mail/m/info" }] } : {}),
+      },
+    };
+  });
+  const html = await (await request("https://cloud.example.test/app/assistant?approvals=1")).text();
+  expect(html).toContain("From your chats");
+  expect(html).toContain("Code you administer");
+  expect(html).toContain("Code of info@example.test: last run failed, access missing");
+  expect(html).toContain("“Deliveries” · you administer info@example.test");
   expect(html).toContain('href="/app/mail/m/info"');
 });

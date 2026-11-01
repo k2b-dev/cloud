@@ -45,6 +45,11 @@ describe("Assistant conversation navigation", () => {
     expect(assistantProjectHref(ASSISTANT_CODE_HREF, "prj123")).toBe("/app/assistant?project=prj123");
   });
 
+  test("a chat or Project opened from a personal Code page returns to the app root", () => {
+    expect(assistantConversationHref("/app/assistant/code/c_woche1?tab=runs", "chat-1")).toBe("/app/assistant?conversation=chat-1");
+    expect(assistantProjectHref("/app/assistant/code/c_woche1", "prj123")).toBe("/app/assistant?project=prj123");
+  });
+
   test("reads conversation ids from absolute and relative hrefs", () => {
     expect(assistantConversationIdFromHref("/app/assistant?conversation=chat-1")).toBe("chat-1");
     expect(assistantConversationIdFromHref("https://cloud.test/app/assistant?conversation=chat%202")).toBe("chat 2");
