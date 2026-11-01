@@ -1,0 +1,6 @@
+### A long task let the dayHours week stop its reveal a day short of a tablet drawer
+
+- **What happened:** The WebKit browser test "820×1180 touch tablet with motion, a drawer of fractional width" failed in CI with Sunday's end 105.75 px past the end of the trail ([#2199](https://github.com/k2b-dev/cloud/issues/2199)). The strip rested at 378 instead of 484, so Sunday stayed partly under the drawer.
+- **Root cause:** The week view treated 140 ms without a scroll event as rest. A long task during a smooth reveal delays that event, and the timer can then run first. The settle read the position halfway, and its own `scrollTo` replaced the reveal. The strip stopped at the next day edge, which is a place it rests on, so nothing corrected it. The wait in the test was right: 378 is the day end one day short of 484, and the same stopped reveal reproduces in Chromium with long tasks at 166 and 318. The long task in the failed WebKit runs was not observed directly.
+- **Error class:** A timer stands for "the scroll has ended" on a page whose main thread can stall, so code that acts at rest interrupts a scroll still in flight.
+- **Guard:** The rest timer waits two more frames, and a scroll still moving reports before them and starts the wait again. A browser test runs long tasks during the reveal and requires Sunday's end beside the drawer.
