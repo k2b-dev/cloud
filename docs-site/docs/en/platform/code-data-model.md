@@ -1,7 +1,8 @@
 ---
 title: Code data model
-section: Platform
-order: 960
+navTitle: Code data model
+section: Platform services
+order: 568
 description: Understand Code ownership, immutable versions, Query access and run retention.
 tags: [code, capabilities, data, permissions]
 updated: 2026-10-31

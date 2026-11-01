@@ -1,7 +1,8 @@
 ---
 title: Code storage
+navTitle: Code storage
 section: Operations
-order: 1252
+order: 1253
 description: Back up Code versions and understand run retention and storage budgets.
 tags: [operations, code, postgres]
 updated: 2026-10-31
