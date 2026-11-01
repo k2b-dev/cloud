@@ -23,7 +23,7 @@ export async function processCodePolicyPauseBatch(row: PauseRow): Promise<void> 
       const impact = await codePolicyImpact(candidate, before, current.definition, tx);
       if (!impact) continue;
       pausedCount++;
-      await tx`UPDATE code.codes SET state='paused',pause_reason=${impact.reason},pause_rows=${impact.rows}::text[],
+      await tx`UPDATE code.codes SET state='paused',pause_reason=${impact.reason},pause_rows=${tx.array(impact.rows, "text")},
         pause_policy_revision=${current.revision} WHERE id=${candidate.id} AND state='active' AND active_version_id IS NOT DISTINCT FROM ${candidate.active_version_id}::uuid`;
     }
     if (pausedCount)
@@ -38,7 +38,7 @@ export async function processCodePolicyPauseBatch(row: PauseRow): Promise<void> 
         tx,
       );
     if (candidates.length === 50)
-      await tx`INSERT INTO code.policy_pause_outbox(revision,previous,cursor) VALUES(${row.revision},${JSON.stringify(before)}::jsonb,${candidates.at(-1)!.id}) ON CONFLICT DO NOTHING`;
+      await tx`INSERT INTO code.policy_pause_outbox(revision,previous,cursor) VALUES(${row.revision},${JSON.stringify(before)}::text::jsonb,${candidates.at(-1)!.id}) ON CONFLICT DO NOTHING`;
   });
 }
 /** Durable Postgres outbox. Failed batches remain visible with attempts/last_error and retry with bounded backoff. */

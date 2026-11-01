@@ -549,6 +549,23 @@ const projectContactPage = async (items: Contact[], favoriteKeys: string[]) => {
 
 const adminApi = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
+  .get(
+    "/books",
+    auth.requireOAuthScope("read", "admin"),
+    v("query", PaginationQuerySchema.extend({ search: z.string().max(200).optional() })),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const query = c.req.valid("query");
+      const filter = { query: query.search };
+      const [books, summary] = await Promise.all([
+        contactsService.book.admin.list({ actor: c.get("actor"), pagination: parsePagination(query), filter }),
+        contactsService.book.admin.summary({ actor: c.get("actor"), filter }),
+      ]);
+      if (!books.ok) return respond(c, books);
+      if (!summary.ok) return respond(c, summary);
+      return respond(c, ok({ ...books.data, items: await projectBooks(books.data.items), summary: summary.data }));
+    },
+  )
   .get("/books/:bookId/access", async (c) => {
     const bookId = c.req.param("bookId") ?? "";
     const internalBookId = await resolvePublicId("books", bookId);

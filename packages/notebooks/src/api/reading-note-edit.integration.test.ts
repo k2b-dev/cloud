@@ -52,6 +52,7 @@ if (process.env.NOTEBOOKS_READING_EDIT_CHILD !== "1") {
     spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
     spyOn(server, "guardAppAccessSocket").mockImplementation(async (_c, _appId, events) => events);
     const { notebooksService } = await import("../service");
+    const { workspaceOutbox } = await import("../service/workspace-events");
     const { yjsSnapshotWorker } = await import("../service/yjs-snapshot-worker");
     const snapshots = spyOn(yjsSnapshotWorker, "queueSnapshotSave").mockResolvedValue(undefined);
     const { createYjsTopic } = await import("../service/yjs-sync");
@@ -172,6 +173,8 @@ if (process.env.NOTEBOOKS_READING_EDIT_CHILD !== "1") {
     };
     try {
       await sync.ready();
+      // This fixture mounts the API directly, so it also owns the app's dispatcher lifecycle.
+      workspaceOutbox.start();
       await sql`INSERT INTO auth.users (id, uid, provider, profile) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user')`;
       await sql`INSERT INTO notebooks.notebooks (id, short_id, name, default_presentation_mode)
         VALUES (${notebookId}::uuid, ${notebookShortId}, 'Reading edits', 'write')`;
@@ -357,6 +360,7 @@ if (process.env.NOTEBOOKS_READING_EDIT_CHILD !== "1") {
       await reads;
       await drainNotebookConnections();
       await listener.stop(true);
+      await workspaceOutbox.stop();
       await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
       await sync.drain();

@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { CapabilityDefinitions } from "../contracts/capabilities";
 import { CapabilityManifestSchema, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import type { CodeAccessAdapter } from "../contracts/code-access";
-import { compileCapabilities, invokeCompiledCapability } from "./capabilities";
+import { codeAccessMessages } from "../shared/code-access-messages";
+import { compileCapabilities, invokeCompiledCapability, resolveCapabilityManifestPresentation } from "./capabilities";
 import { codeAccessOperationsAllowed, validateCodeAccess } from "./code-access";
 
 const adapter: CodeAccessAdapter = {
@@ -61,6 +62,46 @@ test("readable stays independent; four Code functions are all or none", () => {
     );
     expect(() => validateCodeAccess({ ...definitions, code: { access: { app: access } } })).toThrow("all be supplied");
   }
+});
+
+test("generated inputs have complete German presentation for every adapter and preserve app overrides", () => {
+  const copy = codeAccessMessages("de");
+  for (const baseLocale of ["en", "de"]) {
+    const compiled = compileCapabilities("inventory", { ...definitions, presentation: { baseLocale, translations: {} } });
+    const manifest = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-DE");
+    expect(manifest.actions.find((op) => op.localId === "code.access.set")?.inputSchema).toMatchObject({
+      properties: {
+        proof: { description: copy.setInput.proof },
+        target: {
+          description: copy.setInput.target,
+          properties: { type: { description: copy.setInput["target.type"] }, id: { description: copy.setInput["target.id"] } },
+        },
+        operations: { description: copy.setInput.operations },
+        dryRun: { description: copy.setInput.dryRun },
+      },
+    });
+    expect(manifest.queries.find((op) => op.localId === "code.access.list")?.inputSchema).toMatchObject({
+      properties: { principal: { description: copy.listInput.principal } },
+    });
+    expect(manifest.actions.find((op) => op.localId === "code.access.rm")?.inputSchema).toMatchObject({
+      properties: { grantId: { description: copy.rmInput.grantId } },
+    });
+    const english = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "en");
+    expect(english.actions.find((op) => op.localId === "code.access.set")?.inputSchema).toMatchObject({
+      properties: { proof: { description: codeAccessMessages("en").setInput.proof } },
+    });
+  }
+  const compiled = compileCapabilities("inventory", {
+    ...definitions,
+    presentation: {
+      baseLocale: "en",
+      translations: { de: { actions: { "code.access.set": { title: "Zugriff einrichten", input: { proof: "Aktivierungsnachweis." } } } } },
+    },
+  });
+  expect(compiled.presentation?.translations.de?.actions?.["code.access.set"]).toMatchObject({
+    title: "Zugriff einrichten",
+    input: { ...copy.setInput, proof: "Aktivierungsnachweis." },
+  });
 });
 test("startup refuses access or owners without a declared reader and collisions", () => {
   expect(() => compileCapabilities("inventory", { ...definitions, code: { owners: ["missing"] } })).toThrow(/declared type with a reader/);

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { compileCapabilityManifest } from "../capabilities/testing";
-import { defineCapabilities } from "../contracts/capabilities";
+import { CloudResourceReaderViewSchema, defineCapabilities } from "../contracts/capabilities";
 
 /** Fictional provider: no installed application is a special case in the SDK. */
 export function sdkFixture(appId = "work-shop") {
@@ -9,10 +9,18 @@ export function sdkFixture(appId = "work-shop") {
     defineCapabilities({
       protocolVersion: 2,
       types: {
-        workshop: { title: "Workshop", description: "A workshop.", access: { readable: async () => [] } },
+        workshop: { title: "Workshop", description: "A workshop.", reader: "workshop.read", access: { readable: async () => [] } },
         item: { title: "Item", description: "An item." },
       },
       queries: {
+        "workshop.read": {
+          title: "Read workshop",
+          description: "Read one workshop.",
+          openWorld: false,
+          input: z.object({ id: z.string().describe("Workshop ID.") }).strict(),
+          data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
+          run: () => ({ ok: false as const, error: { code: "NOT_FOUND", message: "Missing", status: 404 as const } }),
+        },
         "stock.list": {
           title: "Stock",
           description: "Read stock in a workshop.",

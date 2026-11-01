@@ -20,7 +20,7 @@ import { AuthenticatedPrincipalSchema } from "./shared";
 
 export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
-export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
+export { CAPABILITY_MAX_RESULT_BYTES } from "./capability-limits";
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 export const CAPABILITY_QUALIFIED_ID_MAX_LENGTH = 180;
 export const CLOUD_RESOURCE_ID_MAX_LENGTH = 512;
