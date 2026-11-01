@@ -1879,11 +1879,14 @@ describe("spaces capabilities", () => {
     expect(review).toMatchObject({
       ok: true,
       data: {
-        details: [
-          { label: "Space", value: space.name },
-          { label: "Column", value: "To do" },
-          { label: "Title", value: task.title },
-        ],
+        preview: {
+          kind: "fields",
+          rows: [
+            { label: "Space", value: space.name },
+            { label: "Column", value: "To do" },
+            { label: "Title", value: task.title },
+          ],
+        },
       },
     });
     const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
