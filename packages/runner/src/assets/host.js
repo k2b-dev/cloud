@@ -3,13 +3,20 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 
 export class Cloud extends WorkerEntrypoint {
   async call(operation, input) {
-    const response = await this.env.BRIDGE.fetch("http://bridge/call", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: this.env.CAPABILITY },
-      body: JSON.stringify({ runId: this.ctx.props.runId, operation, input }),
-    });
-    if (!response.ok) throw new Error("runner_bridge_unavailable");
-    const result = await response.json();
+    let result;
+    try {
+      const response = await this.env.BRIDGE.fetch("http://bridge/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: this.env.CAPABILITY },
+        body: JSON.stringify({ runId: this.ctx.props.runId, operation, input }),
+      });
+      if (!response.ok) throw new Error("runner_bridge_unavailable");
+      result = await response.json();
+    } catch {
+      // The supervisor may close an oversized upload before workerd reads its 413.
+      // Code sees one stable code, never transport details.
+      throw new Error("runner_bridge_unavailable");
+    }
     if (!result.ok) throw new Error(result.error.code);
     return result.data;
   }
