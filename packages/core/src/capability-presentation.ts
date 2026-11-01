@@ -12,6 +12,49 @@ const codePolicyDefinitionInput = {
   "definition.rules[].value": "automatic führt automatisch aus, admin verlangt Admin-Freigabe, never verbietet.",
 };
 
+const codeIdInput = { codeId: "Stabile Code-ID aus der Code-Liste oder dem Lesen eines Codes." };
+const codeVersionInput = { ...codeIdInput, versionId: "UUID der unveränderlichen Version aus Einreichung oder Versionsliste." };
+const codeComparisonInput = {
+  comparisonVersionId: "UUID der genauen Vergleichsversion oder null für einen leeren Ausgangsstand.",
+};
+const codeVersionDecisionInput = {
+  ...codeVersionInput,
+  sourceHash: "Unveränderter SHA-256-Hash des geprüften Quelltexts aus dem Vergleich.",
+  bundleHash: "Unveränderter SHA-256-Hash des geprüften Bundles aus dem Vergleich.",
+  manifestHash: "Unveränderter SHA-256-Hash des gespeicherten Prüfmanifests.",
+  ...codeComparisonInput,
+  comparisonSourceHash: "Quelltext-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
+  comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
+};
+const codeVersionSubmissionInput = {
+  ...codeIdInput,
+  sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
+  bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
+  manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
+  "manifest.version": "Formatversion des Prüfmanifests, derzeit 1.",
+  "manifest.entry": "Ursprünglicher Einstiegspfad der Prüfanfrage; Bestandteil des Quelltext-Hashes.",
+  "manifest.policyRows": "Eindeutige Einstufungen aller deklarierten Aufrufe sowie der KI- und Internetnutzung.",
+  "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
+  "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
+  "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
+  "manifest.entrypoints[].cron": "Zeitplan mit fünf Feldern oder null bei manueller Ausführung.",
+  "manifest.entrypoints[].file": "Relative Quelldatei mit dieser Deklaration.",
+  "manifest.entrypoints[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.permissions": "Alle erkannten Operationen und Ziele mit ihren Quelltextstellen.",
+  "manifest.permissions[].operation": "Vollständige Operations-ID aus dem Capability-Katalog.",
+  "manifest.permissions[].target": "Genaues Operationsziel oder null bei einer anwendungsweiten Operation.",
+  "manifest.permissions[].target.type": "Vollständiger Ressourcentyp des Ziels.",
+  "manifest.permissions[].target.id": "Wörtliche Ziel-ID oder null bei einem dynamischen persönlichen Ziel.",
+  "manifest.permissions[].file": "Relative Quelldatei mit dieser Operation.",
+  "manifest.permissions[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.ai": "Ob erkannte Aufrufe KI nutzen.",
+  "manifest.hashes": "Prüfsummen für Quelltext, erzeugtes SDK und genaues Bundle.",
+  "manifest.hashes.source": "SHA-256-Hash des Quelltexts aus der Prüfung.",
+  "manifest.hashes.sdk": "SHA-256-Hash des erzeugten SDK aus der Prüfung.",
+  "manifest.hashes.bundle": "SHA-256-Hash des genauen Bundles aus der Prüfung.",
+  baseVersionId: "UUID der zuletzt gespeicherten Version oder null bei der ersten Einreichung.",
+};
+
 export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
@@ -37,15 +80,27 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Vollständigen Code-Vergleich lesen",
           description:
             "Liest begrenzte Abschnitte des vollständigen CodeDiff-JSON zweier unveränderlicher Versionen. Vor der Anzeige vollständig zusammensetzen.",
+          input: {
+            ...codeVersionInput,
+            ...codeComparisonInput,
+            offset: "UTF-16-Position aus dem vorherigen Abschnitt; bei 0 beginnen.",
+            length: "Maximale UTF-16-Zeichen pro Abschnitt; höchstens 65536.",
+          },
         },
         "code.version.diff": {
           title: "Code-Version vergleichen",
           description:
             "Liest vollständige Dateizeilen gegen die letzte freigegebene oder eingeschaltete Version mit genauem Entscheidungsstand.",
+          input: codeVersionInput,
         },
         "code.version.list": {
           title: "Code-Versionen auflisten",
           description: "Liest Einreichungen und Freigabe-Belege einschließlich der Allein-Admin-Entscheidung.",
+          input: {
+            ...codeIdInput,
+            before: "Versionsnummer aus nextBefore, ausschließlich dieser Version.",
+            limit: "Maximale Anzahl von Einträgen auf dieser Seite; höchstens 50.",
+          },
         },
         "code.policy.read": {
           title: "Code-Richtlinie lesen",
@@ -266,22 +321,27 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Code-Version einreichen",
           description:
             "Speichert geprüften Quelltext und Bundle gegen baseVersionId. Fragt nötige Freigaben an; die aktive Version läuft weiter.",
+          input: codeVersionSubmissionInput,
         },
         "code.version.approve": {
           title: "Code-Version freigeben",
           description: "Gibt genau diesen Quelltext, dieses Bundle und diesen Vergleich über die Cloud-Admin-Regel der Plattform frei.",
+          input: codeVersionDecisionInput,
         },
         "code.version.reject": {
           title: "Code-Version ablehnen",
           description: "Lehnt die genaue Version und ihren Vergleich über dieselbe Plattform-Anfrage ab.",
+          input: codeVersionDecisionInput,
         },
         "code.pause": {
           title: "Code pausieren",
           description: "Pausiert weitere Ausführung. Die aktive Version bleibt erhalten; verpasste Ereignisse werden nicht nachgeholt.",
+          input: codeIdInput,
         },
         "code.resume": {
           title: "Code fortsetzen",
           description: "Setzt die aktive Version nach Prüfung der aktuellen Richtlinie und Freigabe-Belege fort.",
+          input: codeIdInput,
         },
         "code.policy.update": {
           title: "Code-Richtlinie ändern",
