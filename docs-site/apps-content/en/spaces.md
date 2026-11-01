@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Spaces
@@ -680,3 +680,31 @@ resolves the linked event from its Mail correlation values.
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the invocation and review contract.
+
+## Code access to a Space
+
+A Space can be a target for resource-owned Code. Core activates its access
+with `spaces.code.access.set`, lists it with `spaces.code.access.list`, and
+removes a grant with `spaces.code.access.rm`. The target is
+`{ type: "spaces.space", id: spaceId }`, using the public Space ID.
+Spaces does not declare Code owners in Phase 1.
+
+Spaces chooses the smallest level covering every requested operation: `read`
+for readers, or `write` for changes and Queries that require write access,
+such as assignee and writable-destination discovery. It refuses the entire
+request with a reason when any operation is unknown, belongs to another app,
+requires template administration, edits a person’s comment, or has a Mail
+workflow marked `code: false`. Code never receives an administrative level
+or counts as a Space manager. Forced task claims and releases still require
+admin and remain unavailable to Code. The version mandate still limits individual
+operations at each target.
+
+Only the Code account’s explicit grants count. Public, group, and
+all-signed-in access do not give it access to another Space. Removing a grant
+changes permission checks immediately; overlapping grants remain independent.
+Ordinary access lists include `grantId` for Code entries. Change those grants
+through Core using that ID; normal share updates and removals refuse them.
+Person and other service-account sharing keeps its existing behavior.
+
+See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
+for activation proofs, dry runs, retry safety, and cleanup.

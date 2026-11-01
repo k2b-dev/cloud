@@ -564,9 +564,11 @@ are incomplete. The manifest advertises the supported targets and owners in
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
 
-Use only the supplied transaction for adapter reads and writes. Do not publish
-events, send notifications, or perform other external effects there. A dry run
-must produce the same decision without effects; Cloud also rolls back its
+Use only the supplied transaction for adapter reads and writes. Transactional
+outbox writes, such as access invalidations, are allowed and roll back with the
+grant. Do not deliver events, send notifications, or perform other external
+effects there. A dry run must produce the same decision without effects;
+Cloud also rolls back its
 transaction. A refusal or exception rolls back the adapter's writes. Code
 receives neither `admin` nor a manager role. Keep different grant IDs
 independent, even for the same account and target: rolling back a new

@@ -2767,7 +2767,7 @@ test("discussion containers continue from the same offset when the limit changes
 
 test("Space actions declare a fixed container and flat tools lift it out of domain input", () => {
   const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
-  for (const action of manifest.actions) {
+  for (const action of manifest.actions.filter((entry) => !entry.localId.startsWith("code.access."))) {
     expect(action.target).toBe(action.localId === "calendar-invitation.response.commit" ? undefined : "space");
     expect(action.inputSchema.properties).not.toHaveProperty("spaceId");
   }
