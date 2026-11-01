@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { requireConfirmedBrowserSignIn, toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 import * as clients from "./clients";
 import { rejectBrowserSignIn } from "./sign-in";

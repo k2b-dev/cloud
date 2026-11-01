@@ -169,8 +169,16 @@ export default function GridsSidebar(props: { userId?: string; state: PublicOkWo
 
       {documentNavigation()}
 
-      {state.catalog.workflows.length > 0 && (
+      {(state.catalog.workflows.length > 0 || workflowsRoute) && (
         <AppWorkspace.SidebarSection title={t.workflows}>
+          {/* The overview exists only while a base has no workflow (it opens the first one otherwise). The sidebar marks
+              it there, so its head needs no way back. */}
+          {workflowsRoute && !workflowsRoute.activeWorkflow && (
+            <SidebarLink href={keepEdit(`/app/grids/${state.base.id}/workflows`, state.adminModeRequested)} active>
+              <AppWorkspace.SidebarItemIcon icon="ti ti-route" />
+              <AppWorkspace.SidebarItemLabel>{t.allWorkflows}</AppWorkspace.SidebarItemLabel>
+            </SidebarLink>
+          )}
           {state.catalog.workflows.map((workflow) => {
             const active = workflowsRoute?.activeWorkflow?.id === workflow.id;
             return (

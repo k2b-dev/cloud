@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { isUniqueViolation, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 
 export const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;
 export const SHORT_ID_LENGTH = 6;

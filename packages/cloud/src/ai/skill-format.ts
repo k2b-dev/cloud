@@ -9,9 +9,14 @@ export const AI_SKILL_REFERENCE_MAX_CHARS = 100_000;
 export const AI_SKILL_REFERENCE_MAX_ITEMS = 50;
 export const AI_SKILL_REFERENCES_MAX_CHARS = 1_000_000;
 export const AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS = 20_000;
+/** Matches the load_tools request limit, so one Skill never asks for more than one load_tools call could. */
+export const AI_SKILL_LOAD_TOOLS_MAX_ITEMS = 25;
+/** Optional frontmatter field: tools that load_skill makes callable together with the Skill. It grants nothing. */
+export const AI_SKILL_LOAD_TOOLS_FIELD = "load-tools";
 
 export const AI_SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const AI_SKILL_REFERENCE_PATH_PATTERN = /^references\/[a-z0-9][a-z0-9._-]*\.md$/;
+const AI_SKILL_LOAD_TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/;
 
 export type AiSkillExtraFrontmatter = Record<string, unknown>;
 
@@ -29,6 +34,20 @@ export type AiSkillDocument = {
 
 export const isAiSkillManualOnly = (extraFrontmatter: AiSkillExtraFrontmatter): boolean =>
   extraFrontmatter["disable-model-invocation"] === true;
+
+/** Capability IDs or built-in tool names the Skill loads with itself; empty when the field is absent. */
+export const aiSkillLoadTools = (extraFrontmatter: AiSkillExtraFrontmatter): string[] => {
+  const value = extraFrontmatter[AI_SKILL_LOAD_TOOLS_FIELD];
+  return Array.isArray(value) ? value.filter((name): name is string => typeof name === "string") : [];
+};
+
+const validateAiSkillLoadTools = (value: unknown): void => {
+  if (value === undefined) return;
+  const message = `SKILL.md frontmatter field "${AI_SKILL_LOAD_TOOLS_FIELD}" must list 1-${AI_SKILL_LOAD_TOOLS_MAX_ITEMS} unique capability IDs or built-in tool names, such as inventory.location.list.`;
+  if (!Array.isArray(value) || value.length < 1 || value.length > AI_SKILL_LOAD_TOOLS_MAX_ITEMS) throw new Error(message);
+  if (value.some((name) => typeof name !== "string" || !AI_SKILL_LOAD_TOOL_NAME_PATTERN.test(name))) throw new Error(message);
+  if (new Set(value).size !== value.length) throw new Error(message);
+};
 
 export const mountAiSkillInstructionLinks = (name: string, instructions: string): string =>
   instructions.replace(/\]\((references\/[a-z0-9][a-z0-9._-]*\.md)\)/g, (_, path: string) => `](${AI_SKILL_FILE_MOUNT}/${name}/${path})`);
@@ -83,6 +102,7 @@ export const validateAiSkillExtraFrontmatter = (value: AiSkillExtraFrontmatter =
     }
   }
   assertJsonValue(value, "Skill frontmatter");
+  validateAiSkillLoadTools(value[AI_SKILL_LOAD_TOOLS_FIELD]);
   if (JSON.stringify(value).length > AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS) {
     throw new Error(`Optional SKILL.md frontmatter exceeds ${AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS} characters.`);
   }

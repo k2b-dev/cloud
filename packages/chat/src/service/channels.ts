@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import type { z } from "zod";
 import {
   boundConversation,

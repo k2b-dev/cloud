@@ -12,14 +12,15 @@ const load = async () => {
     const { default: NoteEditor } = await import("./NoteEditor.client");
     const { LocaleProvider } = await import("@k2b/ui");
     const { yjs } = await import("../../../lib/yjs");
-    return { NoteEditor, LocaleProvider, yjs };
+    const offline = await import("../../../lib/yjs/offline");
+    return { NoteEditor, LocaleProvider, yjs, offline };
   } finally {
     dom.cleanup();
   }
 };
 const loaded = isServer ? undefined : await load();
 
-const mount = (markdown: string) => {
+const mount = async (markdown: string) => {
   const dom = createDomTestHarness();
   delegateEvents(["click", "mousedown"], dom.document);
   const previousBindings = new Map<string, PropertyDescriptor | undefined>();
@@ -32,35 +33,53 @@ const mount = (markdown: string) => {
   const { NoteEditor, LocaleProvider, yjs } = loaded!;
   // Keep the real editor, collaboration binding, attachment event and ScrollArea handlers;
   // only the network provider is inert. No service is contacted by this fixture.
-  const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => ({
-    connect() {},
-    reconnectNow() {},
-    resume() {},
-    dispose() {},
-    hasUnsentChanges: () => false,
-    restoreRevision: () => opts.initialRestoreRevision ?? null,
-    canStructure: () => false,
-    canUndo: () => !!opts.undoManager?.undoStack.length,
-    canRedo: () => !!opts.undoManager?.redoStack.length,
-    undo: async () => {
-      opts.undoManager?.undo();
-      return null;
-    },
-    redo: async () => {
-      opts.undoManager?.redo();
-      return null;
-    },
-    setInverseHandler: () => {},
-    recoveryInput: () => ({
-      state: Y.encodeStateAsUpdate(opts.doc),
-      text: opts.doc.getText("codemirror").toString(),
-      pending: [],
-      baseCursor: null,
-    }),
-    beginAction: () => {
-      throw new Error("Structure is unavailable in this fixture");
-    },
-  }));
+  let options: Parameters<typeof yjs.createYjsProvider>[0] | undefined;
+  const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => {
+    options = opts;
+    return {
+      connect() {},
+      reconnectNow() {},
+      resume() {},
+      dispose() {},
+      hasUnsentChanges: () => false,
+      restoreRevision: () => opts.initialRestoreRevision ?? null,
+      canStructure: () => false,
+      canUndo: () => !!opts.undoManager?.undoStack.length,
+      canRedo: () => !!opts.undoManager?.redoStack.length,
+      undo: async () => {
+        opts.undoManager?.undo();
+        return null;
+      },
+      redo: async () => {
+        opts.undoManager?.redo();
+        return null;
+      },
+      setInverseHandler: () => {},
+      recoveryInput: () => ({
+        state: Y.encodeStateAsUpdate(opts.doc),
+        text: opts.doc.getText("codemirror").toString(),
+        pending: [],
+        baseCursor: null,
+      }),
+      beginAction: () => {
+        throw new Error("Structure is unavailable in this fixture");
+      },
+    };
+  });
+  const device = spyOn(loaded!.offline, "openNotebookDocument").mockImplementation(async (options) => {
+    options.doc.transact(() => options.doc.getText("codemirror").insert(0, markdown), "remote");
+    const provider = loaded!.yjs.createYjsProvider({ ...options, initialRestoreRevision: "0" });
+    return {
+      provider,
+      recovery: false,
+      pending: false,
+      refresh: async () => {},
+      retry: async () => {},
+      discard: async () => {},
+      flush: async () => true,
+      dispose: () => provider.dispose(),
+    };
+  });
   const dispose = render(
     () => (
       <LocaleProvider locale="en">
@@ -100,17 +119,20 @@ const mount = (markdown: string) => {
     ),
     dom.root,
   );
+  await Promise.resolve();
   const view = EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
   const surface = view.dom.closest<HTMLElement>(".k2b-scroll-area")!;
   return {
     dom,
     view,
     surface,
+    provider: () => options!,
     async [Symbol.asyncDispose]() {
       dispose();
       // Focus-out cleanup queues a measurement in the shared editor. Let it run
       // before removing this document, just as when the real page stays mounted.
       await Promise.resolve();
+      device.mockRestore();
       provider.mockRestore();
       for (const [name, previous] of previousBindings) {
         if (previous) Object.defineProperty(globalThis, name, previous);
@@ -130,7 +152,7 @@ describe("Notebook attachment and recovery surface integration", () => {
   test.each(["| Item | Cost |\n| --- | ---: |\n| Paper | 4 |", "Item | Cost\n--- | ---:\nPaper | 4"])(
     "the actual attachment event inserts after the table without changing its source (%s)",
     async (table) => {
-      await using app = mount(`Intro\n\n${table}\n\nFollowing prose.`);
+      await using app = await mount(`Intro\n\n${table}\n\nFollowing prose.`);
       app.view.dispatch({ selection: { anchor: app.view.state.doc.toString().indexOf("Paper") } });
       window.dispatchEvent(
         new CustomEvent(EDITOR_INSERT_ATTACHMENT_EVENT, { detail: { id: "File01", kind: "file", filename: "invoice.pdf" } }),
@@ -140,7 +162,7 @@ describe("Notebook attachment and recovery surface integration", () => {
   );
 
   test("the attachment picker remains available while a table cell has focus", async () => {
-    await using app = mount("| Item | Cost |\n| --- | ---: |\n| Paper | 4 |");
+    await using app = await mount("| Item | Cost |\n| --- | ---: |\n| Paper | 4 |");
     const cell = app.view.contentDOM.querySelector<HTMLElement>(".k2b-ste-cell");
     if (!cell) throw new Error("Missing editable cell");
     cell.focus();
@@ -152,7 +174,7 @@ describe("Notebook attachment and recovery surface integration", () => {
   });
 
   test("the actual blank surface handler leaves preserved input selectable and recovery controls operable", async () => {
-    await using app = mount("Beginning\n\nEnd of note");
+    await using app = await mount("Beginning\n\nEnd of note");
     app.view.dispatch({ selection: { anchor: 2 } });
     app.view.focus();
     const interrupted = `Interrupted input ${"x".repeat(NOTE_EDITOR_MAX_LENGTH)}`;

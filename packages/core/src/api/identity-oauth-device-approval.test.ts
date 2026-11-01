@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { appApproval } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { sql } from "bun";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate/core/app-approval";
 import { cleanupTerminalLogins, createIdentityOAuthDeviceApprovalRoutes, terminalLogins } from "./identity-oauth-device-approval";
-import { createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
+import { authorizeOAuthRequest, createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
 const previousBroker = process.env.CLOUD_OAUTH_BROKER_SECRET;
 beforeAll(() => {
@@ -32,7 +32,9 @@ const input = (deviceAuthorizationId = crypto.randomUUID(), clientId = "test-cli
 
 describe("Core OAuth device approval broker", () => {
   test("authenticates before parsing even a malformed or oversized body", async () => {
-    const routes = createIdentityOAuthDeviceApprovalRoutes();
+    const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
+      authorizeOAuthRequest(c, undefined, async () => {}),
+    );
     for (const authorization of [undefined, "Bearer invalid", `Bearer ${"cd".repeat(32)}`]) {
       const response = await routes.request("/oauth/device-approval", {
         method: "POST",
@@ -45,7 +47,9 @@ describe("Core OAuth device approval broker", () => {
   });
 
   test("strict bounded input rejects malformed bodies before any database query", async () => {
-    const routes = createIdentityOAuthDeviceApprovalRoutes();
+    const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
+      authorizeOAuthRequest(c, undefined, async () => {}),
+    );
     for (const body of [
       {},
       { ...input(), extra: true },
@@ -152,7 +156,9 @@ databaseSuite()("Core terminal authorization bridge", () => {
 
   test("rejects decided, expired, wrong-client, scopes, admin, lifetime and duplicate links", async () => {
     const f = await fixture();
-    const routes = createIdentityOAuthDeviceApprovalRoutes();
+    const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
+      authorizeOAuthRequest(c, undefined, async () => {}),
+    );
     try {
       for (const invalid of [
         "decided",
@@ -202,7 +208,9 @@ databaseSuite()("Core terminal authorization bridge", () => {
     const f = await fixture();
     const groups = [crypto.randomUUID(), crypto.randomUUID()];
     try {
-      const routes = createIdentityOAuthDeviceApprovalRoutes();
+      const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
+        authorizeOAuthRequest(c, undefined, async () => {}),
+      );
       for (const kind of ["unknown", "real", "not-accepted", "disallowed", "direct", "nested"] as const) {
         await sql`UPDATE oauth.clients SET access_mode=${["disallowed", "direct", "nested"].includes(kind) ? "specific" : "profiles"} WHERE id=${f.clientPk}::uuid`;
         if (kind === "not-accepted") await sql`DELETE FROM auth.legal_acceptances WHERE user_id=${f.userId}::uuid`;
@@ -454,7 +462,9 @@ databaseSuite()("Core terminal authorization bridge", () => {
     const f = await fixture();
     try {
       await sql`UPDATE auth.users SET auth_epoch=3 WHERE id=${f.userId}::uuid`;
-      const routes = createIdentityOAuthDeviceApprovalRoutes();
+      const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
+        authorizeOAuthRequest(c, undefined, async () => {}),
+      );
       for (const decision of ["approve", "deny"] as const) {
         const id = await f.authorization(),
           other = await f.authorization();

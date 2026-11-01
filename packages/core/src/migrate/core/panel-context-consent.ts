@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { CAPABILITY_APP_ID_MAX_LENGTH } from "@k2b/cloud/contracts/capabilities";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db

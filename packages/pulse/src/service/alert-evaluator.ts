@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { ALERT_MAX_KEYS, type AlertKeyState, type AlertSeverity, type AlertStateName, type AlertThresholds } from "../alert-contracts";
 import { nextAlertState, readAlertValues } from "./alert-state";
 import { recordBaseActivity } from "./base-activity";

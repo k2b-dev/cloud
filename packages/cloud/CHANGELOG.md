@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.52.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.51.0...npm-cloud-v0.52.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** migrate deployments to app key files with checked upgrade steps ([#2268](https://github.com/k2b-dev/cloud/issues/2268)) ([52c1438](https://github.com/k2b-dev/cloud/commit/52c1438cc02a7746099d672631f513cf12b4ce42))
+* **cloud:** require migration evidence before retiring app credentials ([#2266](https://github.com/k2b-dev/cloud/issues/2266)) ([b1ba1da](https://github.com/k2b-dev/cloud/commit/b1ba1dad5319622cecb6b6308446543328f30bc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.40.0 to 0.41.0
+    * @k2b/editor bumped from 0.3.1 to 0.4.0
+
+## [0.51.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.50.0...npm-cloud-v0.51.0) (2026-11-01)
+
+
+### Features
+
+* **assistant:** skills load their core tools and simple requests finish in fewer rounds ([#2275](https://github.com/k2b-dev/cloud/issues/2275)) ([f290d51](https://github.com/k2b-dev/cloud/commit/f290d519ab7cc8c1ce605bb8ca41b299bd8ce6f7))
+* **cli:** administer Cloud with a normal admin login ([#2251](https://github.com/k2b-dev/cloud/issues/2251)) ([c79a019](https://github.com/k2b-dev/cloud/commit/c79a0197c606dabfdab4d12143a34b7d5a2d836b))
+* **cloud:** apps use only the platform database and cache clients ([#2260](https://github.com/k2b-dev/cloud/issues/2260)) ([ff7901d](https://github.com/k2b-dev/cloud/commit/ff7901d741ded39c87c413f5b4d63898baa031b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.39.0 to 0.40.0
+    * @k2b/editor bumped from 0.3.0 to 0.3.1
+
+## [0.50.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.49.0...npm-cloud-v0.50.0) (2026-10-31)
+
+
+### Features
+
+* **core:** the Apps page says when Core refused an app's start and how to recover ([#2230](https://github.com/k2b-dev/cloud/issues/2230)) ([f9eef29](https://github.com/k2b-dev/cloud/commit/f9eef29a112d46569b833a9de580b5d052466075))
+
+
+### Bug Fixes
+
+* **notebooks:** show CLI edits live in open notes ([#2227](https://github.com/k2b-dev/cloud/issues/2227)) ([9ce093c](https://github.com/k2b-dev/cloud/commit/9ce093ced8e2d2d8f381ee71d85a7b167f410872))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.1 to 0.39.0
+    * @k2b/editor bumped from 0.2.0 to 0.3.0
+
+## [0.49.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.48.0...npm-cloud-v0.49.0) (2026-10-31)
+
+
+### Features
+
+* **capabilities:** call platform capabilities as the app ([#2214](https://github.com/k2b-dev/cloud/issues/2214)) ([de4a979](https://github.com/k2b-dev/cloud/commit/de4a979ca1125d1c314b00479f12fa3aef218b49)), closes [#2213](https://github.com/k2b-dev/cloud/issues/2213)
+* **identity:** admins see why an app start was refused ([#2224](https://github.com/k2b-dev/cloud/issues/2224)) ([94e7df1](https://github.com/k2b-dev/cloud/commit/94e7df121f9672f40213bd6f32d94cfac833feb3))
+* **identity:** apps sign background and OAuth calls with their key ([#2191](https://github.com/k2b-dev/cloud/issues/2191)) ([d0da761](https://github.com/k2b-dev/cloud/commit/d0da76197d3cb17ec0156547ac9abc60d8b203bc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.0 to 0.38.1
+    * @k2b/editor bumped from 0.1.1 to 0.2.0
+
 ## [0.48.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.47.0...npm-cloud-v0.48.0) (2026-10-31)
 
 

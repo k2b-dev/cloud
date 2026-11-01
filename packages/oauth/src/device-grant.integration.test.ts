@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { type AppTerminalLogins, appApproval, oauthTokens, readAppApprovalConfig, toPgUuidArray } from "@k2b/cloud/services";
@@ -6,7 +7,6 @@ import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
@@ -175,6 +175,29 @@ const expectTokensEndBy = (tokens: Record<string, unknown>, endsAt: Date) => {
 
 suite("OAuth device authorization grant", () => {
   useTestSettings({ "app.url": ISSUER });
+  test("the first-party CLI can explicitly request short-lived admin consent without widening normal logins", () =>
+    withFrozenTime(async () => {
+      const who = await person("CLI step-up");
+      await sql`UPDATE auth.users SET admin=true WHERE id=${who.userId}::uuid`;
+      const started = await startDevice({ scope: "openid offline_access read write admin", ttl: "900" });
+      expect((await poll(started.device_code)).body).toMatchObject({ error: "authorization_pending" });
+      const approval = await confirmRequest(who, started.user_code);
+      expect(approval.scopes).toContain("admin");
+      await decide(who, approval.request, "approve");
+      await allowNextPoll(started.device_code);
+      const issued = await poll(started.device_code);
+      expect(issued.status, JSON.stringify(issued.body)).toBe(200);
+      expect(String(issued.body.scope).split(" ")).toContain("admin");
+      const token = String(issued.body.access_token);
+      expect(await oauthTokens.verifyAccessToken(token, ["cloud", "cloud-cli"])).toMatchObject({
+        kind: "user",
+        user: { roles: expect.arrayContaining(["admin"]) },
+        scopes: expect.arrayContaining(["admin"]),
+      });
+      await sql`UPDATE auth.users SET admin=false WHERE id=${who.userId}::uuid`;
+      const revoked = await oauthTokens.verifyAccessToken(token, ["cloud", "cloud-cli"]);
+      expect(revoked?.kind === "user" && revoked.user.roles.includes("admin")).toBe(false);
+    }));
   test("signing out everywhere ends device refresh and access tokens on the next request", () =>
     withFrozenTime(async () => {
       const who = await person();

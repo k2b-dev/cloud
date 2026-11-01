@@ -1,9 +1,14 @@
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
+import { audit } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
 import { storageSettings } from "./storage-settings";
 import { testIdentity } from "./test-identity";
+
+useUnitClients();
 
 const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
   savepoint: () => {
@@ -19,9 +24,11 @@ beforeEach(() => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     await run(tx);
   });
+  const record = spyOn(audit, "record").mockResolvedValue();
   const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
   restoreTransaction = () => {
     begin.mockRestore();
+    record.mockRestore();
     invalidate.mockRestore();
   };
 });

@@ -1,9 +1,9 @@
-import { createSql } from "@k2b/cloud";
+import { createSql, sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { hasPermission, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
-import { SQL, sql, type TransactionSQL } from "bun";
+import { SQL, type TransactionSQL } from "bun";
 import * as Y from "yjs";
 import { z } from "zod";
 import {
@@ -268,14 +268,14 @@ const withNoteLock = async <T>(
   run: (tx: TransactionSQL) => Promise<Result<T>>,
 ): Promise<Result<T>> => {
   try {
-    return await annotationTransactions().begin(async (tx) => {
+    return await workspaceEvents.workspaceTransaction(async (tx) => {
       context.signal.throwIfAborted();
       // Only the fixed platform budget is interpolated into SET LOCAL.
       await tx.unsafe(`SET LOCAL lock_timeout = '${ANNOTATION_LOCK_TIMEOUT_MS}ms'`);
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`notebooks.annotations:${noteId}`}, 0))`;
       context.signal.throwIfAborted();
       return run(tx);
-    });
+    }, annotationTransactions());
   } catch (error) {
     if (error instanceof SQL.PostgresError && error.errno === "55P03") return conflict(words(context).busy, { retryable: true });
     throw error;
@@ -451,18 +451,18 @@ export const readResource = async (id: string, context: AnnotationContext) => {
   >`SELECT note.short_id FROM notebooks.annotations annotation JOIN notebooks.notes note ON note.id = annotation.note_id WHERE annotation.id = ${id}::uuid`;
   return row ? read(row.short_id, id, context) : notFound(context);
 };
-const changed = async (note: notes.Note) => {
+const changed = async (note: notes.Note, tx: TransactionSQL) => {
   // Every write opportunistically purges one bounded page after the original
   // author mutation window, without introducing another worker or schedule.
   const expiredBefore = new Date(Date.now() - COMMENT_MUTATION_WINDOW_MS);
-  await sql`DELETE FROM notebooks.annotation_replies WHERE id IN (
+  await tx`DELETE FROM notebooks.annotation_replies WHERE id IN (
     SELECT reply.id FROM notebooks.annotation_replies reply JOIN notebooks.annotations root ON root.id = reply.annotation_id
     WHERE root.note_id = ${note.id}::uuid AND reply.deleted_at IS NOT NULL AND reply.created_at < ${expiredBefore} LIMIT ${ANNOTATION_PAGE_SIZE}
   )`;
-  await sql`DELETE FROM notebooks.annotations WHERE id IN (
+  await tx`DELETE FROM notebooks.annotations WHERE id IN (
     SELECT id FROM notebooks.annotations WHERE note_id = ${note.id}::uuid AND deleted_at IS NOT NULL AND created_at < ${expiredBefore} LIMIT ${ANNOTATION_PAGE_SIZE}
   )`;
-  await workspaceEvents.noteCommentsChanged({ notebookId: note.notebookId, noteId: note.id });
+  await workspaceEvents.noteCommentsChanged({ notebookId: note.notebookId, noteId: note.id }, tx);
 };
 export const create = async (noteId: string, input: z.input<typeof AnnotationCreateSchema>, context: AnnotationContext) => {
   const parsed = AnnotationCreateSchema.safeParse(input);
@@ -512,13 +512,13 @@ export const create = async (noteId: string, input: z.input<typeof AnnotationCre
         },
         tx,
       );
+      await changed(access.data.note, tx);
       return ok(row!.id);
     } finally {
       head.doc.destroy();
     }
   });
   if (!result.ok) return result;
-  await changed(access.data.note);
   return read(noteId, result.data, context);
 };
 const replyHasContent = async (root: RootRow, body: string, suggestion: string | null, context: AnnotationContext) => {
@@ -545,7 +545,7 @@ export const reply = async (noteId: string, id: string, input: z.input<typeof An
   const access = await authorize(noteId, context, true);
   if (!access.ok) return access;
   const identity = actor(context);
-  return withNoteLock(access.data.note.id, context, async () => {
+  return withNoteLock(access.data.note.id, context, async (tx) => {
     const root = await loadRoot(access.data.note.id, id);
     if (!root || root.deleted_at) return notFound(context);
     const suggestion = parsed.data.suggestion ?? null;
@@ -559,15 +559,15 @@ export const reply = async (noteId: string, id: string, input: z.input<typeof An
     >`SELECT *, created_at::text AS cursor_at FROM notebooks.annotation_replies WHERE annotation_id = ${id}::uuid AND author_kind = ${identity.kind} AND author_id = ${identity.id}::uuid AND idempotency_key = ${parsed.data.idempotencyKey}`;
     if (existing) {
       if (existing.payload_hash !== hash) return conflict(words(context).key);
-      await changed(access.data.note);
+      await changed(access.data.note, tx);
       return ok(mapReply(existing, context, true));
     }
     if (!(await replyHasContent(root, parsed.data.body, suggestion, context))) return fail(err.badInput(words(context).invalid));
-    const [row] = await sql<
+    const [row] = await tx<
       ReplyRow[]
     >`INSERT INTO notebooks.annotation_replies (annotation_id, author_kind, author_id, author_name, author_avatar_hash, via, body, suggestion, suggestion_state, idempotency_key, payload_hash, request_id)
       VALUES (${id}::uuid, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${identity.avatarHash}, ${via(context)}, ${parsed.data.body}, ${suggestion}, ${suggestion === null ? null : "open"}, ${parsed.data.idempotencyKey}, ${hash}, ${context.requestId}) RETURNING *, created_at::text AS cursor_at`;
-    await changed(access.data.note);
+    await changed(access.data.note, tx);
     return ok(mapReply(row!, context, true));
   });
 };
@@ -613,7 +613,7 @@ export const mutate = async (
     return notFound(context);
   const access = await authorize(noteId, context, true);
   if (!access.ok) return access;
-  const result = await withNoteLock(access.data.note.id, context, async () => {
+  const result = await withNoteLock(access.data.note.id, context, async (tx) => {
     const root = await loadRoot(access.data.note.id, id);
     if (!root || (root.deleted_at && (input.kind !== "restore" || input.replyId))) return notFound(context);
     const [replyRow] = input.replyId
@@ -629,7 +629,7 @@ export const mutate = async (
         await sql`SELECT id FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND status = 'pending' LIMIT 1`;
       if (pending) return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
       const identity = actor(context);
-      await sql`UPDATE notebooks.annotations SET state = ${input.kind === "resolve" ? "resolved" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), state_via = ${via(context)}, updated_at = now() WHERE id = ${id}::uuid`;
+      await tx`UPDATE notebooks.annotations SET state = ${input.kind === "resolve" ? "resolved" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), state_via = ${via(context)}, updated_at = now() WHERE id = ${id}::uuid`;
     } else {
       if (!mutable(row, context, true)) return fail(err.forbidden(words(context).own));
       if (input.kind === "edit") {
@@ -652,7 +652,7 @@ export const mutate = async (
         const newSuggestion = suggestion !== row.suggestion && suggestion !== null;
         const state = suggestion === row.suggestion ? row.suggestion_state : suggestion === null ? null : "open";
         const table = replyRow ? "notebooks.annotation_replies" : "notebooks.annotations";
-        await sql`UPDATE ${sql(table)} SET body = ${parsed.data.body}, suggestion = ${suggestion}, suggestion_state = ${state},
+        await tx`UPDATE ${sql(table)} SET body = ${parsed.data.body}, suggestion = ${suggestion}, suggestion_state = ${state},
           suggestion_state_by_kind = ${suggestion === row.suggestion ? row.suggestion_state_by_kind : newSuggestion ? identity.kind : null},
           suggestion_state_by_id = ${suggestion === row.suggestion ? row.suggestion_state_by_id : newSuggestion ? identity.id : null}::uuid,
           suggestion_state_by_name = ${suggestion === row.suggestion ? row.suggestion_state_by_name : newSuggestion ? identity.name : null},
@@ -676,12 +676,12 @@ export const mutate = async (
           if (pending) return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
         }
         if (replyRow)
-          await sql`UPDATE notebooks.annotation_replies SET deleted_at = ${input.kind === "delete" ? new Date() : null}, updated_at = now() WHERE id = ${row.id}::uuid`;
+          await tx`UPDATE notebooks.annotation_replies SET deleted_at = ${input.kind === "delete" ? new Date() : null}, updated_at = now() WHERE id = ${row.id}::uuid`;
         else
-          await sql`UPDATE notebooks.annotations SET deleted_at = ${input.kind === "delete" ? new Date() : null}, updated_at = now() WHERE id = ${id}::uuid`;
+          await tx`UPDATE notebooks.annotations SET deleted_at = ${input.kind === "delete" ? new Date() : null}, updated_at = now() WHERE id = ${id}::uuid`;
       }
     }
-    await changed(access.data.note);
+    await changed(access.data.note, tx);
     return ok({ id: row.id, annotationId: id, deleted: input.kind === "delete" });
   });
   return result;
@@ -699,7 +699,7 @@ export const reject = async (noteId: string, id: string, input: z.input<typeof A
   if (!AnnotationIdSchema.safeParse(id).success) return notFound(context);
   const access = await authorize(noteId, context, true);
   if (!access.ok) return access;
-  return withNoteLock(access.data.note.id, context, async () => {
+  return withNoteLock(access.data.note.id, context, async (tx) => {
     const root = await loadRoot(access.data.note.id, id);
     if (!root || root.deleted_at) return notFound(context);
     const selected = await loadSuggestion(root, parsed.data.replyId);
@@ -712,11 +712,11 @@ export const reject = async (noteId: string, id: string, input: z.input<typeof A
     if (selected.suggestion_state !== state) {
       const identity = actor(context);
       const table = parsed.data.replyId ? "notebooks.annotation_replies" : "notebooks.annotations";
-      await sql`UPDATE ${sql(table)} SET suggestion_state = ${state}, suggestion_state_by_kind = ${identity.kind},
+      await tx`UPDATE ${sql(table)} SET suggestion_state = ${state}, suggestion_state_by_kind = ${identity.kind},
         suggestion_state_by_id = ${identity.id}::uuid, suggestion_state_by_name = ${identity.name},
         suggestion_state_at = now(), suggestion_state_via = ${via(context)}, updated_at = now() WHERE id = ${selected.id}::uuid`;
     }
-    await changed(access.data.note);
+    await changed(access.data.note, tx);
     return ok({ id: selected.id, annotationId: id, deleted: false });
   });
 };
@@ -787,7 +787,6 @@ export const operate = async (
       )
         return conflict(words(context).operation);
       if (operation.status === "applied") {
-        await changed(access.data.note);
         return ok({ id, operationId: operation.id, status: "applied" as const, state: root.state });
       }
       if (operation.status === "conflict") return conflict(words(context).changed, conflictData(operation.id, operation.current_text));
@@ -932,7 +931,7 @@ export const operate = async (
           head.doc.destroy();
         }
       }
-      await sql.begin(async (tx) => {
+      await workspaceEvents.workspaceTransaction(async (tx) => {
         await tx`UPDATE notebooks.annotation_operations SET status = 'applied', updated_at = now() WHERE id = ${op.id}::uuid`;
         // Accept follows the inserted items; undo follows the restored items.
         if (op.start_rel && op.end_rel)
@@ -943,8 +942,8 @@ export const operate = async (
           suggestion_state_by_kind = ${identity.kind}, suggestion_state_by_id = ${identity.id}::uuid,
           suggestion_state_by_name = ${identity.name}, suggestion_state_at = now(), suggestion_state_via = ${op.via},
           updated_at = now() WHERE id = ${op.reply_id ?? id}::uuid`;
+        await changed(access.data.note, tx);
       });
-      await changed(access.data.note);
       return ok({ id, operationId: op.id, status: "applied" as const, state: kind === "accept" ? "accepted" : "open" });
     } catch (error) {
       if (error instanceof OperationConflict) {

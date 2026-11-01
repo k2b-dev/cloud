@@ -488,7 +488,7 @@ the corresponding administrator access/grant/change-grant commands and
 `delete <resource-id> --yes` for confirmed deletion.
 
 Read redacted connection state with `studio-admin settings`. Configure using
-`studio-admin configure --input-file <private-json-file>` with `url` and `token`;
+`studio-admin configure --input-file <private-json-file> --yes` with `url` and `token`;
 omit `token` to preserve it, or add `--test` to test without saving. Never put
 the token directly in command arguments. Settings cannot replace a server that
 still owns databases or pending cleanup. Central inventory covers shared data
@@ -672,7 +672,7 @@ Manage). Project members inherit Use on linked published Apps:
 cld assistant code file-upload APP --file invoice.pdf --key invoices/invoice.pdf
 cld assistant code file-download APP --key invoices/invoice.pdf --out invoice.pdf
 cld assistant studio-admin storage-settings --json
-cld assistant studio-admin storage-configure --input-file limits.json
+cld assistant studio-admin storage-configure --input-file limits.json --yes
 ```
 
 The administrator input is `{"fileMiB":50,"totalMiB":250}`. Omit fields you do

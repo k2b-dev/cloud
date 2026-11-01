@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { assertStoreName } from "../store/base-schema";
 import { baseStore } from "../store/base-store";
 import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
@@ -24,7 +24,7 @@ export type RetentionResult = {
 export const createRetention =
   ({
     store: configuredStore = baseStore,
-    database = sql,
+    database: injectedDatabase,
     clock = configuredStore.clock,
   }: {
     store?: IngestStore;
@@ -32,6 +32,7 @@ export const createRetention =
     clock?: () => Date;
   } = {}) =>
   async (baseId?: string, after: string | null = null): Promise<RetentionResult> => {
+    const database = injectedDatabase ?? sql;
     const store = { ...configuredStore, query: await configuredStore.prepare() };
     const now = clock();
     const result: RetentionResult = {

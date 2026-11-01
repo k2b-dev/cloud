@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { isUniqueViolation, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import {
   type CreateItemTemplate,
   type ItemTemplateKind,
@@ -141,7 +141,7 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
   );
 };
 
-const COLUMNS = sql`
+const COLUMNS = () => sql`
   id, space_id, kind, name, title, description, priority, assign_creator, checklist, estimated_duration_minutes,
   location, url, all_day, duration_minutes, time_of_day::text AS time_of_day, date_rule, date_weekdays, date_offset_days,
   created_at, updated_at
@@ -150,7 +150,7 @@ const COLUMNS = sql`
 /** Templates of a Space, by kind and then name. */
 export const list = async (params: { spaceId: string; kind?: ItemTemplateKind }): Promise<SpaceItemTemplate[]> => {
   const rows = await sql<DbTemplate[]>`
-    SELECT ${COLUMNS}
+    SELECT ${COLUMNS()}
     FROM spaces.item_templates
     WHERE space_id = ${params.spaceId}::uuid AND (${params.kind ?? null}::text IS NULL OR kind = ${params.kind ?? null})
     ORDER BY kind DESC, lower(name), id
@@ -160,7 +160,7 @@ export const list = async (params: { spaceId: string; kind?: ItemTemplateKind })
 };
 
 export const get = async (params: { id: string }): Promise<SpaceItemTemplate | null> => {
-  const rows = await sql<DbTemplate[]>`SELECT ${COLUMNS} FROM spaces.item_templates WHERE id = ${params.id}::uuid`;
+  const rows = await sql<DbTemplate[]>`SELECT ${COLUMNS()} FROM spaces.item_templates WHERE id = ${params.id}::uuid`;
   const [template] = await loadRelations(rows);
   return template ?? null;
 };
@@ -168,7 +168,7 @@ export const get = async (params: { id: string }): Promise<SpaceItemTemplate | n
 /** A template of the Space whose name matches case-insensitively; the name is unique per Space and kind. */
 export const findByName = async (params: { spaceId: string; name: string; kind?: ItemTemplateKind }): Promise<SpaceItemTemplate[]> => {
   const rows = await sql<DbTemplate[]>`
-    SELECT ${COLUMNS}
+    SELECT ${COLUMNS()}
     FROM spaces.item_templates
     WHERE space_id = ${params.spaceId}::uuid
       AND lower(name) = lower(${params.name.trim()})

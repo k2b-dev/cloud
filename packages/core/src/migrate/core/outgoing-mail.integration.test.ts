@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { bindProcessSync, sql, unbindProcessSync } from "@k2b/cloud";
 import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { deleteLegacyKeys, listLegacyKeys } from "@k2b/cloud/services/settings/store";
 import { createSync } from "@k2b/sync";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { connectTestNats, databaseSuite, testFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
 import { migrate as migrateLogging } from "./logging";

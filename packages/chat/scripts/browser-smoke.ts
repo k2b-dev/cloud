@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * Chat browser regression smoke against a loopback Cloud stack.
  *
@@ -8,7 +9,8 @@
  */
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
 import { type BrowserContext, chromium, type Page, webkit } from "playwright";
 import { z } from "zod";
 import { CreateOutcomeSchema, SEND_CONVERSATION_WINDOW_SECONDS } from "../src/service/contracts";
@@ -551,9 +553,18 @@ const cleanup = async () => {
     }
   } finally {
     const failures: unknown[] = [];
-    if (createdChats.size && !process.env.DATABASE_URL)
-      console.log(`DATABASE_URL is unset; chats ${[...createdChats].join(", ")} stay (Chat has no delete API).`);
-    for (const createdId of process.env.DATABASE_URL ? createdChats : []) {
+    let databaseReady = false;
+    if (createdChats.size) {
+      try {
+        await initializePlatform({ appId: "chat", source: "env" });
+        databaseReady = true;
+      } catch {
+        console.log(
+          `Database cleanup could not start; chats ${[...createdChats].join(", ")} stay (Chat has no delete API). Supply DATABASE_URL and REDIS_URL.`,
+        );
+      }
+    }
+    for (const createdId of databaseReady ? createdChats : []) {
       try {
         await sql.begin(async (tx) => {
           // Deleting a conversation cascades to messages, participants and conversation_access, but not auth.access.

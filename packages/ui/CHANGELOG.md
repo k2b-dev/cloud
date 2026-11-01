@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.41.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.40.0...npm-ui-v0.41.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Bug Fixes
+
+* **mail:** the composer always edits formatted, with the toolbar right under the subject ([#2294](https://github.com/k2b-dev/cloud/issues/2294)) ([196a753](https://github.com/k2b-dev/cloud/commit/196a75306c9a4f19b8b3a61498c87755cab60711))
+* **ui:** settings dialogs show every allowed section, so mailbox admins can rename again ([#2299](https://github.com/k2b-dev/cloud/issues/2299)) ([2d0a790](https://github.com/k2b-dev/cloud/commit/2d0a790efd19cb8b7e1592798083ea1e190e38bc))
+* **ui:** the icon picker opens wide enough, searches every group strictly, and speaks German ([#2255](https://github.com/k2b-dev/cloud/issues/2255)) ([8f0d4c5](https://github.com/k2b-dev/cloud/commit/8f0d4c534b90cf73a84287a6a919de3a0f42ea84))
+* **ui:** the StatGrid header sets itself apart by its surface, not a line ([#2315](https://github.com/k2b-dev/cloud/issues/2315)) ([1196746](https://github.com/k2b-dev/cloud/commit/11967464506569bd6ba2199477ff7b42e2d61609))
+* **ui:** the workspace drawer marks its edge with one shade, not a line ([#2321](https://github.com/k2b-dev/cloud/issues/2321)) ([a9188da](https://github.com/k2b-dev/cloud/commit/a9188dad5780f0c678beed1d8c4a5ebee774ca8b))
+
+## [0.40.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.39.0...npm-ui-v0.40.0) (2026-11-01)
+
+
+### Features
+
+* **notebooks:** drop the head above notes; navigation and Details move to the note toolbar ([#2261](https://github.com/k2b-dev/cloud/issues/2261)) ([328ffb8](https://github.com/k2b-dev/cloud/commit/328ffb88daef3bc53ab8cd1595ab37aad53d68c3))
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+
+## [0.39.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.1...npm-ui-v0.39.0) (2026-10-31)
+
+
+### Features
+
+* **editor:** polish table editing with outside grips, scoped menus and full-height cells ([#2226](https://github.com/k2b-dev/cloud/issues/2226)) ([10d326e](https://github.com/k2b-dev/cloud/commit/10d326e35fc4ca35b9c6909d79dc24ee09e1b3c3))
+
+
+### Bug Fixes
+
+* **ui:** keep shortcut hints from covering selection toolbar icons ([#2231](https://github.com/k2b-dev/cloud/issues/2231)) ([4880c02](https://github.com/k2b-dev/cloud/commit/4880c022b1ea285a8daf48e2dc273c79f32b3cc1))
+* **ui:** the chat command list holds its rows while one is pressed, so arriving rows cannot move it away from the pointer ([#2239](https://github.com/k2b-dev/cloud/issues/2239)) ([c6c6eb6](https://github.com/k2b-dev/cloud/commit/c6c6eb6fc8d4170225e13e9dece3ce17cd3db3ac))
+
+## [0.38.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.0...npm-ui-v0.38.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **mail:** keep list times whole, quiet date headings, and even sidebar counts ([#2223](https://github.com/k2b-dev/cloud/issues/2223)) ([965fa2b](https://github.com/k2b-dev/cloud/commit/965fa2ba10c9001b42f1c92118a44dac878f8e5e))
+* **ui:** give every column edge one shadow in every state ([#2216](https://github.com/k2b-dev/cloud/issues/2216)) ([cdd8ffd](https://github.com/k2b-dev/cloud/commit/cdd8ffdaea8f72d4d25081c68b4da7a6e51e5838))
+
 ## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.37.0...npm-ui-v0.38.0) (2026-10-31)
 
 

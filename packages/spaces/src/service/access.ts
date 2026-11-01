@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
@@ -14,8 +15,10 @@ import {
   type RequestActor,
   type ResourceAccessAdapter,
   updateAccess,
+  userFromActor,
 } from "@k2b/cloud/server";
 import {
+  audit,
   isStandaloneServiceAccountKind,
   type ServiceAccountCredential,
   serviceAccountCredentials,
@@ -23,7 +26,7 @@ import {
 } from "@k2b/cloud/services";
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================
@@ -262,7 +265,20 @@ const mutateSpaceAccess = async (params: {
       params.permission === undefined
         ? await deleteAccess({ id: params.accessId }, tx)
         : await updateAccess({ id: params.accessId, permission: params.permission }, tx);
-    if (changed.ok) await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    if (changed.ok) {
+      if (params.caller)
+        await audit.record(
+          {
+            action: params.permission === undefined ? "spaces.access.revoke" : "spaces.access.update",
+            outcome: "allowed",
+            actor: { userId: userFromActor(params.caller.actor)?.id },
+            target: { type: "space", id: params.spaceId },
+            metadata: { accessId: params.accessId },
+          },
+          tx,
+        );
+      await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    }
     return changed;
   });
   if (result.ok) spacesLive.wake();
@@ -369,6 +385,17 @@ export const grantSpaceAccess = async (params: {
     const created = await createAccess({ principal, permission }, tx);
     if (!created.ok) return created;
     await tx`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${spaceId}::uuid, ${created.data.id}::uuid)`;
+    if (params.caller)
+      await audit.record(
+        {
+          action: "spaces.access.grant",
+          outcome: "allowed",
+          actor: { userId: userFromActor(params.caller.actor)?.id },
+          target: { type: "space", id: spaceId },
+          metadata: { accessId: created.data.id, permission },
+        },
+        tx,
+      );
     await publishSpaceChange(tx, { type: "access.changed", spaceId });
     return ok(created.data.id);
   });

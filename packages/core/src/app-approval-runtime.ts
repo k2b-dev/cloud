@@ -1,8 +1,7 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { appApproval, knownBrowsers, pwaDevices } from "@k2b/cloud/services";
 import { cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { cleanupTerminalLogins, notifyPendingOAuthNewAccess } from "./api/identity-oauth-device-approval";
 import type { CoreNotificationSender } from "./notifications";
 

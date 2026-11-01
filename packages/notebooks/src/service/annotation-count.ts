@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Open inline comments of one note, for Book's quiet "n comments" entry; the caller has authorized reading the note. */
 export const countOpenAnnotations = async (noteId: string): Promise<number> => {

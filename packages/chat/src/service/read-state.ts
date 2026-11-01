@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { z } from "zod";
 import {
   boundConversation,

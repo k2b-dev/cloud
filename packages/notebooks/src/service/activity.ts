@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import {
   isNotebookActivityAction,
   NOTEBOOK_ACTIVITY_ACTIONS,

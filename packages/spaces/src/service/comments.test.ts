@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";

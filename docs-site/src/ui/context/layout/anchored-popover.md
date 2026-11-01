@@ -16,7 +16,9 @@ short card with a slider, a summary and a link into a longer list. Use
   to, so the side is chosen for the tallest content and the card never flips.
 - Escape, a click outside and another press of the anchor close it. Focus
   moves into the card (`initialFocus`) and returns to where it was.
-- On a phone (below 48rem) it is a bottom sheet across the screen.
+- On a phone (below 48rem) it is a bottom sheet across the screen. A short
+  notice that must not cover its control, such as a dictation card, passes
+  `sheet={false}` and stays beside the control inside the screen.
 - `align` lines up the card's `start` or `end` edge with the anchor; `width`
   sets the desktop width, such as `21rem`.
 

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { z } from "zod";
 import type { Overview, OverviewActivity, OverviewAttention } from "../overview-contracts";
 import { pulseStoreConfigured } from "../store/service";

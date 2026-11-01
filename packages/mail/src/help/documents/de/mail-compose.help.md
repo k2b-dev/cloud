@@ -269,3 +269,11 @@ Mail hält empfangene Berichte in der Aktivität der Unterhaltung fest. Ein Zust
 ## Einen Termin über die Cloud-Suche hinzufügen {icon="calendar-event"}
 
 Wähle beim Bearbeiten eines Entwurfs in der Cloud-Suche **Kalendereinladung an diesen Entwurf anhängen**. Mail speichert den Entwurf und öffnet dieselbe Terminauswahl wie die Schaltfläche im Editor. Empfänger, Text und Anhänge bleiben in diesem Entwurf. Schlägt das Speichern fehl oder hält jemand anderes die Bearbeitungssperre, behebe das zuerst. Das Senden bleibt ein eigener Schritt.
+
+## Nicht gespeicherte Eingaben wiederherstellen {icon="history"}
+
+Mail speichert während des Schreibens. Falls das Speichern fehlschlägt, lass das Schreibfenster offen und wähle **Erneut versuchen**. Deine Eingaben bleiben sichtbar.
+
+Wurde der Entwurf in einem anderen Tab oder auf einem anderen Gerät geändert, bleiben deine Eingaben sichtbar. Wähle bei einer neuen Nachricht **Als neuen Entwurf speichern**, um beide Fassungen zu behalten. Wähle bei einer Antwort **Änderungen wiederherstellen**, um eine gesicherte Kopie in derselben Konversation wiederherzustellen. Im Wiederherstellungsdialog kannst du auch deine aktuellen Eingaben wählen. Mail behält die ersetzten Texte als Wiederherstellungskopien; lokale Kopien sind nur in diesem Browser verfügbar. Mit **Text kopieren** kannst du den sichtbaren Nachrichtentext kopieren. Nach dem Neuladen erscheinen die lokalen Eingaben dieses Tabs wieder. Unter **Änderungen wiederherstellen** findest du auch unterschiedliche, noch nicht gespeicherte Fassungen aus diesem Browser.
+
+Kann der Browser keine lokale Wiederherstellungskopie speichern, speichert Mail weiter auf dem Server. Lass das Schreibfenster offen, bis der Entwurf gespeichert ist.

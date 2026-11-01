@@ -48,6 +48,7 @@ views and filters in the head, the detail beside the content.
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
 | R5 Color from content | Status dots, tag colors, places, and stock carry color. The accent carries only the selection; controls stay platform blue, and only the one main action is filled. See [Colors and selection](/en/ui/surfaces/color). |
 | R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
+| R7 Quiet group headings | A heading that groups list rows by date or kind ("Today", "Yesterday", "This week") uses the `k2b-list-group-heading` class: muted ink, 0.75rem, semibold. It is one step quieter than the rows, the same in every list. |
 
 Three exceptions:
 
@@ -165,6 +166,28 @@ names the object on desktop; the head keeps its views while hiding the repeated
 title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
+
+### Without a head
+
+`AppWorkspace head={false}` draws no head row, for a page whose own toolbar
+already holds the head's buttons and whose title shows elsewhere, such as a
+note in its navigation. The application then gives both buttons itself, in
+any island:
+
+- a sidebar button with `data-app-workspace-sidebar-toggle` and
+  `aria-controls` set to the sidebar's ID. Below a 64 rem app host it opens the
+  overlay sidebar; where the sidebar is a column, it hides and shows a sidebar
+  with `onHiddenChange`, and a hidden sidebar comes back as the overlay where
+  it is one;
+- for each `AppWorkspace.Detail toggle={false}`, a Details button with
+  `data-app-workspace-detail-toggle` and
+  `aria-controls={appWorkspaceDetailElementId(detailId)}`. It opens and closes
+  the panel and, while the panel waits for room, slides it in as the drawer.
+
+Both stay one constant label ("Navigation", "Details"); the shared controller
+runs them and keeps their `aria-expanded` current, so the button needs no click
+handler of its own. Keep the head where a page has no such toolbar: removing it
+must not remove a way to the navigation or the details at any width.
 
 ## Compose the regions
 

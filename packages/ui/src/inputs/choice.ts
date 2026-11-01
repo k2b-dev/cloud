@@ -175,8 +175,10 @@ export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement, p
   const triggerWidth = Math.min(triggerRect.width, window.innerWidth - margin * 2);
   if (placement.width !== "own") popover.style.width = `${triggerWidth}px`;
 
+  // A stylesheet minimum, such as a popover with filter chips, can make it
+  // wider than the trigger, so the clamp below uses the rendered width.
   const popoverRect = popover.getBoundingClientRect();
-  const width = placement.width === "own" ? popoverRect.width : triggerWidth;
+  const width = popoverRect.width;
   const left = Math.max(margin, Math.min(triggerRect.left, window.innerWidth - width - margin));
   const roomBelow = window.innerHeight - triggerRect.bottom - gap - margin;
   const roomAbove = triggerRect.top - gap - margin;

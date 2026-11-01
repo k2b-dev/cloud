@@ -4,12 +4,12 @@
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { redis, sql } from "bun";
 import { createLocalJWKSet, decodeJwt } from "jose";
 import accountsRoutes from "../../../packages/accounts/src/api";
 import coreSettingsRoutes from "../../../packages/cloud/src/api/admin-core-settings";
 import identityRoutes from "../../../packages/cloud/src/api/admin-identity";
 import { AI_INFERENCE_SCOPE } from "../../../packages/cloud/src/contracts/shared";
+import { redis, sql } from "../../../packages/cloud/src/runtime/clients";
 import { resolveInvocationAuthority } from "../../../packages/cloud/src/services/identity/invocation-actor";
 import {
   type InvocationAuthority,

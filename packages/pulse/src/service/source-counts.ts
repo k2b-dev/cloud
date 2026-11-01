@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { ReadProfileName } from "../store/admin-contracts";
 import { sqlRunner } from "../store/sql-run";
 import { sqlAdmission } from "./sql-admission";

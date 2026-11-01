@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
-import { sql } from "bun";
 import {
   attachmentMediaType,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,

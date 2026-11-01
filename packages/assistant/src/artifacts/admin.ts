@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { z } from "zod";
 import { ArtifactError, type ArtifactIdentity, artifacts, user } from "./service";
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Idempotent upgrade: existing public URLs survive, their bearer tokens do not stay in the database. */
 export async function migrateSharing(): Promise<void> {

@@ -1,5 +1,5 @@
 import { afterEach, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { requireConversation } from "../service/access";
 import { ChangesPageSchema, MemberPageSchema, MessagePageSchema, MessageViewSchema } from "../service/contracts";

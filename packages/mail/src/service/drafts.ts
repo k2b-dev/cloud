@@ -517,21 +517,32 @@ const storeRecoveryCopy = async (params: {
   baseRevision: number;
   content: DraftEditableContent;
   actor: MutableActor;
+  includeAttachments?: boolean;
 }): Promise<void> => {
   const contentHash = sha256Json(params.content);
-  await params.db`
+  const [stored] = await params.db<{ id: string }[]>`
     INSERT INTO mail.draft_recovery_copies (
-      draft_id, base_revision, content, content_hash, creator_kind, creator_id
+      draft_id, base_revision, content, content_hash, creator_kind, creator_id, has_attachment_snapshot
     ) VALUES (
       ${params.draftId}::uuid,
       ${params.baseRevision},
       ${params.content}::jsonb,
       ${contentHash},
       ${params.actor.kind},
-      ${actorId(params.actor)}::uuid
+      ${actorId(params.actor)}::uuid,
+      ${params.includeAttachments ?? false}
     )
-    ON CONFLICT (draft_id, base_revision, creator_kind, creator_id, content_hash) DO NOTHING
+    ON CONFLICT (draft_id, base_revision, creator_kind, creator_id, content_hash) DO UPDATE
+      SET has_attachment_snapshot = true
+      WHERE EXCLUDED.has_attachment_snapshot AND NOT mail.draft_recovery_copies.has_attachment_snapshot
+    RETURNING id
   `;
+  if (stored && params.includeAttachments)
+    await params.db`
+      INSERT INTO mail.draft_recovery_attachments (recovery_copy_id, blob_id, filename, content_type, byte_length, content_hash, position)
+      SELECT ${stored.id}::uuid, blob_id, filename, content_type, byte_length, content_hash, position
+      FROM mail.draft_attachments WHERE draft_id = ${params.draftId}::uuid AND removed_at IS NULL
+    `;
 };
 
 type PreparedComposeDraft = {
@@ -1757,10 +1768,10 @@ export const updateDraft = async (params: {
         const [saved] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
         return saved ? ok(mapDraft(saved)) : pending();
       }
-      if (Number(current.revision) !== params.expectedRevision) {
+      const staleRecovery = async () => {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
         return conflict("Draft changed; the submitted content was saved as a recovery copy");
-      }
+      };
       const identity = await validateIdentity({ mailboxId: params.mailboxId, senderIdentityId: parsed.data.senderIdentityId, db: tx });
       if (!identity.ok) {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
@@ -1774,7 +1785,24 @@ export const updateDraft = async (params: {
         body: parsed.data.body,
         requested: parsed.data.signatureTemplateId,
       });
-      if (!signature.ok) return signature;
+      if (!signature.ok) return Number(current.revision) !== params.expectedRevision ? staleRecovery() : signature;
+      // A successful PUT may lose its response. Confirm identical input under
+      // the row lock before enforcing the revision; never replay it as a new edit.
+      const [unchanged] = await tx<DbDraft[]>`
+        SELECT ${draftColumns()} FROM mail.drafts d
+        WHERE d.id = ${draftId}::uuid AND d.revision >= ${params.expectedRevision}
+          AND d.sender_identity_id = ${parsed.data.senderIdentityId}::uuid
+          AND d.signature_template_id IS NOT DISTINCT FROM ${signature.data.signatureTemplateId}::uuid
+          AND jsonb_strip_nulls(d.to_addresses) = jsonb_strip_nulls(${parsed.data.to}::jsonb)
+          AND jsonb_strip_nulls(d.cc_addresses) = jsonb_strip_nulls(${parsed.data.cc}::jsonb)
+          AND jsonb_strip_nulls(d.bcc_addresses) = jsonb_strip_nulls(${parsed.data.bcc}::jsonb)
+          AND d.subject = ${parsed.data.subject} AND d.body_markdown = ${signature.data.body}
+          AND d.body_format = ${parsed.data.format} AND d.priority = ${parsed.data.priority}
+          AND d.request_delivery_receipt = ${parsed.data.requestDeliveryReceipt}
+          AND d.request_read_receipt = ${parsed.data.requestReadReceipt}
+      `;
+      if (unchanged) return ok(mapDraft(unchanged));
+      if (Number(current.revision) !== params.expectedRevision) return staleRecovery();
       const [row] = await tx<DbDraft[]>`
         UPDATE mail.drafts d
         SET
@@ -2131,6 +2159,20 @@ export const restoreDraftRecoveryCopy = async (params: {
           if (saved.data.status !== "accepted")
             return conflict("Recovery is awaiting synchronization. The copy remains available; refresh before retrying.");
         }
+        if (draft.edit_mode === "lock") {
+          // Restoring is an explicit replacement. Preserve the replaced server
+          // version in the same transaction, including its attachment set.
+          const [previous] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+          if (!previous) return fail(err.notFound("Draft"));
+          await storeRecoveryCopy({
+            db: tx,
+            draftId,
+            baseRevision: Number(draft.revision),
+            content: internalDraftEditableContentSchema.strip().parse(mapDraft(previous)),
+            actor,
+            includeAttachments: true,
+          });
+        }
         const recoveryAttachments = copy.has_attachment_snapshot
           ? await tx<
               {
@@ -2289,6 +2331,13 @@ export const removeDraftAttachment = async (params: {
       `;
       if (!draft) return fail(err.notFound("Draft"));
       if (draft.state !== "draft") return fail(err.badInput("Draft can no longer be edited"));
+      const [attachment] = await tx<{ removed_at: Date | null }[]>`
+        SELECT removed_at FROM mail.draft_attachments WHERE id = ${attachmentId}::uuid AND draft_id = ${draftId}::uuid
+      `;
+      if (attachment?.removed_at && params.expectedRevision <= Number(draft.revision)) {
+        const [current] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+        return current ? ok(mapDraft(current)) : fail(err.notFound("Draft"));
+      }
       if (Number(draft.revision) !== params.expectedRevision) return conflict("Draft changed before the attachment could be removed");
       const [removed] = await tx<{ id: string }[]>`
         UPDATE mail.draft_attachments

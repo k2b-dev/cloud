@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { getProcessSync, type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { getProcessSync, type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteOptions } from "@k2b/filegate";
-import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";

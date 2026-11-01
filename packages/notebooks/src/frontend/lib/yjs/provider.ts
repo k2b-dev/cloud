@@ -3,7 +3,9 @@ import {
   MAX_SHARED_TEXT_STORAGE_RETRIES,
   type SharedTextProviderError,
   type SharedTextProviderMessage,
+  type SharedTextProviderPendingState,
   type SharedTextProviderRequest,
+  type SharedTextProviderSnapshot,
   type SharedTextProviderUpdate,
 } from "@k2b/cloud/browser/shared-text";
 import { type NotebookPresenceParticipant, NotebookPresenceParticipantSchema } from "@k2b/cloud/contracts";
@@ -11,6 +13,7 @@ import type * as awarenessProtocol from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { notebooksWorkspace, type PublicNotebookWorkspaceEvent } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
+import { presencePeerId } from "../presence-peer";
 import { reconnectDelayMs } from "../reconnect";
 
 type YjsErrorCode = (typeof notebooksYjs.errorCode)[keyof typeof notebooksYjs.errorCode];
@@ -19,6 +22,7 @@ export type YjsProviderError = {
   code: YjsErrorCode;
   message: string;
   noteId?: string;
+  reopen?: boolean;
 };
 
 export type YjsProviderOptions = {
@@ -28,6 +32,10 @@ export type YjsProviderOptions = {
   noteId: string;
   appUrl: string;
   initialCursor?: string | null;
+  initialPending?: SharedTextProviderPendingState;
+  expectedUserId?: string;
+  onLocalUpdate?: (pending: SharedTextProviderPendingState) => void;
+  onSnapshot?: (snapshot: SharedTextProviderSnapshot) => void;
   /** Revision belonging to the initial Y.Doc, including its historical deletes. */
   initialRestoreRevision?: string;
   onConnectionChange?: (connected: boolean) => void;
@@ -156,11 +164,13 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const fromError = (error: SharedTextProviderError): YjsProviderError => ({
     code: error.code as YjsErrorCode,
     message: error.message,
+    ...(error.reopen ? { reopen: true } : {}),
     ...(error.docId === undefined ? {} : { noteId: error.docId }),
   });
   const toError = (error: YjsProviderError): SharedTextProviderError => ({
     code: error.code,
     message: error.message,
+    ...(error.reopen ? { reopen: true } : {}),
     ...(error.noteId === undefined ? {} : { docId: error.noteId }),
   });
   const record = (value: unknown): Record<string, unknown> =>
@@ -248,7 +258,12 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       case "replayRequest":
         return {
           type: WS_TYPE.replayRequest,
-          payload: { noteId: request.payload.docId, fromCursor: request.payload.fromCursor, restoreRevision: request.payload.generation },
+          payload: {
+            noteId: request.payload.docId,
+            fromCursor: request.payload.fromCursor,
+            restoreRevision: request.payload.generation,
+            presencePeerId: presencePeerId(),
+          },
         };
       case "syncPublish":
         return {
@@ -265,6 +280,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     }
   };
   const wsUrl = new URL("/api/notebooks/ws", resolveHttpBaseUrl(opts.appUrl));
+  if (opts.expectedUserId) wsUrl.searchParams.set("expectedUserId", opts.expectedUserId);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
   const provider = createSharedTextProvider({
     doc: opts.doc,
@@ -273,6 +289,9 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     docId: opts.noteId,
     initialCursor: opts.initialCursor,
     initialGeneration: opts.initialRestoreRevision,
+    initialPending: opts.initialPending,
+    onLocalUpdate: opts.onLocalUpdate,
+    onSnapshot: opts.onSnapshot,
     maxSyncPayloadLength: notebooksYjs.maxSyncPayloadLength,
     terminalErrorCodes: notebooksYjs.terminalErrorCodes,
     allowUnversionedUpdates: true,
