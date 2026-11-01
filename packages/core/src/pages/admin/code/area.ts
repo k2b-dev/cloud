@@ -2,7 +2,17 @@ import type { CodeAdminCodeStatus } from "../../../code/admin";
 import { CODE_POLICY_ROWS, type CodePolicyRow } from "../../../code/policy-contracts";
 
 /** Sections of Administration › Code; each one is a row in the area column. */
-export const CODE_AREA_SECTIONS = ["approvals", "code", "policy", "groups", "effective", "cleanup", "limits", "runners"] as const;
+export const CODE_AREA_SECTIONS = [
+  "approvals",
+  "code",
+  "policy",
+  "groups",
+  "effective",
+  "history",
+  "cleanup",
+  "limits",
+  "runners",
+] as const;
 export type CodeAreaSection = (typeof CODE_AREA_SECTIONS)[number];
 const STATUSES = ["active", "paused", "draft", "deleting", "waiting"] as const satisfies readonly CodeAdminCodeStatus[];
 
@@ -70,7 +80,7 @@ export const codeAreaLevel = (query: CodeAreaQuery): "area" | "section" | "detai
 
 /** Sections whose content fills the list and detail columns together. */
 export const isWideCodeSection = (section: CodeAreaSection | undefined): boolean =>
-  section === "policy" || section === "cleanup" || section === "limits" || section === "runners";
+  section === "policy" || section === "history" || section === "cleanup" || section === "limits" || section === "runners";
 
 /** Rows grouped as the policy table shows them. */
 export const CODE_POLICY_ROW_GROUPS: readonly { key: "grpRead" | "grpSilent" | "grpAsk" | "grpAiNet"; rows: CodePolicyRow[] }[] = [

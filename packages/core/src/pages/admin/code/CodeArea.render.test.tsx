@@ -78,12 +78,17 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(detail).toContain("entfällt");
   expect(detail).toContain("Version 2 (freigegeben");
   expect(detail).toContain("Gilt genau für Version 3");
+  expect(detail).toContain("https://api.buchhaltung-beispiel.de");
+  expect(detail).toContain("Secrets BUCHHALTUNG_TOKEN");
+  expect(detail).toContain("Aufrufe ohne Secret dürfen jede öffentliche HTTPS-Adresse");
+  expect(detail).not.toContain("am Tag");
   expect(detail).toContain("Version 3 freigeben");
   expect(detail).toContain("Ablehnen …");
 
   const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
   expect(first).toContain("Erste Freigabe");
   expect(first).toContain("Kein Vorgänger: der ganze Code von Version 1");
+  expect(first).toContain("Diese Version ruft keine Adresse außerhalb von Cloud auf.");
 
   expect(render(review, "newer")).toContain("Version 3 ist überholt");
   expect(render(review, "own")).toContain("Du hast diese Version geschrieben.");
@@ -92,6 +97,9 @@ test("approvals render list, review, decided, empty, error and missing states", 
   const approved = render(review, "approved");
   expect(approved).toContain("Version 3 ist freigegeben.");
   expect(approved).not.toContain("Ablehnen …");
+  expect(approved).toContain("Zurücknehmen geht über „Pausieren“ am Code.");
+  expect(approved).toContain("Code öffnen");
+  expect(approved).not.toContain("zurückziehen");
 
   const decided = render({ sec: "approvals", tab: "decided" });
   expect(decided).toContain("Termin-Antworten");
@@ -118,6 +126,8 @@ test("all Code renders owners, status and last run, with empty, filtered and err
   expect(detail).toContain("In „Freigaben“ öffnen");
   expect(detail).toContain("selbst freigegeben (einziger Admin)");
   expect(detail).toContain("Letzte Läufe");
+  expect(detail).toContain("Pausieren");
+  expect(render({ sec: "code", id: "c_woche" })).toContain("Fortsetzen");
   expect(detail).toContain("Fehlgeschlagen");
   expect(render({ sec: "code" }, "empty")).toContain("Noch kein Code");
   expect(render({ sec: "code", status: "deleting" })).toContain("Kein Code passt zu diesen Filtern");
@@ -144,6 +154,14 @@ test("policy, groups and effective rows render with their sources", () => {
   expect(effective).toContain("aus Gruppe Buchhaltung");
   expect(render({ sec: "effective" })).toContain("Suche eine Person");
   expect(render({ sec: "policy" }, "fail")).toContain("Konnte nicht geladen werden");
+  expect(policy).toContain('href="/admin/code?sec=history"');
+  const history = render({ sec: "history" });
+  expect(history).toContain("Jana Probe");
+  expect(history).toContain("Sendet (Praktikum)");
+  expect(history).toContain("wie Standard");
+  expect(history).toContain("Voreinstellung Admin gibt frei → Eigene");
+  expect(render({ sec: "history" }, "empty")).toContain("Noch keine Änderung aufgezeichnet");
+  expect(render({ sec: "history" }, "fail")).toContain("Konnte nicht geladen werden");
 });
 
 test("cleanup, limits and runners render their data, empty and error states", () => {

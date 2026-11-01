@@ -5,6 +5,7 @@ import { createComponent, render } from "solid-js/web";
 import CoreSettingsForm from "../settings/_components/CoreSettingsForm.island.tsx";
 import CodeApprovalReview from "./CodeApprovalReview.island.tsx";
 import CodeListFilters from "./CodeListFilters.island.tsx";
+import CodePauseAction from "./CodePauseAction.island.tsx";
 import CodePolicyEditor from "./CodePolicyEditor.island.tsx";
 import CodePolicyPicker from "./CodePolicyPicker.island.tsx";
 
@@ -12,6 +13,7 @@ import CodePolicyPicker from "./CodePolicyPicker.island.tsx";
 const islands: Record<string, Component<never>> = {
   "CodeApprovalReview.island.tsx": CodeApprovalReview as Component<never>,
   "CodeListFilters.island.tsx": CodeListFilters as Component<never>,
+  "CodePauseAction.island.tsx": CodePauseAction as Component<never>,
   "CodePolicyEditor.island.tsx": CodePolicyEditor as Component<never>,
   "CodePolicyPicker.island.tsx": CodePolicyPicker as Component<never>,
   "CoreSettingsForm.island.tsx": CoreSettingsForm as Component<never>,

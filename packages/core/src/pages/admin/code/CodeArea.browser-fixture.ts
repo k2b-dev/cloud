@@ -96,6 +96,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       panelConsent: undefined;
       railPreferences: undefined;
       announcements: undefined;
+      adminCodeApprovals: number | undefined;
       page: { title?: string; theme: "light" | "dark" };
     };
   }>();
@@ -117,6 +118,13 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const t = codeAdminMessages.resolve([locale]).t;
     c.set("page", { title: t.area, theme });
     const query = parseCodeAreaQuery(c.req.query());
+    const data = state === "noperm" ? null : codeFixtureData(state, c.req.query(), locale);
+    // A decision persists until reset, so the reloaded page shows its result and the sidebar count drops.
+    const decision = query.id ? decisions.get(query.id) : undefined;
+    if (data && decision !== undefined) data.approval = fixtureApprovalDetail(decision ? "approved" : "rejected");
+    const waiting = 4 - decisions.size;
+    if (data && data.summary !== null && typeof data.summary === "object") data.summary = { ...data.summary, approvals: waiting };
+    c.set("adminCodeApprovals", state === "noperm" ? undefined : waiting);
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
@@ -128,7 +136,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
             locale,
             dateConfig: { locale: locale === "de" ? "de-DE" : "en-GB", timeZone: "Europe/Berlin" },
             query,
-            data: state === "noperm" ? null : codeFixtureData(state, c.req.query(), locale),
+            data,
             noPermission: state === "noperm",
             retryHref: c.req.url,
             appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
@@ -142,6 +150,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     );
   });
 
+  const decisions = new Map<string, boolean>();
   /** Requests the islands sent, for assertions. */
   const requests: { path: string; body: unknown }[] = [];
   const api = async (request: Request, url: URL): Promise<Response> => {
@@ -151,8 +160,15 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     requests.push({ path, body });
     if (state === "saving" && path !== "policy/preview") return new Promise(() => {});
     if (path === "decide" && state === "lost") return Response.json({ message: "Gateway timeout" }, { status: 504 });
+    if (path === "pause") {
+      const paused = body && typeof body === "object" && "paused" in body ? body.paused === true : false;
+      if (state === "savefail" && !paused)
+        return Response.json({ code: "code_version_unavailable", message: "Needs approval" }, { status: 409 });
+      return Response.json({ data: { state: paused ? "paused" : "active" } });
+    }
     if (path === "decide") {
       const decision = body && typeof body === "object" && "approved" in body ? body.approved : null;
+      decisions.set(fixtureApprovalDetail().version.id, Boolean(decision));
       const detail = fixtureApprovalDetail();
       return Response.json({
         data: {
@@ -232,6 +248,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     requests,
     reset() {
       requests.length = 0;
+      decisions.clear();
     },
     close() {
       server.stop(true);

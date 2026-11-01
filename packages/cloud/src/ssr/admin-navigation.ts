@@ -1,9 +1,10 @@
+import { approvalMessages } from "../approvals/messages";
 import { normalizeRedirectTo } from "../shared";
 import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 
 /** `match` lists further paths the link stands for, such as the pages of an area. */
-export type AdminLink = { href: string; icon: string; label: string; match?: string[] };
+export type AdminLink = { href: string; icon: string; label: string; match?: string[]; waiting?: { count: number; label: string } };
 export type AdminGroup = { label: string; links: AdminLink[] };
 
 const normalizeAdminHref = (href: string | undefined): string | undefined => {
@@ -11,8 +12,13 @@ const normalizeAdminHref = (href: string | undefined): string | undefined => {
   return normalized === "/admin" || normalized?.startsWith("/admin/") ? normalized : undefined;
 };
 
-export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][], locale = "en"): AdminGroup[] => {
+export const buildAdminGroups = (
+  apps: readonly RuntimeContext["apps"][number][],
+  locale = "en",
+  status: { codeApprovals?: number } = {},
+): AdminGroup[] => {
   const t = platformMessages.resolve([locale]).t;
+  const codeApprovals = status.codeApprovals;
   const settingsLinks: AdminLink[] = [
     { href: "/admin/settings?tab=storage", icon: "ti-database", label: t.storage },
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
@@ -52,7 +58,14 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
     { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
     // Core owns Code administration: approvals, policy, all Code and its operation.
-    { href: "/admin/code", icon: "ti-code", label: t.code },
+    {
+      href: "/admin/code",
+      icon: "ti-code",
+      label: t.code,
+      ...(codeApprovals
+        ? { waiting: { count: codeApprovals, label: approvalMessages.resolve([locale]).t.waiting({ count: codeApprovals }) } }
+        : {}),
+    },
     ...(observabilityPaths.length > 0
       ? [
           {

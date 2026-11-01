@@ -28,6 +28,9 @@ export type CodeApprovalReviewProps = {
   diffHeader: string;
   files: CodeVersionDiffFile[] | null;
   decision: { approved: boolean; soleAdmin: boolean; by: string; when: string } | null;
+  internet: { origins: { origin: string; secrets: string[] }[]; open: boolean };
+  /** The Code in Administration › Code, where it can be paused. */
+  codeHref: string;
   nextHref: string | null;
   listHref: string;
 };
@@ -66,7 +69,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     try {
       const result = await postCodeAdmin("decide", { binding: props.binding, approved }, codeVersionContracts.decide.data);
       setDone(result.status === "approved" ? "approved" : result.status === "rejected" ? "rejected" : null);
-      if (result.status !== "approved" && result.status !== "rejected") reloadCodeArea();
+      // The server renders the decision and the sidebar count of open approvals from the same state.
+      reloadCodeArea();
     } catch (error) {
       // Only a refusal proves nothing changed; a lost answer may follow a committed decision.
       setFailure(
@@ -98,7 +102,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         title={state === "approved" ? t().approvedTitle({ n: props.number }) : t().rejectedTitle({ n: props.number })}
         detail={
           <>
-            <p>{state === "approved" ? t().approvedSub : t().rejectedSub}</p>
+            <p>{state === "approved" ? `${t().approvedSub} ${t().undoHint}` : t().rejectedSub}</p>
             <Show when={!done() && props.decision}>
               {(decision) => (
                 <p class="text-(--k2b-text-muted)">
@@ -108,6 +112,11 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
               )}
             </Show>
             <div class="mt-2 flex flex-wrap gap-2">
+              <Show when={state === "approved"}>
+                <ButtonLink size="sm" variant="secondary" href={props.codeHref}>
+                  {t().openCode}
+                </ButtonLink>
+              </Show>
               <Show
                 when={props.nextHref}
                 fallback={
@@ -240,6 +249,36 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
                 )}
               </For>
             </ul>
+          </Show>
+        </section>
+
+        <section class="grid gap-2" aria-labelledby="code-review-internet">
+          <div class="flex items-baseline justify-between gap-3">
+            <h3 id="code-review-internet" class="text-base font-semibold">
+              {t().internet}
+            </h3>
+            <span class="text-xs text-(--k2b-text-muted)">{t().internetSub}</span>
+          </div>
+          <Show
+            when={props.internet.origins.length || props.internet.open}
+            fallback={<p class="text-sm text-(--k2b-text-muted)">{t().internetNone}</p>}
+          >
+            <ul class="grid gap-1">
+              <For each={props.internet.origins}>
+                {(target) => (
+                  <li class="flex items-center gap-3 px-3 py-1 text-sm">
+                    <i class="ti ti-world text-(--k2b-text-muted)" aria-hidden="true" />
+                    <span class="min-w-0 flex-1">
+                      <span class="font-mono">{target.origin}</span>
+                      <span class="block text-xs text-(--k2b-text-muted)">{t().internetSecrets({ names: target.secrets.join(", ") })}</span>
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <Show when={props.internet.open}>
+              <p class="text-xs text-(--k2b-text-muted)">{t().internetOpen}</p>
+            </Show>
           </Show>
         </section>
 

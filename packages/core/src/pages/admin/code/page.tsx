@@ -12,6 +12,7 @@ import {
   readCodeAdminCode,
   readCodeAdminEffective,
   readCodeAdminPolicy,
+  readCodeAdminPolicyHistory,
   readCodeAdminRunners,
   readCodeAdminSummary,
 } from "../../../code/admin";
@@ -71,6 +72,7 @@ export default ssr<AuthContext>(async (c) => {
         code: sec === "code" && query.id ? await attempt(() => readCodeAdminCode(query.id ?? "", context)) : null,
         policy: sec === "policy" || sec === "groups" || sec === "effective" ? await attempt(() => readCodeAdminPolicy(context)) : null,
         effective: sec === "effective" && query.id ? await attempt(() => readCodeAdminEffective(query.id ?? "", context)) : null,
+        history: sec === "history" ? await attempt(() => readCodeAdminPolicyHistory(context)) : null,
         cleanup: sec === "cleanup" ? await attempt(() => listCodeAdminCleanup(context, { cursor: query.after })) : null,
         runners: sec === "runners" ? await attempt(() => readCodeAdminRunners(context)) : null,
         limits:

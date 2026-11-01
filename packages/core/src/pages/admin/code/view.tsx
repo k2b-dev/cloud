@@ -24,6 +24,7 @@ import type {
   CodeAdminDecided,
   CodeAdminEffective,
   CodeAdminPolicy,
+  CodeAdminPolicyChange,
   CodeAdminSummary,
 } from "../../../code/admin";
 import type { CodeOwner } from "../../../code/contracts";
@@ -33,6 +34,7 @@ import CoreSettingsForm, { type SettingFieldDef } from "../settings/_components/
 import { CODE_POLICY_ROW_GROUPS, type CodeAreaQuery, type CodeAreaSection, codeAreaHref, codeAreaLevel, isWideCodeSection } from "./area";
 import CodeApprovalReview, { type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
 import CodeListFilters from "./CodeListFilters.island";
+import CodePauseAction from "./CodePauseAction.island";
 import CodePolicyEditor from "./CodePolicyEditor.island";
 import CodePolicyPicker from "./CodePolicyPicker.island";
 import type { CodeAdminMessages } from "./messages";
@@ -48,6 +50,7 @@ export type CodeAreaData = {
   code: Loaded<CodeAdminCodeDetail>;
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
+  history: Loaded<CodeAdminPolicyChange[]>;
   cleanup: Loaded<{ items: CodeCleanupJob[]; nextCursor: string | null }>;
   runners: Loaded<CodeRunnerMetrics>;
   limits: Loaded<SettingFieldDef[]>;
@@ -80,6 +83,7 @@ const sectionIcon: Record<CodeAreaSection, string> = {
   policy: "ti ti-table-options",
   groups: "ti ti-users-group",
   effective: "ti ti-user-search",
+  history: "ti ti-history",
   cleanup: "ti ti-recycle",
   limits: "ti ti-gauge",
   runners: "ti ti-server-2",
@@ -177,6 +181,8 @@ export function approvalReviewProps(
         }
       : null,
     nextHref: next ? codeAreaHref({ sec: "approvals", id: next.versionId }) : null,
+    internet: detail.internet,
+    codeHref: codeAreaHref({ sec: "code", id: detail.code.id }),
     listHref: codeAreaHref({ sec: "approvals" }),
   };
 }
@@ -275,6 +281,7 @@ export function CodeAreaView(props: Props) {
         {item("policy", t.standard)}
         {item("groups", t.groups, { meta: count(summary?.groups) })}
         {item("effective", t.effective)}
+        {item("history", t.history)}
       </AppWorkspace.SidebarSection>
       <AppWorkspace.SidebarSection title={t.operations}>
         {item("cleanup", t.cleanup, { meta: count(summary?.cleanup) })}
@@ -543,6 +550,9 @@ export function CodeAreaView(props: Props) {
           <dt class="text-(--k2b-text-muted)">ID</dt>
           <dd class="font-mono text-xs">{code.id}</dd>
         </dl>
+        <Show when={code.activeVersionNumber !== null && (code.state === "active" || code.state === "paused")}>
+          <CodePauseAction codeId={code.id} title={code.title} paused={code.state === "paused"} />
+        </Show>
         <section class="grid gap-2" aria-labelledby="code-detail-versions">
           <h3 id="code-detail-versions" class="text-base font-semibold">
             {t.versions}
@@ -739,6 +749,48 @@ export function CodeAreaView(props: Props) {
     );
   };
 
+  const historySection = (): JSX.Element => {
+    const entries = data.history;
+    if (!ok(entries)) return failure;
+    const value = (cell: CodeAdminPolicyChange["changes"][number]["before"]) => (cell ? t.value({ value: cell }) : t.unset);
+    const presetLabel = (preset: string) =>
+      ({ off: t.presetOff, admin: t.presetAdmin, open: t.presetOpen, custom: t.presetCustom })[preset] ?? preset;
+    return (
+      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+        <Show when={entries.length} fallback={<Placeholder icon="ti ti-history" title={t.historyEmpty} description={t.historyEmptySub} />}>
+          <ol class="grid gap-4">
+            <For each={entries}>
+              {(entry) => (
+                <li class="grid gap-1">
+                  <p class="text-sm">
+                    <span class="font-semibold">{entry.by ?? t.unknownAuthor}</span>
+                    <span class="text-(--k2b-text-muted)"> · {when(entry.at)}</span>
+                  </p>
+                  <ul class="grid gap-0.5 text-sm">
+                    <Show when={entry.preset}>
+                      {(preset) => <li>{t.historyPreset({ before: presetLabel(preset().before), after: presetLabel(preset().after) })}</li>}
+                    </Show>
+                    <For each={entry.changes.slice(0, 6)}>
+                      {(change) => (
+                        <li>
+                          {t.historyRow({ row: t.rowLabel({ row: change.row }), group: change.group })}:{" "}
+                          <span class="text-(--k2b-text-muted)">{value(change.before)}</span> → {value(change.after)}
+                        </li>
+                      )}
+                    </For>
+                    <Show when={entry.changes.length > 6}>
+                      <li class="text-(--k2b-text-muted)">{t.historyMore({ n: entry.changes.length - 6 })}</li>
+                    </Show>
+                  </ul>
+                </li>
+              )}
+            </For>
+          </ol>
+        </Show>
+      </div>
+    );
+  };
+
   // ---------- Operations ----------
   function cleanupTable(jobs: readonly CodeCleanupJob[]): JSX.Element {
     return (
@@ -881,6 +933,7 @@ export function CodeAreaView(props: Props) {
         policy: t.standard,
         groups: t.groups,
         effective: t.effective,
+        history: t.history,
         cleanup: t.cleanup,
         limits: t.limits,
         runners: t.runners,
@@ -893,6 +946,7 @@ export function CodeAreaView(props: Props) {
     if (section === "policy") return policyHead();
     if (section === "groups") return policy ? t.groupsSub({ n: policy.groups.length }) : undefined;
     if (section === "effective") return t.effectiveSub;
+    if (section === "history") return t.historySub;
     if (section === "cleanup") return summary ? t.cleanupSub({ n: summary.cleanup }) : undefined;
     if (section === "limits") return t.limitsSub;
     if (section === "runners") return t.runnersSub;
@@ -901,11 +955,13 @@ export function CodeAreaView(props: Props) {
   const wideContent = (): JSX.Element =>
     section === "policy"
       ? policyStandard()
-      : section === "cleanup"
-        ? cleanupSection()
-        : section === "runners"
-          ? runnersSection()
-          : limitsSection();
+      : section === "history"
+        ? historySection()
+        : section === "cleanup"
+          ? cleanupSection()
+          : section === "runners"
+            ? runnersSection()
+            : limitsSection();
   const secondColumn = (): JSX.Element =>
     section === "approvals"
       ? approvalsList()
@@ -966,7 +1022,19 @@ export function CodeAreaView(props: Props) {
         {ok(data.summary) || data.summary === null ? areaColumn : failure}
       </AppWorkspace.MainPane>
       {isWideCodeSection(section) ? (
-        <AppWorkspace.MainPane id="section" label={sectionLabel} description={sectionDescription()}>
+        <AppWorkspace.MainPane
+          id="section"
+          label={sectionLabel}
+          description={sectionDescription()}
+          actions={
+            section === "policy" ? (
+              <ButtonLink variant="ghost" size="sm" href={codeAreaHref({ sec: "history" })}>
+                <i class="ti ti-history" aria-hidden="true" />
+                {t.history}
+              </ButtonLink>
+            ) : undefined
+          }
+        >
           {wideContent()}
         </AppWorkspace.MainPane>
       ) : (

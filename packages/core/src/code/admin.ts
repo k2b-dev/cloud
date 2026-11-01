@@ -1,13 +1,23 @@
 import { sql } from "@k2b/cloud";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import { audit } from "@k2b/cloud/services";
 import { listPending, presentPendingApproval } from "@k2b/cloud/services/approvals";
 import { diffArrays } from "diff";
+import { z } from "zod";
 import { type CodeContext, CodeDataError } from "./access";
 import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, requireCodePolicyAdmin } from "./policy";
-import { CODE_POLICY_ROWS, type CodePolicy, type CodePolicyRow, CodePolicyRowSchema, type CodePolicyValue } from "./policy-contracts";
+import {
+  CODE_POLICY_ROWS,
+  type CodePolicy,
+  CodePolicyPresetSchema,
+  type CodePolicyRow,
+  CodePolicyRowSchema,
+  type CodePolicyValue,
+  CodePolicyValueSchema,
+} from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { readCodeRunnerMetrics } from "./scheduling";
 import type { CodeRunnerMetrics } from "./scheduling-contracts";
@@ -79,6 +89,8 @@ export type CodeAdminApprovalDetail = {
   own: boolean;
   soleAdminNotice: string | null;
   decision: (CodeVersionDecision & { decidedByName: string | null }) | null;
+  /** Internet targets: exact HTTPS origins from the version's C11 secret bindings, and whether calls without a secret use public HTTPS. */
+  internet: { origins: { origin: string; secrets: string[] }[]; open: boolean };
   /** Localized catalog titles for operations and target types; ids stay the fallback. */
   titles: { operations: Record<string, string>; types: Record<string, string> };
 };
@@ -311,6 +323,16 @@ export function codeAdminPermissionChanges(
   return changes.sort((a, b) => order[a.change] - order[b.change]);
 }
 
+/** Origins a version may send secrets to, from its immutable C11 bindings, one entry per origin. */
+export function codeAdminInternet(manifest: CodeCheckedVersionManifest | null): CodeAdminApprovalDetail["internet"] {
+  const origins = new Map<string, string[]>();
+  for (const binding of manifest?.secrets ?? []) origins.set(binding.origin, [...(origins.get(binding.origin) ?? []), binding.name]);
+  return {
+    origins: [...origins].sort(([a], [b]) => a.localeCompare(b)).map(([origin, secrets]) => ({ origin, secrets: secrets.sort() })),
+    open: manifest?.internet === true || (manifest?.policyRows.includes("internet") ?? false),
+  };
+}
+
 /** Catalog titles of the operations and target types a version names, in the request locale. */
 async function operationTitles(
   permissions: readonly { operation: string; target: { type: string } | null }[],
@@ -447,6 +469,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
           decidedByName,
         }
       : null,
+    internet: codeAdminInternet(manifest),
     titles: await operationTitles(permissions, context),
   };
 }
@@ -636,4 +659,65 @@ export async function codeAdminOwnerNames(codeIds: readonly string[], context: C
       CASE WHEN c.owner_kind='person' THEN COALESCE(NULLIF(u.display_name,''),u.uid) ELSE NULL END AS name
     FROM code.codes c LEFT JOIN auth.users u ON u.id=c.owner_user_id WHERE c.id=ANY(${sql.array([...codeIds], "text")})`;
   return Object.fromEntries(rows.map((row) => [row.id, row.name]));
+}
+
+/** One saved policy change from the audit, newest first: who, when, and each changed row with old → new. */
+export type CodeAdminPolicyChange = {
+  at: string;
+  by: string | null;
+  revision: number | null;
+  preset: { before: string; after: string } | null;
+  changes: { group: string | null; row: CodePolicyRow; before: CodePolicyValue | null; after: CodePolicyValue | null }[];
+};
+const PolicyAuditSchema = z.object({
+  revision: z.number().int().optional(),
+  preset: CodePolicyPresetSchema.optional(),
+  previousPreset: CodePolicyPresetSchema.optional(),
+  changes: z
+    .record(
+      z.string(),
+      z.record(z.string(), z.object({ before: CodePolicyValueSchema.nullable(), after: CodePolicyValueSchema.nullable() })),
+    )
+    .optional(),
+});
+
+/** Policy history from the existing audit entries of `core.code.policy.updated`; Code keeps no own history store. */
+export async function readCodeAdminPolicyHistory(context: CodeContext, limit = 10): Promise<CodeAdminPolicyChange[]> {
+  requireCodePolicyAdmin(context);
+  const page = await audit.list({ filter: { action: "core.code.policy.updated" }, pagination: { page: 1, perPage: limit } });
+  const parsed = page.items.map((event) => ({ event, metadata: PolicyAuditSchema.safeParse(event.metadata) }));
+  const groupIds = parsed.flatMap(({ metadata }) =>
+    Object.keys(metadata.success ? (metadata.data.changes ?? {}) : {}).filter((key) => key !== "default"),
+  );
+  const names = await groupNames([...new Set(groupIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id)));
+  const people = new Map<string, string | null>();
+  for (const { event } of parsed)
+    if (event.actor.userId && !people.has(event.actor.userId)) people.set(event.actor.userId, await userName(event.actor.userId));
+  return parsed.map(({ event, metadata }) => {
+    const data = metadata.success ? metadata.data : {};
+    return {
+      at: event.createdAt,
+      by: (event.actor.userId ? people.get(event.actor.userId) : null) ?? event.actor.uid,
+      revision: data.revision ?? null,
+      preset:
+        data.preset && data.previousPreset && data.preset !== data.previousPreset
+          ? { before: data.previousPreset, after: data.preset }
+          : null,
+      changes: Object.entries(data.changes ?? {}).flatMap(([group, rows]) =>
+        Object.entries(rows).flatMap(([row, change]) => {
+          const parsedRow = CodePolicyRowSchema.safeParse(row);
+          return parsedRow.success
+            ? [
+                {
+                  group: group === "default" ? null : (names.get(group) ?? group),
+                  row: parsedRow.data,
+                  before: change.before,
+                  after: change.after,
+                },
+              ]
+            : [];
+        }),
+      ),
+    };
+  });
 }

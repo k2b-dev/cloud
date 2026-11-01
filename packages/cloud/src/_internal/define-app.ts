@@ -72,6 +72,7 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import { preloadAdminCodeApprovals } from "../ssr/admin-status";
 import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
@@ -662,6 +663,7 @@ export const defineApp = <
         preloadLayoutHelp(c),
         user ? preloadPanelConsent(c) : undefined,
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
+        user ? preloadAdminCodeApprovals(c) : undefined,
       ]);
     }),
     createPageResponses(html, opts.id, (c) => ({ installable: requestInstallable(c.req.path) })),

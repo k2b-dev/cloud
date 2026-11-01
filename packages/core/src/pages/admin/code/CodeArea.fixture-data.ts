@@ -7,6 +7,7 @@ import type {
   CodeAdminDecided,
   CodeAdminEffective,
   CodeAdminPolicy,
+  CodeAdminPolicyChange,
   CodeAdminSummary,
 } from "../../../code/admin";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
@@ -163,12 +164,12 @@ const diffLines = () => {
 };
 
 export const fixtureApprovalDetail = (
-  variant: "normal" | "first" | "newer" | "own" | "sole" | "difffail" | "approved" = "normal",
+  variant: "normal" | "first" | "newer" | "own" | "sole" | "difffail" | "approved" | "rejected" = "normal",
 ): CodeAdminApprovalDetail => {
   const first = variant === "first";
   return {
     approvalId: "e0000000-0000-4000-8000-000000000001",
-    status: variant === "approved" ? "approved" : "pending",
+    status: variant === "approved" ? "approved" : variant === "rejected" ? "rejected" : "pending",
     code: {
       id: first ? "c_liefer" : "c_rueck",
       title: first ? "Lieferzeit beantworten" : "Rückruf bestätigen",
@@ -249,6 +250,9 @@ export const fixtureApprovalDetail = (
             decidedByName: "Ben Schulz",
           }
         : null,
+    internet: first
+      ? { origins: [], open: false }
+      : { origins: [{ origin: "https://api.buchhaltung-beispiel.de", secrets: ["BUCHHALTUNG_TOKEN"] }], open: true },
     titles: {
       operations: {
         "spaces.task.create": "Aufgabe anlegen",
@@ -312,8 +316,8 @@ export const fixtureCodes = (): CodeAdminCode[] => [
     "policy_changed",
   ),
 ];
-export const fixtureCodeDetail = (): CodeAdminCodeDetail => {
-  const base = fixtureCodes()[4]!;
+export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
+  const base = fixtureCodes().find((code) => code.id === codeId) ?? fixtureCodes()[4]!;
   return {
     code: { ...base, activeVersionNumber: 1, createdAt: "2026-10-20T09:00:00.000Z" },
     pendingVersionId: V.rechnungen2,
@@ -511,6 +515,26 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
         nextCursor: null,
       };
 
+export const fixtureHistory = (): CodeAdminPolicyChange[] => [
+  {
+    at: "2026-10-30T14:00:00.000Z",
+    by: "Jana Probe",
+    revision: 7,
+    preset: null,
+    changes: [
+      { group: "Praktikum", row: "ask_sends", before: null, after: "never" },
+      { group: "Praktikum", row: "internet", before: null, after: "never" },
+    ],
+  },
+  {
+    at: "2026-10-28T09:12:00.000Z",
+    by: "Ben Schulz",
+    revision: 6,
+    preset: { before: "admin", after: "custom" },
+    changes: [{ group: null, row: "silent_shared", before: "automatic", after: "admin" }],
+  },
+];
+
 /** Every part loaded; tests replace single parts to reach a state. */
 export const fixtureData = (): CodeAreaData => ({
   summary: fixtureSummary(),
@@ -521,6 +545,7 @@ export const fixtureData = (): CodeAreaData => ({
   code: null,
   policy: fixturePolicy(),
   effective: null,
+  history: fixtureHistory(),
   cleanup: { items: fixtureCleanup(), nextCursor: null },
   runners: fixtureRunners(),
   limits: [],
@@ -580,6 +605,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       decided: [],
       codes: { items: [], total: 0, owners: 0, nextCursor: null },
       cleanup: { items: [], nextCursor: null },
+      history: [],
       runners: fixtureRunners(true),
       policy: data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? { ...data.policy, groups: [] } : data.policy,
     };
@@ -591,6 +617,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       codes: "failed",
       policy: "failed",
       cleanup: "failed",
+      history: "failed",
       runners: "failed",
       limits: "failed",
     };
@@ -610,7 +637,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
               : "normal",
           );
   }
-  if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail();
+  if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {
     const codes = data.codes;
     if (codes !== null && codes !== "failed" && codes !== "missing")

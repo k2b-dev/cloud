@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { User } from "@k2b/cloud/contracts";
+import { countPending } from "@k2b/cloud/services/approvals";
 import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { CodeContext } from "./access";
@@ -16,10 +17,12 @@ import {
   readCodeAdminCode,
   readCodeAdminEffective,
   readCodeAdminPolicy,
+  readCodeAdminPolicyHistory,
   readCodeAdminRunners,
   readCodeAdminSummary,
 } from "./admin";
 import type { CodeSourceFiles } from "./contracts";
+import { readCodePolicySnapshot, updateCodePolicy } from "./policy";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash } from "./store";
 import type { CodeCheckedVersionManifest } from "./version-contracts";
@@ -146,6 +149,9 @@ databaseSuite()("C22 Administration › Code read model", () => {
     expect(first.status).toBe("pending");
 
     expect(await readCodeAdminSummary(reviewer)).toEqual({ approvals: 1, codes: 1, groups: 0, cleanup: 0 });
+    const codeVersions = () =>
+      countPending({ approverUserId: reviewerId, roleContext: { kind: "request", authority: reviewer.authority }, kind: "code_version" });
+    expect((await codeVersions()).total).toBe(1);
     const {
       items: [item],
       nextCursor,
@@ -195,6 +201,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     });
 
     await decideCodeVersion(first.binding, true, reviewer);
+    expect((await codeVersions()).total).toBe(0);
     expect(await listCodeAdminApprovals(reviewer)).toEqual({ items: [], nextCursor: null });
     expect(await listCodeAdminDecided(reviewer)).toEqual([
       expect.objectContaining({ versionId: first.version.id, approved: true, soleAdmin: false, decidedBy: "Ben Schulz" }),
@@ -205,7 +212,24 @@ databaseSuite()("C22 Administration › Code read model", () => {
       decision: { approved: true, decidedByName: "Ben Schulz" },
     });
 
-    await sql`INSERT INTO code.policy_rules(group_id,row,value) VALUES(${groupId}::uuid,'ask_deletes','automatic')`;
+    expect(await readCodeAdminPolicyHistory(reviewer)).toEqual([]);
+    const current = await readCodePolicySnapshot();
+    await updateCodePolicy(
+      {
+        revision: current.revision,
+        definition: { preset: "custom", rules: [...current.definition.rules, { groupId, row: "ask_deletes", value: "automatic" }] },
+      },
+      reviewer,
+    );
+    expect(await readCodeAdminPolicyHistory(reviewer)).toEqual([
+      {
+        at: expect.any(String),
+        by: "Ben Schulz",
+        revision: current.revision + 1,
+        preset: { before: current.definition.preset, after: "custom" },
+        changes: [{ group: "Buchhaltung", row: "ask_deletes", before: null, after: "automatic" }],
+      },
+    ]);
     const policy = await readCodeAdminPolicy(reviewer);
     expect(policy.groups).toEqual([{ id: groupId, name: "Buchhaltung", rules: 1, members: 1, parents: [] }]);
     expect(policy.policy.revision).toBeGreaterThan(0);
@@ -231,6 +255,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       () => listCodeAdminCodes({}, stranger),
       () => readCodeAdminCode("c_admin1", stranger),
       () => readCodeAdminPolicy(stranger),
+      () => readCodeAdminPolicyHistory(stranger),
       () => readCodeAdminEffective(authorId, stranger),
       () => listCodeAdminCleanup(stranger),
       () => readCodeAdminRunners(stranger),

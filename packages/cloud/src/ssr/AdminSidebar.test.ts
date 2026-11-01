@@ -55,6 +55,16 @@ describe("buildAdminGroups", () => {
       ]);
     }
   });
+  it("shows open Code-version approvals on the Code entry as waiting, and nothing at zero", () => {
+    const code = (count?: number, locale = "de") =>
+      buildAdminGroups([], locale, { codeApprovals: count })
+        .flatMap((group) => group.links)
+        .find((link) => link.href === "/admin/code");
+    expect(code(3)?.waiting).toEqual({ count: 3, label: "3 offen" });
+    expect(code(1, "en")?.waiting).toEqual({ count: 1, label: "1 waiting" });
+    expect(code(0)?.waiting).toBeUndefined();
+    expect(code()?.waiting).toBeUndefined();
+  });
   it("leaves declared AI tools to the AI area instead of the sidebar", () => {
     const groups = buildAdminGroups([
       app({
