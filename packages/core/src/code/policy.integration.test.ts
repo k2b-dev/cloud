@@ -236,7 +236,8 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     const [retry] = await codePolicyPauseOutbox.claim();
     expect(retry).toMatchObject({ id: job!.id, attempts: 1 });
     await codePolicyPauseOutbox.dispatch(retry!);
-    expect(await sql`SELECT previous,cursor FROM code.policy_pause_outbox`).toEqual([{ previous: current.definition, cursor: codeId(50) }]);
+    const pending: unknown = await sql`SELECT previous,cursor FROM code.policy_pause_outbox`;
+    expect(pending).toEqual([{ previous: current.definition, cursor: codeId(50) }]);
     expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toHaveLength(50);
     await codePolicyPauseOutbox.reconcile();
     expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toHaveLength(52);
