@@ -3,7 +3,7 @@ import { activityPublic, mailboxAccess, publicResources } from "../service";
 import type { MailRequestContext } from "../service/auth";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
 import type { MailFocusItem as InternalMailFocusItem, MailFocusMailboxCounts } from "../service/focus";
-import type { MailboxPageData, MailConversationDetailData } from "../service/workspace";
+import type { MailboxCodePageData, MailboxPageData, MailConversationDetailData } from "../service/workspace";
 
 type Table = publicResources.MailPublicResourceTable;
 export type SsrPublicPath = { table: Table; segments: Array<string | number> };
@@ -226,6 +226,20 @@ export const projectMailboxPageData = async (data: MailboxPageData, loadPublicId
     });
   }
   return projectSsrPaths({ ...data, activity }, paths, loadPublicIds);
+};
+
+/** The Code page's mailbox and folder IDs as the public IDs its links and sidebar use. */
+export const projectMailboxCodePageData = async (
+  data: MailboxCodePageData,
+  loadPublicIds?: LoadPublicIds,
+): Promise<MailboxCodePageData> => {
+  const paths: Path[] = [{ table: "mailboxes", segments: ["mailbox", "id"] }];
+  addResourceList(paths, "folders", ["folders"], data.folders);
+  data.folders.forEach((item, index) => {
+    add(paths, "folders", ["folders", index, "parentId"], item.parentId);
+    add(paths, "folders", ["folders", index, "displayInheritedFromFolderId"], item.displayInheritedFromFolderId);
+  });
+  return projectSsrPaths(data, paths, loadPublicIds);
 };
 
 export const projectAutomationWorkspace = async <T extends MailAutomationAccessData>(

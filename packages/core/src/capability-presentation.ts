@@ -129,6 +129,20 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
         },
+        "code.attention": {
+          title: "Aufmerksamkeit für Code prüfen",
+          description:
+            "Listet für einen genauen Besitzer den lesbaren Code, der jemanden braucht: letzter Lauf fehlgeschlagen, Zugriff an einem Ziel entfernt oder eine Version wartet auf Freigabe.",
+          input: {
+            owner: "Genauer Code-Besitzer, dessen Code die Seite zeigt.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+          },
+        },
         "code.list": {
           title: "Code auflisten",
           description:

@@ -8,6 +8,7 @@ import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import * as access from "./access";
+import { clearCodeAttentionCache, readCodeAttention } from "./attention";
 import { type Code, codeQueryContracts } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import {
@@ -418,6 +419,39 @@ databaseSuite()("Core Code data and Query authorization", () => {
         ctx(ids.reader),
       ),
     ).rejects.toBeInstanceOf(access.CodeOwnerUnavailableError);
+  });
+  test("the Code page names people through a real array query, and guests only themselves", async () => {
+    const { loadPeople } = await import("@k2b/cloud/ssr/code-page/load");
+    const member = await loadPeople([ids.owner, ids.reader], { id: ids.owner, directory: true });
+    expect([...member.keys()].sort()).toEqual([ids.owner, ids.reader].sort());
+    const guest = await loadPeople([ids.owner, ids.reader], { id: ids.reader, directory: false });
+    expect([...guest.keys()]).toEqual([ids.reader]);
+  });
+  test("owner attention lists only readable Code and flags a failed newest run per entrypoint", async () => {
+    clearCodeAttentionCache();
+    const owner = { kind: "resource" as const, ref: { type: "example.mailbox", id: "attention" } };
+    const resource = await createCode({ owner, title: "Attention" }, ctx(ids.admin, true));
+    const version = await createCodeVersion(
+      { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
+      ctx(ids.admin, true),
+    );
+    await addCodeShare(resource.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.admin, true));
+    const finish = async (entrypoint: string, state: "succeeded" | "failed", at: string) => {
+      const id = await insertCodeRun({ codeId: resource.id, versionId: version.id, trigger: "schedule", entrypoint, input: null });
+      await sql`UPDATE code.runs SET state=${state},created_at=${new Date(at)},started_at=${new Date(at)},ended_at=${new Date(at)} WHERE id=${id}::uuid`;
+    };
+    // "sort" failed before but succeeded since; "deliver" failed last.
+    await finish("sort", "failed", "2026-10-31T08:00:00.000Z");
+    await finish("sort", "succeeded", "2026-10-31T09:00:00.000Z");
+    await finish("deliver", "succeeded", "2026-10-31T08:00:00.000Z");
+    await finish("deliver", "failed", "2026-10-31T09:00:00.000Z");
+    expect(await readCodeAttention({ owner }, ctx(ids.reader))).toEqual({ items: [{ codeId: resource.id, reasons: ["run_failed"] }] });
+    expect(await readCodeAttention({ owner }, ctx(ids.stranger))).toEqual({ items: [] });
+    // Core keeps the reasons briefly: a newer success shows after the cache, never as an error.
+    await finish("deliver", "succeeded", "2026-10-31T10:00:00.000Z");
+    expect((await readCodeAttention({ owner }, ctx(ids.reader))).items[0]?.reasons).toEqual(["run_failed"]);
+    clearCodeAttentionCache();
+    expect((await readCodeAttention({ owner }, ctx(ids.reader))).items[0]?.reasons).toEqual([]);
   });
   test("unfiltered lists avoid remote owner scans; exact owners check live administration", async () => {
     const resource = await createCode(

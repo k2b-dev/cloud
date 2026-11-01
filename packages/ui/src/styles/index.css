@@ -1475,6 +1475,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: color-mix(in srgb, var(--k2b-text) 5%, transparent);
 }
 
+/* Needs attention: a warning dot in its own 0.875rem mark, the width of the bell and "@", so it never moves another mark. */
+.k2b-ui .k2b-app-workspace__sidebar-status-attention {
+  box-sizing: content-box;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-inline: 0.1875rem;
+  border-radius: 999px;
+  /* The warning ink, not the 500 tone: a state mark needs 3:1 against the sidebar in light and dark. */
+  background: var(--k2b-warning-text);
+}
+
 .k2b-ui .k2b-app-workspace__sidebar-status-dot {
   width: 0.5rem;
   height: 0.5rem;
