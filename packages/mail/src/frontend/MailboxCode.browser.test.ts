@@ -170,7 +170,8 @@ describe("Mailbox Code page in a browser", () => {
       expect(await dialog.getByText("Operation an Ziel").isVisible()).toBe(true);
       expect(await dialog.getByText("du verwaltest info@moebel-beispiel.de").isVisible()).toBe(true);
       await shoot(page, "einschalten-1440");
-      await settled(page);
+      // The dialog's buttons may still fade their hover colour; their place is final once visible.
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).waitFor({ state: "visible" });
       const confirm = dialog.getByRole("button", { name: "Version 5 einschalten" });
       const before = await confirm.boundingBox();
       await confirm.click();
