@@ -18,6 +18,7 @@ import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferen
 import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
+import * as authoringChecks from "./authoring-check";
 import { createCodeBridgeHost } from "./bridge";
 import * as origins from "./origins";
 import { dispatchCodeSecretHttp } from "./secret-http";
@@ -69,6 +70,7 @@ const destination = { origin: "https://api.example:8443", pathPrefix: "/v1", hea
 databaseSuite()("C11 version-bound write-only secrets", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let ownOrigins: ReturnType<typeof spyOn<typeof origins, "readCodeOwnOrigins">>;
   let app: ReturnType<typeof spyOn<typeof registry, "getApp">>;
   let stopApprovals: (() => void) | undefined;
@@ -93,6 +95,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     for (const id of [authorId, reviewerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     ownOrigins = spyOn(origins, "readCodeOwnOrigins").mockResolvedValue(["https://cloud.example"]);
     app = spyOn(registry, "getApp").mockImplementation(async (id) => ({
       id,
@@ -107,6 +110,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   });
   afterAll(async () => {
     stopApprovals?.();
+    serverCheck?.mockRestore();
     settings?.mockRestore();
     ownOrigins?.mockRestore();
     app?.mockRestore();

@@ -24,6 +24,7 @@ import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
 import { createCodeActivationRoutes } from "./api/code-activation";
 import { createCodeAdminRoutes } from "./api/code-admin";
+import { createCodeAuthoringRoutes } from "./api/code-authoring";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
@@ -54,6 +55,7 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 const coreApi = new Hono()
   .route("/code/admin", createCodeAdminRoutes())
   .route("/code", createCodeActivationRoutes())
+  .route("/code/authoring", createCodeAuthoringRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())

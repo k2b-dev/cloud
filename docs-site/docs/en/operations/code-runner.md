@@ -20,6 +20,16 @@ distributes [Code runs](/en/docs/platform/code-runs) through one shared Sync
 queue. Every Core instance can serve a poll, heartbeat, bundle request, or
 completion; runners need no affinity to a Core instance.
 
+## Authoring commands
+
+Core serves the `code` CLI module for SDK pull, check, test, simulation and
+version submission. Install the matching module with `cld plugins install code`.
+[Code CLI](/en/docs/platform/code-cli) describes the commands and JSON contracts.
+Check/test/simulate share the runner job pool and Administration > Code budgets;
+Core and Runner must support the same job protocol. Busy requests fail visibly
+instead of building an unbounded HTTP queue. Disconnects cancel outstanding
+jobs, and authoring HTTP requests stop at the platform's 240-second budget.
+
 ## Configure the service
 
 Register an Ed25519 key for app ID `runner` using
