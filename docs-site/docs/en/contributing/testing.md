@@ -322,6 +322,15 @@ own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
 targets, such as the OAuth consent test, run with `--integration` instead.
 `--filter` narrows the run to a package or a file name.
 
+Before the first file, `bun run test --browser` runs a warm-up,
+`packages/ui/test/browser-warm-up.ts`. It opens a `@k2b/ui` panel dialog,
+searches and picks in a combobox, and opens a menu, in light and dark. A fresh
+Playwright container compiles its graphics shaders on the first frames it
+draws. In WebKit this took 3–4 s, and that time went into the 5 s budget of
+whichever test drew first
+([#2149](https://github.com/k2b-dev/cloud/issues/2149)). The shard log shows
+the warm-up's duration, and that time counts toward `--max-minutes`.
+
 When a test times out, `bun test` stops every process the test file started,
 including the shared browser. `launchBrowser()` starts a new browser for the
 next `newPage()` or `newContext()`, so one hung test fails alone. Closing a page
