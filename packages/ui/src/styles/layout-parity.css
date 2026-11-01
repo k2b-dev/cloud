@@ -2496,6 +2496,13 @@ html {
   }
 }
 
+/* A primary that opens a menu says so with a quiet chevron after its label. */
+.k2b-ui .k2b-app-workspace__head-primary-chevron {
+  margin-inline-start: 0.25rem;
+  font-size: 0.875rem;
+  opacity: 0.85;
+}
+
 /* After filters and compact views give way, the primary keeps its name
    for assistive technology while its icon frees space for the view strip.
    If the lead and actions still cannot fit, flex puts them on separate rows. */
