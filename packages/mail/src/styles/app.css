@@ -677,9 +677,13 @@
     padding-inline-start: 0.75rem;
   }
 
+  /* A dot, never a number: the Code needs someone. The label carries the meaning for screen readers. */
   .mail-sidebar-code-attention {
-    color: var(--k2b-warning-500);
-    font-size: 0.75rem;
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: var(--k2b-warning-500);
   }
 
   .mail-sidebar-folders-heading {

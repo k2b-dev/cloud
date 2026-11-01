@@ -43,7 +43,7 @@ import {
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
 
-export type { CodePageData, CodePageTab } from "./data";
+export type { CodeAttention, CodePageData, CodePageTab } from "./data";
 
 /** The browser calls Core's public Code capabilities with the person's own session, like any page. */
 const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
@@ -173,6 +173,27 @@ const switchOnReady = (state: CodePageReady) =>
   state.waiting.status !== "pending" &&
   state.waitingTargets !== null &&
   !state.versionsFailed;
+
+/** Opens the panel that works on Code with the person, when one is offered. */
+function EditWithPanel(props: { data: CodePageData; t: CodePageMessages; size?: "sm" }) {
+  return (
+    <Show when={props.data.editor}>
+      {(panel) => (
+        <Button type="button" size={props.size} variant="secondary" onClick={() => openPanel(panel().provider)}>
+          <i class="ti ti-sparkles" aria-hidden="true" />
+          {props.t.editWith({ name: panel().label })}
+        </Button>
+      )}
+    </Show>
+  );
+}
+
+/** Same rule as Core's attention query: a failed last run, missing access, or a version waiting for approval. */
+export const codePageNeedsAttention = (state: CodePageData["state"]): boolean =>
+  state.kind === "ready" &&
+  ((state.automations ?? []).some((automation) => automation.lastRun?.state === "failed") ||
+    (state.access ?? []).some((row) => row.state === "removed") ||
+    state.waiting?.status === "pending");
 
 /** "Copy link" shares this page, so the person who can switch it on lands right here. */
 const copyPageLink = async (data: CodePageData, t: CodePageMessages) => {
@@ -465,6 +486,18 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
   const editor = () => props.state.permission === "editor";
   const removed = () => (props.state.access ?? []).filter((row) => row.state === "removed" && !row.target.own);
   const outside = () => (props.state.access ?? []).filter((row) => !row.target.own);
+  /** Which automations fail because of one removed target, and which keep running. */
+  const affectedText = (key: string): string[] => {
+    const automations = (props.state.automations ?? []).filter((automation) => !automation.isNew);
+    const affected = automations.filter((automation) => automation.missingTargets.includes(key));
+    const others = automations.filter((automation) => !automation.missingTargets.includes(key));
+    if (affected.length === 0) return [];
+    const names = (list: CodePageAutomation[]) => list.map((automation) => `„${automation.entrypoint}“`).join(", ");
+    return [
+      t().affectedFailed({ names: names(affected) }),
+      ...(others.length > 0 ? [t().othersRunning({ names: names(others), count: others.length })] : []),
+    ];
+  };
   const allRemoved = () => outside().length > 1 && outside().every((row) => row.state === "removed");
   const newOperations = () =>
     (props.state.waitingTargets ?? [])
@@ -555,18 +588,22 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
                     ? t().targetDeletedTitle({ name: props.text.targetName(row.target) })
                     : t().accessRemovedTitle({ name: props.text.targetName(row.target) })
                 }
-                detail={
+                detail={[
                   row.target.deleted
                     ? t().targetDeletedDescription({ name: props.text.targetName(row.target) })
-                    : t().accessRemovedDescription({ name: props.text.targetName(row.target) })
-                }
+                    : t().accessRemovedDescription({ name: props.text.targetName(row.target) }),
+                  ...affectedText(row.target.key),
+                ].join(" ")}
               >
-                <Show when={editor() && !row.target.deleted && props.state.active}>
+                <Show when={editor() && props.state.active}>
                   <div class="cloud-code__note-actions">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => props.onActivate("again")}>
-                      <i class="ti ti-power" aria-hidden="true" />
-                      {t().switchOnAgain}
-                    </Button>
+                    <Show when={!row.target.deleted}>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => props.onActivate("again")}>
+                        <i class="ti ti-power" aria-hidden="true" />
+                        {t().switchOnAgain}
+                      </Button>
+                    </Show>
+                    <EditWithPanel data={props.data} t={t()} size="sm" />
                   </div>
                 </Show>
               </NoticeCard>
@@ -662,6 +699,7 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
   const status = (): { tone: StatusTone; label: string } => {
     if (props.automation.isNew) return { tone: "neutral", label: t().statusOff({ version: props.state.waiting?.number ?? 0 }) };
     if (props.state.code.state === "paused") return { tone: "warning", label: t().statusPaused };
+    if (props.automation.missingTargets.length > 0) return { tone: "warning", label: t().statusAccessMissing };
     if (props.automation.lastRun?.state === "failed") return { tone: "error", label: t().statusLastFailed };
     return { tone: "ok", label: t().statusOn };
   };
@@ -1290,13 +1328,31 @@ function ActivationDialog(props: {
       return <span class="text-dimmed">{t().alreadyHas({ version: props.state.active?.number ?? props.version.number })}</span>;
     return <span class="text-secondary">{t().checkedAtTarget}</span>;
   };
+  /**
+   * Whether the person may read the refusing target: its own reader named it for them while the page loaded. Only then
+   * does the message name it and who manages it; otherwise only its ID, whatever the refusal carries.
+   */
+  const blockedReadable = () => {
+    const current = view();
+    if (current.kind !== "failed" || !current.failure?.target) return false;
+    const target = targetByRef(current.failure.target);
+    return Boolean(target && (target.own || (target.title !== null && !target.deleted)));
+  };
+  const managersText = () => {
+    const current = view();
+    const names = current.kind === "failed" && blockedReadable() ? (current.failure?.managers ?? []).map((manager) => manager.name) : [];
+    return names.length > 0 ? t().managedBy({ names: names.join(", ") }) : "";
+  };
   const failureText = (): string | null => {
     const current = view();
     if (current.kind !== "failed") return null;
     if (!current.failure) return current.message ?? t().activationUnavailable;
     const target = targetByRef(current.failure.target);
     const name = target ? props.text.targetName(target) : (current.failure.target?.id ?? props.data.owner.title);
-    if (current.failure.code === "not_manager") return t().blockedNotAdmin({ target: name, owner: props.data.owner.title });
+    if (current.failure.code === "not_manager")
+      return blockedReadable()
+        ? t().blockedNotAdmin({ target: name, owner: props.data.owner.title })
+        : t().blockedNotAdminUnreadable({ id: current.failure.target?.id ?? "" });
     if (current.failure.code === "removed") return t().accessRemovedAtTarget({ target: name });
     return t().failedGeneric({ reason: current.failure.reason });
   };
@@ -1370,7 +1426,9 @@ function ActivationDialog(props: {
             tone="danger"
             icon={blocked() ? "ti ti-lock" : "ti ti-alert-triangle"}
             title={failure()}
-            detail={[t().nothingChanged({ running: running() }), blocked() ? t().shareLink : ""].filter(Boolean).join(" ")}
+            detail={[blocked() ? managersText() : "", t().nothingChanged({ running: running() }), blocked() ? t().shareLink : ""]
+              .filter(Boolean)
+              .join(" ")}
             role="alert"
           />
         )}

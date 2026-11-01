@@ -464,7 +464,7 @@ export default function MailSidebar(
             active={code().active}
             meta={
               code().attention ? (
-                <i class="ti ti-point-filled mail-sidebar-code-attention" role="img" aria-label={messages().codeNeedsAttention} />
+                <span class="mail-sidebar-code-attention" role="img" aria-label={messages().codeNeedsAttention} />
               ) : undefined
             }
             viewTransitionName="mail-code"

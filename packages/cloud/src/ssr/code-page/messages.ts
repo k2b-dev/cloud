@@ -101,8 +101,10 @@ export const codePageMessages = i18n.define({
       pausedTitle: "This Code is paused.",
       pausedDescription: "Its automations do not start. Events during the pause are not caught up.",
       accessRemovedTitle: ({ name }: Name) => `Access to ${name} was removed.`,
-      accessRemovedDescription: ({ name }: Name) =>
-        `Calls to ${name} fail with “Access removed” until someone switches the Code on again. Everything else keeps running.`,
+      accessRemovedDescription: ({ name }: Name) => `Calls to ${name} fail until someone switches the Code on again.`,
+      affectedFailed: ({ names }: { names: string }) => `That is why the last run of ${names} failed.`,
+      othersRunning: ({ names, count }: { names: string; count: number }) =>
+        count === 1 ? `${names} keeps running.` : `${names} keep running.`,
       targetDeletedTitle: ({ name }: Name) => `${name} was deleted.`,
       targetDeletedDescription: ({ name }: Name) => `Calls to ${name} fail. Change the Code so it no longer needs it.`,
       allAccessRemovedTitle: "All access was removed.",
@@ -119,13 +121,14 @@ export const codePageMessages = i18n.define({
       statusPaused: "Paused",
       statusOff: ({ version }: Version) => `New in version ${version} · off`,
       statusLastFailed: "Last run failed",
+      statusAccessMissing: "Access missing",
       lastRun: "Last run",
       noRunYet: "none yet",
       name: "Name",
       status: "Status",
       access: "Access",
       accessDescription:
-        "Operation at target, read from the handles in the Code. Applies from switching on. If someone removes access at a target, only the calls to that target fail.",
+        "Operation at target, read from the handles in the Code. Applies from switching on. If someone removes access at a target, only the calls to that target fail. Only the whole Code can be paused.",
       accessFailed: "Access could not be checked.",
       accessEmpty: ({ name }: Name) => `No access outside ${name}.`,
       atOwn: ({ name }: Name) => `at ${name} itself`,
@@ -224,6 +227,9 @@ export const codePageMessages = i18n.define({
         `You are not an administrator of ${target}. Only someone who administers ${owner} and ${target} can switch this on.`,
       nothingChanged: ({ running }: { running: number | null }) =>
         running === null ? "Nothing was switched on." : `Nothing was switched on; version ${running} keeps running.`,
+      blockedNotAdminUnreadable: ({ id }: { id: string }) =>
+        `You are not an administrator of this target (${id}). Only someone who administers this target can switch this on.`,
+      managedBy: ({ names }: { names: string }) => `Here that is ${names}.`,
       shareLink: "Send the link to someone who administers it.",
       failedGeneric: ({ reason }: { reason: string }) => `Switching on did not work: ${reason}`,
       accessRemovedAtTarget: ({ target }: { target: string }) =>
@@ -284,8 +290,10 @@ export const codePageMessages = i18n.define({
       pausedTitle: "Dieser Code ist pausiert.",
       pausedDescription: "Seine Automationen starten nicht. Ereignisse in der Pause werden nicht nachgeholt.",
       accessRemovedTitle: ({ name }: Name) => `Zugriff auf ${name} wurde entfernt.`,
-      accessRemovedDescription: ({ name }: Name) =>
-        `Aufrufe an ${name} scheitern mit „Zugriff entfernt“, bis jemand den Code wieder einschaltet. Alles andere läuft weiter.`,
+      accessRemovedDescription: ({ name }: Name) => `Aufrufe an ${name} scheitern, bis jemand neu einschaltet.`,
+      affectedFailed: ({ names }: { names: string }) => `Darum ist der letzte Lauf von ${names} fehlgeschlagen.`,
+      othersRunning: ({ names, count }: { names: string; count: number }) =>
+        count === 1 ? `${names} läuft weiter.` : `${names} laufen weiter.`,
       targetDeletedTitle: ({ name }: Name) => `${name} wurde gelöscht.`,
       targetDeletedDescription: ({ name }: Name) => `Aufrufe an ${name} scheitern. Ändere den Code, damit er es nicht mehr braucht.`,
       allAccessRemovedTitle: "Alle Zugriffe wurden entfernt.",
@@ -301,13 +309,14 @@ export const codePageMessages = i18n.define({
       statusPaused: "Pausiert",
       statusOff: ({ version }: Version) => `Neu in Version ${version} · aus`,
       statusLastFailed: "Letzter Lauf fehlgeschlagen",
+      statusAccessMissing: "Zugriff fehlt",
       lastRun: "Letzter Lauf",
       noRunYet: "noch keiner",
       name: "Name",
       status: "Status",
       access: "Zugriff",
       accessDescription:
-        "Operation an Ziel, gelesen aus den Handles im Code. Gilt ab dem Einschalten. Entfernt jemand einen Zugriff am Ziel, scheitern nur die Aufrufe an dieses Ziel.",
+        "Operation an Ziel, gelesen aus den Handles im Code. Gilt ab dem Einschalten. Entfernt jemand einen Zugriff am Ziel, scheitern nur die Aufrufe an diesem Ziel. Pausieren lässt sich nur der ganze Code.",
       accessFailed: "Der Zugriff konnte nicht geprüft werden.",
       accessEmpty: ({ name }: Name) => `Kein Zugriff außerhalb von ${name}.`,
       atOwn: ({ name }: Name) => `an ${name} selbst`,
@@ -403,6 +412,9 @@ export const codePageMessages = i18n.define({
         `Du bist nicht Admin von ${target}. Einschalten kann nur, wer ${owner} und ${target} verwaltet.`,
       nothingChanged: ({ running }: { running: number | null }) =>
         running === null ? "Es wurde nichts eingeschaltet." : `Es wurde nichts eingeschaltet, Version ${running} läuft weiter.`,
+      blockedNotAdminUnreadable: ({ id }: { id: string }) =>
+        `Du bist nicht Admin von diesem Ziel (${id}). Einschalten kann nur, wer dieses Ziel verwaltet.`,
+      managedBy: ({ names }: { names: string }) => `Das ist hier ${names}.`,
       shareLink: "Schick den Link an jemanden, der es verwaltet.",
       failedGeneric: ({ reason }: { reason: string }) => `Einschalten hat nicht geklappt: ${reason}`,
       accessRemovedAtTarget: ({ target }: { target: string }) =>

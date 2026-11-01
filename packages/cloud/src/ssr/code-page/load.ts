@@ -9,7 +9,7 @@ import { coreOrigin } from "../../services/identity/core-origin";
 import { LOCALE_HEADER } from "../../shared/locale";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
-import { loadCodeRunCallsForDetail } from "./calls";
+import { loadCodeRunCalls, loadCodeRunCallsForDetail } from "./calls";
 import {
   CodeListSchema,
   type CodePageAccessRow,
@@ -38,6 +38,8 @@ import {
 const PAGE = 20;
 /** Core's default manifest budget is 1 MiB: 64 chunks of 16 Ki code units. A larger manifest shows as unreadable. */
 const MANIFEST_CHUNKS = 64;
+/** Failed automations whose last calls are read to find which one lost access. */
+const MISSING_ACCESS_CHECKS = 5;
 /** Distinct targets named on one page; a version has at most 200 operations. */
 const TARGET_LIMIT = 50;
 
@@ -378,6 +380,7 @@ const loadReady = async (
       cron: entry.cron,
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
+      missingTargets: [],
     }));
   const activeEntrypoints = new Set(activeManifest?.entrypoints.map((entry) => entry.entrypoint) ?? []);
   const automations =
@@ -390,6 +393,28 @@ const loadReady = async (
             : []),
         ];
 
+  // Removed access: which automation needs it. The only automation does; otherwise a failed last run that failed there.
+  const removedKeys = new Set((access ?? []).filter((row) => row.state === "removed").map((row) => targetKey(row.target)));
+  if (automations && removedKeys.size > 0) {
+    const running = automations.filter((automation) => !automation.isNew);
+    if (running.length === 1) running[0]!.missingTargets = [...removedKeys];
+    else
+      await Promise.all(
+        running
+          .filter((automation) => automation.lastRun?.state === "failed")
+          .slice(0, MISSING_ACCESS_CHECKS)
+          .map(async (automation) => {
+            const calls = await loadCodeRunCalls(invoke, code.id, automation.lastRun!.id, 0).catch(() => null);
+            automation.missingTargets = [
+              ...new Set(
+                (calls?.calls ?? [])
+                  .filter((call) => call.state === "failed" && call.target && removedKeys.has(targetKey(call.target)))
+                  .map((call) => targetKey(call.target!)),
+              ),
+            ];
+          }),
+      );
+  }
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
   const activeVersion =
     versions.find((version) => version.active) ??

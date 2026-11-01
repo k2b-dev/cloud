@@ -54,6 +54,8 @@ const iconFont = iconSource.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
 if (!iconFont) throw new Error("Missing Tabler WOFF2 file");
 const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolve(dirname(iconCss), iconFont) };
 /** What Core answers while the person switches on: the activation's final state. */
+/** The space whose refusal the harness answers with. */
+let refusedTarget = "sp_2lg8";
 let activationEnd: "active" | "not_manager" | "unavailable" | "lost-active" | "silent" = "not_manager";
 const activations: unknown[] = [];
 const server = Bun.serve({
@@ -74,17 +76,30 @@ const server = Bun.serve({
     }
     if (url.pathname === "/api/code/activation/read") {
       const body = (await request.json()) as { activationId: string };
+      // The refusal names the target the harness was told about, with its title and manager even where it should not.
+      if (activationEnd === "not_manager")
+        return Response.json({
+          data: {
+            id: body.activationId,
+            versionId: "00000000-0000-4000-8000-000000000005",
+            state: "failed",
+            failure: {
+              target: { type: "spaces.space", id: refusedTarget },
+              code: "not_manager",
+              reason: "Target manager authority required",
+              title: "Logistik",
+              managers: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "Ben Schulz" }],
+            },
+          },
+        });
       if (activationEnd === "unavailable") return Response.json({ code: "NOT_FOUND", message: "Activation not found." }, { status: 404 });
       if (activationEnd === "silent") return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
       return Response.json({
         data: {
           id: body.activationId,
           versionId: "00000000-0000-4000-8000-000000000005",
-          state: activationEnd === "not_manager" ? "failed" : "active",
-          failure:
-            activationEnd !== "not_manager"
-              ? null
-              : { target: { type: "spaces.space", id: "sp_2lg8" }, code: "not_manager", reason: "Target manager authority required" },
+          state: "active",
+          failure: null,
         },
       });
     }
@@ -147,6 +162,23 @@ describe("Mailbox Code page in a browser", () => {
       }
     }, 60_000);
 
+  test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
+    for (const [state, dot] of [
+      ["removed", true],
+      ["overview", false],
+    ] as const) {
+      const page = await load(state, 1440);
+      try {
+        const entry = page.locator('.mail-sidebar a[href="/app/mail/Mb4kd2/code"]').first();
+        expect(await entry.locator('[aria-label="Code braucht Aufmerksamkeit"]').count()).toBe(dot ? 1 : 0);
+        if (dot) expect(await entry.locator('[aria-label="Code braucht Aufmerksamkeit"]').isVisible()).toBe(true);
+        expect(/\d/.test((await entry.textContent()) ?? "")).toBe(false);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
   test("the sidebar marks Code under the open mailbox, after Sent", async () => {
     const page = await load("overview", 1440);
     try {
@@ -179,6 +211,8 @@ describe("Mailbox Code page in a browser", () => {
       expect(activations).toHaveLength(1);
       expect(await dialog.getByText("Es wurde nichts eingeschaltet, Version 4 läuft weiter.", { exact: false }).isVisible()).toBe(true);
       expect(await dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).toBe(true);
+      // The person may read the space, so the message names who manages it.
+      expect(await dialog.getByText("Das ist hier Ben Schulz.", { exact: false }).isVisible()).toBe(true);
       expect(await dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).toBe(true);
       // Blocked, the confirm button says only what it would do and stays disabled.
       expect(await dialog.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
@@ -189,6 +223,27 @@ describe("Mailbox Code page in a browser", () => {
       await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
       expect(await page.getByRole("dialog").count()).toBe(0);
     } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a refusing target the person may not read stays an ID, even when the refusal carries its title and manager", async () => {
+    activationEnd = "not_manager";
+    refusedTarget = "sp_9zz9";
+    const page = await load("waiting-unreadable", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
+      await dialog.getByText("Du bist nicht Admin von diesem Ziel (sp_9zz9).", { exact: false }).waitFor();
+      expect(await dialog.getByText("Einschalten kann nur, wer dieses Ziel verwaltet.", { exact: false }).isVisible()).toBe(true);
+      const text = (await dialog.textContent()) ?? "";
+      expect(text).not.toContain("Logistik");
+      expect(text).not.toContain("Ben Schulz");
+      expect(await dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).toBe(true);
+      await shoot(page, "blockiert-nicht-lesbar-1440");
+    } finally {
+      refusedTarget = "sp_2lg8";
       await page.context().close();
     }
   }, 30_000);

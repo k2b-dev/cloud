@@ -2,6 +2,7 @@ import { liveConnection } from "@k2b/cloud/browser/live";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
+import type { CodeAttention } from "@k2b/cloud/ssr/code-page";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import {
   captureScroll,
@@ -73,6 +74,7 @@ import { mailAutomationLogMessages } from "./_components/mail-automation-log-mes
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
+import { mailCodeEntry } from "./_components/mail-code-entry";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -193,6 +195,8 @@ type MailWorkspaceProps = {
     pinnedMailboxIds: string[];
     hiddenMailboxIds: string[];
   };
+  /** Core's answer for the server-rendered mailbox's Code; null when Core did not answer in time. */
+  codeAttention?: { mailboxId: string; value: CodeAttention | null };
 };
 
 type MailboxSession = Pick<MailWorkspaceProps, "data" | "requestPath" | "initialPreferences" | "initialUserPreferences">;
@@ -2749,8 +2753,12 @@ function createMailboxController(props: MailboxControllerProps) {
         return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
       },
       onNavigate: navigateWorkspace,
-      // Mailbox administrators reach its Code; others with access to the Code reach it by link or from the panel.
-      ...(canAdmin() && !assignedOnly() ? { code: { active: false } } : {}),
+      // Administrators always reach the mailbox's Code; others once Core said they may see it.
+      code: mailCodeEntry({
+        mailboxAdmin: canAdmin() && !assignedOnly(),
+        attention: props.codeAttention?.mailboxId === data.mailbox.id ? props.codeAttention.value : null,
+        active: false,
+      }),
     }),
     onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
     preferences: () => ({

@@ -104,8 +104,8 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   active: v4,
   waiting: null,
   automations: [
-    { entrypoint: "anfragenSortieren", kind: "schedule", cron: "*/15 * * * *", isNew: false, lastRun: runs[1]! },
-    { entrypoint: "wochenbericht", kind: "schedule", cron: "0 7 * * 1", isNew: false, lastRun: null },
+    { entrypoint: "anfragenSortieren", kind: "schedule", cron: "*/15 * * * *", isNew: false, lastRun: runs[1]!, missingTargets: [] },
+    { entrypoint: "wochenbericht", kind: "schedule", cron: "0 7 * * 1", isNew: false, lastRun: null, missingTargets: [] },
   ],
   access: access("present"),
   waitingTargets: null,
@@ -129,6 +129,7 @@ export const codePageFixture = (
     | "run-unclassified"
     | "versions"
     | "versions-failed"
+    | "waiting-unreadable"
     | "reader"
     | "activated"
     | "empty"
@@ -161,7 +162,7 @@ export const codePageFixture = (
           waitingTargets,
           automations: [
             ...ready().automations!,
-            { entrypoint: "lieferungenEintragen", kind: "schedule", cron: "0 8 * * 1-5", isNew: true, lastRun: null },
+            { entrypoint: "lieferungenEintragen", kind: "schedule", cron: "0 8 * * 1-5", isNew: true, lastRun: null, missingTargets: [] },
           ],
           access: [
             ...access("present"),
@@ -180,7 +181,32 @@ export const codePageFixture = (
     case "approval":
       return { ...base, tab: "overview", state: ready({ waiting: { ...v5, status: "pending" }, waitingTargets }) };
     case "removed":
-      return { ...base, tab: "overview", state: ready({ access: access("removed") }) };
+      // „lieferungenEintragen“ failed at the space whose access was removed; „anfragenSortieren“ keeps running.
+      return {
+        ...base,
+        tab: "overview",
+        state: ready({
+          access: access("removed"),
+          automations: [
+            {
+              entrypoint: "anfragenSortieren",
+              kind: "schedule",
+              cron: "*/15 * * * *",
+              isNew: false,
+              lastRun: runs[1]!,
+              missingTargets: [],
+            },
+            {
+              entrypoint: "lieferungenEintragen",
+              kind: "schedule",
+              cron: "0 8 * * 1-5",
+              isNew: false,
+              lastRun: runs[3]!,
+              missingTargets: ["space"],
+            },
+          ],
+        }),
+      };
     case "deleted":
       return { ...base, tab: "overview", state: ready({ access: access("removed", true) }) };
     case "paused":
@@ -269,6 +295,23 @@ export const codePageFixture = (
             input: null,
             inputTooLarge: false,
           },
+        }),
+      };
+    case "waiting-unreadable":
+      // The new target is a space the person may not read: only its ID is known to the page.
+      return {
+        ...base,
+        tab: "overview",
+        state: ready({
+          waiting: v5,
+          waitingTargets: [
+            waitingTargets[0]!,
+            {
+              target: { ...space, key: "hidden", ref: { type: "spaces.space", id: "sp_9zz9" }, title: null, href: null },
+              operations: ["spaces.task.create"],
+              isNew: true,
+            },
+          ],
         }),
       };
     case "versions-failed":

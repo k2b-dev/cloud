@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
+import type { Context } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
@@ -16,6 +17,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
 const { permissionRef, visiblePersonIds } = await import("./load");
+const { loadCodeAttention } = await import("./attention");
+const { codePageNeedsAttention } = await import("./CodePage");
 const { LocaleProvider } = await import("@k2b/ui");
 
 type State = Parameters<typeof codePageFixture>[0];
@@ -68,8 +71,16 @@ describe("Code page states", () => {
   test("removed access and a deleted target say what fails and how to recover", () => {
     const removed = text("removed");
     expect(removed).toContain("Zugriff auf Space Logistik wurde entfernt.");
+    expect(removed).toContain(
+      "Aufrufe an Space Logistik scheitern, bis jemand neu einschaltet. Darum ist der letzte Lauf von „lieferungenEintragen“ fehlgeschlagen. „anfragenSortieren“ läuft weiter.",
+    );
     expect(removed).toContain("Zugriff entfernt");
     expect(removed).toContain("Wieder einschalten");
+    expect(removed).toContain("Mit Gustav bearbeiten");
+    // Only the affected automation shows missing access; nothing is paused per automation.
+    expect(html("removed").match(/k2b-status-badge__label">Zugriff fehlt</g)).toHaveLength(1);
+    expect(removed).not.toContain("Pausiert");
+    expect(removed).toContain("Pausieren lässt sich nur der ganze Code.");
     const deleted = text("deleted");
     expect(deleted).toContain("Space Logistik wurde gelöscht.");
     expect(deleted).toContain("Ziel gelöscht");
@@ -152,6 +163,39 @@ describe("Code page states", () => {
 });
 
 describe("Code page helpers", () => {
+  test("the page's own attention follows Core's rule: failed run, missing access or pending approval", () => {
+    expect(codePageNeedsAttention(codePageFixture("overview").state)).toBe(false);
+    expect(codePageNeedsAttention(codePageFixture("removed").state)).toBe(true);
+    expect(codePageNeedsAttention(codePageFixture("approval").state)).toBe(true);
+    expect(codePageNeedsAttention(codePageFixture("paused").state)).toBe(false);
+  });
+
+  test("Core down, failing or slow: no dot and no error, within the timeout", async () => {
+    const c = { req: { raw: { signal: new AbortController().signal }, header: () => undefined } } as unknown as Context;
+    const ref = { type: "mail.mailbox", id: "Mb4kd2" };
+    const down = (async () => {
+      throw new Error("connect ECONNREFUSED");
+    }) as CodePageInvoke;
+    expect(await loadCodeAttention(c, ref, { invoke: down })).toBeNull();
+    const refused = (async () => ({ ok: false, error: { code: "APP_UNAVAILABLE", message: "down", status: 503 } })) as CodePageInvoke;
+    expect(await loadCodeAttention(c, ref, { invoke: refused })).toBeNull();
+    const hanging = (() => new Promise(() => {})) as CodePageInvoke;
+    const started = performance.now();
+    expect(await loadCodeAttention(c, ref, { invoke: hanging, timeoutMs: 50 })).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1_000);
+    const answer = (items: Array<{ codeId: string; reasons: string[] }>) =>
+      (async () => ({ ok: true, data: { data: { data: { items } } } })) as unknown as CodePageInvoke;
+    expect(await loadCodeAttention(c, ref, { invoke: answer([]) })).toEqual({ visible: false, attention: false });
+    expect(await loadCodeAttention(c, ref, { invoke: answer([{ codeId: "c_3mfa", reasons: [] }]) })).toEqual({
+      visible: true,
+      attention: false,
+    });
+    expect(await loadCodeAttention(c, ref, { invoke: answer([{ codeId: "c_3mfa", reasons: ["access_missing"] }]) })).toEqual({
+      visible: true,
+      attention: true,
+    });
+  });
+
   test("a permission without a target is an app-wide grant, as Core plans it", () => {
     expect(permissionRef({ operation: "spaces.space.list", target: null })).toEqual({ type: "app", id: "spaces" });
     expect(permissionRef({ operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" } })).toEqual({
