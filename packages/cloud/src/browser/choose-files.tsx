@@ -1,8 +1,8 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
 import { dialogCore, panelDialogWorkspaceOptions, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
 import { deviceFilesProblem } from "./choice-limits";
+import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
 import type { FileProviderCaller, FileProviderSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
