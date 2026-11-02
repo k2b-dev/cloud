@@ -98,6 +98,13 @@ replaced later. A manifest never grants permission to make a call. Dispatch
 checks each actual operation against current policy, version approval, mandate
 and resource access.
 
+Automation titles use `CodeAutomationTitleSchema`: trimmed, 1–200 characters,
+one line of plain text without HTML markup or control/format characters.
+A title belongs to this immutable manifest. A title change creates a new
+version and follows the existing approval rules. `entrypoint` remains the key
+for execution, JSON, audit and URLs; human displays use `title ?? entrypoint`.
+Historical runs use the title of their own version.
+
 ## Compare what will be approved
 
 `core.code.version.diff({ codeId, versionId })` returns `binding`,
@@ -240,11 +247,3 @@ request ID, channel and `sole_admin`; a sole-admin approval uses reason
 Use [Code activation](/en/docs/platform/code-activation) to check owner and target
 authority, create its version mandate, and switch the active version durably.
 Pending or failed activation leaves the current version running.
-
-
-Automation titles use `CodeAutomationTitleSchema`: trimmed, 1–200 characters,
-one line of plain text without HTML markup or control/format characters.
-A title belongs to this immutable manifest. A title change creates a new
-version and follows the existing approval rules. `entrypoint` remains the key
-for execution, JSON, audit and URLs; human displays use `title ?? entrypoint`.
-Historical runs use the title of their own version.

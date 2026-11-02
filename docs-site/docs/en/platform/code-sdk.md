@@ -101,11 +101,11 @@ Queries are absent from the SDK.
 no schedule registrations, version or owner. The chat execution path still
 asks for writing Actions as required by the normal approval policy.
 
-## Recognize later-phase APIs
+## Name an automation
 
-The `app` type includes `schedule`, `on`, `get`, `post`, `put`, `delete`, `all`,
-`nav`, `webhook`, and `fetch`. Only `schedule(cron, handler)` is available in
-Phase 1. To give a schedule a name for manual execution, pass a third argument:
+Give a schedule a stable name for manual execution and an optional readable
+title in its third argument:
+
 ```ts
 app.schedule("0 8 * * 1", weeklyReview, {
   name: "weekly-review",
@@ -119,10 +119,16 @@ Cloud displays it as escaped text. Declare a constant title; imported options
 need literal types, for example `as const`. The title appears wherever people
 see the automation; without one, Cloud shows its identifier. Changing a title
 creates a new checked version with the usual review and activation rules.
+Titles need not be unique; the stable name identifies the automation.
 
 Names contain letters,
 digits, dots, underscores or hyphens, start with a letter or digit, and must be
 unique in the module. Keep the name across versions to identify the same task.
+
+## Recognize later-phase APIs
+
+The `app` type includes `schedule`, `on`, `get`, `post`, `put`, `delete`, `all`,
+`nav`, `webhook`, and `fetch`. Only `schedule` is available in Phase 1.
 Route, navigation and fetch registrations report
 `app.<method> kommt in Phase 2`; events and webhooks report Phase 3. The runtime
 also refuses these calls. Declaring a later-phase method never silently

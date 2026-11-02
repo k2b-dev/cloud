@@ -73,7 +73,7 @@ subscription.
 
 Declare schedules as module-level calls with a constant five-field cron expression and an
 optional constant name and human `title` in the declaration options. Titles follow
-the [SDK title contract](/en/docs/platform/code-sdk#recognize-later-phase-apis);
+the [SDK title contract](/en/docs/platform/code-sdk#name-an-automation);
 invalid or dynamic titles report `code_static_title`. A name in an imported options object needs a literal
 type, such as `{ name: "weekly" as const }`. Names must be unique. Unnamed
 schedules use the SDK's `schedule:0`, `schedule:1`, … identifiers in runtime module

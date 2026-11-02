@@ -204,7 +204,7 @@ app.schedule = (cron, fn, options) => {
   const entrypoint = name ?? "schedule:" + schedules.length;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
   const title = typeof options?.title === "string" ? options.title.trim() : options?.title;
-  if (options?.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(title))) throw new Error("code_sdk_invalid_schedule_title");
+  if (options?.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]/u.test(title))) throw new Error("code_sdk_invalid_schedule_title");
   schedules.push({ entrypoint, cron, ...(title === undefined ? {} : { title }), handler: fn });
   return app;
 };

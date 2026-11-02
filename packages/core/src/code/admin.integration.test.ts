@@ -290,6 +290,10 @@ databaseSuite()("C22 Administration › Code read model", () => {
       entrypoint: "weekly",
       input: null,
     });
+    const next = submission("c_origin", "export const c = 4;\nexample.item.change();", version.version.id);
+    next.manifest.entrypoints[0]!.title = "Lieferungen prüfen";
+    await submitCodeVersion(next, author);
+    // Run labels remain pinned to the run's version after a newer title is submitted.
     const read = await readCodeWorkload(`${version.version.id}~${runId}`, author);
     expect(read.view).toEqual({ title: "Wochenbericht", context: "Lieferungen eintragen", permission: "write" });
     expect((await listCodeRuns({ codeId: "c_origin", limit: 10 }, author)).items[0]).toMatchObject({

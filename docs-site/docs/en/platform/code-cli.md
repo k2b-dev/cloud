@@ -72,6 +72,11 @@ person's own rights and never asks for target-admin grants. Phase 1 supports
 named schedules and hand starts; future page, webhook and database syntax fails
 checking.
 
+Human check and run output uses each automation's reviewed title followed by
+its identifier in parentheses. Without a title, it shows the identifier. JSON
+keeps `entrypoint` unchanged and adds the optional `title`; pass the identifier
+to `cld code run`.
+
 ## Test with fixed fixtures
 
 ```sh
@@ -327,8 +332,3 @@ return a generic message without private input. The shared contract adds
 `policyEffective`, `policyPreview`, `policyUpdate`, `secretSet`, `secretList`
 and `secretDelete`; `CodeLocalStatusSchema` and `CodeWorkspaceStatusSchema`
 define the local comparison. Existing C18a keys and version 1 stay unchanged.
-
-
-Human check and run output uses each automation's reviewed title, falling back
-to its entrypoint identifier. JSON keeps `entrypoint` unchanged and adds the
-optional `title`; pass the identifier to `cld code run`.

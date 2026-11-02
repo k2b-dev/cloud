@@ -338,11 +338,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             const titleValue = titleProperty && ts.isPropertyAssignment(titleProperty) ? titleProperty.initializer : undefined;
             const titles = titleValue && ts.isStringLiteralLike(titleValue) ? [titleValue.text] : titleType && strings(titleType);
             const title = titles?.length === 1 ? CodeAutomationTitleSchema.safeParse(titles[0]) : null;
-            if (titleType && (!title || !title.success))
+            if (titleType && !(titleType.flags & ts.TypeFlags.Undefined) && (!title || !title.success))
               report(
                 options!,
                 "code_static_title",
-                "Der Titel muss konstanter Klartext mit 1 bis 200 Zeichen sein, ohne Markup oder Steuerzeichen.",
+                "Der Titel muss konstanter Klartext mit 1 bis 200 Zeichen sein, ohne Markup, Steuer- oder Formatzeichen.",
               );
             if (
               !cron ||

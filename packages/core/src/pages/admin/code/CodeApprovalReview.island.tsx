@@ -189,7 +189,16 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           <section>
             <h3 class="text-sm font-medium">{t().automations}</h3>
             <ul class="mt-2 grid gap-1 text-sm text-secondary">
-              <For each={props.automations}>{(entry) => <li>{entry.title ?? entry.entrypoint}</li>}</For>
+              <For each={props.automations}>
+                {(entry) => (
+                  <li>
+                    <bdi>{entry.title ?? entry.entrypoint}</bdi>
+                    <Show when={entry.title}>
+                      <code class="ml-2 text-xs text-dimmed">{entry.entrypoint}</code>
+                    </Show>
+                  </li>
+                )}
+              </For>
             </ul>
           </section>
         </Show>

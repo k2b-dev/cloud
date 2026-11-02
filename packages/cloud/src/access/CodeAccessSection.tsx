@@ -172,7 +172,9 @@ export default function CodeAccessSection(props: {
     const name = nameOf(entry);
     const owner = accounts[accountId(entry)]?.ownerTitle;
     const detail = detailOf(entry);
-    const automations = (detail?.automations ?? []).map((id) => detail?.automationTitles?.[id] ?? id);
+    const automations = (detail?.automations ?? []).map((id) =>
+      detail?.automationTitles?.[id] ? `${detail.automationTitles[id]} (${id})` : id,
+    );
     const confirmed = await prompts.confirm(
       <>
         <p>{automations.length ? t().codeRemoveBodyFor({ names: automations }) : t().codeRemoveBody}</p>
@@ -306,7 +308,13 @@ export default function CodeAccessSection(props: {
                               <code class="font-mono text-[0.95em] font-medium text-secondary">{detail().operations.join(", ")}</code>
                               <Show when={detail().automations.length > 0}>
                                 {" "}
-                                · {t().codeUsedFor({ names: detail().automations.map((id) => detail().automationTitles?.[id] ?? id) })}
+                                ·{" "}
+                                {t().codeUsedFor({
+                                  names: detail().automations.map((id) => {
+                                    const title = detail().automationTitles?.[id];
+                                    return title ? `${title} (${id})` : id;
+                                  }),
+                                })}
                               </Show>
                             </span>
                             <Show when={detail().activatedAt}>

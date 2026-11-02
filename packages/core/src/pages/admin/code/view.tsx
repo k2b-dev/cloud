@@ -668,8 +668,7 @@ export function CodeAreaView(props: Props) {
                 {(run) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
                     <span>
-                      {t.runState({ s: run.state })} · {t.trigger({ t: run.trigger })}{" "}
-                      <code class="text-xs">{run.title ?? run.entrypoint}</code>
+                      {t.runState({ s: run.state })} · {t.trigger({ t: run.trigger })} <span>{run.title ?? run.entrypoint}</span>
                     </span>
                     <span class="text-(--k2b-text-muted)">{when(run.createdAt)}</span>
                   </li>

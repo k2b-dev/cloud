@@ -136,8 +136,7 @@ test("check prints chapter 11 permissions with exact targets and source lines", 
   const run = context(["check", directory], {}, "text");
   expect(await code.run(run.ctx)).toBe(0);
   expect(run.printed.join("\n")).toMatchInlineSnapshot(`
-"Automationen
-Erlaubnisse
+"Erlaubnisse
   example.conversation.move   am eigenen Postfach Rechnungen (box_1234)   code.ts:3
   other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8  ← neu, braucht den Admin des Space
 KI           ja
@@ -576,8 +575,7 @@ test("personal check never asks for target-admin grants", async () => {
   const run = context(["check", directory], {}, "text", () => Response.json(personal));
   expect(await code.run(run.ctx)).toBe(0);
   expect(run.printed.join("\n")).toMatchInlineSnapshot(`
-"Automationen
-Erlaubnisse
+"Erlaubnisse
   example.conversation.move   an Postfach Rechnungen (box_1234)   code.ts:3
   other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8
 KI           ja
@@ -1060,10 +1058,23 @@ test("human check output uses reviewed titles and JSON retains both titles and s
   data.manifest.entrypoints = entries;
   const human = context([], {}, "text");
   printCodeCheck(human.ctx, data);
-  expect(human.printed.join("\n")).toContain("Lieferungen eintragen · 0 8 * * 1");
+  expect(human.printed.join("\n")).toContain("Lieferungen eintragen (deliver) · 0 8 * * 1");
   expect(human.printed.join("\n")).toContain("legacy · Handstart");
   const { directory } = await project();
-  const machine = context(["check", directory], {}, "json", () => Response.json({ data }));
+  const machine = context(["check", directory], {}, "json", () => Response.json(data));
   expect(await code.run(machine.ctx)).toBe(0);
-  expect(JSON.parse(machine.printed[0]!).result.manifest.entrypoints).toEqual(entries);
+  expect(machine.printed[0]).toMatchObject({ result: { manifest: { entrypoints: entries } } });
+});
+
+test("human runs keep the command identifier beside a reviewed title and JSON preserves both fields", async () => {
+  const { directory } = await project();
+  const run = { ...runMetadata, title: "Lieferungen eintragen" };
+  const data = { version: 1, items: [run, runMetadata], nextCursor: null };
+  const human = context(["runs", directory], {}, "text", () => Response.json(data));
+  expect(await code.run(human.ctx)).toBe(0);
+  expect(human.printed.join("\n")).toContain("Lieferungen eintragen (monday)");
+  expect(human.printed.join("\n")).toContain(" · monday · ");
+  const machine = context(["runs", directory], {}, "json", () => Response.json(data));
+  expect(await code.run(machine.ctx)).toBe(0);
+  expect(machine.printed).toEqual([data]);
 });

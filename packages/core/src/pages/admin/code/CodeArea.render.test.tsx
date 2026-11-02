@@ -257,5 +257,5 @@ test("reviewed automation titles appear in approvals and old declarations keep t
   const html = render(review);
   expect(html).toContain("Lieferungen eintragen");
   expect(html).toContain("legacyJob");
-  expect(html).not.toContain(">lieferungenEintragen<");
+  expect(html).toContain(">lieferungenEintragen</code>");
 });

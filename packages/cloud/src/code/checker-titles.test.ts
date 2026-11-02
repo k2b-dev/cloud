@@ -22,6 +22,7 @@ test("schedule titles are optional reviewed metadata; the runner key and source 
   for (const [options, title] of [
     ['{ name: "deliver", title: "  Lieferungen eintragen  " }', "Lieferungen eintragen"],
     ['{ name: "deliver" }', undefined],
+    ['{ name: "deliver", title: undefined }', undefined],
     ["options", "Lieferungen eintragen"],
   ] as const) {
     const result = analyze(options, {
@@ -50,6 +51,24 @@ test("dynamic, blank, oversized, markup and multiline titles are checker errors"
   expect(
     analyze("options", { "options.ts": 'export const options = { name: "deliver" as const, title: String(Date.now()) };' }).diagnostics,
   ).toContainEqual(expect.objectContaining({ code: "code_static_title" }));
+});
+
+test("titles are display metadata and distinct identifiers may share a title", () => {
+  const result = analyzeCode({
+    sdk,
+    entry: "code.ts",
+    aiOperations: [],
+    files: {
+      "code.ts": `import { app } from "@sdk";
+app.schedule("0 8 * * 1", async () => {}, { name: "first", title: "Weekly review" });
+app.schedule("0 9 * * 1", async () => {}, { name: "second", title: "Weekly review" });`,
+    },
+  });
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints.map(({ entrypoint, title }) => ({ entrypoint, title }))).toEqual([
+    { entrypoint: "first", title: "Weekly review" },
+    { entrypoint: "second", title: "Weekly review" },
+  ]);
 });
 
 test("checker and stored manifests share the bounded title contract and accept old manifests", () => {

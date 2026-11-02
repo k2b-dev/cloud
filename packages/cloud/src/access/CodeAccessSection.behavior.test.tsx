@@ -476,7 +476,7 @@ describe("Code with access in the shared rights editor", () => {
         },
       ]);
       expect(view.codeRows().map((row) => row.textContent)).toEqual([
-        "Code von info@moebel-beispiel.despaces.task.create · für „Lieferungen eintragen“eingeschaltet von Ben Schulz am 28.10.2026Entfernen",
+        "Code von info@moebel-beispiel.despaces.task.create · für „Lieferungen eintragen (lieferungenEintragen)“eingeschaltet von Ben Schulz am 28.10.2026Entfernen",
         "Code von EinkaufAnsehenEntfernen",
       ]);
       expect(view.codeRows()[0]!.querySelector("code")?.textContent).toBe("spaces.task.create");
@@ -484,7 +484,7 @@ describe("Code with access in the shared rights editor", () => {
       view.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
       await waitFor(() => view.confirmations.length === 1, "the confirmation");
       expect(view.confirmations[0]!.content).toStartWith(
-        "„Lieferungen eintragen“ kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was es schon gibt, bleibt.",
+        "„Lieferungen eintragen (lieferungenEintragen)“ kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was es schon gibt, bleibt.",
       );
     } finally {
       view.cleanup();

@@ -521,3 +521,20 @@ test("automation rows and missing-access messages use reviewed titles with ident
   }
   expect(html("overview")).toContain("anfragenSortieren");
 });
+
+test("run lists and details use the run's title with identifier fallback", () => {
+  const data = codePageFixture("runs", "de");
+  if (data.state.kind !== "ready" || !data.state.run || !data.state.runs) throw new Error("Expected run fixture");
+  data.state.run.run.title = "Lieferungen eintragen";
+  data.state.runs.items[0]!.title = "Lieferungen eintragen";
+  const rendered = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data });
+      },
+    }),
+  ).replaceAll(/<!--[^>]*-->/g, "");
+  expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(rendered).toContain("anfragenSortieren");
+});
