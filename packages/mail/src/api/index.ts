@@ -212,11 +212,13 @@ import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
 import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
+  internalDraftSeedInput,
   internalInput,
   internalMailboxId,
   internalParams,
   type MailApiContext,
   mailboxParamSchema,
+  projectDraftSeed,
   projectResourcePaths,
   projectRootRelation,
   resolveMailboxParam,
@@ -3014,11 +3016,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .post("/mailboxes/:mailboxId/draft-seeds", v("param", mailboxParamSchema), v("json", prepareDraftSeedInputSchema), async (c) =>
     respondPublic(
       c,
-      drafts.prepareDraftSeed({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        origin: (await internalInput(c, c.req.valid("json"))).origin,
-      }),
+      projectDraftSeed(
+        drafts.prepareDraftSeed({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          origin: (await internalDraftSeedInput(c, c.req.valid("json"))).origin,
+        }),
+      ),
     ),
   )
   .post(
@@ -3031,7 +3035,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         drafts.materializeDraftSeed({
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
-          input: await internalInput(c, c.req.valid("json")),
+          input: await internalDraftSeedInput(c, c.req.valid("json")),
         }),
       ),
   )
