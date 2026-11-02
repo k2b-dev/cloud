@@ -244,7 +244,7 @@ describe("selection colors in the browser", () => {
                 secondary: [".k2b-app-workspace__sidebar-item-description", ".k2b-app-workspace__sidebar-item-meta"],
               },
               { element: page.getByRole("tab", { name: "Preferences", exact: true }), kind: "nav" },
-              { element: page.locator(".k2b-data-table__row").first(), kind: "row", text: "td" },
+              { element: page.locator(".k2b-data-table__row").first(), kind: "table", text: "td" },
               { element: page.locator(".k2b-file-grid__item").first(), kind: "row", text: ".k2b-file-grid__name" },
             ] as const;
             const before = await Promise.all(
@@ -267,7 +267,14 @@ describe("selection colors in the browser", () => {
                   expect(contrast(secondary.ink, selected.background), `${selector} contrast`).toBeGreaterThanOrEqual(4.5);
                 }
               if (colors) {
-                expect(selected.background).toEqual(rgb(colors[target.kind]));
+                if (target.kind === "table") {
+                  // A selected table row mixes 16 % of the host ink into the surface below it.
+                  const surface = before[index]!.paint.background;
+                  const ink = rgb(colors.ink);
+                  selected.background.forEach((channel, i) =>
+                    expect(Math.abs(channel - (ink[i]! * 0.16 + surface[i]! * 0.84)), "table fill").toBeLessThanOrEqual(1.5),
+                  );
+                } else expect(selected.background).toEqual(rgb(colors[target.kind]));
                 if (target.kind === "nav") expect(selected.ink).toEqual(rgb(colors.ink));
               } else {
                 expect(Number(selected.alpha)).toBeGreaterThan(0);

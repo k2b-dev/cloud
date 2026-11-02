@@ -1777,9 +1777,6 @@
   font-size: 0.78125rem;
   white-space: nowrap;
 }
-.k2b-ui .notebook-graph__list .k2b-data-table__row[data-selected="true"] {
-  background: var(--k2b-row-selected);
-}
 .notebook-graph__list-title {
   color: inherit;
   font-weight: 600;

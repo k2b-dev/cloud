@@ -47,11 +47,9 @@ const navInk = [
   ".k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control",
   '.k2b-ui .k2b-settings__tabs button[data-active="true"]',
 ];
-const rows = [
-  '.k2b-ui .k2b-data-table__row[data-selected="true"]',
-  '.k2b-ui .k2b-file-grid__item[aria-selected="true"]',
-  '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]',
-];
+// A selected table row mixes a stronger fill of its own (see the table test below).
+const tableRow = '.k2b-ui .k2b-data-table__row[data-selected="true"]';
+const rows = ['.k2b-ui .k2b-file-grid__item[aria-selected="true"]', '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]'];
 
 describe("selection hooks", () => {
   test("one navigation fill and one row fill alias platform selection and action without color-mix", () => {
@@ -76,9 +74,12 @@ describe("selection hooks", () => {
   });
 
   test("content selection changes paint without weight, padding, or border width", () => {
-    for (const selector of rows) {
+    expect(declarations(tableRow).get("background")).toEqual([
+      "color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface))",
+    ]);
+    for (const selector of [tableRow, ...rows]) {
       const selected = declarations(selector);
-      expect(selected.get("background"), selector).toEqual(["var(--k2b-row-selected)"]);
+      if (selector !== tableRow) expect(selected.get("background"), selector).toEqual(["var(--k2b-row-selected)"]);
       expect(
         [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?-width|border)$/.test(property)),
         selector,
