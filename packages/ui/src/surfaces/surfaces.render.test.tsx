@@ -440,6 +440,18 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(text).not.toContain("ti ti-alert-circle");
   });
 
+  test("keeps the width of every possible label so the dot holds one place", () => {
+    const html = renderToString(() =>
+      createComponent(StatusBadge, { label: "Running", tone: "ok", variant: "dot", labels: ["Running", "Not started"] }),
+    );
+    expect(html).toContain(`class="k2b-status-badge__label" data-reserve><span>Running</span>`);
+    // The alternatives only take room; screen readers hear the one current word.
+    expect(html).toContain('<span aria-hidden="true">Not started</span>');
+    expect(renderToString(() => createComponent(StatusBadge, { label: "Running", tone: "ok", variant: "dot" }))).not.toContain(
+      "data-reserve",
+    );
+  });
+
   test("renders responsive stat grids and prevents nested accent links", () => {
     const html = renderToString(() =>
       createComponent(StatGrid, {

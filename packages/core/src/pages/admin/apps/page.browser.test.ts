@@ -61,6 +61,11 @@ test("the list names every app by name with its state in words and its most impo
   expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +2");
   expect(await page.locator('[data-app="tools"]').innerText()).toContain("Zugriff: niemand verwaltet ihn");
   expect(await page.getByText("Wähle eine App, um Zustand, Zugriff, Schlüssel und Ereignisse zu sehen.").isVisible()).toBe(true);
+  // Status keeps one place: every row's dot starts at the same x, whatever the word ("Läuft", "Nicht gestartet").
+  const dots = await rows.evaluateAll((elements) =>
+    elements.map((element) => Math.round(element.querySelector(".k2b-status-badge__dot")!.getBoundingClientRect().left)),
+  );
+  expect(new Set(dots).size).toBe(1);
 }, 20_000);
 
 test("the old app address opens the app, and every hint has exactly one way out to its column", async () => {
