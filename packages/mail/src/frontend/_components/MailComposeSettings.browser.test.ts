@@ -104,6 +104,8 @@ const load = async (
     window.mountComposeSettings({ ...harnessOptions, logo });
   }, options);
   await page.locator("[data-mail-logo-stage]").scrollIntoViewIfNeeded();
+  // The dropzone below the stage is clicked later; in view from the start, that click scrolls nothing it compares.
+  await page.locator(".k2b-dropzone").scrollIntoViewIfNeeded();
   await page.evaluate(() => document.fonts.ready);
   return Object.assign(page, { errors });
 };
