@@ -278,12 +278,32 @@ event gap and retention checks run once per minute, independently of signal
 volume. No new service or operator setting is required.
 
 Grids starts its 32 record-event workflow partition readers only while at least
-one enabled record-event workflow exists. Workflow changes wake the runtime
-across replicas; the existing minute reconciliation recovers missed hints.
-Readers drain when the last such workflow is disabled or removed. Their durable
-queue and partition positions remain, so events queued before startup or during
-an idle period are delivered in record order. Activation timestamps continue to
-exclude events from before a workflow was enabled.
+one enabled record-event workflow exists in a base outside the trash. Workflow
+changes and base trash/restore actions wake the runtime across replicas; the existing minute reconciliation
+recovers missed hints. Readers drain when the last such workflow is disabled,
+removed, or its base is trashed. A drain runs outside the runtime topic reader,
+so it does not hold up schedule changes or subsequent hints.
+
+The PostgreSQL record-event outbox also supplies the change feed and snapshot
+anchors. These rows keep their existing retention even without workflows.
+Before forwarding an event to NATS, the dispatcher checks committed workflow
+demand for its base and occurrence time in its existing database read. Without
+an eligible workflow, it completes that outbox entry without publishing workflow
+work. Enabling a workflow before writing records guarantees that its first
+event can be queued even before any replica starts the readers. An activation
+still in an uncommitted transaction does not claim events already dispatched
+without it; activation does not replay earlier record changes.
+
+The durable queue, partition positions, delivery budgets, and per-record
+ordering remain. During a mixed-version rollout, older publishers can still
+queue idle events. On activation, readers acknowledge historical messages
+without a workflow SQL query when both their occurrence and publication times
+precede the earliest active workflow's activation. Recently published events,
+delayed outbox publications, and manual replays still query current definitions;
+this also covers activations not yet reflected in a reader's cached minimum.
+Existing backlogs still require transport reads and acknowledgments.
+The existing 30-day / 1 GiB queue limit remains, and older
+publishers must finish rolling out before idle writes stop adding queue work.
 
 Only Core registers the hourly [one-time link cleanup](/en/docs/identity/one-time-links#operations-notes).
 Other applications still provision the shared links table before setup.

@@ -181,7 +181,7 @@ describe("workflow record-event delivery recovery", () => {
 });
 
 test("idle Grids starts zero partition consumers across repeated reconciliations", async () => {
-  const workflows = spyOn(workflowDefinitions, "listRecordEventBaseIds").mockResolvedValue([]);
+  const workflows = spyOn(workflowDefinitions, "getRecordEventActiveSince").mockResolvedValue(null);
   const queue = spyOn(recordEvents, "recordEventWorkQueue").mockImplementation(() => {
     throw new Error("Idle Grids must not start partition pollers");
   });
@@ -194,6 +194,45 @@ test("idle Grids starts zero partition consumers across repeated reconciliations
   } finally {
     await runtime.stop();
     queue.mockRestore();
+    workflows.mockRestore();
+  }
+});
+
+test("runtime hints coalesce while reconciliation is blocked and shutdown joins the refresh", async () => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const refreshed = Promise.withResolvers<void>();
+  const finishRefresh = Promise.withResolvers<void>();
+  const workflows = spyOn(workflowDefinitions, "getRecordEventActiveSince")
+    .mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return null;
+    })
+    .mockImplementation(async () => {
+      refreshed.resolve();
+      await finishRefresh.promise;
+      return null;
+    });
+  const runtime = createWorkflowRecordEventRuntime(async () => {
+    throw new Error("No workflow should run");
+  });
+  try {
+    runtime.wake();
+    await entered.promise;
+    for (let i = 0; i < 1_000; i++) runtime.wake();
+    expect(workflows).toHaveBeenCalledTimes(1);
+    release.resolve();
+    await refreshed.promise;
+    const stopping = runtime.stop();
+    expect(Bun.peek.status(stopping)).toBe("pending");
+    finishRefresh.resolve();
+    await stopping;
+    expect(workflows).toHaveBeenCalledTimes(2);
+  } finally {
+    release.resolve();
+    finishRefresh.resolve();
+    await runtime.stop();
     workflows.mockRestore();
   }
 });

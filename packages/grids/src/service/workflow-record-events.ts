@@ -23,7 +23,7 @@ import {
   recordEventWorkQueue,
   requeueRecordEventWork,
 } from "./record-events";
-import { listRecordEventBaseIds, listRecordEventWorkflows } from "./workflow-definitions";
+import { getRecordEventActiveSince, listRecordEventWorkflows } from "./workflow-definitions";
 import { machineWorkflowOwnerPrincipal } from "./workflow-machine-authority";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
@@ -262,6 +262,9 @@ export const processWorkflowRecordEventDelivery = async (
 
 export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
   let worker: Worker | undefined;
+  let activeSince: number | undefined;
+  let wakeRequested = false;
+  let waking: Promise<void> | undefined;
   // Runtime hints, the safety reconcile and shutdown can overlap. Never start
   // a replacement while the previous partition readers are still draining.
   let transition = Promise.resolve();
@@ -334,20 +337,54 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
     if (failures.length > 0) throw new AggregateError(failures, "Workflow record event dispatch failed");
   };
 
+  const reconcile = (): Promise<void> =>
+    serialize(async () => {
+      const activation = await getRecordEventActiveSince();
+      if (!activation) {
+        await stop();
+        activeSince = undefined;
+        return;
+      }
+      activeSince = activation.getTime();
+      // Preserve durable partition cursors and per-record ordering across idle.
+      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
+        processWorkflowRecordEventDelivery(delivery, async (event) => {
+          // A newly committed activation may not be in our cached minimum yet.
+          // Never skip a recently published event (including a delayed outbox or
+          // manual replay) just because its occurrence predates that minimum.
+          if (activeSince !== undefined && Date.parse(event.occurredAt) < activeSince && delivery.publishedAt.getTime() < activeSince)
+            return;
+          await dispatch(event);
+        }),
+      );
+    });
+
+  // Runtime hints must not block the topic reader behind a partition drain.
+  // One pending refresh coalesces bursts; shutdown joins the owned task.
+  const wake = (): void => {
+    wakeRequested = true;
+    waking ??= Promise.resolve().then(async () => {
+      try {
+        do {
+          wakeRequested = false;
+          await reconcile();
+        } while (wakeRequested);
+      } catch (error) {
+        log.warn("Workflow record event reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        waking = undefined;
+      }
+    });
+  };
+
   return {
     dispatch,
-    reconcile: (): Promise<void> =>
-      serialize(async () => {
-        if ((await listRecordEventBaseIds()).length === 0) {
-          await stop();
-          return;
-        }
-        // Keep the durable queue and its partition cursors across idle periods.
-        // Events published before this start remain queued in record order.
-        worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
-          processWorkflowRecordEventDelivery(delivery, dispatch),
-        );
-      }),
-    stop: (): Promise<void> => serialize(stop),
+    reconcile,
+    wake,
+    stop: async (): Promise<void> => {
+      wakeRequested = false;
+      await waking;
+      await serialize(stop);
+    },
   };
 };

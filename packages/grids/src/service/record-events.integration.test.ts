@@ -46,7 +46,7 @@ natsTest(
     const stopSync = await startGridsTestSync();
     const definitions = await import("./workflow-definitions");
     const { createWorkflowRecordEventRuntime } = await import("./workflow-record-events");
-    const bases = spyOn(definitions, "listRecordEventBaseIds").mockResolvedValue([]);
+    const bases = spyOn(definitions, "getRecordEventActiveSince").mockResolvedValue(null);
     const received: string[] = [];
     const workflows = spyOn(definitions, "listRecordEventWorkflows").mockImplementation(async (_baseId, occurredAt) => {
       received.push(occurredAt);
@@ -84,7 +84,7 @@ natsTest(
       await publishRecordEvent(event);
       await publishRecordEvent({ ...event, version: 2, occurredAt: "2026-07-15T12:00:01.000Z" });
 
-      bases.mockResolvedValue([event.baseId]);
+      bases.mockResolvedValue(new Date(event.occurredAt));
       await Promise.all([runtime.reconcile(), runtime.reconcile(), runtime.reconcile()]);
       expect(processing).toHaveBeenCalledTimes(1);
       expect(processing).toHaveBeenCalledWith({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, expect.any(Function));
@@ -93,11 +93,35 @@ natsTest(
       expect(Object.keys(workQueue?.detail?.consumers ?? {})).toHaveLength(32);
       await waitForDeliveries(2);
 
-      bases.mockResolvedValue([]);
+      const handler = processing.mock.calls[0]?.[1];
+      if (!handler) throw new Error("Workflow partition handler was not registered");
+      const message = {
+        data: { ...event, occurredAt: "2026-06-01T00:00:00.000Z" },
+        messageId: "old-month-backlog",
+        attempt: 1,
+        publishedAt: new Date("2026-06-01T00:00:01.000Z"),
+        tenantId: "workflow-kernel",
+        signal: new AbortController().signal,
+        heartbeat: async () => undefined,
+      };
+      workflows.mockClear();
+      // A quiet month's historical queue costs no workflow SQL per message.
+      for (let i = 0; i < 1_000; i++) await handler(message);
+      expect(workflows).toHaveBeenCalledTimes(0);
+      // Another replica may have committed an earlier activation since our
+      // snapshot. Delayed outboxes, old publishers, and replays must still query.
+      await handler({ ...message, publishedAt: new Date("2026-07-15T12:00:01.000Z") });
+      expect(workflows).toHaveBeenCalledTimes(1);
+      // The exact activation boundary remains eligible too.
+      await handler({ ...message, data: event });
+      expect(workflows).toHaveBeenCalledTimes(2);
+      received.splice(2);
+
+      bases.mockResolvedValue(null);
       await runtime.reconcile();
       expect(sync.health().activeWorkers).toBe(0);
       await publishRecordEvent({ ...event, version: 3, occurredAt: "2026-07-15T12:00:02.000Z" });
-      bases.mockResolvedValue([event.baseId]);
+      bases.mockResolvedValue(new Date(event.occurredAt));
       await runtime.reconcile();
       await waitForDeliveries(3);
       expect(processing).toHaveBeenCalledTimes(2);
