@@ -561,6 +561,8 @@ describe("@k2b/ui feedback runtime", () => {
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
 
+    // The prompt's date field was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const formResult = prompts.form({
       fields: {
         releaseDate: { type: "datetime", dateOnly: true, default: "2026-08-03" },

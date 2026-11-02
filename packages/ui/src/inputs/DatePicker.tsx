@@ -1,13 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
-import { prefersMenuSheet } from "../actions/menu-sheet";
-import { dialogCore } from "../feedback/dialog-core";
+import { prefersMenuSheet } from "../actions/phone-sheet";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
-import { LocaleProvider, useDateConfigLocale } from "../intl/locale";
+import { useDateConfigLocale } from "../intl/locale";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
 import { isWeekendKey } from "../intl/weekend";
-import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
 import { type DateInputResult, dateInputPattern, formatDateInput, parseDateInput } from "./date-input";
 import { resolveDateInputMessages } from "./date-input-messages";
 import {
@@ -828,33 +826,25 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   const openSheet = async () => {
     sheetOpen = true;
     calendar.close();
-    const picked = await dialogCore.open<{ key: string }>(
-      (close, context) => (
-        <LocaleProvider locale={locale() ?? "en"}>
-          <BottomSheet onDismiss={context.requestDismiss}>
-            <BottomSheet.Header
-              title={props.owner.label ?? props.owner["aria-label"]}
-              subtitle={props.value() ? formatDateLong(props.value()!, locale()) : t().noDate}
-            />
-            <BottomSheet.Body>
-              <div class="k2b-date-sheet">
-                <DatePickerPanel
-                  visibleMonth={visibleMonth}
-                  setVisibleMonth={setVisibleMonth}
-                  selected={draftKey}
-                  focusDate={draftKey}
-                  onSelect={(key) => close({ key })}
-                  dateConfig={props.dateConfig()}
-                  min={props.owner.min}
-                  max={props.owner.max}
-                />
-              </div>
-            </BottomSheet.Body>
-          </BottomSheet>
-        </LocaleProvider>
+    const { openDateSheet } = await import("./date-sheet");
+    const picked = await openDateSheet<{ key: string }>({
+      title: props.owner.label ?? props.owner["aria-label"],
+      subtitle: props.value() ? formatDateLong(props.value()!, locale()) : t().noDate,
+      ariaLabel: fieldName(props.owner),
+      locale: locale() ?? "en",
+      content: (close) => (
+        <DatePickerPanel
+          visibleMonth={visibleMonth}
+          setVisibleMonth={setVisibleMonth}
+          selected={draftKey}
+          focusDate={draftKey}
+          onSelect={(key) => close({ key })}
+          dateConfig={props.dateConfig()}
+          min={props.owner.min}
+          max={props.owner.max}
+        />
       ),
-      { ...bottomSheetOptions, ariaLabel: fieldName(props.owner), history: true },
-    );
+    });
     sheetOpen = false;
     if (picked) pick(picked.key);
     toggle?.focus({ preventScroll: true });
@@ -1260,22 +1250,14 @@ function DateRangeTextField(props: {
   const openSheet = async () => {
     sheetOpen = true;
     calendar.close();
-    const range = await dialogCore.open<DateRangeValue>(
-      (close, context) => (
-        <LocaleProvider locale={locale() ?? "en"}>
-          <BottomSheet onDismiss={context.requestDismiss}>
-            <BottomSheet.Header
-              title={props.owner.label ?? props.owner["aria-label"]}
-              subtitle={rangeStatusText(props.value(), locale(), t()) || t().noDate}
-            />
-            <BottomSheet.Body>
-              <div class="k2b-date-sheet">{rangeCalendar((next) => close(next))}</div>
-            </BottomSheet.Body>
-          </BottomSheet>
-        </LocaleProvider>
-      ),
-      { ...bottomSheetOptions, ariaLabel: name(), history: true },
-    );
+    const { openDateSheet } = await import("./date-sheet");
+    const range = await openDateSheet<DateRangeValue>({
+      title: props.owner.label ?? props.owner["aria-label"],
+      subtitle: rangeStatusText(props.value(), locale(), t()) || t().noDate,
+      ariaLabel: name(),
+      locale: locale() ?? "en",
+      content: (close) => rangeCalendar(close),
+    });
     sheetOpen = false;
     // A dismissed sheet saves nothing, also not the days it filled in.
     if (range) commitRange(range);

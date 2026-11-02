@@ -1006,6 +1006,8 @@ describe("@k2b/ui choice and date browser behavior", () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { DatePicker } = await import("../src/inputs/DatePicker");
+    // DatePicker was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const activeListeners = { resize: 0, scroll: 0 };
     const target = dom.window as unknown as {
       addEventListener: (...args: unknown[]) => unknown;
@@ -1117,6 +1119,8 @@ describe("@k2b/ui choice and date browser behavior", () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { DateRangePicker } = await import("../src/inputs/DatePicker");
+    // DatePicker was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const commits: Array<{ start: string | null; end: string | null }> = [];
     const dispose = render(
       () =>
@@ -1213,6 +1217,8 @@ describe("@k2b/ui choice and date browser behavior", () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { DatePicker } = await import("../src/inputs/DatePicker");
+    // DatePicker was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const dispose = render(
       () =>
         createComponent(DatePicker, {
