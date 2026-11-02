@@ -198,6 +198,10 @@ const VIEWS: readonly AppView[] = ["access", "keys", "domains", "events", "route
 export const WINDOWS = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type AppStatusWindow = (typeof WINDOWS)[number];
 export type MovedFrom = "gateway" | "credentials";
+/** The list's search and filter; they stay in the URL, so an open app, reload and back keep the same rows. */
+export type AppsListState = { q: string; problems: boolean };
+/** A search longer than any app name or ID finds nothing; the URL keeps at most this much of it. */
+const SEARCH_MAX = 80;
 
 /** The page's URL state. `traffic` is the old name of the routes column and opens it. */
 export function parseAppsQuery(query: Record<string, string | undefined>) {
@@ -206,17 +210,38 @@ export function parseAppsQuery(query: Record<string, string | undefined>) {
   const view = app && VIEWS.includes(requested as AppView) ? (requested as AppView) : null;
   const window = WINDOWS.includes(query.window as AppStatusWindow) ? (query.window as AppStatusWindow) : "24h";
   const moved = query.moved === "gateway" || query.moved === "credentials" ? (query.moved as MovedFrom) : null;
-  return { app, invalidApp: Boolean(query.app) && !app, view, window, moved };
+  const list: AppsListState = { q: (query.q ?? "").trim().slice(0, SEARCH_MAX), problems: query.filter === "problems" };
+  return { app, invalidApp: Boolean(query.app) && !app, view, window, moved, list };
 }
 export type AppsQuery = ReturnType<typeof parseAppsQuery>;
 
-/** `create` asks the keys column to open "Create key" once, for a hint whose way out is a new key. */
-export function appsHref(query: { app?: string | null; view?: AppView | null; window?: AppStatusWindow | null; create?: boolean }): string {
+/**
+ * `create` asks the keys column to open "Create key" once, for a hint whose way out is a new key. `list` carries the
+ * list's search and filter, so opening an app or one of its views keeps the rows beside it.
+ */
+export function appsHref(query: {
+  app?: string | null;
+  view?: AppView | null;
+  window?: AppStatusWindow | null;
+  create?: boolean;
+  list?: AppsListState | null;
+}): string {
   const params = new URLSearchParams();
   if (query.app) params.set("app", query.app);
   if (query.app && query.view) params.set("view", query.view);
   if (query.app && query.view === "routes" && query.window && query.window !== "24h") params.set("window", query.window);
   if (query.app && query.view === "keys" && query.create) params.set("create", "1");
+  if (query.list?.q) params.set("q", query.list.q);
+  if (query.list?.problems) params.set("filter", "problems");
   const search = params.toString();
   return search ? `/admin/apps?${search}` : "/admin/apps";
 }
+
+/** Whether a row belongs under "Problems": it is not running cleanly or has something to do. */
+export const hasProblem = (app: Pick<AppEntry, "status" | "hints">): boolean => app.status !== "ok" || app.hints.length > 0;
+
+/** The search matches the name the list shows or the app's ID, regardless of case. */
+export const matchesSearch = (app: { id: string; name: string }, q: string, locale: string): boolean => {
+  const needle = q.trim().toLocaleLowerCase(locale);
+  return !needle || app.name.toLocaleLowerCase(locale).includes(needle) || app.id.includes(needle);
+};

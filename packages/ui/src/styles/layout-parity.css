@@ -3427,6 +3427,11 @@ html {
   margin-inline: -0.75rem -0.5rem;
 }
 
+/* A level's own parent in the same column: its step shows at every width. */
+.k2b-ui .k2b-app-workspace__level-head > .k2b-app-workspace__level-back--own {
+  display: inline-flex;
+}
+
 .k2b-ui .k2b-app-workspace__level-back .ti {
   width: 1.25rem;
   height: 1.25rem;

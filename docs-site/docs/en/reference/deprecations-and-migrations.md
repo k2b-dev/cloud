@@ -60,16 +60,18 @@ configuration; legacy credentials must still be active. See
 
 **Administration → Apps** now lists every app the registry, Core or an
 [App status](/en/docs/platform/app-status) provider knows, with its state and
-the one hint that needs attention. An app opens as its own column with state,
-traffic, access, keys and events; each row opens a further column, and the
-address keeps the selection, for example `/admin/apps?app=mail&view=keys`.
+the one hint that needs attention. Search and **Problems** narrow the list. An
+app opens beside the list with state, traffic, access, keys and events; a linked
+value opens its view in the same place, with a back step to the app. The
+address keeps the selection and the list's search and filter, for example
+`/admin/apps?app=mail&view=keys&filter=problems`.
 
 | Before | Now |
 | --- | --- |
 | `/admin/apps?app=<id>` | unchanged; opens the app |
 | `/admin/app-credentials` | opens `/admin/apps` with a hint; tokens are under the app's **Keys → Tokens for host operation** |
 | `/admin/observability/gateway` (Apps table) | opens `/admin/apps` with a hint |
-| **Remove offline app** in the Gateway Apps table | **Remove from list …** in the app's row menu or page, only for an app that is not running |
+| **Remove offline app** in the Gateway Apps table | **Remove from list …** in the app's detail under **More**, only for an app that is not running |
 | `/admin/observability/gateway/routes` | unchanged; app IDs link to the app |
 
 Operators: no migration is needed beyond Core's own. `cld admin app-credentials …`,

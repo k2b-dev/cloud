@@ -301,6 +301,11 @@ export type AppWorkspaceMainPaneProps = {
   description?: JSX.Element;
   /** Levels mode: a small mark before the level title, such as the colour dot of the object's container. */
   lead?: JSX.Element;
+  /**
+   * Levels mode: the level's own parent inside the same column, such as a sub-view of a detail that replaces the
+   * detail in place. Its back step shows at every width and replaces the shared step to the level before.
+   */
+  back?: { href: string; label: string };
   /** Controls at the end of the level head. */
   actions?: JSX.Element;
   /**
@@ -933,16 +938,31 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                           actions={pane.props.actions}
                           lead={pane.props.lead}
                         >
-                          <Show when={levelIndex() > 1 && depth() > 1}>
-                            <IconButtonLink
-                              class="k2b-app-workspace__level-back"
-                              href={levels()[depth() - 2]?.props.href}
-                              label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
-                              navigation={props.onLevelNavigate ? "enhanced" : "document"}
-                              onNavigate={props.onLevelNavigate ? navigateBack : undefined}
-                            >
-                              <i class="ti ti-chevron-left" aria-hidden="true" />
-                            </IconButtonLink>
+                          <Show
+                            when={pane.props.back}
+                            fallback={
+                              <Show when={levelIndex() > 1 && depth() > 1}>
+                                <IconButtonLink
+                                  class="k2b-app-workspace__level-back"
+                                  href={levels()[depth() - 2]?.props.href}
+                                  label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
+                                  navigation={props.onLevelNavigate ? "enhanced" : "document"}
+                                  onNavigate={props.onLevelNavigate ? navigateBack : undefined}
+                                >
+                                  <i class="ti ti-chevron-left" aria-hidden="true" />
+                                </IconButtonLink>
+                              </Show>
+                            }
+                          >
+                            {(back) => (
+                              <IconButtonLink
+                                class="k2b-app-workspace__level-back k2b-app-workspace__level-back--own"
+                                href={back().href}
+                                label={workspaceMessages().backTo({ page: back().label })}
+                              >
+                                <i class="ti ti-chevron-left" aria-hidden="true" />
+                              </IconButtonLink>
+                            )}
                           </Show>
                         </LevelHead>
                         <div
