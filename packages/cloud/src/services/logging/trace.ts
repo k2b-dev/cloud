@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { SyncEvent } from "@k2b/sync";
+import type { JobContext, ScheduleContext, SyncEvent } from "@k2b/sync";
 import { getProcessApplicationId } from "../../_internal/process-identity";
 import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
+import { type BackgroundLoop, isBackgroundLoopEvent, registerBackgroundLoop } from "./background-loop-policy";
 import { isSensitiveMetadataKey, REDACTED, redactLinkTokens, redactMetadata } from "./redaction";
 
 export type TraceAttributeValue = string | number | boolean | null | undefined;
@@ -991,6 +992,78 @@ const syncSpanKey = (kind: SyncRunKind, resource: string, runId: string, consume
     ? `sync:topic:${JSON.stringify([resource, runId, consumer])}`
     : `sync:${kind}:${resource}:${runId}`;
 
+/** Declare once per static loop. Null summaries mean no work; failures/retries are still traced.
+ * Summarize the run here; independently keyed domain/child spans are untouched.
+ */
+const backgroundLoop = <Context extends { attempt: number }, Result>(
+  loop: BackgroundLoop,
+  identity: (context: Context) => { id: string; key: string },
+  run: (context: Context) => Promise<Result>,
+  summarize: (result: Result) => Record<string, unknown> | null,
+): ((context: Context) => Promise<void>) => {
+  const deferred = registerBackgroundLoop(loop);
+  return async (context) => {
+    const startedAt = new Date();
+    const result = await run(context);
+    if (!deferred) return;
+    let summary: Record<string, unknown> | null;
+    try {
+      summary = summarize(result);
+    } catch (error) {
+      // The domain work already completed; diagnostic failures must never retry it.
+      console.error("[logging:trace] background summary failed:", error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (summary === null) return;
+    const { id, key } = identity(context);
+    const endedAt = new Date();
+    const spanKey = syncSpanKey(loop.kind, loop.resource, id);
+    enqueueSyncTraceWrite(spanKey, () =>
+      complete(
+        {
+          name: loop.kind === "scheduler" ? key : loop.resource,
+          source: loop.resource,
+          appId: processAppId(),
+          category: SYNC_CATEGORY[loop.kind],
+          kind: "consumer",
+          spanKey,
+          startedAt,
+          endedAt,
+          status: "ok",
+          summary,
+          attributes: {
+            "sync.kind": loop.kind,
+            "sync.resource": loop.resource,
+            "sync.id": id,
+            "sync.key": key,
+            "sync.attempt": context.attempt,
+          },
+        },
+        true,
+      ),
+    );
+  };
+};
+
+const backgroundJob = <Input, Result>(
+  resource: string,
+  run: (context: JobContext<Input>) => Promise<Result>,
+  summarize: (result: Result) => Record<string, unknown> | null,
+) => backgroundLoop({ kind: "job", resource }, (context: JobContext<Input>) => ({ id: context.jobId, key: context.key }), run, summarize);
+
+const backgroundSchedule = <Result>(
+  resource: string,
+  scheduleId: string,
+  run: (context: ScheduleContext) => Promise<Result>,
+  summarize: (result: Result) => Record<string, unknown> | null,
+) =>
+  backgroundLoop(
+    { kind: "scheduler", resource, key: scheduleId },
+    (context: ScheduleContext) => ({ id: context.runId, key: context.scheduleId }),
+    run,
+    summarize,
+  );
+
 const isSyncRunKind = (kind: string): kind is SyncRunKind => kind in SYNC_CATEGORY;
 
 const TRACED_SYNC_EVENT_TYPES = new Set([
@@ -1005,6 +1078,10 @@ const TRACED_SYNC_EVENT_TYPES = new Set([
 /** Whether the adapter records this event at all (see the topic policy above). */
 const isTracedSyncEvent = (event: SyncEvent): boolean => {
   if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !TRACED_SYNC_EVENT_TYPES.has(event.type)) return false;
+  if (isBackgroundLoopEvent(event)) {
+    if (event.type === "handler_started") return false;
+    if (event.type === "handler_settled" && event.detail?.status === "success" && event.detail.attempt === 1) return false;
+  }
   if (event.kind !== "topic") return true;
   if (event.type === "handler_started" || event.type === "redelivery") return false;
   if (event.type !== "handler_settled") return true;
@@ -1073,7 +1150,7 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
       if (status === "retry") {
         // Topic runs have no started span: materialize the failed run first.
-        if (kind === "topic") {
+        if (kind === "topic" || isBackgroundLoopEvent(event)) {
           await complete(
             {
               ...base,
@@ -1179,22 +1256,18 @@ const pendingSyncWrites = new Map<string, Promise<void>>();
 let pendingSyncWriteCount = 0;
 let reportedSyncOverflow = false;
 
-/** Ordered per-run, bounded, non-blocking adapter for createSync({ observe }). */
-export const observeSyncEvent = (event: SyncEvent, application?: string): void => {
-  if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !isTracedSyncEvent(event)) return;
+/** Shared budget and ordering for automatic events and deferred background summaries. */
+const enqueueSyncTraceWrite = (key: string, writeTrace: () => Promise<unknown>): void => {
   if (pendingSyncWriteCount >= SYNC_TRACE_PENDING_LIMIT) {
     if (!reportedSyncOverflow) console.error("[logging:trace] sync trace buffer full; dropping diagnostics");
     reportedSyncOverflow = true;
     return;
   }
-  const detail = event.detail ?? {};
-  const id =
-    detailString(detail, "id") ?? detailString(detail, "messageId") ?? detailString(detail, "eventId") ?? detailString(detail, "key") ?? "";
-  const consumer = event.kind === "topic" ? (detailString(detail, "key") ?? detailString(detail, "consumer")) : undefined;
-  const key = syncSpanKey(event.kind, event.resource, id, consumer);
   pendingSyncWriteCount++;
   const write = (pendingSyncWrites.get(key) ?? Promise.resolve())
-    .then(() => traceSyncEvent(event, application))
+    .then(async () => {
+      await writeTrace();
+    })
     .catch((error: unknown) => {
       console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
     })
@@ -1204,6 +1277,17 @@ export const observeSyncEvent = (event: SyncEvent, application?: string): void =
       if (pendingSyncWriteCount === 0) reportedSyncOverflow = false;
     });
   pendingSyncWrites.set(key, write);
+};
+
+/** Ordered per-run, bounded, non-blocking adapter for createSync({ observe }). */
+export const observeSyncEvent = (event: SyncEvent, application?: string): void => {
+  if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !isTracedSyncEvent(event)) return;
+  const detail = event.detail ?? {};
+  const id =
+    detailString(detail, "id") ?? detailString(detail, "messageId") ?? detailString(detail, "eventId") ?? detailString(detail, "key") ?? "";
+  const consumer = event.kind === "topic" ? (detailString(detail, "key") ?? detailString(detail, "consumer")) : undefined;
+  const key = syncSpanKey(event.kind, event.resource, id, consumer);
+  enqueueSyncTraceWrite(key, () => traceSyncEvent(event, application));
 };
 
 /** Flush diagnostics after Sync workers stop producing events during shutdown. */
@@ -1229,4 +1313,6 @@ export const trace = {
   summary,
   cleanup,
   syncSpanKey,
+  backgroundJob,
+  backgroundSchedule,
 };
