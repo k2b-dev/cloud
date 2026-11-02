@@ -1219,6 +1219,27 @@ waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
 
+### Index Mail's provider-message lookups
+
+Mail builds `mail.remote_message_refs_provider_message_idx` concurrently
+in the background. It accelerates matching a provider message across folders
+without changing message identity rules. The command-target, provider-message,
+and optional search builds share one renewable NATS lease and reserve their
+SQL connection, so ordinary queries cannot queue behind an index waiting for
+an old snapshot. Startup does not wait for these builds. A failed or busy
+build is retried at the next start; check warnings from `mail:migrate` and
+`pg_index.indisvalid` before expecting the new plan.
+
+After deployment, compare interval deltas in `pg_stat_statements` for the
+`SELECT DISTINCT remote_ref.message_id` statement that joins `mail.folders`
+and filters `connector_ref ->> 'providerMessageId'`. The new statement adds an
+`md5` equality before the full-ID equality, so it has a new query ID. Compare
+old statement intervals with new statement intervals after the index is valid:
+calls, total execution time and shared blocks read per call. The hash bounds
+index entries for legacy oversized provider IDs; the full equality still
+rejects hash collisions. This index does not reduce the number
+of statements or row writes per idle sync run.
+
 ### Index Mail's per-message command lookups
 
 After its first start with this update, Mail builds `commands_message_target_idx`
