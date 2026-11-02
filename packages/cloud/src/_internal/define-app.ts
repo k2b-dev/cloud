@@ -1209,7 +1209,7 @@ export const defineApp = <
       // Core creates it in its own setup, so it starts publishing after that.
       if (meta.id !== "core") await startOutbox();
 
-      cleanup.push(await startLinksRuntime());
+      cleanup.push(await startLinksRuntime(meta.id));
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);

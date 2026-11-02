@@ -671,7 +671,8 @@ const startRuntimeEventReader = (after: string | null): void => {
         }
         for await (const event of liveWorkflowRuntimeEvents({ after: cursor, signal })) {
           cursor = await applyWorkflowRuntimeEvent(event, async (data) => {
-            await Promise.all([registerSchedule(data.workflowId), workflowRecordEvents.reconcile()]);
+            workflowRecordEvents.wake();
+            await registerSchedule(data.workflowId);
           });
         }
       } catch (error) {

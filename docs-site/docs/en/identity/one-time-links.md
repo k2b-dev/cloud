@@ -239,9 +239,9 @@ Every started application ensures that the one reserved
 `platform._cloud_links` table exists in its SQL database. No domain schema,
 application `setup()`, or environment variable is required.
 
-One shared platform Sync schedule runs hourly in UTC. All apps and replicas
-compete for the same serial schedule; cleanup runs once for the shared table,
-not separately for each app or package. It deletes rows whose expiry or
+Core runs one shared platform Sync schedule hourly in UTC. Core replicas
+compete for the same serial schedule; other application processes only provision
+the table. Cleanup waits while Core is unavailable. It deletes rows whose expiry or
 redemption is more than 24 hours old, in batches of at most 1000. Each batch has a ten-second SQL statement
 budget, and each run has a five-minute budget with cancellation checked
 between batches. A failed run retries once after 30 seconds and remains
