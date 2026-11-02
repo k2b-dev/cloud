@@ -45,6 +45,7 @@ const codeVersionSubmissionInput = {
   "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
   "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
   "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
+  "manifest.entrypoints[].title": "Optionaler lesbarer Name der Automation; ohne ihn gilt der Export-Name.",
   "manifest.entrypoints[].cron": "Zeitplan mit fünf Feldern oder null bei manueller Ausführung.",
   "manifest.entrypoints[].file": "Relative Quelldatei mit dieser Deklaration.",
   "manifest.entrypoints[].line": "Quelltextzeile, beginnend bei 1.",
