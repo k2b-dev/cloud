@@ -48,6 +48,7 @@ patterns with `rg -n` in the application's `src` directory.
 | UI-24 | Follow the minimal Grids table reference: no grid, zebra, or row lines; row hairlines only above 8 columns; numbers right-aligned with tabular figures. | Rows remain quiet and comparable. | Check: use DataTable; no custom row borders. `data-table-minimal.browser.test.ts` pins the threshold. | [Tables](/en/ui/content/tables#presentation) |
 | UI-25 | Load with row-height placeholders; distinguish empty, no results, and no access. Every load error uses `Placeholder` with `state="error"` and `onRetry`. | People see the right next step and keep their selection during recovery. | Manual: search for `state="error"` without `onRetry` or a recovery `action`. | [States](/en/ui/surfaces/empty-states) |
 | UI-26 | Pass a component such as `InlineGuidance` or `IconButton` one computed `class`, and use `classList` only on native elements. | A component that spreads its props sets its own `class` after a spread `classList`, so the toggled classes are missing from the first render. | `bun scripts/check.ts component-class-list` | [Semantic styling](/en/docs/frontend/styling-and-accessibility#style-app-owned-content-semantically) |
+| UI-27 | Use only the `k2b-*` classes a shipped stylesheet defines; a link in text is `k2b-text-link`. | A class nobody defines styles nothing, so the markup silently loses its look. | `bun scripts/check.ts ui-classes` | [Semantic styling](/en/docs/frontend/styling-and-accessibility#style-app-owned-content-semantically) |
 
 ## Interaction and feedback (IX)
 

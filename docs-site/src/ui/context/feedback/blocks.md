@@ -32,6 +32,10 @@ example a list or the controls for the next step. Without a title, the
 children are the whole notice. Children that render nothing, such as a `Show`
 whose condition is false, add no body and no space.
 
+To put a result where the person is, give the notice `tabIndex={-1}` and move
+focus to it; screen readers read it, and it shows no focus ring because it is
+not a control.
+
 `meta` is one short fact shown as a small pill at the end of the title row,
 such as a deadline (`Due 22 Nov`) or a count. It uses the tone color on a
 lighter tint and wraps below the title on narrow screens. It needs a title;

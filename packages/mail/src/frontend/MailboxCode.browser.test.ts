@@ -175,6 +175,28 @@ describe("Mailbox Code page in a browser", () => {
       }
     }, 60_000);
 
+  test("the page is titled Code and its row titles stay smaller than the section headings", async () => {
+    for (const width of [1440, 390])
+      for (const state of ["overview", "runs", "versions", "empty"]) {
+        const page = await load(state, width);
+        try {
+          const measured = await page.evaluate(() => {
+            const size = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
+            const heading = document.querySelector(".cloud-code__h2");
+            return {
+              title: (document.querySelector(".cloud-code h1 [aria-hidden=true]") as HTMLElement | null)?.innerText,
+              rowsAboveHeading: heading
+                ? Array.from(document.querySelectorAll(".cloud-code__title")).filter((row) => size(row) > size(heading)).length
+                : 0,
+            };
+          });
+          expect({ state, width, ...measured }).toEqual({ state, width, title: "Code", rowsAboveHeading: 0 });
+        } finally {
+          await page.context().close();
+        }
+      }
+  }, 60_000);
+
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [
       ["removed", true],

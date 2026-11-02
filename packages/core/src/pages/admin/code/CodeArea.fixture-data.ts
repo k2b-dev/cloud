@@ -176,7 +176,7 @@ export const fixtureApprovalDetail = (
       owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
       state: "active",
     },
-    ownerName: null,
+    ownerName: "info@moebel-beispiel.de",
     version: {
       id: first ? V.lieferzeit1 : V.rueckruf3,
       number: first ? 1 : 3,
@@ -327,7 +327,14 @@ const code = (
   lastRun: lastRun ? { at: lastRun, state: "succeeded" } : null,
 });
 export const fixtureCodes = (): CodeAdminCode[] => [
-  code("c_anfrag", "Anfragen sortieren", { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, null, "active", ago(4)),
+  code(
+    "c_anfrag",
+    "Anfragen sortieren",
+    { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
+    "info@moebel-beispiel.de",
+    "active",
+    ago(4),
+  ),
   code("c_auftrag", "Auftragsboard", { kind: "person", userId: FIXTURE_PEOPLE.mia }, "Mia Koch", "active", ago(70)),
   code("c_portal", "Kundenportal-Eingang", { kind: "app", appId: "werkstatt" }, null, "draft", null),
   code(
@@ -343,11 +350,18 @@ export const fixtureCodes = (): CodeAdminCode[] => [
     "c_rechn",
     "Rechnungen an die Buchhaltung",
     { kind: "resource", ref: { type: "mail.mailbox", id: "m_rechn" } },
-    null,
+    "rechnung@moebel-beispiel.de",
     "waiting",
     ago(12),
   ),
-  code("c_rueck", "Rückruf bestätigen", { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, null, "waiting", ago(9)),
+  code(
+    "c_rueck",
+    "Rückruf bestätigen",
+    { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
+    "info@moebel-beispiel.de",
+    "waiting",
+    ago(9),
+  ),
   code("c_termin", "Termin-Antworten", { kind: "person", userId: FIXTURE_PEOPLE.lea }, "Lea Muster", "active", ago(60)),
   code(
     "c_woche",
