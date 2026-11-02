@@ -440,8 +440,9 @@ describe("k2b notes · Produktions-SPA", () => {
       expect(look.innerBorder).toBe("0px");
       expect(look.innerOutline).toBe("none");
       expect(look.innerRadius).toBe("0px");
-      expect(look.shellBorder).toBe("rgba(0, 0, 0, 0)");
+      // The shell draws the 2 px focus edge as a border plus an inset of the same colour: one shape.
       expect(look.shellRing).toContain("inset");
+      expect(look.shellRing).toContain(look.shellBorder);
     };
 
     await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
