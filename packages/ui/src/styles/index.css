@@ -1380,7 +1380,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-app-workspace__sidebar-item-label:is(
     [data-lines="1"],
     :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
-    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > .k2b-app-workspace__sidebar-item-label
   )::after {
   display: none;
 }
@@ -1389,7 +1389,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-app-workspace__sidebar-item-label:is(
     [data-lines="1"],
     :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
-    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > .k2b-app-workspace__sidebar-item-label
   )
   > .k2b-app-workspace__sidebar-item-label-text {
   --k2b-truncate-fade-lines: 1;
@@ -2337,11 +2337,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    flex rows, grids without descriptions, fill fields, and browsers without
    subgrid keep the stacked layout. */
 @supports (grid-template-rows: subgrid) {
+  .k2b-ui .k2b-field {
+    --k2b-field-control-row: initial;
+    --k2b-field-control-height: initial;
+  }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) {
     display: grid;
     grid-template-rows: subgrid;
     grid-row: span 4;
     align-content: start;
+    align-items: start;
+    --k2b-field-control-row: 3;
+    --k2b-field-control-height: max-content;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__label {
     grid-row: 1;
@@ -2355,18 +2362,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label)) > .k2b-field__description {
     grid-row: 1 / 3;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
-    grid-row: 3;
-    align-self: start;
+  /* The control's row travels in a custom property. A rule after :has() whose
+     last part names no class, such as this :not(), makes every :has() change
+     restyle the whole document: seconds per click in a mailbox. */
+  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
+    grid-row: var(--k2b-field-control-row);
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
-    grid-row: 3 / 5;
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) {
+    --k2b-field-control-row: 3 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)) > :not(.k2b-field__error) {
-    grid-row: 1 / 5;
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)) {
+    --k2b-field-control-row: 1 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)):has(> .k2b-field__error) > :not(.k2b-field__error) {
-    grid-row: 1 / 4;
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)):has(> .k2b-field__error) {
+    --k2b-field-control-row: 1 / 4;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__error {
     grid-row: 4;
@@ -2377,8 +2386,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      and the actions below it. A start-aligned control measures its content
      anyway; saying so explicitly keeps the rows tall enough there and changes
      nothing in a grid. Zero specificity keeps any control's own height. */
-  :where(.k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"])) > :where(:not(.k2b-field__label, .k2b-field__description, .k2b-field__error)) {
-    height: max-content;
+  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__description, .k2b-field__error)) {
+    height: var(--k2b-field-control-height);
   }
 }
 
@@ -5486,7 +5495,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-ui
       .k2b-app-workspace__sidebar-item
       > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
-      > :nth-last-child(1 of :not([popover])) {
+      > :is(.k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper):nth-last-child(1 of :not([popover])) {
       opacity: 0;
       pointer-events: none;
     }

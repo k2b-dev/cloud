@@ -252,6 +252,10 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
       expect(await tab.locator("#pulse-panel-sql-req details").getAttribute("open")).not.toBeNull();
       expect(await tab.locator("#pulse-panel-sql-req code").textContent()).toContain("SELECT time");
       await tab.locator("#pulse-panel-sql-req summary").click();
+      // Focus returns from the native toggle event, a task after the click.
+      await tab.waitForFunction(() => document.activeElement?.getAttribute("aria-label")?.startsWith("So gerechnet:"), undefined, {
+        timeout: 5_000,
+      });
       expect(
         await tab
           .getByRole("button", { name: "So gerechnet: Anfragen je Dienst", exact: true })
