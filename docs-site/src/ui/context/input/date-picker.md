@@ -11,6 +11,67 @@ date alone is the normal case and a time is the exception, such as a task's
 due date. Use `DateRangePicker` for a start and end, with `withTime` when both
 endpoints include time.
 
+## Type a date or pick one
+
+`DatePicker` and a date-only `DateRangePicker` are text fields. People type a
+date, or open the calendar and pick a day; both always show the same day.
+Typing moves the open calendar to the typed month and marks the day, and
+picking a day fills the text. `DateTimePicker`, a `DateRangePicker` with
+`withTime`, and every `appearance="plain"` picker keep the calendar button.
+
+The field understands a small, fixed set of inputs in German and English, in
+every locale:
+
+| Input | Means |
+| --- | --- |
+| `11.11.2026`, `11.11.26`, `11.11.`, `11.11` | A date in the locale's order of day, month and year; `11/11/2026` in `en-US`. Without a year, the current one. |
+| `24`, `1111`, `111126`, `11112026` | Digits only, for the phone keypad: a day of this month, or day, month and year without separators. |
+| `2026-11-11`, `11. November 2026`, `Nov 11, 2026` | ISO dates and month names. |
+| `heute`, `morgen`, `gestern`, `übermorgen`, `today`, `tomorrow`, `yesterday` | That day. |
+| `mi`, `Mittwoch`, `wed`, `wednesday` | The next Wednesday after today; today's weekday means the same day next week. |
+| `+14`, `-3`, `+2w`, `+1m`, `+1j`, `heute +2 wochen`, `gestern + 34`, `mi +7`, `11.11. -3` | One offset at the end, counted from the date before it or from today: days by default, or `t`/`d`, `w`, `m`, `j`/`y`. Months end on the last day that exists. |
+
+The field does not read sentences such as "in 2 Wochen"; it then suggests a
+form that works.
+
+Under the field, a status line always says which day is meant:
+
+- at rest, the weekday and distance of the saved date, for example
+  **Mittwoch, in 9 Tagen**;
+- while typing, the absolute day that a commit would save and what the words
+  meant, for example **→ Mi., 4. Nov. 2026 · nächster Mittwoch**;
+- after a refused commit, the reason in red, for example **Der Februar 2026
+  hat nur 28 Tage.**
+
+The line keeps its height when it is empty, so typing, a mistake, or a
+cleared value never moves the content below the field.
+
+**Enter**, leaving the field, and picking a day commit. The text then shows the
+date in the locale's numeric form: `+14` becomes `16.11.2026`. A refused text
+stays for correction, the field reports `aria-invalid`, and the saved value
+does not change. **Escape** restores the saved value. While typing, nothing is
+red: an unfinished entry shows **…** or **Noch kein Datum**, and a definite
+mistake already names its reason in the normal text color.
+
+A click into the text opens the calendar and keeps the caret; reaching the
+field with **Tab** does not. **↓** or **Alt+↓** opens the calendar with the
+focus on the day; **Escape** or **Alt+↑** there returns to the text and keeps
+it. The calendar opens below the status line, so the meant day stays visible.
+On a phone the text brings up the numeric keypad, and the calendar button
+opens the calendar as a bottom sheet with touch-sized days.
+
+A date-only `DateRangePicker` has a start and an end field in one box, with
+the range and its length in the status line. A pasted range such as
+`11.11. – 14.11.` or `11.11. bis 14.11.` fills both. The calendar keeps two
+clicks and **Apply**.
+
+Set `min` and `max` as date keys to limit the days. The calendar locks the
+other days and months and names the limits in its footer; a typed day outside
+them is refused with the nearest allowed day, for example **Spätestens am
+30.11.2026.** `readOnly` shows the value with a lock instead of the calendar
+button and keeps the field focusable. An `error` from the form appears in the
+status line while nobody is typing.
+
 ## Import
 
 ```tsx
@@ -54,9 +115,11 @@ for the shared row behavior. A `clearable` plain picker clears from a
 **Clear date** button in the panel footer instead of beside the value. The
 empty value shows `placeholder` in muted text.
 
-`DatePicker` and `DateTimePicker` accept `renderValue(value)` for the
+A plain `DatePicker` and `DateTimePicker` accept `renderValue(value)` for the
 trigger content of a set value, for example the date followed by a relative
-hint. The panel and the emitted value are unchanged.
+hint. The panel and the emitted value are unchanged. In a typed `DatePicker`,
+`renderValue` replaces the resting status line under the field; while someone
+types, the line still shows the meant day.
 
 ```tsx
 <DateTimePicker
@@ -169,7 +232,7 @@ type DateRangeValue = {
 
 type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   placeholder?: string; value: MaybeAccessor<T>; presets?: readonly DatePreset<T>[]; dateConfig?: DateContext;
-  clearable?: boolean; appearance?: ChoiceAppearance;
+  clearable?: boolean; appearance?: ChoiceAppearance; min?: string; max?: string; readOnly?: boolean;
 };
 
 type DatePickerProps = DatePickerBaseProps<string | null> & {
@@ -188,11 +251,19 @@ type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
 
 `DateContext` is defined under [date and locale options](/en/ui/content/intl#date-and-locale-options). `DatePicker` emits `YYYY-MM-DD`; without a timezone `DateTimePicker` emits `YYYY-MM-DDTHH:mm`, with a timezone it emits an ISO instant in UTC. With `optionalTime`, `DateTimePicker` emits `YYYY-MM-DD` for a date without time and the datetime contract with one. `DateRangePicker` follows the date contract by default and the datetime contract with `withTime=true`. Empty range endpoints are `null`, not an absent range object. Supply preset values in the same format as the controlled value.
 
-`ChoiceAppearance` is `"field" | "plain"` and defaults to `"field"`. `renderValue` only replaces the trigger content of a set value. `presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
+`ChoiceAppearance` is `"field" | "plain"` and defaults to `"field"`. `renderValue` replaces the trigger content of a set value in a plain picker and the resting status line of a typed `DatePicker`. `min` and `max` are date keys and apply to every picker's calendar. A typed field's `placeholder` defaults to the locale's pattern, such as `TT.MM.JJJJ` or `MM/DD/YYYY`. `presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
 
 ## Accessibility
 
-Provide a visible `label` or a specific placeholder. The trigger exposes dialog
+A typed field is a `combobox` with a dialog popup. It has one tab stop: the
+calendar button is skipped by **Tab** and opened with **↓** from the text. The
+status line describes the field, and a polite live region reads the meant day
+in words about half a second after typing stops, for example "Mittwoch,
+4. November 2026, nächster Mittwoch". Locked days are named "nicht wählbar"
+(**not available**). The range fields are named **Start** and **End** after the
+field label.
+
+Provide a visible `label` or a specific placeholder. A plain trigger exposes dialog
 and expanded state, and direct JSX descriptions and errors are connected to it.
 A button's label replaces its content, so the trigger also names its shown
 value, or the placeholder, as its description: a plain picker with
@@ -209,7 +280,7 @@ October 9, 2026". Without a value the calendar's tab stop starts on today.
 
 ## Runtime
 
-The trigger and current value render in server HTML. Opening the calendar, navigating dates, selecting presets, and applying time or range values require browser code.
+The field, its text, and its status line, or a plain trigger and its value, render in server HTML. A typed field renders its calendar only when it opens. Typing, opening the calendar, navigating dates, selecting presets, and applying time or range values require browser code.
 
 ## Example
 

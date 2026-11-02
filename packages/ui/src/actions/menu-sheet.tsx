@@ -6,10 +6,8 @@ import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSearch } fro
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
 import { filterDropdownItems, MenuSearch } from "./menu-search";
 
-/** Phones, where a menu opens as a bottom sheet instead of beside its trigger. */
-export const PHONE_SHEET_QUERY = "(max-width: 47.999rem)";
-
-export const prefersMenuSheet = (): boolean => typeof matchMedia === "function" && matchMedia(PHONE_SHEET_QUERY).matches;
+// Kept apart so a control can check for phones without loading the sheet and its dialog imports.
+export { PHONE_SHEET_QUERY, prefersMenuSheet } from "./phone-sheet";
 
 type SheetEntry = DropdownAction | DropdownChoice;
 type SheetItem = SheetEntry | { items: readonly SheetEntry[] };
