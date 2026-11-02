@@ -11,6 +11,10 @@ export type ChoiceListOption<T extends string = string> = {
   description?: string;
   /** A quiet tag after the label, such as "Default" for the choice that applies without one. */
   marker?: string;
+  /** A Tabler icon class before the text, such as `ti ti-truck`, when a picture helps tell the choices apart. */
+  icon?: string;
+  /** This choice is not possible now. Say why in `description`; a disabled chosen option still shows as chosen. */
+  disabled?: boolean;
 };
 
 export type ChoiceListProps<T extends string = string> = Omit<ValueFieldProps<T | null>, "onValueChange" | "onValueCommit"> & {
@@ -35,11 +39,24 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
   const meta = createFieldMeta(props.id);
   let group: HTMLDivElement | undefined;
   const value = () => resolveMaybeAccessor(props.value) ?? null;
-  const tabStop = (option: ChoiceListOption<T>, index: number) =>
-    value() === option.value || (index === 0 && !props.options.some((candidate) => candidate.value === value()));
+  const enabled = (index: number) => index >= 0 && index < props.options.length && !props.options[index]?.disabled;
+  // The chosen option holds the tab stop; without one that can take focus, the first option that can.
+  const tabStop = (index: number) => {
+    const chosen = props.options.findIndex((option, candidate) => option.value === value() && enabled(candidate));
+    return index === (chosen >= 0 ? chosen : props.options.findIndex((_, candidate) => enabled(candidate)));
+  };
+  // Arrows step over disabled options; Home and End go to the first and last option that can be chosen.
+  const keyTarget = (key: string, index: number) => {
+    const count = props.options.length;
+    let target = radioKeyTarget(key, index, count);
+    for (let steps = 0; target !== undefined && !enabled(target) && steps < count; steps++) {
+      target = key === "Home" ? target + 1 : key === "End" ? target - 1 : radioKeyTarget(key, target, count);
+    }
+    return target !== undefined && enabled(target) ? target : undefined;
+  };
   const choose = (index: number, focus = false) => {
     const option = props.options[index];
-    if (!option || props.disabled) return;
+    if (!option || props.disabled || option.disabled) return;
     props.onValueChange?.(option.value);
     props.onValueCommit?.(option.value);
     if (focus) queueMicrotask(() => group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[index]?.focus());
@@ -78,17 +95,18 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                   class="k2b-choice-list__option"
                   aria-checked={checked()}
                   aria-describedby={option().description ? descriptionId : undefined}
-                  disabled={props.disabled}
-                  tabIndex={tabStop(option(), index) ? 0 : -1}
+                  disabled={props.disabled || option().disabled}
+                  tabIndex={tabStop(index) ? 0 : -1}
                   onClick={() => choose(index)}
                   onKeyDown={(event) => {
-                    const target = radioKeyTarget(event.key, index, props.options.length);
+                    const target = keyTarget(event.key, index);
                     if (target === undefined) return;
                     event.preventDefault();
                     choose(target, true);
                   }}
                 >
                   <span class="k2b-choice-list__radio" aria-hidden="true" />
+                  <Show when={option().icon}>{(icon) => <i class={`k2b-choice-list__icon ${icon()}`} aria-hidden="true" />}</Show>
                   <span class="k2b-choice-list__text">
                     <span class="k2b-choice-list__label">
                       {option().label}
