@@ -6,7 +6,7 @@ import { flushSyncTraceEvents, observeSyncEvent, trace } from "./trace";
 const suite = databaseSuite();
 const at = new Date("2026-11-01T12:00:00Z");
 suite("background loop trace emission", () => {
-  test("idle first attempts write no spans, work writes one complete span, retries and errors stay visible", async () => {
+  test("successful idle and work attempts write no spans; retries and errors stay visible", async () => {
     const resource = `test-background-${crypto.randomUUID()}`;
     const key = "reconcile";
     let count = 0;
@@ -64,19 +64,12 @@ suite("background loop trace emission", () => {
       expect(await sql.unsafe(`SELECT 1 FROM logging.${probe}`)).toHaveLength(0);
       count = 3;
       await run("work");
-      const work = await sql<{ name: string; status: string; ended_at: Date | null; summary: unknown; attributes: unknown }[]>`
-        SELECT name, status, ended_at, summary, attributes FROM logging.trace_spans WHERE span_key = ${trace.syncSpanKey("scheduler", resource, "work")}`;
-      expect(work).toHaveLength(1);
-      expect(work[0]).toMatchObject({
-        name: key,
-        status: "ok",
-        attributes: { "sync.kind": "scheduler", "sync.resource": resource, "sync.id": "work", "sync.key": key, "sync.attempt": 1 },
-      });
-      expect(work[0]?.ended_at).not.toBeNull();
-      expect(work[0]?.summary).toEqual({ changed: 3 });
-      expect(
-        await sql.unsafe(`SELECT 1 FROM logging.${probe} WHERE span_key = $1`, [trace.syncSpanKey("scheduler", resource, "work")]),
-      ).toHaveLength(1);
+      expect(await sql`SELECT 1 FROM logging.trace_spans WHERE source = ${resource}`).toHaveLength(0);
+      expect(await sql.unsafe(`SELECT 1 FROM logging.${probe}`)).toHaveLength(0);
+      const [counts] = await sql<
+        { count: string }[]
+      >`SELECT SUM(run_count)::text AS count FROM logging.run_minutes WHERE source = ${resource}`;
+      expect(Number(counts?.count)).toBe(2);
       failure = true;
       await run("failed");
       const [failed] = await sql<{ status: string; event_count: number }[]>`
@@ -88,18 +81,26 @@ suite("background loop trace emission", () => {
       const [recovered] = await sql<{ status: string; event_count: number }[]>`
         SELECT span.status, (SELECT count(*)::int FROM logging.trace_events event WHERE event.trace_id = span.trace_id AND event.span_id = span.span_id) AS event_count FROM logging.trace_spans span WHERE span_key = ${trace.syncSpanKey("scheduler", resource, "failed")}`;
       expect(recovered).toMatchObject({ status: "ok", event_count: 1 });
-      // Neighbor schedules are not opted in and retain their ordinary lifecycle spans.
+      // All schedules share the problem-only policy, including neighbors.
       observeSyncEvent({ at, type: "handler_started", kind: "scheduler", resource, detail: { id: "neighbor", key: "other", attempt: 1 } });
+      observeSyncEvent({
+        at,
+        type: "handler_settled",
+        kind: "scheduler",
+        resource,
+        detail: { id: "neighbor", key: "other", attempt: 1, status: "success", durationMs: 1 },
+      });
       await flushSyncTraceEvents();
       expect(
         await sql`SELECT 1 FROM logging.trace_spans WHERE span_key = ${trace.syncSpanKey("scheduler", resource, "neighbor")}`,
-      ).toHaveLength(1);
+      ).toHaveLength(0);
     } finally {
       await flushSyncTraceEvents();
       await sql.unsafe(`DROP TRIGGER ${probe} ON logging.trace_spans`);
       await sql.unsafe(`DROP FUNCTION logging.${probe}()`);
       await sql.unsafe(`DROP TABLE logging.${probe}`);
       await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+      await sql`DELETE FROM logging.run_minutes WHERE source = ${resource}`;
     }
   });
 
@@ -128,7 +129,7 @@ suite("background loop trace emission", () => {
       await connection`BEGIN`;
       // The integration preload gives this file its own database. Hold writes,
       // then race handler completion against an independent database round trip.
-      await connection`LOCK TABLE logging.trace_spans IN SHARE MODE`.simple();
+      await connection`LOCK TABLE logging.run_minutes IN SHARE MODE`.simple();
       observeSyncEvent({ at, type: "handler_started", kind: "job", resource, detail: { id, key, attempt: 1 } });
       completion = handler(context);
       expect(await Promise.race([completion.then(() => "completed"), sql`SELECT 1`.then(() => "still pending")])).toBe("completed");
@@ -148,21 +149,64 @@ suite("background loop trace emission", () => {
       expect(await sql`SELECT 1 FROM logging.trace_spans WHERE source = ${resource}`).toHaveLength(0);
       await connection`ROLLBACK`;
       await flush;
-      const [span] = await sql<{ name: string; status: string; summary: unknown; attributes: unknown }[]>`
-        SELECT name, status, summary, attributes FROM logging.trace_spans
-        WHERE span_key = ${trace.syncSpanKey("job", resource, id)}`;
-      expect(span).toMatchObject({
-        name: resource,
-        status: "ok",
-        summary: { changed: 2 },
-        attributes: { "sync.kind": "job", "sync.resource": resource, "sync.id": id, "sync.key": key, "sync.attempt": 1 },
-      });
+      const [minute] = await sql<
+        { source: string; run_count: string }[]
+      >`SELECT source, run_count FROM logging.run_minutes WHERE source = ${resource}`;
+      expect(minute?.source).toBe(resource);
+      expect(Number(minute?.run_count)).toBe(1);
+      expect(await sql`SELECT 1 FROM logging.trace_spans WHERE source = ${resource}`).toHaveLength(0);
     } finally {
       await connection`ROLLBACK`;
       connection.release();
       await completion;
       await flushSyncTraceEvents();
       await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+      await sql`DELETE FROM logging.run_minutes WHERE source = ${resource}`;
+    }
+  });
+
+  test("retry summaries never wait for the trace database", async () => {
+    const resource = `test-background-retry-${crypto.randomUUID()}`;
+    const detail = { id: "retry", key: "reconcile", attempt: 2 };
+    const handler = trace.backgroundSchedule(
+      resource,
+      detail.key,
+      async () => 1,
+      (changed) => ({ changed }),
+    );
+    const connection = await sql.reserve();
+    try {
+      await connection`BEGIN`;
+      await connection`LOCK TABLE logging.trace_spans IN SHARE MODE`.simple();
+      observeSyncEvent({ at, type: "handler_started", kind: "scheduler", resource, detail });
+      const completed = handler({
+        scheduleId: detail.key,
+        runId: detail.id,
+        runNumber: 1,
+        slot: at,
+        trigger: "schedule",
+        attempt: 2,
+        signal: new AbortController().signal,
+        heartbeat: async () => undefined,
+      });
+      expect(await Promise.race([completed.then(() => "completed"), sql`SELECT 1`.then(() => "blocked")])).toBe("completed");
+      observeSyncEvent({
+        at,
+        type: "handler_settled",
+        kind: "scheduler",
+        resource,
+        detail: { ...detail, status: "success", durationMs: 1 },
+      });
+      await connection`ROLLBACK`;
+      await flushSyncTraceEvents();
+      const [span] = await sql<Array<{ summary: unknown }>>`SELECT summary FROM logging.trace_spans WHERE source = ${resource}`;
+      expect(span?.summary).toEqual({ changed: 1 });
+    } finally {
+      await connection`ROLLBACK`;
+      connection.release();
+      await flushSyncTraceEvents();
+      await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+      await sql`DELETE FROM logging.run_minutes WHERE source = ${resource}`;
     }
   });
 
@@ -204,6 +248,7 @@ suite("background loop trace emission", () => {
       report.mockRestore();
       await flushSyncTraceEvents();
       await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+      await sql`DELETE FROM logging.run_minutes WHERE source = ${resource}`;
     }
   });
 });

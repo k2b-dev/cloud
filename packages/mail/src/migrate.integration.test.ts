@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
-import { buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
+import { buildBackfillActivityIndex, buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
 
 const suite = suiteFor("database", "nats");
 
@@ -406,6 +406,56 @@ suite("mail baseline schema", () => {
       await writer`ROLLBACK`.simple();
       writer.release();
       other.release();
+    }
+  });
+
+  test("builds the backfill activity index concurrently while foreground activity remains writable", async () => {
+    await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.activity_events_backfill_operation_idx`.simple();
+    await migrate();
+    const [before] = await sql<{ present: boolean }[]>`
+      SELECT to_regclass('mail.activity_events_backfill_operation_idx') IS NOT NULL AS present`;
+    expect(before?.present).toBe(false);
+    const [mailbox] = await sql<{ id: string }[]>`
+      INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Concurrent activity index') RETURNING id`;
+    const writer = await sql.reserve();
+    const foreground = await sql.reserve();
+    let build: ReturnType<typeof buildBackfillActivityIndex> | undefined;
+    try {
+      await writer`BEGIN`.simple();
+      await writer`LOCK TABLE mail.activity_events IN ROW EXCLUSIVE MODE`.simple();
+      build = buildBackfillActivityIndex();
+      let started = false;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const progress = await sql`SELECT pid FROM pg_stat_progress_create_index
+          WHERE datname = current_database() AND relid = 'mail.activity_events'::regclass`;
+        if (progress.length) {
+          started = true;
+          break;
+        }
+        await Bun.sleep(25);
+      }
+      expect(started).toBe(true);
+      // NOWAIT is a lock-compatibility guard, independent of machine speed.
+      await foreground`BEGIN`.simple();
+      await foreground`LOCK TABLE mail.activity_events IN ROW EXCLUSIVE MODE NOWAIT`.simple();
+      const inserted = await foreground`INSERT INTO mail.activity_events (mailbox_id, actor_kind, action, outcome)
+        VALUES (${mailbox!.id}::uuid, 'system', 'index.guard', 'confirmed') RETURNING id`;
+      expect(inserted).toHaveLength(1);
+      await foreground`COMMIT`.simple();
+      await writer`COMMIT`.simple();
+      expect(await build).toBe("built");
+      expect(await buildBackfillActivityIndex()).toBe("ready");
+      const [index] = await sql<{ valid: boolean; unique: boolean }[]>`
+        SELECT indisvalid AND indisready AND indislive AS valid, indisunique AS unique
+        FROM pg_index WHERE indexrelid = 'mail.activity_events_backfill_operation_idx'::regclass`;
+      expect(index).toEqual({ valid: true, unique: true });
+    } finally {
+      await foreground`ROLLBACK`.simple();
+      await writer`ROLLBACK`.simple();
+      await build;
+      foreground.release();
+      writer.release();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox!.id}::uuid`;
     }
   });
 

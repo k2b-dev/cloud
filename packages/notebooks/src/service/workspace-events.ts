@@ -26,7 +26,7 @@ export const createWorkspaceOutbox = (config: { reconcileIntervalMs?: number } =
     orderBy: "notebook_id",
     sequence: "seq",
     // Same cadence as platform live delivery; batch, claim and backoff use its defaults.
-    reconcileIntervalMs: config.reconcileIntervalMs ?? 1_000,
+    reconcileIntervalMs: config.reconcileIntervalMs ?? 5_000,
     publish: (row) =>
       workspaceTopic().publish({
         tenantId: row.notebook_id,
