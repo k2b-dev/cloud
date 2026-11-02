@@ -6971,6 +6971,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   content: "";
 }
 
+/* The icon sits on the label's line and takes the action ink on the chosen card. */
+.k2b-ui .k2b-choice-list__icon {
+  flex: 0 0 auto;
+  color: var(--k2b-text-secondary);
+  font-size: 1.125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-choice-list__option[aria-checked="true"] .k2b-choice-list__icon {
+  color: var(--k2b-action-solid);
+}
+
 .k2b-ui .k2b-choice-list__text {
   display: flex;
   min-width: 0;
@@ -7018,6 +7030,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-list__details {
   grid-column: 1 / -1;
   padding: 0 0.5rem 0.25rem 2.125rem;
+}
+
+.k2b-ui .k2b-choice-list__option:has(> .k2b-choice-list__icon) + .k2b-choice-list__details {
+  padding-left: 3.875rem;
 }
 
 @media (pointer: coarse) {

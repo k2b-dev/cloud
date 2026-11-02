@@ -16,10 +16,12 @@ import { ChoiceList, type ChoiceListOption } from "@k2b/ui";
 
 ## Options, markers, and details
 
-`options` contain `value`, `label`, an optional `description`, and an optional `marker`. The controlled `value` is one option's value or `null`, which selects no row.
+`options` contain `value`, `label`, and optionally `description`, `marker`, `icon`, and `disabled`. The controlled `value` is one option's value or `null`, which selects no row.
 
 - `description` is one sentence under the label. Keep it to what changes for the person.
 - `marker` is a quiet tag after the label, such as "Default" on the choice that applies when the person has not chosen. It moves with the default, not with the selection.
+- `icon` is a Tabler icon class shown between the radio and the label, such as `ti ti-truck`, when a picture helps tell the choices apart. It is muted at rest and takes the action ink on the chosen card. Give every option an icon or none.
+- `disabled` keeps a choice visible that is not possible now. The card drops its edge like a disabled list; say why in its `description`, such as "Only within the city; this address is outside." A disabled option that is the current value still shows as chosen.
 - `details` are follow-up controls for the chosen card, such as a duration. They take the whole line under the chosen card's row of cards, aligned with the card text, and close when another card is chosen. Render them only when they belong to the current value.
 
 Choosing changes only the card's edge, fill, and radio, so nothing moves. See [shared field props](/en/ui/getting-started#shared-field-props) for labels, descriptions, errors, disabled state, and value accessors.
@@ -53,7 +55,9 @@ const [level, setLevel] = createSignal<string | null>("all");
 ## API reference
 
 ```ts
-type ChoiceListOption<T extends string = string> = { value: T; label: string; description?: string; marker?: string };
+type ChoiceListOption<T extends string = string> = {
+  value: T; label: string; description?: string; marker?: string; icon?: string; disabled?: boolean;
+};
 
 type ChoiceListProps<T extends string = string> = Omit<ValueFieldProps<T | null>, "onValueChange" | "onValueCommit"> & {
   options: readonly ChoiceListOption<T>[];
@@ -67,4 +71,4 @@ type ChoiceListProps<T extends string = string> = Omit<ValueFieldProps<T | null>
 
 ## Accessibility
 
-The cards are a radio group named by `label`, or by `aria-label` without a visible label, and described by `description`. Each card's sentence describes its radio. Only the chosen card is in the tab order; with no selection the first card is. Arrow keys move and select with wrapping, Home and End select the first and last card. While `busy`, the group is marked busy and the spinner carries `busyLabel`. On touch screens every card is at least 44 px high. In forced colors each card has a system outline, and the chosen one a thicker `Highlight` outline.
+The cards are a radio group named by `label`, or by `aria-label` without a visible label, and described by `description`. Each card's sentence describes its radio. Only the chosen card is in the tab order; with no selection, or a disabled chosen card, the first card that can be chosen is. Arrow keys move and select with wrapping, Home and End select the first and last card; all three skip disabled cards, which keep their sentence as their description. Icons are decorative; the label names the choice. While `busy`, the group is marked busy and the spinner carries `busyLabel`. On touch screens every card is at least 44 px high. In forced colors each card has a system outline, and the chosen one a thicker `Highlight` outline.

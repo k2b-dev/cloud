@@ -1677,11 +1677,12 @@ const ChoiceListDemo = () => {
   const [duration, setDuration] = createSignal<string | null>("8h");
   const [billing, setBilling] = createSignal<string | null>("fixed");
   const [repeat, setRepeat] = createSignal<string | null>("once");
+  const [delivery, setDelivery] = createSignal<string | null>("parcel");
   return (
     <DemoCard
       id="choice-list"
       chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
-      description="A labeled radio group of cards, each with one sentence on its consequence. Cards sit side by side while each gets 11rem and stack in narrow places. A quiet marker names the default, details open under the chosen card, and a save in progress shows a spinner without moving anything."
+      description="A labeled radio group of cards, each with one sentence on its consequence. Cards sit side by side while each gets 11rem and stack in narrow places. A quiet marker names the default, an icon helps tell choices apart, a choice that is not possible now says why, details open under the chosen card, and a save in progress shows a spinner without moving anything."
       code={`<ChoiceList
   label="Notifications"
   value={level}
@@ -1702,6 +1703,22 @@ const ChoiceListDemo = () => {
           options={[
             { value: "fixed", label: "Fixed price", description: "The customer pays the agreed amount." },
             { value: "time", label: "Time and material", description: "Hours and material go on the invoice." },
+          ]}
+        />
+        <ChoiceList
+          label="Delivery"
+          value={delivery}
+          onValueChange={setDelivery}
+          options={[
+            { value: "pickup", label: "Pickup", description: "The customer collects it at the shop.", icon: "ti ti-building-store" },
+            { value: "parcel", label: "Parcel", description: "Tracking goes to the customer by email.", icon: "ti ti-truck" },
+            {
+              value: "courier",
+              label: "Courier",
+              description: "Only within the city; this address is outside.",
+              icon: "ti ti-bike",
+              disabled: true,
+            },
           ]}
         />
         <ChoiceList
