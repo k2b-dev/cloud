@@ -866,6 +866,7 @@ export const loadMailboxPageData = async (pageParams: {
     messages.getConversationViewCounts({
       context: params.context,
       mailboxId: params.mailboxId,
+      cached: true,
     }),
     saved,
     localTags.listLocalTags(params.context, params.mailboxId),

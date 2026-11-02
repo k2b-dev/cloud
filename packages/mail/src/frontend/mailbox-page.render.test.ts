@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
-import type { AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
 import { createConfig } from "@k2b/ssr";
@@ -16,6 +16,7 @@ import { focus, mailboxes, mailboxPreferences } from "../service";
 import * as access from "../service/access";
 import * as integrations from "../service/app-integrations";
 import * as publicResources from "../service/public-resources";
+import { CountRefreshBusy } from "../service/view-count-cache";
 import type { MailboxPageData } from "../service/workspace";
 import * as workspace from "../service/workspace";
 import * as sidebarData from "./mail-sidebar-data";
@@ -66,7 +67,7 @@ beforeEach(() => {
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
 });
 
-const request = (query = "", focusPage = false) => {
+const request = (query = "", focusPage = false, env?: { timeout(request: Request, seconds: number): void }) => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -90,7 +91,7 @@ const request = (query = "", focusPage = false) => {
   });
   app.get("/app/mail", ...focusHandler);
   app.get("/app/mail/:mailboxId", ...handler);
-  return app.request(`https://cloud.example.test/app/mail${focusPage ? "" : `/${mailboxShortId}`}${query}`);
+  return app.request(`https://cloud.example.test/app/mail${focusPage ? "" : `/${mailboxShortId}`}${query}`, {}, env);
 };
 
 test("missing or deleted active mailbox renders shared HTML 404 before loading workspace data", async () => {
@@ -114,6 +115,40 @@ test("missing or deleted active mailbox renders shared HTML 404 before loading w
   expect(html).toContain("Page not found");
   expect(html).toContain("Go to home page");
   expect(html).not.toContain("MailWorkspace");
+});
+
+test("mailbox SSR keeps the count wait budget and restores the normal timeout on overload", async () => {
+  const timeouts: number[] = [];
+  spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
+  spies.push(
+    spyOn(integrations, "getSpacesMailIntegrationAvailability").mockResolvedValue({
+      invitations: false,
+      settings: false,
+      composer: false,
+      context: false,
+    }),
+  );
+  spies.push(
+    spyOn(workspace, "loadMailboxPageData").mockImplementation(async () => {
+      await Bun.sleep(0);
+      expect(timeouts).toEqual([40]);
+      throw new CountRefreshBusy("Mailbox counts are still refreshing; retry the request");
+    }),
+  );
+
+  const response = await request("", false, {
+    timeout: (_request, seconds) => {
+      timeouts.push(seconds);
+    },
+  });
+
+  expect(response.status).toBe(503);
+  expect(timeouts).toEqual([40, REQUEST_IDLE_TIMEOUT_SECONDS]);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  const html = await response.text();
+  expect(html).toContain("Go to home page");
+  expect(html).not.toContain("MailWorkspace");
+  expect(html).not.toContain("Mailbox counts are still refreshing");
 });
 
 test("an active mailbox the caller may not read answers the shared no-store 404 page, as for an unknown address", async () => {

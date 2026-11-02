@@ -107,11 +107,11 @@ export const loadFolderDisplayState = async (mailboxId: string, folderId: string
  * The scope of these mailboxes, read from their folder trees. Only mailboxes with a folder that is not
  * shown everywhere load their folders, so the lists stay as short as those trees.
  */
-export const loadAggregatedViewScope = async (mailboxIds: readonly string[]): Promise<AggregatedViewScope> => {
+export const loadAggregatedViewScope = async (mailboxIds: readonly string[], db: typeof sql = sql): Promise<AggregatedViewScope> => {
   if (mailboxIds.length === 0) return EMPTY_SCOPE;
   return aggregatedViewScope(
     await loadFolderDisplayEntries(
-      sql,
+      db,
       sql`
         SELECT scoped_resource.mailbox_id
         FROM mail.folders scoped_folder
