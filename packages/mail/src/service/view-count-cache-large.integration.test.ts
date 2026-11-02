@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { unwrap } from "@k2b/stdlib";
@@ -12,7 +12,8 @@ import { createMailbox } from "./mailboxes";
 import { getConversationViewCounts, listFolders } from "./messages";
 import { queryConversationViewCounts } from "./view-count-query";
 
-const suite = suiteFor("database", "nats", "valkey");
+// Seeding 46,000 conversations takes minutes, so this opts in like performance.integration.test.ts.
+const suite = process.env.MAIL_PERFORMANCE_TESTS === "1" ? suiteFor("database", "nats", "valkey") : describe.skip;
 const median = (values: number[]) => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)]!;
 const contextFor = (user: User): MailRequestContext => ({
   actor: { kind: "user", user },
