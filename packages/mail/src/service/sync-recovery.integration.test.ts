@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { connections, createSql, sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { closePlatformClients, initializeClients } from "../../../cloud/src/runtime/clients";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -405,6 +406,7 @@ suite("mail sync recovery", () => {
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
       await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
     } finally {
       status.mockRestore();
     }
@@ -486,6 +488,30 @@ suite("mail sync recovery", () => {
         ORDER BY started_at DESC LIMIT 1`;
       expect(run?.state).toBe("completed");
       expect(run?.cursor_after).toEqual(cursor);
+
+      // Count a whole warmed idle folder batch as well as the commit seam above.
+      const originalUrl = connections().database.url;
+      const idleStatus = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+      try {
+        await closePlatformClients();
+        connections().database.url = counter.url;
+        await initializeClients();
+        await sql`TRUNCATE mail.idle_write_probe`;
+        const beforeBatch = counter.count();
+        const batch = await syncFolderBatch(fixture.folderId, async () => undefined);
+        const batchStatements = counter.count() - beforeBatch;
+        const batchWrites = await sql<{ table_name: string; count: number }[]>`
+          SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name`;
+        console.info("whole idle folder batch", { statements: batchStatements, writes: batchWrites });
+        expect(batchStatements).toBe(24);
+        expect(batch).toMatchObject({ imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
+        expect(batchWrites).toEqual(writes);
+      } finally {
+        idleStatus.mockRestore();
+        await closePlatformClients();
+        connections().database.url = originalUrl;
+        await initializeClients();
+      }
 
       // A changed provider cursor, error and mailbox health must still write immediately.
       await sql`UPDATE mail.binding_folder_refs SET uid_next = 99 WHERE binding_id = ${fixture.bindingId}::uuid`;
