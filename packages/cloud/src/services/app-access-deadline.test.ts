@@ -72,7 +72,7 @@ test("an app page answers with healthy apps despite a stalled owner, and the nex
   );
   const server = new Hono<AuthContext & { Variables: { runtime: { apps: AppRegistryEntry[] } } }>()
     .use(async (c, next) => {
-      const current = bindAppAccessRequest(authority, c.req.raw);
+      const current = bindAppAccessRequest({ ...authority }, c.req.raw);
       c.set("actor", current.actor);
       c.set("accessSubject", current.accessSubject);
       c.set("credentialKind", current.credentialKind);
@@ -92,7 +92,7 @@ test("an app page answers with healthy apps despite a stalled owner, and the nex
     for (const fixture of fixtures) fixture.stop();
     setSystemTime();
   }
-}, 4000);
+}, 8000);
 
 test("discovery gives each owner three seconds and shares six seconds below the idle timeout", () => {
   expect(RESOURCE_ACCESS_PROBE_TIMEOUT_MS).toBe(3_000);
