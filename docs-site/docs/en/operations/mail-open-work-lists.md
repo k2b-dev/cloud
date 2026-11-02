@@ -16,8 +16,12 @@ view "All active". Done is a Cloud status for the whole mailbox. The upgrade
 changes nothing at the mail provider, and other mail programs still see every
 message.
 
-No migration runs. Count snapshots use a new cache key, so older snapshots
-expire within 30 seconds of the upgrade.
+No schema marker changes, so a rollback to the previous image keeps working.
+Mail builds one new partial index, `conversations_mailbox_open_latest_idx`,
+in the background after it starts (`CREATE INDEX CONCURRENTLY`, logged as
+"Building Mail background index"). Until it is ready, lists still work, but
+large folders read more rows. Count snapshots use a new cache key, so older
+snapshots expire within 30 seconds of the upgrade.
 
 ## Which lists change
 
