@@ -248,6 +248,11 @@ also use distributed wake signals. These workers retain a **five-second safety s
 signals, due retries, deadlines, and expired claims. Under idle conditions this
 means twelve safety scans per minute per dispatcher, plus startup; workflow
 workers also probe their execution slots before and after recovery.
+This counts safety scans, not all database queries. Core also reconciles
+declarations and wakes delivery on registry updates, including each app
+instance's minute heartbeat. Near idle, those heartbeats add roughly one wake
+per app instance per minute; concurrent wakes can coalesce. The frozen-clock
+guard covers the delivery dispatcher without the registry watcher.
 Outbox dispatchers also schedule a wake at known retry and claim deadlines.
 Commit notifications wake locally and signal other instances; the originating
 process ignores its own signal. Shutdown drains accepted producers before

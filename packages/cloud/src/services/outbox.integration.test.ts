@@ -316,6 +316,34 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     }
   });
 
+  test("deadline discovery observes retries committed while awaiting the claim lock", async () => {
+    const delivered = Promise.withResolvers<void>();
+    const outbox = reports(async () => delivered.resolve());
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${pgOutboxKey(table)}, 0))`;
+        outbox.start();
+        const lockWait = AbortSignal.timeout(2_000);
+        for (;;) {
+          lockWait.throwIfAborted();
+          const [waiting] = await sql<{ locked: boolean }[]>`
+            SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event = 'advisory'
+                AND query LIKE '%pg_advisory_xact_lock%' AND query LIKE '%set_config%') AS locked`;
+          if (waiting?.locked) break;
+          await Bun.sleep(10);
+        }
+        await report(tx, itemB, 82);
+        await tx`UPDATE ${sql.unsafe(table)} SET attempts = 1, next_attempt_at = clock_timestamp() + interval '1 second'`;
+      });
+      await delivered.promise;
+      await outbox.stop();
+      expect(await pending()).toEqual([]);
+    } finally {
+      await outbox.stop();
+    }
+  });
+
   test("notify() publishes without start, and stop() waits for the pass in flight", async () => {
     await report(sql, itemB, 8);
     let release = () => {};

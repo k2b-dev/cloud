@@ -124,20 +124,23 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       // Without sequential and bitmap scans, statistics of an empty or claimed outbox cannot make a claim scan and sort
       // the whole backlog instead of walking the sequence index up to the batch. A disabled scan still counts as very
       // expensive, which would compile every claim (JIT, ~0.4 s), so JIT stays off.
-      const [schedule] = await tx<{ wake_after_ms: number | null }[]>`
+      await tx`
         SELECT set_config('statement_timeout', ${String(claimMs)}, true),
                set_config('idle_in_transaction_session_timeout', ${String(claimMs)}, true),
                set_config('enable_seqscan', 'off', true),
                set_config('enable_bitmapscan', 'off', true),
                set_config('jit', 'off', true),
-               pg_advisory_xact_lock(hashtextextended(${claimLock}, 0)),
-               (SELECT extract(epoch FROM (min(GREATEST(
-                  current.claimed_until,
-                  CASE WHEN current.attempts > 0 THEN current.next_attempt_at END
-                )) - clock_timestamp()))::double precision * 1000
-                FROM ${sql.unsafe(table)} current
-                WHERE (current.claimed_until > now() OR (current.attempts > 0 AND current.next_attempt_at > now()))
-                  ${matches("current")}) AS wake_after_ms
+               pg_advisory_xact_lock(hashtextextended(${claimLock}, 0))
+      `;
+      // Plan after the settings apply, and read a fresh snapshot after waiting for the claim lock.
+      const [schedule] = await tx<{ wake_after_ms: number | null }[]>`
+        SELECT extract(epoch FROM (min(GREATEST(
+          current.claimed_until,
+          CASE WHEN current.attempts > 0 THEN current.next_attempt_at END
+        )) - clock_timestamp()))::double precision * 1000 AS wake_after_ms
+        FROM ${sql.unsafe(table)} current
+        WHERE (current.claimed_until > now() OR (current.attempts > 0 AND current.next_attempt_at > now()))
+          ${matches("current")}
       `;
       wakeAfter(schedule?.wake_after_ms ?? null);
       // The busy probe runs per candidate (OFFSET 0 keeps the planner from turning it into a join, which

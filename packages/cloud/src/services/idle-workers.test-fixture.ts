@@ -221,7 +221,7 @@ const broker = startEventDispatcher(
 await settled();
 brokerPolls = 0;
 await advance(60_000);
-assert.equal(brokerPolls, 12, "Core: at most 12 idle DB claims per minute");
+assert.equal(brokerPolls, 12, "Core dispatcher without registry events: 12 safety scans per minute");
 assert.equal(maintenance, 2, "gap and retention run once per minute");
 // Bursts cannot advance minute maintenance, or create parallel passes.
 for (let i = 0; i < 100; i++) broker.wake();
@@ -233,4 +233,6 @@ Object.defineProperty(globalThis, "setInterval", { value: realInterval });
 Object.defineProperty(globalThis, "clearInterval", { value: realClearInterval });
 mock.restore();
 setSystemTime();
-console.log("Idle minute: outbox 12 claims; workflow 12 recoveries / 48 slot claims; Core 12 claims / 1 maintenance pass");
+console.log(
+  "Idle minute: outbox 12 claims; workflow 12 recoveries / 48 slot claims; Core without registry events: 12 claims / 1 maintenance pass",
+);
