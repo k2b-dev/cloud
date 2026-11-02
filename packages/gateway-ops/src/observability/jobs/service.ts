@@ -191,6 +191,13 @@ const rowMatchesSearch = (row: BackgroundJobOverviewRow, search: string): boolea
     .some((value) => String(value).toLowerCase().includes(needle));
 };
 
+/** Minute-only recovery must clear an older error without inventing a success span. */
+export const backgroundSourceStatus = (group: TraceSourceGroup) => {
+  if (group.latestStartedAt && !group.latestEndedAt) return group.latestStatus;
+  const traceAt = group.latestEndedAt ?? group.latestStartedAt;
+  return group.latestSuccessAt && (!traceAt || group.latestSuccessAt > traceAt) ? "ok" : group.latestStatus;
+};
+
 const rowMatchesHealth = (row: BackgroundJobOverviewRow, health: BackgroundJobOverviewFilter["health"]): boolean => {
   if (!health || health === "all") return true;
   const trace = row.trace;
@@ -200,8 +207,8 @@ const rowMatchesHealth = (row: BackgroundJobOverviewRow, health: BackgroundJobOv
   // ones hang forever.
   if (health === "stuck") return trace.stuck > 0;
   if (health === "running") return trace.running > 0;
-  if (health === "failed") return trace.latestStatus === "error";
-  if (health === "healthy") return trace.latestStatus === "ok";
+  if (health === "failed") return backgroundSourceStatus(trace) === "error";
+  if (health === "healthy") return backgroundSourceStatus(trace) === "ok";
   return true;
 };
 

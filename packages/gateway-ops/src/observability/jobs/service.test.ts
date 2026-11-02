@@ -154,6 +154,31 @@ describe("jobs observability service", () => {
   });
 });
 
+test("a minute-only success clears a previous failure in health filters", () => {
+  const source = "inventory:import";
+  const recovered = buildBackgroundJobRows(
+    [],
+    [
+      group(source, {
+        latestStatus: "error",
+        latestSuccessAt: "2026-07-09T12:00:00.100Z",
+      }),
+    ],
+  );
+  expect(filterBackgroundJobRows(recovered, { health: "failed" })).toHaveLength(0);
+  expect(filterBackgroundJobRows(recovered, { health: "healthy" })).toHaveLength(1);
+  const failedLater = buildBackgroundJobRows(
+    [],
+    [
+      group(source, {
+        latestStatus: "error",
+        latestSuccessAt: "2026-07-09T11:59:00.000Z",
+      }),
+    ],
+  );
+  expect(filterBackgroundJobRows(failedLater, { health: "failed" })).toHaveLength(1);
+});
+
 describe("partial scheduler availability", () => {
   test("keeps healthy schedules and surfaces unavailable app warnings", async () => {
     const { spyOn } = await import("bun:test");

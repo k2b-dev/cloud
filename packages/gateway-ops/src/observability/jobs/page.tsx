@@ -1,6 +1,13 @@
 import { createPagination } from "@k2b/cloud/contracts";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { type TraceListFilter, type TraceRunStats, type TraceSourceGroup, type TraceSpan, trace } from "@k2b/cloud/services";
+import {
+  type TraceListFilter,
+  type TraceRunStats,
+  type TraceSourceGroup,
+  type TraceSpan,
+  type TraceSuccessMinutes,
+  trace,
+} from "@k2b/cloud/services";
 import { formatDurationMs as formatMs, formatNumber, formatPercent, formatDateTime as formatTimestamp } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -35,6 +42,7 @@ import {
 } from "./_components/types";
 import {
   type BackgroundJobOverviewRow,
+  backgroundSourceStatus,
   buildBackgroundJobRows,
   buildJobTimelineRows,
   filterBackgroundJobRows,
@@ -105,7 +113,7 @@ const statusBadge = (input: { status: string | null; running?: boolean }) => {
 
 const groupHealth = (group: TraceSourceGroup) => {
   if (group.latestStartedAt && !group.latestEndedAt) return statusBadge({ status: group.latestStatus, running: true });
-  return statusBadge({ status: group.latestStatus });
+  return statusBadge({ status: backgroundSourceStatus(group) });
 };
 
 const rowHealth = (row: BackgroundJobOverviewRow) => (row.trace ? groupHealth(row.trace) : statusBadge({ status: null }));
@@ -155,7 +163,7 @@ const statsGrid = (stats: TraceRunStats, filter: JobsFilterState) => {
         value={formatNumber(stats.sources, { locale: locale() })}
         sub={filter.source ? t.selectedSource : t.jobFamilies}
       />
-      <StatCell label={t.runs} value={formatNumber(stats.runs, { locale: locale() })} sub={windowLabel(filter, t)} />
+      <StatCell label={t.traceRuns} value={formatNumber(stats.runs, { locale: locale() })} sub={windowLabel(filter, t)} />
       <StatCell
         label={t.failed}
         value={formatNumber(stats.failed, { locale: locale() })}
@@ -198,6 +206,7 @@ const sourceSubtitle = (group: TraceSourceGroup, t: GatewayOpsMessages, locale: 
   if (group.categories.length === 1 && group.categories[0] === "backfill") {
     return t.backfillRuns({ count: formatNumber(group.runs, { locale }) });
   }
+  if (!group.runs && group.latestSuccessAt) return t.successCountedMinute;
   const parts = [
     t.sourceRunCounts({
       jobs: formatNumber(group.jobRuns, { locale }),
@@ -273,12 +282,12 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
   const columns: DataTableColumn<BackgroundJobOverviewRow>[] = [
     { id: "source", header: t.scheduleSource, value: (row) => row.source, cellClass: "min-w-[280px]" },
     { id: "control", header: t.control, subtitle: t.handler, value: (row) => row.state },
-    { id: "health", header: t.latest, subtitle: t.traceRun, value: (row) => row.trace?.latestStatus ?? "" },
-    { id: "runs", header: t.runs, value: (row) => row.trace?.runs ?? 0, headerClass: "text-right", cellClass: "text-right" },
+    { id: "health", header: t.latest, subtitle: t.traceRun, value: (row) => (row.trace ? (backgroundSourceStatus(row.trace) ?? "") : "") },
+    { id: "runs", header: t.traceRuns, value: (row) => row.trace?.runs ?? 0, headerClass: "text-right", cellClass: "text-right" },
     {
       id: "failed",
       header: t.failed,
-      subtitle: t.errorRate,
+      subtitle: t.traceErrorRate,
       value: (row) => row.trace?.failed ?? 0,
       headerClass: "text-right",
       cellClass: "text-right",
@@ -364,6 +373,63 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
           return "";
         }}
       />
+    </DataTable.Panel>
+  );
+};
+
+const SuccessMinutesTable = (props: {
+  result: TraceSuccessMinutes;
+  filter: JobsFilterState;
+  dateConfig: DateContext;
+  pagination: ReturnType<typeof createPagination>;
+  baseUrl: string;
+}) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  type Minute = TraceSuccessMinutes["minutes"][number];
+  const columns: DataTableColumn<Minute>[] = [
+    { id: "at", header: t.successMinute, value: (row) => row.at },
+    { id: "source", header: t.source, value: (row) => row.source },
+    { id: "name", header: t.name, value: (row) => row.name },
+    { id: "count", header: t.succeeded, value: (row) => row.count },
+    { id: "average", header: t.runtime, value: (row) => row.avgDurationMs },
+    { id: "p95", header: "P95 ≤", value: (row) => row.p95DurationMs },
+    { id: "max", header: t.successMaximum, value: (row) => row.maxDurationMs },
+  ];
+  return (
+    <DataTable.Panel>
+      <DataTable.Header title={t.successMinutes} subtitle={t.successRollupHint} />
+      <StatGrid columns={4}>
+        <StatCell label={t.succeeded} value={formatNumber(props.result.count, { locale: locale() })} />
+        <StatCell label={t.runtime} value={formatMs(props.result.avgDurationMs, { locale: locale() })} />
+        <StatCell label="P95 ≤" value={formatMs(props.result.p95DurationMs, { locale: locale() })} />
+        <StatCell label={t.successMaximum} value={formatMs(props.result.maxDurationMs, { locale: locale() })} />
+      </StatGrid>
+      <DataTable
+        rows={props.result.minutes}
+        columns={columns}
+        getRowId={(row) => JSON.stringify([row.at, row.source, row.appId, row.category, row.name])}
+        density="compact"
+        surface="plain"
+        empty={t.noSuccessMinutes}
+        renderCell={({ row, col }) => {
+          if (col.id === "at") return formatTimestamp(row.at, props.dateConfig);
+          if (col.id === "source")
+            return (
+              <a class="hover:underline" href={sourceUrl(props.filter, row.source)}>
+                {row.source}
+              </a>
+            );
+          if (col.id === "name") return row.name;
+          if (col.id === "count") return formatNumber(row.count, { locale: locale() });
+          return formatMs(col.id === "average" ? row.avgDurationMs : col.id === "max" ? row.maxDurationMs : row.p95DurationMs, {
+            locale: locale(),
+          });
+        }}
+      />
+      <DataTable.Footer>
+        <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={props.baseUrl} />
+      </DataTable.Footer>
     </DataTable.Panel>
   );
 };
@@ -468,6 +534,12 @@ export default ssr<AuthContext>(async (c) => {
   const actionFeedback = parseActionFeedback(url, t);
   const traceFilter = traceFilterFromJobs(filter);
   const perPage = 100;
+  const parsedSuccessPage = Number(url.searchParams.get("successPage") ?? 1);
+  const successPage = Number.isSafeInteger(parsedSuccessPage) && parsedSuccessPage > 0 ? parsedSuccessPage : 1;
+  const successPaginationInput = { page: successPage, perPage, offset: (successPage - 1) * perPage };
+  const successUrl = new URL(url);
+  successUrl.searchParams.delete("successPage");
+  const successPaginationBase = `${successUrl.pathname}${successUrl.search}${successUrl.search ? "&" : "?"}successPage=`;
   const paginationInput = { page: filter.page, perPage, offset: (filter.page - 1) * perPage };
   const selectedRun = parseRunKey(filter.run);
   const schedulesPromise = filter.source
@@ -477,7 +549,7 @@ export default ssr<AuthContext>(async (c) => {
         .then(({ schedules, warnings }) => ({ schedules, error: warnings.length > 0 ? warnings.join("; ") : null }))
         .catch((error) => ({ schedules: [], error: error instanceof Error ? error.message : String(error) }));
 
-  const [stats, groups, listResult, selectedSpan, selectedEvents, scheduleResult, timelineResult] = await Promise.all([
+  const [stats, groups, listResult, selectedSpan, selectedEvents, scheduleResult, timelineResult, successResult] = await Promise.all([
     trace.stats({ filter: traceFilter }),
     filter.source ? Promise.resolve([]) : trace.sourceGroups({ filter: traceFilter }),
     filter.source ? trace.list(paginationInput, { filter: traceFilter }) : Promise.resolve({ spans: [], total: 0 }),
@@ -486,6 +558,7 @@ export default ssr<AuthContext>(async (c) => {
     schedulesPromise,
     // Lanes need the individual runs; the overview table only has aggregates.
     trace.list({ page: 1, perPage: 2000, offset: 0 }, { filter: traceFilter }).catch(() => ({ spans: [], total: 0 })),
+    trace.successMinutes(successPaginationInput, { filter: filter.health === "stuck" ? { ...traceFilter, active: true } : traceFilter }),
   ]);
   const windowSeconds = jobsWindowOptions.find((option) => option.value === filter.window)?.seconds ?? 86_400;
   const timelineWindow = { fromMs: Date.now() - windowSeconds * 1000, toMs: Date.now() };
@@ -551,6 +624,14 @@ export default ssr<AuthContext>(async (c) => {
         }
       >
         <JobsActionToast />
+        <SuccessMinutesTable
+          result={successResult}
+          filter={filter}
+          dateConfig={dateConfig}
+          pagination={createPagination(successPaginationInput, successResult.total)}
+          baseUrl={successPaginationBase}
+        />
+        <p class="text-xs text-dimmed">{t.problemTraceHint}</p>
         {statsGrid(stats, filter)}
 
         <section class="paper p-3">

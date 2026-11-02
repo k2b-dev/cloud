@@ -60,34 +60,51 @@ These entries contain IDs, attempt number, durations, and state, without
 addresses, subjects, or message content. Compare production measurements for
 the same provider and outcome before drawing conclusions about send speed.
 
-## Idle background checks
+## Background success counts and trace retention
 
-Mail's folder-sync worker and interrupted-hydration check omit automatic
-spans for successful first attempts that report no work. Folder checks with
-imports, draft import/export projections, UIDVALIDITY resets, flag changes, removals or continuation
-work keep a complete timed span. Deferred metadata errors keep a summary, and thrown
-failures and retries remain visible. Domain logs and traces are unchanged.
-Routine provider-busy, rate-limit and changed-transport deferrals also omit
-the first-attempt span. This changes which spans are written, not their retention.
+**Runtime change:** deploy Core's updated logging migration before starting
+updated applications or Gateway Ops. It creates `logging.run_minutes`.
 
-The `mail:sync-due` schedule keeps ordinary lifecycle tracing: its draft
-scheduler can retire MIME state or queue effects that its result does not
-count. Those counts cannot reliably identify an idle run.
+Automatic Sync background runs now keep individual traces for failures,
+retries, and runs of at least 30 seconds. That threshold is Sync 7's default
+acknowledgement budget, rather than a new performance limit. An in-flight run
+materializes its start at the threshold. Fast first-attempt successes use
+minute counts with duration sum, maximum, and a bounded histogram in the
+existing logging database. Slow successes and recovered retries also enter
+these success counters; do not add them to detailed trace totals. A process flushes a batch within a minute, replacing
+the former two trace writes per run with one upsert per static source/minute.
 
-Deferred spans appear when a run completes. Inspect Sync's worker and durable
-job state for activity still in progress. A stopped process can leave no
-completed trace for its last attempt; its durable job remains recoverable.
-See [Tracing](/en/docs/platform/tracing#trace-background-loops-only-when-they-do-work)
-for applying the same rule to an application's own loops.
+Gateway Ops shows these successes in **Jobs → Successful runs per minute**,
+both in the overview and when a source is selected. The counts and weighted
+mean cover the complete selected window; the table is paginated independently
+of detailed traces. P95 is a histogram bucket upper bound. Existing trace
+statistics and timeline describe the retained diagnostic spans. The in-place
+notice explains this distinction. The last successful completion also updates
+source health, even when it has no individual span. Source, type, search, and window selections
+apply to counters; individual duration filters apply only to detailed traces.
 
-After deployment, group `logging.trace_spans` by `app_id`, `source` and
-`category` over a fixed interval. For Mail compare `mail:sync-folder` (`job`)
-and `mail` (`schedule`, name `mail:hydration-recovery`) separately; compare
-folder jobs against completed `mail.sync_runs`. Ordinary lifecycle tracing
-attempts two span upserts per delivered first attempt, including idle checks;
-the opted-in idle path issues none and work issues one complete upsert. Claim
-polling itself emits no handler lifecycle event and already wrote no span. Without a
-production breakdown, aggregate insert totals cannot identify Mail's share.
+Counters may lag by one minute. A process crash, observer overload, or failed
+aggregate write can lose counts; failures are logged and subsequent minutes
+recover normally. These counters are not accounting records. Explicit domain
+traces and diagnostic events are unchanged. See [Tracing](/en/docs/platform/tracing#automatic-background-diagnostics).
+
+Core's existing `app:logs:cleanup` job now owns trace and minute retention,
+even without Gateway Ops. It uses `logs.trace_retention_days` (default 30)
+and `logs.trace_max_bytes` (default 1 GiB) together: first remove expired
+records, then the oldest completed records until the live row payload fits
+the byte budget. The default reserves one day's 1 GiB trace-growth budget;
+operators can raise it explicitly for their diagnostic history. Trace events
+count toward the budget and are deleted with their parent span. Minute rows
+share the same day and byte budget. Deletes run in batches of at most 10,000,
+heartbeat between batches, and honor cancellation.
+
+The byte budget measures live row payload, not index size, WAL, or allocated
+relation files. Postgres reuses deleted pages; this cleanup does not shrink
+files. Open spans are preserved: elapsed time alone is not evidence of an
+expired worker lease. If open spans alone exceed the budget, Core warns and
+leaves them intact. Inspect worker state before removing orphaned diagnostics.
+Retention applies on the configured cleanup schedule, not synchronously on
+each insert; concurrent writes can exceed the budget until the next sweep.
 
 ## Trace a request or operation
 
@@ -244,7 +261,9 @@ cld admin jobs show <traceId>:<spanId> --json
 
 The source example is Core's FreeIPA expiry backfill. Use the source returned
 by `jobs list` for another operation and the run ID returned by `jobs runs`
-for `jobs show`. An empty list can mean no run exists in the selected window.
+for `jobs show`. These commands show retained diagnostic spans. Fast successful
+backfills may appear only in Gateway Ops minute counts; an empty trace list
+does not mean no producer ran.
 
 Pump summaries include dispatched and failed counts. A completed producer can
 still have unfinished or failed downstream jobs; for FreeIPA, also inspect

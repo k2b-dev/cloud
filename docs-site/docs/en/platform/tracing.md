@@ -52,13 +52,33 @@ const item = await trace.withSpan(
 The callback receives `{ traceId, spanId }`. Pass that context to child work
 when it belongs to the same operation.
 
-## Trace background loops only when they do work
+## Automatic background diagnostics
 
-A scheduler tick or coalesced job can check for work and find none. Declare a
-static handler with `trace.backgroundSchedule(resource, scheduleId, run,
-summarize)` or `trace.backgroundJob(resource, run, summarize)`. The callback
-receives the normal Sync context. Return `null` from `summarize(result)` only
-when the successful run did no work; return a bounded summary for real work.
+Cloud defers automatic Sync job, queue, topic-consumer, schedule, and pump
+spans. A successful first attempt below 30 seconds writes no trace row.
+Each process combines successful completions (including slow runs and
+recovered retries) by UTC minute, application, source, category, and static operation name in `logging.run_minutes`. It flushes one
+batched upsert within a minute and at clean shutdown. The row stores count,
+duration sum, maximum, and a fixed duration histogram; it stores no run IDs,
+keys, attributes, summaries, or payloads. These are operational counters,
+not durable business facts: a process crash or failed diagnostic write can
+lose the unflushed minute. Writes are not retried after an ambiguous result.
+
+The 30-second diagnostic threshold comes from Sync 7's default delivery
+acknowledgement budget (`ackWaitMs: 30_000`). It is fixed across applications,
+including those that extend their delivery lease. It does not mean their
+worker lease expired. On reaching the threshold, an in-flight run materializes
+its start span with its original start time, so a hanging run remains visible.
+Failures, retries, and successful retries retain their detailed span. Explicit
+diagnostic events and independent domain/child spans retain their contracts.
+
+Use `trace.syncSpanKey(kind, resource, runId)` to attach presentation or a
+summary to the same automatic run. Such a successful run remains deferred;
+an explicit diagnostic event materializes it. `trace.backgroundSchedule()`
+and `trace.backgroundJob()` still accept a result summarizer. Return `null`
+when no summary is useful; a non-null summary enriches a problem trace without
+forcing an individual success trace. A summary exception is logged and never
+retries completed business work.
 
 ```ts
 const processDue = trace.backgroundSchedule(
@@ -68,27 +88,25 @@ const processDue = trace.backgroundSchedule(
 await scheduler.create({ id: "inventory:due", cron: "* * * * *", process: processDue });
 ```
 
-The handler preserves retries, cancellation and delivery behavior. A successful
-idle first attempt writes no automatic lifecycle span. Work produces one
-complete span with the callback's full start/end timing and summary. The
-wrapper queues it through the bounded trace observer without waiting for the
-trace database. These deferred spans appear on completion; use Sync's live
-worker and durable delivery state for a running loop.
-Failures and retries are still recorded, and an idle successful retry closes
-its earlier error span. A callback must report all of its effects before it
-can classify a result as idle. Summary failures are logged and cannot retry
-completed work.
+The observer bounds active deferred runs and pending diagnostic writes to
+1,024 each; the minute buffer likewise holds at most 1,024 distinct groups.
+Overflow reports a diagnostic warning and drops observations, never domain
+work. Slow-start visibility can be incomplete under observer overload; a
+settled slow or failed run can still create its span. Normal operation resumes
+as entries settle or a minute is flushed. Timers do not keep a process alive.
 
-An opted-in callback must not call `trace.start()`, `trace.record()`,
-`trace.end()` or `trace.complete()` on its own Sync run span. Put run metadata
-in `summarize` instead. Independent domain spans and child spans with their
-own identities remain supported. Keep ordinary lifecycle tracing when a
-callback needs to manage or enrich its own run span explicitly.
-
-Declare handlers once per static job or schedule, never per entity or run.
-The registration budget matches the trace observer's 1,024-entry diagnostic
-budget; additional declarations retain ordinary lifecycle tracing. No idle
-run records, buffers or suppression keys accumulate per execution.
+Platform consumers can read `trace.successMinutes(pagination, { filter })`
+for paginated minute rows and whole-selection count, weighted mean, maximum,
+and histogram p95. Source, application, category, search, and time filters
+apply. Individual duration filters apply to detailed traces only. Histogram
+p95 is the upper bound of a power-of-two millisecond bucket, not an exact
+sample percentile. `trace.list` and `stats` continue to describe
+detailed stored spans. `sourceGroups` also discovers sources that have only
+minute counters and supplies `latestSuccessAt`, so a later success can clear
+an older failure in the health view. Its run/duration counters describe
+retained spans and are zero for a minute-only source. Slow or recovered successful runs appear in both
+sets; never add the counters to the trace totals. Percentiles beyond the last
+finite histogram bucket (2³¹ ms) are unavailable.
 
 ## Choose span fields
 
@@ -114,7 +132,8 @@ reindexing historical data or applying a rule retroactively. Use `job` for an
 individual background operation and `sync` for synchronization activity.
 The category labels the trace; it does not schedule work or make it durable.
 
-Cloud automatically records Sync pump runs as `backfill` spans. Their `name`
+Cloud classifies Sync pump diagnostics as `backfill`. Fast successful pump
+runs use the same minute counters; problems retain spans. Their `name`
 and `source` are the pump ID, and `appId` identifies the hosting application.
 No application-level observer or additional wrapper span is needed. To attach
 events to that run, use `trace.syncSpanKey("pump", pumpId, runKey)` with the
@@ -177,13 +196,14 @@ after one hour. Always end manually started spans.
 
 ## Trace storage and failures
 
-Cloud records Sync worker starts, completions, and dead letters automatically.
-For handlers using ordinary lifecycle tracing, enrich the same span with
+Cloud observes Sync starts, completions, and dead letters automatically and
+stores diagnostic spans according to the background policy above. Enrich the
+same run with
 `trace.syncSpanKey(kind, resourceId, runId)` as the `spanKey`. For a durable
 topic handler, also pass the consumer name as the
 fourth argument: `trace.syncSpanKey("topic", resourceId, eventId, consumer)`.
-Each independent consumer receives its own span, even when processing the same
-event. Use the same key when starting, recording, or ending that span.
+Each independent consumer has its own run identity, even when processing the
+same event. Use the same key when starting, recording, or ending that span.
 
 Trace writes are operational telemetry. Write failures are reported to the
 process console and do not replace application error handling.
@@ -192,4 +212,5 @@ Do not use traces as business records. Store domain facts in the application
 database. Use [audit events](/en/docs/platform/audit-events) for durable
 security evidence.
 
-Topic consumer runs are traced only when they retry or dead-letter: successful runs write no span, so high-volume consumers such as gateway telemetry do not multiply span writes.
+Topic consumers follow the same failure, retry, and slow-run policy. Fast
+successes contribute to the minute counters without multiplying span writes.
