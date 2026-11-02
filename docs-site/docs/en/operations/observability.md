@@ -175,7 +175,7 @@ distinct derived templates per app.
 
 The `Upstream unavailable` log carries the same redacted template without the
 200-template limit, the error type, and a transport error code such as
-`ConnectionRefused` or `ENOTFOUND`. It never includes the error message or the
+`ECONNREFUSED` or `ENOTFOUND`. It never includes the error message or the
 query.
 
 When a client disconnects before the application answers, the gateway cancels

@@ -13,6 +13,7 @@ import { listByTables } from "./fields";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { get as getRecord } from "./records";
 import { get as getTable } from "./tables";
+import { transactionWithRollback } from "./transaction-rollback";
 
 /** Pin the source plan and its dependencies. Liquid also reads the complete
  * root record, including transitive computed fields. Unrelated Base resources
@@ -111,10 +112,16 @@ export const prepareCustomAppDocumentPreview = async (input: {
   authorize: (client: SqlClient) => Promise<boolean>;
 }) => {
   const app = await buildTemplateAppData();
-  return sql.begin(async (client) => {
+  type Preview = {
+    template: NonNullable<Awaited<ReturnType<typeof getStoredTemplate>>>;
+    createdAt: Date;
+    rendered: Awaited<ReturnType<typeof buildLiveRenderData>>;
+  } | null;
+  return transactionWithRollback<Preview>(async (client, rollback) => {
     await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
     input.signal.throwIfAborted();
-    if (!(await input.authorize(client))) return null;
+    // A denial may stand for a caught SQL error that aborted this snapshot.
+    if (!(await input.authorize(client))) return rollback(null);
     if ((await customAppDocumentPreviewFingerprint(client, input.baseId, input.tableId, input.templateId)) !== input.fingerprint)
       return null;
     const template = await getStoredTemplate(input.templateId, client);
@@ -139,6 +146,7 @@ export const prepareCustomAppDocumentPreview = async (input: {
       includeScanMetadata: false,
       signal: input.signal,
     });
-    return { template, createdAt, rendered };
+    // A failed render may have aborted this snapshot; the caller still reports the failure.
+    return rendered.ok ? { template, createdAt, rendered } : rollback({ template, createdAt, rendered });
   });
 };

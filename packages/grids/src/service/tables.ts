@@ -399,14 +399,15 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
   const restored = await sql.begin(async (tx) => {
     await degradeForTableSchemaChange(id, actorId, tx);
     const result = await writeNamedResource(
-      async () => {
-        const [row] = await tx<DbRow[]>`
-          UPDATE grids.tables SET deleted_at = NULL, updated_at = ${NEXT_TABLE_VERSION()}
-          WHERE id = ${id}::uuid
-          RETURNING ${COLS()}
-        `;
-        return row;
-      },
+      () =>
+        tx.savepoint(async (sp) => {
+          const [row] = await sp<DbRow[]>`
+            UPDATE grids.tables SET deleted_at = NULL, updated_at = ${NEXT_TABLE_VERSION()}
+            WHERE id = ${id}::uuid
+            RETURNING ${COLS()}
+          `;
+          return row;
+        }),
       "idx_grids_tables_live_name",
       messages.tableNameUnique,
     );

@@ -3,13 +3,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { profilePictureMessages } from "@k2b/cloud/account/ui";
 import type { RobotAvatar } from "@k2b/cloud/contracts/avatar";
 import { renderAvatarSvg } from "@k2b/cloud/shared";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
+import "../../../../ui/test/solid-ssr-preload";
 import { accountsMessages } from "../messages";
+
+const { profilePictureMessages } = await import("@k2b/cloud/account/ui");
 
 // An agent always shows a robot or a photo. An administrator opens "Change profile picture" from the agent's page,
 // which offers Photo and Robot, never a bare symbol, and saves through the administration API.

@@ -40,7 +40,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  BUN_VERSION: 1.4.2
+  BUN_VERSION: 1.4.4
   TEST_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
 # The heavy matrix jobs (unit, webkit, integration, grids) run on the runner named by

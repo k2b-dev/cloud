@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { AiPeopleModels } from "../shared/ai-models";
-import { aiModelBlocksSending, aiModelRequestFor, resolveAiModelChoice } from "./model-chooser";
+import "../../../ui/test/solid-ssr-preload";
+
+const { aiModelBlocksSending, aiModelRequestFor, resolveAiModelChoice } = await import("./model-chooser");
 
 const mark = { kind: "mark" as const, text: "CO", color: "#0f766e" };
 // Like the people API: the model behind Maximum is no longer allowed, so it is not among the options.

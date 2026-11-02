@@ -2,12 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { profilePictureMessages } from "@k2b/cloud/account/ui";
 import { type PersonAvatar, robotAvatarFromSeed } from "@k2b/cloud/contracts/avatar";
 import { renderAvatarSvg } from "@k2b/cloud/shared";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
+import "../../../../ui/test/solid-ssr-preload";
+
+const { profilePictureMessages } = await import("@k2b/cloud/account/ui");
 
 // "Change profile picture" on /me: a person picks a photo, a built avatar, or initials. The dialog keeps one size,
 // saves in one step, keeps the choice when saving fails, and asks before it drops unsaved changes.

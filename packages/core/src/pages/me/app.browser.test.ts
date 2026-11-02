@@ -8,7 +8,6 @@ import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
-import * as cloudSsr from "@k2b/cloud/ssr";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
@@ -22,6 +21,7 @@ import { accountMessages } from "./messages";
 const root = mkdtempSync(join(tmpdir(), "core-account-app-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
+const cloudSsr = await import("@k2b/cloud/ssr");
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const appPage = (await import("./app.page")).default;
