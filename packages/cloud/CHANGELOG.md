@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.54.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.53.0...npm-cloud-v0.54.0) (2026-11-02)
+
+
+### Features
+
+* **cloud:** omit successful idle background lifecycle spans ([#2436](https://github.com/k2b-dev/cloud/issues/2436)) ([edd815a](https://github.com/k2b-dev/cloud/commit/edd815a2315f86f24d29d085430bfbb7bf146c78))
+* **geoip:** let applications look up a country from an IP address ([#2376](https://github.com/k2b-dev/cloud/issues/2376)) ([9030858](https://github.com/k2b-dev/cloud/commit/9030858f884cadd7bfa970dfc462523c9b5bd3c2))
+* **pulse:** build dashboards from reviewed SQL panels ([#1718](https://github.com/k2b-dev/cloud/issues/1718)) ([60368f0](https://github.com/k2b-dev/cloud/commit/60368f01cd3d441eb4b1e60decbc98179c7a308b))
+
+
+### Bug Fixes
+
+* **cli:** admin settings tests print their result instead of saved ([#2397](https://github.com/k2b-dev/cloud/issues/2397)) ([2f9ea4a](https://github.com/k2b-dev/cloud/commit/2f9ea4ac3bc83cc9ce70ab6d7883168d989df3ee))
+* **cloud:** one slow application no longer delays or breaks a page ([#2434](https://github.com/k2b-dev/cloud/issues/2434)) ([1fc908e](https://github.com/k2b-dev/cloud/commit/1fc908e0e3944c23545aa9e1f1bbc0c9098bdcc2))
+* **core:** a fresh boot no longer deadlocks on browser-notification setup ([#2393](https://github.com/k2b-dev/cloud/issues/2393)) ([fc47d68](https://github.com/k2b-dev/cloud/commit/fc47d686cdd0715af2fc388577a683d4d32dd700))
+* **identity:** full-access machine keys name their scopes and work ([#2396](https://github.com/k2b-dev/cloud/issues/2396)) ([07f13e5](https://github.com/k2b-dev/cloud/commit/07f13e5cef415002cd363715f5ee22db77b3447b))
+* **settings:** include platform keys in the default admin catalog ([#2426](https://github.com/k2b-dev/cloud/issues/2426)) ([ef96b11](https://github.com/k2b-dev/cloud/commit/ef96b11b3c924546a544a6cf5d333d1cbfe88097))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.42.0 to 0.43.0
+    * @k2b/editor bumped from 0.5.0 to 0.5.1
+
 ## [0.53.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.52.0...npm-cloud-v0.53.0) (2026-11-01)
 
 
