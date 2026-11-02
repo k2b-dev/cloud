@@ -2127,9 +2127,9 @@ const queryDefinitions = {
     },
   },
   "delivery.list": {
-    title: "List scheduled deliveries",
+    title: "List waiting deliveries",
     description:
-      "List deliveries still in an undo window or scheduled for later in one known mailbox. Get mailboxId from mailbox.list; use returned mail.delivery refs with delivery.read or delivery.cancel.",
+      "List deliveries waiting in line after Undo and dispatch grace, or scheduled for later, in one known mailbox. Get mailboxId from mailbox.list; use returned mail.delivery refs with delivery.read or delivery.cancel.",
     input: c.DeliveryListInputSchema,
     data: c.DeliveryListDataSchema,
     openWorld: false,

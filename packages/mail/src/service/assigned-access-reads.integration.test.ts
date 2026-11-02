@@ -216,7 +216,7 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
       (mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload,
        access_subject_kind, access_subject_id, credential_scopes)
       VALUES (${mailboxId}::uuid, 'send', 'user', ${owner.id}::uuid, ${key}, ${"f".repeat(64)}, '{}'::jsonb,
-        ${{ scheduledAt: new Date(Date.now() + 3600000).toISOString() }}::jsonb, 'user', ${owner.id}::uuid, ARRAY[]::text[]) RETURNING id`;
+        ${{ scheduledAt: "2099-01-01T00:00:00.000Z" }}::jsonb, 'user', ${owner.id}::uuid, ARRAY[]::text[]) RETURNING id`;
     if (!command) throw new Error("Command fixture was not created");
     const snapshot = {
       to: [],
@@ -228,9 +228,9 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     };
     const [submission] = await sql<{ id: string }[]>`INSERT INTO mail.outbox_submissions
       (short_id, mailbox_id, draft_id, command_id, sender_identity_id, selected_binding_id, stable_message_id,
-       state, scheduled_at, requested_at, mime_date, draft_snapshot, message_id)
+       state, scheduled_at, undo_until, requested_at, mime_date, draft_snapshot, message_id)
       VALUES (${newShortId()}, ${mailboxId}::uuid, ${draftId}::uuid, ${command.id}::uuid, ${identityId}::uuid, ${bindingId}::uuid,
-        ${`<${key}@example.test>`}, ${state}, now() + interval '1 hour', now(), now(), ${snapshot}::jsonb, ${messageId}::uuid) RETURNING id`;
+        ${`<${key}@example.test>`}, ${state}, '2099-01-01T00:00:00Z', '2099-01-01T00:00:00Z', '2026-01-01T00:00:00.123456Z', '2026-01-01T00:00:00Z', ${snapshot}::jsonb, ${messageId}::uuid) RETURNING id`;
     if (!submission) throw new Error("Submission fixture was not created");
     return submission.id;
   };
@@ -617,6 +617,56 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     expect((await call(tokenA, `${base()}/workspace-detail/${conversation.shortId}`)).status).toBe(404);
   };
 
+  test("waiting sends without a scheduled time share visibility, pagination and counts; undo stays hidden", async () => {
+    const params = { context: contextFor(readerA), mailboxId };
+    try {
+      // Real later sends store their future due time in undo_until even though undoSeconds is zero.
+      expect(unwrap(await scheduledSends.listScheduledSends(params)).total).toBe(1);
+      expect(unwrap(await scheduledSends.countScheduledSends(params))).toBe(1);
+      expect(unwrap(await scheduledSends.getScheduledSend({ ...params, scheduledSendId: scheduled1 })).id).toBe(scheduled1);
+      await sql`UPDATE mail.outbox_submissions SET scheduled_at = '2000-01-01T00:00:00Z', undo_until = NULL WHERE id IN (${scheduled1}::uuid, ${scheduled3}::uuid)`;
+      // The nullable command payload is not the durable outbox's non-null requested_at.
+      await sql`UPDATE mail.commands SET payload = '{"scheduledAt":null}'::jsonb
+        WHERE id IN (SELECT command_id FROM mail.outbox_submissions WHERE id IN (${scheduled1}::uuid, ${scheduled3}::uuid))`;
+      const page = unwrap(await scheduledSends.listScheduledSends({ ...params, limit: 1 }));
+      expect(page.items.map((item) => item.id)).toEqual([scheduled1]);
+      expect(page.total).toBe(1);
+      expect(page.nextCursor).toBeNull();
+      expect(unwrap(await scheduledSends.countScheduledSends(params))).toBe(page.total);
+      expect(unwrap(await scheduledSends.getScheduledSend({ ...params, scheduledSendId: scheduled1 })).scheduledAt).toBeTruthy();
+      notFound(await scheduledSends.getScheduledSend({ ...params, scheduledSendId: scheduled3 }));
+      const ownerParams = { context: contextFor(owner), mailboxId, limit: 1 };
+      const first = unwrap(await scheduledSends.listScheduledSends(ownerParams));
+      expect(first.total).toBe(2);
+      expect(first.nextCursor).toBeTruthy();
+      const next = unwrap(await scheduledSends.listScheduledSends({ ...ownerParams, cursor: first.nextCursor! }));
+      expect(new Set([...first.items, ...next.items].map((item) => item.id))).toEqual(new Set([scheduled1, scheduled3]));
+      expect(next.total).toBe(unwrap(await scheduledSends.countScheduledSends(ownerParams)));
+
+      for (const state of ["scheduled", "undo_window"]) {
+        await sql`UPDATE mail.outbox_submissions SET state = ${state}, scheduled_at = '2000-01-01T00:00:00Z', undo_until = '2099-01-01T00:00:00Z'
+          WHERE id = ${scheduled1}::uuid`;
+        expect(unwrap(await scheduledSends.listScheduledSends(params))).toMatchObject({ items: [], total: 0 });
+        expect(unwrap(await scheduledSends.countScheduledSends(params))).toBe(0);
+        notFound(await scheduledSends.getScheduledSend({ ...params, scheduledSendId: scheduled1 }));
+        await sql`UPDATE mail.outbox_submissions SET scheduled_at = '2099-01-01T00:00:00Z', undo_until = '2000-01-01T00:00:00Z' WHERE id = ${scheduled1}::uuid`;
+        const expired = unwrap(await scheduledSends.listScheduledSends(params));
+        expect(expired.items.map((item) => item.id)).toEqual(state === "scheduled" ? [scheduled1] : []);
+        expect(expired.total).toBe(unwrap(await scheduledSends.countScheduledSends(params)));
+        // Undo has ended, but an ordinary send stays hidden through the dispatch grace.
+        await sql`UPDATE mail.outbox_submissions SET scheduled_at = '2000-01-01T00:00:00Z' WHERE id = ${scheduled1}::uuid`;
+        const due = unwrap(await scheduledSends.listScheduledSends(params));
+        expect(due.items.map((item) => item.id)).toEqual([scheduled1]);
+        expect(due.total).toBe(unwrap(await scheduledSends.countScheduledSends(params)));
+      }
+    } finally {
+      await sql`UPDATE mail.outbox_submissions SET state = 'scheduled', scheduled_at = '2099-01-01T00:00:00Z', undo_until = '2099-01-01T00:00:00Z'
+        WHERE id IN (${scheduled1}::uuid, ${scheduled3}::uuid)`;
+      await sql`UPDATE mail.commands SET payload = '{"scheduledAt":"2099-01-01T00:00:00Z"}'::jsonb
+        WHERE id IN (SELECT command_id FROM mail.outbox_submissions WHERE id IN (${scheduled1}::uuid, ${scheduled3}::uuid))`;
+    }
+  });
+
   test("mailboxes expose assigned scope, including group write grants, without broadening write authority", async () => {
     const context = contextFor(readerA);
     expect(unwrap(await mailboxes.listMailboxes(context))).toEqual([
@@ -886,5 +936,52 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     expect(page.detailMessages).toEqual([]);
     expect(page.savedViews).toEqual([]);
     expect(unwrap(await messages.listConversations({ context: contextFor(readerR), mailboxId })).items).toHaveLength(3);
+  });
+  test("a waiting immediate send can be cancelled only before its execution fence", async () => {
+    const draftId = await createDraft(null);
+    const id = await createSubmission(draftId, "scheduled");
+    const params = { context: contextFor(owner), mailboxId, scheduledSendId: id, input: { disposition: "draft" as const } };
+    await sql`UPDATE mail.commands SET payload = '{"scheduledAt":null}'::jsonb, state = 'executing'
+      WHERE id = (SELECT command_id FROM mail.outbox_submissions WHERE id = ${id}::uuid)`;
+    const blocked = await scheduledSends.cancelScheduledSend(params);
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.status).toBe(409);
+    await sql`UPDATE mail.commands SET state = 'queued'
+      WHERE id = (SELECT command_id FROM mail.outbox_submissions WHERE id = ${id}::uuid)`;
+    expect(unwrap(await scheduledSends.cancelScheduledSend(params))).toEqual({ disposition: "draft", draftId });
+    const [row] = await sql<{ state: string }[]>`SELECT state FROM mail.outbox_submissions WHERE id = ${id}::uuid`;
+    expect(row?.state).toBe("cancelled");
+  });
+
+  test("a waiting queue of thousands has an exact total and bounded pages", async () => {
+    const rows = Array.from({ length: 3000 }, () => ({ command_id: crypto.randomUUID(), short_id: newShortId() }));
+    const key = `queue-scale-${crypto.randomUUID()}`;
+    try {
+      await sql`INSERT INTO mail.commands
+        (id, mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload,
+         access_subject_kind, access_subject_id, credential_scopes)
+        SELECT row.command_id, ${mailboxId}::uuid, 'send', 'user', ${owner.id}::uuid,
+          ${key} || row.command_id::text, ${"f".repeat(64)}, '{}'::jsonb, '{"scheduledAt":null}'::jsonb,
+          'user', ${owner.id}::uuid, ARRAY[]::text[]
+        FROM jsonb_to_recordset(${rows}::jsonb) AS row(command_id uuid, short_id text)`;
+      await sql`INSERT INTO mail.outbox_submissions
+        (short_id, mailbox_id, draft_id, command_id, sender_identity_id, selected_binding_id, stable_message_id,
+         state, scheduled_at, requested_at, mime_date, draft_snapshot)
+        SELECT row.short_id, source.mailbox_id, source.draft_id, row.command_id, source.sender_identity_id,
+          source.selected_binding_id, '<' || row.command_id::text || '@example.test>',
+          'scheduled', source.scheduled_at, source.requested_at, source.mime_date, source.draft_snapshot
+        FROM jsonb_to_recordset(${rows}::jsonb) AS row(command_id uuid, short_id text)
+        CROSS JOIN mail.outbox_submissions source WHERE source.id = ${scheduled1}::uuid`;
+      const params = { context: contextFor(owner), mailboxId, limit: 100 };
+      const page = unwrap(await scheduledSends.listScheduledSends(params));
+      expect(page.items).toHaveLength(100);
+      expect(page.total).toBe(3002);
+      expect(unwrap(await scheduledSends.countScheduledSends(params))).toBe(page.total);
+      expect(page.nextCursor).toBeTruthy();
+    } finally {
+      await sql`DELETE FROM mail.outbox_submissions WHERE command_id IN
+        (SELECT id FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid AND starts_with(idempotency_key, ${key}))`;
+      await sql`DELETE FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid AND starts_with(idempotency_key, ${key})`;
+    }
   });
 });
