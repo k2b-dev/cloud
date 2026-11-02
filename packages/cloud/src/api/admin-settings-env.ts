@@ -25,7 +25,11 @@ export const adminSettingsEnvRoutes = new Hono<AuthContext>()
     c.header("Cache-Control", "no-store");
     const appId = c.req.valid("query").app;
     if (!appId || appId === "core")
-      return c.json(AdminSettingsCatalogSchema.parse({ settings: await readAdminSettingsCatalog(Object.keys(CORE_SETTINGS)) }));
+      return c.json(
+        AdminSettingsCatalogSchema.parse({
+          settings: await readAdminSettingsCatalog(appId === "core" ? Object.keys(CORE_SETTINGS) : undefined),
+        }),
+      );
     const app = await getApp(appId);
     if (!app) return c.json({ message: "App is not registered" }, 404);
     try {
