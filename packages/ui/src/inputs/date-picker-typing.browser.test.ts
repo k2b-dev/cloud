@@ -329,6 +329,25 @@ describe("typed date field", () => {
           }),
       );
       expect(rounded(await page.locator(".k2b-date-field .k2b-input-shell").first().boundingBox())).toEqual(shell);
+
+      // A range sheet dismissed after picking other days saves nothing, and opens again on the saved range.
+      const rangeToggle = page.getByRole("button", { name: "Kalender öffnen" }).nth(2);
+      const rangeSheet = page.locator("dialog[open] .k2b-date-sheet");
+      const picked = () =>
+        rangeSheet
+          .locator('[data-date-day][aria-selected="true"]')
+          .evaluateAll((days) => days.map((day) => day.getAttribute("data-date-day")));
+      await rangeToggle.tap();
+      await rangeSheet.waitFor();
+      await rangeSheet.locator('[data-date-day="2026-11-24"]').tap();
+      expect(await picked()).toEqual(["2026-11-24"]);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => document.querySelector("dialog[open]") === null);
+      expect(await field(page, "Zeitraum: Start").inputValue()).toBe("");
+      await rangeToggle.tap();
+      await rangeSheet.waitFor();
+      expect(await picked()).toEqual([]);
+      expect(await commits(page)).toEqual(["2026-11-20"]);
     } finally {
       await page.close();
     }

@@ -19,15 +19,17 @@ const findInFile = (path: string, source: string): { line: number; name: string 
   const report = (node: ts.Node, name: string) =>
     hits.push({ line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1, name });
   const visit = (node: ts.Node) => {
-    if (ts.isIdentifier(node) && nonAscii.test(node.text)) report(node, node.text);
+    if ((ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) && nonAscii.test(node.text)) report(node, node.text);
     else if (
-      (ts.isPropertyAssignment(node) || ts.isMethodDeclaration(node) || ts.isPropertySignature(node)) &&
-      ts.isStringLiteral(node.name) &&
-      nonAscii.test(node.name.text) &&
-      // Only a key that is a valid identifier gets printed bare; "Loading…" stays quoted.
-      ts.isIdentifierText(node.name.text, ts.ScriptTarget.Latest)
+      // A quoted member name of any kind (property, method, accessor, class field) that a bundler may print bare;
+      // "Loading…" is not a valid identifier and stays quoted.
+      ts.isStringLiteral(node) &&
+      (ts.isObjectLiteralElement(node.parent) || ts.isClassElement(node.parent) || ts.isTypeElement(node.parent)) &&
+      (node.parent as { name?: ts.Node }).name === node &&
+      nonAscii.test(node.text) &&
+      ts.isIdentifierText(node.text, ts.ScriptTarget.Latest)
     )
-      report(node.name, node.name.text);
+      report(node, node.text);
     ts.forEachChild(node, visit);
   };
   visit(file);

@@ -11,6 +11,8 @@ export const openDateSheet = <T,>(options: {
   title: JSX.Element;
   subtitle: string;
   ariaLabel?: string;
+  /** The calendar's id, which the field's `aria-controls` names while the sheet is open. */
+  id: string;
   locale: string;
   content: (close: (result: T) => void) => JSX.Element;
 }): Promise<T | undefined> =>
@@ -20,7 +22,9 @@ export const openDateSheet = <T,>(options: {
         <BottomSheet onDismiss={context.requestDismiss}>
           <BottomSheet.Header title={options.title} subtitle={options.subtitle} />
           <BottomSheet.Body>
-            <div class="k2b-date-sheet">{options.content((result) => close(result))}</div>
+            <div id={options.id} class="k2b-date-sheet">
+              {options.content((result) => close(result))}
+            </div>
           </BottomSheet.Body>
         </BottomSheet>
       </LocaleProvider>

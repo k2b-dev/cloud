@@ -749,6 +749,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     wide: () => Boolean(props.owner.presets?.length),
   });
   const popoverId = `${meta.controlId}-calendar`;
+  const sheetId = `${meta.controlId}-sheet`;
   // The status line holds the field's message slot, so it carries the `<id>-error` every field family uses.
   const statusId = meta.errorId;
 
@@ -844,6 +845,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
       title: props.owner.label ?? props.owner["aria-label"],
       subtitle: props.value() ? formatDateLong(props.value()!, locale()) : t().noDate,
       ariaLabel: fieldName(props.owner),
+      id: sheetId,
       locale: locale() ?? "en",
       content: (close) => (
         <DatePickerPanel
@@ -951,7 +953,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             role="combobox"
             aria-haspopup="dialog"
             aria-expanded={calendar.open() || sheetOpen()}
-            aria-controls={sheetOpen() ? undefined : popoverId}
+            aria-controls={sheetOpen() ? sheetId : popoverId}
             aria-describedby={[props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
               .filter(Boolean)
               .join(" ")}
@@ -1002,7 +1004,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
               disabled={props.owner.disabled}
               aria-label={calendar.open() ? t().closeCalendar : t().openCalendar}
               aria-expanded={calendar.open() || sheetOpen()}
-              aria-controls={sheetOpen() ? undefined : popoverId}
+              aria-controls={sheetOpen() ? sheetId : popoverId}
               onClick={(event) => {
                 // Pointers are handled on pointerdown; this is activation by assistive technology.
                 if (event.detail === 0) openCalendar(true);
@@ -1112,6 +1114,7 @@ function DateRangeTextField(props: {
   const wide = () => Boolean(props.owner.datePresets?.length || props.owner.presets?.length);
   const calendar = createCalendarPopover({ anchor: () => shell, below: () => statusLine, wide });
   const popoverId = `${meta.controlId}-calendar`;
+  const sheetId = `${meta.controlId}-sheet`;
   // The status line holds the field's message slot, so it carries the `<id>-error` every field family uses.
   const statusId = meta.errorId;
   const name = () => fieldName(props.owner);
@@ -1275,11 +1278,18 @@ function DateRangeTextField(props: {
     setSheetOpen(true);
     calendar.close();
     const before = { start: startText(), end: endText(), dirty: dirty() };
+    // Every opening starts from the text, also after a dismissed sheet left other days picked.
+    batch(() => {
+      setPicked(draft());
+      setAnchor(null);
+      setPreviewDate(null);
+    });
     const { openDateSheet } = await import("./date-sheet");
     const range = await openDateSheet<DateRangeValue>({
       title: props.owner.label ?? props.owner["aria-label"],
       subtitle: rangeStatusText(props.value(), locale(), t()) || t().noDate,
       ariaLabel: name(),
+      id: sheetId,
       locale: locale() ?? "en",
       content: (close) =>
         rangeCalendar((next) => {
@@ -1306,7 +1316,7 @@ function DateRangeTextField(props: {
     setPicked(draft());
     if (prefersMenuSheet()) return void openSheet();
     const range = draft();
-    if (range.start || range.end) setVisibleMonth(parseDateValue(range.start || range.end, props.dateConfig()));
+    setVisibleMonth(parseDateValue(openingDay(range.start || range.end, limits(), props.dateConfig()), props.dateConfig()));
     calendar.show();
     if (focusDay) calendar.focusDay();
   };
@@ -1417,7 +1427,7 @@ function DateRangeTextField(props: {
             ref={startInput}
             {...inputProps}
             role="combobox"
-            aria-controls={sheetOpen() ? undefined : popoverId}
+            aria-controls={sheetOpen() ? sheetId : popoverId}
             id={meta.controlId}
             aria-label={name() ? t().startOf({ label: name()! }) : t().start}
             aria-expanded={calendar.open() || sheetOpen()}
@@ -1435,7 +1445,7 @@ function DateRangeTextField(props: {
             ref={endInput}
             {...inputProps}
             role="combobox"
-            aria-controls={sheetOpen() ? undefined : popoverId}
+            aria-controls={sheetOpen() ? sheetId : popoverId}
             aria-label={name() ? t().endOf({ label: name()! }) : t().end}
             aria-expanded={calendar.open() || sheetOpen()}
             aria-describedby={describedBy()}
@@ -1478,7 +1488,7 @@ function DateRangeTextField(props: {
               disabled={props.owner.disabled}
               aria-label={calendar.open() ? t().closeCalendar : t().openCalendar}
               aria-expanded={calendar.open() || sheetOpen()}
-              aria-controls={sheetOpen() ? undefined : popoverId}
+              aria-controls={sheetOpen() ? sheetId : popoverId}
               onClick={(event) => {
                 if (event.detail === 0) openCalendar(true);
               }}
@@ -1591,7 +1601,7 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
     setDraftDate(next.date);
     setDraftTime(next.time || defaultTime());
     setWithTime(valueHasTime());
-    setVisibleMonth(parseDateValue(next.date, dateConfig()));
+    setVisibleMonth(parseDateValue(openingDay(next.date, { min: props.min, max: props.max }, dateConfig()), dateConfig()));
   };
   const canApply = () => Boolean(draftDate()) && (!withTime() || isCompleteTime(draftTime()));
   const draftValue = () => (withTime() ? toDateTimeValue(draftDate(), draftTime(), dateConfig()) : draftDate() || null);
@@ -1713,7 +1723,9 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     setPreviewDate(null);
     setStartTime(next.start.time || "09:00");
     setEndTime(next.end.time || "10:00");
-    setVisibleMonth(parseDateValue(next.start.date || next.end.date, dateConfig()));
+    setVisibleMonth(
+      parseDateValue(openingDay(next.start.date || next.end.date, { min: props.min, max: props.max }, dateConfig()), dateConfig()),
+    );
   };
 
   const valueLabel = () => {
