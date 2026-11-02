@@ -10,15 +10,21 @@ const root = mkdtempSync(join(tmpdir(), "core-code-area-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const [{ LocaleProvider }, { approvalCheck, CodeAreaView }, { codeAdminMessages }, { parseCodeAreaQuery }, { codeFixtureData }, data] =
-  await Promise.all([
-    import("@k2b/ui"),
-    import("./view"),
-    import("./messages"),
-    import("./area"),
-    import("./CodeArea.fixture-data"),
-    import("./CodeArea.fixture-data"),
-  ]);
+const [
+  { LocaleProvider },
+  { approvalCheck, CodeAreaView, ownerLabel },
+  { codeAdminMessages },
+  { parseCodeAreaQuery },
+  { codeFixtureData },
+  data,
+] = await Promise.all([
+  import("@k2b/ui"),
+  import("./view"),
+  import("./messages"),
+  import("./area"),
+  import("./CodeArea.fixture-data"),
+  import("./CodeArea.fixture-data"),
+]);
 
 type State = Parameters<typeof codeFixtureData>[0];
 const render = (query: Record<string, string>, state: State = "normal", locale = "de") =>
@@ -172,7 +178,12 @@ test("all Code renders owners, status and last run, with empty, filtered and err
   const list = render({ sec: "code" });
   expect(list).toContain("8 Code von 5 Besitzern");
   expect(list).toContain("Lea Muster · Pausiert: Richtlinie");
-  expect(list).toContain("Mail · m_info · Aktiv");
+  // A place by the name its reader gave this admin; without one, by its ID.
+  expect(list).toContain("Mail · info@moebel-beispiel.de · Aktiv");
+  expect(list).not.toContain("m_rechn");
+  expect(
+    ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, { mail: "Mail" }),
+  ).toBe("Mail · m_x");
   expect(list).toContain("App Werkstattbuch · Entwurf");
   expect(list).toContain("noch kein Lauf");
   const detail = render({ sec: "code", id: "c_rechn" });

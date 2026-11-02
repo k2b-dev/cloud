@@ -7,6 +7,7 @@ import { countPending } from "@k2b/cloud/services/approvals";
 import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { CodeContext } from "./access";
+import * as access from "./access";
 import {
   CodeExplanationUnavailableError,
   codeAdminOwnerNames,
@@ -386,5 +387,25 @@ databaseSuite()("C22 Administration › Code read model", () => {
       () => codeAdminOwnerNames(["c_admin1"], stranger),
     ])
       await expect(read()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  test("a place is named by its type's reader for this admin, and keeps its ID when the reader refuses", async () => {
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,created_by)
+      VALUES('code:example.item:i_rechn','code',${authorId}::uuid) RETURNING id`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,created_by,created_at)
+      VALUES('c_place','resource','example.item','i_rechn',${account!.id}::uuid,'Rechnungen',${authorId}::uuid,${fixed})`;
+    const owner = spyOn(access, "readCodeOwner").mockResolvedValue({ title: "rechnung@example.test", admin: false });
+    try {
+      const codes = await listCodeAdminCodes({ app: "example" }, reviewer);
+      expect(codes.items).toMatchObject([{ id: "c_place", ownerName: "rechnung@example.test" }]);
+      expect((await readCodeAdminCode("c_place", reviewer)).code.ownerName).toBe("rechnung@example.test");
+      expect(owner).toHaveBeenCalledWith({ kind: "resource", ref: { type: "example.item", id: "i_rechn" } }, reviewer);
+      owner.mockResolvedValue(null);
+      expect((await listCodeAdminCodes({ app: "example" }, reviewer)).items[0]?.ownerName).toBeNull();
+      owner.mockRejectedValue(new access.CodeOwnerUnavailableError("down"));
+      expect((await readCodeAdminCode("c_place", reviewer)).code.ownerName).toBeNull();
+    } finally {
+      owner.mockRestore();
+    }
   });
 });

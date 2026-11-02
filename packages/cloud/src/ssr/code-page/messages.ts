@@ -59,6 +59,7 @@ export const codePageMessages = i18n.define({
   messages: {
     en: {
       pageTitle: ({ name }: Name) => `Code of ${name}`,
+      placeTitle: "Code",
       navAttention: "Code needs attention",
       actsAs: ({ name }: Name) => `Acts on behalf of ${name}, not as a person`,
       versionLine: ({ version }: Version) => `Version ${version}`,
@@ -289,8 +290,8 @@ export const codePageMessages = i18n.define({
       line: ({ file, line }: { file: string; line: number }) => `${file}:${line}`,
       // States
       emptyTitle: ({ name }: Name) => `${name} has no Code yet`,
-      emptyDescription: ({ name }: Name) =>
-        `With Code, ${name} can sort, file and pass on work by itself. Someone who administers it writes the Code, for example with the assistant.`,
+      emptyDescription: ({ name, editor }: { name: string; editor: string | null }) =>
+        `With Code, ${name} can sort, file and pass on work by itself. ${editor ? `${editor} writes it with you.` : "Someone who administers it writes the Code."}`,
       emptyTerminal: "In the terminal:",
       noAccessTitle: "You do not see this Code",
       noAccessDescription: ({ name }: Name) => `Only administrators of ${name} and people with access to its Code see it.`,
@@ -356,6 +357,7 @@ export const codePageMessages = i18n.define({
     },
     de: {
       pageTitle: ({ name }: Name) => `Code von ${name}`,
+      placeTitle: "Code",
       navAttention: "Code braucht Aufmerksamkeit",
       actsAs: ({ name }: Name) => `Handelt im Namen von ${name}, nicht als Person`,
       versionLine: ({ version }: Version) => `Version ${version}`,
@@ -583,8 +585,8 @@ export const codePageMessages = i18n.define({
       codeDiff: "Code-Unterschied",
       line: ({ file, line }: { file: string; line: number }) => `${file}:${line}`,
       emptyTitle: ({ name }: Name) => `${name} hat noch keinen Code`,
-      emptyDescription: ({ name }: Name) =>
-        `Mit Code sortiert, legt ab und gibt weiter, was bei ${name} ankommt, von selbst. Wer es verwaltet, schreibt den Code, zum Beispiel mit dem Assistenten.`,
+      emptyDescription: ({ name, editor }: { name: string; editor: string | null }) =>
+        `Mit Code sortiert, legt ab und gibt weiter, was bei ${name} ankommt, von selbst. ${editor ? `${editor} schreibt ihn mit dir.` : "Wer es verwaltet, schreibt den Code."}`,
       emptyTerminal: "Im Terminal:",
       noAccessTitle: "Diesen Code siehst du nicht",
       noAccessDescription: ({ name }: Name) => `Nur Admins von ${name} und wer Zugriff auf den Code hat, sehen ihn.`,

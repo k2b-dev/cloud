@@ -33,7 +33,7 @@ const withOriginLink = (sentence: string, origin: Row["origin"]): JSX.Element =>
   return (
     <>
       {sentence.slice(0, at)}
-      <a class="k2b-link" href={origin.href ?? undefined}>
+      <a class="k2b-text-link" href={origin.href ?? undefined}>
         {origin.name}
       </a>
       {sentence.slice(at + origin.name.length)}
@@ -94,7 +94,7 @@ export default function ItemHistorySection(props: Props) {
                       {(href) => (
                         <>
                           {" · "}
-                          <a class="k2b-link" href={href()}>
+                          <a class="k2b-text-link" href={href()}>
                             {t.historyOpenRun}
                           </a>
                         </>

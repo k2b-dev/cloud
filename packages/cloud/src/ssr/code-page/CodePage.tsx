@@ -280,9 +280,17 @@ export default function CodePage(props: { data: CodePageData }) {
   const t = text.t;
   return (
     <div class="cloud-code" data-tab={props.data.tab}>
-      {/* A place's own app names it beside the page; personal Code has no place, so its title leads. */}
-      <Show when={personal(props.data)} fallback={<h1 class="sr-only">{t().pageTitle({ name: props.data.owner.title })}</h1>}>
-        <h1 class="cloud-code__title">
+      {/* Personal Code is titled by its own name; a place's Code is "Code", and the lead names the place. */}
+      <Show
+        when={personal(props.data)}
+        fallback={
+          <h1 class="cloud-code__page-title">
+            <span aria-hidden="true">{t().placeTitle}</span>
+            <span class="sr-only">{t().pageTitle({ name: props.data.owner.title })}</span>
+          </h1>
+        }
+      >
+        <h1 class="cloud-code__page-title">
           <i class="ti ti-bolt" aria-hidden="true" />
           {props.data.owner.title || t().personalErrorTitle}
         </h1>
@@ -329,7 +337,7 @@ function EmptyCode(props: { data: CodePageData; text: PageText }) {
         variant="panel"
         icon="ti ti-code"
         title={t().emptyTitle({ name: props.data.owner.title })}
-        description={t().emptyDescription({ name: props.data.owner.title })}
+        description={t().emptyDescription({ name: props.data.owner.title, editor: props.data.editor?.label ?? null })}
         action={
           <Show when={props.data.editor}>
             {(editor) => (
@@ -581,7 +589,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             when={waiting().status !== "pending"}
             fallback={
               <NoticeCard
-                tone="info"
+                tone="neutral"
                 icon="ti ti-hourglass"
                 title={t().waitingApprovalTitle({ version: waiting().number })}
                 detail={t().waitingApproval({ running: running() })}
@@ -596,7 +604,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             }
           >
             <NoticeCard
-              tone="info"
+              tone="neutral"
               icon="ti ti-sparkles"
               title={t().waitingReadyTitle({ version: waiting().number })}
               detail={[
@@ -1640,7 +1648,9 @@ function ActivationDialog(props: {
       <Show when={newAutomations().length > 0}>
         <p class="text-secondary">
           {t().newAutomations({ version: props.version.number, names: newAutomations().join(", ") })}{" "}
-          <a href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>{t().showDiff}</a>
+          <a class="k2b-text-link" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
+            {t().showDiff}
+          </a>
         </p>
       </Show>
       <Show when={!props.data.activation.allowed}>

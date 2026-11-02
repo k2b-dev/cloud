@@ -12,6 +12,30 @@ export type CodeDiffLineKind = "same" | "add" | "del";
 
 export type CodeDiffLine = { kind: CodeDiffLineKind; text: string };
 
+/**
+ * Centres a row in its nearest vertical scroller and moves nothing else. `scrollIntoView` would also scroll every outer
+ * container, such as the app shell around a review, and cut its sidebar and list.
+ */
+const centerInScroller = (row: HTMLElement | null | undefined) => {
+  if (!row) return;
+  const document = row.ownerDocument;
+  const view = document.defaultView;
+  let scroller = row.parentElement;
+  // The root and the body scroll the viewport, whose origin is 0 however far the page has scrolled.
+  while (scroller && scroller !== document.documentElement && scroller !== document.body) {
+    const overflow = view?.getComputedStyle(scroller).overflowY ?? "";
+    if ((overflow === "auto" || overflow === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
+    scroller = scroller.parentElement;
+  }
+  if (scroller === document.documentElement || scroller === document.body) scroller = null;
+  const target = scroller ?? document.scrollingElement;
+  if (!target) return;
+  const top = scroller ? scroller.getBoundingClientRect().top + scroller.clientTop : 0;
+  const height = scroller ? scroller.clientHeight : (view?.innerHeight ?? 0);
+  const box = row.getBoundingClientRect();
+  target.scrollBy?.({ top: box.top + box.height / 2 - (top + height / 2), behavior: "instant" });
+};
+
 export type CodeDiffFile = {
   /** Shown on the file tab and used to address the file. */
   path: string;
@@ -205,17 +229,18 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
       },
     ),
   );
-  // What a mark revealed stays revealed when the mark goes away; the marked line scrolls into view.
+  // What a mark revealed stays revealed when the mark goes away; the marked line scrolls into view. A new mark object
+  // is a new request, so marking the same line again brings it back after the person scrolled away.
   createEffect(
     on(
-      () => [markIndex(), currentPath()] as const,
+      () => [markIndex(), currentPath(), props.mark] as const,
       ([target, path]) => {
         if (target === undefined || !path) return;
         const fold = markFold();
         const needed = markPages();
         if (fold !== undefined) setOpened((current) => new Map(current).set(path, new Set([...(current.get(path) ?? []), fold])));
         if (needed > (pages().get(path) ?? 1)) setPages((current) => new Map(current).set(path, needed));
-        queueMicrotask(() => body?.querySelector(`[data-row="${target}"]`)?.scrollIntoView({ block: "center" }));
+        queueMicrotask(() => centerInScroller(body?.querySelector<HTMLElement>(`[data-row="${target}"]`)));
       },
     ),
   );

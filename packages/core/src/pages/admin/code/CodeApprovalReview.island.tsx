@@ -56,6 +56,10 @@ export type CodeApprovalReviewProps = {
 
 const short = (hash: string | null) => (hash ? `${hash.slice(0, 4)}…${hash.slice(-2)}` : "—");
 
+/** Survives the reload after a decision, so the reloaded page moves focus to the result once. */
+const DECIDED_KEY = "k2b-code-decided";
+const RESULT_ID = "code-review-result";
+
 /**
  * The detail level of one version: why it needs you, what changes in permissions, the full Code difference and the
  * decision bound to the exact hashes. Deciding sends the unchanged binding; the server rechecks everything.
@@ -66,7 +70,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [mark, setMark] = createSignal<CodeDiffLocation>();
   const [busy, setBusy] = createSignal<"approve" | "reject" | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
-  const [done, setDone] = createSignal<"approved" | "rejected" | null>(null);
   const [explanation, setExplanation] = createSignal(props.explanation);
   // An open approval asks once by itself; the first render reserves the place, so the page does not shift.
   const [explaining, setExplaining] = createSignal(props.explanation === null && props.status === "pending");
@@ -74,7 +77,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [callsOpen, setCallsOpen] = createSignal(false);
   const explainAbort = new AbortController();
   onCleanup(() => explainAbort.abort());
-  let diffRegion: HTMLElement | undefined;
 
   const explain = async () => {
     setExplaining(true);
@@ -90,9 +92,17 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   };
   onMount(() => {
     if (explaining()) void explain();
+    // The decision was made in the footer; after the reload its result is at the top, so focus and screen readers go there.
+    try {
+      if (sessionStorage.getItem(DECIDED_KEY) !== props.versionId) return;
+      sessionStorage.removeItem(DECIDED_KEY);
+    } catch {
+      return;
+    }
+    document.getElementById(RESULT_ID)?.focus({ preventScroll: false });
   });
 
-  const pending = () => props.status === "pending" && !done();
+  const pending = () => props.status === "pending";
   const blocked = () => (props.newer ? t().outdated({ n: props.number }) : props.files ? null : t().notLoaded);
   const mayDecide = () => pending() && props.canApprove && !props.staleComparison;
 
@@ -109,11 +119,17 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     setBusy(approved ? "approve" : "reject");
     setFailure(null);
     try {
-      const result = await postCodeAdmin("decide", { binding: props.binding, approved }, codeVersionContracts.decide.data);
-      setDone(result.status === "approved" ? "approved" : result.status === "rejected" ? "rejected" : null);
-      // The server renders the decision and the sidebar count of open approvals from the same state.
+      await postCodeAdmin("decide", { binding: props.binding, approved }, codeVersionContracts.decide.data);
+      try {
+        sessionStorage.setItem(DECIDED_KEY, props.versionId);
+      } catch {
+        // Without storage the result still renders at the top; only the focus move is lost.
+      }
+      // The server renders the decision and the sidebar count of open approvals from the same state. The button keeps
+      // its busy state until the reloaded page replaces it, so nothing on this page moves in between.
       reloadCodeArea();
     } catch (error) {
+      setBusy(null);
       // Only a refusal proves nothing changed; a lost answer may follow a committed decision.
       setFailure(
         !(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500
@@ -124,28 +140,28 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
               ? t().decideForbidden
               : t().decideFailed,
       );
-    } finally {
-      setBusy(null);
     }
   };
 
   const showLine = (right: CodeApprovalRight) => {
     if (!right.file || !right.line) return;
+    // CodeDiff centres the line in the detail column alone; the shell around it stays put.
     setMark({ path: right.file, line: right.line, side: right.change === "removed" ? "old" : "new" });
-    diffRegion?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
   const decidedNotice = () => {
-    const state = done() ?? (props.status === "approved" || props.status === "rejected" ? props.status : null);
+    const state = props.status === "approved" || props.status === "rejected" ? props.status : null;
     if (!state) return null;
     return (
       <NoticeCard
+        id={RESULT_ID}
+        tabIndex={-1}
         tone={state === "approved" ? "success" : "neutral"}
         title={state === "approved" ? t().approvedTitle({ n: props.number }) : t().rejectedTitle({ n: props.number })}
         detail={
           <>
             <p>{state === "approved" ? `${t().approvedSub} ${t().undoHint}` : t().rejectedSub}</p>
-            <Show when={!done() && props.decision}>
+            <Show when={props.decision}>
               {(decision) => (
                 <p class="text-(--k2b-text-muted)">
                   {t().decidedBy({ who: decision().by, when: decision().when })}
@@ -185,7 +201,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       <div class="grid flex-1 content-start gap-6 px-2 pt-1 pb-6">
         <Show when={decidedNotice()}>{(notice) => notice()}</Show>
 
-        <Show when={!done() && (props.status === "expired" || props.status === "cancelled")}>
+        <Show when={props.status === "expired" || props.status === "cancelled"}>
           <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />
         </Show>
         <Show when={pending() && props.newer}>
@@ -281,7 +297,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
                     <Show when={right.file && right.line && props.files}>
                       <button
                         type="button"
-                        class="k2b-link shrink-0 font-mono text-xs"
+                        class="k2b-text-link shrink-0 font-mono text-xs"
                         aria-label={t().showLine({ file: right.file ?? "", n: right.line ?? 0 })}
                         onClick={() => showLine(right)}
                       >
@@ -440,7 +456,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           </Show>
         </section>
 
-        <section class="grid gap-2" aria-labelledby="code-review-diff" ref={diffRegion}>
+        <section class="grid gap-2" aria-labelledby="code-review-diff">
           <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h3 id="code-review-diff" class="text-base font-semibold">
               {t().diff}
@@ -458,39 +474,43 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         </section>
       </div>
 
-      <div class="sticky bottom-0 flex flex-wrap items-center gap-2 bg-(--k2b-surface) px-2 py-3">
-        <span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-(--k2b-text-muted)">
-          <i class="ti ti-lock" aria-hidden="true" />
-          <span>{t().boundTo({ n: props.number })}</span>
+      {/* The binding is one line on top, the decision one row below it, so the approve button never wraps alone. */}
+      <div class="sticky bottom-0 grid gap-2 bg-(--k2b-surface) px-2 py-3">
+        <p class="text-xs text-(--k2b-text-muted)">
+          <i class="ti ti-lock" aria-hidden="true" /> {t().boundTo({ n: props.number })}
           <span class="hidden md:inline">
+            {" "}
             · {t().sourceHash} <code title={props.binding.sourceHash}>{short(props.binding.sourceHash)}</code> · {t().bundleHash}{" "}
             <code title={props.binding.bundleHash}>{short(props.binding.bundleHash)}</code>
           </span>
-        </span>
+        </p>
         <Show when={pending() && (!props.own || props.soleAdminNotice)}>
-          <Button
-            variant="secondary"
-            disabled={!mayDecide() || busy() !== null}
-            loading={busy() === "reject"}
-            onClick={() => void decide(false)}
-          >
-            {t().reject}
-          </Button>
+          {/* Why approving is blocked sits on its own line, so the two buttons never split across rows. */}
           <Show when={blocked() ?? (props.staleComparison ? t().staleTitle : null)}>
             {(reason) => (
-              <span class="text-xs font-medium text-(--k2b-warning-text)">
+              <p class="text-right text-xs font-medium text-(--k2b-warning-text)">
                 <i class="ti ti-alert-triangle" aria-hidden="true" /> {reason()}
-              </span>
+              </p>
             )}
           </Show>
-          <Button
-            disabled={!mayDecide() || blocked() !== null || busy() !== null}
-            loading={busy() === "approve"}
-            onClick={() => void decide(true)}
-          >
-            <i class="ti ti-check" aria-hidden="true" />
-            {t().approveVersion({ n: props.number })}
-          </Button>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              disabled={!mayDecide() || busy() !== null}
+              loading={busy() === "reject"}
+              onClick={() => void decide(false)}
+            >
+              {t().reject}
+            </Button>
+            <Button
+              disabled={!mayDecide() || blocked() !== null || busy() !== null}
+              loading={busy() === "approve"}
+              onClick={() => void decide(true)}
+            >
+              <i class="ti ti-check" aria-hidden="true" />
+              {t().approveVersion({ n: props.number })}
+            </Button>
+          </div>
         </Show>
       </div>
     </div>

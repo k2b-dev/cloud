@@ -99,7 +99,8 @@ export function ownerLabel(t: CodeAdminMessages, owner: CodeOwner, ownerName: st
   if (owner.kind === "person") return t.ownerPerson({ who: ownerName ?? t.unknownAuthor });
   if (owner.kind === "app") return t.ownerApp({ app: appNames[owner.appId] ?? owner.appId });
   const appId = owner.ref.type.split(".")[0] ?? "";
-  return `${appNames[appId] ?? appId} · ${owner.ref.id}`;
+  // The place's own name when its reader let this admin read it, else its ID.
+  return `${appNames[appId] ?? appId} · ${ownerName ?? owner.ref.id}`;
 }
 
 const statusText = (t: CodeAdminMessages, code: Pick<CodeAdminCode, "status" | "pauseReason">) =>
@@ -640,7 +641,7 @@ export function CodeAreaView(props: Props) {
                 {(entry) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
                     <a
-                      class="k2b-link font-medium"
+                      class="k2b-text-link font-medium"
                       href={codeLink({ version: entry.version.id })}
                       aria-current={query.version === entry.version.id ? "true" : undefined}
                       aria-label={`${t.viewCode}: ${t.versionRow({ n: entry.version.number })}`}
