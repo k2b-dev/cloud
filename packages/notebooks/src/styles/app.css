@@ -126,8 +126,16 @@
 .k2b-ui .notebook-sidebar-chip.k2b-button {
   flex: none;
 }
-.k2b-ui .notebook-sidebar-chip.k2b-button:focus-visible {
-  outline-offset: calc(-1 * var(--k2b-focus-width));
+/* Quick filters read like FilterChip: the field edge at rest, drawn as the button's 1 px border plus a 1 px inset of
+   the same colour, so a state never changes the chip's size. Focus turns the edge blue inside the chip. */
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button {
+  --k2b-edge-color: var(--k2b-edge);
+  border-color: var(--k2b-edge-color);
+  box-shadow: inset 0 0 0 1px var(--k2b-edge-color);
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:focus-visible {
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
 }
 .notebook-sidebar-chip > span {
   max-width: 8rem;
@@ -137,12 +145,22 @@
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
 }
-/* A chosen filter and the list header it opened share the navigation fill of an active filter chip. */
-.k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]),
-.k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):not(:disabled):hover,
+/* A chosen filter and the list header it opened take the selected edge and fill of an active filter chip. */
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]) {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):focus-visible {
+  --k2b-edge-color: var(--k2b-edge-focus);
+}
 .notebook-sidebar-filter {
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-selected);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
 }
 .notebook-sidebar-filter {
   display: flex;
@@ -181,6 +199,11 @@
 @media (forced-colors: active) {
   .k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]) {
     outline: 1px solid Highlight;
+  }
+
+  .k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
   }
 }
 
