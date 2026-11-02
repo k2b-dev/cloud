@@ -1048,7 +1048,7 @@ for (const width of [1440, 390]) {
       const replayResponse = await replay;
       expect(replayResponse.ok()).toBe(true);
       expect((await replayResponse.json()).draft).toEqual(savedDraft);
-      await panel.getByText("The saved draft changed. Your local text has been kept.", { exact: true }).waitFor();
+      await panel.getByText("The saved draft was changed.", { exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("Local draft A");
       await panel.getByText("Other tab draft B", { exact: true }).waitFor();
       expect(created.draft).toMatchObject({ revision, content: [{ type: "text", text: "Other tab draft B" }] });
@@ -1372,7 +1372,7 @@ for (const editDuringSave of [false, true]) {
       } else {
         await panel.getByRole("button", { name: "Retry creating conversation", exact: true }).click();
       }
-      await panel.getByText("The saved draft changed. Your local text has been kept.", { exact: true }).waitFor();
+      await panel.getByText("The saved draft was changed.", { exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("Local creation draft A");
       const otherDraft = editDuringSave ? "Later local draft B2" : "Second local draft B";
       await panel.getByText(otherDraft, { exact: true }).waitFor();
