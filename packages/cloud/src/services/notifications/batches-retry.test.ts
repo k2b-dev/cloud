@@ -33,6 +33,7 @@ test("explicit batch retries retain a wakeup while the previous worker is comple
     const clients = { ...await import(${JSON.stringify(new URL("../../runtime/clients.ts", import.meta.url).pathname)}) };
     mock.module(${JSON.stringify(new URL("../../runtime/clients.ts", import.meta.url).pathname)}, () => ({ ...clients, sql }));
     mock.module(${JSON.stringify(new URL("../../_internal/process-sync.ts", import.meta.url).pathname)}, () => ({
+      processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
       lazySync: () => () => ({
         submit: async (input) => {
           assert.ok(new TextEncoder().encode(input.key).length <= 96, "Sync job keys are limited to 96 bytes");
