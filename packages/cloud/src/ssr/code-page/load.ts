@@ -38,7 +38,6 @@ import {
   VersionDiffSchema,
   VersionListSchema,
   VersionReadSchema,
-  wrapped,
 } from "./data";
 
 /** Core pages run metadata and versions in pages of 20. */
@@ -181,9 +180,9 @@ const loadManifest = async (invoke: CodePageInvoke, codeId: string, versionId: s
     const from: number = offset;
     const read = await invoke(
       coreQuery("code.version.read", { codeId, versionId, content: { kind: "manifest" }, offset: from }),
-      wrapped(VersionReadSchema),
+      VersionReadSchema,
     );
-    const content: { text: string; nextOffset: number | null } | null = read.ok ? read.data.data.data.content : null;
+    const content: { text: string; nextOffset: number | null } | null = read.ok ? read.data.data.content : null;
     if (!content) return null;
     text += content.text;
     offset = content.nextOffset;
@@ -295,15 +294,15 @@ const loadReady = async (
   const catalog = catalogCache(getLocale(c));
   const code = listed;
   const [versionsResult, runsResult, accessResult, attentionResult, automationResult] = await Promise.all([
-    invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), wrapped(VersionListSchema)),
-    invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), wrapped(RunListSchema)),
+    invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), VersionListSchema),
+    invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), RunListSchema),
     coreRoute(caller, "/api/code/access", { codeId: code.id }, TargetAccessSchema).catch(() => null),
     // The same answer the owner's navigation gets, so its dot and this page agree.
-    invoke(coreQuery("code.attention", { owner: codeOwner }), wrapped(AttentionSchema)).catch(() => null),
+    invoke(coreQuery("code.attention", { owner: codeOwner }), AttentionSchema).catch(() => null),
     // Only the next run comes from here; without it the row simply does not name one.
-    invoke(coreQuery("code.automation.list", { codeId: code.id }), wrapped(AutomationListSchema)).catch(() => null),
+    invoke(coreQuery("code.automation.list", { codeId: code.id }), AutomationListSchema).catch(() => null),
   ]);
-  const receipts = versionsResult.ok ? versionsResult.data.data.data.items : [];
+  const receipts = versionsResult.ok ? versionsResult.data.data.items : [];
   const latest = receipts[0];
   const activeReceipt = receipts.find((receipt) => receipt.version.id === code.activeVersionId);
   const waitingReceipt =
@@ -321,11 +320,11 @@ const loadReady = async (
   // The running or a linked version can be older than the first history page; read its own metadata then.
   const versionMeta = async (versionId: string | null | undefined) => {
     if (!versionId || receipts.some((receipt) => receipt.version.id === versionId)) return null;
-    const read = await invoke(coreQuery("code.version.read", { codeId: code.id, versionId }), wrapped(VersionReadSchema));
-    return read.ok ? read.data.data.data.version : null;
+    const read = await invoke(coreQuery("code.version.read", { codeId: code.id, versionId }), VersionReadSchema);
+    return read.ok ? read.data.data.version : null;
   };
   const runs: CodePageRun[] | null = runsResult.ok
-    ? runsResult.data.data.data.items.map((run) => ({ ...run, versionNumber: numbers.get(run.versionId) ?? null }))
+    ? runsResult.data.data.items.map((run) => ({ ...run, versionNumber: numbers.get(run.versionId) ?? null }))
     : null;
 
   // Selection: a run on the runs tab (the newest by default), a version on the versions tab.
@@ -341,7 +340,7 @@ const loadReady = async (
   const [runCalls, diffResult, olderActive, olderSelected] = await Promise.all([
     selectedRunId ? loadCodeRunCallsForDetail(invoke, code.id, selectedRunId) : Promise.resolve(null),
     selectedVersionId
-      ? invoke(coreQuery("code.version.diff", { codeId: code.id, versionId: selectedVersionId }), wrapped(VersionDiffSchema))
+      ? invoke(coreQuery("code.version.diff", { codeId: code.id, versionId: selectedVersionId }), VersionDiffSchema)
       : Promise.resolve(null),
     versionMeta(code.activeVersionId),
     selectedVersionId !== code.activeVersionId ? versionMeta(selectedVersionId) : Promise.resolve(null),
@@ -360,7 +359,7 @@ const loadReady = async (
     entry.operations.add(permission.operation);
     waitingByTarget.set(targetKey(ref), entry);
   }
-  const diffPermissions = diffResult?.ok ? diffResult.data.data.data.permissions : [];
+  const diffPermissions = diffResult?.ok ? diffResult.data.data.permissions : [];
   const ownerRef = ownerRefOf(options.owner);
   const refs = new Map<string, { type: string; id: string }>(ownerRef ? [[targetKey(ownerRef), ownerRef]] : []);
   for (const row of access ?? []) refs.set(targetKey(row.target), row.target);
@@ -446,9 +445,7 @@ const loadReady = async (
         ]
       : null;
   // A skipped tick or a cancelled start is not a run's result.
-  const nextRuns = new Map(
-    automationResult?.ok ? automationResult.data.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : [],
-  );
+  const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);
   const lastRunOf = (entrypoint: string) =>
     runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
@@ -492,10 +489,10 @@ const loadReady = async (
       const after: string | null = cursor;
       const read = await invoke(
         coreQuery("code.secret.list", { codeId: code.id, limit: PAGE, ...(after ? { cursor: after } : {}) }),
-        wrapped(SecretListSchema),
+        SecretListSchema,
       );
       if (!read.ok) return null;
-      const items: z.infer<typeof SecretListSchema> = read.data.data.data;
+      const items: z.infer<typeof SecretListSchema> = read.data.data;
       listed.push(...items.items);
       cursor = items.nextCursor;
     }
@@ -557,7 +554,7 @@ const loadReady = async (
     };
   let diff: CodePageDiff | null = null;
   if (diffResult?.ok && selectedVersionId) {
-    const value = diffResult.data.data.data;
+    const value = diffResult.data.data;
     // The comparison can also be older than the loaded history; its number comes from its own metadata then.
     const comparisonId = value.binding.comparisonVersionId;
     if (comparisonId && !numbers.has(comparisonId)) {
@@ -596,7 +593,7 @@ const loadReady = async (
     permission: code.permission,
     versions,
     versionsFailed: !versionsResult.ok,
-    moreVersions: versionsResult.ok && versionsResult.data.data.data.nextBefore !== null,
+    moreVersions: versionsResult.ok && versionsResult.data.data.nextBefore !== null,
     active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
@@ -605,11 +602,9 @@ const loadReady = async (
       waiting: waitingManifest ? (waitingManifest.internet ?? []) : waitingReceipt ? null : [],
     },
     access: accessRows,
-    attentionReasons: attentionResult?.ok
-      ? (attentionResult.data.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? [])
-      : null,
+    attentionReasons: attentionResult?.ok ? (attentionResult.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? []) : null,
     waitingTargets,
-    runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.data.nextCursor } : null,
+    runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.nextCursor } : null,
     run,
     diff,
     selectionFailed: Boolean((selectedRunId && !run) || (selectedVersionId && !diff)),
@@ -672,20 +667,20 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     const ownerRefForList = options.owner.ref;
     const listed = await invoke(
       coreQuery("code.list", { owner: { kind: "resource", ref: ownerRefForList }, limit: 1 }),
-      wrapped(CodeListSchema),
+      CodeListSchema,
     ).catch(() => null);
     if (!listed?.ok) return { ...base, state: { kind: "error" } };
-    code = listed.data.data.data.items[0];
+    code = listed.data.data.items[0];
     if (!code) return { ...base, state: { kind: options.canManageOwner ? "none" : "no-access" } };
   } else {
     // Personal Code is read by its ID; Core answers "not found" for Code the person may not see.
-    const read = await invoke(coreQuery("code.read", { codeId: options.owner.codeId }), wrapped(CodeReadSchema)).catch(() => null);
+    const read = await invoke(coreQuery("code.read", { codeId: options.owner.codeId }), CodeReadSchema).catch(() => null);
     if (!read?.ok) return { ...base, state: { kind: read?.error.status === 404 || read?.error.status === 403 ? "no-access" : "error" } };
-    const codeOwner = read.data.data.data.code.owner;
+    const codeOwner = read.data.data.code.owner;
     // Only personal Code belongs here; Code of a place is shown at that place.
     if (codeOwner.kind !== "person") return { ...base, state: { kind: "no-access" } };
     attentionOwner = { kind: "person", userId: codeOwner.userId };
-    code = { ...read.data.data.data.code, permission: read.data.data.data.permission };
+    code = { ...read.data.data.code, permission: read.data.data.permission };
     base.owner.title = code.title;
     if (codeOwner.userId !== user?.id) {
       const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };

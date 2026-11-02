@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceReaderViewSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   completeConversationsSchema,
@@ -109,6 +109,7 @@ const CapabilityMailSearchExpressionSchema: z.ZodType<MailSearchExpression> = z.
 
 export const MailboxDataSchema = z
   .object({
+    view: CloudResourceReaderViewSchema,
     id: ResourceShortIdSchema,
     name: z.string().min(1).max(160),
     description: z.string().max(2000).nullable(),

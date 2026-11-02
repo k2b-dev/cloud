@@ -149,6 +149,7 @@ test.skipIf(isServer)("deleting always asks first and names the Code target", as
     page.button("Delete …").click();
     await tick();
     expect(confirm).toHaveBeenCalledTimes(2);
+    expect(invoke.mock.calls[0]![1].safeParse({ deleted: true }).success).toBe(true);
     expect(invoke.mock.calls[0]![0]).toMatchObject({
       capabilityId: "code.secret.delete",
       target: { type: "core.code" },

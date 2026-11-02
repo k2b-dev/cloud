@@ -9,6 +9,7 @@ import {
   type CapabilityInvocationResult,
   capabilityResultSchema,
   cloudResourceHref,
+  typeViewIssues,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { err, fail } from "@k2b/stdlib";
@@ -872,6 +873,7 @@ describe("mail capabilities", () => {
   test("compiles into a registrable v1 manifest", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     expect(manifest.appId).toBe("mail");
+    expect(typeViewIssues(manifest, "mailbox")).toEqual([]);
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
       [...Object.keys(mailCapabilities.queries), "code.access.list", "mailbox.readable"].sort(),

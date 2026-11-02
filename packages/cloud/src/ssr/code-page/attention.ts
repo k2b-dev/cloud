@@ -3,7 +3,7 @@ import { invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { getLocale } from "../../server";
 import { AttentionSchema } from "./attention-schema";
-import { type CodeAttention, type CodePageInvoke, coreQuery, wrapped } from "./data";
+import { type CodeAttention, type CodePageInvoke, coreQuery } from "./data";
 
 export type { CodeAttention };
 
@@ -33,10 +33,10 @@ export const loadCodeAttention = async (
         signal,
       }));
   const expired = new Promise<null>((resolve) => timeout.addEventListener("abort", () => resolve(null), { once: true }));
-  const asked = invoke(coreQuery("code.attention", { owner: { kind: "resource", ref } }), wrapped(AttentionSchema))
+  const asked = invoke(coreQuery("code.attention", { owner: { kind: "resource", ref } }), AttentionSchema)
     .then((result) => {
       if (!result.ok) return null;
-      const items = result.data.data.data.items;
+      const items = result.data.data.items;
       return { visible: items.length > 0, attention: items.some((item) => item.reasons.length > 0) };
     })
     .catch(() => null);
