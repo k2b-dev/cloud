@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.55.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.54.0...npm-cloud-v0.55.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Bug Fixes
+
+* **cloud:** keep registry reads local and preserve app discovery ([#2446](https://github.com/k2b-dev/cloud/issues/2446)) ([2f61f5a](https://github.com/k2b-dev/cloud/commit/2f61f5a75efc1b4577ff6281f55e0d087e5a3dfa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.43.0 to 0.44.0
+    * @k2b/editor bumped from 0.5.1 to 0.6.0
+
 ## [0.54.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.53.0...npm-cloud-v0.54.0) (2026-11-02)
 
 

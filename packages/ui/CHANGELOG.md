@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.44.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.43.0...npm-ui-v0.44.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Bug Fixes
+
+* **ui:** the phone menu no longer rebuilds its navigation for every row ([#2440](https://github.com/k2b-dev/cloud/issues/2440)) ([ce18b0a](https://github.com/k2b-dev/cloud/commit/ce18b0abeee73208bf6da4cbb64d8eeb55ae0224))
+
 ## [0.43.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.42.0...npm-ui-v0.43.0) (2026-11-02)
 
 

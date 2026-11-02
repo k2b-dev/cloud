@@ -3,6 +3,21 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.62.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.61.0...cloud-v0.62.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Bug Fixes
+
+* **cloud:** keep registry reads local and preserve app discovery ([#2446](https://github.com/k2b-dev/cloud/issues/2446)) ([2f61f5a](https://github.com/k2b-dev/cloud/commit/2f61f5a75efc1b4577ff6281f55e0d087e5a3dfa))
+* **mail:** reuse reader-specific workspace view counts ([#2437](https://github.com/k2b-dev/cloud/issues/2437)) ([219a0b0](https://github.com/k2b-dev/cloud/commit/219a0b0e1d9fdef7dffe16eae790455fd644c616))
+* **mail:** seek running and recent sync runs for operator counts ([#2435](https://github.com/k2b-dev/cloud/issues/2435)) ([d7c02ad](https://github.com/k2b-dev/cloud/commit/d7c02adb8cf0c199536db2f94ff999f023cb04e1))
+* **ui:** the phone menu no longer rebuilds its navigation for every row ([#2440](https://github.com/k2b-dev/cloud/issues/2440)) ([ce18b0a](https://github.com/k2b-dev/cloud/commit/ce18b0abeee73208bf6da4cbb64d8eeb55ae0224))
+
 ## [0.61.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.60.0...cloud-v0.61.0) (2026-11-02)
 
 
