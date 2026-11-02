@@ -984,7 +984,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       });
       return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
     } catch (error) {
-      if (error instanceof CountRefreshBusy) return c.json({ code: "MAIL_COUNTS_REFRESHING", message: error.message }, 503);
+      if (error instanceof CountRefreshBusy)
+        return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
       throw error;
     } finally {
       setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);

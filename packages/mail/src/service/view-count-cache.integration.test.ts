@@ -74,6 +74,7 @@ suite("Mail count cache", () => {
     const user = context.actor.user;
     const auth = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     const delayedCounts = spyOn(messages, "getConversationViewCounts").mockImplementation(async () => {
+      // fixed wait: the real HTTP request must outlive Bun's normal ten-second idle timeout.
       await Bun.sleep(13_000);
       return ok(counts(0));
     });
@@ -247,6 +248,7 @@ suite("Mail count cache", () => {
     const first = cachedConversationViewCounts({ mailboxId, reader: ownReader, load });
     try {
       await ready;
+      // fixed wait: cross the original ten-second lease expiry to prove that the owner renews it.
       await Bun.sleep(10_100);
       expect(await redis.send("GET", [`${key}:fill`])).not.toBeNull();
       const second = cachedConversationViewCounts({ mailboxId, reader: ownReader, load });
