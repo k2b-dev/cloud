@@ -213,24 +213,29 @@ try {
     outdir: browserOut,
     target: "browser",
     format: "esm",
+    // As in the @k2b/ssr island build: code a component loads on demand, such as the date picker's phone sheet,
+    // becomes its own chunk, and only the entry counts against the budget below.
+    splitting: true,
     external: ["@k2b/ssr", "@k2b/ssr/*", "@k2b/stdlib", "@k2b/stdlib/*", "marked", "solid-js", "solid-js/*"],
   });
   if (!browserBuild.success) {
     throw new Error(`packed browser build failed\n${browserBuild.logs.join("\n")}`);
   }
   const browserOutput = await Bun.file(join(browserOut, "browser-entry.js")).text();
-  if (browserOutput.includes("react/jsx-runtime")) {
+  const browserChunks = (await Promise.all(browserBuild.outputs.map((output) => output.text()))).join("\n");
+  if (browserChunks.includes("react/jsx-runtime")) {
     throw new Error("packed browser build still requires a React JSX transform");
   }
   // Each component family owns its message catalog, so this unminified build
   // carries only the common strings. A leaked family adds several kilobytes;
   // the budget leaves a few percent for the two components to grow. The
-  // locale weekend band and the one-click range moved the pair to about 58 kB.
-  if (browserOutput.length > 60_000) {
+  // locale weekend band and the one-click range moved the pair to about 58 kB;
+  // the typed date field with its parser and status line to about 78 kB.
+  if (browserOutput.length > 81_000) {
     throw new Error(`packed Button + DatePicker browser build is too large: ${browserOutput.length} bytes`);
   }
   for (const unusedMessage of ["chartCopyFailed", "installCopyLink", "qrCameraPreview", "pdfPreviewHttpError", "composerFormatting"]) {
-    if (browserOutput.includes(unusedMessage)) {
+    if (browserChunks.includes(unusedMessage)) {
       throw new Error(`packed browser build retained unused ${unusedMessage} messages`);
     }
   }
