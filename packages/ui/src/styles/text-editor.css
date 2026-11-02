@@ -58,7 +58,8 @@
 .k2b-ui .k2b-ste-check { display: inline-flex; align-items: center; gap: 6px; color: var(--k2b-warning-text); }
 .k2b-ui .k2b-ste-status .k2b-button { min-height: 24px; padding: 2px 10px; font-size: 12.5px; }
 .k2b-ui .k2b-ste-toolbar { display: flex; align-items: center; gap: 12px; padding: 10px 0 6px; max-width: 786px; }
-.k2b-ui .k2b-ste-toolbar-slot { display: contents; }
+/* In a scrolling host the toolbar stays at the top while the text scrolls beneath it. */
+.k2b-ui .k2b-ste-toolbar-slot { display: block; position: sticky; top: 0; z-index: 7; background: var(--k2b-surface); }
 .k2b-ui .k2b-ste-toolbar .k2b-ste-tool-group { display: flex; align-items: center; gap: 2px; flex: none; }
 .k2b-ui .k2b-ste-toolbar .k2b-ste-tool { width: 32px; height: 32px; min-height: 32px; padding: 0; flex: none; border-radius: 8px; color: var(--k2b-text-secondary); }
 .k2b-ui .k2b-ste-toolbar .k2b-ste-table-tool { background: var(--k2b-selected); color: var(--k2b-action); }
@@ -81,7 +82,9 @@
  .k2b-ui .k2b-ste-toolbar { overflow-x: auto; max-width: 100%; gap: 12px; }
  /* Dictate stays at the end of the scrolling row, so it never scrolls away. */
  .k2b-ui .k2b-ste-toolbar > .k2b-ste-dictate { position: sticky; right: 0; flex: none; background: var(--k2b-surface); }
- .k2b-ui .k2b-ste-toolbar-slot { display: block; min-height: 54px; }
+ .k2b-ui .k2b-ste-toolbar-slot { min-height: 54px; }
+ /* While writing, the toolbar floats above the keyboard; its empty slot scrolls away with the text. */
+ .k2b-ui .k2b-text-editor[data-active="true"] .k2b-ste-toolbar-slot { position: static; }
  .k2b-ui .k2b-text-editor[data-active="true"] .k2b-ste-toolbar { position: fixed; left: 8px; right: 8px; bottom: calc(8px + var(--k2b-ste-keyboard, 0px)); z-index: 7; padding: 4px; border-radius: 14px; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-float); max-width: none; }
  .k2b-ui .k2b-ste-toolbar .k2b-ste-tool { width: 38px; height: 38px; min-height: 38px; }
  /* The dictation bar keeps the row at the height of its 38px tools. */

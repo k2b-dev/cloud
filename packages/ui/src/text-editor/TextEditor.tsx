@@ -880,6 +880,11 @@ export function TextEditor(props: TextEditorProps) {
           schedulePosition();
           if (update.docChanged) queueMicrotask(() => setDocumentRevision((revision) => revision + 1));
         }),
+        // The caret never moves under a toolbar that stays at the top of a scrolling host.
+        EditorView.scrollMargins.of(() => {
+          const slot = root.querySelector<HTMLElement>(".k2b-ste-toolbar-slot");
+          return slot && getComputedStyle(slot).position === "sticky" ? { top: slot.offsetHeight } : null;
+        }),
         props.extensions ?? [],
         props.dictation ? dictationExtension() : [],
       ],
