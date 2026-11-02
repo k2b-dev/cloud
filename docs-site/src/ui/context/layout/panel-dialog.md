@@ -144,8 +144,9 @@ created and can now be printed or sent. The dialog frame gets a 2 px edge in
 the tone's colour, drawn inside the frame: the frame keeps its size and
 nothing in it moves. The header shows the tone's icon (a check, a warning
 triangle, or a stop sign) in the tone's colour instead of its own `icon`, and
-screen readers hear the tone ("Success:", "Warning:", "Caution:" from the
-inherited locale) before the title. Each edge colour keeps 3:1 against the
+screen readers hear the tone ("Success", "Warning", or "Caution" from the
+inherited locale) as the dialog's description. The heading keeps exactly its
+title, so its accessible name does not change. Each edge colour keeps 3:1 against the
 dialog surface in both themes.
 
 The tone belongs to the dialog's moment, not its content: use it for the

@@ -150,10 +150,21 @@ describe("@k2b/ui dialog tones", () => {
             // The edge separates the dialog from its own surface.
             expect(contrast(tone, third!)).toBeGreaterThanOrEqual(3);
 
-            // The header names the tone with its icon and, for screen readers, a word before the title.
+            // The header shows the tone's icon; for screen readers its word describes the dialog, and the
+            // heading keeps exactly the title, so a lookup by heading name finds it as before.
             const header = toned.locator("dialog[open] :is(.k2b-panel-dialog__header, .k2b-dialog__header)");
             expect(await header.locator(`[data-tone="${tones[variant]}"]`).count()).toBe(1);
-            expect(await toned.locator("dialog[open] h2 .k2b-sr-only").textContent()).toMatch(/^(Success|Warning|Caution): $/);
+            const title = await plain.locator("dialog[open] h2").textContent();
+            expect(await toned.locator("dialog[open] h2").textContent()).toBe(title);
+            await toned.getByRole("heading", { name: title!, exact: true }).waitFor();
+            expect(
+              await toned.locator("dialog[open]").evaluate((dialog) =>
+                (dialog.getAttribute("aria-describedby") ?? "")
+                  .split(" ")
+                  .map((id) => document.getElementById(id)?.textContent)
+                  .join(" "),
+              ),
+            ).toMatch(/^(Success|Warning|Caution)$/);
 
             // A focused frame keeps its edge.
             await toned.locator("dialog[open]").evaluate((dialog: HTMLDialogElement) => {

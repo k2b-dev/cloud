@@ -12,5 +12,8 @@ const tones = {
 /** The header icon of a toned dialog; it replaces the dialog's own icon. */
 export const dialogToneIcon = (tone: DialogTone): string => tones[tone].icon;
 
-/** What a screen reader hears before a toned dialog's title, so the tone is not carried by colour alone. */
+/**
+ * The tone's word for screen readers, so the tone is not carried by colour alone. Headers render it hidden with
+ * `data-dialog-tone-label`; the dialog core makes it the dialog's description, and the heading keeps the title alone.
+ */
 export const dialogToneLabel = (messages: UiMessages, tone: DialogTone): string => messages[tones[tone].label];

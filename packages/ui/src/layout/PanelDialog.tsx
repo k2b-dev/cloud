@@ -131,10 +131,14 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
         )}
       </Show>
       <div class="k2b-panel-dialog__heading">
-        <h2>
-          <Show when={tone()}>{(value) => <span class="k2b-sr-only">{dialogToneLabel(messages(), value())} </span>}</Show>
-          {props.title}
-        </h2>
+        <Show when={tone()}>
+          {(value) => (
+            <span class="k2b-sr-only" data-dialog-tone-label>
+              {dialogToneLabel(messages(), value())}
+            </span>
+          )}
+        </Show>
+        <h2>{props.title}</h2>
         <Show when={props.subtitle}>
           <p>{props.subtitle}</p>
         </Show>

@@ -22,13 +22,15 @@ export const DialogHeader = (props: { close: () => void; title?: string; icon?: 
     <Show when={props.tone ? dialogToneIcon(props.tone) : props.icon}>
       {(icon) => <i class={icon()} data-tone={props.tone} aria-hidden="true" />}
     </Show>
-    <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
-      {(title) => (
-        <h2>
-          <Show when={props.tone}>{(tone) => <span class="k2b-sr-only">{dialogToneLabel(resolveUiMessages(), tone())} </span>}</Show>
-          {title()}
-        </h2>
+    <Show when={props.tone}>
+      {(tone) => (
+        <span class="k2b-sr-only" data-dialog-tone-label>
+          {dialogToneLabel(resolveUiMessages(), tone())}
+        </span>
       )}
+    </Show>
+    <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
+      {(title) => <h2>{title()}</h2>}
     </Show>
     <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
       <i class="ti ti-x" aria-hidden="true" />

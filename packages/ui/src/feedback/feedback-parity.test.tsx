@@ -367,7 +367,9 @@ describe("@k2b/ui Cloud feedback parity", () => {
     );
     expect(prompt).toContain('<i class="ti ti-alert-octagon" data-tone="danger" aria-hidden="true">');
     expect(prompt).not.toContain("ti-trash");
-    expect(prompt).toMatch(/<h2><span class="k2b-sr-only">Caution: <\/span>Delete note\?<\/h2>/);
+    // The tone's word describes the dialog; the heading keeps the title alone, so its accessible name does not change.
+    expect(prompt).toContain('<span class="k2b-sr-only" data-dialog-tone-label>Caution</span>');
+    expect(prompt).toContain("<h2>Delete note?</h2>");
 
     const panel = renderToString(() =>
       createComponent(PanelDialog, {
@@ -379,7 +381,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
     );
     expect(panel).toContain('class="k2b-panel-dialog" data-surface="contained" data-tone="success"');
     expect(panel).toMatch(/class="k2b-panel-dialog__icon k2b-icon-tile" data-tone="success"[^>]*><i class="ti ti-circle-check">/);
-    expect(panel).toMatch(/<h2><span class="k2b-sr-only">Success: <\/span>Invoice created<\/h2>/);
+    expect(panel).toContain('<span class="k2b-sr-only" data-dialog-tone-label>Success</span>');
+    expect(panel).toContain("<h2>Invoice created</h2>");
 
     const plain = renderToString(() =>
       createComponent(PanelDialog, {
