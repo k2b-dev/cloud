@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { dates } from "@k2b/stdlib";
-import { createComponent } from "solid-js";
+import { createComponent, createRoot } from "solid-js";
 import { renderToString } from "solid-js/web";
 import {
   dateKey,
@@ -259,6 +259,28 @@ describe("@k2b/ui complete date picker migration", () => {
     } finally {
       setSystemTime();
     }
+  });
+
+  test("renders and disposes every picker on the server without browser globals", () => {
+    // The docs server disposes each island after rendering; a cleanup that reached for `window` crashed it.
+    expect(typeof window).toBe("undefined");
+    const disposers: Array<() => void> = [];
+    const html = renderToString(() =>
+      createRoot((dispose) => {
+        disposers.push(dispose);
+        return [
+          createComponent(DatePicker, { label: "Due", value: "2026-07-27", clearable: true, min: "2026-07-01", max: "2026-07-31" }),
+          createComponent(DatePicker, { label: "Created", value: "2026-07-27", readOnly: true }),
+          createComponent(DatePicker, { label: "Plain", value: null, appearance: "plain" }),
+          createComponent(DateRangePicker, { label: "Window", value: { start: "2026-07-27", end: "2026-07-29" }, clearable: true }),
+          createComponent(DateTimePicker, { label: "Starts", value: null }),
+        ];
+      }),
+    );
+    expect(html).toContain("k2b-date-status");
+    expect(() => {
+      for (const dispose of disposers) dispose();
+    }).not.toThrow();
   });
 
   test("renders a plain date picker with presets and calendar semantics", () => {

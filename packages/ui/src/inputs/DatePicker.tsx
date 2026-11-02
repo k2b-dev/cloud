@@ -731,7 +731,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   let toggle: HTMLButtonElement | undefined;
   let statusLine: HTMLElement | undefined;
   let sheetOpen = false;
-  let announceTimer: number | undefined;
+  let announceTimer: ReturnType<typeof setTimeout> | undefined;
   const calendar = createCalendarPopover({
     anchor: () => shell,
     below: () => statusLine,
@@ -766,7 +766,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
       } else if (result?.kind === "empty") setFailure(undefined);
     }),
   );
-  onCleanup(() => window.clearTimeout(announceTimer));
+  onCleanup(() => clearTimeout(announceTimer));
 
   const externalError = () => resolveMaybeAccessor(props.owner.error);
   const invalid = () => Boolean(failure() || externalError());
@@ -947,8 +947,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             onInput={(event) => {
               setText(event.currentTarget.value);
               setDirty(true);
-              window.clearTimeout(announceTimer);
-              announceTimer = window.setTimeout(() => {
+              clearTimeout(announceTimer);
+              announceTimer = setTimeout(() => {
                 const result = parsed();
                 setAnnouncement(result?.kind === "date" ? spokenDateText(result.date, result.note, locale(), t()) : "");
               }, 500);
@@ -1090,7 +1090,7 @@ function DateRangeTextField(props: {
   let toggle: HTMLButtonElement | undefined;
   let statusLine: HTMLElement | undefined;
   let sheetOpen = false;
-  let announceTimer: number | undefined;
+  let announceTimer: ReturnType<typeof setTimeout> | undefined;
   const wide = () => Boolean(props.owner.datePresets?.length || props.owner.presets?.length);
   const calendar = createCalendarPopover({ anchor: () => shell, below: () => statusLine, wide });
   const popoverId = `${meta.controlId}-calendar`;
@@ -1129,7 +1129,7 @@ function DateRangeTextField(props: {
       setFailure(undefined);
     }),
   );
-  onCleanup(() => window.clearTimeout(announceTimer));
+  onCleanup(() => clearTimeout(announceTimer));
 
   const externalError = () => resolveMaybeAccessor(props.owner.error);
   const invalid = () => Boolean(failure() || externalError());
@@ -1317,8 +1317,8 @@ function DateRangeTextField(props: {
   const onInput = (setter: (value: string) => void) => (event: InputEvent & { currentTarget: HTMLInputElement }) => {
     setter(event.currentTarget.value);
     setDirty(true);
-    window.clearTimeout(announceTimer);
-    announceTimer = window.setTimeout(() => {
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => {
       const range = draft();
       setAnnouncement(range.start || range.end ? rangeStatusText(range, locale(), t()) : "");
     }, 500);
