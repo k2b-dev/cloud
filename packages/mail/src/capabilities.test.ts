@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
 import { capabilityCallFromTool, capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, typeViewIssues } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityActionCallReviewSchema,
@@ -872,6 +872,7 @@ describe("mail capabilities", () => {
   test("compiles into a registrable v1 manifest", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     expect(manifest.appId).toBe("mail");
+    expect(typeViewIssues(manifest, "mailbox")).toEqual([]);
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
       [...Object.keys(mailCapabilities.queries), "code.access.list", "mailbox.readable"].sort(),
