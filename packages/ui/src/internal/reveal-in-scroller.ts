@@ -7,8 +7,8 @@ export function revealInScroller(scroller: HTMLElement | undefined, item: HTMLEl
   if (!scroller || !item || !scroller.contains(item)) return;
   const view = scroller.getBoundingClientRect();
   const box = item.getBoundingClientRect();
-  const style = getComputedStyle(scroller);
-  const padding = (value: string) => Number.parseFloat(value) || 0;
+  const style = scroller.ownerDocument.defaultView?.getComputedStyle(scroller);
+  const padding = (value: string | undefined) => Number.parseFloat(value ?? "") || 0;
   const nearest = (start: number, end: number, viewStart: number, viewEnd: number) => {
     if (start >= viewStart && end <= viewEnd) return 0;
     if (start < viewStart && end > viewEnd) return 0;
@@ -19,14 +19,14 @@ export function revealInScroller(scroller: HTMLElement | undefined, item: HTMLEl
   const dx = nearest(
     box.left,
     box.right,
-    left + padding(style.scrollPaddingLeft),
-    left + scroller.clientWidth - padding(style.scrollPaddingRight),
+    left + padding(style?.scrollPaddingLeft),
+    left + scroller.clientWidth - padding(style?.scrollPaddingRight),
   );
   const dy = nearest(
     box.top,
     box.bottom,
-    top + padding(style.scrollPaddingTop),
-    top + scroller.clientHeight - padding(style.scrollPaddingBottom),
+    top + padding(style?.scrollPaddingTop),
+    top + scroller.clientHeight - padding(style?.scrollPaddingBottom),
   );
   // Instant, like the first frame of a newly mounted strip: there is no motion to follow.
   if (dx || dy) scroller.scrollBy?.({ left: dx, top: dy, behavior: "instant" });
