@@ -3,6 +3,44 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.61.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.60.0...cloud-v0.61.0) (2026-11-02)
+
+
+### Features
+
+* **cloud:** omit successful idle background lifecycle spans ([#2436](https://github.com/k2b-dev/cloud/issues/2436)) ([edd815a](https://github.com/k2b-dev/cloud/commit/edd815a2315f86f24d29d085430bfbb7bf146c78))
+* **geoip:** let applications look up a country from an IP address ([#2376](https://github.com/k2b-dev/cloud/issues/2376)) ([9030858](https://github.com/k2b-dev/cloud/commit/9030858f884cadd7bfa970dfc462523c9b5bd3c2))
+* **mail:** show how many sends are waiting, in the sidebar and in cld ([#2416](https://github.com/k2b-dev/cloud/issues/2416)) ([55388f6](https://github.com/k2b-dev/cloud/commit/55388f6fae56e6c53a6b9532ac68d2b09fda6a56))
+* **pulse:** build dashboards from reviewed SQL panels ([#1718](https://github.com/k2b-dev/cloud/issues/1718)) ([60368f0](https://github.com/k2b-dev/cloud/commit/60368f01cd3d441eb4b1e60decbc98179c7a308b))
+* **pulse:** keep collection retries consistent across recovery ([#1715](https://github.com/k2b-dev/cloud/issues/1715)) ([49c4343](https://github.com/k2b-dev/cloud/commit/49c43434402121c6e95b0c410fe6d4c606c5d8f3))
+* **pulse:** list dashboard panels in the CLI and document a website usage dashboard ([#2406](https://github.com/k2b-dev/cloud/issues/2406)) ([4ab3039](https://github.com/k2b-dev/cloud/commit/4ab303971d30752b81fe940bf91a62d8bb659a3a))
+* **pulse:** read dashboard panels in parallel within the SQL budget ([#2405](https://github.com/k2b-dev/cloud/issues/2405)) ([bd8daf3](https://github.com/k2b-dev/cloud/commit/bd8daf3df7ce49436f263572bbe25367359d92a7))
+* **pulse:** show dashboard results per country on a world map ([#2404](https://github.com/k2b-dev/cloud/issues/2404)) ([7f8ee95](https://github.com/k2b-dev/cloud/commit/7f8ee95d6f17a48793a17b1734ee2f418d54e093))
+* **ui:** add a country map that shades the world by one value per country ([#2373](https://github.com/k2b-dev/cloud/issues/2373)) ([bbcea1d](https://github.com/k2b-dev/cloud/commit/bbcea1d2dd46cbb460420be85e64e14adfa31b14))
+
+
+### Bug Fixes
+
+* **ci:** wait for the final Postgres server before image smoke ([#2400](https://github.com/k2b-dev/cloud/issues/2400)) ([dee0789](https://github.com/k2b-dev/cloud/commit/dee0789106b599681cbc22de0049239702b0f105))
+* **cli:** admin settings tests print their result instead of saved ([#2397](https://github.com/k2b-dev/cloud/issues/2397)) ([2f9ea4a](https://github.com/k2b-dev/cloud/commit/2f9ea4ac3bc83cc9ce70ab6d7883168d989df3ee))
+* **cloud:** one slow application no longer delays or breaks a page ([#2434](https://github.com/k2b-dev/cloud/issues/2434)) ([1fc908e](https://github.com/k2b-dev/cloud/commit/1fc908e0e3944c23545aa9e1f1bbc0c9098bdcc2))
+* **core:** a fresh boot no longer deadlocks on browser-notification setup ([#2393](https://github.com/k2b-dev/cloud/issues/2393)) ([fc47d68](https://github.com/k2b-dev/cloud/commit/fc47d686cdd0715af2fc388577a683d4d32dd700))
+* **identity:** full-access machine keys name their scopes and work ([#2396](https://github.com/k2b-dev/cloud/issues/2396)) ([07f13e5](https://github.com/k2b-dev/cloud/commit/07f13e5cef415002cd363715f5ee22db77b3447b))
+* **mail:** a send opens one IMAP connection instead of four ([#2409](https://github.com/k2b-dev/cloud/issues/2409)) ([7b0505f](https://github.com/k2b-dev/cloud/commit/7b0505fffe5444a9bdf1a1ed73c878df42379633))
+* **mail:** keep provider identity lookups off full reference scans ([#2425](https://github.com/k2b-dev/cloud/issues/2425)) ([eb7ef9b](https://github.com/k2b-dev/cloud/commit/eb7ef9ba7423f36a724c5560274c9c390b0a6878))
+* **mail:** load new message content without scheduler delays ([#2401](https://github.com/k2b-dev/cloud/issues/2401)) ([39874da](https://github.com/k2b-dev/cloud/commit/39874dad8a2f0e346bb9117d53edac0669f30327))
+* **mail:** opening a large mailbox reads one page instead of every conversation ([#2407](https://github.com/k2b-dev/cloud/issues/2407)) ([eeb4e3a](https://github.com/k2b-dev/cloud/commit/eeb4e3a483071b7c16015b42780e14ab903fb8a5))
+* **mail:** skip unchanged metadata writes during idle sync ([#2433](https://github.com/k2b-dev/cloud/issues/2433)) ([d1eb99c](https://github.com/k2b-dev/cloud/commit/d1eb99c6254612433b07d10679c088879895f110))
+* **notebooks:** keep the page graph fast when row estimates are stale ([#2439](https://github.com/k2b-dev/cloud/issues/2439)) ([06514e1](https://github.com/k2b-dev/cloud/commit/06514e1fd461b7d1555f23608ba39f0b76ff7776)), closes [#2388](https://github.com/k2b-dev/cloud/issues/2388)
+* **settings:** include platform keys in the default admin catalog ([#2426](https://github.com/k2b-dev/cloud/issues/2426)) ([ef96b11](https://github.com/k2b-dev/cloud/commit/ef96b11b3c924546a544a6cf5d333d1cbfe88097))
+* **test:** integration shards fit their budget, and a slow shard warns while it is green ([#2383](https://github.com/k2b-dev/cloud/issues/2383)) ([9e9f790](https://github.com/k2b-dev/cloud/commit/9e9f7907dd7f624d12e5225ead0b815a959ce4ed))
+
+
+### Performance Improvements
+
+* **mail:** a conversation click keeps the folder rows and row menus it does not change ([#2421](https://github.com/k2b-dev/cloud/issues/2421)) ([06e3244](https://github.com/k2b-dev/cloud/commit/06e3244217e89daf95c0d0b6ed33dd871224f7cc))
+* **mail:** opening a conversation checks access once instead of seventeen times ([#2408](https://github.com/k2b-dev/cloud/issues/2408)) ([7e506a0](https://github.com/k2b-dev/cloud/commit/7e506a01be7f0b70503be622c211f5ea248c3142))
+
 ## [0.60.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.59.0...cloud-v0.60.0) (2026-11-01)
 
 
