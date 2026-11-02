@@ -327,7 +327,7 @@ export function mailboxData(url: URL): MailboxPageData {
     listTitle: searching
       ? "Search results"
       : scheduledMode
-        ? "Scheduled"
+        ? "Outbox"
         : savedViewId
           ? savedViewId === "Saved1"
             ? "Priority view"

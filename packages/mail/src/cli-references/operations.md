@@ -22,7 +22,10 @@ cld --json mail sync runs --state failed --limit 100 --cursor <next-cursor>
 
 `--state` takes `running`, `completed`, `failed`, `cancelled`, or `stale_fence`; without it the list shows every state. A page holds up to 100 runs, 50 by default; pass the printed `nextCursor` for the next page. Mail keeps finished runs for 30 days, so the list reaches back that far. It needs read access to the whole mailbox, like `mail status`. Failures that a later run of the same folder follows with `completed`, such as a dropped connection, were retried; the same folder failing with the same code run after run, or the mailbox staying `degraded`, needs attention.
 
-Mailbox admins can inspect the redacted operator view:
+Mailbox admins can inspect the redacted operator view. Text output includes one
+`Outbox:` line with the existing state counts, such as `290 scheduled, 1 sending`;
+`--json` exposes the same counts under `queues.outbox`. These counts include all
+outbox states, while `mail scheduled list` shows only visible sends still waiting:
 
 ```bash
 cld --json mail operator status

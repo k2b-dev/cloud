@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { lazySync, redis, sql } from "@k2b/cloud";
-import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
+import {
+  createRuntimeLifecycle,
+  createRuntimeTaskTracker,
+  logger,
+  stopRuntimeJobs,
+  stopRuntimeResources,
+  trace,
+} from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
@@ -129,6 +136,9 @@ type SyncBatchResult = {
    */
   syncPending: boolean;
   imported: number;
+  uidValidityReset: boolean;
+  draftImportsQueued: number;
+  draftExportsQueued: number;
   flagsUpdated: number;
   removed: number;
 };
@@ -2218,7 +2228,17 @@ export const syncFolderBatch = async (
   priority: Extract<ProviderLeasePriority, "sync" | "background"> = "sync",
 ): Promise<SyncBatchResult> => {
   const folder = await loadSyncFolder(folderId);
-  if (!folder) return { hasMore: false, syncPending: false, imported: 0, flagsUpdated: 0, removed: 0 };
+  if (!folder)
+    return {
+      hasMore: false,
+      syncPending: false,
+      imported: 0,
+      uidValidityReset: false,
+      draftImportsQueued: 0,
+      draftExportsQueued: 0,
+      flagsUpdated: 0,
+      removed: 0,
+    };
 
   const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
     resource: folder.remote_resource_id,
@@ -2249,7 +2269,17 @@ export const syncFolderBatch = async (
       },
       work: async (_assertLeaseActive, signal) => {
         const refreshedFolder = await loadSyncFolder(folderId);
-        if (!refreshedFolder) return { hasMore: false, syncPending: false, imported: 0, flagsUpdated: 0, removed: 0 };
+        if (!refreshedFolder)
+          return {
+            hasMore: false,
+            syncPending: false,
+            imported: 0,
+            uidValidityReset: false,
+            draftImportsQueued: 0,
+            draftExportsQueued: 0,
+            flagsUpdated: 0,
+            removed: 0,
+          };
         Object.assign(folder, refreshedFolder);
         await waitForMailProviderSlot(folder.remote_resource_id, signal);
         const execution = await resolveMailExecution({
@@ -2369,6 +2399,9 @@ export const syncFolderBatch = async (
           hasMore,
           syncPending: newMailPending || cursor.flagNextLow != null,
           imported: result.hydratedIds.length,
+          uidValidityReset: uidValidityChanged,
+          draftImportsQueued: result.draftImportSnapshotIds.length,
+          draftExportsQueued: result.draftExportSnapshotIds.length,
           flagsUpdated: result.flagsUpdated,
           removed: result.removed,
         };
@@ -2455,8 +2488,10 @@ const syncFolderJob = lazySync((sync) =>
   }),
 );
 
-/** Runs one `mail:sync-folder` attempt; exported so tests can drive the job's failure handling. */
-export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+/** Runs one `mail:sync-folder` attempt and returns its counted outcome. */
+const runSyncFolderJobOutcome = async (
+  ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">,
+): Promise<SyncBatchResult | { deferred: string }> => {
   const { folderId } = ctx.input;
   let backfill = ctx.input.backfill === true;
   try {
@@ -2467,17 +2502,18 @@ export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>,
     if (data.hasMore) ctx.resubmit({ delayMs: 0, input: { folderId, backfill: !data.syncPending } });
     // A sync requested while this batch ran may have come after the batch checked for new mail.
     else if (Number(await redis.send("EXISTS", [syncRequestKey(folderId)])) > 0) ctx.resubmit({ delayMs: 0, input: { folderId } });
+    return data;
   } catch (error) {
     const code = normalizeSyncErrorCode(error);
-    if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+    if (code === "MAILBOX_TRANSPORT_CHANGED") return { deferred: code };
     if (code === "MAIL_RATE_LIMITED") {
       ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill } });
-      return;
+      return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
     if (code === "SYNC_BUSY") {
       ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill } });
-      return;
+      return { deferred: code };
     }
     // The failed run and the resource error are already recorded; retries and dead letters
     // would only repeat them, because the scheduler queues a degraded folder again.
@@ -2490,11 +2526,34 @@ export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>,
         recheckInMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS,
       });
       ctx.resubmit({ delayMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS });
-      return;
+      return { deferred: code };
     }
     throw error;
   }
 };
+
+/** Allows tests to drive the job's failure handling without its tracing wrapper. */
+export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+  await runSyncFolderJobOutcome(ctx);
+};
+/** Classify every counted effect, including draft projections, before suppressing a run span. */
+export const summarizeSyncFolderOutcome = (result: SyncBatchResult | { deferred: string }) => {
+  if ("deferred" in result) {
+    return result.deferred === "SYNC_BUSY" || result.deferred === "MAIL_RATE_LIMITED" || result.deferred === "MAILBOX_TRANSPORT_CHANGED"
+      ? null
+      : result;
+  }
+  return result.imported > 0 ||
+    result.uidValidityReset ||
+    result.draftImportsQueued > 0 ||
+    result.draftExportsQueued > 0 ||
+    result.flagsUpdated > 0 ||
+    result.removed > 0 ||
+    result.hasMore
+    ? result
+    : null;
+};
+const tracedSyncFolderJob = trace.backgroundJob("mail:sync-folder", runSyncFolderJobOutcome, summarizeSyncFolderOutcome);
 
 /** Retries a failed `mail:sync-folder` attempt or gives up after the last one; exported for tests. */
 export const onSyncFolderJobError = async ({
@@ -2518,7 +2577,7 @@ let syncFolderJobWorker: Worker | undefined;
 const startSyncFolderJob = async (): Promise<void> => {
   syncFolderJobWorker = await syncFolderJob().process(
     { concurrency: MAIL_PROVIDER_JOB_CONCURRENCY, onError: onSyncFolderJobError },
-    runSyncFolderJob,
+    tracedSyncFolderJob,
   );
 };
 
@@ -3386,6 +3445,8 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       cron: "* * * * *",
       misfire: "latest",
       meta: { appId: "mail", family: "mail:sync", label: "Mail synchronization" },
+      // Draft scheduling also retires MIME state and may queue effects outside the returned counts.
+      // Keep ordinary tracing until its result accounts for every effect.
       process: async () => {
         await submitDueWork();
       },
@@ -3396,9 +3457,9 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       cron: "*/15 * * * *",
       misfire: "latest",
       meta: { appId: "mail", family: "mail:sync", label: "Mail interrupted body download recovery" },
-      process: async () => {
-        await recoverInterruptedHydrations();
-      },
+      process: trace.backgroundSchedule("mail", "mail:hydration-recovery", recoverInterruptedHydrations, (released) =>
+        released > 0 ? { released } : null,
+      ),
     });
     await mailScheduler().create({
       id: "mail:snooze-wake",

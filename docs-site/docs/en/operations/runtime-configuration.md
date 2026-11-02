@@ -642,3 +642,11 @@ registered `/api/ai` prefix; the gateway's registry-based WebSocket proxy
 forwards the socket. See [Live dictation](/en/docs/ai/live-dictation) for the
 protocol, cancellation contract, privacy, and recovery behavior. Verify real
 microphones on Safari/iOS before enabling the feature broadly.
+
+### Discover platform retention settings
+
+Use `cld admin settings show logs.trace_retention_days --json` without `--app`
+to inspect the platform setting's presence and readability. The platform catalog
+also includes `logs.retention_days`; list, show and set use that same catalog.
+Neither list nor show prints stored or default values. `--app core` restricts
+the catalog to Core settings; other application IDs select their owning API.

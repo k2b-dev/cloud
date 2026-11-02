@@ -452,7 +452,7 @@ describe("Mail workspace search return", () => {
     const last = new URL(workspaceRequests.at(-1)!, "http://localhost");
     expect(last.pathname + last.search).toBe(`${path}?scheduled=1`);
     expect(dom.root.querySelector("[data-mail-conversation-list]")).toBeNull();
-    expect(dom.root.querySelector("section > h1")?.textContent).toBe("Scheduled");
+    expect(dom.root.querySelector("section > h1")?.textContent).toBe("Outbox");
   });
 
   test("structured search records Needs action and builder clear restores it", async () => {
