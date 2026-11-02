@@ -17,15 +17,7 @@ import { badgeCount } from "./badge";
 import { conversations } from "./conversations";
 import { mockDiscussionCatalog, providerApp } from "./discussions.test-fixture";
 import { forYou, forYouUnread } from "./for-you";
-import {
-  alertKey,
-  allowAlert,
-  deliverMessage,
-  notificationLifecycle,
-  notificationOutbox,
-  runNotificationAttempt,
-  sendPush,
-} from "./notification-delivery";
+import { alertKey, allowAlert, deliverMessage, notificationLifecycle, runNotificationAttempt, sendPush } from "./notification-delivery";
 import { resourceReaderDependencies } from "./resource-access";
 import * as systemReaderAccess from "./system-notification-access";
 import {
@@ -1324,17 +1316,22 @@ suiteFor(
     const { author, chat } = await setup();
     try {
       await notificationLifecycle.start();
+      const started = performance.now();
       await post(author, chat.shortId, "First worker message");
       await post(author, chat.shortId, "Second worker message");
-      await notificationOutbox.reconcile();
       const deadline = performance.now() + 10_000;
       while (!sent.length && performance.now() < deadline) await Bun.sleep(50);
       expect(sent).toHaveLength(1);
       expect(sent[0]!.data).toMatchObject({ chat: chat.shortId, further: 1 });
       expect(sent[0]!.key).toBe("message");
+      expect(performance.now() - started).toBeGreaterThanOrEqual(3_000);
     } finally {
       await notificationLifecycle.stop();
     }
+    expect(
+      await sql`SELECT 1 FROM chat.notification_outbox WHERE conversation_id = ${chat.id}::uuid AND claimed_until IS NOT NULL`,
+    ).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(0);
   });
   test("notification kinds expose browser recommendations and the email exclusion reason", () => {
     expect(app.notifications.message.delivery).toEqual({ recommended: ["browser"], required: [], excluded: ["email"] });

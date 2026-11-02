@@ -1,6 +1,6 @@
 ### Idle dispatchers poll too often while wake signals stay inside one process
 
-- **What happened:** Idle outboxes, workflow workers, and Core event delivery queried Postgres every second. Outbox notifications woke only their own process.
-- **Root cause:** A one-second recovery timer also served as normal work discovery. Core discarded hints received during an active pass and tied minute maintenance to pass count.
-- **Error class:** Polling replaces distributed wake signals; concurrent hints are lost; maintenance depends on traffic volume.
-- **Guard:** `idle-workers.test.ts` advances a frozen minute and counts twelve safety scans per dispatcher, with separate workflow slot counts. `outbox.integration.test.ts` commits and signals from another OS process. `app-events/runtime.test.ts` checks coalescing, backlog draining, shutdown, and failure recovery.
+- **What happened:** Idle outboxes, workflow workers, and Core event delivery queried Postgres every second. Outbox notifications woke only their own process. New commit hints also published locally with workers stopped, leaving jobs that polluted a later Chat integration test.
+- **Root cause:** A one-second recovery timer also served as normal work discovery. Core discarded hints received during an active pass and tied minute maintenance to pass count. Outbox notifications did not respect dispatcher startup and shutdown, and retry deadlines depended on the safety scan.
+- **Error class:** Polling replaces distributed wake signals; concurrent hints are lost; background work escapes its lifecycle; maintenance depends on traffic volume.
+- **Guard:** `idle-workers.test.ts` advances a frozen minute and counts twelve safety scans per dispatcher, with separate workflow slot counts; it also checks the exact retry boundary and stopped notifications. `outbox.integration.test.ts` commits and signals from another OS process and checks retry recovery after restart and draining. The Chat integration checks delayed coalescing with real Sync workers. `app-events/runtime.test.ts` checks coalescing, backlog draining, shutdown, and failure recovery.

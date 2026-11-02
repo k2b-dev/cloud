@@ -588,11 +588,15 @@ export const notificationLifecycle = {
     log.info("Chat notification workers started", { deliveryBatch: DELIVERY_BATCH, pushDelayMs: PUSH_DELAY_MS, retention: "sync-default" });
   },
   async stop() {
-    await notificationOutbox.stop();
     deliveryWorker?.stop();
     pushWorker?.stop();
-    await Promise.all([deliveryWorker?.drain(), pushWorker?.drain()]);
-    deliveryWorker = undefined;
-    pushWorker = undefined;
+    try {
+      await Promise.all([deliveryWorker?.drain(), pushWorker?.drain()]);
+    } finally {
+      // Accepted handlers may commit and wake the outbox while draining.
+      await notificationOutbox.stop();
+      deliveryWorker = undefined;
+      pushWorker = undefined;
+    }
   },
 };

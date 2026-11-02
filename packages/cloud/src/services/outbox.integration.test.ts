@@ -272,7 +272,42 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     }
   });
 
-  test("notify() logs a failing pass instead of throwing, and stop() waits for the pass in flight", async () => {
+  test("known retry deadlines wake before the safety scan, including after a restart", async () => {
+    await report(sql, itemB, 80);
+    const delivered = Promise.withResolvers<void>();
+    let attempts = 0;
+    const outbox = reports(async () => {
+      if (++attempts === 1) throw new Error("Transient delivery failure");
+      delivered.resolve();
+    });
+    try {
+      outbox.start();
+      await delivered.promise;
+      await outbox.stop();
+      expect(attempts).toBe(2);
+      expect(await pending()).toEqual([]);
+
+      await report(sql, itemB, 81);
+      await sql`UPDATE ${sql.unsafe(table)} SET attempts = 1, next_attempt_at = clock_timestamp() + interval '100 milliseconds'`;
+      const resumed = Promise.withResolvers<void>();
+      const restarted = reports(async () => {
+        const [row] = await sql<{ due: boolean }[]>`SELECT next_attempt_at <= clock_timestamp() AS due FROM ${sql.unsafe(table)}`;
+        expect(row?.due).toBe(true);
+        resumed.resolve();
+      });
+      try {
+        restarted.start();
+        await resumed.promise;
+      } finally {
+        await restarted.stop();
+      }
+      expect(await pending()).toEqual([]);
+    } finally {
+      await outbox.stop();
+    }
+  });
+
+  test("notify() respects the lifecycle, and stop() waits for the pass in flight", async () => {
     await report(sql, itemB, 8);
     let release = () => {};
     const blocked = new Promise<void>((resolve) => {
@@ -283,12 +318,21 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       await blocked;
       published.push(row.delta);
     });
+    await outbox.notify();
+    expect(published).toEqual([]);
+    expect(await pending()).toHaveLength(1);
     outbox.start();
     const stopped = outbox.stop();
     release();
     await stopped;
     expect(published).toEqual([8]);
     expect(await pending()).toEqual([]);
+    await report(sql, itemB, 9);
+    await outbox.notify();
+    expect(published).toEqual([8]);
+    expect(await pending()).toHaveLength(1);
+    await outbox.reconcile();
+    expect(published).toEqual([8, 9]);
 
     const broken = createPgOutbox<StockReport>({
       table: `${schema}.missing`,
@@ -299,6 +343,8 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       publish: async () => {},
     });
     await expect(broken.reconcile()).rejects.toThrow();
+    broken.start();
     await expect(broken.notify()).resolves.toBeUndefined();
+    await broken.stop();
   });
 });

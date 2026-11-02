@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 const epoch = Date.parse("2026-11-02T12:00:00Z");
 setSystemTime(epoch);
 let now = epoch;
-const timers = new Set<{ timer: ReturnType<typeof setInterval>; every: number; next: number; run: () => void }>();
+const timers = new Set<{ timer: ReturnType<typeof setInterval>; every?: number; next: number; run: () => void }>();
 const realInterval = globalThis.setInterval;
 const realClearInterval = globalThis.clearInterval;
 Object.defineProperty(globalThis, "setInterval", {
@@ -23,6 +23,15 @@ Object.defineProperty(globalThis, "clearInterval", {
     for (const entry of timers) if (entry.timer === timer) timers.delete(entry);
   },
 });
+Object.defineProperty(globalThis, "setTimeout", {
+  value: (callback: () => void, delay = 0) => {
+    const timer = realInterval(() => {}, 2 ** 30);
+    realClearInterval(timer);
+    timers.add({ timer, next: now + delay, run: callback });
+    return timer;
+  },
+});
+Object.defineProperty(globalThis, "clearTimeout", { value: globalThis.clearInterval });
 const settled = () => new Promise<void>((resolve) => setImmediate(resolve));
 const advance = async (ms: number) => {
   const end = now + ms;
@@ -33,7 +42,8 @@ const advance = async (ms: number) => {
     setSystemTime(now);
     for (const entry of timers) {
       if (entry.next !== now) continue;
-      entry.next += entry.every;
+      if (entry.every === undefined) timers.delete(entry);
+      else entry.next += entry.every;
       entry.run();
     }
     await settled();
@@ -44,12 +54,19 @@ const advance = async (ms: number) => {
 
 let polls = 0;
 let pending: Array<{ id: string; attempts: number }> = [];
-const query = Object.assign(async () => [], { unsafe: (value: string) => value, array: (value: string[]) => value });
+let pendingDue: number | undefined;
+const query = Object.assign(
+  async (parts: TemplateStringsArray) =>
+    parts.join("").includes("AS wake_after_ms")
+      ? [{ wake_after_ms: pendingDue !== undefined && pendingDue > now ? pendingDue - now : null }]
+      : [],
+  { unsafe: (value: string) => value, array: (value: string[]) => value },
+);
 const sql = Object.assign(query, {
   begin: async (run: (tx: typeof query) => Promise<unknown>) => {
     polls++;
     await run(query);
-    return pending.splice(0);
+    return pendingDue !== undefined && pendingDue > now ? [] : pending.splice(0);
   },
 });
 mock.module("../runtime/clients", () => ({ sql }));
@@ -122,6 +139,32 @@ assert.equal(
   [...listeners.values()].reduce((n, group) => n + group.size, 0),
   0,
 );
+
+pending = [{ id: "retry-after-restart", attempts: 1 }];
+pendingDue = now + 2_000;
+await outbox.notify();
+assert.equal(polls, stoppedPolls, "notify while stopped only signals other processes");
+outbox.start();
+await settled();
+const beforeDue = polls;
+await advance(1_999);
+assert.equal(polls, beforeDue, "known deadline adds no polling before it is due");
+assert.equal(delivered, 2);
+await advance(1);
+assert.equal(delivered, 3, "retry wakes at its deadline, before the five-second safety scan");
+pendingDue = undefined;
+await outbox.stop();
+pending = [{ id: "cancel-deadline-on-stop", attempts: 1 }];
+pendingDue = now + 2_000;
+outbox.start();
+await settled();
+await outbox.stop();
+const afterDue = polls;
+await outbox.notify();
+await advance(60_000);
+assert.equal(polls, afterDue, "stop cancels deadline timers and ignores later local notifications");
+pending = [];
+pendingDue = undefined;
 
 const appOutbox = appEventOutbox("idle-budget", async () => {});
 appOutbox.start();

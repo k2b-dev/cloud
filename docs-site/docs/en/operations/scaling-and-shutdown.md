@@ -248,6 +248,9 @@ also use distributed wake signals. These workers retain a **five-second safety s
 signals, due retries, deadlines, and expired claims. Under idle conditions this
 means twelve safety scans per minute per dispatcher, plus startup; workflow
 workers also probe their execution slots before and after recovery.
+Outbox dispatchers also schedule a wake at known retry and claim deadlines.
+Commit notifications only start local passes while the dispatcher is running;
+shutdown drains accepted producers before stopping their outbox.
 
 A missed signal can delay discovery of committed work until the next safety
 scan. Backlogs, claims, and unavailable dependencies can add delay. Postgres
