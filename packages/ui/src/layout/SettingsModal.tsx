@@ -1,5 +1,6 @@
 import { type Accessor, children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
+import { revealInScroller } from "../internal/reveal-in-scroller";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
 import { useSettingsMessages } from "./settings-messages";
@@ -149,7 +150,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
   // `defaultTab`, `activeTab` and clicks can select a category past the edge of the scrolling row or rail.
   createEffect(() => {
     const id = resolvedActiveTabId();
-    queueMicrotask(() => tabRefs.get(id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+    queueMicrotask(() => revealInScroller(tabList, tabRefs.get(id)));
   });
   // A memo, so a change elsewhere in the tab list does not create the open panel again.
   const activeTab = createMemo(() => tabs().find((tab) => tab.props.id === resolvedActiveTabId()) ?? null);

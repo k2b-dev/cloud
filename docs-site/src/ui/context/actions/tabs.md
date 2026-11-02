@@ -77,7 +77,8 @@ The classic tab list scrolls horizontally and never vertically; its focus ring s
 scrollbars, the horizontal one is thin. Subtle overflow fades appear only at edges
 with hidden content and disappear when the list fits. Vertical tabs are not
 masked; forced-color mode leaves every orientation unmasked. The active tab
-remains visible. Use
+remains visible: only the list scrolls to show it, never the page or a panel
+around it, so a page with tabs opens at its top. Use
 `trailing` for a fixed action outside the scrollport, such as an IconButton or
 Dropdown trigger. The application owns that action and its menu entries.
 Do not nest a close button inside a tab label.
