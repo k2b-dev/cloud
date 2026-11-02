@@ -64,6 +64,9 @@ the same provider and outcome before drawing conclusions about send speed.
 
 **Runtime change:** deploy Core's updated logging migration before starting
 updated applications or Gateway Ops. It creates `logging.run_minutes`.
+Upgrade Mail before the first size cleanup if its existing backfill history
+must be preserved: Mail imports the last 30 days of its retained backfill
+traces into its own activity journal. Traces already deleted cannot be imported.
 
 Automatic Sync background runs now keep individual traces for failures,
 retries, and runs of at least 30 seconds. That threshold is Sync 7's default
@@ -278,7 +281,9 @@ The source example is Core's FreeIPA expiry backfill. Use the source returned
 by `jobs list` for another operation and the run ID returned by `jobs runs`
 for `jobs show`. These commands show retained diagnostic spans. Fast successful
 backfills may appear only in Gateway Ops minute counts; an empty trace list
-does not mean no producer ran.
+does not mean no producer ran. Mail's **Automations → Activity** reads its
+mailbox activity journal and durable pump state, so successful backfills remain
+visible for its 30-day activity window even when trace retention removes diagnostics.
 
 Pump summaries include dispatched and failed counts. A completed producer can
 still have unfinished or failed downstream jobs; for FreeIPA, also inspect

@@ -600,6 +600,50 @@ const addSenderVerificationCommands = async (tx: SqlClient): Promise<void> => {
   `.simple();
 };
 
+/** Preserve the visible legacy history before routine trace cleanup can remove it. */
+const migrateBackfillActivity = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    CREATE UNIQUE INDEX IF NOT EXISTS activity_events_backfill_operation_idx
+    ON mail.activity_events (mailbox_id, target_id, (metadata ->> 'operationId'))
+    WHERE action = 'incoming_automation.backfill.start'
+  `;
+  await tx`
+    INSERT INTO mail.activity_events (
+      mailbox_id, actor_kind, action, outcome, target_type, target_id, metadata, created_at
+    )
+    SELECT automation.mailbox_id, 'system', 'incoming_automation.backfill.start', 'confirmed',
+      'incoming_automation', automation.id,
+      jsonb_build_object(
+        'operationId', span.attributes ->> 'mail.backfill.operation_id',
+        'workflowId', span.attributes ->> 'mail.workflow.id',
+        'name', automation.name,
+        'backfillStatus', CASE
+          WHEN span.ended_at IS NULL THEN 'running'
+          WHEN span.status = 'error' OR span.summary ->> 'status' = 'failed' THEN 'failed'
+          WHEN span.summary ->> 'status' = 'canceled' THEN 'canceled'
+          ELSE 'completed' END,
+        'dispatched', span.summary -> 'dispatched',
+        'lastError', span.status_message,
+        'updatedAt', coalesce(span.ended_at, span.updated_at)
+      ), span.started_at
+    FROM logging.trace_spans span
+    JOIN mail.incoming_automations automation
+      ON automation.id::text = span.attributes ->> 'mail.incoming_automation.id'
+      AND automation.mailbox_id::text = span.attributes ->> 'mail.mailbox.id'
+    WHERE span.app_id = 'mail' AND span.source = 'mail:incoming-automation-backfill'
+      AND span.started_at >= ${new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000)}
+      AND span.attributes ->> 'mail.backfill.operation_id' IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.activity_events activity
+        WHERE activity.mailbox_id = automation.mailbox_id
+          AND activity.target_id = automation.id
+          AND activity.action = 'incoming_automation.backfill.start'
+          AND activity.metadata ->> 'operationId' = span.attributes ->> 'mail.backfill.operation_id'
+      )
+    ON CONFLICT DO NOTHING
+  `;
+};
+
 /** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */
 const migrationErrorCode = (error: unknown): string | null => {
   const candidate = error as { code?: unknown; errno?: unknown } | null;
@@ -621,6 +665,7 @@ export const migrate = async (): Promise<void> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateBackfillActivity(tx);
         await migrateAiDailyBudget(tx);
         await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);

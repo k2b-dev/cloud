@@ -144,6 +144,10 @@ events to that run, use `trace.syncSpanKey("pump", pumpId, runKey)` with the
 exact key passed to the pump. For a manually traced backfill outside a pump,
 set `category: "backfill"` on the normal span API.
 
+Keep user-facing activity in the owning application's domain journal and durable
+execution state. Diagnostic spans can be omitted on success or removed by retention;
+they cannot be the source of a promised activity history.
+
 Keep metadata limited to safe identifiers and counts. Do not attach scanned
 records, account details, tokens, or message contents. Pump completion records
 the status, dispatched count, and failure count; a failed pump ends with trace
