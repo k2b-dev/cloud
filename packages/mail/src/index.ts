@@ -11,12 +11,14 @@ import { router } from "./router";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
+import { stopConversationViewCountCache } from "./service/view-count-cache";
 
 const mailNotifications = createMailNotificationService(app.notifications);
 
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
     stopMailDraftConnections,
+    stopConversationViewCountCache,
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
     () => workflowRuntime.stop(),

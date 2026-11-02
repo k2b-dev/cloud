@@ -458,6 +458,41 @@ const addAssignedOnlyMailboxAccess = async (tx: SqlClient): Promise<void> => {
  * each of its assignees, and an update of the whole mailbox, which names none, to `<mailbox>:assigned`.
  */
 const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> => {
+  // Cache versions advance at commit, after domain writes, to avoid adding a mailbox-wide
+  // lock in the middle of multi-conversation writes. Pending rows belong only to this transaction.
+  // No mailbox FK: even its KEY SHARE check would invert the domain writers' lock order.
+  // Mail archives mailboxes; a hard-deleted mailbox leaves only one harmless UUID version.
+  await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_read_versions (
+    mailbox_id uuid PRIMARY KEY,
+    version uuid NOT NULL DEFAULT gen_random_uuid()
+  )`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.pending_read_invalidations (
+    transaction_id xid8 NOT NULL DEFAULT pg_current_xact_id(),
+    mailbox_id uuid NOT NULL,
+    PRIMARY KEY (transaction_id, mailbox_id)
+  )`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.advance_read_versions() RETURNS trigger LANGUAGE plpgsql AS $$
+    DECLARE target uuid;
+    BEGIN
+      -- All affected mailboxes are locked in the same order, including a transfer between mailboxes.
+      FOR target IN SELECT mailbox_id FROM mail.pending_read_invalidations
+        WHERE transaction_id = pg_current_xact_id() ORDER BY mailbox_id
+      LOOP
+        INSERT INTO mail.mailbox_read_versions (mailbox_id) VALUES (target)
+        ON CONFLICT (mailbox_id) DO UPDATE SET version = gen_random_uuid();
+      END LOOP;
+      DELETE FROM mail.pending_read_invalidations WHERE transaction_id = pg_current_xact_id();
+      RETURN NULL;
+    END;
+  $$`.simple();
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+      WHERE tgrelid = 'mail.pending_read_invalidations'::regclass AND tgname = 'advance_read_versions') THEN
+      CREATE CONSTRAINT TRIGGER advance_read_versions
+        AFTER INSERT ON mail.pending_read_invalidations DEFERRABLE INITIALLY DEFERRED
+        FOR EACH ROW EXECUTE FUNCTION mail.advance_read_versions();
+    END IF;
+  END $$`.simple();
   await tx`
     CREATE OR REPLACE FUNCTION mail.enqueue_live_invalidation(target_mailbox_id uuid, target_conversation_id uuid DEFAULT NULL)
     RETURNS uuid
@@ -466,6 +501,8 @@ const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> =>
     DECLARE
       conversation_short_id text;
     BEGIN
+      INSERT INTO mail.pending_read_invalidations (mailbox_id) VALUES (target_mailbox_id)
+      ON CONFLICT DO NOTHING;
       IF target_conversation_id IS NOT NULL THEN
         SELECT short_id INTO conversation_short_id
         FROM mail.conversations

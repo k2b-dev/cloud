@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-31
+updated: 2026-11-02
 ---
 
 # Deployment requirements
@@ -1171,6 +1171,46 @@ and workspace responses. The value is the stored lowercase SHA-256 hex string,
 or `null` when unknown. Clients can compare known checksums to identify the
 same file; matching filenames alone do not establish equal content. This uses
 the existing nullable column and needs no migration or configuration change.
+
+### Mail workspace count cache
+
+Mail reuses a reader's workspace view counts in the existing Valkey service for
+up to 30 seconds. Reads after 15 seconds refresh the snapshot in the background.
+A committed Mail live invalidation changes the mailbox's cache version before
+its live event is delivered. The covering workspace refresh therefore reads the
+new counts after an action; reload and the first browser render use one snapshot.
+The standalone conversation-count API continues to compute fresh counts.
+
+The cache needs no environment variable or operator-managed index. Mail adds two
+small tables at startup: the current version per mailbox and transaction-local
+pending invalidations. Pending rows are consumed at commit; versions advance in
+mailbox order after domain writes. No message or conversation backfill runs.
+
+A cold, expired, or invalidated cache computes the counts once per reader and
+version. Concurrent opens share a Valkey lease; healthy owners renew it every
+3.3 seconds. Fills across different readers use at most the shared SQL pool size
+minus one connection (at least one). At capacity, background refreshes are skipped
+and cold reads wait. Local and remote waiters have the same 30-second budget;
+after that the workspace API returns `503 MAIL_COUNTS_REFRESHING`, and a mailbox
+reload uses the existing service error page with a Home link. Browser reload
+retries the same mailbox. Live refresh keeps the current view on failure; a retry
+can reuse the completed fill.
+The mailbox page and workspace-route handlers allow 40 seconds of idle time
+while loading, then restore the normal request limit before responding. Database
+statements time out after 30 seconds, and shutdown drains fills for at most
+30 seconds. Mail never substitutes invented zero counts on this path.
+
+If Valkey is unavailable, Mail computes directly with the same local concurrency
+bound; reads can take longer. Entries expire on their own and contain only the
+counts for their mailbox, person, and current visibility. No cache flush is needed.
+
+The fast path needs a reusable snapshot. A continuously changing mailbox can
+still pay for the authoritative aggregate after each committed live invalidation,
+including background updates. Changes without live invalidation, including
+assignment eligibility changes, age out within 30 seconds on the next workspace
+read. Complete the rollout across replicas: an older image can reinstall the
+previous invalidation function, leaving only age-based refresh until a new image
+starts again.
 
 ### Mail storage for kept conversations
 
