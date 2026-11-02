@@ -290,6 +290,15 @@ describe("typed date field", () => {
     try {
       const input = field(page, "Fällig am");
       expect(await input.getAttribute("inputmode")).toBe("numeric");
+      // Every field, the two-date range included, fits its box and shows its whole text.
+      await settled(page);
+      const overflow = await page.evaluate(
+        () =>
+          [...document.querySelectorAll(".k2b-date-field .k2b-input-shell, .k2b-date-field input")].filter(
+            (element) => element.scrollWidth > element.clientWidth,
+          ).length,
+      );
+      expect(overflow).toBe(0);
       const shell = rounded(await page.locator(".k2b-date-field .k2b-input-shell").first().boundingBox());
       await input.tap();
       expect(await popover(page).count()).toBe(0);
