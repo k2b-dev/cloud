@@ -177,6 +177,7 @@ export type {
   SaveStatusState,
   SettingsFieldControlProps,
   SettingsFieldProps,
+  SettingsFieldWidth,
   SettingsGroupActionProps,
   SettingsGroupProps,
   SettingsPageProps,

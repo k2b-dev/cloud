@@ -437,7 +437,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
             <SettingsModal.Tab id="retention" title={t().retention} icon="ti ti-clock-cog" description={t().retentionTabDescription}>
               <div class="max-w-[860px]">
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().rawDataRetention}
                   description={t().rawDataRetentionDescription}
                   error={() => undefined}
@@ -489,7 +488,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   )}
                 </SettingsField>
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().hourlyRollupRetention}
                   description={t().hourlyRollupRetentionDescription}
                   error={() => undefined}
@@ -546,7 +544,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   )}
                 </SettingsField>
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().sensitiveEventRetention}
                   description={t().sensitiveEventRetentionDescription}
                   error={() => undefined}

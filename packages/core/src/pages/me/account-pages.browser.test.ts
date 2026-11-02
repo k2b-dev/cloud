@@ -348,13 +348,19 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
           const style = getComputedStyle(section);
           return `${style.borderTopWidth} ${style.backgroundColor}`;
         }),
-        // How far each section's first content sits below its header, and whether its actions stay inside the panel.
-        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section) => {
+        // How far each section's first content sits below its header, or below the section's top where the header
+        // stands in its own column beside the content, and whether its actions stay inside the panel.
+        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section): (number | string)[] => {
           const header = section.querySelector(".k2b-settings-section__header")!.getBoundingClientRect();
+          const body = section.querySelector(".k2b-settings-section__body")!.getBoundingClientRect();
           const first = Array.from(section.querySelectorAll<HTMLElement>(".k2b-settings-section__body *")).find(
             (element) => element.checkVisibility() && element.getBoundingClientRect().height > 0,
           );
-          return first ? [Math.round(first.getBoundingClientRect().top - header.bottom)] : [];
+          if (!first) return [];
+          const top = first.getBoundingClientRect().top;
+          return header.right <= body.left
+            ? [`beside ${Math.round(top - section.getBoundingClientRect().top)}`]
+            : [Math.round(top - header.bottom)];
         }),
         actionsPastPanel: Math.max(
           0,
@@ -480,7 +486,7 @@ describe("account pages in a browser", () => {
     for (const view of [desktop, phone])
       for (const path of Object.keys(pages) as Path[]) {
         const result = await measure(view, path, "en");
-        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 12) }).toEqual({
+        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 8 && gap !== "beside 8") }).toEqual({
           path,
           width: view.width,
           spacing: [],

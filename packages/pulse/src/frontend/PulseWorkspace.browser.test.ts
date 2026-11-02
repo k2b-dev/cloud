@@ -927,17 +927,17 @@ test("base settings preserve arbitrary values and show only measured usage on ph
       await raw.waitFor();
       const fieldGeometry = await raw.evaluate((element) => {
         const field = element.closest(".k2b-settings-field")!;
+        const name = field.querySelector(".k2b-settings-field__copy")!.getBoundingClientRect();
+        const control = field.querySelector(".k2b-settings-field__control")!.getBoundingClientRect();
         return {
-          display: getComputedStyle(field).display,
-          columns: getComputedStyle(field).gridTemplateColumns,
           padding: getComputedStyle(field).paddingLeft,
+          wide: field.getBoundingClientRect().width >= 640,
+          besideName: control.left >= name.right,
         };
       });
       expect(fieldGeometry.padding).toBe("0px");
-      if (view.width >= 768) {
-        expect(fieldGeometry.display).toBe("grid");
-        expect(fieldGeometry.columns.startsWith("170px ")).toBe(true);
-      }
+      // The shared settings row puts name and control side by side wherever the field has room.
+      expect(fieldGeometry.besideName).toBe(fieldGeometry.wide);
       for (const name of ["Aufbewahrung von Rohdaten", "Aufbewahrung stündlicher Aggregate", "Aufbewahrung sensibler Ereignisdaten"]) {
         const input = dialog.getByRole("spinbutton", { name, exact: true });
         await input.waitFor();

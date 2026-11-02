@@ -1044,11 +1044,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     test("keeps SettingsField a plain row and scopes its typography", () => {
       const field = rule(".k2b-settings-field");
-      // Cloud: `flex flex-col gap-1.5 px-3 py-3` — no fill, no radius.
-      expect(field).toContain("gap:.375rem");
+      // No fill and no radius; the row decides its own columns from its width.
+      expect(field).toContain("container:k2b-settings-field/inline-size");
+      expect(rule(".k2b-settings-field__row")).toContain("gap:.375rem .75rem");
       expect(field).not.toContain("background");
       expect(field).not.toContain("border-radius");
-      expect(rule(".k2b-settings-field__heading strong")).toContain("font-size:.875rem");
+      expect(rule(".k2b-settings-field__heading strong")).toContain("font-size:.8125rem");
       expect(rule(".k2b-settings-field__heading strong")).toContain("font-weight:500");
       // The description rule must not reach the error line or consumer content.
       expect(css).not.toMatch(/\.k2b-settings-field p\s*\{/);
