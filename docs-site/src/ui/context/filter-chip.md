@@ -169,7 +169,7 @@ const sections: FilterChipSection[] = [
 
 Use `FilterToggle` for one on/off filter, such as **Service accounts** or
 **Only mine**. The parent owns `active` and updates the URL or filter state.
-It looks like a `FilterChip`, and an active toggle has the same selection fill.
+It looks like a `FilterChip`, and an active toggle has the same selected edge and fill.
 Selection changes only color and background, so neighboring chips stay in place.
 
 Pass `href` to render a native link that works without JavaScript. The active

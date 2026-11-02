@@ -67,8 +67,8 @@ floating placement.
 Fields inside the group (text, textarea, number, select, multi-select,
 combobox, date, tags, color, and input-style buttons and checkbox cards) turn
 to the base surface so they stand out from the tint, disabled ones included.
-The other muted fills do the same: subtle buttons, segmented control tracks,
-filter chips, and neutral status chips. A hovered field stays on the base
+The other muted fills do the same: segmented control tracks and neutral status
+chips. Subtle buttons and filter chips are white with their own edge anyway. A hovered field stays on the base
 surface and shows its border; focus, invalid, and autofill states stay as they
 are. Switches, checkboxes, dropzones, notices, and code keep their own look.
 About 24 px separates a section from its neighbours. A section placed first in
@@ -79,16 +79,15 @@ must keep 4.5:1 against the tint; `--k2b-text-muted` and Cloud's `text-dimmed`
 do in both themes.
 
 Content in a group should not paint a white card of its own: the group already
-groups it, and a white card hides the white fields inside. Drop the fill, as
-for list rows, or give blocks that need an edge, such as a scrolling `pre`, the
-base surface. A surface that does paint its own background starts over, and
-its fields return to the muted well: detail panels, disclosures, choice, date,
-and dropdown popovers, and Cloud's `paper`. Set `--k2b-field-surface:
-initial` on any other such surface.
+groups it. Drop the fill, as for list rows, or give blocks that need an edge,
+such as a scrolling `pre`, the base surface. Fields are white with their own
+edge on every surface (see [Field edge](/en/ui/surfaces/color#field-edge)).
+Segmented control tracks and status chips in a group take the dialog surface
+through `--k2b-field-surface`; a surface that paints its own background starts over:
+detail panels, disclosures, choice, date, and dropdown popovers, and Cloud's
+`paper`. Set `--k2b-field-surface: initial` on any other such surface.
 
-Prefer sections for every field in a body that has groups. Loose fields keep
-the muted well on the dialog surface, so loose fields above a group show two
-well colours side by side.
+Prefer sections for every field in a body that has groups.
 
 A section that is alone in the body, directly or inside a form that is the
 body's only child, has nothing to be grouped against. It drops the tint and

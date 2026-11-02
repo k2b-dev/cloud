@@ -59,11 +59,15 @@ suiteFor(
   let send: ReturnType<typeof spyOn<typeof typedNotifications, "send">> | undefined;
   let reader: ReturnType<typeof spyOn<typeof systemNotificationDependencies, "read">> | undefined;
   let catalog: ReturnType<typeof mockDiscussionCatalog>;
+  let outboxWake: ReturnType<typeof spyOn<typeof notificationOutbox, "notify">>;
   const testInstant = new Date("2040-06-01T12:00:00Z");
   beforeEach(() => {
     setSystemTime(testInstant);
     catalog = mockDiscussionCatalog([providerApp("inventory")]);
     reader = spyOn(systemNotificationDependencies, "read").mockResolvedValue({ state: "not_configured", reason: "no_credential" });
+    // These service tests drive fan-out and push explicitly. Keep their commit hooks
+    // from submitting real Sync jobs that survive into the later worker test.
+    outboxWake = spyOn(notificationOutbox, "notify").mockResolvedValue(undefined);
   });
   const sent: { key: string; data: PushData; locale?: string }[] = [];
   const capture = () => {
@@ -105,6 +109,7 @@ suiteFor(
     }
     if (bulkUsers.length) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(bulkUsers)}::uuid[])`;
     bulkUsers.length = 0;
+    outboxWake.mockRestore();
   });
   const post = async (owner: Person, chat: string, body = "A complete message", rest: Record<string, unknown> = {}) => {
     const response = await f.request(owner.headers, `/${chat}/messages`, "POST", { body, clientId: crypto.randomUUID(), ...rest });
@@ -1321,20 +1326,26 @@ suiteFor(
   test("outbox and real Sync workers deliver one delayed push and drain cleanly", async () => {
     // Real NATS scheduling shares the broker's wall clock; only duration assertions use performance.now().
     setSystemTime();
+    outboxWake.mockRestore(); // This test owns real outbox publishing and the worker lifecycle.
     const { author, chat } = await setup();
     try {
       await notificationLifecycle.start();
+      const started = performance.now();
       await post(author, chat.shortId, "First worker message");
       await post(author, chat.shortId, "Second worker message");
-      await notificationOutbox.reconcile();
       const deadline = performance.now() + 10_000;
       while (!sent.length && performance.now() < deadline) await Bun.sleep(50);
       expect(sent).toHaveLength(1);
       expect(sent[0]!.data).toMatchObject({ chat: chat.shortId, further: 1 });
       expect(sent[0]!.key).toBe("message");
+      expect(performance.now() - started).toBeGreaterThanOrEqual(3_000);
     } finally {
       await notificationLifecycle.stop();
     }
+    expect(
+      await sql`SELECT 1 FROM chat.notification_outbox WHERE conversation_id = ${chat.id}::uuid AND claimed_until IS NOT NULL`,
+    ).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(0);
   });
   test("notification kinds expose browser recommendations and the email exclusion reason", () => {
     expect(app.notifications.message.delivery).toEqual({ recommended: ["browser"], required: [], excluded: ["email"] });

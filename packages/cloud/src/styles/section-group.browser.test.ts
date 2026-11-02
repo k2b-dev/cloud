@@ -24,7 +24,7 @@ const measure = async (theme: "light" | "dark") => {
   try {
     await page.setContent(
       `<html class="${theme === "dark" ? "dark" : ""}"><head><style>${css}</style></head><body class="k2b-ui">` +
-        `<i id="muted" style="background: var(--k2b-surface-muted)"></i><i id="surface" style="background: var(--ui-surface)"></i>` +
+        `<i id="muted" style="background: var(--k2b-surface-muted)"></i><i id="field" style="background: var(--k2b-surface)"></i><i id="surface" style="background: var(--ui-surface)"></i>` +
         `<div class="k2b-panel-dialog__section-body"><p class="text-dimmed">Counted per request.</p>` +
         `<div class="paper"><div class="k2b-input-shell" id="paper-well"></div></div></div>` +
         `</body></html>`,
@@ -56,7 +56,7 @@ const measure = async (theme: "light" | "dark") => {
       return {
         onGroup: contrast(dimmed, background(".k2b-panel-dialog__section-body")),
         onSurface: contrast(dimmed, background("#surface")),
-        paperWell: background("#paper-well") === background("#muted") ? "muted" : background("#paper-well"),
+        paperWell: background("#paper-well") === background("#field") ? "field" : background("#paper-well"),
       };
     });
   } finally {
@@ -65,12 +65,11 @@ const measure = async (theme: "light" | "dark") => {
 };
 
 for (const theme of ["light", "dark"] as const) {
-  test(`dimmed text keeps WCAG AA on a section group and paper fields stay muted in ${theme}`, async () => {
+  test(`dimmed text keeps WCAG AA on a section group and paper fields stay white in ${theme}`, async () => {
     const result = await measure(theme);
     expect(result.onGroup).toBeGreaterThanOrEqual(4.5);
     expect(result.onSurface).toBeGreaterThanOrEqual(4.5);
-    // A paper card inside the group paints its own surface, so its wells
-    // return to the muted recess instead of vanishing into the card.
-    expect(result.paperWell).toBe("muted");
+    // Fields are white with their own edge on every surface, also on a paper card in the group.
+    expect(result.paperWell).toBe("field");
   }, 30_000);
 }

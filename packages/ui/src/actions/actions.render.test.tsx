@@ -177,7 +177,10 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('data-variant="subtle"');
     expect(button).toContain('type="button"');
     expect(rule('.k2b-ui .k2b-button[data-size="xs"]')).toContain("min-height: 1.5rem");
-    expect(rule('.k2b-ui .k2b-button[data-variant="subtle"]')).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    // Subtle and secondary share one look: white with a light 1 px border.
+    const quiet = rule('.k2b-ui .k2b-button:is([data-variant="secondary"], [data-variant="subtle"])');
+    expect(quiet).toContain("border-color: var(--k2b-control-border-soft)");
+    expect(quiet).toContain("background: var(--k2b-surface)");
     const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
     expect(warningRule).toContain("color: #422006");
     expect(warningRule).toContain("background: var(--k2b-warning-500)");
@@ -204,7 +207,8 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('data-variant="input"');
     const inputRule = rule('.k2b-ui .k2b-button[data-variant="input"]');
     expect(inputRule).toContain("min-height: 2.25rem");
-    expect(inputRule).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(inputRule).toContain("background: var(--k2b-surface)");
+    expect(inputRule).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 
@@ -949,7 +953,8 @@ describe("@k2b/ui action geometry parity", () => {
     expect(chip).toContain("border-radius: var(--k2b-radius-control)");
     expect(chip).not.toContain("999px");
     expect(chip).toContain("border: 0");
-    expect(chip).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(chip).toContain("background: var(--k2b-surface)");
+    expect(chip).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
     expect(iconOnly).toContain("width: 2.25rem");
     expect(actionsCss).toContain(".k2b-ui .k2b-filter-chip:hover");
   });
@@ -974,7 +979,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(actionsCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(disabled).toContain("opacity: 0.4");
     // A focusable aria-disabled button looks disabled and gets no hover or press feedback.
-    for (const variant of ["", '[data-variant="ghost"]', '[data-variant="secondary"]'])
+    for (const variant of ["", '[data-variant="ghost"]', ':is([data-variant="secondary"], [data-variant="subtle"])'])
       expect(actionsCss).toContain(`.k2b-ui .k2b-button${variant}:not(:disabled, [aria-disabled="true"]):hover {`);
     expect(actionsCss).not.toMatch(/\.k2b-button[^{}\n]*:not\(:disabled\):(hover|active)/);
   });
@@ -1353,9 +1358,14 @@ describe("FilterToggle", () => {
     expect(disabled).not.toContain("href=");
   });
 
-  test("uses the shared active FilterChip tint and keeps links undecorated", () => {
+  test("uses the shared active FilterChip edge and fill and keeps links undecorated", () => {
     const active = rule('.k2b-ui .k2b-filter-chip[data-active="true"]');
-    expect(active).toContain("background: var(--k2b-app-workspace-selected)");
+    expect(active).toContain(
+      "--k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))",
+    );
+    expect(active).toContain(
+      "background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
     expect(active).toContain("color: var(--k2b-app-workspace-active)");
     expect(rule(".k2b-ui a.k2b-filter-chip")).toContain("text-decoration: none");
   });

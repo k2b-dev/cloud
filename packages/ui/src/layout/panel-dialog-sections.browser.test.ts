@@ -253,7 +253,7 @@ const measure = () => {
     ),
     icons: Array.from(grouped.querySelectorAll(".k2b-panel-dialog__section-icon")).map((element) => style(element).display),
     groupedWells: visibleBodies.flatMap((element) =>
-      Array.from(element.querySelectorAll(".k2b-input-shell")).map((input) => style(input).backgroundColor),
+      Array.from(element.querySelectorAll(".k2b-input-shell:not(:has(:disabled))")).map((input) => style(input).backgroundColor),
     ),
     looseWell: well(grouped.querySelector(".k2b-panel-dialog__body > .k2b-field")!),
     sectionGap: box(sections[1]!).top - box(sections[0]!).bottom,
@@ -321,9 +321,9 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
         expect(new Set(result.icons)).toEqual(new Set(["none"]));
         expect(result.sectionGap).toBe(24);
 
-        // Wells turn white inside a group and stay muted outside one.
+        // Fields are white with their own edge inside and outside a group.
         expect(new Set(result.groupedWells)).toEqual(new Set([result.surface]));
-        expect(result.looseWell).toBe(result.muted);
+        expect(result.looseWell).toBe(result.surface);
 
         // Opening a hideable section keeps its title and eye button in place,
         // with or without a subtitle and in floating cards too.
@@ -335,7 +335,7 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
 
         // A lone section drops its group, also inside a form that fills the body.
         for (const lone of [result.lone, result.loneForm]) {
-          expect(lone).toEqual({ tint: transparent, well: result.muted, titleAlignedWithField: true });
+          expect(lone).toEqual({ tint: transparent, well: result.surface, titleAlignedWithField: true });
         }
 
         // Sections wrapped one per column keep their groups.
@@ -442,19 +442,21 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
             };
           });
           // A segmented control is soft and draws no track on either surface.
-          expect(result.loose).toEqual({ subtle: result.muted, track: "rgba(0, 0, 0, 0)", chip: result.muted });
+          // A subtle button is white with a light border on every surface; chips follow the group.
+          expect(result.loose).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.muted });
           expect(result.grouped).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.surface });
-          // A surface inside the group starts over with muted wells.
-          expect(result.panelWell).toBe(result.muted);
+          // Fields are white with their own edge on every surface, also inside a group.
+          expect(result.panelWell).toBe(result.surface);
 
-          // A hovered well stays on the base surface and shows its border.
+          // A hovered field keeps its edge and darkens its fill a little.
           const well = page.locator("#fills .k2b-panel-dialog__section-body > .k2b-field .k2b-input-shell").first();
           await well.hover();
           const hovered = await well.evaluate((element) => {
             const style = getComputedStyle(element);
             return { background: style.backgroundColor, border: style.borderTopColor };
           });
-          expect(hovered.background).toBe(result.surface);
+          expect(hovered.background).not.toBe(result.surface);
+          expect(hovered.background).not.toBe(result.muted);
           expect(hovered.border).not.toBe(transparent);
 
           // The section subtitle uses --k2b-text-muted; it keeps WCAG AA on the tint.
