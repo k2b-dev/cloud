@@ -451,6 +451,7 @@ const loadReady = async (
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
     manifest.entrypoints.map((entry) => ({
       entrypoint: entry.entrypoint,
+      ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       cron: entry.cron,
       isNew: isNew(entry.entrypoint),

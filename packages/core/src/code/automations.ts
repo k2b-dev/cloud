@@ -1,6 +1,11 @@
 import { sql } from "@k2b/cloud";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import { CloudResourceReaderViewSchema, CodeCheckedVersionManifestSchema, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import {
+  CloudResourceReaderViewSchema,
+  CodeAutomationTitleSchema,
+  CodeCheckedVersionManifestSchema,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import type { CodeContext } from "./access";
 import { targetApp, targetKey } from "./activation-plan";
@@ -21,6 +26,7 @@ const TargetSchema = z
 export const CodeAutomationSchema = z
   .object({
     entrypoint: z.string(),
+    title: CodeAutomationTitleSchema.optional(),
     kind: z.enum(["schedule", "manual"]),
     cron: z.string().nullable(),
     /** When the installation's scheduler runs it next; null when it does not or the scheduler cannot say. */
@@ -210,6 +216,7 @@ export async function listCodeAutomations(
     const run = lastRun.get(entry.entrypoint);
     return {
       entrypoint: entry.entrypoint,
+      ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       cron: entry.cron,
       nextRunAt: nextRuns.get(entry.entrypoint) ?? null,

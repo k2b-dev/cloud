@@ -16,6 +16,7 @@ const PreviewSchema = z.object({
   codeId: z.string(),
   title: z.string(),
   ownerKind: z.enum(["person", "resource", "app"]),
+  automations: z.array(z.object({ entrypoint: z.string(), title: z.string().optional() })).optional(),
   versionId: z.string(),
   number: z.number().int(),
   running: z.number().int().nullable(),

@@ -117,6 +117,8 @@ export const CodeRunSchema = z
     trigger: z.enum(["manual", "schedule", "event", "path"]),
     /** Declared handler name; never a concrete request URL or payload. Safe run metadata for readers. */
     entrypoint: z.string(),
+    /** Reviewed title of this run's entrypoint in its pinned version, when declared. */
+    title: z.string().optional(),
     state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
     outcome: z.string().nullable(),
     createdAt: timestamp,

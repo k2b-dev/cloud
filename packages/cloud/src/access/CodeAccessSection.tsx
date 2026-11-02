@@ -171,7 +171,8 @@ export default function CodeAccessSection(props: {
     if (!canRemove(entry) || !appId || removing() !== null) return;
     const name = nameOf(entry);
     const owner = accounts[accountId(entry)]?.ownerTitle;
-    const automations = detailOf(entry)?.automations ?? [];
+    const detail = detailOf(entry);
+    const automations = (detail?.automations ?? []).map((id) => detail?.automationTitles?.[id] ?? id);
     const confirmed = await prompts.confirm(
       <>
         <p>{automations.length ? t().codeRemoveBodyFor({ names: automations }) : t().codeRemoveBody}</p>
@@ -303,7 +304,10 @@ export default function CodeAccessSection(props: {
                             {/* These lines wrap on narrow screens instead of hiding who switched it on. */}
                             <span class={`block break-words text-dimmed ${props.expanded ? "text-[13px]" : "text-xs"}`}>
                               <code class="font-mono text-[0.95em] font-medium text-secondary">{detail().operations.join(", ")}</code>
-                              <Show when={detail().automations.length > 0}> · {t().codeUsedFor({ names: detail().automations })}</Show>
+                              <Show when={detail().automations.length > 0}>
+                                {" "}
+                                · {t().codeUsedFor({ names: detail().automations.map((id) => detail().automationTitles?.[id] ?? id) })}
+                              </Show>
                             </span>
                             <Show when={detail().activatedAt}>
                               {(at) => (

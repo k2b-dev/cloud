@@ -13,7 +13,9 @@ if (Bun.argv.includes("--help")) {
     console.log(JSON.stringify(analyzeCode(request)));
   } else if (Bun.argv[2] === "bundle") {
     const expected = JSON.stringify(
-      request.entrypoints.filter((e) => e.kind === "schedule").map(({ entrypoint, cron }) => ({ kind: "schedule", entrypoint, cron })),
+      request.entrypoints
+        .filter((e) => e.kind === "schedule")
+        .map(({ entrypoint, cron, title }) => ({ kind: "schedule", entrypoint, cron, ...(title === undefined ? {} : { title }) })),
     );
     const exports = request.entrypoints
       .map((entry, i) => {

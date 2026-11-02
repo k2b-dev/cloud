@@ -48,6 +48,9 @@ export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"ch
       ctx.print(`${diagnostic.file}:${diagnostic.line}:${diagnostic.column} ${diagnostic.code}: ${diagnostic.message}`);
     return;
   }
+  ctx.print(t("Automations", "Automationen"));
+  for (const entry of data.result.manifest.entrypoints)
+    ctx.print(`  ${entry.title ?? entry.entrypoint} · ${entry.cron ?? t("manual start", "Handstart")}`);
   ctx.print(t("Permissions", "Erlaubnisse"));
   for (const permission of data.permissions) {
     const type = permission.typeTitle ?? permission.target?.type ?? t("application", "App");

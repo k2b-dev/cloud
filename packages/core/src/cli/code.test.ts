@@ -6,7 +6,7 @@ import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cl
 import { codeTestFailure } from "@k2b/cloud/code";
 import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
-import code from "./code";
+import code, { printCodeCheck } from "./code";
 import { codeProjectFolder, listCodeProjects, loadCodeProject, readCodeFiles, writeCodeProject } from "./code-files";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
@@ -136,7 +136,8 @@ test("check prints chapter 11 permissions with exact targets and source lines", 
   const run = context(["check", directory], {}, "text");
   expect(await code.run(run.ctx)).toBe(0);
   expect(run.printed.join("\n")).toMatchInlineSnapshot(`
-"Erlaubnisse
+"Automationen
+Erlaubnisse
   example.conversation.move   am eigenen Postfach Rechnungen (box_1234)   code.ts:3
   other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8  ← neu, braucht den Admin des Space
 KI           ja
@@ -575,7 +576,8 @@ test("personal check never asks for target-admin grants", async () => {
   const run = context(["check", directory], {}, "text", () => Response.json(personal));
   expect(await code.run(run.ctx)).toBe(0);
   expect(run.printed.join("\n")).toMatchInlineSnapshot(`
-"Erlaubnisse
+"Automationen
+Erlaubnisse
   example.conversation.move   an Postfach Rechnungen (box_1234)   code.ts:3
   other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8
 KI           ja
@@ -1045,4 +1047,23 @@ test("status with no current project and no default code folder returns an empty
   expect(exit).toBe(0);
   expect(stderr).toBe("");
   expect(JSON.parse(stdout)).toEqual([]);
+});
+
+test("human check output uses reviewed titles and JSON retains both titles and stable entrypoints", async () => {
+  const data = structuredClone(checked);
+  if (!data.result.ok || !data.manifest) throw new Error("Expected successful check");
+  const entries = [
+    { kind: "schedule" as const, entrypoint: "deliver", title: "Lieferungen eintragen", cron: "0 8 * * 1", file: "code.ts", line: 1 },
+    { kind: "manual" as const, entrypoint: "legacy", cron: null, file: "code.ts", line: 2 },
+  ];
+  data.result.manifest.entrypoints = entries;
+  data.manifest.entrypoints = entries;
+  const human = context([], {}, "text");
+  printCodeCheck(human.ctx, data);
+  expect(human.printed.join("\n")).toContain("Lieferungen eintragen · 0 8 * * 1");
+  expect(human.printed.join("\n")).toContain("legacy · Handstart");
+  const { directory } = await project();
+  const machine = context(["check", directory], {}, "json", () => Response.json({ data }));
+  expect(await code.run(machine.ctx)).toBe(0);
+  expect(JSON.parse(machine.printed[0]!).result.manifest.entrypoints).toEqual(entries);
 });

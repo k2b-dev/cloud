@@ -196,7 +196,7 @@ databaseSuite()("durable Code activation", () => {
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(sourceFiles, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: [{ kind: "manual", entrypoint: "run", cron: null, file: "code.ts", line: 1 }],
+      entrypoints: [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
       // The checker could place the call at A in the run entrypoint, not the one at B.
@@ -296,7 +296,13 @@ databaseSuite()("durable Code activation", () => {
     const code = await newCode(),
       submitted = await version(code);
     const ready = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-    expect(ready).toMatchObject({ number: submitted.version.number, running: null, activated: null, allowed: { allowed: true } });
+    expect(ready).toMatchObject({
+      number: submitted.version.number,
+      running: null,
+      activated: null,
+      allowed: { allowed: true },
+      automations: [{ entrypoint: "run", title: "Lieferungen eintragen" }],
+    });
     expect(ready.rows.map((row) => [row.target.id, row.own, row.check, row.isNew, row.title])).toEqual([
       [code.owner.kind === "resource" ? code.owner.ref.id : "", true, "manages", false, "Fixture target"],
       ["A", false, "manages", true, "Fixture target"],
@@ -1145,6 +1151,7 @@ databaseSuite()("durable Code activation", () => {
         grantId: atA.grantId,
         operations: ["example.item.change"],
         automations: ["run"],
+        automationTitles: { run: "Lieferungen eintragen" },
         activatedBy: { id: ownerId, name: "Ben Schulz" },
         activatedAt: activatedAt.toISOString(),
       },

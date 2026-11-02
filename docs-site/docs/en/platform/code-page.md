@@ -147,3 +147,8 @@ because the Code never gets access of its own. Gustav uses this at
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
 appears as **Edit with <panel>** on the page and on an empty page, with the icon
 the panel declares; the page names no application.
+
+
+Automation names use the optional reviewed `entrypoints[].title` and fall back
+to the entrypoint identifier. This also applies to switch-on dialogs and
+missing-access messages. Run history uses the title from the run's own version.

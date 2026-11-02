@@ -151,7 +151,7 @@ export function codeOperationCommands(locale?: string) {
           const data = await request(ctx, "runs", { codeId: config.codeId, cursor: flags.cursor, limit: flags.limit });
           if (!printStructured(ctx, data)) {
             if (!data.items.length) ctx.print(t("No runs.", "Keine Läufe."));
-            for (const run of data.items) ctx.print(`${run.id} · ${run.entrypoint} · ${run.state} · ${outcome(run.outcome)}`);
+            for (const run of data.items) ctx.print(`${run.id} · ${run.title ?? run.entrypoint} · ${run.state} · ${outcome(run.outcome)}`);
             if (data.nextCursor) ctx.print(`--cursor ${data.nextCursor}`);
           }
         }

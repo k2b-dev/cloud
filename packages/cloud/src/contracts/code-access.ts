@@ -218,7 +218,8 @@ export const CodeGrantDetailsInputSchema = z
  * What a target's manager sees about one Code grant: the operations it was switched on for, the automations of the
  * running version that use them here, and who switched it on when. Core returns a grant only when the target's own
  * `code.access.list` lists it for the viewer, so only at targets they manage. `automations` holds the sorted
- * entrypoint names the checker attributed to these operations at this target; it is empty when none could be
+ * entrypoint identifiers the checker attributed to these operations at this target; optional `automationTitles`
+ * maps those identifiers to reviewed display titles. The identifiers array is empty when none could be
  * placed. `activatedBy` is null when that account is gone or the viewer may not see other people's names
  * (directory visibility); `activatedAt` is null while the activation has not finished.
  */
@@ -227,6 +228,8 @@ export const CodeGrantDetailSchema = z
     grantId: z.uuid(),
     operations: z.array(z.string()),
     automations: z.array(z.string()),
+    /** Reviewed titles keyed by entrypoint; absent titles fall back to that identifier. */
+    automationTitles: z.record(z.string(), z.string()).optional(),
     activatedBy: z.object({ id: z.uuid(), name: z.string() }).strict().nullable(),
     activatedAt: z.iso.datetime().nullable(),
   })

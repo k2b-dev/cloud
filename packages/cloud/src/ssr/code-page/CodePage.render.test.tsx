@@ -500,3 +500,24 @@ test("internet lists distinguish running/waiting versions, historical selection,
   expect(text("internet-failed")).toContain("Die Ursprünge im Internet konnten nicht geladen werden.");
   expect(text("internet-failed")).toContain("Erneut versuchen");
 });
+
+test("automation rows and missing-access messages use reviewed titles with identifier fallback", () => {
+  for (const state of ["overview", "removed", "waiting"] as const) {
+    const data = codePageFixture(state, "de");
+    if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+    for (const automation of data.state.automations ?? []) automation.title = "Lieferungen eintragen";
+    const rendered = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+    const text = rendered.replaceAll(/<[^>]+>/g, " ");
+    expect(text).toContain("Lieferungen eintragen");
+    expect(text).not.toContain("anfragenSortieren");
+    if (state === "removed") expect(text).toContain("„Lieferungen eintragen“");
+  }
+  expect(html("overview")).toContain("anfragenSortieren");
+});

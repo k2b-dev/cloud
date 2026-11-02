@@ -552,7 +552,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
     );
     const proven = affected.filter((automation) => automation.missingProven);
     const needing = affected.filter((automation) => !automation.missingProven);
-    const names = (list: CodePageAutomation[]) => list.map((automation) => `„${automation.entrypoint}“`).join(", ");
+    const names = (list: CodePageAutomation[]) => list.map((automation) => `„${automation.title ?? automation.entrypoint}“`).join(", ");
     return [
       ...(proven.length > 0 ? [t().affectedFailed({ names: names(proven) })] : []),
       ...(needing.length > 0 ? [t().needsThisAccess({ names: names(needing), count: needing.length })] : []),
@@ -861,7 +861,7 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
       </span>
       <span class="cloud-code__cell" role="cell">
         <span class="cloud-code__title">
-          {props.automation.entrypoint}
+          {props.automation.title ?? props.automation.entrypoint}
           <Show when={props.automation.isNew}>
             <Tag>{t().newTag}</Tag>
           </Show>
@@ -990,7 +990,7 @@ function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText 
                     >
                       <span class="cloud-code__cell">
                         <span class="cloud-code__title">
-                          {shortId(run.id)} · {run.entrypoint}
+                          {shortId(run.id)} · {run.title ?? run.entrypoint}
                         </span>
                         <span class="cloud-code__sub">
                           {[
@@ -1130,7 +1130,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
       <div class="cloud-code__run-head">
         <div class="min-w-0">
           <h2 id="cloud-code-run-title" class="cloud-code__h2">
-            {shortId(run().id)} · {run().entrypoint}
+            {shortId(run().id)} · {run().title ?? run().entrypoint}
           </h2>
           <p class="cloud-code__sub">
             {[
@@ -1416,7 +1416,9 @@ function ActivationDialog(props: {
   };
   const newAutomations = () =>
     props.mode === "waiting"
-      ? (props.state.automations ?? []).filter((automation) => automation.isNew).map((automation) => `„${automation.entrypoint}“`)
+      ? (props.state.automations ?? [])
+          .filter((automation) => automation.isNew)
+          .map((automation) => `„${automation.title ?? automation.entrypoint}“`)
       : [];
   const blocked = () => {
     const current = view();

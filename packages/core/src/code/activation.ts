@@ -279,15 +279,19 @@ export async function previewCodeActivation(
   const person = codePerson(context, true);
   const code = await authorizeActivation(input.codeId, person, context);
   const [version] = await sql<
-    { number: number }[]
-  >`SELECT number FROM code.versions WHERE id=${input.versionId}::uuid AND code_id=${code.id}`;
+    { number: number; manifest: unknown }[]
+  >`SELECT number,manifest FROM code.versions WHERE id=${input.versionId}::uuid AND code_id=${code.id}`;
   if (!version) throw new CodeDataError("NOT_FOUND", "Code version not found.");
   const [numbers] = await sql<{ latest: number; running: number | null }[]>`SELECT
       (SELECT max(number) FROM code.versions WHERE code_id=${code.id})::int AS latest,
       (SELECT number FROM code.versions WHERE id=${code.activeVersionId}::uuid)::int AS running`;
   const allowed = previewAllowed(context);
+  const manifest = CodeCheckedVersionManifestSchema.safeParse(version.manifest);
   const base = {
     codeId: code.id,
+    automations: manifest.success
+      ? manifest.data.entrypoints.map(({ entrypoint, title }) => ({ entrypoint, ...(title === undefined ? {} : { title }) }))
+      : [],
     title: code.title,
     ownerKind: code.owner.kind,
     versionId: input.versionId,

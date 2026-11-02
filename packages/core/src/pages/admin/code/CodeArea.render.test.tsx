@@ -252,3 +252,10 @@ test("people without the Cloud-admin role see only the no-permission state", () 
   expect(html).toContain("Nur Cloud-Admins verwalten Code");
   expect(html).not.toContain("Freigaben");
 });
+
+test("reviewed automation titles appear in approvals and old declarations keep their identifier", () => {
+  const html = render(review);
+  expect(html).toContain("Lieferungen eintragen");
+  expect(html).toContain("legacyJob");
+  expect(html).not.toContain(">lieferungenEintragen<");
+});

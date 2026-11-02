@@ -224,3 +224,10 @@ cleanup runs separately so a draining version does not block new activations.
 Owner deletion stops activation and durably removes its grants. See
 [Code lifecycle](/en/docs/platform/code-lifecycle) for the deletion helper,
 owner checks and the cleanup read model.
+
+
+Activation previews carry optional `automations`: `{ entrypoint, title? }`
+from the reviewed version. Consumers show the title when present and keep the
+entrypoint as the execution key. Target-grant details keep `automations` as
+identifiers and add optional `automationTitles`, keyed by those identifiers,
+for readable names in access and removal dialogs.

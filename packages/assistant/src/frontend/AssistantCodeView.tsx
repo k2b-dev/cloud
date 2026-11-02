@@ -62,7 +62,7 @@ export const codeScheduleLine = (code: CodeSummary, locale: string, timeZone: st
   const next = nextCodeRun(code);
   return [
     automations.length > 1 ? t.codeAutomationCount({ count: automations.length }) : t.codeKind,
-    ...(single ? [single.cron ? describeCodeSchedule(single.cron, locale) : t.codeManualStart] : []),
+    ...(single ? [single.title ?? single.entrypoint, single.cron ? describeCodeSchedule(single.cron, locale) : t.codeManualStart] : []),
     ...(next ? [t.codeNextRun({ when: formatCodeNextRun(next, locale, timeZone) })] : []),
   ].join(" · ");
 };

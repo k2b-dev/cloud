@@ -295,6 +295,13 @@ export default function AssistantCodeVersionCard(props: {
         {(current) => (
           <div class="assistant-code-version" data-state={blockedRows().length > 0 ? "blocked" : "ready"}>
             <p class="assistant-code-version__title">{t().codeVersionReady({ version: props.number, title: current().title })}</p>
+            <Show when={current().automations?.length}>
+              <p class="assistant-code-version__note">
+                {current()
+                  .automations?.map((entry) => entry.title ?? entry.entrypoint)
+                  .join(" · ")}
+              </p>
+            </Show>
             <Show
               when={current().rows.length > 0}
               fallback={

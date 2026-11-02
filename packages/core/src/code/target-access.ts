@@ -3,6 +3,7 @@ import { invokeCodeAccess } from "@k2b/cloud/capabilities/server";
 import {
   CODE_ACCESS_ACCOUNTS_MAX,
   CodeAccessListDataSchema,
+  CodeAutomationTitleSchema,
   type CodeGrantDetail,
   CodeGrantDetailSchema,
   CodeGrantDetailsInputSchema,
@@ -58,6 +59,7 @@ const managedGrantIds = async (
 };
 
 const ManifestUsesSchema = z.object({
+  entrypoints: z.array(z.object({ entrypoint: z.string(), title: CodeAutomationTitleSchema.optional() })).optional(),
   permissions: z.array(
     z.object({
       operation: z.string(),
@@ -151,10 +153,20 @@ export const readCodeGrantDetails = async (
   );
   return matching.map((row) => {
     const name = row.activating_person ? names.get(row.activating_person) : undefined;
+    const automations = automationsAt(row.manifest, row.target, row.operations);
+    const manifest = ManifestUsesSchema.safeParse(row.manifest);
+    const automationTitles = Object.fromEntries(
+      manifest.success
+        ? (manifest.data.entrypoints ?? []).flatMap((entry) =>
+            entry.title !== undefined && automations.includes(entry.entrypoint) ? [[entry.entrypoint, entry.title]] : [],
+          )
+        : [],
+    );
     return {
       grantId: row.grant_id,
       operations: [...row.operations].sort(),
-      automations: automationsAt(row.manifest, row.target, row.operations),
+      automations,
+      ...(Object.keys(automationTitles).length ? { automationTitles } : {}),
       activatedBy: row.activating_person && name ? { id: row.activating_person, name } : null,
       activatedAt: row.activated_at ? row.activated_at.toISOString() : null,
     };

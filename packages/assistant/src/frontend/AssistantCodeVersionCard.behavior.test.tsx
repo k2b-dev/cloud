@@ -207,3 +207,13 @@ test("an activation whose person is hidden or gone is credited to nobody", async
   expect(dom.root.textContent).toContain("Version 5 switched on");
   expect(dom.root.textContent).not.toContain("by you");
 });
+
+test("the chat version card names reviewed automations and falls back to their identifiers", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({
+      json: { data: preview({ automations: [{ entrypoint: "deliver", title: "Lieferungen eintragen" }, { entrypoint: "legacyJob" }] }) },
+    }),
+  });
+  expect(dom.root.textContent).toContain("Lieferungen eintragen · legacyJob");
+  expect(dom.root.textContent).not.toContain("deliver");
+});

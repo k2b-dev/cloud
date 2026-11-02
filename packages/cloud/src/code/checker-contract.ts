@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CodeInternetOriginsSchema } from "../contracts/code-internet";
+import { CodeAutomationTitleSchema } from "../contracts/code-version";
 import type { GeneratedCodeSdk } from "./types";
 
 /** Administrator budgets for C22. UTF-8 sizes; checkMs covers all child processes together. No environment overrides. */
@@ -59,6 +60,7 @@ export const CodeVersionManifestSchema = z
         .object({
           kind: z.enum(["schedule", "manual"]),
           entrypoint: z.string().min(1),
+          title: CodeAutomationTitleSchema.optional(),
           cron: z.string().nullable(),
           file: z.string().min(1),
           line: z.number().int().positive(),

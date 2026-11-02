@@ -55,6 +55,11 @@ test("approving sends the unchanged hash binding, shows the result and lowers th
   await page.getByRole("link", { name: "Code öffnen" }).waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).count()).toBe(0);
   expect(await sidebarCode().innerText()).toContain("3");
+  expect(await page.locator(`a[href*="sec=approvals"][href*="id=${FIXTURE_VERSIONS.rueckruf3}"]`).count()).toBe(0);
+  await page.reload();
+  await page.getByText("Version 3 ist freigegeben.").waitFor();
+  expect(await sidebarCode().innerText()).toContain("3");
+  expect(await page.locator(`a[href*="sec=approvals"][href*="id=${FIXTURE_VERSIONS.rueckruf3}"]`).count()).toBe(0);
 }, 20_000);
 
 test("rejecting asks first and cancel changes nothing", async () => {
