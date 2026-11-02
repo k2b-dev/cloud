@@ -380,9 +380,9 @@ add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
 Cloud writes the collection before advertising the app at startup. Successful
-publication is remembered by content hash; unchanged heartbeats do not write
-the collection again. The publisher of the advertised hash checks that its
-collection still exists on its own heartbeat. Missing collections produce a
+publication is remembered by content hash; with Core 0.64 or later, unchanged
+heartbeats do not write the collection again. The publisher of the advertised
+hash checks that its collection still exists on its own heartbeat. Missing collections produce a
 warning and are republished; failed publications remain retryable through the
 existing heartbeat failure policy.
 
@@ -392,8 +392,8 @@ replica taking over republishes its collection before advertising it. Publishing
 a collection clears its pending deletion in the same transaction. Stored
 collections from unavailable applications are not exposed as current Help.
 Retention uses the registered app and hash, never the age of a publication or
-its last renewal. See [upgrade order](/en/docs/operations/scaling-and-shutdown#upgrade-help-and-skill-publication)
-before upgrading application publishers.
+its last renewal. See [upgrade behavior](/en/docs/operations/scaling-and-shutdown#upgrade-help-and-skill-publication)
+for automatic legacy renewals when an application upgrades before Core.
 
 ## Use the automatically derived surfaces
 

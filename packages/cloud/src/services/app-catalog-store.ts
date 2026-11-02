@@ -9,11 +9,14 @@ export const APP_CATALOG_RETENTION_MS = 24 * 60 * 60 * 1_000;
 
 export type AppCatalogRegistration = Pick<AppRegistryEntry, "id" | "help" | "skills">;
 
+const legacyCatalogTables = new Set<AppCatalogTable>();
+export const usesLegacyCatalogRenewal = (table: AppCatalogTable): boolean => legacyCatalogTables.has(table);
+
 const sqlState = (error: unknown): unknown =>
   error && typeof error === "object" ? (Reflect.get(error, "errno") ?? Reflect.get(error, "code")) : null;
 
 /** New publishers cancel a pending removal in the same transaction as publication.
- * Older Core schemas remain writable during recovery, but still require Core-first upgrades.
+ * Older Core schemas keep lease renewals until a later publication detects the new column.
  */
 export const clearCatalogRemoval = async (tx: TransactionSQL, table: AppCatalogTable, appId: string, hash: string): Promise<void> => {
   try {
@@ -24,9 +27,12 @@ export const clearCatalogRemoval = async (tx: TransactionSQL, table: AppCatalogT
         [appId, hash],
       );
     });
+    legacyCatalogTables.delete(table);
   } catch (error) {
     if (sqlState(error) !== "42703") throw error;
-    logger("app-catalogs").warn("Core lacks registry-based catalog retention; upgrade Core before application publishers", {
+    if (legacyCatalogTables.has(table)) return;
+    legacyCatalogTables.add(table);
+    logger("app-catalogs").warn("Core lacks registry-based catalog retention; using legacy catalog renewals until Core upgrades", {
       appId,
       table,
     });

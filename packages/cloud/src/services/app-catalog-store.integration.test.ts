@@ -5,7 +5,7 @@ import { createCatalogPublication } from "../_internal/catalog-publication";
 import { compileHelp } from "../_internal/help";
 import { appSkillManifestHash, registerAppSkills, skill } from "../ai/app-skills";
 import { defineHelp } from "../server/help";
-import { APP_CATALOG_RETENTION_MS, appCatalogExists, cleanupAppCatalogs } from "./app-catalog-store";
+import { APP_CATALOG_RETENTION_MS, appCatalogExists, cleanupAppCatalogs, usesLegacyCatalogRenewal } from "./app-catalog-store";
 import { migrateHelp, registerHelp } from "./help/store";
 
 const epoch = Date.UTC(2030, 0, 1);
@@ -156,6 +156,7 @@ databaseSuite()("registry-owned app catalog retention", () => {
           await registerHelp(corpus.corpus, db);
         },
         {
+          force: usesLegacyCatalogRenewal("help.corpora"),
           verify: () => appCatalogExists("help.corpora", "repair", corpus.corpus.manifestHash, db),
           onMissing,
         },
@@ -167,6 +168,7 @@ databaseSuite()("registry-owned app catalog retention", () => {
           return registerAppSkills("repair", [source], hash, db);
         },
         {
+          force: usesLegacyCatalogRenewal("ai.app_skill_catalogs"),
           verify: () => appCatalogExists("ai.app_skill_catalogs", "repair", hash, db),
           onMissing,
         },
@@ -184,7 +186,7 @@ databaseSuite()("registry-owned app catalog retention", () => {
     await heartbeat();
     expect(writes).toBe(4);
     expect(await db`SELECT 1 FROM help.documents`).toHaveLength(2);
-    // During an unsupported Core-first upgrade inversion, older Core's expiry can delete sources again.
+    // Third-party publishers may upgrade before Core: renew timestamps until its schema upgrades.
     await db`ALTER TABLE help.corpora DROP COLUMN unregistered_at`.simple();
     await db`ALTER TABLE ai.app_skill_catalogs DROP COLUMN unregistered_at`.simple();
     try {
@@ -195,9 +197,31 @@ databaseSuite()("registry-owned app catalog retention", () => {
       expect(warnings).toBe(4);
       expect(await appCatalogExists("help.corpora", "repair", corpus.corpus.manifestHash, db)).toBe(true);
       expect(await appCatalogExists("ai.app_skill_catalogs", "repair", hash, db)).toBe(true);
+      expect(usesLegacyCatalogRenewal("help.corpora")).toBe(true);
+      expect(usesLegacyCatalogRenewal("ai.app_skill_catalogs")).toBe(true);
+      const documents = await db`SELECT ctid::text FROM help.documents ORDER BY locale`;
+      for (let minute = 0; minute < 60; minute++) {
+        for (const table of ["help.corpora", "ai.app_skill_catalogs"] as const)
+          await db.unsafe(`UPDATE ${table} SET last_seen_at=now() - interval '5 minutes'`);
+        await heartbeat();
+        for (const table of ["help.corpora", "ai.app_skill_catalogs"] as const) {
+          // Old Core's expiry must not delete a healthy app between its own heartbeats.
+          await db.unsafe(`DELETE FROM ${table} WHERE last_seen_at < now() - interval '6 minutes'`);
+          expect(await db.unsafe(`SELECT 1 FROM ${table}`)).toHaveLength(1);
+        }
+      }
+      expect(writes).toBe(126);
+      expect(warnings).toBe(4);
+      expect(await db`SELECT ctid::text FROM help.documents ORDER BY locale`).toEqual(documents);
     } finally {
       await db`ALTER TABLE help.corpora ADD COLUMN unregistered_at timestamptz`.simple();
       await db`ALTER TABLE ai.app_skill_catalogs ADD COLUMN unregistered_at timestamptz`.simple();
     }
+    await heartbeat(); // The first renewal against upgraded Core clears legacy mode for both catalogs.
+    expect(writes).toBe(128);
+    expect(usesLegacyCatalogRenewal("help.corpora")).toBe(false);
+    expect(usesLegacyCatalogRenewal("ai.app_skill_catalogs")).toBe(false);
+    await heartbeat();
+    expect(writes).toBe(128);
   });
 });

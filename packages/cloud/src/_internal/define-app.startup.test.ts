@@ -47,7 +47,9 @@ describe("application startup readiness", () => {
       } as unknown as Sync;
       const current = spyOn(registry, "getApp").mockResolvedValue(null);
       const exists = spyOn(catalogStore, "appCatalogExists").mockResolvedValue(true);
+      const legacy = spyOn(catalogStore, "usesLegacyCatalogRenewal").mockReturnValue(false);
       const spies = [
+        legacy,
         current,
         exists,
         helpWrite,
@@ -190,6 +192,15 @@ describe("application startup readiness", () => {
           await publishCatalogs!(true); // Membership adoption cancels source retention before advertising.
           expect(helpWrite).toHaveBeenCalledTimes(3);
           expect(skillWrite).toHaveBeenCalledTimes(3);
+          legacy.mockReturnValue(true);
+          await publishCatalogs!();
+          await publishCatalogs!();
+          expect(helpWrite).toHaveBeenCalledTimes(5);
+          expect(skillWrite).toHaveBeenCalledTimes(5);
+          legacy.mockReturnValue(false);
+          await publishCatalogs!();
+          expect(helpWrite).toHaveBeenCalledTimes(5);
+          expect(skillWrite).toHaveBeenCalledTimes(5);
           if (skipSetup) {
             expect(events).not.toContain("setup");
             expect(events).not.toContain("setup-lock-ready");

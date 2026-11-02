@@ -8,7 +8,7 @@ import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-ac
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
-import { appCatalogExists } from "../services/app-catalog-store";
+import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
@@ -850,7 +850,7 @@ export const defineApp = <
           const current = force ? null : await getApp(meta.id);
           if (compiledHelp)
             await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus), {
-              force,
+              force: force || usesLegacyCatalogRenewal("help.corpora"),
               verify:
                 current?.help?.manifestHash === compiledHelp.corpus.manifestHash
                   ? () => appCatalogExists("help.corpora", meta.id, compiledHelp.corpus.manifestHash)
@@ -859,7 +859,7 @@ export const defineApp = <
             });
           if (appSkills && skillsManifestHash)
             await publishSkills(skillsManifestHash, () => registerAppSkills(meta.id, appSkills, skillsManifestHash), {
-              force,
+              force: force || usesLegacyCatalogRenewal("ai.app_skill_catalogs"),
               verify:
                 current?.skills?.manifestHash === skillsManifestHash
                   ? () => appCatalogExists("ai.app_skill_catalogs", meta.id, skillsManifestHash)

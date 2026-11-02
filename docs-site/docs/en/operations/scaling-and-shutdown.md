@@ -37,23 +37,25 @@ bun --no-env-file scripts/scale-acceptance.ts
 
 ## Upgrade Help and Skill publication
 
-Upgrade all Core replicas to registry-based catalog retention before upgrading
-application publishers, including third-party applications that update
-`@k2b/cloud` independently. New publishers write Help and Skill catalogs at
-startup, on content changes, on replica takeover, and when repairing missing
-sources. Unchanged heartbeats perform indexed existence reads without catalog
-writes.
+Core 0.64 introduces registry-based catalog retention. Upgrade Core first to
+reduce catalog writes immediately. Third-party applications may also update
+`@k2b/cloud` before the operator upgrades Core: their publishers automatically
+keep the legacy once-per-minute timestamp renewals while the retention column
+is absent. This prevents old Core from deleting healthy catalogs after six
+minutes and avoids repeatedly rebuilding their Help search documents.
 
-Core 0.62 and earlier still delete catalogs after six minutes without timestamp
-renewals. A publisher that stops renewing timestamps without self-repair loses
-its catalogs until restart. Publishers with heartbeat self-repair restore
-missing sources on their next heartbeat, but old Core can delete them again.
-Upgrading application packages first is therefore unsupported: upgrade Core
-first, then restart affected applications to restore their catalogs immediately.
+Each renewal checks for the new column. Once Core's schema upgrade adds it,
+the process automatically returns to publication at startup, on content
+changes, on replica takeover, and when repairing missing sources. Unchanged
+heartbeats then perform indexed existence reads without catalog writes; no
+application restart is needed to leave legacy mode. Core before 0.64 still
+uses timestamp expiry, so upgrade all Core replicas together before completing
+the rollout of the new retention behavior.
 
 New Core accepts the existing catalog tables and renewal statements from
-`@k2b/cloud 0.55.0` applications. Their minute-by-minute writes remain
-compatible. It retains the registered app/hash pair indefinitely. Other hashes
+older applications, including published `@k2b/cloud 0.55.0`. Their
+minute-by-minute writes remain compatible. It retains the registered app/hash
+pair indefinitely. Other hashes
 and sources of removed apps receive one day of grace before bounded deletion,
 including all localized Help documents. An older replica taking over rewrites
 its sources before advertising them. A returning publisher clears pending
