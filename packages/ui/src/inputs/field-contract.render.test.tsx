@@ -148,5 +148,4 @@ describe("TextInput icons", () => {
     expect(explicit).toContain("ti ti-pencil");
     expect(ai.match(/ti ti-sparkles/g)?.length).toBe(2);
   });
-
 });

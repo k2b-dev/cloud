@@ -141,7 +141,9 @@ describe("source-faithful editor SSR contracts", () => {
         .join(";");
 
     expect(body(".k2b-ui .k2b-markdown-editor")).toContain("border: 1px solid var(--k2b-edge-color)");
-    expect(body(".k2b-ui .k2b-markdown-editor")).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
+    expect(body(".k2b-ui .k2b-markdown-editor")).toContain(
+      "box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)",
+    );
     const focus = body(".k2b-ui .k2b-markdown-editor:focus-within");
     expect(focus).toContain("--k2b-edge-color: var(--k2b-edge-focus)");
     expect(focus).toContain("outline: none");
