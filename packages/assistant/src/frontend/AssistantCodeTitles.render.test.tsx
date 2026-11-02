@@ -59,5 +59,7 @@ for (const surface of ["apps", "panel"] as const)
     const titled = render(surface, "Lieferungen eintragen");
     expect(titled).toContain("Lieferungen eintragen");
     expect(titled).not.toContain(">lieferungenEintragen<");
-    expect(render(surface)).toContain("lieferungenEintragen");
+    // The list row stays "Automation · schedule" without a declared title (mockup); the panel names the export.
+    if (surface === "panel") expect(render(surface)).toContain("lieferungenEintragen");
+    else expect(render(surface)).not.toContain("lieferungenEintragen");
   });
