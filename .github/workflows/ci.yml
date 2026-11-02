@@ -298,7 +298,8 @@ jobs:
           # Log every statement that takes 250 ms or longer, with its plan, so
           # a slow run can be told apart from a slow database. The runner
           # prints the service log under "Stop containers"; the log options
-          # below bound it. See contributing/testing.md.
+          # below bound it. A statement ends soon after its test process is
+          # gone, so its locks never stall the next suite. See contributing/testing.md.
           POSTGRES_INITDB_ARGS: &postgres-diagnostics >-
             -c fsync=off -c synchronous_commit=off -c full_page_writes=off
             -c shared_preload_libraries=auto_explain
@@ -309,6 +310,7 @@ jobs:
             -c auto_explain.log_analyze=off
             -c auto_explain.log_nested_statements=on
             -c auto_explain.log_parameter_max_length=256
+            -c client_connection_check_interval=5s
         ports: ["5432:5432"]
         options: >-
           --tmpfs /var/lib/postgresql/data:rw,size=4g

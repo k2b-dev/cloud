@@ -1,0 +1,6 @@
+### A planner estimate of one row stalled every Notebooks suite after it
+
+- **What happened:** In about one of ten runs `graph-around.integration.test.ts` timed out, and the `migrate()` of the next two suites hit its 120 s hook limit, on pull requests that do not touch Notebooks.
+- **Root cause:** Autoanalyze ran after earlier suites had deleted their pages but not yet on their links, so the planner expected one row in `notebooks.notes` and many in `notebooks.note_links`. For the edges of the graph around a page it then looped over all pages for every page: 1,801 pages took 332 s instead of milliseconds. The test process ended, but PostgreSQL kept running the statement, and its lock held `ALTER TABLE notebooks.notes` in the following `migrate()` until it finished.
+- **Error class:** A query joins a table only to translate values the caller already holds, so a stale estimate can make it quadratic; and a statement outlives its test, so one failure spreads to unrelated suites.
+- **Guard:** `graph-around.integration.test.ts` now plans under exactly these statistics in every run; CI PostgreSQL ends statements of lost clients through `client_connection_check_interval`; the runner prints `Database activity:` after a failed integration suite.
