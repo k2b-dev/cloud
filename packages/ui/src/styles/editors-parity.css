@@ -342,7 +342,7 @@
     background-color 150ms ease-out;
 }
 
-.k2b-ui .k2b-markdown-editor:not([data-variant="embedded"]):hover {
+.k2b-ui .k2b-markdown-editor:where(:not([data-variant="embedded"], [data-disabled="true"])):hover {
   background: var(--k2b-edge-hover-bg);
 }
 
@@ -389,7 +389,7 @@
   cursor: not-allowed;
 }
 
-.k2b-ui .k2b-markdown-editor[data-invalid="true"] {
+.k2b-ui .k2b-markdown-editor[data-invalid="true"]:not([data-disabled="true"]) {
   --k2b-edge-color: var(--k2b-edge-danger);
   border-color: var(--k2b-edge-color);
 }

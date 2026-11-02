@@ -2483,23 +2483,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: none;
 }
 
-.k2b-ui .k2b-input-shell[data-invalid="true"],
-.k2b-ui .k2b-choice-control[data-invalid="true"] :where(.k2b-choice-trigger, .k2b-multi-select-trigger),
-.k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input,
-.k2b-ui .k2b-tags-input[data-invalid="true"],
-.k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger,
-.k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value {
+/* A disabled field keeps no edge, also when it is invalid; its message stays. */
+.k2b-ui .k2b-input-shell[data-invalid="true"]:not(:has(.k2b-input:disabled)),
+.k2b-ui .k2b-choice-control[data-invalid="true"] :where(.k2b-choice-trigger, .k2b-multi-select-trigger):not(:disabled, [data-disabled="true"]),
+.k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:not(:has(> input:disabled)),
+.k2b-ui .k2b-tags-input[data-invalid="true"]:not([data-disabled="true"]),
+.k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:not(:disabled),
+.k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:not(:disabled) {
   --k2b-edge-color: var(--k2b-edge-danger);
 }
 
 /* Red and a darker red cannot tell focus apart without a second width, so a
    focused invalid field shows the focus edge; its error message stays. */
-.k2b-ui .k2b-input-shell[data-invalid="true"]:focus-within,
-.k2b-ui .k2b-choice-control[data-invalid="true"] :where(.k2b-choice-trigger, .k2b-multi-select-trigger):focus-visible,
-.k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:focus-within,
-.k2b-ui .k2b-tags-input[data-invalid="true"]:focus-within,
-.k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:focus-visible,
-.k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:focus-visible {
+.k2b-ui .k2b-input-shell[data-invalid="true"]:not(:has(.k2b-input:disabled)):focus-within,
+.k2b-ui .k2b-choice-control[data-invalid="true"] :where(.k2b-choice-trigger, .k2b-multi-select-trigger):not(:disabled, [data-disabled="true"]):focus-visible,
+.k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:not(:has(> input:disabled)):focus-within,
+.k2b-ui .k2b-tags-input[data-invalid="true"]:not([data-disabled="true"]):focus-within,
+.k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:not(:disabled):focus-visible,
+.k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:not(:disabled):focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
 }
 
@@ -2510,7 +2511,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-multi-select-trigger[data-disabled="true"],
 .k2b-ui .k2b-combobox__input:has(> input:disabled),
 .k2b-ui .k2b-tags-input[data-disabled="true"],
-.k2b-ui .k2b-date-trigger:disabled {
+.k2b-ui .k2b-date-trigger:disabled,
+.k2b-ui .k2b-color-input__value:disabled {
   --k2b-edge-color: transparent;
   background: var(--k2b-surface-muted);
 }
@@ -4701,18 +4703,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-family: var(--k2b-font-mono);
 }
 
-/* Inline value fields compose into dense rows: no border, the whole edge is
-   the inset shadow, in the same colours as every field. */
+/* Inline value fields compose into dense rows with the same edge as every
+   field; the padding keeps the text where a borderless shell had it. */
 .k2b-ui .k2b-text-input[data-variant="compact"] {
   display: inline-flex;
   flex: none;
   min-height: 0;
   height: 26px;
   gap: 6px;
-  padding: 0 3px 0 8px;
-  border: 0;
+  padding: 0 2px 0 7px;
   border-radius: 7px;
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
   transition: none;
 }
 .k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input {
@@ -4740,7 +4740,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-color: color-mix(in srgb, var(--k2b-action) 40%, var(--k2b-edge));
 }
 
-.k2b-ui .k2b-text-input[data-ai="true"]:not(:focus-within) {
+.k2b-ui .k2b-text-input[data-ai="true"]:not(:focus-within, :hover) {
   background: color-mix(in srgb, var(--k2b-info-surface) 55%, var(--k2b-surface));
 }
 
@@ -4837,7 +4837,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-number-input__step:focus-visible {
-  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-edge-focus);
   outline: none;
 }
 
@@ -4966,7 +4966,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-edge-hover-bg);
 }
 
-.k2b-ui .k2b-signature-input[data-invalid="true"] .k2b-signature-input__pad {
+.k2b-ui .k2b-signature-input[data-invalid="true"]:not([data-disabled="true"]) .k2b-signature-input__pad {
   --k2b-edge-color: var(--k2b-edge-danger);
 }
 
@@ -4985,6 +4985,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-signature-input[data-disabled="true"] .k2b-signature-input__pad {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -7819,12 +7821,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   min-height: 2rem;
   flex: 1;
-  padding: 0 0.625rem;
-  border: 0;
+  padding: 0 calc(0.625rem - 1px);
+  border: 1px solid var(--k2b-edge-color);
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
+  box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color);
   font: inherit;
   font-size: 0.8125rem;
   outline: none;

@@ -119,13 +119,11 @@ describe("source-faithful editor SSR contracts", () => {
     expect(editorCss).toContain('.k2b-ui .k2b-autocomplete[data-single-line="true"]');
   });
 
-  test("keeps the recessed editor well while focused", async () => {
+  test("keeps the recessed autocomplete well while focused", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../../styles/editors-parity.css")).text();
-    const focusRules = [...css.matchAll(/\.k2b-ui \.k2b-(?:autocomplete|markdown-editor):focus-within \{([^}]*)\}/g)].map(
-      (match) => match[1] ?? "",
-    );
+    const focusRules = [...css.matchAll(/\.k2b-ui \.k2b-autocomplete:focus-within \{([^}]*)\}/g)].map((match) => match[1] ?? "");
 
-    expect(focusRules).toHaveLength(2);
+    expect(focusRules).toHaveLength(1);
     for (const rule of focusRules) {
       expect(rule).toContain("border-color: var(--k2b-focus-ring)");
       expect(rule).not.toMatch(/box-shadow:\s*none/);
@@ -133,11 +131,29 @@ describe("source-faithful editor SSR contracts", () => {
     }
   });
 
+  test("draws the Markdown editor with the shared field edge", async () => {
+    const css = await Bun.file(resolve(import.meta.dir, "../../styles/editors-parity.css")).text();
+    const rules = parseCssRules("editors-parity.css", css);
+    const body = (selector: string) =>
+      rules
+        .filter((rule) => rule.selector === selector)
+        .map((rule) => rule.body)
+        .join(";");
+
+    expect(body(".k2b-ui .k2b-markdown-editor")).toContain("border: 1px solid var(--k2b-edge-color)");
+    expect(body(".k2b-ui .k2b-markdown-editor")).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
+    const focus = body(".k2b-ui .k2b-markdown-editor:focus-within");
+    expect(focus).toContain("--k2b-edge-color: var(--k2b-edge-focus)");
+    expect(focus).toContain("outline: none");
+    expect(focus).toContain("background: var(--k2b-surface)");
+    expect(focus).not.toContain("border-width");
+  });
+
   test("uses one complete focus border on a neutral editor surface", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../../styles/editors-parity.css")).text();
     const rules = parseCssRules("editors-parity.css", css);
 
-    for (const selector of [".k2b-ui .k2b-autocomplete:focus-within", ".k2b-ui .k2b-markdown-editor:focus-within"]) {
+    for (const selector of [".k2b-ui .k2b-autocomplete:focus-within"]) {
       const body = rules
         .filter((rule) => rule.selector === selector)
         .map((rule) => rule.body)

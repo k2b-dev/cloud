@@ -29,8 +29,17 @@ const fields = (invalid) => {
     ["tags", createComponent(TagsInput, { label: "Tags", value: ["red"], onValueChange: () => {}, error })],
     ["date", createComponent(DatePicker, { label: "Due", value: "2026-11-02", onValueChange: () => {}, error })],
     ["color", createComponent(ColorInput, { label: "Colour", value: "#2563eb", onValueChange: () => {}, error })],
+    ["compact", createComponent(TextInput, { "aria-label": "Width", variant: "compact", value: "120", error })],
   ];
 };
+// Disabled fields, also invalid ones, drop the edge and sit as a muted well.
+const disabled = [
+  ["text", createComponent(TextInput, { label: "Name", value: "Ada", disabled: true, error: "Check this value" })],
+  ["number", createComponent(NumberInput, { label: "Count", value: 3, disabled: true })],
+  ["select", createComponent(Select, { label: "Kind", value: "one", options, onValueChange: () => {}, disabled: true })],
+  ["date", createComponent(DatePicker, { label: "Due", value: "2026-11-02", onValueChange: () => {}, disabled: true, error: "Check this value" })],
+  ["color", createComponent(ColorInput, { label: "Colour", value: "#2563eb", onValueChange: () => {}, disabled: true })],
+];
 render(() => [false, true].map((invalid) =>
   fields(invalid).map(([name, field]) => {
     const cell = document.createElement("div");
@@ -45,7 +54,13 @@ render(() => [false, true].map((invalid) =>
   cell.style.cssText = "width:260px";
   render(() => createComponent(Button, { variant: "input", children: "Choose a file" }), cell);
   return [cell];
-})()), document.getElementById("app"));
+})()).concat(disabled.map(([name, field]) => {
+  const cell = document.createElement("div");
+  cell.dataset.field = name + "-disabled";
+  cell.style.cssText = "width:260px";
+  render(() => field, cell);
+  return cell;
+})), document.getElementById("app"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the control edge fixture.");
@@ -62,6 +77,7 @@ const shells: Record<string, { edge: string; focus: string; text: string }> = {
   tags: { edge: ".k2b-tags-input", focus: "input", text: ".k2b-tags-input__icon" },
   date: { edge: ".k2b-date-trigger", focus: ".k2b-date-trigger", text: ".k2b-date-trigger__value" },
   color: { edge: ".k2b-color-input__value", focus: ".k2b-color-input__value", text: "code" },
+  compact: { edge: ".k2b-input-shell", focus: "input", text: "input" },
   "input-button": { edge: ".k2b-button", focus: ".k2b-button", text: ".k2b-button__label" },
 };
 
@@ -157,6 +173,7 @@ describe("field edge contract in the browser", () => {
                 focus: read("var(--k2b-edge-focus)"),
                 danger: read("var(--k2b-edge-danger)"),
                 surface: read("var(--k2b-surface)"),
+                muted: read("var(--k2b-surface-muted)"),
                 hover: read("var(--k2b-edge-hover-bg)"),
               };
               probe.remove();
@@ -191,6 +208,19 @@ describe("field edge contract in the browser", () => {
                   expect(painted.color, `${label} ${state} inset = border colour`).toBe(painted.borderColor);
                   const expected = state.startsWith("focus") ? tokens.focus : invalid ? tokens.danger : tokens.edge;
                   expect(painted.borderColor, `${label} ${state} edge colour`).toBe(expected);
+                }
+                if (!invalid && name !== "input-button") {
+                  // Disabled: same box and edge width, no visible edge, muted fill.
+                  const off = page.locator(`[data-field="${name}-disabled"]`);
+                  if ((await off.count()) > 0) {
+                    await page.mouse.move(5, 1090);
+                    const locked = await geometry(off.locator(shells[name]!.edge).first(), off.locator(shells[name]!.text).first());
+                    expect(locked.outer.width, `${label} disabled width`).toBe(seen.rest!.outer.width);
+                    expect(locked.outer.height, `${label} disabled height`).toBe(seen.rest!.outer.height);
+                    expect(edgeOf(locked.paint).width, `${label} disabled edge width`).toBe(2);
+                    expect(locked.paint.borderColor, `${label} disabled edge`).toBe("rgba(0, 0, 0, 0)");
+                    expect(locked.paint.background, `${label} disabled fill`).toBe(tokens.muted);
+                  }
                 }
                 expect(seen.rest!.paint.background, `${label} rest fill`).toBe(tokens.surface);
                 expect(seen.hover!.paint.background, `${label} hover fill`).toBe(tokens.hover);
