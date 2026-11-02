@@ -97,6 +97,7 @@ type DbItem = {
   rank: string;
   completed_at: Date | null;
   created_by: string | null;
+  created_by_workload?: boolean | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -669,6 +670,7 @@ const mapToItem = (row: DbItem): SpaceItem => ({
   rank: row.rank,
   completedAt: row.completed_at?.toISOString() ?? null,
   createdBy: row.created_by,
+  createdByWorkload: row.created_by_workload === true,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
   lastActivityAt: row.updated_at.toISOString(),
@@ -1079,7 +1081,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
         i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date,
         i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
-        i.completed_at, i.created_by, i.created_at, i.updated_at
+        i.completed_at, i.created_by, i.created_by_workload, i.created_at, i.updated_at
       FROM spaces.items i
       LEFT JOIN spaces.columns c ON c.id = i.column_id
       WHERE i.space_id = ${spaceId}
@@ -1091,7 +1093,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
         i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date,
         i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
-        i.completed_at, i.created_by, i.created_at, i.updated_at
+        i.completed_at, i.created_by, i.created_by_workload, i.created_at, i.updated_at
       FROM spaces.items i
       LEFT JOIN spaces.columns c ON c.id = i.column_id
       WHERE i.space_id = ${spaceId} AND i.completed_at IS NULL
@@ -1347,7 +1349,7 @@ export const listFiltered = async (params: {
            i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
            i.rank::text AS rank,
            i.completed_at,
-           i.created_by, i.created_at, i.updated_at
+           i.created_by, i.created_by_workload, i.created_at, i.updated_at
     FROM spaces.items i
     LEFT JOIN spaces.columns c ON i.column_id = c.id
     WHERE i.id IN (
@@ -1575,7 +1577,7 @@ export const searchAcross = async (params: {
       i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
       i.rank::text AS rank,
       i.completed_at,
-      i.created_by, i.created_at, i.updated_at,
+      i.created_by, i.created_by_workload, i.created_at, i.updated_at,
       s.name AS space_name,
       (SELECT column_entry.name FROM spaces.columns column_entry WHERE column_entry.id = i.column_id) AS column_name
     FROM spaces.items i
@@ -1654,6 +1656,7 @@ export const get = async (params: { id: string; viewer?: ReactionViewer }): Prom
       i.rank::text AS rank,
       i.completed_at,
       i.created_by,
+      i.created_by_workload,
       i.created_at,
       i.updated_at
     FROM spaces.items i
@@ -1754,7 +1757,7 @@ export const create = async (params: {
       INSERT INTO spaces.items (
         id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline, deadline_date,
         estimated_duration_minutes, all_day, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
-        recurring_event_id, recurrence_id, rank, completed_at, created_by
+        recurring_event_id, recurrence_id, rank, completed_at, created_by, created_by_workload
       )
       VALUES (
         gen_random_uuid(), ${shortId},
@@ -1778,7 +1781,8 @@ export const create = async (params: {
         ${data.recurrenceId ?? null},
         ${rank.toDb(nextRank)}::bigint,
         ${null},
-        ${createdBy}::uuid
+        ${createdBy}::uuid,
+        ${params.actor?.origin !== undefined}
       )
       ON CONFLICT (recurring_event_id, recurrence_id)
       WHERE recurring_event_id IS NOT NULL AND recurrence_id IS NOT NULL

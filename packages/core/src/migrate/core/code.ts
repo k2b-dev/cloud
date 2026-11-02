@@ -63,6 +63,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     )`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_code_history ON code.runs(code_id,created_at DESC,id DESC)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_retention ON code.runs(ended_at,id) WHERE ended_at IS NOT NULL`.simple();
+    // A run keeps its origin as long as the failed run and the person's account exist.
+    await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS rerun_of UUID REFERENCES code.runs(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS rerun_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS runs_rerun_of ON code.runs(rerun_of) WHERE rerun_of IS NOT NULL`.simple();
     // json preserves exact result text: no exponent expansion or separator whitespace beyond CAPABILITY_MAX_RESULT_BYTES.
     await tx`CREATE TABLE IF NOT EXISTS code.calls (
       run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE, ordinal INTEGER NOT NULL CHECK (ordinal > 0),

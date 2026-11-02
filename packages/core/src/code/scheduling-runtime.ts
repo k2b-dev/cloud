@@ -109,7 +109,7 @@ export async function fetchCodeRuns(
   }
 }
 
-const scheduleId = (codeId: string, entrypoint: string) =>
+export const codeScheduleId = (codeId: string, entrypoint: string) =>
   `code:${new Bun.CryptoHasher("sha256").update(`${codeId}:${entrypoint}`).digest("hex")}`;
 /** Every replica registers all handlers, in bounded database pages. Definition changes and deletion
  * recheck the current Code under its row lock, so another replica's newer snapshot cannot be undone.
@@ -134,7 +134,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
               for (const entry of manifest.data.entrypoints) {
                 if (entry.kind !== "schedule" || !entry.cron) continue;
                 const cron = entry.cron;
-                const id = scheduleId(code.id, entry.entrypoint);
+                const id = codeScheduleId(code.id, entry.entrypoint);
                 desired.add(id);
                 await scheduler.create({
                   id,

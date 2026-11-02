@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
-import { hasCompleteSentence, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
+import { hasCompleteSentence, layoutAiTurn, storedPhase, submittedCodeVersion, waitsForUser } from "./turn-layout";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -271,4 +271,21 @@ test("partial failed and interrupted history cannot become a completed answer wi
   expect(storedPhase([{ loopDoneReason: "error", stopReason: "error" }])).toBe("failed");
   expect(storedPhase([{ loopDoneReason: null, stopReason: "interrupted" }])).toBe("stopped");
   expect(storedPhase([{ loopDoneReason: "error", stopReason: "interrupted" }])).toBe("failed");
+});
+
+test("a saved version is a result only for a host that shows it, once per Code, and never a failed submit", () => {
+  const submitted = (id: string, number: number) =>
+    tool(id, "code_submit", {
+      args: { codeId: "c_info01" },
+      result: { version: 1, submission: { version: { id: `v-${number}`, number } } },
+    });
+  const failed = tool("bad", "code_submit", {
+    args: { codeId: "c_info01" },
+    result: { version: 1, error: { code: "code_conflict", message: "Stale", details: null } },
+  });
+  expect(layoutAiTurn([submitted("a", 5)], { phase: "completed" }).results).toEqual([]);
+  expect(layoutAiTurn([failed], { phase: "completed", codeVersions: true }).results).toEqual([]);
+  const shown = layoutAiTurn([submitted("a", 5), submitted("b", 6)], { phase: "completed", codeVersions: true }).results;
+  expect(shown).toHaveLength(1);
+  expect(submittedCodeVersion(shown[0]!.block)).toEqual({ codeId: "c_info01", versionId: "v-6", number: 6 });
 });

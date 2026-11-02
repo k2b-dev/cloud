@@ -54,7 +54,7 @@ import {
   fetchCodeRuns,
 } from "./scheduling-runtime";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertCodeRun, readCodeRun } from "./store";
+import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertCodeRun, listCodeRuns, readCodeRun } from "./store";
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const other = "22222222-2222-4222-8222-222222222222";
@@ -403,6 +403,31 @@ suiteFor(
     const rerun = await startCodeRun({ ...request, idempotencyKey: "invoice:001:rerun" }, context());
     expect(rerun.runId).not.toBe(results[0]!.runId);
     await expect(startCodeRun(request, context(other))).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+  test("a run started again remembers the failed run and who started it, and only a failed run of the same entrypoint qualifies", async () => {
+    const code = await fixture();
+    const request = { codeId: code.codeId, entrypoint: code.entrypoint };
+    const first = await startCodeRun({ ...request, idempotencyKey: "origin:first" }, context());
+    await expect(startCodeRun({ ...request, idempotencyKey: "origin:early", rerunOf: first.runId }, context())).rejects.toMatchObject({
+      code: "BAD_INPUT",
+    });
+    await sql`UPDATE code.runs SET state='failed',outcome='failed',ended_at=clock_timestamp() WHERE id=${first.runId}::uuid`;
+    await expect(
+      startCodeRun({ ...request, idempotencyKey: "origin:unknown", rerunOf: crypto.randomUUID() }, context()),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    await expect(
+      startCodeRun({ ...request, entrypoint: "other", idempotencyKey: "origin:other", rerunOf: first.runId }, context()),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    const again = await startCodeRun({ ...request, idempotencyKey: "origin:again", rerunOf: first.runId }, context());
+    const { items } = await listCodeRuns({ codeId: code.codeId, limit: 10 }, context());
+    const listed = items.find((run) => run.id === again.runId)!;
+    expect(listed.rerunOf).toBe(first.runId);
+    expect(listed.rerunByName).toEqual(expect.any(String));
+    expect(items.find((run) => run.id === first.runId)).toMatchObject({ rerunOf: null, rerunByName: null });
+    // Without directory access only the person's own name shows; that it ran again stays visible.
+    await sql`UPDATE code.runs SET rerun_by=${other}::uuid WHERE id=${again.runId}::uuid`;
+    const hidden = await readCodeRun({ codeId: code.codeId, runId: again.runId, cursor: 0, offset: 0, length: 16384 }, context());
+    expect(hidden.run).toMatchObject({ rerunOf: first.runId, rerunByName: null });
   });
   const checkRequest = () => ({
     files: { "code.ts": "source" },

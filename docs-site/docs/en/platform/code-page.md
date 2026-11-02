@@ -18,12 +18,15 @@ third-party application get the same page. It never names an application.
 ## What people see
 
 - **Overview:** who the Code acts as, the running version and who switched it
-  on, its automations (schedules and manual starts) with status and last run,
+  on, its automations (schedules and manual starts) with status, next run and last run,
   and its access as operation at target. A newer version that is ready but off
   says which access it newly needs and offers **Switch on**. A version that
   waits for a Cloud administrator says so and cannot be switched on yet.
-  Removed access says which calls fail until someone switches the Code on
-  again. The automation that needs it shows **Access missing**; the others keep
+  Removed access says who removed it at the target and when ("Mia Koch
+  removed it today at 11:20"), and which calls fail until someone switches the
+  Code on again. A name the viewer may not see in the directory reads as
+  "Someone"; without the removal's audit event only the removal itself shows.
+  The automation that needs it shows **Access missing**; the others keep
   running. Only the whole Code can be paused. A deleted target, all access
   removed, and paused Code each show what fails and how to recover. Internet
   origins come from the full `manifest.internet` list reviewed with each version,
@@ -32,7 +35,18 @@ third-party application get the same page. It never names an application.
 - **Runs:** each run with its trigger, version and state, including skipped
   schedule ticks. A run lists its calls in order with their result. A run that
   failed after its first action offers **Run again**, once per failed run; a
-  run that failed earlier was already retried by Core.
+  run that failed earlier was already retried by Core. Editors can open any
+  failed run in the panel with **View with <panel>**. A run started again says
+  "run again by Ben Schulz" in the list and detail and links the failed run
+  ("Run again from #2284a1"); a hidden name leaves "run again".
+- **Secrets (editors only):** each secret's name, the address, path and headers
+  that may receive it, who last set the value and which versions use it; never
+  the value. Editors create a secret, replace a value, change a binding or
+  delete a value. Replacing needs no approval. A new binding submits a new
+  version, and the running version keeps its old binding until that one is
+  switched on. A binding change asks for the value again: Cloud never moves a
+  stored value to a new address unasked. Deleting always asks first. See
+  [Code secrets](/en/docs/platform/code-secrets).
 - **Versions:** each version with its approval state, including
   "self-approved (only administrator)", and the selected version's full code
   difference and permissions.
@@ -50,6 +64,8 @@ cannot load shows an error with a way to try again.
 
 ## Mount it
 
+Mount the page at `<resource's open link>/code`. The chat's version card and its
+**Copy link** build the address this way from the link your reader returns.
 Check that the person may read the resource, then load the page on the server
 and render it in an island:
 
@@ -81,7 +97,19 @@ export default function StoreCode(props: { code: CodePageData }) {
 
 Import the page from its own entry, `@k2b/cloud/ssr/code-page`, so other
 islands do not load its schemas. `loadCodePage` reads the tab and selection from the URL (`?tab=runs&run=<id>`,
-`?tab=versions&version=<id>`), so reload, back and shared links keep the view.
+`?tab=secrets&secret=<name>`, `?tab=versions&version=<id>`), so reload, back and shared links keep the view.
+
+## Say where the page lives
+
+Declare the mount so links to Code lead to it, for example from the history of
+what the Code changed in another application:
+
+```ts
+code: { owners: ["store"], pages: { store: "/app/inventory/{id}/code" } },
+```
+
+Without it, those links open the resource itself.
+
 ## Show the entry in your navigation
 
 Offer the page as a "Code" entry under the resource. During SSR, call
@@ -117,4 +145,5 @@ because the Code never gets access of its own. Gustav uses this at
 `/app/assistant/code/<codeId>`.
 
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
-appears as **Edit with <panel>** on the page and on an empty page.
+appears as **Edit with <panel>** on the page and on an empty page, with the icon
+the panel declares; the page names no application.

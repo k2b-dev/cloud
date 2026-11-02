@@ -6,6 +6,8 @@ export const mailRemainingMessages = i18n.define({
     en: {
       overview: "Overview",
       automationNeedsAttention: "Needs attention",
+      automationNeedsYou: ({ name }: { name: string }) => `“${name}” needs you.`,
+      automationsNeedYou: ({ count }: { count: number }) => `${count} automations need you.`,
       automationTargetConfirmation:
         "Spaces access needs confirmation. Edit this automation, choose its Spaces destinations again, and save. Then enable it.",
       headers: "Headers",
@@ -824,6 +826,8 @@ export const mailRemainingMessages = i18n.define({
     de: {
       overview: "Übersicht",
       automationNeedsAttention: "Prüfung erforderlich",
+      automationNeedsYou: ({ name }) => `„${name}“ braucht dich.`,
+      automationsNeedYou: ({ count }) => `${count} Automatisierungen brauchen dich.`,
       automationTargetConfirmation:
         "Bitte Spaces-Zugriff bestätigen: Automatisierung bearbeiten, Spaces-Ziele erneut auswählen und speichern. Danach einschalten.",
       headers: "Header",

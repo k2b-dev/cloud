@@ -24,11 +24,12 @@ import {
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
-import { verifyCodeSubmission } from "./authoring-check";
+import { createCodeCheckRequest, verifyCodeSubmission } from "./authoring-check";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
 import {
@@ -41,6 +42,7 @@ import {
   readCode,
   readCodeVersion,
 } from "./store";
+import { testCode } from "./testing";
 import {
   CodeCheckedVersionManifestSchema,
   type CodeVersionBinding,
@@ -49,6 +51,7 @@ import {
   codeVersionContracts,
 } from "./version-contracts";
 import { codeVersionDiff } from "./version-diff";
+import { type CodeVersionEvidence, codeVersionEvidence, NO_TESTS_EVIDENCE, unavailableEvidence } from "./version-evidence";
 import { codeVersionMessages } from "./version-messages";
 
 /** Stable refusal codes for CLI, chat tools and activation. Conflict details contain the current full comparison. */
@@ -233,16 +236,42 @@ export async function reviewCodeVersionSubmission(
     throw new CodeDataError("BAD_INPUT", "The complete submission review exceeds the approval content budget.");
   return review;
 }
+/** Capability Actions end after 30 seconds; the rest of that stays for the transaction. */
+const SUBMISSION_BUDGET_MS = 25_000;
+/** Run the author's fixtures once for reviewers. Their result informs the decision; a failure never refuses the version. */
+async function submissionEvidence(
+  input: { codeId: string; sourceFiles: Record<string, string>; manifest: { entry: string }; tests?: Record<string, string> },
+  context: CodeContext,
+  startedAt: number,
+): Promise<CodeVersionEvidence> {
+  if (!input.tests || !Object.keys(input.tests).length) return NO_TESTS_EVIDENCE;
+  // Fixtures may never cost the submission itself: they get only what the required checks left of its budget.
+  const remaining = SUBMISSION_BUDGET_MS - (performance.now() - startedAt);
+  if (remaining <= 0) return unavailableEvidence("code_test_runner_unavailable");
+  const budget = AbortSignal.timeout(remaining);
+  const bounded: CodeContext = { ...context, signal: context.signal ? AbortSignal.any([context.signal, budget]) : budget };
+  try {
+    const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, bounded);
+    return codeVersionEvidence(
+      await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(bounded), bounded.signal),
+    );
+  } catch (error) {
+    if (context.signal?.aborted) throw error;
+    return unavailableEvidence("code_test_runner_unavailable");
+  }
+}
 /** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
 export async function submitCodeVersion(
   raw: z.input<typeof codeVersionContracts.submit.input>,
   context: CodeContext,
 ): Promise<CodeVersionSubmission> {
+  const startedAt = performance.now();
   const input = checkedSubmission(raw, context);
   const author = codePerson(context, true);
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
   await verifyCodeSubmission(input, context);
+  const evidence = await submissionEvidence(input, context, startedAt);
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
@@ -309,8 +338,8 @@ export async function submitCodeVersion(
       approvalId = asked.id;
       reviewDigest = approvalReviewDigest(review);
     }
-    await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest)
-      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest})`;
+    await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest,evidence)
+      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest},${JSON.stringify(evidence)}::text::jsonb)`;
     await audit.record(
       {
         action: "core.code.version.submitted",

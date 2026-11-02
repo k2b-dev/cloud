@@ -27,6 +27,8 @@ const codeVersionDecisionInput = {
   comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionSubmissionInput = {
+  tests:
+    "Deklarative test/**/*.json-Fälle. Core führt sie beim Einreichen mit Testdaten aus und zeigt das Ergebnis den Prüfenden; ein fehlgeschlagener Test lehnt die Version nicht ab.",
   sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
   bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
   manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
@@ -53,6 +55,7 @@ const codeVersionSubmissionInput = {
   "manifest.permissions[].target.id": "Wörtliche Ziel-ID oder null bei einem dynamischen persönlichen Ziel.",
   "manifest.permissions[].file": "Relative Quelldatei mit dieser Operation.",
   "manifest.permissions[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.permissions[].entrypoints": "Automationen, deren Handler diese Operation selbst aufruft; fehlt, wenn es unbekannt ist.",
   "manifest.ai": "Ob erkannte Aufrufe KI nutzen.",
   "manifest.hashes": "Prüfsummen für Quelltext, erzeugtes SDK und genaues Bundle.",
   "manifest.hashes.source": "SHA-256-Hash des Quelltexts aus der Prüfung.",
@@ -68,6 +71,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
       events: { "user.created": { title: "Benutzer erstellt", description: "Eine Benutzeridentität wurde erstmals in Cloud angelegt." } },
       types: {
         code: { title: "Code", description: "Eine unabhängig versionierte Code-Ressource." },
+        "code.version": {
+          title: "Code",
+          description: "Der Code hinter einer Änderung in einer anderen App, genannt über Version und Lauf.",
+        },
         user: { title: "Benutzer", description: "Eine Benutzeridentität in Cloud." },
         "ai.chat": {
           title: "KI-Chat",
@@ -146,6 +153,24 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
         },
+        "code.version.origin": {
+          title: "Code hinter einer Änderung lesen",
+          description:
+            "Liest Titel, Automation und Links des Codes, der eine Änderung gemacht hat, aus einem core.code.version-Verweis im Verlauf einer anderen App. Nichts für alle, die diesen Code nicht lesen dürfen.",
+          input: { id: "Versions-UUID, optional gefolgt von ~ und einer Lauf-UUID." },
+        },
+        "code.summary": {
+          title: "Code eines Besitzers zusammenfassen",
+          description:
+            "Zählt für einen genauen Besitzer die Automationen und die Ziele mit Zugriff des lesbaren Codes. Ohne Namen und Inhalte.",
+          input: {
+            owner: "Genauer Code-Besitzer.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+          },
+        },
         "code.attention": {
           title: "Aufmerksamkeit für Code prüfen",
           description:
@@ -208,6 +233,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listet über alle Besitzer Code einer Ressource oder App, die du verwaltest, wenn er dich braucht: pausiert, letzter Lauf fehlgeschlagen, Zugriff an einem Ziel fehlt oder eine Version wartet auf Freigabe. Dem Cursor auch bei leeren Seiten folgen.",
           input: { cursor: "Letzte geprüfte Code-ID aus nextCursor." },
+        },
+        "code.automation.list": {
+          title: "Automationen eines Codes auflisten",
+          description:
+            "Listet die Automationen der laufenden Version mit Zeitplan, nächstem und letztem Lauf und nennt, welchen entfernten Zugriff eine Automation braucht.",
+          input: { codeId: "Code-ID." },
         },
         "code.run.count": {
           title: "Eigene Code-Läufe zählen",
@@ -366,6 +397,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
             input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
+            rerunOf: "Der fehlgeschlagene Lauf dieses Codes und Einstiegs, den dieser Lauf erneut startet.",
           },
         },
         "code.secret.set": {

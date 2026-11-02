@@ -692,7 +692,7 @@ test("bootstrap shows the inherited signed-in grant, dismisses its notice and ha
     await picker.fill("Niemandgefunden");
     expect((await response).status()).toBe(200);
     await page.locator(".k2b-combobox .k2b-spin").waitFor({ state: "hidden" });
-    await page.getByRole("listbox").getByText("Keine Ergebnisse gefunden", { exact: true }).waitFor();
+    await page.getByRole("listbox").getByText("Keine Person und keine Gruppe gefunden.", { exact: true }).waitFor();
     expect(await page.getByRole("option").count()).toBe(0);
     expect(await page.getByRole("button", { name: "Hinzufügen", exact: true }).isDisabled()).toBe(true);
     await picker.press("Enter");

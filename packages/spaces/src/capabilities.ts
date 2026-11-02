@@ -24,7 +24,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
-import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
+import { actorWorkload, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
@@ -1275,10 +1275,15 @@ const capabilityAuditActor = (context: CapabilityExecutionContext): AuditActor =
         roles: context.actor.scopes,
       };
 
-const spaceActivityActor = (context: CapabilityExecutionContext) =>
-  context.actor.kind === "user"
-    ? ({ kind: "user", id: context.actor.user.id } as const)
-    : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const);
+const spaceActivityActor = (context: CapabilityExecutionContext) => {
+  const origin = actorWorkload(context.actor);
+  return {
+    ...(context.actor.kind === "user"
+      ? ({ kind: "user", id: context.actor.user.id } as const)
+      : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const)),
+    ...(origin ? { origin } : {}),
+  };
+};
 
 const actionAudit = (context: CapabilityExecutionContext, actionId: string, targetType: string, targetId: string) => ({
   action: `spaces.capability.${actionId}`,

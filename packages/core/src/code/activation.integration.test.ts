@@ -17,7 +17,14 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+import {
+  activateCodeVersion,
+  cancelCodeActivation,
+  checkCodeActivation,
+  previewCodeActivation,
+  processCodeActivation,
+  readCodeActivation,
+} from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
 import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
 import * as authoringChecks from "./authoring-check";
@@ -192,7 +199,14 @@ databaseSuite()("durable Code activation", () => {
       entrypoints: [{ kind: "manual", entrypoint: "run", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
-      permissions: targets.map((id) => ({ operation: `example.${op}`, target: { type: "example.item", id }, file: "code.ts", line: 1 })),
+      // The checker could place the call at A in the run entrypoint, not the one at B.
+      permissions: targets.map((id) => ({
+        operation: `example.${op}`,
+        target: { type: "example.item", id },
+        file: "code.ts",
+        line: 1,
+        ...(id === "A" ? { entrypoints: ["run"] } : {}),
+      })),
     };
     return submitCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest, baseVersionId }, owner);
   }
@@ -277,6 +291,87 @@ databaseSuite()("durable Code activation", () => {
     expect(sets.every((set) => set.dryRun)).toBe(true);
     expect((await findCode(code.id))!.activeVersionId).toBeNull();
     expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
+  });
+  test("the preview says what switching on would do before anyone clicks, and changes nothing", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    const ready = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    expect(ready).toMatchObject({ number: submitted.version.number, running: null, activated: null, allowed: { allowed: true } });
+    expect(ready.rows.map((row) => [row.target.id, row.own, row.check, row.isNew, row.title])).toEqual([
+      [code.owner.kind === "resource" ? code.owner.ref.id : "", true, "manages", false, "Fixture target"],
+      ["A", false, "manages", true, "Fixture target"],
+      ["B", false, "manages", true, "Fixture target"],
+    ]);
+    expect(sets.every((set) => set.dryRun)).toBe(true);
+    expect(live.size).toBe(0);
+    expect((await findCode(code.id))!.activeVersionId).toBeNull();
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${code.id}`).toHaveLength(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id}`).toHaveLength(0);
+  });
+  test("the preview names who manages a refusing target only for a person who may read it", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    await sql`UPDATE auth.users SET display_name='Ben Schulz', given_name='Ben' WHERE id=${nextOwnerId}::uuid`;
+    denyDry = "B";
+    const row = (rows: { target: { id: string } }[], id: string) => rows.find((item) => item.target.id === id);
+    const readable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    expect(row(readable.rows, "B")).toMatchObject({
+      check: "blocked",
+      title: "Fixture target",
+      managers: [{ name: "Ben Schulz", firstName: "Ben" }],
+    });
+    targetReadable = false;
+    try {
+      const unreadable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+      expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, icon: null, managers: [] });
+    } finally {
+      targetReadable = true;
+      await sql`UPDATE auth.users SET display_name='', given_name='' WHERE id=${nextOwnerId}::uuid`;
+    }
+  });
+  test("the preview of a running or replaced version asks no target; a credential that cannot switch on is told and asks none", async () => {
+    const code = await newCode(),
+      first = await version(code);
+    const activation = await start(code, first.version.id);
+    await run(activation.id);
+    sets.length = 0;
+    const on = await previewCodeActivation({ codeId: code.id, versionId: first.version.id }, owner, deps);
+    expect(on).toMatchObject({ running: first.version.number, rows: [], activated: { byYou: true, byName: null } });
+    const second = await version(code, ["A", "B"], first.version.id);
+    const third = await version(code, ["A", "B"], second.version.id);
+    const replaced = await previewCodeActivation({ codeId: code.id, versionId: second.version.id }, owner, deps);
+    expect(replaced).toMatchObject({ latest: third.version.number, rows: [] });
+    expect(sets).toHaveLength(0);
+    const apiKey: CodeContext = {
+      ...owner,
+      authority: { ...owner.authority, credentialKind: "api_key", scopes: ["write"], credentialProof: undefined },
+    };
+    const blocked = await previewCodeActivation({ codeId: code.id, versionId: third.version.id }, apiKey, deps);
+    expect(blocked.allowed).toEqual({ allowed: false, reason: "credential" });
+    expect(blocked.rows.every((item) => item.check === "has" || item.check === "unknown")).toBe(true);
+    expect(sets).toHaveLength(0);
+  });
+  test("an application that cannot list its grants leaves its targets unchecked, not the whole preview", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        list: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(preview.rows.filter((row) => !row.own).map((row) => [row.target.id, row.check])).toEqual([
+      ["A", "unknown"],
+      ["B", "unknown"],
+    ]);
+  });
+  test("the preview refuses someone who may not edit the Code", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    await expect(previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, context(nextOwnerId), deps)).rejects.toThrow();
   });
   test("an unregistered target fails visibly before target effects", async () => {
     const code = await newCode(),
@@ -477,17 +572,36 @@ databaseSuite()("durable Code activation", () => {
     const next = await start(code, submitted.version.id);
     await run(next.id);
     const active = [...live.keys()][0]!;
+    const removedGrant = live.get(active)!;
     live.delete(active);
     tombstones.add(active);
     sets.length = 0;
+    // Without an audit event of the removal, who removed it stays unknown.
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({ grantId: active, state: "removed", removedBy: null, removedAt: null }),
+    );
+    // The platform's code.access.rm audits each removal; events for another account or target never answer.
+    const audit = (principal: string, target: { type: string; id: string }, at: string) =>
+      sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+        VALUES('code.access.rm','allowed',${ownerId}::uuid,${target.type},${target.id},
+          ${JSON.stringify({ appId: "example", grantId: active, principal })}::text::jsonb,${at}::timestamptz)`;
+    await audit(crypto.randomUUID(), removedGrant.target, "2026-10-31T11:30:00.000Z");
+    await audit(removedGrant.principal, { type: removedGrant.target.type, id: "elsewhere" }, "2026-10-31T11:40:00.000Z");
+    await audit(removedGrant.principal, removedGrant.target, "2026-10-31T11:20:00.000Z");
+    // An event that names another app for this target is not this removal either.
+    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+      VALUES('code.access.rm','allowed',${nextOwnerId}::uuid,${removedGrant.target.type},${removedGrant.target.id},
+        ${JSON.stringify({ appId: "other", grantId: active, principal: removedGrant.principal })}::text::jsonb,'2026-10-31T11:50:00.000Z'::timestamptz)`;
+    expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
+      // The Code page names who confirmed the grant and when, and who removed it at the target and when.
       expect.objectContaining({
         grantId: active,
         state: "removed",
         activatedBy: expect.any(String),
         activatedAt: expect.any(String),
         activatedVersionId: expect.any(String),
+        removedBy: ownerId,
+        removedAt: "2026-10-31T11:20:00.000Z",
       }),
     );
     expect(sets).toHaveLength(0);
@@ -770,6 +884,65 @@ databaseSuite()("durable Code activation", () => {
     expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id} AND state='granted'`).toHaveLength(grants.length);
     expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid`).toHaveLength(1);
   });
+  test("the check before the click asks every target like an activation and writes nothing", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A", "B"]);
+    denyDry = "B";
+    sets.length = 0;
+    const answer = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    expect(sets.every((set) => set.dryRun)).toBe(true);
+    expect(answer.targets.find((item) => item.target.id === "A")).toEqual({
+      target: { type: "example.item", id: "A" },
+      state: "granted",
+      failure: null,
+    });
+    const refused = answer.targets.find((item) => item.target.id === "B")!;
+    expect(refused).toMatchObject({ state: "refused", failure: { code: "not_manager", title: "Fixture target", readable: true } });
+    expect(refused.failure?.managerNames).toHaveLength(1);
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${code.id}`).toHaveLength(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id}`).toHaveLength(0);
+    // The check never tells an ID's title or managers to someone who may not read that target.
+    targetReadable = false;
+    const hidden = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    const unreadable = hidden.targets.find((item) => item.target.id === "B")!;
+    expect(unreadable.failure).toMatchObject({ code: "not_manager", readable: false });
+    expect(JSON.stringify(unreadable)).not.toContain("Fixture target");
+    expect(JSON.stringify(unreadable)).not.toContain(nextOwnerId);
+    // A target that does not answer leaves the decision to activating.
+    targetReadable = true;
+    const silent = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        set: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(silent.targets.every((item) => item.state === "unknown" && item.failure === null)).toBe(true);
+    // An application that cannot list its grants leaves its targets unknown instead of guessing that they are new.
+    sets.length = 0;
+    const unlisted = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        list: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(unlisted.targets.find((item) => item.target.id === "A")).toMatchObject({ state: "unknown", failure: null });
+    expect(unlisted.targets.find((item) => item.target.id === "B")).toMatchObject({ state: "unknown", failure: null });
+    expect(sets.some((set) => set.id === "A" || set.id === "B")).toBe(false);
+    // Only a person who could start this activation may ask.
+    await expect(
+      checkCodeActivation(
+        { codeId: code.id, versionId: submitted.version.id },
+        { ...owner, authority: { ...owner.authority, credentialKind: "api_key" } },
+        deps,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
   test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
     for (const readable of [false, true]) {
       targetReadable = readable;
@@ -971,11 +1144,16 @@ databaseSuite()("durable Code activation", () => {
       {
         grantId: atA.grantId,
         operations: ["example.item.change"],
+        automations: ["run"],
         activatedBy: { id: ownerId, name: "Ben Schulz" },
         activatedAt: activatedAt.toISOString(),
       },
     ]);
     expect(listed).toEqual([{ appId: "example", operation: "list", input: { principal } }]);
+    // The automation comes from the running version's checker evidence; a call it could not place names none.
+    expect(await readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: [atB] }) })).toEqual([
+      expect.objectContaining({ grantId: atB.grantId, automations: [] }),
+    ]);
     // A guest sees when, but not another person's name.
     const guest: CodeContext = {
       ...owner,

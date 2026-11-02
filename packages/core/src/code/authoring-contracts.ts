@@ -39,6 +39,8 @@ export const CodeAuthoringPermissionSchema = z
     needsTargetAdmin: z.boolean(),
     file: z.string(),
     line: z.number().int().positive(),
+    /** Sorted entrypoints whose handler makes this call, as the checker placed it; absent when it could not. */
+    entrypoints: z.array(z.string().min(1)).min(1).optional(),
     status: z.enum(["new", "existing"]),
   })
   .strict();
@@ -55,7 +57,14 @@ const check = z
   })
   .strict();
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
-const submitted = z.object({ version: z.literal(1), submission: codeVersionContracts.submit.data }).strict();
+const submitted = z
+  .object({
+    version: z.literal(1),
+    submission: codeVersionContracts.submit.data,
+    /** Which version keeps running meanwhile; null when none runs. Added field: consumers may ignore it. */
+    runningVersion: z.number().int().positive().nullable().optional(),
+  })
+  .strict();
 /** Local source compared with its saved base and the current server version. No filesystem paths. */
 export const CodeLocalStatusSchema = z
   .object({
@@ -101,6 +110,10 @@ export const codeAuthoringContracts = {
   secretSet: { input: codeSecretContracts.set.input, data: codeSecretContracts.set.data.extend({ version: z.literal(1) }) },
   secretList: { input: codeSecretContracts.list.input, data: codeSecretContracts.list.data.extend({ version: z.literal(1) }) },
   secretDelete: { input: codeSecretContracts.delete.input, data: codeSecretContracts.delete.data.extend({ version: z.literal(1) }) },
+  secretCheck: {
+    input: codeSecretContracts.checkBinding.input,
+    data: codeSecretContracts.checkBinding.data.extend({ version: z.literal(1) }),
+  },
   sdk: {
     input: z.object({ codeId: CodeIdSchema }).strict(),
     data: z.object({ version: z.literal(1), files: CodeSourceFilesSchema }).strict(),
@@ -108,8 +121,10 @@ export const codeAuthoringContracts = {
   check: { input: source, data: check },
   test: { input: source.extend({ tests: CodeSourceFilesSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
   simulate: { input: source.extend({ fixture: CodeTestCaseSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
-  push: { input: source.extend({ baseVersionId: z.uuid().nullable() }), data: submitted },
-  submit: { input: source.extend({ baseVersionId: z.uuid().nullable() }), data: submitted },
+  push: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
+  submit: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
+  /** Submits the latest source once more, for a page without a local project: it picks up changed secret bindings. */
+  resubmit: { input: z.object({ codeId: CodeIdSchema, baseVersionId: z.uuid() }).strict(), data: submitted },
   diff: {
     input: z.object({ codeId: CodeIdSchema, versionId: z.uuid() }).strict(),
     data: z.object({ version: z.literal(1), diff: codeVersionContracts.diff.data }).strict(),

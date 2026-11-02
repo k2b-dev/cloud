@@ -50,6 +50,8 @@ const PermissionSchema = z.object({
 });
 /** The parts of the checked version manifest the page shows. */
 export const ManifestSchema = z.object({
+  /** Reviewed secret bindings: which secret and destination this version may use, for the secrets tab. */
+  secrets: z.array(z.object({ name: z.string(), binding_revision: z.string(), origin: z.string() })).optional(),
   internet: CodeInternetOriginsSchema.optional(),
   entrypoints: z.array(z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), cron: z.string().nullable() })),
   permissions: z.array(PermissionSchema),
@@ -70,6 +72,10 @@ const RunSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().nullable(),
   endedAt: z.string().nullable(),
+  /** The failed run this one starts again. */
+  rerunOf: z.string().nullable().optional(),
+  /** Who started it again, as the directory shows them to this viewer. */
+  rerunByName: z.string().nullable().optional(),
 });
 export const RunListSchema = z.object({ items: z.array(RunSchema), nextCursor: z.string().nullable() });
 const CallSchema = z.object({
@@ -101,6 +107,8 @@ export const TargetAccessSchema = z.array(
     activatedBy: z.string().nullable().optional(),
     activatedAt: z.string().nullable().optional(),
     activatedVersionId: z.string().nullable().optional(),
+    removedBy: z.string().nullable().optional(),
+    removedAt: z.string().nullable().optional(),
   }),
 );
 export const ActivationSchema = z.object({
@@ -120,7 +128,33 @@ export const ActivationSchema = z.object({
     .nullable(),
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
+/** Core's answer before the click: a target left out needs no new answer. */
+export const ActivationCheckSchema = z.object({
+  targets: z.array(
+    z.object({
+      target: z.object({ type: z.string(), id: z.string() }),
+      state: z.enum(["granted", "refused", "unknown"]),
+      failure: ActivationSchema.shape.failure,
+    }),
+  ),
+});
+export type CodeActivationCheck = z.infer<typeof ActivationCheckSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+export const AutomationListSchema = z.object({ items: z.array(z.object({ entrypoint: z.string(), nextRunAt: z.string().nullable() })) });
+/** Metadata only: Core has no operation that returns a secret's value. */
+const SecretSchema = z.object({
+  name: z.string(),
+  binding_revision: z.string(),
+  origin: z.string(),
+  pathPrefix: z.string(),
+  headers: z.array(z.string()),
+  configured: z.boolean(),
+});
+export const SecretListSchema = z.object({
+  items: z.array(SecretSchema.extend({ valueSetBy: z.string().nullable(), valueSetAt: z.string().nullable() })),
+  nextCursor: z.string().nullable(),
+});
+export const SecretSetSchema = z.object({ secret: SecretSchema });
 
 /** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
 export type CodeAttention = { visible: boolean; attention: boolean };
@@ -167,6 +201,9 @@ export type CodePageAccessRow = {
   activatedAt: string | null;
   /** The version whose activation created this grant; a later version may reuse it unchanged. */
   activatedVersionId: string | null;
+  /** For removed access: who removed it at the target, when the viewer may see that name, and when. */
+  removedBy: CodePagePerson | null;
+  removedAt: string | null;
 };
 /** One target the waiting version needs, for the switch-on dialog. The owner is always checked. */
 export type CodePageActivationRow = { target: CodePageTarget; operations: string[]; isNew: boolean };
@@ -210,6 +247,8 @@ export type CodePageAutomation = {
   /** Access was removed, but whether this automation needs it could not be told. */
   accessUnknown: boolean;
   lastRun: CodePageRun | null;
+  /** When the scheduler runs it next; absent when it does not or Core cannot say. */
+  nextRunAt?: string | null;
 };
 export type CodePageVersion = {
   id: string;
@@ -231,7 +270,27 @@ export type CodePageDiff = {
   files: z.infer<typeof VersionDiffSchema>["files"];
   permissions: { operation: string; target: CodePageTarget | null; file: string; line: number }[];
 };
-export type CodePageTab = "overview" | "runs" | "versions";
+/** One secret of this Code: where its value may go and who wrote it, never the value. */
+export type CodePageSecret = z.infer<typeof SecretSchema> & {
+  valueSetBy: CodePagePerson | null;
+  valueSetAt: string | null;
+  /** The running and the waiting version, when they use this name. */
+  usedIn: { number: number; state: "active" | "waiting" }[];
+  /** No saved version uses this destination yet, so submitting one is still open. Null when that could not be read. */
+  unsubmitted: boolean | null;
+};
+/** What just happened on the secrets tab, from the URL, so a reload keeps it. */
+export type CodeSecretNotice = "replaced" | "submitted" | "saved" | "submit-failed";
+export type CodePageSecrets = {
+  items: CodePageSecret[];
+  /** More secrets than one page loads; `cld code secret list` reads them all. */
+  more: boolean;
+  selected: string | null;
+  notice: CodeSecretNotice | null;
+  /** The newest saved version, which a new destination is submitted against. */
+  latest: { id: string; number: number } | null;
+};
+export type CodePageTab = "overview" | "runs" | "secrets" | "versions";
 export type CodePageReady = {
   kind: "ready";
   code: z.infer<typeof CodeSchema>;
@@ -258,6 +317,8 @@ export type CodePageReady = {
   diff: CodePageDiff | null;
   /** The selected version or run could not be read. */
   selectionFailed: boolean;
+  /** Only on the secrets tab, which only editors reach; null there when Core could not list them. */
+  secrets: CodePageSecrets | null;
 };
 export type CodePageState = { kind: "none" } | { kind: "no-access" } | { kind: "error" } | CodePageReady;
 /** Serializable initial data from `loadCodePage`, rendered unchanged by the server and the browser. */
@@ -280,8 +341,8 @@ export type CodePageData = {
   canManageOwner: boolean;
   /** Activation needs an interactive browser session or a personal OAuth credential. */
   activation: { allowed: true } | { allowed: false; reason: "phone" | "credential" };
-  /** A panel that works on Code with the person, offered as "Edit with …". */
-  editor: { provider: string; label: string } | null;
+  /** A panel that works on Code with the person, offered as "Edit with …" under its own name and icon. */
+  editor: { provider: string; label: string; icon: string } | null;
   dates: DateContext & { now: string };
   /** The page reloaded right after this version was switched on. */
   activatedNotice: number | null;

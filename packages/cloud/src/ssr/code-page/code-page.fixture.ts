@@ -4,6 +4,7 @@ import type {
   CodePageData,
   CodePageReady,
   CodePageRun,
+  CodePageSecret,
   CodePageTarget,
   CodePageVersion,
 } from "./data";
@@ -17,6 +18,7 @@ const owner = {
 };
 const ben = { id: "00000000-0000-4000-8000-0000000000b1", name: "Ben Schulz" };
 const lea = { id: "00000000-0000-4000-8000-0000000000a1", name: "Lea Muster" };
+const mia = { id: "00000000-0000-4000-8000-0000000000c1", name: "Mia Koch" };
 const own: CodePageTarget = {
   key: "own",
   ref: owner.ref,
@@ -73,7 +75,11 @@ const runs = [
   run("2286a1b2-0000-4000-8000-000000000003", "lieferungenEintragen", "skipped", "2026-11-01T08:52:00.000Z", "previous_schedule_running"),
   run("2284a1b2-0000-4000-8000-000000000004", "lieferungenEintragen", "failed", "2026-11-01T08:30:00.000Z", "failed"),
 ];
-const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAccessRow[] => [
+const access = (
+  state: CodePageAccessRow["state"],
+  deleted = false,
+  removal: Pick<CodePageAccessRow, "removedBy" | "removedAt"> = { removedBy: null, removedAt: null },
+): CodePageAccessRow[] => [
   {
     target: own,
     operations: ["mail.conversation.tag", "mail.conversation.assign"],
@@ -83,6 +89,8 @@ const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAcc
     activatedAt: "2026-10-14T08:00:00.000Z",
     // Reused unchanged from version 3: it does not say who switched on version 4.
     activatedVersionId: "00000000-0000-4000-8000-000000000003",
+    removedBy: null,
+    removedAt: null,
   },
   {
     target: { ...space, deleted },
@@ -92,6 +100,7 @@ const access = (state: CodePageAccessRow["state"], deleted = false): CodePageAcc
     activatedBy: ben,
     activatedAt: "2026-10-28T09:00:00.000Z",
     activatedVersionId: v4.id,
+    ...removal,
   },
 ];
 const waitingTargets: CodePageActivationRow[] = [
@@ -127,6 +136,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
       cron: "0 7 * * 1",
       isNew: false,
       lastRun: null,
+      nextRunAt: "2026-11-02T06:00:00.000Z",
       missingTargets: [],
       missingProven: false,
       accessUnknown: false,
@@ -138,6 +148,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   run: null,
   diff: null,
   selectionFailed: false,
+  secrets: null,
   ...overrides,
 });
 
@@ -149,16 +160,26 @@ export const codePageFixture = (
     | "waiting"
     | "approval"
     | "removed"
+    | "removed-unnamed"
+    | "removed-unknown"
     | "deleted"
     | "paused"
     | "runs"
     | "run-failed"
+    | "run-rerun"
     | "run-unclassified"
     | "versions"
     | "versions-failed"
     | "waiting-unreadable"
     | "internet"
     | "reader"
+    | "secrets"
+    | "secrets-empty"
+    | "secrets-error"
+    | "secrets-replaced"
+    | "secrets-submitted"
+    | "secrets-unsubmitted"
+    | "secrets-deleted"
     | "activated"
     | "empty"
     | "no-access"
@@ -170,7 +191,7 @@ export const codePageFixture = (
     href: "/app/mail/Mb4kd2/code",
     canManageOwner: true,
     activation: { allowed: true },
-    editor: { provider: "assistant", label: "Gustav" },
+    editor: { provider: "assistant", label: "Gustav", icon: "ti ti-moustache" },
     dates: { locale, timeZone: "Europe/Berlin", now: "2026-11-01T10:30:00.000Z" },
     activatedNotice: null,
   };
@@ -211,6 +232,8 @@ export const codePageFixture = (
               activatedBy: null,
               activatedAt: null,
               activatedVersionId: null,
+              removedBy: null,
+              removedAt: null,
             },
           ].filter((row, index) => index !== 1),
         }),
@@ -218,12 +241,21 @@ export const codePageFixture = (
     case "approval":
       return { ...base, tab: "overview", state: ready({ waiting: { ...v5, status: "pending" }, waitingTargets }) };
     case "removed":
+    case "removed-unnamed":
+    case "removed-unknown":
       // „lieferungenEintragen“ failed at the space whose access was removed; „anfragenSortieren“ keeps running.
+      // Mia Koch removed it at 11:20; a guest does not see her name, and without its audit event nobody knows who.
       return {
         ...base,
         tab: "overview",
         state: ready({
-          access: access("removed"),
+          access: access(
+            "removed",
+            false,
+            state === "removed-unknown"
+              ? { removedBy: null, removedAt: null }
+              : { removedBy: state === "removed" ? mia : null, removedAt: "2026-11-01T10:20:00.000Z" },
+          ),
           automations: [
             {
               entrypoint: "anfragenSortieren",
@@ -283,6 +315,25 @@ export const codePageFixture = (
                 summary: "Karte „Lieferung KW 45 – Rampe 2“ angelegt",
               },
             ],
+            nextCallCursor: null,
+            input: null,
+            inputTooLarge: false,
+          },
+        }),
+      };
+    case "run-rerun":
+      // Ben Schulz ran the failed run again.
+      return {
+        ...base,
+        tab: "runs",
+        state: ready({
+          runs: {
+            items: [{ ...runs[2]!, state: "succeeded", outcome: null, rerunOf: runs[3]!.id, rerunByName: ben.name }, runs[3]!],
+            nextCursor: null,
+          },
+          run: {
+            run: { ...runs[2]!, state: "succeeded", outcome: null, rerunOf: runs[3]!.id, rerunByName: ben.name },
+            calls: [],
             nextCallCursor: null,
             input: null,
             inputTooLarge: false,
@@ -397,6 +448,44 @@ export const codePageFixture = (
           run: { run: runs[3]!, calls: null, nextCallCursor: null, input: null, inputTooLarge: false },
         }),
       };
+    case "secrets":
+    case "secrets-empty":
+    case "secrets-error":
+    case "secrets-replaced":
+    case "secrets-submitted":
+    case "secrets-unsubmitted":
+    case "secrets-deleted": {
+      const secret: CodePageSecret = {
+        name: "LAGER_TOKEN",
+        binding_revision: "00000000-0000-4000-8000-0000000000c1",
+        origin: "https://api.lager-beispiel.de",
+        pathPrefix: "/v2/",
+        headers: ["authorization"],
+        configured: state !== "secrets-deleted",
+        valueSetBy: ben,
+        valueSetAt: "2026-10-20T09:00:00.000Z",
+        usedIn: [{ number: 4, state: "active" }],
+        unsubmitted: state === "secrets-unsubmitted",
+      };
+      const notice = state === "secrets-replaced" ? "replaced" : state === "secrets-submitted" ? "submitted" : null;
+      return {
+        ...base,
+        tab: "secrets",
+        state: ready({
+          waiting: state === "secrets-submitted" ? { ...v5, status: "pending" } : null,
+          secrets:
+            state === "secrets-error"
+              ? null
+              : {
+                  items: state === "secrets-empty" ? [] : [secret, { ...secret, name: "WETTER_KEY", usedIn: [], unsubmitted: false }],
+                  more: false,
+                  selected: state === "secrets-empty" ? null : secret.name,
+                  notice,
+                  latest: { id: "00000000-0000-4000-8000-0000000000d4", number: 4 },
+                },
+        }),
+      };
+    }
     case "versions":
       return {
         ...base,

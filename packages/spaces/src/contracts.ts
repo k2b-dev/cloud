@@ -174,6 +174,7 @@ export const SpaceItemSchema = z.object({
   rank: z.string().describe("Item ordering rank within a column"),
   completedAt: z.string().nullable().describe("Completion timestamp (ISO)"),
   createdBy: UuidSchema.nullable().describe("Creator user UUID"),
+  createdByWorkload: z.boolean().optional().describe("Whether durable work such as Code created this item rather than a person directly"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
   lastActivityAt: z.string().optional().describe("Most recent item or checklist activity timestamp (ISO); comments do not count"),

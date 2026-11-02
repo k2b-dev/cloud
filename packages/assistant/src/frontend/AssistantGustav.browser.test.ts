@@ -17,12 +17,19 @@ const fakeLive = resolve(import.meta.dir, "AssistantGustav.browser-live.ts");
 const entrySource = `
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
 
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
-      <AssistantWorkspace {...window.harness.props} />
+      {window.harness.card ? (
+        <div style="width:100%;padding:1rem">
+          <AssistantCodeVersionCard {...window.harness.card} timeZone="Europe/Berlin" />
+        </div>
+      ) : (
+        <AssistantWorkspace {...window.harness.props} />
+      )}
     </LocaleProvider>
   ),
   document.getElementById("root"),
@@ -108,6 +115,31 @@ const MINE = [
 ];
 // A place owns at most one Code.
 const MAILBOX = [code("c_info01", "Anfragen sortieren", "paused")];
+/** The summary carries Core's list under the names the block reads. */
+const summaryOf = <T extends { items: unknown[]; removedTargets: unknown[] }>({ items, ...item }: T) => ({ ...item, automations: items });
+const automation = (entrypoint: string, cron: string | null, patch: Record<string, unknown> = {}) => ({
+  entrypoint,
+  kind: cron ? "schedule" : "manual",
+  cron,
+  nextRunAt: null,
+  lastRun: { state: "succeeded", createdAt: at(25), endedAt: at(24) },
+  missingTargets: [],
+  ...patch,
+});
+const logistik = { type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" };
+/** The running version's automations, as Core lists them; each owner's answer also names removed access. */
+const automationsOf = (codeId: string, accessMissing = false) => {
+  if (codeId === "c_woche1")
+    return { items: [automation("wochenbericht", "0 7 * * 1", { nextRunAt: "2026-11-02T06:00:00.000Z" })], removedTargets: [] };
+  if (codeId !== "c_info01") return { items: [], removedTargets: [] };
+  return {
+    items: [
+      automation("Anfragen sortieren", null),
+      automation("Lieferungen eintragen", null, accessMissing ? { missingTargets: [logistik] } : {}),
+    ],
+    removedTargets: accessMissing ? [logistik] : [],
+  };
+};
 const runOf = (codeId: string) => {
   const failed = codeId === "c_stoff1";
   const minutesAgo = { c_woche1: 7_000, c_rueck1: 60, c_stoff1: 210, c_angeb1: 2_900, c_info01: 25 }[codeId] ?? 60;
@@ -126,6 +158,9 @@ type Scenario = {
   panelFails?: boolean;
   /** The panel's place can own Code but has none. */
   panelEmpty?: boolean;
+  panelAccessMissing?: boolean;
+  /** What Core answers for a version card, which then renders alone in the panel's width. */
+  cardPreview?: unknown;
   /** One personal Code with the shared Code page. */
   detail?: boolean;
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
@@ -199,7 +234,12 @@ const propsOf = (scenario: Scenario, url: URL) => ({
     open: Boolean(scenario.codeOpen || scenario.detail),
     ...(scenario.codeOpen
       ? {
-          page: scenario.listFails ? null : { items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null },
+          page: scenario.listFails
+            ? null
+            : {
+                items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id), ...automationsOf(item.id) })).map(summaryOf),
+                nextCursor: null,
+              },
           today: { runs: 9, failed: 1 },
         }
       : {}),
@@ -210,7 +250,17 @@ const propsOf = (scenario: Scenario, url: URL) => ({
         ref: mailbox,
         page: scenario.panelFails
           ? null
-          : { items: scenario.panelEmpty ? [] : MAILBOX.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null },
+          : {
+              items: scenario.panelEmpty
+                ? []
+                : MAILBOX.map((item) => ({
+                    ...item,
+                    state: scenario.panelAccessMissing ? "active" : item.state,
+                    lastRun: runOf(item.id),
+                    ...automationsOf(item.id, scenario.panelAccessMissing),
+                  })).map(summaryOf),
+              nextCursor: null,
+            },
         ...(scenario.panelEmpty
           ? { place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info", canOwnCode: true } }
           : {}),
@@ -343,7 +393,11 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     const url = new URL(route.request().url());
     if (url.pathname === "/harness.js" || url.pathname === "/harness.css" || url.pathname.startsWith("/ui/")) return route.continue();
     if (url.pathname === "/app/assistant" || url.pathname === "/app/assistant/panel" || url.pathname.startsWith("/app/assistant/code/")) {
-      const harness = { locale: "de", props: propsOf(scenario, url) };
+      const harness = {
+        locale: "de",
+        props: propsOf(scenario, url),
+        ...(scenario.cardPreview ? { card: { codeId: "c_info01", versionId: cardVersionId, number: 5 } } : {}),
+      };
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
         ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
@@ -362,6 +416,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
           `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script><script type="module" src="/harness.js"></script></body></html>`,
       });
     }
+    if (url.pathname === "/api/code/activation/preview" && scenario.cardPreview)
+      return route.fulfill({ json: { data: scenario.cardPreview } });
     const capability = /^\/api\/capabilities\/v1\/queries\/(\w+)\/([\w.]+)$/.exec(url.pathname);
     if (capability) {
       const [, appId, capabilityId] = capability;
@@ -377,6 +433,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
         return route.fulfill({ json: { data: { items: input.owner?.kind === "resource" ? MAILBOX : MINE, nextCursor: null } } });
       }
       if (capabilityId === "code.run.list") return route.fulfill({ json: { data: { items: [runOf(input.codeId!)], nextCursor: null } } });
+      if (capabilityId === "code.automation.list")
+        return route.fulfill({ json: { data: { codeId: input.codeId, ...automationsOf(input.codeId!) } } });
       if (capabilityId === "code.run.count") return route.fulfill({ json: { data: { runs: 9, failed: 1 } } });
     }
     if (url.pathname === "/api/capabilities/v1/catalog") return route.fulfill({ json: mailCatalog });
@@ -405,6 +463,45 @@ const personalCodePage = () => ({
   href: "/app/assistant/code/c_woche1",
 });
 
+const cardVersionId = "66666666-6666-4666-8666-666666666666";
+const cardRow = (patch: Record<string, unknown>) => ({
+  target: { type: "spaces.space", id: "sp_2lg8" },
+  operations: ["spaces.task.create"],
+  own: false,
+  isNew: true,
+  check: "manages",
+  title: "Logistik",
+  typeTitle: "Space",
+  icon: "ti ti-layout-kanban",
+  managers: [],
+  ...patch,
+});
+const cardPreview = (patch: Record<string, unknown> = {}) => ({
+  codeId: "c_info01",
+  title: "Code von info@",
+  ownerKind: "resource",
+  versionId: cardVersionId,
+  number: 5,
+  running: 4,
+  latest: 5,
+  activated: null,
+  allowed: { allowed: true },
+  readiness: { state: "ready" },
+  place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m/info" },
+  rows: [
+    cardRow({
+      target: { type: "mail.mailbox", id: "m_info" },
+      operations: ["mail.conversation.move"],
+      own: true,
+      title: "info@moebel-beispiel.de",
+      typeTitle: "Postfach",
+      icon: "ti ti-mail",
+    }),
+    cardRow({}),
+  ],
+  ...patch,
+});
+
 const shot = async (page: Page, name: string) => {
   if (!shots) return;
   mkdirSync(shots, { recursive: true });
@@ -427,6 +524,8 @@ describe("Gustav", () => {
         expect(await list.getByRole("heading", { level: 1 }).textContent()).toBe("Meine Apps & Automationen");
         expect(await list.getByText("Dein Code läuft als du.").count()).toBe(1);
         expect(await list.getByText("Heute 9 Läufe · 1 fehlgeschlagen").count()).toBe(1);
+        // The list row names the schedule and the next run; a Code without a running automation stays "Automation".
+        await list.getByText(/^Automation · montags 07:00 · nächster Lauf /).waitFor();
         // The failed run and the pause are the visible statuses; the rest are "An".
         const rows = await list
           .locator("li.assistant-code__row")
@@ -469,15 +568,17 @@ describe("Gustav", () => {
       await block.getByText("Anfragen sortieren").waitFor();
       // The place's own name comes from its reader.
       await block.getByText("von info@moebel-beispiel.de").waitFor();
-      expect(await block.locator("li").count()).toBe(1);
-      expect(await block.getByText("Pausiert").count()).toBe(1);
+      // One row per automation; pausing is the whole Code's state, so both say it.
+      expect(await block.locator("li").count()).toBe(2);
+      await block.getByText("Lieferungen eintragen").waitFor();
+      expect(await block.getByText("Pausiert").count()).toBe(2);
       expect(await block.getByRole("button", { name: "Mit Gustav bearbeiten" }).count()).toBe(1);
       expect(await block.getByRole("link", { name: "info@moebel-beispiel.de öffnen" }).getAttribute("href")).toBe("/app/mail/m/info");
       // The server already listed this place's Code; the page does not ask Core again.
       expect(h.codeCalls.filter((call) => call === "core.code.list")).toEqual([]);
       await shot(h.page, "b-panel-code-von-light");
       await block.getByRole("button", { name: "Code ausblenden" }).click();
-      await block.getByText("Pausiert").waitFor();
+      await block.getByText("2 Automationen · Pausiert").waitFor();
       expect(await block.locator("li").count()).toBe(0);
       await shot(h.page, "b-panel-code-von-zu-light");
     } finally {
@@ -494,6 +595,61 @@ describe("Gustav", () => {
       await failed.close();
     }
   }, 90_000);
+
+  test("access removed at a target shows at the automation that needs it, while the other stays on", async () => {
+    const h = await open(panel, { panel: true, panelAccessMissing: true }, { path: "/app/assistant/panel" });
+    try {
+      const block = h.page.locator("section.assistant-code-block");
+      await block.getByText("Zugriff fehlt").waitFor();
+      const rows = block.locator("li");
+      expect(await rows.count()).toBe(2);
+      expect(await rows.nth(0).textContent()).toContain("An");
+      expect(await rows.nth(1).textContent()).toContain("Zugriff auf Space Logistik entfernt");
+      await shot(h.page, "b-panel-code-von-zugriff-fehlt-light");
+      await block.getByRole("button", { name: "Code ausblenden" }).click();
+      await block.getByText("2 Automationen · Zugriff fehlt").waitFor();
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
+  test("the version card fits the panel and says who can switch on, for each person", async () => {
+    const lea = cardPreview();
+    const blocked = (lea.rows as ReturnType<typeof cardRow>[]).map((row) =>
+      row.own ? row : { ...row, check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] },
+    );
+    const states = [
+      { name: "ben", preview: lea, expected: "du verwaltest ihn", button: "Einschalten" },
+      {
+        name: "lea",
+        preview: cardPreview({ rows: blocked }),
+        expected: "Einschalten kann nur, wer Postfach und Space verwaltet: Ben Schulz.",
+        button: "Link für Ben kopieren",
+      },
+      {
+        name: "an",
+        preview: cardPreview({ running: 5, rows: [], activated: { at: at(5), byYou: true, byName: null } }),
+        expected: "Version 5 eingeschaltet",
+        button: null,
+      },
+    ];
+    for (const state of states)
+      for (const view of [panel, phone]) {
+        const h = await open(view, { cardPreview: state.preview }, { path: "/app/assistant/panel" });
+        try {
+          await h.page.getByText(state.expected).waitFor();
+          if (state.button) expect(await h.page.getByRole("button", { name: state.button }).count()).toBe(1);
+          const overflow = await h.page.evaluate(() => {
+            const card = document.querySelector(".assistant-code-version, .assistant-code-version__line")!;
+            return card.scrollWidth - card.clientWidth;
+          });
+          expect(overflow).toBeLessThanOrEqual(0);
+          await shot(h.page, `b-karte-${state.name}-${view.name}-light`);
+        } finally {
+          await h.close();
+        }
+      }
+  }, 120_000);
 
   test("a personal Code opens on the shared Code page, runs as its person, and keeps My apps & automations marked", async () => {
     for (const view of [desktop, phone]) {

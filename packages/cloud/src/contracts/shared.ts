@@ -439,6 +439,8 @@ export type InvocationProvenance = {
   mandateRevision?: number;
   workloadType?: string;
   workloadId?: string;
+  /** One concrete run of this workload, when its owner tracks runs. */
+  workloadRun?: string;
 };
 
 export type UserRequestActor = {

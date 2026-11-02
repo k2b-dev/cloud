@@ -510,6 +510,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
 | `@k2b/cloud/ssr/code-nav-status` | Supported, browser | `CodeNavStatus` and `codeNavAttentionLabel`: the warning dot of an owner's "Code" navigation entry | [Code page](/en/docs/platform/code-page) |
+| `@k2b/cloud/ssr/code-schedule` | Supported, browser | `describeCodeSchedule`: a five-field schedule as a short localized sentence | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |

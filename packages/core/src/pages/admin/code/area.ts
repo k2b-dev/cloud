@@ -21,6 +21,8 @@ export type CodeAreaQuery = {
   sec?: CodeAreaSection;
   /** Version UUID in approvals, Code ID in code, group UUID in groups, person UUID in effective. */
   id?: string;
+  /** Version UUID whose source the Code detail shows, read-only. */
+  version?: string;
   /** `decided` shows decided versions in approvals. */
   tab?: "decided";
   status?: CodeAdminCodeStatus;
@@ -63,7 +65,7 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
     const q = query.q?.trim().slice(0, 100);
     return {
       sec,
-      ...(CODE_ID.test(id) ? { id } : {}),
+      ...(CODE_ID.test(id) ? { id, ...(UUID.test(query.version ?? "") ? { version: query.version } : {}) } : {}),
       ...(status ? { status } : {}),
       ...(query.app && APP.test(query.app) ? { app: query.app } : {}),
       ...(q ? { q } : {}),

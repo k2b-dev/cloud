@@ -40,6 +40,15 @@ to **Admin approval** for its author or owner. The review shows:
 - the internet targets: each exact HTTPS origin the version may send a secret
   to, from its secret bindings, and whether calls without a secret reach public
   HTTPS addresses;
+- what happens: a short AI explanation of the version, marked as only a hint.
+  An open review asks for it once; it is stored per version and language and
+  charged to the administrator who asked first. When no explanation can be
+  generated the review says so and offers a retry; deciding never depends on it;
+- the check Core ran at submission: types, the author's test fixtures, and a
+  trial run with their test data that lists each call with its count, compared
+  with the earlier version when that has a record. Fixtures run against fake
+  data, so nothing real happens. Failed tests or tests that could not run are
+  shown and do not refuse the version;
 - the complete Code difference against the last approved or switched-on
   version, or the whole Code for a first version.
 
@@ -56,6 +65,13 @@ Authors do not approve their own versions. The one exception is an
 installation with exactly one active Cloud administrator: the review then
 shows that you are approving your own Code, and the version list labels the
 result "self-approved (only admin)".
+
+## Read a version's Code
+
+Under **Code in this Cloud**, choose **View code** or a version in a Code's
+detail to read that version's complete source, read-only, with or without an
+open approval. The selection is part of the URL. Like the other reads in this
+area it needs the Cloud administrator role and writes no audit entry.
 
 ## Edit the policy
 

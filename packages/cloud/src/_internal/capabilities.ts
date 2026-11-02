@@ -1123,6 +1123,7 @@ export const compileCapabilities = (
                 .sort(),
             },
             owners: [...(definitions.code?.owners ?? [])].sort(),
+            ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
           },
         }
       : {}),

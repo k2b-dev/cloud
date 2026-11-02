@@ -22,13 +22,45 @@ const RunListSchema = z.object({
   ),
 });
 
+const AutomationTargetSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+  title: z.string().nullable(),
+  typeTitle: z.string().nullable(),
+});
+const AutomationListSchema = z.object({
+  items: z.array(
+    z.object({
+      entrypoint: z.string(),
+      kind: z.enum(["schedule", "manual"]),
+      cron: z.string().nullable(),
+      nextRunAt: z.string().nullable(),
+      lastRun: z
+        .object({ state: RunListSchema.shape.items.element.shape.state, createdAt: z.string(), endedAt: z.string().nullable() })
+        .nullable(),
+      missingTargets: z.array(AutomationTargetSchema),
+    }),
+  ),
+  removedTargets: z.array(AutomationTargetSchema),
+});
+export type CodeAutomation = z.infer<typeof AutomationListSchema>["items"][number];
+export type CodeAutomationTarget = z.infer<typeof AutomationTargetSchema>;
+
 /** A place's own name, its type's title, its link, and whether its type can own Code at all. */
 export type CodePlace = { name?: string; type?: string; href?: string; canOwnCode?: boolean };
 
 export type CodeOwnerFilter = { kind: "person"; userId: string } | { kind: "resource"; ref: CloudResourceRef };
 export type CodeRunSummary = z.infer<typeof RunListSchema>["items"][number];
-/** `lastRun` is null when the Code never ran, and undefined when Core could not read its run history. */
-export type CodeSummary = z.infer<typeof CodeItemSchema> & { lastRun: CodeRunSummary | null | undefined };
+/**
+ * `lastRun` is null when the Code never ran, and undefined when Core could not read its run history. `automations` is
+ * undefined when Core could not list them; the Code then shows as one row.
+ */
+export type CodeSummary = z.infer<typeof CodeItemSchema> & {
+  lastRun: CodeRunSummary | null | undefined;
+  automations?: CodeAutomation[];
+  /** Targets that removed access, also when no automation could be named for them. */
+  removedTargets?: CodeAutomationTarget[];
+};
 /** One page of Code the person may see for an owner. `nextCursor` continues the list; null means it is complete. */
 export type CodeSummaryPage = { items: CodeSummary[]; nextCursor: string | null };
 
@@ -53,7 +85,7 @@ export const hasPersonalCode = async (invoke: CodeQueryInvoke, userId: string): 
 };
 
 /**
- * One page of Code for one owner, each with its newest run. Core lists only Code the person may read, so a
+ * One page of Code for one owner, each with its newest run and its automations. Core lists only Code the person may read, so a
  * resource without readable Code yields no items. Run lookups are bounded by the page size and run in parallel.
  */
 export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwnerFilter, cursor?: string): Promise<CodeSummaryPage> => {
@@ -61,9 +93,16 @@ export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwne
   if (!listed.ok) throw new CodeSummaryError(listed.error.message);
   const items = await Promise.all(
     listed.data.data.items.map(async (code): Promise<CodeSummary> => {
-      const runs = await invoke(query("code.run.list", { codeId: code.id, limit: 1 }), RunListSchema);
+      const [runs, automations] = await Promise.all([
+        invoke(query("code.run.list", { codeId: code.id, limit: 1 }), RunListSchema),
+        invoke(query("code.automation.list", { codeId: code.id }), AutomationListSchema).catch(() => null),
+      ]);
       // A missing run history does not hide the Code; it shows that its last run is unknown.
-      return { ...code, lastRun: runs.ok ? (runs.data.data.items[0] ?? null) : undefined };
+      return {
+        ...code,
+        lastRun: runs.ok ? (runs.data.data.items[0] ?? null) : undefined,
+        ...(automations?.ok ? { automations: automations.data.data.items, removedTargets: automations.data.data.removedTargets } : {}),
+      };
     }),
   );
   return { items, nextCursor: listed.data.data.nextCursor };
@@ -71,14 +110,38 @@ export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwne
 
 export type CodeStatusTone = "success" | "warning" | "danger" | "neutral";
 
-/** One status per Code: paused and failed runs need attention before "on". */
-export const codeStatus = (code: CodeSummary): { key: "on" | "paused" | "draft" | "deleting" | "failed"; tone: CodeStatusTone } => {
+export type CodeStatusKey = "on" | "paused" | "draft" | "deleting" | "failed" | "access_missing";
+
+/** One status per Code: pausing the whole Code, removed access and failed runs need attention before "on". */
+export const codeStatus = (code: CodeSummary): { key: CodeStatusKey; tone: CodeStatusTone } => {
   if (code.state === "paused") return { key: "paused", tone: "warning" };
   if (code.state === "draft") return { key: "draft", tone: "neutral" };
   if (code.state === "deleting") return { key: "deleting", tone: "neutral" };
+  if ((code.removedTargets?.length ?? 0) > 0) return { key: "access_missing", tone: "warning" };
   if (code.lastRun?.state === "failed") return { key: "failed", tone: "danger" };
   return { key: "on", tone: "success" };
 };
+
+/**
+ * One status per automation. Only the whole Code can pause, so an automation never pauses by itself: what it can lack
+ * is its access, while the others keep running.
+ */
+export const automationStatus = (code: CodeSummary, automation: CodeAutomation): { key: CodeStatusKey; tone: CodeStatusTone } => {
+  if (code.state === "paused") return { key: "paused", tone: "warning" };
+  if (code.state === "draft") return { key: "draft", tone: "neutral" };
+  if (code.state === "deleting") return { key: "deleting", tone: "neutral" };
+  if (automation.missingTargets.length > 0) return { key: "access_missing", tone: "warning" };
+  if (automation.lastRun?.state === "failed") return { key: "failed", tone: "danger" };
+  return { key: "on", tone: "success" };
+};
+
+/** The earliest next run of a Code's automations, or null when none is due. */
+export const nextCodeRun = (code: CodeSummary): string | null =>
+  (code.automations ?? []).reduce<string | null>(
+    (earliest, automation) =>
+      automation.nextRunAt && (!earliest || Date.parse(automation.nextRunAt) < Date.parse(earliest)) ? automation.nextRunAt : earliest,
+    null,
+  );
 
 const AttentionSchema = z.object({
   items: z.array(

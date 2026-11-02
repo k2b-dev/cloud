@@ -73,6 +73,9 @@ export const codeVersionContracts = {
           "Complete immutable checker evidence with the original entry and current policy classifications.",
         ),
         baseVersionId: z.uuid().nullable().describe("Latest saved version UUID, or null for the first push."),
+        tests: CodeSourceFilesSchema.optional().describe(
+          "Declarative test/**/*.json fixtures. Core runs them against fake data at submission and records the result for reviewers; a failing test does not refuse the version.",
+        ),
       })
       .strict(),
     data: submission,

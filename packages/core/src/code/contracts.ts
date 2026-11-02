@@ -122,6 +122,10 @@ export const CodeRunSchema = z
     createdAt: timestamp,
     startedAt: timestamp.nullable(),
     endedAt: timestamp.nullable(),
+    /** The failed run this one starts again; null for a first attempt or after that run's retention. */
+    rerunOf: z.uuid().nullable(),
+    /** Who started it again, as the directory shows them to this reader; resolved on read and never stored. */
+    rerunByName: z.string().nullable(),
   })
   .strict();
 export type CodeRun = z.infer<typeof CodeRunSchema>;

@@ -1,8 +1,17 @@
-import { type AuthContext, auth, getLocale, middleware, v } from "@k2b/cloud/server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  middleware,
+  REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { z } from "zod";
 import { type CodeContext, CodeDataError } from "../code/access";
-import { codeAdminOwnerNames } from "../code/admin";
+import { CodeExplanationUnavailableError, codeAdminOwnerNames, explainCodeVersion } from "../code/admin";
 import { CodeIdSchema } from "../code/contracts";
 import { previewCodePolicy, readCodePolicy, requireCodePolicyAdmin, updateCodePolicy } from "../code/policy";
 import { codePolicyContracts } from "../code/policy-contracts";
@@ -13,6 +22,7 @@ import { CodeVersionError, decideCodeVersion, setCodePaused } from "../code/vers
 export const codeAdminContracts = {
   decide: { input: z.object({ binding: CodeVersionBindingSchema, approved: z.boolean() }).strict() },
   read: { input: z.object({}).strict() },
+  explain: { input: z.object({ versionId: z.uuid() }).strict(), data: z.object({ text: z.string() }).strict() },
   pause: { input: z.object({ codeId: CodeIdSchema, paused: z.boolean() }).strict() },
   preview: { input: codePolicyContracts.preview.input },
   update: { input: codePolicyContracts.update.input },
@@ -50,6 +60,25 @@ export const createCodeAdminRoutes = () => {
       (c) => {
         const input = c.req.valid("json");
         return run(() => decideCodeVersion(input.binding, input.approved, context(c)));
+      },
+    )
+    .post(
+      "/explain",
+      auth.requireOAuthScope("write", "admin"),
+      middleware.openapi({ tags: ["Code"], summary: "Explain one Code version to its reviewer in plain language" }),
+      v("json", codeAdminContracts.explain.input),
+      async (c) => {
+        // A model answers well past the default idle budget.
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+        try {
+          return await run(() => explainCodeVersion(c.req.valid("json").versionId, context(c)));
+        } catch (error) {
+          if (error instanceof CodeExplanationUnavailableError)
+            return Response.json({ code: "code_explanation_unavailable", message: "No explanation could be generated." }, { status: 503 });
+          throw error;
+        } finally {
+          setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+        }
       },
     )
     .post(

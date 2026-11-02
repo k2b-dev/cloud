@@ -50,9 +50,14 @@ export const CodeVersionPermissionSchema = z
       .describe("Exact operation target, or null for an app-wide operation."),
     file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
     line: z.number().int().positive().describe("One-based source line."),
+    entrypoints: z
+      .array(z.string().min(1))
+      .min(1)
+      .optional()
+      .describe("Sorted entrypoints whose handler contains this call; absent when the checker cannot place it."),
   })
   .strict();
-/** One permission emitted by the checker, with its source location. */
+/** One permission emitted by the checker, with its source location and, when known, the entrypoints that use it. */
 export type CodeVersionPermission = z.infer<typeof CodeVersionPermissionSchema>;
 /** The checker's immutable manifest plus the host's original check entry and policyRows.
  * Copy version/entrypoints/permissions/ai/hashes unchanged from checkCode's result.

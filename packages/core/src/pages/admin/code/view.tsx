@@ -26,17 +26,19 @@ import type {
   CodeAdminPolicy,
   CodeAdminPolicyChange,
   CodeAdminSummary,
+  CodeAdminVersionSource,
 } from "../../../code/admin";
 import type { CodeOwner } from "../../../code/contracts";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import CoreSettingsForm, { type SettingFieldDef } from "../settings/_components/CoreSettingsForm.island";
 import { CODE_POLICY_ROW_GROUPS, type CodeAreaQuery, type CodeAreaSection, codeAreaHref, codeAreaLevel, isWideCodeSection } from "./area";
-import CodeApprovalReview, { type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
+import CodeApprovalReview, { type CodeApprovalCheck, type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
 import CodeListFilters from "./CodeListFilters.island";
 import CodePauseAction from "./CodePauseAction.island";
 import CodePolicyEditor from "./CodePolicyEditor.island";
 import CodePolicyPicker from "./CodePolicyPicker.island";
+import CodeVersionSource from "./CodeVersionSource.island";
 import type { CodeAdminMessages } from "./messages";
 
 /** A part of the page: its data, a failed load, a selection that no longer exists, or not needed for this URL. */
@@ -48,6 +50,8 @@ export type CodeAreaData = {
   approval: Loaded<CodeAdminApprovalDetail>;
   codes: Loaded<{ items: CodeAdminCode[]; total: number; owners: number; nextCursor: string | null }>;
   code: Loaded<CodeAdminCodeDetail>;
+  /** One version's source, read-only, when the URL selects it. */
+  source: Loaded<CodeAdminVersionSource>;
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
   history: Loaded<CodeAdminPolicyChange[]>;
@@ -112,6 +116,35 @@ export function approvalStat(t: CodeAdminMessages, item: CodeAdminApproval): str
   return t.linesChanged({ add: item.stat.added, del: item.stat.removed });
 }
 
+/** Word what Core recorded at submission. Calls of both versions are listed once, the newly called ones with `before` 0. */
+export function approvalCheck(t: CodeAdminMessages, detail: CodeAdminApprovalDetail): CodeApprovalCheck | null {
+  const evidence = detail.evidence;
+  if (!evidence) return null;
+  const { state, passed, total } = evidence.tests;
+  const trial = evidence.trial;
+  const before = detail.comparison ? detail.comparisonEvidence?.trial : null;
+  const operations = [...new Set([...(trial?.calls ?? []), ...(before?.calls ?? [])].map((call) => call.operation))];
+  return {
+    tests:
+      state === "passed"
+        ? t.testsPassed({ n: total })
+        : state === "failed"
+          ? t.testsFailed({ passed, total })
+          : state === "none"
+            ? t.testsNone
+            : t.testsUnavailable,
+    testsOk: state === "passed",
+    trial: trial ? t.trial({ runs: trial.runs, calls: trial.calls.reduce((sum, call) => sum + call.count, 0) }) : null,
+    calls: operations.map((operation) => ({
+      label: detail.titles.operations[operation] ?? operation,
+      operation,
+      now: trial?.calls.find((call) => call.operation === operation)?.count ?? 0,
+      before: before?.calls.find((call) => call.operation === operation)?.count ?? 0,
+    })),
+    comparedWith: before && detail.comparison ? detail.comparison.number : null,
+  };
+}
+
 /** Build the island props for one version under review. */
 export function approvalReviewProps(
   t: CodeAdminMessages,
@@ -124,6 +157,9 @@ export function approvalReviewProps(
   const index = list.findIndex((item) => item.versionId === detail.version.id);
   const next = (index >= 0 ? list.slice(index + 1).concat(list.slice(0, index)) : others)[0];
   return {
+    versionId: detail.version.id,
+    explanation: detail.explanation,
+    check: approvalCheck(t, detail),
     number: detail.version.number,
     binding: detail.binding,
     status: detail.status,
@@ -518,8 +554,38 @@ export function CodeAreaView(props: Props) {
     if (detail === "missing") return missing(t.codeMissing, { sec: "code" });
     if (detail === "failed") return failure;
     const code = detail.code;
+    const codeLink = (extra: Pick<CodeAreaQuery, "version">) =>
+      codeAreaHref({ sec: "code", id: code.id, status: query.status, app: query.app, q: query.q, after: query.after, ...extra });
+    const newest = detail.versions[0]?.version.id;
+    const source = data.source;
     return (
       <div class="grid content-start gap-6 px-2 pt-1 pb-6">
+        <Show when={source !== null}>
+          <section class="grid gap-2" aria-labelledby="code-detail-source">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 id="code-detail-source" class="text-base font-semibold">
+                {t.viewCode}
+              </h3>
+              <ButtonLink size="sm" variant="ghost" href={codeLink({})}>
+                <i class="ti ti-x" aria-hidden="true" />
+                {t.closeCode}
+              </ButtonLink>
+            </div>
+            {source === "failed" ? (
+              failure
+            ) : source === "missing" ? (
+              <Placeholder icon="ti ti-search-off" title={t.sourceMissing} />
+            ) : ok(source) ? (
+              <>
+                <p class="text-xs text-(--k2b-text-muted)">
+                  {t.codeReadOnly({ n: source.number, hash: `${source.bundleHash.slice(0, 4)}…${source.bundleHash.slice(-2)}` })} ·{" "}
+                  {t.codeReadOnlyHint}
+                </p>
+                <CodeVersionSource files={source.files} label={t.viewCode} />
+              </>
+            ) : undefined}
+          </section>
+        </Show>
         <Show when={detail.pendingVersionId}>
           {(versionId) => (
             <NoticeCard
@@ -551,9 +617,19 @@ export function CodeAreaView(props: Props) {
           <dt class="text-(--k2b-text-muted)">ID</dt>
           <dd class="font-mono text-xs">{code.id}</dd>
         </dl>
-        <Show when={code.activeVersionNumber !== null && (code.state === "active" || code.state === "paused")}>
-          <CodePauseAction codeId={code.id} title={code.title} paused={code.state === "paused"} />
-        </Show>
+        <div class="flex flex-wrap items-center gap-2">
+          <Show when={source === null && newest}>
+            {(versionId) => (
+              <ButtonLink size="sm" variant="secondary" href={codeLink({ version: versionId() })}>
+                <i class="ti ti-code" aria-hidden="true" />
+                {t.viewCode}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show when={code.activeVersionNumber !== null && (code.state === "active" || code.state === "paused")}>
+            <CodePauseAction codeId={code.id} title={code.title} paused={code.state === "paused"} />
+          </Show>
+        </div>
         <section class="grid gap-2" aria-labelledby="code-detail-versions">
           <h3 id="code-detail-versions" class="text-base font-semibold">
             {t.versions}
@@ -563,7 +639,14 @@ export function CodeAreaView(props: Props) {
               <For each={detail.versions}>
                 {(entry) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <span class="font-medium">{t.versionRow({ n: entry.version.number })}</span>
+                    <a
+                      class="k2b-link font-medium"
+                      href={codeLink({ version: entry.version.id })}
+                      aria-current={query.version === entry.version.id ? "true" : undefined}
+                      aria-label={`${t.viewCode}: ${t.versionRow({ n: entry.version.number })}`}
+                    >
+                      {t.versionRow({ n: entry.version.number })}
+                    </a>
                     <span class="text-(--k2b-text-muted)">
                       {entry.decision?.soleAdmin ? t.selfApproved : t.versionStatus({ s: entry.status })}
                       {entry.decision ? ` · ${when(entry.decision.decidedAt)}` : ` · ${when(entry.version.createdAt)}`}

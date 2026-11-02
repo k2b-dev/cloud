@@ -44,7 +44,7 @@ export async function reconcileCodeAccess(
       byApp.set(appId, null);
     }
   }
-  return rows.map((row) => {
+  const states = rows.map((row): CodeTargetAccess => {
     const live = byApp.get(targetApp(row.target));
     return {
       grantId: row.grant_id,
@@ -64,7 +64,45 @@ export async function reconcileCodeAccess(
               )
             ? "present"
             : "removed",
+      removedBy: null,
+      removedAt: null,
     };
+  });
+  return withRemovals(states, code.serviceAccountId);
+}
+/**
+ * Who removed a grant and when. The platform's generated `code.access.rm` writes its audit event in the same transaction
+ * as the target's tombstone; the newest allowed event for this grant, Code account, target and its app answers it.
+ */
+async function withRemovals(rows: CodeTargetAccess[], principal: string): Promise<CodeTargetAccess[]> {
+  const removed = rows.filter((row) => row.state === "removed");
+  if (!removed.length) return rows;
+  // Each grant is matched with its own target and owning app before the newest event is chosen.
+  const events = await sql<{ grant_id: string; actor_user_id: string | null; created_at: Date }[]>`
+    SELECT DISTINCT ON (r.grant_id) r.grant_id, e.actor_user_id, e.created_at
+    FROM unnest(${sql.array(
+      removed.map((row) => row.grantId),
+      "text",
+    )}::text[], ${sql.array(
+      removed.map((row) => row.target.type),
+      "text",
+    )}::text[],
+      ${sql.array(
+        removed.map((row) => row.target.id),
+        "text",
+      )}::text[], ${sql.array(
+        removed.map((row) => targetApp(row.target)),
+        "text",
+      )}::text[])
+      AS r(grant_id, target_type, target_id, app_id)
+    JOIN audit.events e ON e.target_type = r.target_type AND e.target_id = r.target_id
+    WHERE e.action = 'code.access.rm' AND e.outcome = 'allowed'
+      AND e.metadata->>'grantId' = r.grant_id AND e.metadata->>'appId' = r.app_id AND e.metadata->>'principal' = ${principal}
+    ORDER BY r.grant_id, e.created_at DESC`;
+  const byGrant = new Map(events.map((event) => [event.grant_id, event]));
+  return rows.map((row) => {
+    const event = row.state === "removed" ? byGrant.get(row.grantId) : undefined;
+    return event ? { ...row, removedBy: event.actor_user_id, removedAt: event.created_at.toISOString() } : row;
   });
 }
 /** Cleanup waits for queued/running runs of every superseded version, then removes only unused explicit grants and revokes drained mandates. */

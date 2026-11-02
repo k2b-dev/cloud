@@ -1,6 +1,17 @@
 import { type CodeAccessGrant, sql } from "@k2b/cloud";
-import { readCodeActivationManifest, readResourcePrincipals } from "@k2b/cloud/capabilities/server";
-import { type CapabilityManifest, type CodeAccessSetData, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import {
+  getCapabilityCatalogApp,
+  invokeCapabilityWithDataSchema,
+  readCodeActivationManifest,
+  readResourcePrincipals,
+} from "@k2b/cloud/capabilities/server";
+import {
+  type CapabilityManifest,
+  CloudResourceReaderViewSchema,
+  type CodeAccessSetData,
+  CodeCheckedVersionManifestSchema,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
@@ -12,8 +23,11 @@ import { type CodeContext, CodeDataError, codePerson, requireCodePermission } fr
 import {
   CODE_ACTIVATION_MANAGER_NAMES,
   type CodeActivation,
+  type CodeActivationCheck,
   type CodeActivationFailure,
   CodeActivationFailureSchema,
+  type CodeActivationPreview,
+  type CodeActivationPreviewRow,
   codeActivationContracts,
 } from "./activation-contracts";
 import {
@@ -99,11 +113,13 @@ const visibleManagerNames = async (managerIds: string[], person: { id: string; r
   }
 };
 async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
-  const failure = result.failure;
+  return result.failure ? { ...result, failure: await visibleFailure(result.failure, context) } : result;
+}
+async function visibleFailure(failure: CodeActivationFailure, context: CodeContext): Promise<CodeActivationFailure> {
   // Provider presentation needs a current reader check. Core's own operational
   // failures contain no target presentation and retain their recovery reason.
-  if (!failure?.target || (failure.readable === undefined && failure.title === undefined && failure.managerUserIds === undefined))
-    return result;
+  if (!failure.target || (failure.readable === undefined && failure.title === undefined && failure.managerUserIds === undefined))
+    return failure;
   const person = codePerson(context);
   let readable = false;
   if (failure.readable !== false && failure.target.type !== "app") {
@@ -119,13 +135,12 @@ async function visibleReceipt(result: CodeActivation, context: CodeContext): Pro
       /* An unavailable reader check never supplies presentation. */
     }
   }
-  if (!readable)
-    result.failure = { target: failure.target, code: failure.code, reason: activationManagerRequired(context.locale), readable: false };
-  else if (failure.managerUserIds?.length) {
+  if (!readable) return { target: failure.target, code: failure.code, reason: activationManagerRequired(context.locale), readable: false };
+  if (failure.managerUserIds?.length) {
     const managerNames = await visibleManagerNames(failure.managerUserIds, person);
-    if (managerNames.length > 0) result.failure = { ...failure, managerNames };
+    if (managerNames.length > 0) return { ...failure, managerNames };
   }
-  return result;
+  return failure;
 }
 const load = async (id: string, db: SQL = sql) => (await db<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${id}::uuid`)[0];
 const terminal = (state: CodeActivation["state"]) => ["active", "failed", "cancelled"].includes(state);
@@ -170,8 +185,15 @@ function activationPerson(context: CodeContext) {
   return person;
 }
 async function authorizedCode(codeId: string, context: CodeContext, db: SQL = sql): Promise<Code> {
-  const person = activationPerson(context),
-    code = await findCode(codeId, db);
+  return authorizeActivation(codeId, activationPerson(context), context, db);
+}
+async function authorizeActivation(
+  codeId: string,
+  person: { id: string; roles: readonly string[] },
+  context: CodeContext,
+  db: SQL = sql,
+): Promise<Code> {
+  const code = await findCode(codeId, db);
   if (!code || code.state === "deleting") throw new CodeDataError("NOT_FOUND", "Code not found.");
   // An editor is not necessarily an owner administrator. Resource owner authority is checked by set(dryRun) on every attempt.
   if (
@@ -183,6 +205,206 @@ async function authorizedCode(codeId: string, context: CodeContext, db: SQL = sq
   if (code.owner.kind === "person" && code.owner.userId !== person.id)
     throw new CodeDataError("FORBIDDEN", "Only the personal owner can activate personal Code.");
   return code;
+}
+/** Targets asked at once while previewing, and in one preview; a version has at most 200 operations. */
+const PREVIEW_CONCURRENCY = 8;
+const PREVIEW_TARGETS = 50;
+/** Past this, the remaining targets stay unchecked; switching on checks them anyway. */
+const PREVIEW_BUDGET_MS = 10_000;
+const previewAllowed = (context: CodeContext): CodeActivationPreview["allowed"] => {
+  const { authority } = context;
+  if (isAppSessionActor(authority.actor)) return { allowed: false, reason: "phone" };
+  return authority.actor.kind === "user" && ["session", "oauth"].includes(authority.credentialKind)
+    ? { allowed: true }
+    : { allowed: false, reason: "credential" };
+};
+/** First name and full name, under the same directory rule as a refusal's names. */
+const visibleManagers = async (
+  ids: string[],
+  person: { id: string; roles: readonly string[] },
+): Promise<CodeActivationPreviewRow["managers"]> => {
+  const visible = (person.roles.includes("user") ? ids : ids.filter((id) => id === person.id)).slice(0, CODE_ACTIVATION_MANAGER_NAMES);
+  if (visible.length === 0) return [];
+  const rows = await sql<{ display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
+    SELECT display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${sql.array(visible, "uuid")}::uuid[]) ORDER BY uid`.catch(
+    () => [],
+  );
+  return rows.map((row) => ({
+    name: row.display_name?.trim() || `${row.given_name ?? ""} ${row.sn ?? ""}`.trim() || row.uid,
+    firstName: row.given_name?.trim() || null,
+  }));
+};
+/** The owner's name and link through its own reader, with this person's authority; null when they may not read it. */
+const previewPlace = async (code: Code, context: CodeContext): Promise<CodeActivationPreview["place"]> => {
+  if (code.owner.kind !== "resource") return null;
+  const ref = code.owner.ref;
+  try {
+    const catalog = await getCapabilityCatalogApp(targetApp(ref), context.locale, context.authority);
+    if (!catalog.ok || !catalog.data) return null;
+    const reader = resolveCapabilityResourceReader(catalog.data.manifest, ref);
+    if (!reader) return null;
+    const read = await invokeCapabilityWithDataSchema(
+      { appId: catalog.data.appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } },
+      z.object({ view: CloudResourceReaderViewSchema }),
+      { authority: context.authority, locale: context.locale, signal: context.signal },
+    );
+    if (!read.ok) return null;
+    const localType = ref.type.slice(catalog.data.appId.length + 1);
+    return {
+      title: read.data.data.view.title,
+      typeTitle: catalog.data.manifest.types.find((type) => type.localId === localType)?.title ?? null,
+      href: read.data.links?.find((link) => link.rel === "open")?.href ?? null,
+    };
+  } catch {
+    return null;
+  }
+};
+const previewType = async (type: string, context: CodeContext): Promise<{ typeTitle: string | null; icon: string | null }> => {
+  const appId = type.split(".")[0]!;
+  const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority).catch(() => null);
+  const found = catalog?.ok ? catalog.data?.manifest.types.find((item) => `${appId}.${item.localId}` === type) : undefined;
+  return { typeTitle: found?.title ?? null, icon: found?.icon ?? null };
+};
+/**
+ * What switching on this version would do for this person, before they click. Every check is the target's own dry run,
+ * the check an activation runs first: a target that may not be read stays an ID here too, whatever the target returned.
+ */
+export async function previewCodeActivation(
+  raw: z.input<typeof codeActivationContracts.preview.input>,
+  context: CodeContext,
+  overrides?: Partial<CodeActivationDependencies>,
+): Promise<CodeActivationPreview> {
+  const deps = { ...defaults, ...overrides };
+  const input = codeActivationContracts.preview.input.parse(raw);
+  const person = codePerson(context, true);
+  const code = await authorizeActivation(input.codeId, person, context);
+  const [version] = await sql<
+    { number: number }[]
+  >`SELECT number FROM code.versions WHERE id=${input.versionId}::uuid AND code_id=${code.id}`;
+  if (!version) throw new CodeDataError("NOT_FOUND", "Code version not found.");
+  const [numbers] = await sql<{ latest: number; running: number | null }[]>`SELECT
+      (SELECT max(number) FROM code.versions WHERE code_id=${code.id})::int AS latest,
+      (SELECT number FROM code.versions WHERE id=${code.activeVersionId}::uuid)::int AS running`;
+  const allowed = previewAllowed(context);
+  const base = {
+    codeId: code.id,
+    title: code.title,
+    ownerKind: code.owner.kind,
+    versionId: input.versionId,
+    number: version.number,
+    running: numbers?.running ?? null,
+    latest: numbers?.latest ?? version.number,
+    allowed,
+  };
+  const place = await previewPlace(code, context);
+  if (code.activeVersionId === input.versionId) {
+    const [activation] = await sql<{ activating_person: string | null; updated_at: Date }[]>`
+      SELECT activating_person, updated_at FROM code.activations
+      WHERE code_id=${code.id} AND version_id=${input.versionId}::uuid AND state='active' ORDER BY updated_at DESC LIMIT 1`;
+    const by = activation?.activating_person ?? null;
+    const byName = by && by !== person.id ? ((await visibleManagers([by], person))[0]?.name ?? null) : null;
+    return {
+      ...base,
+      activated: activation ? { at: activation.updated_at.toISOString(), byYou: by === person.id, byName } : null,
+      readiness: { state: "ready" },
+      place,
+      rows: [],
+    };
+  }
+  // An older card in a chat asks no target again: nothing can be switched on from there.
+  if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place, rows: [] };
+  let readiness: CodeActivationPreview["readiness"] = { state: "ready" };
+  try {
+    await requireCodeVersionApproval(code, input.versionId, sql);
+  } catch (error) {
+    if (!(error instanceof CodeVersionError)) throw error;
+    readiness =
+      error.code === "code_approval_required"
+        ? { state: "approval_pending" }
+        : { state: "refused", code: error.code, message: error.message };
+  }
+  const unavailable = new Set<string>();
+  let plan: CodeActivationTarget[];
+  try {
+    ({ plan } = await planActivation(input.versionId, code, deps, liveGrantsBesides(unavailable)));
+  } catch (error) {
+    if (error instanceof ActivationRefused)
+      return {
+        ...base,
+        activated: null,
+        readiness: { state: "refused", code: error.failure.code, message: error.failure.reason },
+        place,
+        rows: [],
+      };
+    if (error instanceof CodeDataError && error.code === "BAD_INPUT")
+      return {
+        ...base,
+        activated: null,
+        readiness: { state: "refused", code: "code_plan_invalid", message: error.message },
+        place,
+        rows: [],
+      };
+    throw error;
+  }
+  const check = async (item: CodeActivationTarget, index: number): Promise<CodeActivationPreviewRow> => {
+    const row = { target: item.target, operations: item.operations, own: item.owner, isNew: !item.reused && item.operations.length > 0 };
+    const unknown = {
+      ...row,
+      check: item.reused ? ("has" as const) : ("unknown" as const),
+      title: null,
+      typeTitle: null,
+      icon: null,
+      managers: [],
+    };
+    // A phone or other credential cannot act at a target; asking it would only say so.
+    if (!allowed.allowed || !code.serviceAccountId || index >= PREVIEW_TARGETS) return unknown;
+    if (!item.owner && unavailable.has(targetApp(item.target))) return unknown;
+    try {
+      const decision = await deps.transport.set(
+        {
+          codeId: code.id,
+          versionId: input.versionId,
+          activationId: crypto.randomUUID(),
+          activatingPerson: person.id,
+          principal: code.serviceAccountId,
+          item,
+          dryRun: true,
+        },
+        context,
+      );
+      const readable = decision.readable === true;
+      return {
+        ...row,
+        // The owner is checked on every switch-on, also when its grant stays.
+        check: !decision.granted && (item.owner || !item.reused) ? "blocked" : item.reused ? "has" : "manages",
+        title: readable ? (decision.title ?? null) : null,
+        ...(readable && item.target.type !== "app" ? await previewType(item.target.type, context) : { typeTitle: null, icon: null }),
+        managers: readable && !decision.granted ? await visibleManagers(decision.managerUserIds ?? [], person) : [],
+      };
+    } catch {
+      return unknown;
+    }
+  };
+  // The owner's own operations belong to the owner's row; it is one target to the person.
+  const merged = plan
+    .filter((item) => !item.owner || !plan.some((other) => !other.owner && targetKey(other.target) === targetKey(item.target)))
+    .map((item) => {
+      const isOwn = plan.some((other) => other.owner && targetKey(other.target) === targetKey(item.target));
+      return { ...item, owner: isOwn };
+    });
+  const rows: CodeActivationPreviewRow[] = [];
+  const deadline = Date.now() + PREVIEW_BUDGET_MS;
+  for (let start = 0; start < merged.length; start += PREVIEW_CONCURRENCY) {
+    // Closing the chat stops further checks; a target's own answer cannot be cancelled.
+    context.signal?.throwIfAborted();
+    const expired = Date.now() > deadline;
+    rows.push(
+      ...(await Promise.all(
+        merged.slice(start, start + PREVIEW_CONCURRENCY).map((item, index) => check(item, expired ? PREVIEW_TARGETS : start + index)),
+      )),
+    );
+  }
+  return { ...base, activated: null, readiness, place, rows };
 }
 /** Enqueue once without waiting on target effects. The unique process identity fences duplicate requests. */
 export async function activateCodeVersion(
@@ -230,6 +452,74 @@ export async function activateCodeVersion(
   });
   return visibleReceipt(result, context);
 }
+/**
+ * The switch-on dialog's answer before the click: every target an activation would ask, asked the same way with `dryRun`.
+ * Only a person who could start this activation may ask. It changes no access and starts no activation; each target logs
+ * the question like any capability call. Activating later checks everything again.
+ */
+export async function checkCodeActivation(
+  raw: z.input<typeof codeActivationContracts.check.input>,
+  context: CodeContext,
+  overrides?: Partial<CodeActivationDependencies>,
+): Promise<CodeActivationCheck> {
+  const input = codeActivationContracts.check.input.parse(raw),
+    deps = { ...defaults, ...overrides },
+    person = activationPerson(context),
+    code = await authorizedCode(input.codeId, context);
+  await sql.begin(async (tx) => {
+    await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
+    await requireCodeVersionApproval(code, input.versionId, tx);
+  });
+  const unavailable = new Set<string>();
+  const listAvailable = liveGrantsBesides(unavailable);
+  let plan: CodeActivationTarget[];
+  try {
+    ({ plan } = await planActivation(input.versionId, code, deps, listAvailable));
+  } catch (error) {
+    if (!(error instanceof ActivationRefused)) throw error;
+    const { failure } = error;
+    return {
+      targets: failure.target ? [{ target: failure.target, state: "refused", failure: await visibleFailure(failure, context) }] : [],
+    };
+  }
+  const targets: CodeActivationCheck["targets"] = [];
+  // No grant or activation exists for this identity; it only binds the proofs of this one question.
+  const activationId = crypto.randomUUID();
+  for (const item of plan.filter((item) => item.owner || !item.reused)) {
+    context.signal?.throwIfAborted();
+    if (!code.serviceAccountId || (!item.owner && unavailable.has(targetApp(item.target)))) {
+      targets.push({ target: item.target, state: "unknown", failure: null });
+      continue;
+    }
+    try {
+      const decision = await deps.transport.set(
+        {
+          codeId: code.id,
+          versionId: input.versionId,
+          activationId,
+          activatingPerson: person.id,
+          principal: code.serviceAccountId,
+          item,
+          dryRun: true,
+        },
+        context,
+      );
+      targets.push(
+        decision.granted
+          ? { target: item.target, state: "granted", failure: null }
+          : {
+              target: item.target,
+              state: "refused",
+              failure: await visibleFailure(refusalFailure(item.target, decision, context), context),
+            },
+      );
+    } catch (error) {
+      if (!(error instanceof CodeActivationTransportError)) throw error;
+      targets.push({ target: item.target, state: "unknown", failure: null });
+    }
+  }
+  return { targets };
+}
 /** Permission-aware process status for CLI and resource Code pages. */
 export async function readCodeActivation(
   input: z.infer<typeof codeActivationContracts.read.input>,
@@ -253,20 +543,27 @@ class ActivationRefused extends Error {
 function refuse(target: CodeActivationFailure["target"], code: string, reason: string): never {
   throw new ActivationRefused({ target, code, reason });
 }
-function refuseDecision(
+function refusalFailure(
   target: CodeActivationFailure["target"],
   raw: Extract<CodeAccessSetData, { granted: false }>,
   context: CodeContext,
-): never {
+): CodeActivationFailure {
   const decision = activationDecision(raw, context.locale);
   if (decision.granted) throw new Error("Expected refusal");
-  throw new ActivationRefused({
+  return {
     target,
     code: decision.reasonCode,
     reason: decision.reason,
     readable: decision.readable === true,
     ...(decision.readable ? { title: decision.title, managerUserIds: decision.managerUserIds } : {}),
-  });
+  };
+}
+function refuseDecision(
+  target: CodeActivationFailure["target"],
+  raw: Extract<CodeAccessSetData, { granted: false }>,
+  context: CodeContext,
+): never {
+  throw new ActivationRefused(refusalFailure(target, raw, context));
 }
 async function checkpoint(row: ActivationRow, deps: CodeActivationDependencies): Promise<{ code: Code; context: CodeContext }> {
   if ((await load(row.id))?.cancel_requested) refuse(null, "cancelled", "Activation cancelled.");
@@ -286,10 +583,11 @@ async function liveGrants(code: Code, targets: readonly { target: { type: string
       for (const grant of await transport.list(app, code.serviceAccountId)) live.set(grant.grantId, grant);
   return live;
 }
-async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDependencies): Promise<CodeActivationTarget[]> {
+/** What this version asks of its targets right now, with new grant identities. Writes nothing. */
+async function planActivation(versionId: string, code: Code, deps: CodeActivationDependencies, list = liveGrants) {
   const [version] = await sql<
     { manifest: unknown }[]
-  >`SELECT manifest FROM code.versions WHERE id=${row.version_id}::uuid AND code_id=${code.id}`;
+  >`SELECT manifest FROM code.versions WHERE id=${versionId}::uuid AND code_id=${code.id}`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
   const catalogs = new Map<string, CapabilityManifest>();
   for (const appId of new Set(manifest.permissions.map((p) => p.operation.split(".")[0]!))) {
@@ -307,7 +605,7 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
   const prior = await sql<
     GrantRow[]
   >`SELECT g.* FROM code.target_grants g JOIN code.version_grants vg ON vg.grant_id=g.grant_id WHERE g.code_id=${code.id} AND g.state='granted' AND vg.version_id=${code.activeVersionId}::uuid ORDER BY g.grant_id`;
-  const live = await liveGrants(code, built.targets, deps.transport);
+  const live = await list(code, built.targets, deps.transport);
   const plan: CodeActivationTarget[] = [];
   const owner = ownerTarget(code);
   if (owner) plan.push({ target: owner, operations: [], grantId: crypto.randomUUID(), reused: false, owner: true });
@@ -322,10 +620,29 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
     );
     plan.push({ ...item, grantId: reusable?.grant_id ?? crypto.randomUUID(), reused: Boolean(reusable), owner: false });
   }
+  return { plan, policy: built.policy };
+}
+/** For a question before the click: an application that cannot list its grants leaves only its own targets unknown. */
+const liveGrantsBesides =
+  (unavailable: Set<string>): typeof liveGrants =>
+  async (code, items, transport) => {
+    const live = new Map<string, CodeAccessGrant>();
+    if (code.serviceAccountId)
+      for (const app of new Set(items.map((item) => targetApp(item.target))))
+        try {
+          for (const grant of await transport.list(app, code.serviceAccountId)) live.set(grant.grantId, grant);
+        } catch (error) {
+          if (!(error instanceof CodeActivationTransportError)) throw error;
+          unavailable.add(app);
+        }
+    return live;
+  };
+async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDependencies): Promise<CodeActivationTarget[]> {
+  const { plan, policy } = await planActivation(row.version_id, code, deps);
   await sql.begin(async (tx) => {
     await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
     if ((await findCode(code.id, tx))?.state === "deleting") refuse(null, "code_unavailable", "Code is being deleted.");
-    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(built.policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
+    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::text::jsonb,mandate_policy=${JSON.stringify(policy)}::text::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
         VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::text::jsonb,${tx.array(item.operations, "text")},'planned')`;

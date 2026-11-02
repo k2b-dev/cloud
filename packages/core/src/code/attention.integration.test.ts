@@ -15,9 +15,11 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import * as access from "./access";
 import { codeActivationTransport } from "./activation-transport";
-import { clearCodeAttentionCache, listCodeAttention } from "./attention";
+import { clearCodeAttentionCache, listCodeAttention, readCodeSummary } from "./attention";
+import { listCodeAutomations } from "./automations";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { countOwnCodeRuns, createCode, createCodeVersion, insertCodeRun } from "./store";
+import { readCodeWorkload } from "./workload-reader";
 
 const ids = {
   manager: "11111111-1111-4111-8111-111111111111",
@@ -153,6 +155,83 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await database?.drop();
   });
 
+  test("a Code's automations name the removed access only the one that needs it, its newest run and its next run", async () => {
+    managed.add("box-autos");
+    const entry = (entrypoint: string, cron: string | null) => ({
+      kind: cron ? ("schedule" as const) : ("manual" as const),
+      entrypoint,
+      cron,
+      file: "code.ts",
+      line: 1,
+    });
+    const manifest = {
+      version: 1,
+      entry: "code.ts",
+      policyRows: [],
+      ai: false,
+      permissions: [],
+      hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+      entrypoints: [entry("sort", "0 7 * * 1"), entry("deliver", "*/15 * * * *"), entry("byHand", null)],
+    };
+    const code = await createCode(
+      { owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-autos" } }, title: "Code box-autos" },
+      ctx(ids.manager),
+    );
+    const version = await createCodeVersion(
+      { codeId: code.id, sourceFiles: { "code.ts": "export {};" }, bundle: "export {};", manifest, baseVersionId: null },
+      ctx(ids.manager),
+    );
+    const activationId = randomUUID();
+    const grantId = randomUUID();
+    await sql`INSERT INTO code.activations(id,code_id,version_id,locale,cloud_admin,state)
+      VALUES(${activationId}::uuid,${code.id},${version.id}::uuid,'en',false,'active')`;
+    await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
+      VALUES(${grantId}::uuid,${code.id},${activationId}::uuid,${JSON.stringify({ type: "spaces.space", id: "sp_2lg8" })}::text::jsonb,
+        ${sql.array(["spaces.task.create"], "text")},'granted')`;
+    await sql`INSERT INTO code.version_grants(version_id,grant_id) VALUES(${version.id}::uuid,${grantId}::uuid)`;
+    await sql`UPDATE code.codes SET state='active',active_version_id=${version.id}::uuid WHERE id=${code.id}`;
+    const run = async (entrypoint: string, state: string, at: string) => {
+      const runId = await insertCodeRun({ codeId: code.id, versionId: version.id, trigger: "schedule", entrypoint, input: null });
+      await sql`UPDATE code.runs SET state=${state},created_at=${new Date(at)},started_at=${new Date(at)},ended_at=${new Date(at)} WHERE id=${runId}::uuid`;
+      return runId;
+    };
+    await run("sort", "succeeded", "2026-10-31T08:00:00.000Z");
+    // A skipped tick is no result.
+    await run("sort", "skipped", "2026-10-31T09:00:00.000Z");
+    const failedRun = await run("deliver", "failed", "2026-10-31T09:50:00.000Z");
+    await sql`INSERT INTO code.calls(run_id,ordinal,kind,call,state,ended_at)
+      VALUES(${failedRun}::uuid,1,'action',${JSON.stringify({ capability: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" } })}::text::jsonb,'failed',now())`;
+    const nextRun = async (_codeId: string, entrypoint: string) => (entrypoint === "sort" ? "2026-11-02T06:00:00.000Z" : null);
+    clearCodeAttentionCache();
+    const listed = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
+    expect(listed.removedTargets).toEqual([{ type: "spaces.space", id: "sp_2lg8", title: null, typeTitle: null }]);
+    expect(
+      listed.items.map((item) => [
+        item.entrypoint,
+        item.kind,
+        item.nextRunAt,
+        item.lastRun?.state ?? null,
+        item.missingTargets.map((target) => target.id),
+      ]),
+    ).toEqual([
+      ["sort", "schedule", "2026-11-02T06:00:00.000Z", "succeeded", []],
+      ["deliver", "schedule", null, "failed", ["sp_2lg8"]],
+      ["byHand", "manual", null, null, []],
+    ]);
+    // A paused Code has no next run, whatever the scheduler still holds.
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${code.id}`;
+    const paused = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
+    expect(paused.items[0]!.nextRunAt).toBeNull();
+    // Someone who may not read this Code gets no answer.
+    await expect(listCodeAutomations({ codeId: code.id }, ctx(ids.other), nextRun)).rejects.toThrow();
+    await sql`UPDATE code.codes SET state='deleting' WHERE id=${code.id}`;
+    expect(await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun)).toEqual({
+      codeId: code.id,
+      items: [],
+      removedTargets: [],
+    });
+  });
+
   test("lists only Code the caller administers that is paused or failed, naming access a target removed", async () => {
     const result = await listCodeAttention({}, ctx(ids.manager));
     expect(result.nextCursor).toBeNull();
@@ -202,5 +281,41 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     expect(await countOwnCodeRuns({ since: "2026-10-30T00:00:00.000Z" }, ctx(ids.manager))).toEqual({ runs: 3, failed: 1 });
     expect(await countOwnCodeRuns({ since: "2026-10-31T00:00:00.000Z" }, ctx(ids.other))).toEqual({ runs: 0, failed: 0 });
     await expect(countOwnCodeRuns({ since: "2026-10-20T00:00:00.000Z" }, ctx(ids.manager))).rejects.toThrow("7 days");
+  });
+
+  test("the Code behind a change links its page and run only for those who may read its owner", async () => {
+    const reader = spyOn(access, "codeAccountDisplayName");
+    spies.push(reader);
+    managed.add("box-origin");
+    const { code, versionId } = await mailboxCode("box-origin");
+    const runId = await insertCodeRun({ codeId: code.id, versionId, trigger: "schedule", entrypoint: "sort", input: null });
+    reader.mockResolvedValue("Code of box-origin");
+    const allowed = await readCodeWorkload(`${versionId}~${runId}`, ctx(ids.manager));
+    expect(allowed.view).toMatchObject({ title: "Code of box-origin", context: "sort" });
+    expect(allowed.links.map((link) => link.rel)).toEqual(["open", "status"]);
+    expect(allowed.links[1]?.href).toContain(`tab=runs&run=${runId}`);
+    reader.mockResolvedValue(null);
+    expect((await readCodeWorkload(`${versionId}~${runId}`, ctx(ids.manager))).links).toEqual([]);
+    managed.delete("box-origin");
+  });
+
+  test("summarizes an owner's Code in numbers, and only for those who may read it", async () => {
+    managed.add("box-summary");
+    const ref = { type: "mail.mailbox", id: "box-summary" };
+    const code = await createCode({ owner: { kind: "resource", ref }, title: "Code box-summary" }, ctx(ids.manager));
+    const entrypoints = [
+      { kind: "schedule", entrypoint: "sort", cron: "0 7 * * 1", file: "code.ts", line: 1 },
+      { kind: "manual", entrypoint: "again", cron: null, file: "code.ts", line: 2 },
+    ];
+    await createCodeVersion(
+      { codeId: code.id, sourceFiles: { "code.ts": "export {};" }, bundle: "export {};", manifest: { entrypoints }, baseVersionId: null },
+      ctx(ids.manager),
+    );
+    const summary = await readCodeSummary({ owner: { kind: "resource", ref } }, ctx(ids.manager));
+    expect(summary.items).toEqual([{ codeId: code.id, automations: 2, access: [] }]);
+    managed.delete("box-summary");
+    expect(
+      (await readCodeSummary({ owner: { kind: "resource", ref: { type: "mail.mailbox", id: "box-none" } } }, ctx(ids.manager))).items,
+    ).toEqual([]);
   });
 });

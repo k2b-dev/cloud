@@ -133,6 +133,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     if (!collecting) return;
     const sf = node.getSourceFile();
     for (const id of target?.ids ?? [null]) {
+      placed.push({ index: result.permissions.length, node });
       result.permissions.push({
         operation,
         target: target ? { type: target.type, id } : null,
@@ -199,6 +200,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   }
   const events = new Set<string>();
   const entryNames = new Set<string>();
+  // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
+  const placed: { index: number; node: ts.Node }[] = [];
+  const handlers: { handler: ts.Expression; name: string }[] = [];
   function visit(node: ts.Node) {
     if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", "__codeSdk ist für den Runner reserviert.");
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
@@ -343,6 +347,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               }
               if (entryNames.has(name)) report(node, "code_duplicate_schedule", "Der Name des Zeitplans ist bereits vergeben.");
               entryNames.add(name);
+              if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
               const sf = node.getSourceFile();
               result.entrypoints.push({
                 kind: "schedule",
@@ -385,6 +390,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       visit(sf);
     }
   }
+  attributeEntrypoints(checker, result.permissions, placed, handlers);
   if (!allowedOrigins.size && request.sdk.manifest.mode !== "code_run")
     for (const node of dynamicHttp)
       report(node, "code_http_origin_dynamic", 'Der Ursprung ist dynamisch. Deklariere ihn mit http.allow(["https://api.example.com"]).');
@@ -411,6 +417,48 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   if (!result.entrypoints.length && !result.diagnostics.length)
     report(program.getSourceFile(root + request.entry)!, "code_no_entrypoint", "Lege mindestens einen Zeitplan auf Modulebene an.");
   return result;
+}
+
+/** The function a schedule runs: an inline function, or a function or const function the handler names directly. */
+function handlerFunction(checker: ts.TypeChecker, handler: ts.Expression): ts.Node | undefined {
+  while (ts.isParenthesizedExpression(handler)) handler = handler.expression;
+  if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) return handler;
+  if (!ts.isIdentifier(handler) && !ts.isPropertyAccessExpression(handler)) return undefined;
+  let symbol = checker.getSymbolAtLocation(handler);
+  if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+  const declaration = symbol?.declarations?.length === 1 ? symbol.declarations[0] : undefined;
+  if (!declaration) return undefined;
+  // The type check refuses assigning to a function declaration (TS2630), so it always runs its own body.
+  if (ts.isFunctionDeclaration(declaration)) return declaration;
+  const value = ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+  // Only a const binding is fixed; a let could run another function by the time the schedule fires.
+  const fixed = value && ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.Const;
+  return fixed && (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) ? value : undefined;
+}
+
+/**
+ * Name each permission's entrypoints by the handler whose own body makes the call. The walk stops at the first function
+ * on the way up: a call inside a nested function, such as a callback, runs whenever that function runs, which the
+ * checker cannot prove, so it stays unnamed.
+ */
+function attributeEntrypoints(
+  checker: ts.TypeChecker,
+  permissions: CodePermission[],
+  placed: { index: number; node: ts.Node }[],
+  handlers: { handler: ts.Expression; name: string }[],
+) {
+  const names = new Map<ts.Node, Set<string>>();
+  for (const { handler, name } of handlers) {
+    const fn = handlerFunction(checker, handler);
+    if (fn) names.set(fn, (names.get(fn) ?? new Set()).add(name));
+  }
+  if (!names.size) return;
+  for (const { index, node } of placed) {
+    let current: ts.Node | undefined = node.parent;
+    while (current && !ts.isFunctionLike(current)) current = current.parent;
+    const found = current && names.get(current);
+    if (found) permissions[index]!.entrypoints = [...found].sort();
+  }
 }
 
 /** Resolve only supplied project files. No directories, packages, absolute paths or traversal outside the project. */

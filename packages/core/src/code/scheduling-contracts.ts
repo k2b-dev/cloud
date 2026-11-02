@@ -14,6 +14,7 @@ export const CodeStartRequestSchema = z
       .max(96)
       .refine((value) => new TextEncoder().encode(value).byteLength <= 96, "Key exceeds 96 UTF-8 bytes"),
     input: z.json().default(null).describe("JSON input passed to the entrypoint; defaults to null."),
+    rerunOf: z.uuid().optional().describe("The failed run of this Code and entrypoint that this run starts again."),
   })
   .strict();
 export type CodeStartRequest = z.input<typeof CodeStartRequestSchema>;

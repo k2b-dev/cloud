@@ -59,6 +59,11 @@ export type CloudCliContext = {
    * link. Absent in hosts without a local browser.
    */
   openUrl?: (url: string) => Promise<boolean>;
+  /**
+   * Ask the person one yes/no question and resolve their answer; anything but yes is no. Absent without an
+   * interactive terminal or with structured output, so a command never waits for an answer nobody can give.
+   */
+  confirm?: (question: string) => Promise<boolean>;
 };
 
 /** A profile that signs in with the OAuth client-credentials grant. */

@@ -395,6 +395,7 @@ cld inventory items list --jsonl
 | `jsonLine()` | One compact JSON value |
 | `table()` | Text table |
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
+| `confirm?()` | Ask one yes/no question; anything but yes is no. Absent without an interactive terminal, in CI and with `--json`, so offer an explicit flag and refuse clearly without it |
 | `openUrl?()` | Open an http(s) link in the user's browser; resolves false when the host cannot, so print the link too; absent in hosts without a browser |
 | `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
 

@@ -40,15 +40,35 @@ capability invocation.
 | Route | JSON body | Result |
 | --- | --- | --- |
 | `POST /api/code/activate` | `{ codeId, versionId, activationId }` | Durable activation status |
+| `POST /api/code/activation/preview` | `{ codeId, versionId }` | What switching on would do for this person, before anything starts |
 | `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
 | `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after scheduling cancellation |
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
 | `POST /api/code/access/target` | `{ appId, grants: [{ grantId, principal }] }` | Details for grants at targets the person manages |
 
+The version card in chat and `cld code activate` read the preview. The Code page's
+dialog reads `/activation/check`, described below.
+
+The preview requires the same rights as activating, but also answers phones and
+non-interactive credentials, with `allowed: { allowed: false, reason }`. For the
+newest waiting version it returns one row per target with `check`: `manages`,
+`blocked`, `has` (the running version's grant stays) or `unknown` (the target did
+not answer or was not asked). Each check is that target's own dry run: nothing is
+granted, no activation exists and no grant identity is kept. A row carries
+`title` and `managers` only when the target's reader allows the person to see
+them; otherwise it shows only the ID. `readiness` says whether the version is
+`ready`, `approval_pending` or `refused` with Core's reason. A running version
+returns `activated`, a replaced one only its numbers; neither asks any target.
+At most 50 targets are checked per request, 8 at a time.
+
 Each access observation names its grant, target, operations and state
 (`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
-`activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
-shows them.
+`activatedVersionId` of the activation that created it. A removed grant also
+carries `removedBy` and `removedAt`: the person and time of the newest allowed
+`code.access.rm` audit event for that grant, Code account and target. The
+platform writes that event in the same transaction as the target's removal.
+Both are `null` when no such event exists, for example after audit retention.
+The [Code page](/en/docs/platform/code-page) shows them.
 
 `/api/code/access/target` serves the share dialog's
 [Code with access](/en/docs/identity/authorization#code-with-access) section and
@@ -58,7 +78,9 @@ appears only when that list returns it, which happens only at targets the person
 manages, and only when Core's record names the same Code account and the same
 target of that application. A refused list shows nothing; an unavailable or
 malformed list fails the request so the dialog can retry. Each detail has
-`grantId`, sorted `operations`, `activatedBy`
+`grantId`, sorted `operations`, sorted `automations` (the running version's
+entrypoints whose calls use these operations at this target, from the checker's
+`permissions[].entrypoints`; empty when none could be placed), `activatedBy`
 (`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
 finishes). Names follow directory visibility: members see other people's names;
 guests see only their own.
@@ -115,6 +137,19 @@ stable reason code, with “Only someone who manages this target can activate it
 remains available to copy. Status reads check the current reader again before
 returning a saved title or manager list; only then they add `managerNames`, the
 display names of the first five managers, which are never stored.
+
+`POST /api/code/activation/check` with `codeId` and `versionId` answers before
+anyone clicks. Core asks every target an activation would ask with the same
+`dryRun`, and returns one `{ target, state, failure }` per target: `granted`,
+`refused` with the failure an activation would report under the same reader
+check, or `unknown` when the target does not answer. A target the running version
+already reaches is left out. An application that cannot list its grants leaves
+its targets `unknown`. The route needs the same person and credential as
+activating. It changes no access and starts no activation; each target logs the
+question like any capability call. Activating checks everything again. The Code
+page's dialog shows the answers next to each target, waits for them before it
+enables the button, keeps it disabled for `not_manager`, and leaves `unknown` to
+activating.
 
 Cloud-admin notification audiences use a separate Core-only, target-bound
 `signCodeAccessNotifications` proof. Each successful adapter dry run identifies

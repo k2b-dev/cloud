@@ -28,6 +28,11 @@ response by reading metadata before replacing the value again.
 Cloud administrators can inspect approved bindings in version-review content;
 the editor-only list does not grant them access to current secret metadata.
 
+Editors manage the same secrets on the **Secrets** tab of the
+[Code page](/en/docs/platform/code-page) or with
+[`cld code secret`](/en/docs/platform/code-cli). All of them reach these
+services; none can read a value back.
+
 Set and delete capability calls name `target: { type: "core.code", id: codeId }`;
 omit `codeId` from their domain `input`. Flat tools use `code`. The list Query
 and internal service schemas keep `codeId`.
@@ -56,6 +61,8 @@ ASCII header text. The complete input must fit `core.code.payload_bytes`.
 Set returns `{ secret }`, containing `name`, `binding_revision`, `origin`,
 `pathPrefix`, `headers` and `configured`. List receives `codeId`, optional
 `cursor`, and `limit` (1–20, default 20), and returns `{ items, nextCursor }`.
+Its items add `valueSetBy` and `valueSetAt`: who last wrote the value and when,
+`null` for a value written before Cloud recorded this.
 Follow the cursor to read all metadata. Neither operation returns a value or
 ciphertext. There is no value-reading operation.
 
@@ -66,15 +73,29 @@ Metadata remains with `configured: false`, so old approval evidence remains
 readable. Set a replacement value to recover. Deleting the Code removes its
 values and binding history through the Code's database foreign keys.
 
+Before a value travels, `POST /api/code/authoring/secretCheck` with
+`{ codeId, binding }` answers editors `{ version: 1, allowed }`. `allowed` is false for this
+installation's own addresses, which set also refuses.
+
 Core exports `codeSecretContracts`, `CodeSecretMetadataSchema`,
-`CodeSecretMetadata`, `setCodeSecret`, `listCodeSecrets`, `reviewCodeSecretDeletion`
-and `deleteCodeSecret`
+`CodeSecretMetadata`, `CodeSecretListItemSchema`, `CodeSecretListItem`,
+`setCodeSecret`, `listCodeSecrets`, `checkCodeSecretBinding`,
+`currentCodeSecretBindings`, `reviewCodeSecretDeletion` and `deleteCodeSecret`
 from `packages/core/src/code/index.ts` for its CLI and editor hosts. These
 services take `CodeContext` and enforce the same authority on every surface.
 
 ## Bind the destination to a version
 
-Copy the selected metadata into `manifest.secrets`, omitting `configured`:
+`cld code push`, `cld code submit`, Gustav's submit tool and the Code page's
+**Secrets** tab select the current binding of every secret that has a value and add
+the `internet` policy row. A deleted value stays out of new versions. On the
+page, `POST /api/code/authoring/resubmit` with `{ codeId, baseVersionId }`
+submits the latest source again against that base and refuses with `CONFLICT`
+when a newer version exists.
+
+A caller of `core.code.version.submit` selects bindings itself: copy
+the metadata into `manifest.secrets`, omitting `configured`, `valueSetBy` and
+`valueSetAt`:
 
 ```json
 {

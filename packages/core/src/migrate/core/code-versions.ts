@@ -11,6 +11,8 @@ export async function migrate(db: SQL = sql): Promise<void> {
       FOREIGN KEY(version_id,code_id) REFERENCES code.versions(id,code_id) ON DELETE CASCADE
     )`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS version_submission_approval ON code.version_submissions(approval_id) WHERE approval_id IS NOT NULL`.simple();
+    // What Core saw at submission; null on versions submitted before it recorded this.
+    await tx`ALTER TABLE code.version_submissions ADD COLUMN IF NOT EXISTS evidence JSONB`.simple();
     // No FK to approvals.requests: pruning transient questions must not erase durable decision evidence.
     await tx`CREATE TABLE IF NOT EXISTS code.version_decisions (
       version_id UUID PRIMARY KEY REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
@@ -23,6 +25,11 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE TABLE IF NOT EXISTS code.version_baselines (
       code_id TEXT PRIMARY KEY REFERENCES code.codes(id) ON DELETE CASCADE,
       version_id UUID NOT NULL, FOREIGN KEY(version_id,code_id) REFERENCES code.versions(id,code_id) ON DELETE CASCADE
+    )`.simple();
+    // A generated hint for reviewers, one per version and language; not evidence, so it stays out of the immutable rows.
+    await tx`CREATE TABLE IF NOT EXISTS code.version_explanations (
+      version_id UUID NOT NULL REFERENCES code.versions(id) ON DELETE CASCADE, locale TEXT NOT NULL, text TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(version_id,locale)
     )`.simple();
     await tx`CREATE OR REPLACE FUNCTION code.guard_version_evidence() RETURNS TRIGGER AS $$
     BEGIN

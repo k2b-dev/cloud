@@ -44,6 +44,10 @@ const InvocationRequestSchema = z
     ...CapabilityInvocationBodySchema.shape,
     mandateId: z.string().uuid().optional(),
     mandateRevision: z.number().int().positive().optional(),
+    workloadRun: z
+      .string()
+      .regex(/^[\x21-\x7e]{1,100}$/)
+      .optional(),
     idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
     metadata: InvocationMetadataSchema.optional(),
   })
@@ -158,6 +162,7 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
                 ownerAppId: workload.appId,
               }
             : undefined,
+        workloadRun: input.mandateId ? input.workloadRun : undefined,
         callingAppId: workload.appId,
         locale: input.metadata?.locale,
         dependencies: dependencies.dispatchDependencies,

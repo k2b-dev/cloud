@@ -1,5 +1,11 @@
 import { i18n } from "@k2b/stdlib";
 
+/** Quoted names as one list: „a“, „b“ und „c“. */
+const quoteList = (names: string[], and: string, open: string, close: string) => {
+  const quoted = names.map((name) => `${open}${name}${close}`);
+  return quoted.length < 2 ? quoted.join("") : `${quoted.slice(0, -1).join(", ")} ${and} ${quoted.at(-1)}`;
+};
+
 export const accessMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -97,6 +103,8 @@ export const accessMessages = i18n.define({
       codeOf: ({ title }: { title: string }) => `Code of ${title}`,
       codeHiddenOwner: "Code whose owner you can't see",
       codeHint: "Code gets access only when someone switches it on, never here. After removal, its calls here fail.",
+      searchNobody: "No person and no group found.",
+      searchNeverCode: "Code is never listed here. It gets access when someone who manages both the Code and this place switches it on.",
       codeLoading: "Loading code with access…",
       codeLoadFailed: "Code with access couldn't be loaded. The people above are correct.",
       codeRemove: "Remove",
@@ -104,6 +112,9 @@ export const accessMessages = i18n.define({
       codeRemoveTitle: ({ name }: { name: string }) => `Remove access for “${name}”?`,
       codeRemoveBody:
         "The code can then no longer act here; its runs fail until someone switches it on again. What it already created stays.",
+      codeRemoveBodyFor: ({ names }: { names: string[] }) =>
+        `${quoteList(names, "and", "“", "”")} can then no longer act here; ${names.length > 1 ? "their" : "its"} runs fail until someone switches the code on again. What already exists stays.`,
+      codeUsedFor: ({ names }: { names: string[] }) => `for ${quoteList(names, "and", "“", "”")}`,
       codeRemoveRestore: ({ owner, level }: { owner: string; level: string }) =>
         `Only someone who manages ${owner} and has “${level}” here can switch it on again.`,
       codeRemoveRestoreHidden: ({ level }: { level: string }) =>
@@ -213,6 +224,9 @@ export const accessMessages = i18n.define({
       codeOf: ({ title }) => `Code von ${title}`,
       codeHiddenOwner: "Code, dessen Besitzer du nicht sehen kannst",
       codeHint: "Code bekommt Zugriff nur beim Einschalten, nie hier. Nach dem Entfernen scheitern seine Aufrufe hier.",
+      searchNobody: "Keine Person und keine Gruppe gefunden.",
+      searchNeverCode:
+        "Code steht hier nie zur Auswahl. Er bekommt Zugriff, wenn ihn jemand einschaltet, der den Code und dieses Ziel verwaltet.",
       codeLoading: "Code mit Zugriff wird geladen…",
       codeLoadFailed: "Code mit Zugriff konnte nicht geladen werden. Die Personen oben stimmen.",
       codeRemove: "Entfernen",
@@ -220,6 +234,9 @@ export const accessMessages = i18n.define({
       codeRemoveTitle: ({ name }) => `Zugriff von „${name}“ entfernen?`,
       codeRemoveBody:
         "Der Code kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was er schon angelegt hat, bleibt.",
+      codeRemoveBodyFor: ({ names }) =>
+        `${quoteList(names, "und", "„", "“")} ${names.length > 1 ? "können" : "kann"} hier dann nichts mehr tun; ${names.length > 1 ? "ihre" : "seine"} Läufe scheitern, bis jemand neu einschaltet. Was es schon gibt, bleibt.`,
+      codeUsedFor: ({ names }) => `für ${quoteList(names, "und", "„", "“")}`,
       codeRemoveRestore: ({ owner, level }) => `Wieder einschalten kann, wer ${owner} verwaltet und hier „${level}“ hat.`,
       codeRemoveRestoreHidden: ({ level }) => `Wieder einschalten kann, wer den Besitzer des Codes verwaltet und hier „${level}“ hat.`,
       codeRemoved: ({ name }) => `Zugriff von ${name} entfernt`,

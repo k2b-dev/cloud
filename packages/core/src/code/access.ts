@@ -1,6 +1,11 @@
 import { getApp, sql } from "@k2b/cloud";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import { CloudResourceReaderViewSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import {
+  type CapabilityExecutionContext,
+  CloudResourceReaderViewSchema,
+  cloudResourceRefAppId,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
 import { getEffectivePermission, type RequestAuthority, userFromActor } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { i18n } from "@k2b/stdlib";
@@ -9,7 +14,14 @@ import { z } from "zod";
 import type { Code, CodeOwner, CodePermission } from "./contracts";
 
 /** All Code reads and writes retain the caller's credential ceiling. No ambient user field is authority. */
-export type CodeContext = { authority: RequestAuthority; locale?: string; signal?: AbortSignal; requestId?: string };
+export type CodeContext = {
+  authority: RequestAuthority;
+  locale?: string;
+  signal?: AbortSignal;
+  requestId?: string;
+  /** Under a capability invocation, the one way to ask another app: an invocation cannot be exchanged for a new one. */
+  query?: CapabilityExecutionContext["query"];
+};
 export class CodeDataError extends Error {
   constructor(
     readonly code: "FORBIDDEN" | "NOT_FOUND" | "BAD_INPUT" | "CONFLICT",
@@ -84,11 +96,15 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
   }
   const reader = catalog.data && resolveCapabilityResourceReader(catalog.data.manifest, owner.ref);
   if (!reader) return null;
-  const result = await invokeCapabilityWithDataSchema(
-    { appId, capabilityId: reader.localId, kind: "query", input: { id: owner.ref.id } },
-    z.object({ view: CloudResourceReaderViewSchema }),
-    { authority: context.authority, locale: context.locale, signal: context.signal },
-  );
+  const schema = z.object({ view: CloudResourceReaderViewSchema });
+  const result =
+    context.authority.credentialKind === "invocation" && context.query
+      ? await context.query({ appId, capabilityId: reader.localId, input: { id: owner.ref.id }, signal: context.signal }, schema)
+      : await invokeCapabilityWithDataSchema({ appId, capabilityId: reader.localId, kind: "query", input: { id: owner.ref.id } }, schema, {
+          authority: context.authority,
+          locale: context.locale,
+          signal: context.signal,
+        });
   if (!result.ok) {
     if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return null;
     throw new CodeOwnerUnavailableError("Code owner reader unavailable");

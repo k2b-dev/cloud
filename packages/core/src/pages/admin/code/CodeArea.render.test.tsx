@@ -10,14 +10,15 @@ const root = mkdtempSync(join(tmpdir(), "core-code-area-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const [{ LocaleProvider }, { CodeAreaView }, { codeAdminMessages }, { parseCodeAreaQuery }, { codeFixtureData }, data] = await Promise.all([
-  import("@k2b/ui"),
-  import("./view"),
-  import("./messages"),
-  import("./area"),
-  import("./CodeArea.fixture-data"),
-  import("./CodeArea.fixture-data"),
-]);
+const [{ LocaleProvider }, { approvalCheck, CodeAreaView }, { codeAdminMessages }, { parseCodeAreaQuery }, { codeFixtureData }, data] =
+  await Promise.all([
+    import("@k2b/ui"),
+    import("./view"),
+    import("./messages"),
+    import("./area"),
+    import("./CodeArea.fixture-data"),
+    import("./CodeArea.fixture-data"),
+  ]);
 
 type State = Parameters<typeof codeFixtureData>[0];
 const render = (query: Record<string, string>, state: State = "normal", locale = "de") =>
@@ -50,6 +51,7 @@ test("approval lists every declared origin, including requests without secrets",
 });
 
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
+const t = codeAdminMessages.resolve(["de"]).t;
 
 test("the area column names every section with waiting counts", () => {
   const html = render({});
@@ -93,6 +95,13 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(detail).toContain("von dieser Version deklariert");
   expect(detail).not.toContain("dürfen jede öffentliche HTTPS-Adresse");
   expect(detail).not.toContain("am Tag");
+  expect(detail).toContain("Was passiert");
+  expect(detail).toContain("KI-Erklärung, nur ein Hinweis");
+  expect(detail).toContain("Bittet jemand in info@ um Rückruf");
+  expect(detail).toContain("Prüfung");
+  expect(detail).toContain("Typen geprüft · 9 Tests grün");
+  expect(detail).toContain("Probelauf mit den Testdaten: 9 Läufe, 15 Aufrufe, ohne echte Wirkung");
+  expect(detail).toContain("Vergleich");
   expect(detail).toContain("Version 3 freigeben");
   expect(detail).toContain("Ablehnen …");
 
@@ -124,6 +133,39 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(failed).toContain("Konnte nicht geladen werden");
   expect(failed).toContain("Erneut versuchen");
   expect(render(review, "missing")).toContain("Diese Anfrage ist geschlossen.");
+});
+
+test("a version's check says plainly when tests failed, did not run, or nothing was recorded", () => {
+  const wording = (evidence: ReturnType<typeof data.fixtureApprovalDetail>["evidence"]) =>
+    approvalCheck(t, { ...data.fixtureApprovalDetail(), evidence });
+  const tests = (state: "failed" | "none" | "unavailable") => ({
+    version: 1 as const,
+    tests: { state, passed: state === "failed" ? 2 : 0, total: state === "failed" ? 3 : 0, error: null },
+    trial: null,
+  });
+  expect(wording(tests("failed"))).toMatchObject({ tests: "1 von 3 Tests fehlgeschlagen", testsOk: false, trial: null });
+  expect(wording(tests("none"))).toMatchObject({ tests: "keine Tests eingereicht", testsOk: false });
+  expect(wording(tests("unavailable"))).toMatchObject({ tests: "Tests konnten nicht laufen", testsOk: false });
+  expect(wording(null)).toBeNull();
+  // A call only the earlier version made stays visible with a count of zero now.
+  expect(approvalCheck(t, data.fixtureApprovalDetail())?.calls).toContainEqual({
+    label: "Entwurf anlegen",
+    operation: "mail.draft.create",
+    now: 0,
+    before: 6,
+  });
+});
+
+test("a version's Code reads without an open approval, with error and missing states", () => {
+  const version = "a0000000-0000-4000-8000-000000000003";
+  const detail = render({ sec: "code", id: "c_rechn" });
+  expect(detail).toContain("Code ansehen");
+  expect(detail).toContain(`version=${data.FIXTURE_VERSIONS.rechnungen2}`);
+  const source = render({ sec: "code", id: "c_rechn", version });
+  expect(source).toContain("Version 2 · nur lesen");
+  expect(source).toContain("Code schließen");
+  expect(render({ sec: "code", id: "c_rechn", version }, "fail")).toContain("Konnte nicht geladen werden");
+  expect(render({ sec: "code", id: "c_rechn", version }, "missing")).not.toContain("nur lesen");
 });
 
 test("all Code renders owners, status and last run, with empty, filtered and error states", () => {

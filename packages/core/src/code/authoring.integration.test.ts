@@ -15,6 +15,7 @@ import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
+import { migrate as migrateSecrets } from "../migrate/core/code-secrets";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
@@ -26,6 +27,7 @@ import {
   codeAuthoringContracts,
 } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
+import * as origins from "./origins";
 import { codePolicyPreset } from "./policy-contracts";
 import * as hosts from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -89,6 +91,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     await migratePolicy();
     await migrateApprovals();
     await migrateVersions();
+    await migrateSecrets();
     await migrateActivation();
     await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,'authoring','local','user',true)`;
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) => {
@@ -126,12 +129,72 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     expect(failure.reason.code).toBe("code_version_conflict");
     const conflict = CodeAuthoringConflictSchema.parse(failure.reason.details);
     expect(conflict.latestVersionId).toBe(success.value.submission.version.id);
+    expect(success.value.runningVersion).toBeNull();
     expect(conflict.files[0]?.path).toBe("code.ts");
     expect(conflict.files[0]?.lines.some((line) => line.kind === "add")).toBe(true);
     const pulled = await codeAuthoringServices.pull({ codeId: common.codeId }, context);
     expect(codeAuthoringContracts.pull.data.parse(pulled).config.baseVersionId).toBe(success.value.submission.version.id);
     expect(["first", "second"]).toContain(pulled.files["code.ts"]!);
   });
+  test("a submitted version uses each secret's current destination; a page resubmits without a local project", async () => {
+    const own = spyOn(origins, "readCodeOwnOrigins").mockResolvedValue(["https://cloud.example"]);
+    const code = await codeAuthoringServices.init({ title: "Secrets" }, context);
+    const { codeId } = code.config;
+    const first = await codeAuthoringServices.push(
+      { codeId, entry: "code.ts", files: { "code.ts": "export const monday = 1;" }, baseVersionId: null },
+      context,
+    );
+    const value = "fixture-private-credential";
+    const destination = { origin: "https://api.example.com", pathPrefix: "/v1", headers: ["authorization"] };
+    const set = await codeAuthoringServices.secretSet(
+      { codeId, name: "API", value, binding: destination, binding_revision: null },
+      context,
+    );
+    await codeAuthoringServices.secretSet({ codeId, name: "GONE", value, binding: destination, binding_revision: null }, context);
+    const listed = await codeAuthoringServices.secretList({ codeId, limit: 20 }, context);
+    expect(listed.items[0]).toMatchObject({ name: "API", configured: true, valueSetBy: id, valueSetAt: expect.any(String) });
+    expect(JSON.stringify(listed)).not.toContain(value);
+    const gone = listed.items.find((item) => item.name === "GONE")!;
+    await codeAuthoringServices.secretDelete({ codeId, name: "GONE", binding_revision: gone.binding_revision }, context);
+
+    // A stale page refuses instead of submitting over a newer version.
+    await expect(codeAuthoringServices.resubmit({ codeId, baseVersionId: crypto.randomUUID() }, context)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    const second = await codeAuthoringServices.resubmit({ codeId, baseVersionId: first.submission.version.id }, context);
+    expect(second.submission.version.number).toBe(first.submission.version.number + 1);
+    const diff = await codeAuthoringServices.diff({ codeId, versionId: second.submission.version.id }, context);
+    const { configured: _configured, ...binding } = set.secret;
+    expect(diff.diff.secrets).toEqual([binding]);
+    expect(diff.diff.policyRows).toContain("internet");
+    const pulled = await codeAuthoringServices.pull({ codeId }, context);
+    expect(pulled.files["code.ts"]).toBe("export const monday = 1;");
+    expect(JSON.stringify(diff)).not.toContain(value);
+    own.mockRestore();
+  });
+
+  test("a binding check refuses this installation's own addresses before any value travels", async () => {
+    const own = spyOn(origins, "readCodeOwnOrigins").mockResolvedValue(["https://cloud.example"]);
+    try {
+      const binding = { pathPrefix: "/", headers: ["authorization"] };
+      const { codeId } = (await codeAuthoringServices.init({ title: "Binding check" }, context)).config;
+      expect(
+        await codeAuthoringServices.secretCheck({ codeId, binding: { ...binding, origin: "https://cloud.example" } }, context),
+      ).toEqual({
+        version: 1,
+        allowed: false,
+      });
+      expect(
+        await codeAuthoringServices.secretCheck({ codeId, binding: { ...binding, origin: "https://api.example.com" } }, context),
+      ).toEqual({
+        version: 1,
+        allowed: true,
+      });
+    } finally {
+      own.mockRestore();
+    }
+  });
+
   // Runner transport is deterministic here; C13b/C16/C17 cover isolation and execution.
   test("scripted agent builds a Space task schedule, checks permissions, tests and submits without activation", async () => {
     const chat = spyOn(aiConversations, "getConversation").mockResolvedValue({

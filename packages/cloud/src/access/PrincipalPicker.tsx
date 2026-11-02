@@ -1,4 +1,5 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
+import type { JSX } from "solid-js";
 import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalLabel } from "./principal-label";
@@ -49,6 +50,8 @@ export default function PrincipalPicker(props: {
   placeholder?: string;
   /** The consumer's name and description for every signed-in person. */
   signedIn?: { label: string; description: string };
+  /** Replaces the default text when a search finds nobody. */
+  empty?: JSX.Element;
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (
     principal: Principal,
@@ -146,7 +149,11 @@ export default function PrincipalPicker(props: {
       }
     }
     const existing = new Set(props.existing?.map(principalKey));
-    const filtered = entries.filter((e) => !existing.has(principalKey(e.principal)));
+    // A search lists only what it finds, so "everyone" does not answer a name and hide that nobody matched.
+    const query = search.trim().toLowerCase();
+    const found = (e: Entry) =>
+      search.length < 2 || (e.principal.type !== "authenticated" && e.principal.type !== "public") || e.label.toLowerCase().includes(query);
+    const filtered = entries.filter((e) => !existing.has(principalKey(e.principal)) && found(e));
     if (signal.aborted) return [];
     selectable = new Map(filtered.map((e) => [principalKey(e.principal), e]));
     return filtered.map((e) => ({ id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description }));
@@ -166,6 +173,7 @@ export default function PrincipalPicker(props: {
             : t().addBasic)
       }
       fetchData={load}
+      empty={props.empty}
       onSelect={(option) => {
         const entry = selectable.get(option.id);
         if (entry)

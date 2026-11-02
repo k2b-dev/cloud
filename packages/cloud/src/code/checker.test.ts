@@ -104,14 +104,23 @@ test("checks imported literal constants, refs and finite unions, with source lin
       target: { type: "work-shop.workshop", id: "imported-shop" },
       file: "code.ts",
       line: 5,
+      entrypoints: ["weekly"],
       status: "existing",
     },
-    { operation: "work-shop.item.move", target: { type: "work-shop.workshop", id: "owner-shop" }, file: "code.ts", line: 6, status: "new" },
+    {
+      operation: "work-shop.item.move",
+      target: { type: "work-shop.workshop", id: "owner-shop" },
+      file: "code.ts",
+      line: 6,
+      entrypoints: ["weekly"],
+      status: "new",
+    },
     {
       operation: "work-shop.item.move",
       target: { type: "work-shop.workshop", id: "imported-shop" },
       file: "code.ts",
       line: 6,
+      entrypoints: ["weekly"],
       status: "new",
     },
   ]);
@@ -130,6 +139,52 @@ test("checks imported literal constants, refs and finite unions, with source lin
   });
   expect(calls.map((c) => c.operation)).toEqual(["work-shop.item.create", "work-shop.item.move"]);
   expect(calls[0]?.input).toMatchObject({ call: { target: { type: "work-shop.workshop", id: "imported-shop" } } });
+});
+
+test("each permission names the schedules whose handler makes the call, and never guesses", async () => {
+  const result = await check("", {
+    files: {
+      "code.ts": [
+        `import { app, owner } from "@sdk";`,
+        `import { nightly } from "./jobs";`,
+        `const helper = async () => { await owner.item.create({ title: "Helper", idempotencyKey: "helper" }); };`,
+        `const shared = async () => { await owner.item.move({ itemId: "one", destination: owner }); };`,
+        `let swappable = async () => { await owner.item.create({ title: "Swappable", idempotencyKey: "swap" }); };`,
+        `app.schedule("0 8 * * 1", async () => { await owner.item.create({ title: "Weekly", idempotencyKey: "weekly" }); await helper(); }, { name: "weekly" });`,
+        `app.schedule("0 9 * * 1", nightly, { name: "nightly" });`,
+        `app.schedule("0 10 * * 1", shared, { name: "morning" });`,
+        `app.schedule("0 11 * * 1", shared, { name: "evening" });`,
+        `app.schedule("0 12 * * 1", swappable, { name: "noon" });`,
+        `app.schedule("0 14 * * 1", async () => { await Promise.all(["a"].map((key) => owner.item.create({ title: key, idempotencyKey: "nested" }))); }, { name: "nested" });`,
+        `export default app;`,
+      ].join("\n"),
+      "jobs.ts": `import { owner } from "@sdk";\nexport async function nightly() {\n  await owner.item.create({ title: "Nightly", idempotencyKey: "nightly" });\n}`,
+    },
+  });
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok) return;
+  const placed = result.manifest.permissions.map((p) => [p.file, p.line, p.entrypoints ?? null]);
+  expect(placed).toEqual([
+    ["jobs.ts", 3, ["nightly"]],
+    // A helper the handler calls, and a let binding that could change, are not attributed.
+    ["code.ts", 3, null],
+    // The move and its destination ref are two permissions from one call; both belong to the shared handler.
+    ["code.ts", 4, ["evening", "morning"]],
+    ["code.ts", 4, ["evening", "morning"]],
+    ["code.ts", 5, null],
+    ["code.ts", 6, ["weekly"]],
+    // A nested callback runs when its caller decides, not because the handler runs.
+    ["code.ts", 11, null],
+  ]);
+  expect(CodeVersionManifestSchema.parse(result.manifest)).toEqual(result.manifest);
+});
+
+test("a schedule's named function declaration cannot be swapped for another body", async () => {
+  // Attribution relies on this: a declaration always runs its own body.
+  const result = await check(
+    `import { app, owner } from "@sdk";\nfunction weekly() {}\nweekly = async () => {};\napp.schedule("0 8 * * 1", weekly, { name: "weekly" });\nexport default app;`,
+  );
+  expect(result).toMatchObject({ ok: false, diagnostics: [expect.objectContaining({ code: "TS2630", line: 3 })] });
 });
 
 test("enumerates const tuple targets and permits dynamic personal IDs", async () => {

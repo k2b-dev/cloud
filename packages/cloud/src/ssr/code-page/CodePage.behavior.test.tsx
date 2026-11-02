@@ -36,7 +36,7 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
       control === "run"
         ? { entrypoint: data.state.automations![0]!.entrypoint, input: null }
         : control === "rerun"
-          ? { entrypoint: data.state.run!.run.entrypoint, input: data.state.run!.input }
+          ? { entrypoint: data.state.run!.run.entrypoint, input: data.state.run!.input, rerunOf: data.state.run!.run.id }
           : {};
     delegateEvents(["click"]);
     const dispose = render(

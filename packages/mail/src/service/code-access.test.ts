@@ -6,7 +6,11 @@ import { MAIL_CODE_OPERATION_LEVELS, mailboxCodeAccessDecision } from "./code-ac
 describe("Mail Code access contract", () => {
   test("declares mailboxes as targets and owners and generates the Core access operations", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
-    expect(manifest.code).toEqual({ access: { app: false, types: ["mailbox"] }, owners: ["mailbox"] });
+    expect(manifest.code).toEqual({
+      access: { app: false, types: ["mailbox"] },
+      owners: ["mailbox"],
+      pages: { mailbox: "/app/mail/{id}/code" },
+    });
     expect(
       manifest.actions
         .filter((action) => action.localId.startsWith("code.access."))

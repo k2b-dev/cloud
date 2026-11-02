@@ -7,6 +7,12 @@ export { CodeSecretBindingSchema, CodeSecretNameSchema, CodeSecretVersionBinding
 /** Metadata only. Deleted values leave revision evidence intact for approved versions. */
 export const CodeSecretMetadataSchema = CodeSecretVersionBindingSchema.extend({ configured: z.boolean() }).strict();
 export type CodeSecretMetadata = z.infer<typeof CodeSecretMetadataSchema>;
+/** One list row: metadata plus who last wrote the value and when; null for values written before this was recorded. */
+export const CodeSecretListItemSchema = CodeSecretMetadataSchema.extend({
+  valueSetBy: z.uuid().nullable(),
+  valueSetAt: z.iso.datetime({ offset: true }).nullable(),
+}).strict();
+export type CodeSecretListItem = z.infer<typeof CodeSecretListItemSchema>;
 /** Stable service/CLI contracts; no read-value operation exists. Values must arrive through private editor input, never a chat tool. */
 export const codeSecretContracts = {
   set: {
@@ -37,7 +43,7 @@ export const codeSecretContracts = {
         limit: z.number().int().min(1).max(20).default(20).describe("Maximum metadata items, up to 20 per byte-bounded page."),
       })
       .strict(),
-    data: z.object({ items: z.array(CodeSecretMetadataSchema), nextCursor: CodeSecretNameSchema.nullable() }).strict(),
+    data: z.object({ items: z.array(CodeSecretListItemSchema), nextCursor: CodeSecretNameSchema.nullable() }).strict(),
   },
   delete: {
     input: z
@@ -48,5 +54,10 @@ export const codeSecretContracts = {
       })
       .strict(),
     data: z.object({ deleted: z.boolean() }).strict(),
+  },
+  /** Asks before a value is typed into a request: an installation's own addresses never receive a credential. */
+  checkBinding: {
+    input: z.object({ codeId: CodeIdSchema, binding: CodeSecretBindingSchema }).strict(),
+    data: z.object({ allowed: z.boolean() }).strict(),
   },
 } as const;

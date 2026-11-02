@@ -78,6 +78,7 @@ const InvocationPayloadBaseSchema = z
     mandate_revision: z.number().int().positive().optional(),
     workload_type: BoundedIdentifierSchema.optional(),
     workload_id: BoundedIdentifierSchema.optional(),
+    workload_run: BoundedIdentifierSchema.optional(),
     parent_invocation_id: z.uuid().optional(),
     jti: z.string().uuid(),
     iat: z.number().int().nonnegative(),
@@ -151,6 +152,9 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
   ) {
     context.addIssue({ code: "custom", message: "Mandate provenance is incomplete or unexpected" });
   }
+  if (claims.workload_run && !claims.workload_type) {
+    context.addIssue({ code: "custom", message: "A workload run requires a mandate workload" });
+  }
 };
 
 const InvocationPayloadSchema = InvocationPayloadBaseSchema.superRefine((claims, context) => validateInvocationClaims(claims, context));
@@ -180,6 +184,7 @@ export type InvocationAuthority = Pick<
   | "mandate_revision"
   | "workload_type"
   | "workload_id"
+  | "workload_run"
 >;
 
 type RemoteSetState = { key: JWTVerifyGetKey; lastForcedRefreshAt: number };

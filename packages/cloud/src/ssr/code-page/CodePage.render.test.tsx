@@ -103,6 +103,7 @@ describe("Code page states", () => {
     expect(page).toContain("eingeschaltet von Ben Schulz am");
     expect(page).toContain("alle 15 Minuten");
     expect(page).toContain("montags 07:00");
+    expect(page).toContain("nächster Lauf");
     expect(page).toContain("spaces.task.create");
     expect(page).toContain("an Space Logistik (sp_2lg8)");
     expect(page).toContain("an info@moebel-beispiel.de selbst");
@@ -139,9 +140,20 @@ describe("Code page states", () => {
     const removed = text("removed");
     expect(removed).toContain("Zugriff auf Space Logistik wurde entfernt.");
     expect(removed).toContain(
-      "Aufrufe an Space Logistik scheitern, bis jemand neu einschaltet. Darum ist der letzte Lauf von „lieferungenEintragen“ fehlgeschlagen. „anfragenSortieren“ läuft weiter.",
+      "Mia Koch hat ihn heute um 11:20 entfernt. Aufrufe an Space Logistik scheitern, bis jemand neu einschaltet. Darum ist der letzte Lauf von „lieferungenEintragen“ fehlgeschlagen. „anfragenSortieren“ läuft weiter.",
     );
-    expect(removed).toContain("Zugriff entfernt");
+    expect(removed).toContain("heute 11:20 von Mia Koch entfernt");
+    // A hidden name still says when; without the removal's audit event the page says only that it was removed.
+    const unnamed = text("removed-unnamed");
+    expect(unnamed).toContain("Jemand hat ihn heute um 11:20 entfernt.");
+    expect(unnamed).toContain("heute 11:20 entfernt");
+    expect(unnamed).not.toContain("Mia Koch");
+    const unknown = text("removed-unknown");
+    expect(unknown).toContain("Zugriff auf Space Logistik wurde entfernt. Aufrufe an Space Logistik scheitern");
+    expect(unknown).toContain("Zugriff entfernt");
+    expect(unknown).not.toContain("hat ihn");
+    expect(text("removed", "en")).toContain("Mia Koch removed it today at 11:20.");
+    expect(text("removed", "en")).toContain("removed by Mia Koch today at 11:20");
     expect(removed).toContain("Wieder einschalten");
     expect(removed).toContain("Mit Gustav bearbeiten");
     // Only the affected automation shows missing access; nothing is paused per automation.
@@ -172,6 +184,68 @@ describe("Code page states", () => {
     expect(page).toContain("Fehlgeschlagen nach dem ersten Aufruf.");
     expect(page).toContain("Erneut ausführen");
     expect(page).toContain("Zeitüberschreitung nach 10 s");
+  });
+
+  test("a failed run offers a look with the panel, under the panel's own name and icon", () => {
+    expect(text("run-failed")).toContain("Mit Gustav ansehen");
+    expect(html("run-failed")).toContain("ti ti-moustache");
+    expect(text("run-failed", "en")).toContain("View with Gustav");
+    expect(text("run-unclassified")).toContain("Mit Gustav ansehen");
+    expect(text("reader")).not.toContain("Mit Gustav ansehen");
+  });
+
+  test("the Edit with panel buttons show the panel's icon, never a spark", () => {
+    for (const state of ["overview", "empty", "removed"] as const) {
+      const page = html(state);
+      expect(page).toContain("ti ti-moustache");
+      expect(page).not.toContain("ti-sparkles");
+    }
+  });
+
+  test("a run started again says by whom and links the run it repeats", () => {
+    const page = text("run-rerun");
+    expect(page).toContain("erneut ausgeführt von Ben Schulz");
+    expect(page).toContain("Erneuter Lauf von #2284a1");
+    expect(html("run-rerun")).toContain("run=2284a1b2-0000-4000-8000-000000000004");
+    expect(text("run-rerun", "en")).toContain("run again by Ben Schulz");
+    expect(text("run-rerun", "en")).toContain("Run again from #2284a1");
+    expect(text("runs")).not.toContain("erneut ausgeführt");
+  });
+
+  test("secrets show where a value may go, who set it and every next step, never a value", () => {
+    const page = text("secrets");
+    expect(page).toContain("LAGER_TOKEN");
+    expect(page).toContain("2 Secrets · Werte nie sichtbar");
+    expect(page).toContain("https://api.lager-beispiel.de/v2/");
+    expect(page).toContain("authorization");
+    expect(page).toContain("[secret:LAGER_TOKEN]");
+    expect(page).toContain("gesetzt von Ben Schulz");
+    expect(page).toContain("Version 4 (aktiv)");
+    expect(page).toContain("Wert ersetzen …");
+    expect(page).toContain("Bindung ändern");
+    expect(page).toContain("Löschen …");
+    expect(html("secrets")).not.toContain('type="password"');
+    expect(text("secrets", "en")).toContain("Only sent to");
+  });
+
+  test("secrets keep empty, error and result states with a way forward", () => {
+    expect(text("secrets-empty")).toContain("Noch keine Secrets");
+    expect(text("secrets-empty")).toContain("Secret anlegen");
+    expect(text("secrets-error")).toContain("Die Secrets konnten nicht geladen werden");
+    expect(text("secrets-error")).toContain("Die Werte sind unverändert gespeichert.");
+    expect(text("secrets-replaced")).toContain("Wert ersetzt.");
+    expect(text("secrets-submitted")).toContain("Version 5 ist eingereicht.");
+    expect(text("secrets-submitted")).toContain("Bis dahin läuft Version 4 mit der alten Bindung.");
+    expect(text("secrets-unsubmitted")).toContain("Noch nutzt keine Version diese Bindung.");
+    expect(text("secrets-unsubmitted")).toContain("Version 5 einreichen");
+    const deleted = text("secrets-deleted");
+    expect(deleted).toContain("Wert setzen …");
+    expect(deleted).not.toContain("Löschen …");
+  });
+
+  test("the secrets tab is offered to editors only", () => {
+    expect(html("overview")).toContain("tab=secrets");
+    expect(html("reader")).not.toContain("tab=secrets");
   });
 
   test("readers see runs without their contents and no actions", () => {

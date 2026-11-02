@@ -2,10 +2,19 @@ import { getContext, onContextChange } from "@k2b/cloud/browser/panel";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import { type CodePlace, type CodeSummaryPage, codeStatus, loadCodeSummaries } from "../code-summary";
+import {
+  automationStatus,
+  type CodeAutomation,
+  type CodeAutomationTarget,
+  type CodePlace,
+  type CodeSummary,
+  type CodeSummaryPage,
+  codeStatus,
+  loadCodeSummaries,
+} from "../code-summary";
 import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./AssistantCodeView";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
-import { browserCodeInvoke } from "./code-client";
+import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 
 /** What the server knew about the panel's place: its Code page (null when Core could not list it) and the place. */
@@ -41,6 +50,8 @@ export default function AssistantCodeBlock(props: {
   chatOpen: boolean;
   disabled: boolean;
   onEdit: (ref: CloudResourceRef) => Promise<void> | void;
+  /** Grows when something in this chat changed the Code, such as switching a version on. */
+  revision?: number;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -100,6 +111,16 @@ export default function AssistantCodeBlock(props: {
     onCleanup(onContextChange((context) => update(context?.scope)));
     onCleanup(() => generation++);
   });
+  createEffect(
+    on(
+      () => props.revision,
+      () => {
+        const ref = currentRef();
+        if (ref) void load(ref, true);
+      },
+      { defer: true },
+    ),
+  );
   // The place's name, link and whether it could have Code; the server read the place it rendered.
   createEffect(
     on(
@@ -116,14 +137,44 @@ export default function AssistantCodeBlock(props: {
     const current = state();
     return current.kind === "ready" ? current.page : null;
   };
-  // Folded, the block names the status that needs the most attention.
+  const targetNames = (targets: CodeAutomationTarget[]) =>
+    targets.map((target) => (target.title ? [target.typeTitle, target.title].filter(Boolean).join(" ") : target.id)).join(", ");
+  // Folded, the block says how many automations it holds and, beside that, the status that needs the most attention.
   const summary = () => {
     const items = page()?.items ?? [];
-    const order = ["failed", "paused", "deleting", "draft", "on"] as const;
-    const keys = items.map((code) => codeStatus(code).key);
-    const first = order.find((key) => keys.includes(key));
-    return first ? codeStateLabel(first, locale()) : "";
+    const count = items.reduce((total, code) => total + (code.automations?.length ?? 0), 0);
+    const order = ["failed", "access_missing", "paused", "deleting", "draft"] as const;
+    const keys = items.flatMap((code) =>
+      code.automations?.length ? code.automations.map((automation) => automationStatus(code, automation).key) : [codeStatus(code).key],
+    );
+    // Removed access no automation could be named for still needs someone.
+    if (items.some((code) => codeStatus(code).key === "access_missing")) keys.push("access_missing");
+    const urgent = order.find((key) => keys.includes(key));
+    const parts = [
+      ...(count > 0 ? [t().codeAutomationCount({ count })] : []),
+      ...(urgent ? [codeStateLabel(urgent, locale())] : count === 0 && items.length > 0 ? [codeStateLabel("on", locale())] : []),
+    ];
+    return parts.join(" · ");
   };
+  /** The line under an automation: what it lacks, else its newest run, else when it first runs. */
+  const automationLine = (automation: CodeAutomation) => {
+    if (automation.missingTargets.length > 0) return t().codeAccessRemoved({ targets: targetNames(automation.missingTargets) });
+    if (automation.lastRun)
+      return t().codeLastRun({
+        when: formatCodeTime(automation.lastRun.endedAt ?? automation.lastRun.createdAt, locale(), props.timeZone),
+      });
+    return automation.nextRunAt
+      ? t().codeNextRun({ when: formatCodeNextRun(automation.nextRunAt, locale(), props.timeZone) })
+      : t().codeNoRun;
+  };
+  /** Removed access that no row names: which automation needs it could not be told, so the block says it once. */
+  const unnamedRemoved = (code: CodeSummary) =>
+    (code.removedTargets ?? []).filter(
+      (target) =>
+        !code.automations?.some((automation) =>
+          automation.missingTargets.some((missing) => missing.type === target.type && missing.id === target.id),
+        ),
+    );
 
   const empty = () => state().kind === "none" && Boolean(state().ref) && place().canOwnCode === true;
   const actions = (label: string) => (
@@ -206,17 +257,47 @@ export default function AssistantCodeBlock(props: {
                 <ul class="assistant-code-block__rows">
                   <For each={current().items}>
                     {(code) => (
-                      <li class="assistant-code-block__row">
-                        <i class="ti ti-bolt text-secondary" aria-hidden="true" />
-                        <span class="flex min-w-0 flex-col">
-                          <span class="truncate text-primary">{code.title}</span>
-                          <span class="truncate text-sm text-secondary">{codeRunLine(code, locale(), props.timeZone)}</span>
-                        </span>
-                        <CodeStatusBadge code={code} />
-                      </li>
+                      <Show
+                        when={code.automations?.length}
+                        fallback={
+                          <li class="assistant-code-block__row">
+                            <i class="ti ti-bolt text-secondary" aria-hidden="true" />
+                            <span class="flex min-w-0 flex-col">
+                              <span class="truncate text-primary">{code.title}</span>
+                              <span class="truncate text-sm text-secondary">{codeRunLine(code, locale(), props.timeZone)}</span>
+                            </span>
+                            <CodeStatusBadge code={code} />
+                          </li>
+                        }
+                      >
+                        <For each={code.automations}>
+                          {(automation) => (
+                            <li class="assistant-code-block__row">
+                              <i
+                                class={`ti ${automation.kind === "schedule" ? "ti-clock" : "ti-bolt"} text-secondary`}
+                                aria-hidden="true"
+                              />
+                              <span class="flex min-w-0 flex-col">
+                                <span class="truncate text-primary">{automation.entrypoint}</span>
+                                <span class="truncate text-sm text-secondary">{automationLine(automation)}</span>
+                              </span>
+                              <CodeStatusBadge code={code} status={automationStatus(code, automation)} />
+                            </li>
+                          )}
+                        </For>
+                      </Show>
                     )}
                   </For>
                 </ul>
+                <For each={current().items}>
+                  {(code) => (
+                    <Show when={unnamedRemoved(code).length > 0}>
+                      <p class="assistant-code-block__note text-sm text-secondary">
+                        {t().codeAccessRemovedUnnamed({ targets: targetNames(unnamedRemoved(code)) })}
+                      </p>
+                    </Show>
+                  )}
+                </For>
                 {actions(t().codeEditWithGustav)}
               </>
             )}

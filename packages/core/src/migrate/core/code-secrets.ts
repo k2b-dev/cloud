@@ -17,6 +17,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       PRIMARY KEY(code_id,name),
       FOREIGN KEY(code_id,name,binding_revision) REFERENCES code.secret_bindings(code_id,name,binding_revision)
     )`.simple();
+    await tx`ALTER TABLE code.secrets ADD COLUMN IF NOT EXISTS value_set_by UUID, ADD COLUMN IF NOT EXISTS value_set_at TIMESTAMPTZ`.simple();
     await tx`CREATE OR REPLACE FUNCTION code.guard_secret_binding() RETURNS TRIGGER AS $$
     BEGIN RAISE EXCEPTION 'code secret bindings are immutable' USING ERRCODE='55000'; END $$ LANGUAGE plpgsql`.simple();
     await tx`DROP TRIGGER IF EXISTS secret_binding_immutable ON code.secret_bindings`.simple();

@@ -254,6 +254,20 @@ describe("Cloud invocation JWT", () => {
     expect(await verify(partial)).toBeNull();
   });
 
+  test("carries a workload's run only with its mandate", async () => {
+    const detailed = await token({
+      ...baseClaims(),
+      credential_kind: "mandate",
+      mandate_id: "10ec1c74-858b-4a98-9ba7-ab2276754c69",
+      mandate_revision: 3,
+      workload_type: "code.version",
+      workload_id: "10ec1c74-858b-4a98-9ba7-ab2276754c70",
+      workload_run: "10ec1c74-858b-4a98-9ba7-ab2276754c71",
+    });
+    expect(await verify(detailed)).toMatchObject({ workload_run: "10ec1c74-858b-4a98-9ba7-ab2276754c71" });
+    expect(await verify(await token({ ...baseClaims(), workload_run: "r1" }))).toBeNull();
+  });
+
   test("rejects wrong audience, operation, and schema binding", async () => {
     const signed = await token();
     expect(await verify(signed, { targetAppId: "spaces" })).toBeNull();
