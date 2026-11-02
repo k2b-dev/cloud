@@ -50,8 +50,10 @@ hooks carry it:
   controls below. It defaults to `var(--k2b-selected)`.
 - `--k2b-app-workspace-active` is the ink on that fill. It defaults to
   `var(--k2b-action)`.
-- `--k2b-row-selected` fills selected content rows. It defaults to
-  `var(--k2b-selected)`.
+- `--k2b-row-selected` fills selected list rows and files. It defaults to
+  `var(--k2b-selected)`. A selected `DataTable` row mixes 16 % of
+  `--k2b-app-workspace-active` into the surface instead, so it still reads
+  between the table's lines.
 
 Without a host value, selection keeps the platform selection color. A host
 sets the hooks on its own scope to give selection its color. Cloud maps them
@@ -95,9 +97,11 @@ the main action.
 
 | State | Primitive | Class |
 | --- | --- | --- |
-| Selected table row | `DataTable` | `k2b-data-table` |
 | Selected file tile or list row | `FileGrid` | `k2b-file-grid` |
 | Selected file tree row | `FileTree` | `k2b-content-file-tree` |
+
+A selected table row (`DataTable`) is a stronger fill of the same app ink and
+never a coloured line or bar; see [Tables](/en/ui/content/tables#presentation).
 
 ## Controls stay platform blue
 

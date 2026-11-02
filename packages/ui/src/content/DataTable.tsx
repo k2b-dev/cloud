@@ -26,8 +26,6 @@ import Placeholder from "../surfaces/Placeholder";
 import type { CollectionSelection } from "./collection-selection";
 import { useDataTableMessages } from "./data-table-messages";
 
-const WIDE_TABLE_COLUMNS = 8;
-
 export type DataTableColumn<T> = {
   id: string;
   header: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
@@ -547,12 +545,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           data-scroll-preserve={props.scrollPreserveKey || undefined}
           onScroll={onScroll}
         >
-          <table
-            ref={tableRef}
-            class={tableClass()}
-            data-fill={props.fillHeight ? "true" : undefined}
-            data-wide={props.columns.length > WIDE_TABLE_COLUMNS ? "true" : undefined}
-          >
+          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
             <Show when={props.loading}>
               {/* Names the table while it waits; the announcement goes through the shared live region outside the busy region. */}
               <caption class="k2b-sr-only">{dataTableMessages().loadingRows}</caption>

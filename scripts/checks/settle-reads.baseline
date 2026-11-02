@@ -91,7 +91,6 @@ packages/ui/src/content/calendar-days.browser.test.ts | 1
 packages/ui/src/content/calendar-month.browser.test.ts | 4
 packages/ui/src/content/content-styles.browser.test.ts | 2
 packages/ui/src/content/data-panel-header.browser.test.ts | 1
-packages/ui/src/content/data-table-minimal.browser.test.ts | 8
 packages/ui/src/content/help-blocks.browser.test.ts | 5
 packages/ui/src/content/markdown-callouts.browser.test.ts | 1
 packages/ui/src/content/markdown-links.browser.test.ts | 4
