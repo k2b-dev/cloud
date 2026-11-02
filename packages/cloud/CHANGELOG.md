@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.56.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.55.0...npm-cloud-v0.56.0) (2026-11-02)
+
+
+### Features
+
+* **cloud:** admin bar groups setup and operations and leads to People ([#2453](https://github.com/k2b-dev/cloud/issues/2453)) ([a1f2ea3](https://github.com/k2b-dev/cloud/commit/a1f2ea3e99b2b8c9ef39368c0900dabfd55952d8))
+* **cloud:** retain background traces only for problems ([#2468](https://github.com/k2b-dev/cloud/issues/2468)) ([653500b](https://github.com/k2b-dev/cloud/commit/653500bba31a366058ec34ac5ec1620856796cce))
+* **core:** admin settings put name, field and source in one row ([#2452](https://github.com/k2b-dev/cloud/issues/2452)) ([4dc2462](https://github.com/k2b-dev/cloud/commit/4dc246227e42f0e7ea97bb9db23715545afbd58a))
+* **ui:** fields share one 2 px edge in every state ([#2458](https://github.com/k2b-dev/cloud/issues/2458)) ([534685c](https://github.com/k2b-dev/cloud/commit/534685cd33d221bc1dbae36890655283c8d1f78f))
+* **ui:** tables show a grey head, row and column lines, and a selected row as a fill ([#2469](https://github.com/k2b-dev/cloud/issues/2469)) ([1f93886](https://github.com/k2b-dev/cloud/commit/1f93886348abb971c33ebcc3790f929face038a1))
+
+
+### Bug Fixes
+
+* **assistant:** a new chat no longer reports a draft conflict, and real conflicts show one localized notice ([#2450](https://github.com/k2b-dev/cloud/issues/2450)) ([f4a968f](https://github.com/k2b-dev/cloud/commit/f4a968f7ff8ae7b81ded36b9cab3f27421f908e4))
+
+
+### Performance Improvements
+
+* **cloud:** read registry and capabilities from observed views ([#2467](https://github.com/k2b-dev/cloud/issues/2467)) ([0515f6e](https://github.com/k2b-dev/cloud/commit/0515f6ea6b5d1363692c605a6097d69c704cae45))
+* **cloud:** wake background delivery across instances ([#2466](https://github.com/k2b-dev/cloud/issues/2466)) ([f9798f3](https://github.com/k2b-dev/cloud/commit/f9798f3e8b502e24fe75286f5e2d93ab5a97294c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.44.0 to 0.45.0
+    * @k2b/editor bumped from 0.6.0 to 0.6.1
+
 ## [0.55.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.54.0...npm-cloud-v0.55.0) (2026-11-02)
 
 
