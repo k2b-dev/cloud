@@ -326,13 +326,15 @@
 }
 
 .k2b-ui .k2b-markdown-editor {
+  --k2b-edge-color: var(--k2b-edge);
   position: relative;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--k2b-border);
+  border: 1px solid var(--k2b-edge-color);
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
-  box-shadow: inset 0 1px 2px rgb(9 9 11 / 0.05);
+  /* The field edge (see `--k2b-edge`): 1 px border plus 1 px inset. */
+  box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color);
   /* Cloud's `.md-editor` carries `@apply transition-colors`; same omission as
      `.k2b-autocomplete` above. */
   transition:
@@ -340,16 +342,14 @@
     background-color 150ms ease-out;
 }
 
-.k2b-ui .k2b-markdown-editor:hover {
-  border-color: var(--k2b-border-strong);
-  background: var(--k2b-surface);
+.k2b-ui .k2b-markdown-editor:not([data-variant="embedded"]):hover {
+  background: var(--k2b-edge-hover-bg);
 }
 
 .k2b-ui .k2b-markdown-editor:focus-within {
-  border-color: var(--k2b-focus-ring);
+  --k2b-edge-color: var(--k2b-edge-focus);
   outline: none;
   background: var(--k2b-surface);
-  box-shadow: inset 0 1px 2px rgb(9 9 11 / 0.05);
 }
 
 .k2b-ui .k2b-markdown-editor[data-variant="paper"] {
@@ -383,12 +383,19 @@
 }
 
 .k2b-ui .k2b-markdown-editor[data-disabled="true"] {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .k2b-ui .k2b-markdown-editor[data-invalid="true"] {
-  border-color: var(--k2b-danger-500);
+  --k2b-edge-color: var(--k2b-edge-danger);
+  border-color: var(--k2b-edge-color);
+}
+
+.k2b-ui .k2b-markdown-editor[data-invalid="true"]:not([data-variant="paper"]):focus-within {
+  --k2b-edge-color: var(--k2b-edge-focus);
 }
 
 .k2b-ui .k2b-markdown-editor__toolbar {

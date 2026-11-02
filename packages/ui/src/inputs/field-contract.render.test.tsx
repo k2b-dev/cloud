@@ -135,15 +135,18 @@ describe("@k2b/ui canonical field contract", () => {
 });
 
 describe("TextInput icons", () => {
-  test("keeps a custom icon while focused and switches only the default icon to the pencil", () => {
+  test("keeps a custom icon while focused and leads a plain field with no icon", () => {
     const custom = renderToString(() => createComponent(TextInput, { icon: "ti ti-search", value: "" }));
-    const fallback = renderToString(() => createComponent(TextInput, { value: "" }));
+    const plain = renderToString(() => createComponent(TextInput, { value: "" }));
     const explicit = renderToString(() => createComponent(TextInput, { icon: "ti ti-search", activeIcon: "ti ti-pencil", value: "" }));
+    const ai = renderToString(() => createComponent(TextInput, { variant: "ai", value: "" }));
 
     expect(custom.match(/ti ti-search/g)?.length).toBe(2);
     expect(custom).not.toContain("ti-pencil");
-    expect(fallback).toContain("ti ti-cursor-text");
-    expect(fallback).toContain("ti ti-pencil");
+    expect(plain).not.toContain("k2b-text-input__icon");
+    expect(plain).not.toContain("ti-cursor-text");
     expect(explicit).toContain("ti ti-pencil");
+    expect(ai.match(/ti ti-sparkles/g)?.length).toBe(2);
   });
+
 });
