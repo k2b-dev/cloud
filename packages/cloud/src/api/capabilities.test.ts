@@ -1998,3 +1998,36 @@ test("calendar sources are discovered and read through Core's normal capability 
     setSystemTime();
   }
 });
+
+test("invocation issuance preserves temporary app unavailability without calling the provider", async () => {
+  const { AppAccessUnavailableError } = await import("../services/app-access");
+  const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+  const response = await queryDispatch({
+    getCapability: async () => entry(),
+    signInvocation: async () => {
+      throw new AppAccessUnavailableError(summary(entry()));
+    },
+    fetch,
+  });
+  expect(response.status).toBe(503);
+  expect(response.headers.get("retry-after")).toBe("1");
+  expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("Command resolution preserves temporary app unavailability", async () => {
+  const access = await import("../services/app-access");
+  const check = spyOn(access, "canUseApp").mockRejectedValue(new access.AppAccessUnavailableError(summary(entry())));
+  const routes = buildCapabilityRoutes({ authenticate, listApps: async () => [summary(entry())] });
+  try {
+    const response = await routes.request("/capabilities/v1/commands/demo/compose", {
+      method: "POST",
+      body: JSON.stringify({ input: {} }),
+    });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("1");
+    expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
+  } finally {
+    check.mockRestore();
+  }
+});

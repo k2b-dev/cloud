@@ -249,7 +249,7 @@ suite("Mail search by public folder and tag IDs", () => {
     expect(await titleFor(searchHref(tagged()), "de")).toBe("Gefilterte Suche");
     expect(await titleFor(`${mailboxHref}?q=order`, "de")).toBe("Ergebnisse für „order“");
     expect(await titleFor(`${mailboxHref}?view=needs_action`, "de")).toBe("Handlungsbedarf");
-    expect(await titleFor(`${mailboxHref}?scheduled=1`, "de")).toBe("Geplant");
+    expect(await titleFor(`${mailboxHref}?scheduled=1`, "de")).toBe("Postausgang");
     expect(await titleFor(`${mailboxHref}?search=${encodeURIComponent("{not json")}`, "de")).toBe("Suche");
     expect(await titleFor(mailboxHref, "de")).toBe("Alle E-Mails");
   });

@@ -142,14 +142,26 @@ audience; an app-specific OAuth audience does not become Core authority.
 A background authority without the originating request credential can query
 local adapters but cannot discover resource-derived apps in other processes.
 Run cross-app discovery through Core with an admitted credential; an
-invocation handler cannot exchange its token for a broader app catalog. An unavailable app, failed query or expired
-credential denies access. Resource probes share a ten-second decision budget,
-or the caller's deadline. A caller that supplies a signal must bound it.
-Universal Search shares one eight-second signal across resource access checks,
-invocation signing and provider requests. Registry reads and grants SQL are not
-cancelled by that signal.
-Probes run sequentially and are not retried. The adapter must observe `signal` and
-cancel outstanding work when it aborts.
+invocation handler cannot exchange its token for a broader app catalog. An expired credential denies access. Discovery runs at most four resource
+probes at once, each with a fresh one-second limit under a four-second overall
+deadline. An unavailable or timed-out app is omitted only from that request;
+other apps retain their results. A supplied caller signal replaces the overall
+default deadline; the caller must bound it. Discovery retains the one-second
+per-app limit under that caller deadline.
+Universal Search also shares its eight-second signal with invocation signing
+and provider requests. Registry reads and grants SQL are not cancelled by
+that signal.
+
+Entry into one application allows up to eight seconds for its resource check,
+below the server's ten-second idle timeout and the live-revalidation check
+limit. Browser entry and subsequent SSR discovery share the page request's
+eight-second resource deadline. Long-running API handlers receive a fresh
+budget for each later access check. A confirmed denial returns 403; a failed or
+timed-out resource check returns 503 with `code: "app_access_unavailable"`
+and a retry message. `canUseApp` throws `AppAccessUnavailableError` for that
+unavailable check; `usableAppIds` omits the affected app. An aborted caller
+signal preserves its cancellation reason. Probes are not retried. The adapter
+must observe `signal` and cancel outstanding work when it aborts.
 
 Cloud reuses an identical decision only within the originating request.
 There is no cache between requests: removing the last right or group
@@ -399,7 +411,7 @@ This keeps list grants and local adapter reads in the transaction and avoids
 waiting for a second pooled connection. A remote adapter runs in its owning
 application and reads committed rights there; it cannot share the caller's SQL
 transaction. The caller retains its transaction connection and locks during
-the bounded network check (up to ten seconds per app-access decision).
+the bounded network check (up to eight seconds for entry).
 Keep this cost in mind when calling the resolver from a transaction; moving
 authorization outside a guarded write would introduce a separate race.
 Outside a transaction, omit the option. Framework-managed

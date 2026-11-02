@@ -42,7 +42,11 @@ test.skipIf(isServer)("shares the row context projection across rendering and re
     dom.root,
   );
   const entry = () => dom.root.querySelector(".mail-list-entry")!;
-  const actions = () => [...entry().querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim());
+  // The menu is lazy: a row carries its entries only after the first open.
+  const actions = () => {
+    if (!entry().querySelector('[role="menuitem"]')) entry().querySelector<HTMLElement>(".k2b-dropdown__trigger")!.click();
+    return [...entry().querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim());
+  };
   try {
     // The actual list's projection resolves folders. Repeating it for each state
     // field multiplied that work even though its inputs had not changed.
@@ -108,6 +112,9 @@ test.skipIf(isServer)("keeps menu rows through selection and callback changes, b
   );
   const items = () => [...dom.root.querySelectorAll<HTMLElement>('[role="menuitem"]')];
   try {
+    // The menu is lazy: a row carries its entries only after the first open.
+    expect(items()).toEqual([]);
+    dom.root.querySelector<HTMLElement>(".k2b-dropdown__trigger")!.click();
     const initial = items();
     expect(initial.length).toBeGreaterThan(0);
     setSelected(true);

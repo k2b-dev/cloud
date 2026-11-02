@@ -604,80 +604,88 @@ export const migrate = async (): Promise<void> => {
 const INDEX_BUILD_LEASE_MS = 60_000;
 const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
 
-const readCommandTargetIndexState = async () => {
-  const [state] = await sql<{ present: boolean; valid: boolean; building: boolean }[]>`
-    SELECT to_regclass('mail.commands_message_target_idx') IS NOT NULL AS present,
+type BackgroundIndex = { name: string; table: string; ddl: string };
+const commandTargetIndex: BackgroundIndex = {
+  name: "mail.commands_message_target_idx",
+  table: "mail.commands",
+  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS commands_message_target_idx
+    ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind)
+    WHERE (target ? 'remoteMessageRefId'::text)`,
+};
+const providerMessageIndex: BackgroundIndex = {
+  name: "mail.remote_message_refs_provider_message_idx",
+  table: "mail.remote_message_refs",
+  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS remote_message_refs_provider_message_idx
+    ON mail.remote_message_refs (md5(connector_ref ->> 'providerMessageId'), folder_id, message_id)
+    WHERE connector_ref ->> 'providerMessageId' IS NOT NULL`,
+};
+
+type IndexConnection = Awaited<ReturnType<SqlClient["reserve"]>>;
+const readBackgroundIndexState = async (db: SqlClient | IndexConnection, index: BackgroundIndex) => {
+  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
+    SELECT to_regclass(${index.name}) IS NOT NULL AS present,
       EXISTS (
         SELECT 1 FROM pg_index
-        WHERE indexrelid = to_regclass('mail.commands_message_target_idx')
-          AND indisvalid AND indisready AND indislive
+        WHERE indexrelid = to_regclass(${index.name}) AND indisvalid AND indisready AND indislive
       ) AS valid,
       EXISTS (
         SELECT 1 FROM pg_stat_progress_create_index progress
         WHERE progress.datname = current_database()
-          AND (progress.relid = to_regclass('mail.commands') OR progress.relid IS NULL)
+          AND (progress.relid = to_regclass(${index.table}) OR progress.relid IS NULL)
       ) AS building
-  `.simple();
+  `;
   return state ?? { present: false, valid: false, building: false };
 };
 
-const dropCommandTargetIndex = async (): Promise<void> => {
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.commands_message_target_idx`.simple();
-};
-
-/**
- * Builds the per-message command index after migration, without blocking command writes or startup.
- * Lookups use the older index until this one is valid. The shared Mail index lease serializes builds;
- * interrupted builds are replaced on the next start. Each database step is one statement without
- * session state, so transaction pooling is safe. Never throws.
- */
-export const buildCommandTargetIndex = async (): Promise<"ready" | "busy" | "built" | "failed"> => {
+/** One statement per step, no session state: safe through a transaction pooler. Never throws. */
+const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Promise<"ready" | "busy" | "built" | "failed"> => {
   try {
-    if ((await readCommandTargetIndexState()).valid) return "ready";
+    if ((await readBackgroundIndexState(pool, index)).valid) return "ready";
     const mutex = indexBuildMutex();
     const lease = await mutex.acquire({ resource: "mail-indexes" });
     if (!lease) return "busy";
     const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
     renewal.unref();
     try {
-      const before = await readCommandTargetIndexState();
-      if (before.valid) return "ready";
-      if (before.building) return "busy";
-      // IF NOT EXISTS would keep an invalid index left by an interrupted build.
-      if (before.present) await dropCommandTargetIndex();
-      log.info("Building the per-message command index");
-      const startedAt = performance.now();
+      // Bun must not pipeline foreground queries behind DDL waiting for old snapshots or writers.
+      const db = await pool.reserve();
       try {
-        await sql`
-          CREATE INDEX CONCURRENTLY IF NOT EXISTS commands_message_target_idx
-          ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind)
-          WHERE (target ? 'remoteMessageRefId'::text)
-        `.simple();
-      } catch (error) {
-        const after = await readCommandTargetIndexState();
-        if (after.valid) return "ready";
-        if (after.building) return "busy";
-        log.warn("Per-message command index was not built; lookups use the older index until the next start", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await dropCommandTargetIndex();
-        return "failed";
+        const before = await readBackgroundIndexState(db, index);
+        if (before.valid) return "ready";
+        if (before.building) return "busy";
+        // Names are internal constants, never request input. Replace interrupted builds on restart.
+        const drop = () => db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.name}`).simple();
+        if (before.present) await drop();
+        log.info("Building Mail background index", { index: index.name });
+        const startedAt = performance.now();
+        try {
+          await db.unsafe(index.ddl).simple();
+        } catch (error) {
+          const after = await readBackgroundIndexState(db, index);
+          if (after.valid) return "ready";
+          if (after.building) return "busy";
+          log.warn("Mail background index build failed; the next start retries", { index: index.name, error: String(error) });
+          await drop();
+          return "failed";
+        }
+        if (!(await readBackgroundIndexState(db, index)).valid) return "busy";
+        log.info("Built Mail background index", { index: index.name, durationMs: Math.round(performance.now() - startedAt) });
+        return "built";
+      } finally {
+        db.release();
       }
-      // IF NOT EXISTS may have skipped an index that another process was still building.
-      if (!(await readCommandTargetIndexState()).valid) return "busy";
-      log.info("Built the per-message command index", { durationMs: Math.round(performance.now() - startedAt) });
-      return "built";
     } finally {
       clearInterval(renewal);
       await mutex.release(lease).catch(() => false);
     }
   } catch (error) {
-    log.warn("Per-message command index is unavailable; lookups use the older index", {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    log.warn("Mail background index unavailable; the next start retries", { index: index.name, error: String(error) });
     return "failed";
   }
 };
+
+export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
+export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
@@ -693,8 +701,8 @@ const BM25_INDEX_DDL = `CREATE INDEX CONCURRENTLY IF NOT EXISTS message_contents
  * hides which index another role builds, so any index build of another role in this database
  * counts, such as an operator's own build of this index.
  */
-const readBm25IndexState = async () => {
-  const [state] = await sql<{ installed: boolean; present: boolean; valid: boolean; building: boolean }[]>`
+const readBm25IndexState = async (db: SqlClient | IndexConnection = sql) => {
+  const [state] = await db<{ installed: boolean; present: boolean; valid: boolean; building: boolean }[]>`
     SELECT
       EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed,
       to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS present,
@@ -719,8 +727,8 @@ const readBm25IndexState = async () => {
   return state ?? { installed: false, present: false, valid: false, building: false };
 };
 
-const dropBm25Index = async (): Promise<void> => {
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
+const dropBm25Index = async (db: IndexConnection): Promise<void> => {
+  await db`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
 };
 
 /**
@@ -743,7 +751,12 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready
     const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
     renewal.unref();
     try {
-      return await buildBm25Index();
+      const db = await sql.reserve();
+      try {
+        return await buildBm25Index(db);
+      } finally {
+        db.release();
+      }
     } finally {
       clearInterval(renewal);
       await mutex.release(lease).catch(() => false);
@@ -756,37 +769,37 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready
   }
 };
 
-const buildBm25Index = async (): Promise<"ready" | "busy" | "built" | "failed"> => {
+const buildBm25Index = async (db: IndexConnection): Promise<"ready" | "busy" | "built" | "failed"> => {
   // Another process may have finished the build since the first look, or still build it, for
   // example an operator in a maintenance window or a process whose lease ran out.
-  const before = await readBm25IndexState();
+  const before = await readBm25IndexState(db);
   if (before.valid) return "ready";
   if (before.building) {
     log.info("An index build is already running in this database; the next start checks the optional BM25 index again");
     return "busy";
   }
   // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
-  if (before.present) await dropBm25Index();
+  if (before.present) await dropBm25Index(db);
   log.info("Building the optional BM25 index for Mail search");
   const startedAt = performance.now();
   // The build runs until it is done. pg_textsearch reacts to a cancel request or statement_timeout
   // only once it has read every message, so a time limit would discard a finished build and repeat
   // it on the next start.
   try {
-    await sql.unsafe(BM25_INDEX_DDL).simple();
+    await db.unsafe(BM25_INDEX_DDL).simple();
   } catch (error) {
-    const after = await readBm25IndexState();
+    const after = await readBm25IndexState(db);
     if (after.valid) return "ready";
     if (after.building) return "busy";
     log.warn("Optional BM25 index for Mail search was not built; search stays native", {
       error: error instanceof Error ? error.message : String(error),
     });
-    await dropBm25Index();
+    await dropBm25Index(db);
     return "failed";
   }
   // IF NOT EXISTS skips the build when another build created the index in the meantime; it waits
   // for that build, and the index is valid only if that build succeeded.
-  if (!(await readBm25IndexState()).valid) return "busy";
+  if (!(await readBm25IndexState(db)).valid) return "busy";
   log.info("Built the optional BM25 index for Mail search", { durationMs: Math.round(performance.now() - startedAt) });
   return "built";
 };
