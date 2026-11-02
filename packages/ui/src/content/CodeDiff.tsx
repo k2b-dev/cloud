@@ -18,14 +18,17 @@ export type CodeDiffLine = { kind: CodeDiffLineKind; text: string };
  */
 const centerInScroller = (row: HTMLElement | null | undefined) => {
   if (!row) return;
-  const view = row.ownerDocument.defaultView;
+  const document = row.ownerDocument;
+  const view = document.defaultView;
   let scroller = row.parentElement;
-  while (scroller) {
+  // The root and the body scroll the viewport, whose origin is 0 however far the page has scrolled.
+  while (scroller && scroller !== document.documentElement && scroller !== document.body) {
     const overflow = view?.getComputedStyle(scroller).overflowY ?? "";
     if ((overflow === "auto" || overflow === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
     scroller = scroller.parentElement;
   }
-  const target = scroller ?? row.ownerDocument.scrollingElement;
+  if (scroller === document.documentElement || scroller === document.body) scroller = null;
+  const target = scroller ?? document.scrollingElement;
   if (!target) return;
   const top = scroller ? scroller.getBoundingClientRect().top + scroller.clientTop : 0;
   const height = scroller ? scroller.clientHeight : (view?.innerHeight ?? 0);
@@ -226,10 +229,11 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
       },
     ),
   );
-  // What a mark revealed stays revealed when the mark goes away; the marked line scrolls into view.
+  // What a mark revealed stays revealed when the mark goes away; the marked line scrolls into view. A new mark object
+  // is a new request, so marking the same line again brings it back after the person scrolled away.
   createEffect(
     on(
-      () => [markIndex(), currentPath()] as const,
+      () => [markIndex(), currentPath(), props.mark] as const,
       ([target, path]) => {
         if (target === undefined || !path) return;
         const fold = markFold();

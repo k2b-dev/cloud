@@ -185,6 +185,36 @@ describe("CodeDiff in a browser", () => {
         };
       });
       expect({ ...measured, offCentre: measured.offCentre <= 1 }).toEqual({ page: 0, shell: 0, column: true, offCentre: true });
+
+      // The person scrolls away and marks the same line again: a new mark is a new request.
+      const before = await page.evaluate(() => {
+        const column = document.getElementById("column")!;
+        const top = column.scrollTop;
+        column.scrollTop = 0;
+        return top;
+      });
+      await page.evaluate(() => (window as unknown as Fixture).setMark({ path: "reply.test.ts", line: 700 }));
+      await settled(page);
+      expect(await page.evaluate(() => document.getElementById("column")!.scrollTop)).toBe(before);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a mark in a page whose root scrolls centres the line in the viewport from any scroll position", async () => {
+    const page = await open(560);
+    try {
+      await page.evaluate(() => {
+        document.documentElement.style.overflowY = "auto";
+        window.scrollTo({ top: 300, behavior: "instant" });
+      });
+      await page.evaluate(() => (window as unknown as Fixture).setMark({ path: "reply.test.ts", line: 700 }));
+      await settled(page);
+      const offCentre = await page.evaluate(() => {
+        const row = document.querySelector('[data-marked="true"]')!.getBoundingClientRect();
+        return Math.abs(row.top + row.height / 2 - window.innerHeight / 2);
+      });
+      expect(offCentre).toBeLessThanOrEqual(1);
     } finally {
       await page.close();
     }
