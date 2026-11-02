@@ -41,6 +41,30 @@ Content weight also carries meaning. In a mail list, read senders and subjects
 use regular weight; unread rows add semibold type and the unread marker.
 Selection keeps its fill independently of unread emphasis.
 
+## Field edge
+
+Every control a person fills in shares one edge: text fields, number fields,
+selects, comboboxes, tag and date fields, colour fields, input buttons, the
+Markdown editor, and the signature pad. The field is white, and its edge is
+always `--k2b-edge-width` (2 px) wide, drawn inside the box as a 1 px border
+plus a 1 px inset in the same colour. A state changes only the colour or the
+fill, so the box and the text never move:
+
+| State | Edge | Fill |
+| --- | --- | --- |
+| Rest | `--k2b-edge` (light grey, the strong border) | `--k2b-surface` |
+| Hover | unchanged | `--k2b-edge-hover-bg`, slightly darker |
+| Focus | `--k2b-edge-focus` (strong blue) | `--k2b-surface` |
+| Error | `--k2b-edge-danger` | unchanged |
+| Error with focus | `--k2b-edge-focus`; the error message stays | unchanged |
+| Disabled | none | `--k2b-surface-muted` |
+
+The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
+without a second width. No field casts a shadow. A control with its own edge
+reads `--k2b-edge-color`, the colour of the current state, for example a
+stepper that fills to the border. In forced-colors mode the border takes the
+system colour and focus adds the system outline.
+
 ## Selection color
 
 Selection marks where the person is or what they picked. Three optional host

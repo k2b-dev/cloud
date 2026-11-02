@@ -59,10 +59,9 @@ import {
 
 ## Select
 
-Field groups can set `--k2b-field-surface` and `--k2b-field-border` on their
-container for outlined fields on the base surface. `--k2b-field-font-size`
-sets the text size of choice fields in the group. The default remains a
-muted field with a transparent border; focus and invalid styles still win.
+Choice fields share the edge of every field: white, with a 2 px edge whose
+colour shows the state (see [Field edge](/en/ui/surfaces/color#field-edge)).
+`--k2b-field-font-size` sets the text size of choice fields in a group.
 
 Pass the selected value directly or through a Solid accessor. Selection and
 clearing are atomic actions, so both `onValueChange` and `onValueCommit`

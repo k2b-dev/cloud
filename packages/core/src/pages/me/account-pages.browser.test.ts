@@ -323,10 +323,14 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
       const nav = main.querySelector("nav")!;
       const panel = main.querySelector(".account-page")!;
       const visible = (value: string) => value !== "none" && !/rgba\(.*,\s*0\)$/.test(value) && value !== "transparent";
-      // Every block that paints a border or a shadow: a frame. Controls, tags, table cells and
-      // the notices' forced-colours border are content, not frames.
+      // Every block that paints a border or a shadow: a frame. Controls and their field edge, tags,
+      // table cells and the notices' forced-colours border are content, not frames.
       const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, header, nav"))
-        .filter((element) => element.checkVisibility() && !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-notice-card"))
+        .filter(
+          (element) =>
+            element.checkVisibility() &&
+            !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card"),
+        )
         .filter((element) => {
           const style = getComputedStyle(element);
           const border = Number.parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none" && visible(style.borderTopColor);
