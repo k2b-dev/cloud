@@ -1,6 +1,6 @@
 import { Button, dialogCore, PanelDialog, panelDialogOptions, TextInput, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import { appsHref } from "./model";
+import { appsHref, listStateOf } from "./model";
 import { appsPageMessages } from "./page-messages";
 
 const APP_ID = /^[a-z][a-z0-9-]{0,79}$/;
@@ -24,7 +24,7 @@ export default function AddApp(props: { known: ReadonlyArray<{ id: string; name:
           event.preventDefault();
           if (!value() || error()) return;
           close();
-          window.location.assign(appsHref({ app: value(), view: known() ? null : "keys" }));
+          window.location.assign(appsHref({ app: value(), view: known() ? null : "keys", list: listStateOf(window.location.search) }));
         };
         return (
           <form class="contents" onSubmit={submit} data-add-app>

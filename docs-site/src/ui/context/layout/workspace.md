@@ -380,6 +380,12 @@ level change hides the focused control, such as the back step itself or a row
 of a list the phone no longer shows, focus moves to the title of the selected
 level.
 
+A level whose content has its own parent inside the same column, such as a
+sub-view that replaces an object's detail in place, passes `back` with that
+parent's `href` and name. Its back step then shows at every width, also beside
+the levels before it, and replaces the shared step to the level before; the
+shallower level keeps its own `href`.
+
 Each level head is a 46 px row without a line under it: the `label` as the
 title, an optional one-line `description`, and trailing `actions`. Mark the
 level that holds the page itself, such as a settings form, with
