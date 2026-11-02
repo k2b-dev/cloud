@@ -71,6 +71,26 @@ test("an approval opens at its header with the reasons in view", async () => {
   }
 }, 20_000);
 
+test("the decision bar keeps reject and approve on one row under the binding line", async () => {
+  for (const [query, viewport] of [
+    [review, { width: 1280, height: 900 }],
+    [`${review}&state=difffail`, { width: 1280, height: 900 }],
+    [review, { width: 390, height: 844 }],
+  ] as const) {
+    await goto(query, viewport);
+    await settled(page);
+    const reject = await page.getByRole("button", { name: "Ablehnen …" }).boundingBox();
+    const approve = await page.getByRole("button", { name: "Version 3 freigeben" }).boundingBox();
+    const binding = await page.getByText("Gilt genau für Version 3", { exact: false }).boundingBox();
+    expect({ query, width: viewport.width, row: reject?.y === approve?.y, below: (binding?.y ?? 0) < (approve?.y ?? 0) }).toEqual({
+      query,
+      width: viewport.width,
+      row: true,
+      below: true,
+    });
+  }
+}, 20_000);
+
 test("approving sends the unchanged hash binding, shows the result and lowers the sidebar count", async () => {
   await goto(review);
   expect(await sidebarCode().innerText()).toContain("4");

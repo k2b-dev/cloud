@@ -485,6 +485,14 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           </span>
         </p>
         <Show when={pending() && (!props.own || props.soleAdminNotice)}>
+          {/* Why approving is blocked sits on its own line, so the two buttons never split across rows. */}
+          <Show when={blocked() ?? (props.staleComparison ? t().staleTitle : null)}>
+            {(reason) => (
+              <p class="text-right text-xs font-medium text-(--k2b-warning-text)">
+                <i class="ti ti-alert-triangle" aria-hidden="true" /> {reason()}
+              </p>
+            )}
+          </Show>
           <div class="flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="secondary"
@@ -494,13 +502,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
             >
               {t().reject}
             </Button>
-            <Show when={blocked() ?? (props.staleComparison ? t().staleTitle : null)}>
-              {(reason) => (
-                <span class="text-xs font-medium text-(--k2b-warning-text)">
-                  <i class="ti ti-alert-triangle" aria-hidden="true" /> {reason()}
-                </span>
-              )}
-            </Show>
             <Button
               disabled={!mayDecide() || blocked() !== null || busy() !== null}
               loading={busy() === "approve"}
