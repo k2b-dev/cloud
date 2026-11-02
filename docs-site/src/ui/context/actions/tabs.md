@@ -129,11 +129,13 @@ ring stays fully visible. Labels keep the shared
 [fade utility](/en/ui/layout/navigation#label-overflow), which stays inactive
 while a label fits.
 
-Both tab controls have a soft appearance: no tray, baseline, selection ring,
-or underline. The selected tab or view takes the selection fill; see
-[Colors and selection](/en/ui/surfaces/color). Font weight never changes
-with selection or hover, so neighbouring controls keep their positions.
-Keyboard focus retains its visible focus ring.
+Both tab controls have no tray, baseline, or underline. A tab has no edge
+until selected; the selected tab or view takes the selected edge, fill, and
+ink of the app, like a segment (see
+[Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)).
+Keyboard focus turns the same 2 px edge blue. Font weight and box never change
+with selection, hover, or focus, so neighbouring controls keep their positions.
+A pill tab draws the edge around its label and close button together.
 
 ```ts
 type ViewTab = {
