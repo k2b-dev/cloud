@@ -90,7 +90,11 @@ await scheduler.create({ id: "inventory:due", cron: "* * * * *", process: proces
 
 The observer bounds active deferred runs and pending diagnostic writes to
 1,024 each; the minute buffer likewise holds at most 1,024 distinct groups.
-Overflow reports a diagnostic warning and drops observations, never domain
+At capacity the active-run buffer evicts its oldest observation so missing
+settlement events cannot permanently disable slow-start detection for fresh
+work. Sync can omit settlement on cancellation; an open diagnostic span alone
+does not prove a worker is still running. Pending-write and minute-buffer
+overflow reports a warning and drops observations, never domain
 work. Slow-start visibility can be incomplete under observer overload; a
 settled slow or failed run can still create its span. Normal operation resumes
 as entries settle or a minute is flushed. Timers do not keep a process alive.

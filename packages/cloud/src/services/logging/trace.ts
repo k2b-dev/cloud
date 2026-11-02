@@ -4,7 +4,7 @@ import { getProcessApplicationId } from "../../_internal/process-identity";
 import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
-import { type BackgroundLoop, registerBackgroundLoop } from "./background-loop-policy";
+import { type BackgroundLoop, registerBackgroundLoop, SYNC_SLOW_AFTER_MS } from "./background-loop-policy";
 import { isSensitiveMetadataKey, REDACTED, redactLinkTokens, redactMetadata } from "./redaction";
 import { RUN_DURATION_BOUNDS, reportRunRollupError, runPercentile, runRollups } from "./run-rollups";
 import { cleanupTraceStorage } from "./trace-retention";
@@ -1203,12 +1203,8 @@ const detailAttributes = (detail: Record<string, unknown>): TraceAttributes => {
 /** The app hosting this process; Sync events carry no app name. */
 const processAppId = getProcessApplicationId;
 
-/** Sync 7's default delivery acknowledgement budget (DEFAULT_DELIVERY.ackWaitMs).
- * A run that consumes an entire normal delivery window deserves a trace even
- * when its application extends its lease. This is a diagnostic threshold,
- * never a declaration that the worker has lost its lease.
- */
-export const SYNC_SLOW_AFTER_MS = 30_000;
+export { SYNC_SLOW_AFTER_MS } from "./background-loop-policy";
+
 type DeferredSyncRun = {
   params: TraceStartParams;
   summary?: Record<string, unknown>;
@@ -1231,11 +1227,13 @@ const deferSyncRun = async (params: TraceStartParams & { spanKey: string }, atte
     if (attempt > 1) await materializeSyncRun(params.spanKey);
     return;
   }
-  // Overflow drops slow-start bookkeeping; settlement can still retain problems.
+  // Missing settlement (e.g. a delivery aborted elsewhere) must never crowd
+  // every subsequent run out of slow-start detection. Prefer fresh work.
   if (deferredSyncRuns.size >= SYNC_TRACE_PENDING_LIMIT) {
-    if (!reportedActiveOverflow) console.error("[logging:trace] active run buffer full; slow-start diagnostics dropped");
+    if (!reportedActiveOverflow) console.error("[logging:trace] active run buffer full; evicting oldest slow-start observation");
+    const oldest = deferredSyncRuns.keys().next().value;
+    if (oldest) takeSyncRun(oldest);
     reportedActiveOverflow = true;
-    return;
   }
   if (attempt > 1) {
     await start(params, true);

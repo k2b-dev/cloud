@@ -1,4 +1,5 @@
 import { sql } from "../../runtime/clients";
+import { SYNC_SLOW_AFTER_MS } from "./background-loop-policy";
 
 // Match the existing observability delete-batch budget (telemetry retention).
 const BATCH_SIZE = 10_000;
@@ -10,6 +11,65 @@ export type TraceRetentionOptions = {
   signal?: AbortSignal;
 };
 
+/** Page by the existing primary keys; a large history must renew the job's
+ * lease while counting, not only once it starts deleting. No OFFSET scans.
+ * Explicit ROW constructors keep count/delete sizing consistent across query
+ * plans (whole-row references can use different varlena representations).
+ */
+const tracePayloadBytes = async (options: TraceRetentionOptions): Promise<number> => {
+  const source = options.source ?? null;
+  let bytes = 0;
+  let span: { trace_id: string; span_id: string } | undefined;
+  for (;;) {
+    options.signal?.throwIfAborted();
+    const after = span ? sql`(trace_id, span_id) > (${span.trace_id}, ${span.span_id})` : sql`TRUE`;
+    const rows = await sql<Array<{ trace_id: string; span_id: string; bytes: number }>>`
+      WITH page AS MATERIALIZED (
+        SELECT trace_id, span_id, pg_column_size(ROW(s.*)) AS bytes FROM logging.trace_spans s WHERE ${after}
+          AND (${source}::text IS NULL OR source = ${source})
+        ORDER BY trace_id, span_id LIMIT ${BATCH_SIZE}
+      ) SELECT * FROM page ORDER BY trace_id, span_id`;
+    bytes += rows.reduce((sum, row) => sum + row.bytes, 0);
+    await options.heartbeat?.();
+    if (rows.length < BATCH_SIZE) break;
+    span = rows.at(-1);
+  }
+  let eventId = "0";
+  for (;;) {
+    options.signal?.throwIfAborted();
+    const rows = await sql<Array<{ id: string; bytes: number }>>`
+      WITH page AS MATERIALIZED (
+        SELECT id, trace_id, span_id, pg_column_size(ROW(e.*)) AS bytes FROM logging.trace_events e
+        WHERE id > ${eventId}::bigint ORDER BY id LIMIT ${BATCH_SIZE}
+      ) SELECT id::text, CASE WHEN ${source}::text IS NULL OR EXISTS (
+          SELECT 1 FROM logging.trace_spans s WHERE s.trace_id = page.trace_id AND s.span_id = page.span_id AND s.source = ${source}
+        ) THEN bytes ELSE 0 END AS bytes FROM page ORDER BY page.id`;
+    bytes += rows.reduce((sum, row) => sum + row.bytes, 0);
+    await options.heartbeat?.();
+    if (rows.length < BATCH_SIZE) break;
+    eventId = rows.at(-1)!.id;
+  }
+  let minute: { bucket: Date; source: string; app_id: string; category: string; name: string } | undefined;
+  for (;;) {
+    options.signal?.throwIfAborted();
+    const after = minute
+      ? sql`(bucket, source, app_id, category, name) > (${minute.bucket}, ${minute.source}, ${minute.app_id}, ${minute.category}, ${minute.name})`
+      : sql`TRUE`;
+    const rows = await sql<Array<{ bucket: Date; source: string; app_id: string; category: string; name: string; bytes: number }>>`
+      WITH page AS MATERIALIZED (
+        SELECT bucket, source, app_id, category, name, pg_column_size(ROW(r.*)) AS bytes FROM logging.run_minutes r
+        WHERE ${after} AND (${source}::text IS NULL OR source = ${source})
+        ORDER BY bucket, source, app_id, category, name LIMIT ${BATCH_SIZE}
+      ) SELECT * FROM page
+        ORDER BY bucket, source, app_id, category, name`;
+    bytes += rows.reduce((sum, row) => sum + row.bytes, 0);
+    await options.heartbeat?.();
+    if (rows.length < BATCH_SIZE) break;
+    minute = rows.at(-1);
+  }
+  return bytes;
+};
+
 /** Core owns scheduled retention. Size is live row payload, including events,
  * not relation files: DELETE leaves reusable pages and cannot shrink those.
  * Open spans are preserved regardless of age/size; age is not a worker lease.
@@ -17,9 +77,11 @@ export type TraceRetentionOptions = {
 export const cleanupTraceStorage = async (options: TraceRetentionOptions): Promise<number> => {
   const days = Number.isFinite(options.days) ? Math.max(1, Math.trunc(options.days)) : 30;
   const source = options.source ?? null;
-  const budget = options.maxBytes;
-  if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 1))
-    throw new Error("Trace byte budget must be a positive integer");
+  let budget = options.maxBytes;
+  if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 1)) {
+    console.warn("[logging:trace] invalid byte budget; continuing age-based retention only");
+    budget = undefined;
+  }
   let total = 0;
   const drain = async (remove: () => Promise<number>): Promise<void> => {
     for (;;) {
@@ -47,29 +109,27 @@ export const cleanupTraceStorage = async (options: TraceRetentionOptions): Promi
   });
   if (budget === undefined) return total;
   options.signal?.throwIfAborted();
-  // One accounting scan, then subtract each deleted batch. Never repeatedly
-  // scan a large table while draining. Concurrent inserts wait for next sweep.
-  const [size] = await sql<Array<{ bytes: string }>>`SELECT (
-      COALESCE((SELECT SUM(pg_column_size(s)) FROM logging.trace_spans s WHERE (${source}::text IS NULL OR source = ${source})), 0)
-      + COALESCE((SELECT SUM(pg_column_size(e)) FROM logging.trace_events e JOIN logging.trace_spans s USING (trace_id, span_id)
-          WHERE (${source}::text IS NULL OR s.source = ${source})), 0)
-      + COALESCE((SELECT SUM(pg_column_size(r)) FROM logging.run_minutes r WHERE (${source}::text IS NULL OR source = ${source})), 0)
-    )::text AS bytes`;
-  let excess = Number(size?.bytes ?? 0) - budget;
+  // One paged accounting pass, then subtract each deleted batch. Concurrent
+  // writes are approximate until the next sweep, as with day-based retention.
+  let excess = (await tracePayloadBytes(options)) - budget;
+  let routineOnly = true;
   while (excess > 0) {
     options.signal?.throwIfAborted();
     const [batch] = await sql<Array<{ deleted: number; bytes: string }>>`WITH oldest_spans AS MATERIALIZED (
-        SELECT ctid FROM logging.trace_spans WHERE ended_at IS NOT NULL AND (${source}::text IS NULL OR source = ${source})
+        SELECT s.ctid FROM logging.trace_spans s WHERE ended_at IS NOT NULL AND (${source}::text IS NULL OR source = ${source})
+          AND (${!routineOnly} OR (status = 'ok' AND duration_ms < ${SYNC_SLOW_AFTER_MS}
+            AND COALESCE(attributes->>'sync.attempt', '1') = '1'
+            AND NOT EXISTS (SELECT 1 FROM logging.trace_events e WHERE e.trace_id = s.trace_id AND e.span_id = s.span_id)))
         ORDER BY ended_at LIMIT ${BATCH_SIZE} FOR UPDATE SKIP LOCKED
       ), oldest_minutes AS MATERIALIZED (
-        SELECT ctid FROM logging.run_minutes WHERE (${source}::text IS NULL OR source = ${source}) ORDER BY bucket LIMIT ${BATCH_SIZE} FOR UPDATE SKIP LOCKED
+        SELECT ctid FROM logging.run_minutes WHERE ${!routineOnly} AND (${source}::text IS NULL OR source = ${source}) ORDER BY bucket LIMIT ${BATCH_SIZE} FOR UPDATE SKIP LOCKED
       ), candidates AS MATERIALIZED (
         SELECT 'span' AS kind, s.ctid::text AS tid, s.ended_at AS at,
-          pg_column_size(s)::bigint + COALESCE((SELECT SUM(pg_column_size(e)) FROM logging.trace_events e
+          pg_column_size(ROW(s.*))::bigint + COALESCE((SELECT SUM(pg_column_size(ROW(e.*))) FROM logging.trace_events e
             WHERE e.trace_id = s.trace_id AND e.span_id = s.span_id), 0) AS bytes
         FROM logging.trace_spans s JOIN oldest_spans oldest ON s.ctid = oldest.ctid
         UNION ALL
-        SELECT 'minute', r.ctid::text, r.bucket, pg_column_size(r)::bigint FROM logging.run_minutes r JOIN oldest_minutes oldest ON r.ctid = oldest.ctid
+        SELECT 'minute', r.ctid::text, r.bucket, pg_column_size(ROW(r.*))::bigint FROM logging.run_minutes r JOIN oldest_minutes oldest ON r.ctid = oldest.ctid
         ORDER BY at, kind, tid LIMIT ${BATCH_SIZE}
       ), selected AS MATERIALIZED (
         SELECT * FROM (SELECT *, SUM(bytes) OVER (ORDER BY at, kind, tid ROWS UNBOUNDED PRECEDING) - bytes AS before_bytes FROM candidates) ranked
@@ -83,6 +143,11 @@ export const cleanupTraceStorage = async (options: TraceRetentionOptions): Promi
     const deleted = batch?.deleted ?? 0;
     total += deleted;
     if (!deleted) {
+      if (routineOnly) {
+        routineOnly = false;
+        await options.heartbeat?.();
+        continue;
+      }
       console.warn("[logging:trace] byte budget exceeded by open spans; preserving active work");
       break;
     }

@@ -82,6 +82,9 @@ statistics and timeline describe the retained diagnostic spans. The in-place
 notice explains this distinction. The last successful completion also updates
 source health, even when it has no individual span. Source, type, search, and window selections
 apply to counters; individual duration filters apply only to detailed traces.
+Jobs no longer displays an error percentage, and its overview and `/stats`
+API responses omit `errorRate`: retained diagnostic spans are not a complete
+population of executions. Use the separate failure and successful-run counts.
 
 Counters may lag by one minute. A process crash, observer overload, or failed
 aggregate write can lose counts; failures are logged and subsequent minutes
@@ -91,12 +94,24 @@ traces and diagnostic events are unchanged. See [Tracing](/en/docs/platform/trac
 Core's existing `app:logs:cleanup` job now owns trace and minute retention,
 even without Gateway Ops. It uses `logs.trace_retention_days` (default 30)
 and `logs.trace_max_bytes` (default 1 GiB) together: first remove expired
-records, then the oldest completed records until the live row payload fits
-the byte budget. The default reserves one day's 1 GiB trace-growth budget;
+records, then apply the live row payload budget. Size cleanup first removes
+completed successes below 30 seconds that have no diagnostic events and no
+retry attempt. Only after those are gone does it remove the oldest remaining
+completed spans and minute counts. Failed, retried, and slow runs can therefore
+be removed before their day limit when their combined payload exceeds the budget.
+The default reserves one day's 1 GiB trace-growth budget;
 operators can raise it explicitly for their diagnostic history. Trace events
 count toward the budget and are deleted with their parent span. Minute rows
-share the same day and byte budget. Deletes run in batches of at most 10,000,
-heartbeat between batches, and honor cancellation.
+share the same day and byte budget. Counting and deletion each use pages of
+at most 10,000 rows, heartbeat between pages, and honor cancellation.
+
+**First cleanup after upgrade:** an existing success history can greatly
+exceed 1 GiB. The cleanup discards routine success spans before spending the
+remaining budget on diagnostic history, even if those successes are newer
+than failures. The byte budget is not a promise to retain every problem for
+30 days; raise it before the first cleanup if more diagnostic history is needed.
+An invalid byte setting (zero, fractional, or non-finite) logs a warning and
+still runs age-based cleanup; size cleanup resumes after the setting is corrected.
 
 The byte budget measures live row payload, not index size, WAL, or allocated
 relation files. Postgres reuses deleted pages; this cleanup does not shrink

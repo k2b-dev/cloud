@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, jest, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, spyOn, test } from "bun:test";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/logging";
 import { sql } from "../../runtime/clients";
@@ -87,6 +87,53 @@ suite("problem-only background tracing", () => {
     }
   });
 
+  test("1024 runs without settlement never prevent fresh slow-start detection", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(at);
+    try {
+      for (let i = 0; i < 1024; i++) {
+        observeSyncEvent(
+          { at, kind: "job", resource: "abandoned", type: "handler_started", detail: { id: `old-${i}`, attempt: 1 } },
+          "test",
+        );
+      }
+      const warning = spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        observeSyncEvent({ at, kind: "job", resource: "abandoned", type: "handler_started", detail: { id: "fresh", attempt: 1 } }, "test");
+        expect(warning).toHaveBeenCalledTimes(1);
+      } finally {
+        warning.mockRestore();
+      }
+      // Settle the other observations before their timers fire. The guard is
+      // admission of fresh work at capacity, not 1024 diagnostic SQL writes.
+      for (let i = 1; i < 1024; i++) {
+        await traceSyncEvent(
+          {
+            at,
+            kind: "job",
+            resource: "abandoned",
+            type: "handler_settled",
+            detail: { id: `old-${i}`, attempt: 1, status: "success", durationMs: 1 },
+          },
+          "test",
+        );
+      }
+      jest.advanceTimersByTime(SYNC_SLOW_AFTER_MS);
+      await flushSyncTraceEvents();
+      const [fresh] = await sql<Array<{ started_at: Date; ended_at: Date | null }>>`
+        SELECT started_at, ended_at FROM logging.trace_spans WHERE span_key = ${trace.syncSpanKey("job", "abandoned", "fresh")}`;
+      expect(fresh?.started_at).toEqual(at);
+      expect(fresh?.ended_at).toBeNull();
+      expect(await sql`SELECT 1 FROM logging.trace_spans WHERE span_key = ${trace.syncSpanKey("job", "abandoned", "old-0")}`).toHaveLength(
+        0,
+      );
+      expect(await sql`SELECT 1 FROM logging.trace_spans WHERE source = 'abandoned'`).toHaveLength(1);
+    } finally {
+      await flushSyncTraceEvents({ stopping: true });
+      jest.useRealTimers();
+    }
+  });
+
   test("success read returns whole-window counts separately from paginated minutes", async () => {
     // Align this fixture to the database clock used by the read predicate;
     // its outcome is independent of the calendar day on which CI runs.
@@ -155,7 +202,7 @@ suite("problem-only background tracing", () => {
     const open = await trace.start({ source: "size", name: "active", startedAt: at });
     const [size] = await sql<
       Array<{ bytes: number }>
-    >`SELECT pg_column_size(s)::int AS bytes FROM logging.trace_spans s WHERE trace_id = ${open.traceId}`;
+    >`SELECT pg_column_size(ROW(s.*))::int AS bytes FROM logging.trace_spans s WHERE trace_id = ${open.traceId}`;
     // A very long day window makes this a byte-budget test regardless of date.
     expect(await trace.cleanup({ source: "size", days: 365_000, maxBytes: size!.bytes })).toBe(1);
     expect(await trace.getSpan(closed)).toBeNull();

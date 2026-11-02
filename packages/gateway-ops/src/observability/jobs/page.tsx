@@ -1,14 +1,7 @@
 import { createPagination } from "@k2b/cloud/contracts";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import {
-  type TraceListFilter,
-  type TraceRunStats,
-  type TraceSourceGroup,
-  type TraceSpan,
-  type TraceSuccessMinutes,
-  trace,
-} from "@k2b/cloud/services";
-import { formatDurationMs as formatMs, formatNumber, formatPercent, formatDateTime as formatTimestamp } from "@k2b/cloud/shared";
+import { type TraceListFilter, type TraceRunStats, type TraceSpan, type TraceSuccessMinutes, trace } from "@k2b/cloud/services";
+import { formatDurationMs as formatMs, formatNumber, formatDateTime as formatTimestamp } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
@@ -46,6 +39,7 @@ import {
   buildBackgroundJobRows,
   buildJobTimelineRows,
   filterBackgroundJobRows,
+  type JobTraceSource,
   jobsObservabilityService,
 } from "./service";
 
@@ -111,7 +105,7 @@ const statusBadge = (input: { status: string | null; running?: boolean }) => {
   return <StatusBadge tone="neutral" label={t.unset} />;
 };
 
-const groupHealth = (group: TraceSourceGroup) => {
+const groupHealth = (group: JobTraceSource) => {
   if (group.latestStartedAt && !group.latestEndedAt) return statusBadge({ status: group.latestStatus, running: true });
   return statusBadge({ status: backgroundSourceStatus(group) });
 };
@@ -167,7 +161,6 @@ const statsGrid = (stats: TraceRunStats, filter: JobsFilterState) => {
       <StatCell
         label={t.failed}
         value={formatNumber(stats.failed, { locale: locale() })}
-        sub={t.errorRateValue({ value: formatPercent(stats.errorRate, { locale: locale() }) })}
         valueClass={stats.failed > 0 ? "text-red-500" : "text-primary"}
         accent={stats.failed > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : { tone: "emerald", icon: "ti ti-check" }}
       />
@@ -202,7 +195,7 @@ const statsGrid = (stats: TraceRunStats, filter: JobsFilterState) => {
   );
 };
 
-const sourceSubtitle = (group: TraceSourceGroup, t: GatewayOpsMessages, locale: string): string => {
+const sourceSubtitle = (group: JobTraceSource, t: GatewayOpsMessages, locale: string): string => {
   if (group.categories.length === 1 && group.categories[0] === "backfill") {
     return t.backfillRuns({ count: formatNumber(group.runs, { locale }) });
   }
@@ -287,7 +280,6 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
     {
       id: "failed",
       header: t.failed,
-      subtitle: t.traceErrorRate,
       value: (row) => row.trace?.failed ?? 0,
       headerClass: "text-right",
       cellClass: "text-right",
@@ -337,12 +329,7 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
           if (col.id === "runs")
             return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.trace?.runs ?? 0, { locale: locale() })}</span>;
           if (col.id === "failed")
-            return (
-              <span class="text-[10px] tabular-nums text-dimmed">
-                {formatNumber(row.trace?.failed ?? 0, { locale: locale() })} ·{" "}
-                {formatPercent(row.trace?.errorRate ?? 0, { locale: locale() })}
-              </span>
-            );
+            return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.trace?.failed ?? 0, { locale: locale() })}</span>;
           if (col.id === "runtime")
             return (
               <span class="text-[10px] tabular-nums text-dimmed">
