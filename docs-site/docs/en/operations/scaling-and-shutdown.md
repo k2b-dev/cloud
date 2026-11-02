@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-10-31
+updated: 2026-11-02
 ---
 
 # Scaling and shutdown
@@ -179,6 +179,19 @@ Upgrade all Notebooks replicas for reader presence. This requires no database
 migration or new service; presence remains transient shared NATS state.
 
 ## Application registration
+
+Application registry reads use a process-local view of the shared NATS entries.
+Each reading process opens one watch on first use. Heartbeats update the view;
+removal and access-rule revisions arrive through that watch. Readers also check
+the 180-second lease locally, so a missing expiry event cannot keep an app live.
+
+A lost watch, a resync request, or a NATS disconnect invalidates the view. The
+next read shares one fresh NATS snapshot with concurrent readers and reopens
+the watch. A failed refresh fails the read instead of serving the previous
+view. Registry records do not cache permission decisions: SQL grants and
+owner resource checks still run for each request. Discovery allows three
+seconds per owner within a shared six-second budget, below the ten-second
+request idle timeout. No migration, new service, or operator setting is required.
 
 Every reader uses one logical application entry and one capability manifest per
 application ID. Use the same stable `baseUrl` for every replica.

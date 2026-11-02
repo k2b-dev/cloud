@@ -12,10 +12,13 @@ test("define lists the exact log and recovers retained updates with bounded forw
     let replay;
     const cursor = seq => "s6t.fixture." + seq;
     const topic = { cursorAt: cursor, replay: options => replay(options) };
-    mock.module("../_internal/process-sync", () => ({ getProcessSync: () => ({
-      topic: () => topic,
-      listTopics: async function* (options) { listings.push(options); yield* entries; },
-    }) }));
+    mock.module("../_internal/process-sync", () => ({
+      processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
+      getProcessSync: () => ({
+        topic: () => topic,
+        listTopics: async function* (options) { listings.push(options); yield* entries; },
+      }),
+    }));
     const { sharedText } = await import("./log");
     const { toBase64, SHARED_TEXT_NAME } = await import("./events");
     const log = sharedText.define({ id: "test.text", retention: { maxAgeMs: 604800000, maxBytes: 1024 } });

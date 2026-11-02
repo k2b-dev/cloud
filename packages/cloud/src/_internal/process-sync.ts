@@ -20,6 +20,11 @@ import { withSyncBudgets } from "./sync-budget";
 let current: Sync | undefined;
 let starting = false;
 let processNats: NatsConnection | undefined;
+let readerController = new AbortController();
+const readerStops = new Set<() => Promise<void>>();
+
+/** Process-owned readers stop before Sync and its transport are drained. */
+export const processSyncReaders = () => ({ signal: readerController.signal, stops: readerStops, connection: processNats });
 
 /** Existing non-retained NATS transport, owned and drained by the process lifecycle. */
 export const getProcessNats = (): NatsConnection => {
@@ -28,13 +33,20 @@ export const getProcessNats = (): NatsConnection => {
 };
 
 /** Bind the process instance. `startProcessSync()` does this; tests may bind their own. */
-export const bindProcessSync = (sync: Sync): void => {
+export const bindProcessSync = (sync: Sync, connection?: NatsConnection): void => {
   if (current) throw new Error("A Sync instance is already bound to this process");
+  readerController = new AbortController();
+  if (connection) processNats = connection;
   current = sync;
 };
 
 export const unbindProcessSync = (): void => {
+  readerController.abort();
+  for (const stop of readerStops)
+    void stop().catch((error: unknown) => logger("sync").error("Registry reader cleanup failed", { error: errorMessage(error) }));
+  readerStops.clear();
   current = undefined;
+  processNats = undefined;
 };
 
 export const getProcessSync = (): Sync => {
@@ -142,11 +154,13 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
       }),
       { connection, namespace: connections().nats.namespace },
     );
+    processNats = connection;
     bindProcessSync(sync);
     await sync.ready();
     return { sync, connection };
   } catch (error) {
     if (current === sync) unbindProcessSync();
+    if (processNats === connection) processNats = undefined;
     await flushSyncTraceEvents();
     await connection.close();
     throw error;
@@ -187,6 +201,9 @@ export const startProcessSync = async ({ application }: { application: string })
       stop: () =>
         (stopPromise ??= (async () => {
           try {
+            readerController.abort();
+            await Promise.all([...readerStops].map((stop) => stop()));
+            readerStops.clear();
             await active.drain();
           } finally {
             try {

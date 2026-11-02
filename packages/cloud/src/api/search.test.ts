@@ -4,7 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { bindResourceAppAccess } from "../_internal/app-access-resources";
+import { bindResourceAppAccess, RESOURCE_ACCESS_PROBE_TIMEOUT_MS } from "../_internal/app-access-resources";
 import { compileCapabilities } from "../_internal/capabilities";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
@@ -143,7 +143,7 @@ describe("global capability search", () => {
     const probeDeadline = new AbortController();
     const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
       if (ms === 8_000) return deadline.signal;
-      if (ms === 1_000) return probeDeadline.signal;
+      if (ms === RESOURCE_ACCESS_PROBE_TIMEOUT_MS) return probeDeadline.signal;
       throw new Error(`Unexpected extra search budget: ${ms}`);
     });
     const accessSignals: AbortSignal[] = [];
@@ -198,7 +198,7 @@ describe("global capability search", () => {
       expect(response.status).toBe(200);
       // One shared search deadline replaces discovery/entry defaults. The
       // independent short discovery probe must still inherit its cancellation.
-      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, 1_000]);
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, RESOURCE_ACCESS_PROBE_TIMEOUT_MS]);
       expect(accessSignals).toHaveLength(2);
       expect(providerSignal?.aborted).toBe(false);
       expect(accessSignals.every((signal) => !signal.aborted)).toBe(true);

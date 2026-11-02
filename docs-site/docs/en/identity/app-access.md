@@ -143,10 +143,10 @@ A background authority without the originating request credential can query
 local adapters but cannot discover resource-derived apps in other processes.
 Run cross-app discovery through Core with an admitted credential; an
 invocation handler cannot exchange its token for a broader app catalog. An expired credential denies access. Discovery runs at most four resource
-probes at once, each with a fresh one-second limit under a four-second overall
+probes at once, each with a fresh three-second limit under a six-second overall
 deadline. An unavailable or timed-out app is omitted only from that request;
 other apps retain their results. A supplied caller signal replaces the overall
-default deadline; the caller must bound it. Discovery retains the one-second
+default deadline; the caller must bound it. Discovery retains the three-second
 per-app limit under that caller deadline.
 Universal Search also shares its eight-second signal with invocation signing
 and provider requests. Registry reads and grants SQL are not cancelled by
