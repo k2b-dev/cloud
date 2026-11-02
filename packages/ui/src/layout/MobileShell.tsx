@@ -231,25 +231,27 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
 
   onMount(() => onCleanup(observeMobileShell(root)));
   return (
-    <div
-      ref={root}
-      class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
-      data-k2b-content-heads={props.scroll === false ? "" : undefined}
-    >
-      {props.sidebar}
-      {props.header}
-      <main class="k2b-mobile-shell__main">
-        <Show when={props.scroll !== false} fallback={props.children}>
-          <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
-        </Show>
-      </main>
-      {props.footer}
+    <>
+      <div
+        ref={root}
+        class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
+        data-k2b-content-heads={props.scroll === false ? "" : undefined}
+      >
+        {props.sidebar}
+        {props.header}
+        <main class="k2b-mobile-shell__main">
+          <Show when={props.scroll !== false} fallback={props.children}>
+            <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
+          </Show>
+        </main>
+        {props.footer}
+      </div>
       {/* No pinch zoom on the whole page, portalled dialogs and menus included, also before hydration. iOS ignores
-          `user-scalable=no`; it honours touch-action. It lives here, not behind `html:has(.k2b-mobile-shell) *`, which
-          would restyle the document on every `:has()` change. Zero specificity, so a component's own touch-action,
-          such as a drag handle's `none`, still wins. */}
+        `user-scalable=no`; it honours touch-action. It lives here, not behind `html:has(.k2b-mobile-shell) *`, which
+        would restyle the document on every `:has()` change. Zero specificity, so a component's own touch-action,
+        such as a drag handle's `none`, still wins. */}
       <style innerHTML=":where(html *) { touch-action: pan-x pan-y; }" />
-    </div>
+    </>
   );
 }
 
