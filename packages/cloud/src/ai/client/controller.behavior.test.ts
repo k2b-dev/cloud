@@ -80,6 +80,42 @@ describe("AI controller draft submission", () => {
     dispose();
   });
 
+  test("tells a revision conflict, which sets no chat error, apart from another failed draft save", async () => {
+    const answers = [
+      () => Response.json({ message: "The conversation draft changed in another session." }, { status: 409 }),
+      () => new Response("Bad Gateway", { status: 502 }),
+      () => Response.json({ content: [], revision: 1, updatedAt: null }),
+    ];
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path === "/api/ai/conversations" && init?.method === "POST") return Response.json(conversation("created"), { status: 201 });
+        if (path.endsWith("/draft") && init?.method === "PUT") return answers.shift()!();
+        if (init?.headers && new Headers(init.headers).get("Accept") === "text/event-stream") return new Response(new ReadableStream());
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({ baseUrl: "/api/ai" });
+    });
+    await controller.createConversation();
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).toBeNull();
+    expect(controller.draftSaveFailure("created")).toBe("conflict");
+    expect(controller.error()).toBeNull();
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).toBeNull();
+    expect(controller.draftSaveFailure("created")).toBe("failed");
+    expect(controller.error()).toBe("Failed to save conversation draft");
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).not.toBeNull();
+    expect(controller.draftSaveFailure("created")).toBeNull();
+    dispose();
+  });
+
   test("keeps the submitted draft and turn POST ahead of a queued empty autosave", async () => {
     const requests: string[] = [];
     let revision = 0;

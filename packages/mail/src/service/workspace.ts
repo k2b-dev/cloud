@@ -13,7 +13,7 @@ import {
   type ScheduledSendPage,
   type SenderIdentity,
 } from "../contracts";
-import { isAggregatedListing, mailListingExcludesTrashAndJunk } from "../folder-display-rules";
+import { isAggregatedListing, mailListingExcludesTrashAndJunk, withOpenWork } from "../folder-display-rules";
 import type { MailDoneTodayCounts, MailViewPreference } from "../mail-view-preference";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
@@ -23,7 +23,7 @@ import {
   replaceMailSearchReferences,
   resolveMailSearchRoute,
 } from "../search-state";
-import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
+import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import * as automationLog from "./automation-log";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
@@ -110,7 +110,7 @@ const workspaceMessages = i18n.define({
           recently_active: "Recent activity",
           kept: "Kept",
         })[view],
-      scheduled: "Scheduled",
+      scheduled: "Outbox",
       search: "Search",
       resultsFor: ({ query }: { query: string }) => `Results for “${query}”`,
       filteredSearch: "Filtered search",
@@ -129,7 +129,7 @@ const workspaceMessages = i18n.define({
           recently_active: "Letzte Aktivität",
           kept: "Aufbewahrt",
         })[view],
-      scheduled: "Geplant",
+      scheduled: "Postausgang",
       search: "Suche",
       resultsFor: ({ query }) => `Ergebnisse für „${query}“`,
       filteredSearch: "Gefilterte Suche",
@@ -186,6 +186,8 @@ export type MailboxPageData = {
   listCursor: string | null;
   nextListCursor: string | null;
   listError: MailListError | null;
+  /** The done conversations the list leaves out, named at its end; null while more pages follow or when it leaves none out. */
+  hiddenDone: MailHiddenDone | null;
   listTitle: string;
   detailMessages: MailWorkspaceMessage[];
   conversationRowState: ConversationRowState | null;
@@ -309,7 +311,14 @@ type MailListPage = {
   items: MailListItem[];
   nextCursor: string | null;
   error: MailListError | null;
+  /** The list leaves out done and snoozed conversations (`mailListingOpenOnly`). */
+  openOnly: boolean;
+  /** The condition the list ran, before the open-work rule; it counts the done conversations the list leaves out. */
+  expression: MailSearchExpression | null;
 };
+
+/** The done conversations a work list leaves out, named at its end. `count` is null when it could not be counted. */
+export type MailHiddenDone = { count: number | null; more: boolean };
 
 export const searchHitToListItem = (item: search.MessageSearchHit, listMode: MailListMode): MailListItem => {
   const selectionKind = listMode === "messages" || !item.conversationId ? "message" : "conversation";
@@ -345,16 +354,18 @@ const attachLocalTags = async (
   mailboxId: string,
   items: MailListItem[],
   nextCursor: string | null,
+  rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
   const result = await localTags.listConversationLocalTags({
     context,
     mailboxId,
     conversationIds: items.flatMap((item) => (item.conversationId ? [item.conversationId] : [])),
   });
-  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
+  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
     error: null,
     nextCursor,
+    ...rule,
     items: items.map((item) => ({
       ...item,
       localTags: item.conversationId ? (result.data.get(item.conversationId) ?? []) : [],
@@ -464,19 +475,20 @@ export const loadMailboxConversationDetail = async (params: {
   preferredFolderId?: string | null;
   locale?: string | null;
 }): Promise<MailConversationDetailData | null> => {
-  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  const context = withOneAccessRead(params.context);
+  const permission = await requireMailboxAccess(context, params.mailboxId, "read");
   if (!permission.ok) return null;
   // Mailbox-wide visibility alone does not check conversation existence or mailbox ownership.
   const conversation = await messages.listConversationMessages({
-    context: params.context,
+    context,
     mailboxId: params.mailboxId,
     conversationId: params.conversationId,
     limit: 1,
   });
   if (!conversation.ok) return null;
   const [detail, availableTags] = await Promise.all([
-    loadConversationDetails(params, permission.data),
-    localTags.listLocalTags(params.context, params.mailboxId),
+    loadConversationDetails({ ...params, context }, permission.data),
+    localTags.listLocalTags(context, params.mailboxId),
   ]);
   const availableTagsError = availableTags.ok ? null : localizeMailError(availableTags.error, params.locale).message;
   return {
@@ -562,11 +574,20 @@ const loadListItems = async (params: {
   const sendProblems = !params.searchExpression && !params.savedView && !params.folderId && params.activeView === "send_problems";
 
   if (params.searchExpression || params.listMode === "messages") {
+    const openOnly = await messages.listingOpenOnly({
+      mailboxId: params.mailboxId,
+      view: params.activeView,
+      status: null,
+      expression: messageModeExpression,
+      folderId: params.folderId,
+    });
+    // All mail and folders count from the cached workspace counts; only a search or saved view counts its own condition.
+    const rule = { openOnly, expression: params.searchExpression ?? params.savedView?.filter.expression ?? null };
     const result = await search.searchMessages({
       context: params.context,
       mailboxId: params.mailboxId,
       request: {
-        expression: messageModeExpression,
+        expression: openOnly ? withOpenWork(messageModeExpression) : messageModeExpression,
         sort: params.searchExpression ? params.searchSort : (params.savedView?.filter.sort ?? "newest"),
         cursor: params.cursor,
         limit: 50,
@@ -577,10 +598,10 @@ const loadListItems = async (params: {
       aggregatedView: !params.searchExpression && !params.savedView && isAggregatedListing(params.folderId, params.activeView),
     });
     if (!result.ok) {
-      return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed" };
+      return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed", ...rule };
     }
     const items = result.data.items.map((item) => searchHitToListItem(item, params.listMode));
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, rule);
   }
 
   if (params.savedView) {
@@ -591,9 +612,10 @@ const loadListItems = async (params: {
       cursor: params.cursor,
       limit: 50,
     });
-    if (!result.ok) return { items: [], nextCursor: null, error: "search_failed" };
+    const expression = params.savedView.filter.expression;
+    if (!result.ok) return { items: [], nextCursor: null, error: "search_failed", openOnly: false, expression };
     const items = result.data.items.map(conversationToListItem);
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, { openOnly: result.data.openOnly, expression });
   }
 
   const result = await messages.listConversations({
@@ -605,9 +627,46 @@ const loadListItems = async (params: {
     cursor: params.cursor,
     limit: 50,
   });
-  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
+  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", openOnly: false, expression: null };
   const items = result.data.items.map(conversationToListItem);
-  return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+  return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, {
+    openOnly: result.data.openOnly,
+    expression: null,
+  });
+};
+
+/**
+ * The done conversations a work list leaves out, once it reached its end. All mail and folders read them from the
+ * cached workspace counts; a search, tag, filter or saved view counts them once, bounded like a ranked search.
+ */
+const loadHiddenDone = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  folderId: string | null;
+  list: MailListPage;
+  excludedFolderIds: readonly string[];
+}): Promise<MailHiddenDone | null> => {
+  if (!params.list.openOnly || params.list.error || params.list.nextCursor !== null) return null;
+  try {
+    if (params.list.expression) {
+      const counted = await search.countDoneConversations({
+        context: params.context,
+        mailboxId: params.mailboxId,
+        expression: params.list.expression,
+        excludedFolderIds: params.excludedFolderIds,
+      });
+      return counted.ok ? counted.data : { count: null, more: false };
+    }
+    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
+    if (!counts.ok) return { count: null, more: false };
+    return { count: params.folderId ? (counts.data.doneByFolder[params.folderId] ?? 0) : counts.data.views.done, more: false };
+  } catch (error) {
+    log.warn("Failed to count the done conversations a Mail list leaves out", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { count: null, more: false };
+  }
 };
 
 /** A workspace URL after its public IDs were resolved: resource parameters and search conditions carry internal IDs. */
@@ -688,6 +747,7 @@ export type MailboxListView = Pick<
   | "listCursor"
   | "nextListCursor"
   | "listError"
+  | "hiddenDone"
   | "listTitle"
 > & { scheduledCount?: number };
 
@@ -767,6 +827,10 @@ const buildMailboxListView = async (
       ? drafts.listDraftFolder({ context: params.context, mailboxId: params.mailboxId, cursor: listCursor ?? undefined, limit: 50 })
       : Promise.resolve(null),
   ]);
+  const hiddenDone =
+    "openOnly" in list
+      ? await loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds })
+      : null;
   return {
     scheduledMode,
     ...(scheduledPageResult?.ok ? { scheduledCount: scheduledPageResult.data.total } : {}),
@@ -786,6 +850,7 @@ const buildMailboxListView = async (
     listCursor,
     nextListCursor: list.nextCursor,
     listError: list.error,
+    hiddenDone,
     listTitle: scheduledMode
       ? t.scheduled
       : resolvedSearch.error
@@ -800,7 +865,8 @@ const buildMailboxListView = async (
   };
 };
 
-export const loadMailboxListView = async (params: MailboxListParams): Promise<Result<MailboxListView>> => {
+export const loadMailboxListView = async (listParams: MailboxListParams): Promise<Result<MailboxListView>> => {
+  const params = { ...listParams, context: withOneAccessRead(listParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
   const [mailboxResult, folderResult, savedViewResult] = await Promise.all([
@@ -842,7 +908,7 @@ export const loadMailboxCodePageData = async (context: MailRequestContext, mailb
   return ok({
     mailbox: mailbox.data,
     access: access.data,
-    // Counts are a convenience beside the Code page; a failed count shows none instead of failing the page.
+    // CountRefreshBusy propagates to the page so contention renders 503 instead of misleading zero badges.
     folders: folders.ok ? folders.data : [],
     viewCounts: viewCounts.ok ? viewCounts.data : EMPTY_VIEW_COUNTS,
     scheduledCount: scheduledCount.ok ? scheduledCount.data : 0,
@@ -850,7 +916,7 @@ export const loadMailboxCodePageData = async (context: MailRequestContext, mailb
   });
 };
 
-export const loadMailboxPageData = async (params: {
+export const loadMailboxPageData = async (pageParams: {
   context: MailRequestContext;
   mailboxId: string;
   requestUrl: URL;
@@ -859,6 +925,7 @@ export const loadMailboxPageData = async (params: {
   listMode?: MailListMode;
   locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
+  const params = { ...pageParams, context: withOneAccessRead(pageParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
 
@@ -898,6 +965,7 @@ export const loadMailboxPageData = async (params: {
     messages.getConversationViewCounts({
       context: params.context,
       mailboxId: params.mailboxId,
+      cached: true,
     }),
     saved,
     localTags.listLocalTags(params.context, params.mailboxId),

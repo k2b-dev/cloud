@@ -12,7 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────
 # Stage 1: deps — production install (cache-shared, ships to runtime builds).
 # ──────────────────────────────────────────────────────────────────────
-FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS deps
 WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml ./
@@ -68,7 +68,7 @@ FROM --platform=linux/amd64 ghcr.io/k2b-dev/mirror/dbip-lite:2026-10 AS geoip-sn
 # ──────────────────────────────────────────────────────────────────────
 # Stage 5: geoip — pinned snapshot, independent of application sources.
 # ──────────────────────────────────────────────────────────────────────
-FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS geoip
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS geoip
 ARG APP_ID
 # DB-IP Lite, CC BY 4.0; attribution in THIRD_PARTY_NOTICES.md.
 # Only Core reads it; every build mounts the snapshot, but only Core checks and unpacks it.
@@ -86,7 +86,7 @@ RUN --mount=type=bind,from=geoip-snapshot,target=/snapshot set -eu; mkdir -p /ge
 # ──────────────────────────────────────────────────────────────────────
 # Stage 6: runtime — only the bundled output + bun runtime.
 # ──────────────────────────────────────────────────────────────────────
-FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS runtime
 WORKDIR /app
 ARG APP_ID
 ARG CLOUD_VERSION=0.0.0-local

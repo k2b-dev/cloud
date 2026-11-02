@@ -200,7 +200,7 @@ suite("real Filegate directory lifecycle", () => {
         `type=volume,src=${volume},dst=/data,readonly`,
         "--entrypoint",
         "cat",
-        "oven/bun:1.4.2-alpine",
+        "oven/bun:1.4.4-alpine",
         `/data/${archive.path}/document.txt`,
       ]);
       expect(readAsMember.exitCode).not.toBe(0);

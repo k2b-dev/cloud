@@ -1,0 +1,6 @@
+### A mailbox opening waited for counts of every conversation
+
+- **What happened:** Opening or switching a large Mail mailbox waited for a mailbox-sized count, even after its first list page was fast.
+- **Root cause:** Every workspace snapshot recomputed message placement, follow-up, delivery, and assignment aggregates for all conversations. Existing indexes and disabled JIT still left a full mailbox pass on every workspace read.
+- **Error class:** A bounded page read synchronously recomputes an unbounded aggregate.
+- **Guard:** `view-count-cache-large.integration.test.ts` seeds 80,000 messages and 46,000 conversations, executes the authoritative statement with a forced generic plan, and budgets the authorized cached service read below 50 ms. `view-count-cache.integration.test.ts` checks reader separation, committed invalidation, rollback, an invalidation racing an old fill, expiry, concurrent fills, and Valkey failure. A real HTTP request with a mocked 13-second count loader guards the request budget and its reset, including the explicit overload response. The SSR render test also guards timeout restoration and the 503 page. Existing view-count semantics tests still exercise the authoritative query.

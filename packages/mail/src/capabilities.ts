@@ -1213,7 +1213,7 @@ const queryDefinitions = {
   "conversation.list": {
     title: "List conversations",
     description:
-      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Without folderId, every view except mine, send_problems, and kept leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
+      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Like the Mail lists, a list without view or workStatus shows open work only: it leaves out done and snoozed conversations, except in filing folders (Archive, Sent, Trash, Junk, All Mail); pass workStatus done, view done, or includeDone to list them. Without folderId, every view except mine, send_problems, and kept leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
     target: "mailbox",
     input: c.ConversationListInputSchema,
     data: c.ConversationListDataSchema,
@@ -1233,6 +1233,7 @@ const queryDefinitions = {
         status: input.workStatus,
         view: input.view,
         unread: input.unread,
+        includeDone: input.includeDone,
         cursor: input.cursor,
         limit: input.limit,
       });
@@ -2216,9 +2217,9 @@ const queryDefinitions = {
     },
   },
   "delivery.list": {
-    title: "List scheduled deliveries",
+    title: "List waiting deliveries",
     description:
-      "List deliveries still in an undo window or scheduled for later in one known mailbox. Get the mailbox target from mailbox.list; use returned mail.delivery refs with delivery.read or delivery.cancel.",
+      "List deliveries waiting in line after Undo and dispatch grace, or scheduled for later, in one known mailbox. Get the mailbox target from mailbox.list; use returned mail.delivery refs with delivery.read or delivery.cancel.",
     target: "mailbox",
     input: c.DeliveryListInputSchema,
     data: c.DeliveryListDataSchema,

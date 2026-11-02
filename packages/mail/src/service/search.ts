@@ -1774,3 +1774,71 @@ export const searchMessages = async (params: {
         : null,
   });
 };
+
+/**
+ * How many done conversations match `expression`, counted up to `RANKED_MATCH_WINDOW` and one more, which says "more
+ * than that". A work list that leaves done conversations out names this number at its end; the count stops early, so a
+ * large mailbox pays for at most the window.
+ */
+export const countDoneConversations = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  expression: MailSearchExpression;
+  excludedFolderIds?: readonly string[];
+}): Promise<Result<{ count: number; more: boolean }>> => {
+  const complexity = validateSearchComplexity(params.expression);
+  if (!complexity.ok) return complexity;
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
+  if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
+  const excludedFolderIds = [...new Set(params.excludedFolderIds ?? [])].sort();
+  const lapsedAssignees = searchesUnassigned(params.expression) ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
+  const predicate = compileSearchExpression(
+    params.expression,
+    personalPrincipal(params.context).id,
+    sql`cm.conversation_id`,
+    lapsedAssignees,
+    excludedFolderIds,
+  );
+  try {
+    const [row] = await sql.begin(async (tx) => {
+      await tx`SET LOCAL jit = off`;
+      await limitToDeadline(tx, Date.now() + SEARCH_TIMEOUT_MS);
+      return tx<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count
+        FROM (
+          SELECT 1
+          FROM mail.conversations c
+          WHERE c.mailbox_id = ${params.mailboxId}::uuid
+            AND c.work_status = 'done'
+            AND ${conversationVisibleTo(visibility, sql`c.id`)}
+            AND EXISTS (
+              SELECT 1
+              FROM mail.conversation_messages cm
+              JOIN mail.message_contents mc ON mc.id = cm.message_id
+              WHERE cm.conversation_id = c.id
+                AND ${messageVisibleTo(visibility, sql`mc.id`)}
+                AND EXISTS (
+                  SELECT 1 FROM mail.message_placements visible
+                  WHERE visible.message_id = mc.id
+                    AND visible.deleted_at IS NULL
+                    AND ${includedSearchPlacement(sql`visible.folder_id`, excludedFolderIds)}
+                )
+                AND ${predicate}
+            )
+          LIMIT ${sql.unsafe(String(RANKED_MATCH_WINDOW + 1))}
+        ) bounded
+      `;
+    });
+    const count = row?.count ?? 0;
+    return ok({ count: Math.min(count, RANKED_MATCH_WINDOW), more: count > RANKED_MATCH_WINDOW });
+  } catch (error) {
+    return searchFailure(error);
+  }
+};

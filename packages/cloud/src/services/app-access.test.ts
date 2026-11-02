@@ -239,7 +239,7 @@ describe("resource-derived app access", () => {
       expect(await canUseApp(bindAppAccessRequest(person(), request), app)).toBe(true);
       expect(hasAnyRight).toHaveBeenCalledTimes(1);
       // A cached allow must still honor the current caller's shorter budget.
-      expect(await canUseApp(authority, app, { signal: AbortSignal.abort(new Error("deadline")) })).toBe(false);
+      await expect(canUseApp(authority, app, { signal: AbortSignal.abort(new Error("deadline")) })).rejects.toThrow("deadline");
       expect(hasAnyRight).toHaveBeenCalledTimes(1);
       expect(await canUseApp(authority, app, { db: sql })).toBe(false);
       expect(await canUseApp(bindAppAccessRequest(person(), new Request(request)), app)).toBe(false);

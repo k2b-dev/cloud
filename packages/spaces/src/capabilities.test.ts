@@ -2111,8 +2111,9 @@ describe("spaces capabilities", () => {
   });
 
   test("template inputs accept omitted or cleared icons and reject invalid icon classes", () => {
-    const create = { spaceId, kind: "task", name: "Report" };
+    const create = { kind: "task", name: "Report" };
     expect(TemplateCreateInputSchema.safeParse(create).success).toBeTrue();
+    expect(TemplateCreateInputSchema.safeParse({ ...create, spaceId }).success).toBeFalse();
     for (const icon of [null, "ti ti-report", "ti ti-calendar-event", `ti ti-${"a".repeat(74)}`]) {
       expect(TemplateCreateInputSchema.safeParse({ ...create, icon }).success).toBeTrue();
       expect(TemplateUpdateInputSchema.safeParse({ templateId, icon }).success).toBeTrue();

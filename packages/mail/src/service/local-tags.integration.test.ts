@@ -413,7 +413,8 @@ suite("mail local tags and structured search", () => {
       SET flags = ARRAY['\\Flagged']::text[], updated_at = now()
       WHERE message_id = ${messageId}::uuid
     `;
-    const conversations = await listConversations({ context: readerContext, mailboxId, limit: 20 });
+    // The fixture conversation is snoozed, which the open-work list leaves out.
+    const conversations = await listConversations({ context: readerContext, mailboxId, includeDone: true, limit: 20 });
     expect(conversations.ok).toBe(true);
     const conversation = conversations.ok ? conversations.data.items.find((item) => item.id === conversationId) : null;
     expect(conversation?.flagged).toBe(true);

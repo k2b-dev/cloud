@@ -1,7 +1,17 @@
 import { Readable } from "node:stream";
 import { decodeTableActionIntent, decodeTableFocus } from "@k2b/cloud/browser/shared-text";
 import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
+import {
+  auth,
+  getLocale,
+  jsonResponse,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  requiresAuth,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
@@ -194,6 +204,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
+import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
@@ -202,11 +213,13 @@ import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
 import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
+  internalDraftSeedInput,
   internalInput,
   internalMailboxId,
   internalParams,
   type MailApiContext,
   mailboxParamSchema,
+  projectDraftSeed,
   projectResourcePaths,
   projectRootRelation,
   resolveMailboxParam,
@@ -264,10 +277,19 @@ const mailboxOperationsQuerySchema = z.object({
   attentionCursor: z.string().max(2_000).optional(),
   attentionLimit: z.coerce.number().int().min(1).max(200).default(100),
 });
+/** Work lists leave out done and snoozed conversations; `includeDone=true` lists them too. */
+const includeDoneQuerySchema = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value === "true")
+  .describe(
+    "Also list done and snoozed conversations. Without a view, status or filing folder (Archive, Sent, Trash, Junk, All Mail), the list leaves them out.",
+  );
 const conversationQuerySchema = cursorQuerySchema.extend({
   folderId: ResourceShortIdSchema.optional(),
   status: z.enum(["needs_action", "waiting", "done"]).optional(),
   view: conversationViewSchema.optional(),
+  includeDone: includeDoneQuerySchema,
 });
 const mailFocusQuerySchema = cursorQuerySchema.extend({
   view: mailFocusViewSchema.default("mine"),
@@ -957,41 +979,57 @@ const mailOperationsApi = new Hono<MailApiContext>()
     async (c) => respondMailboxes(c, mailboxes.getMailbox(requestContext(c), internalMailboxId(c))),
   )
   .get("/mailboxes/:mailboxId/workspace-route", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    // A mailbox switched in place gets its Code entry like a page load, within the same short grace.
-    const codeAttention = startMailboxCodeAttention(c, c.req.valid("param").mailboxId);
-    const data = await loadMailboxPageData({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(
-      c,
-      data.ok ? { ...data, data: { ...data.data, codeAttention: await codeAttention.settle() } } : fail(err.notFound("Mailbox")),
-    );
+    // Allow the bounded cold count fill to finish before the server's idle timeout.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      // A mailbox switched in place gets its Code entry like a page load, within the same short grace.
+      const codeAttention = startMailboxCodeAttention(c, c.req.valid("param").mailboxId);
+      const data = await loadMailboxPageData({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(
+        c,
+        data.ok ? { ...data, data: { ...data.data, codeAttention: await codeAttention.settle() } } : fail(err.notFound("Mailbox")),
+      );
+    } catch (error) {
+      if (error instanceof CountRefreshBusy)
+        return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
+      throw error;
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    publicUrl?.searchParams.delete("conversation");
-    publicUrl?.searchParams.delete("message");
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    const data = await loadMailboxListView({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    // A list's last page names the done conversations it leaves out from the cached counts; allow their bounded cold fill.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      publicUrl?.searchParams.delete("conversation");
+      publicUrl?.searchParams.delete("message");
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      const data = await loadMailboxListView({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get(
     "/mailboxes/:mailboxId/workspace-detail/:conversationId",
@@ -1873,7 +1911,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get(
     "/mailboxes/:mailboxId/saved-views/:viewId/conversations",
     v("param", mailboxAndIdParamSchema("viewId")),
-    v("query", cursorQuerySchema),
+    v("query", cursorQuerySchema.extend({ includeDone: includeDoneQuerySchema })),
     async (c) =>
       respondConversations(
         c,
@@ -3008,11 +3046,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .post("/mailboxes/:mailboxId/draft-seeds", v("param", mailboxParamSchema), v("json", prepareDraftSeedInputSchema), async (c) =>
     respondPublic(
       c,
-      drafts.prepareDraftSeed({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        origin: (await internalInput(c, c.req.valid("json"))).origin,
-      }),
+      projectDraftSeed(
+        drafts.prepareDraftSeed({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          origin: (await internalDraftSeedInput(c, c.req.valid("json"))).origin,
+        }),
+      ),
     ),
   )
   .post(
@@ -3025,7 +3065,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         drafts.materializeDraftSeed({
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
-          input: await internalInput(c, c.req.valid("json")),
+          input: await internalDraftSeedInput(c, c.req.valid("json")),
         }),
       ),
   )

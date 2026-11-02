@@ -1125,8 +1125,8 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in ten, and integration tests in
-four. Each mode uses its own measured seconds per suite in
+Unit tests run in nine shards, WebKit tests in eleven, and integration tests in
+five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
@@ -1143,7 +1143,8 @@ returns the jobs to standard runners without a pull request.
 
 Each shard prints its predicted and actual time. Its runner stops an active
 suite and fails with an annotation at the 20-minute budget, before the
-30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
+30-minute job limit. A shard that finishes above the 15-minute target stays green
+and gets a warning annotation that asks for a weight refresh. The budget also includes NATS housekeeping and integration database bootstrap.
 To refresh the weights, run
 `bun scripts/test-weights.ts --run <id> <id> <id>` with recent completed runs,
 including slow or failed runs, using `gh-agent` authentication; add
@@ -1428,7 +1429,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in ten shards with `bun run test --browser`, against
+them again in WebKit in eleven shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
@@ -1467,6 +1468,19 @@ live socket with that public origin and the fixture's session cookie. The
 application's origin checks still apply. Grids reports only known refusal
 codes and close metadata; it does not print cookies, frame bodies, or arbitrary
 close reasons.
+
+### Read what a failed suite left running
+
+After an integration suite fails, the runner prints `Database activity:` next
+to the suite's output: every statement still running on the test server, how
+long it has run, what it waits on, and which backends block it. A statement
+listed there outlived its test.
+
+Such a statement cannot stall the suites after it in the `integration` and
+`packed` jobs: their PostgreSQL sets `client_connection_check_interval`, so it
+ends within seconds of its test process and logs `connection to client lost`.
+Find its plan in the slow statement log below only when it finished; otherwise
+the activity line has its text.
 
 ### Read slow statements from a CI run
 

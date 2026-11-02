@@ -129,7 +129,13 @@ deliberate creation. Without `requestId`, each request creates a conversation.
 The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
-are idempotent; stale writes return a conflict. Submit a turn with the returned
+are idempotent; stale writes return a conflict. In the browser controller, a
+failed `saveDraft`, `send`, or `queueMessage` answers `null` or `false`.
+`draftSaveFailure(conversationId)` then says whether its draft save failed:
+`"conflict"` when the saved draft has another revision, which sets no chat
+error so the app shows its own choice; `"failed"` for any other failure, which
+sets the chat error; or `null` when the draft was saved. Only a conflict means
+that the saved draft changed. Submit a turn with the returned
 `draftRevision`. Local clients may also send `client` (kind `cli` or `acp`,
 optional name, workspace `cwd`, OS, shell and local tools mode) and
 `localContext` (AGENTS.md instructions, local Skill catalog and explicitly

@@ -47,8 +47,8 @@ async function reserveExportConnection(database: SQL, signal: AbortSignal) {
     cancellation ??= (async () => {
       try {
         if (backendPid !== undefined) {
-          // Bun 1.4.2 query.cancel() does not interrupt PostgreSQL. Use a separate connection,
-          // so cancellation cannot queue behind blocked exports in the application pool.
+          // Cancel the backend over a separate connection: it covers the whole export session,
+          // and cancellation cannot queue behind blocked exports in the application pool.
           const { adapter, ...options } = database.options;
           if (adapter === "sqlite") throw new Error("Activity cancellation requires a Postgres connection");
           const control = createSql({ ...options, adapter, max: 1 });

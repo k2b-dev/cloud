@@ -716,7 +716,7 @@ Run `cld admin settings status --env --json` after an upgrade. Exit 0 means no
 reported process needs attention; nonzero means a conflict, invalid env value,
 unreadable row, pending import, or unavailable process. Values are never
 printed. Resolve the problem before removing deprecated environment entries.
-Use `cld admin settings list [--app <id>] --json` to discover keys and types, then `settings show <key>` for presence and readability. Neither prints values.
+Use `cld admin settings list [--app <id>] --json` to discover keys and types, then `settings show <key>` for presence and readability. Neither prints values. Omit `--app` for the platform catalog, including `logs.trace_retention_days` and `logs.retention_days`; `--app core` restricts the result to Core settings. Use `--app <id>` for application-owned settings.
 Use `cld admin settings set <key> --value '<JSON>' --yes`, adding `--app <id>`
 for application-owned keys. Secret settings require `--from <private-json-file>` or `--from -` for stdin; they cannot be supplied with `--value`. Use `--replace-unreadable` only for an explicit
 whole replacement.
@@ -813,7 +813,8 @@ filters or pagination are needed.
 `admin settings apply --from <file|-> --yes` applies Core updates and resets
 atomically. `settings reset <key> --yes` restores one Core default. Saved
 backend checks use `settings test pdf|storage|freeipa --yes`; manual AI
-enrichment uses `ai enrichment run --yes`.
+enrichment uses `ai enrichment run --yes`. On success they print `ok: true`, a
+message, and the check's details, not `saved`.
 
 Core settings, AI execution limits and instance network allowlists use
 `admin settings list|show|set`. Existing commands continue to own outgoing mail,

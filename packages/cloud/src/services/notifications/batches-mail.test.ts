@@ -79,7 +79,10 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
         contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationBatchSql;'), loader: "ts",
       }));
     }});
-    mock.module(${JSON.stringify(new URL("../../_internal/process-sync.ts", import.meta.url).pathname)}, () => ({ lazySync: () => () => ({ submit: async () => ({ jobId: "retry" }) }) }));
+    mock.module(${JSON.stringify(new URL("../../_internal/process-sync.ts", import.meta.url).pathname)}, () => ({
+      processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
+      lazySync: () => () => ({ submit: async () => ({ jobId: "retry" }) }),
+    }));
     mock.module(${JSON.stringify(new URL("../logging/index.ts", import.meta.url).pathname)}, () => ({ logger: () => ({ error() {} }), trace: {} }));
     mock.module(${JSON.stringify(new URL("../../shared/markdown.ts", import.meta.url).pathname)}, () => ({ markdown: {} }));
     mock.module(${JSON.stringify(new URL("../postgres.ts", import.meta.url).pathname)}, () => ({ parsePgJsonValue: v => v, toPgTextArray: v => v, toPgUuidArray: v => v }));

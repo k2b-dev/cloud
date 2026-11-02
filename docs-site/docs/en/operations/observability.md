@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-10-11
+updated: 2026-11-02
 ---
 
 # Observability
@@ -44,6 +44,50 @@ Do not log secrets, session tokens, authorization headers, prompts, or model
 output.
 
 See [Logging](/en/docs/platform/logging) for application APIs.
+
+### Diagnose Mail send attempts
+
+Filter source `mail:commands` for **Mail send attempt finished** and the
+`outboxId` or `commandId`. Each claimed attempt records `outcomeState` and
+millisecond durations for `prepareMs`, `preSendLookupMs`, `smtpMs`,
+`sentCopyMs`, and `totalMs`. Preparation excludes the separately timed Sent
+lookup. A step that did not run is `null`; reconciliation attempts can finish
+without SMTP. `totalMs` also includes pacing, persistence, and lease release.
+
+`leaseAcquireMs` measures this call's lease acquisition. Time spent waiting
+across earlier job retries is unknown and is excluded.
+These entries contain IDs, attempt number, durations, and state, without
+addresses, subjects, or message content. Compare production measurements for
+the same provider and outcome before drawing conclusions about send speed.
+
+## Idle background checks
+
+Mail's folder-sync worker and interrupted-hydration check omit automatic
+spans for successful first attempts that report no work. Folder checks with
+imports, draft import/export projections, UIDVALIDITY resets, flag changes, removals or continuation
+work keep a complete timed span. Deferred metadata errors keep a summary, and thrown
+failures and retries remain visible. Domain logs and traces are unchanged.
+Routine provider-busy, rate-limit and changed-transport deferrals also omit
+the first-attempt span. This changes which spans are written, not their retention.
+
+The `mail:sync-due` schedule keeps ordinary lifecycle tracing: its draft
+scheduler can retire MIME state or queue effects that its result does not
+count. Those counts cannot reliably identify an idle run.
+
+Deferred spans appear when a run completes. Inspect Sync's worker and durable
+job state for activity still in progress. A stopped process can leave no
+completed trace for its last attempt; its durable job remains recoverable.
+See [Tracing](/en/docs/platform/tracing#trace-background-loops-only-when-they-do-work)
+for applying the same rule to an application's own loops.
+
+After deployment, group `logging.trace_spans` by `app_id`, `source` and
+`category` over a fixed interval. For Mail compare `mail:sync-folder` (`job`)
+and `mail` (`schedule`, name `mail:hydration-recovery`) separately; compare
+folder jobs against completed `mail.sync_runs`. Ordinary lifecycle tracing
+attempts two span upserts per delivered first attempt, including idle checks;
+the opted-in idle path issues none and work issues one complete upsert. Claim
+polling itself emits no handler lifecycle event and already wrote no span. Without a
+production breakdown, aggregate insert totals cannot identify Mail's share.
 
 ## Trace a request or operation
 
@@ -160,7 +204,7 @@ distinct derived templates per app.
 
 The `Upstream unavailable` log carries the same redacted template without the
 200-template limit, the error type, and a transport error code such as
-`ConnectionRefused` or `ENOTFOUND`. It never includes the error message or the
+`ECONNREFUSED` or `ENOTFOUND`. It never includes the error message or the
 query.
 
 When a client disconnects before the application answers, the gateway cancels

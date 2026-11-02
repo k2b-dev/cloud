@@ -1,7 +1,17 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
 import { createSettingsDraft, SaveRejected, saveFailure } from "@k2b/cloud/ssr/settings-draft";
-import { Button, ButtonLink, Checkbox, InlineGuidance, readSettingsError, SettingsSection, useLocale } from "@k2b/ui";
+import {
+  Button,
+  ButtonLink,
+  Checkbox,
+  InlineGuidance,
+  readSettingsError,
+  SettingsField,
+  type SettingsFieldWidth,
+  SettingsSection,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
@@ -28,8 +38,16 @@ const preview = (entry: SettingFieldDef, value: unknown, t: AreaFormMessages): s
   if (value === null || value === undefined || value === "") return t.emptyValue;
   return Array.isArray(value) ? value.join(", ") : String(value);
 };
-const sourceText = (entry: SettingFieldDef, t: AreaFormMessages) =>
-  entry.valueSource === "custom" ? t.sourceCustom : entry.valueSource === "env" ? t.sourceEnv : t.sourceDefault;
+const sourceText = (entry: SettingFieldDef, t: AreaFormMessages) => (entry.valueSource === "env" ? t.sourceEnv : t.sourceDefault);
+/** A number never stretches like a URL; a choice takes the room of its longest option; an editor takes the row. */
+const fieldWidth = (kind: SettingFieldDef["kind"]): SettingsFieldWidth =>
+  kind === "number"
+    ? "short"
+    : kind === "enum" || kind === "timezone" || kind === "cron"
+      ? "medium"
+      : kind === "template"
+        ? "full"
+        : "long";
 // Secrets come redacted; an empty draft keeps the stored secret.
 const initialValues = (entries: SettingFieldDef[]): Values =>
   Object.fromEntries(entries.map((entry) => [entry.key, entry.kind === "secret" ? "" : entry.value]));
@@ -37,7 +55,7 @@ const initialValues = (entries: SettingFieldDef[]): Values =>
 /**
  * The registry settings of one admin section, grouped and ordered by hand. It saves with the button in the level head
  * through Core's settings API: a stale version reports who changed what, an unreadable stored value is replaced only
- * after the person confirms it, and "Use default" removes the own value on save.
+ * after the person confirms it, and "Reset", shown only beside a value of its own, removes that value on save.
  */
 export default function RegistryForm(props: {
   groups: string[];
@@ -198,83 +216,92 @@ export default function RegistryForm(props: {
     const item = createMemo(() => entry(fieldProps.key));
     const isReset = () => resets().includes(fieldProps.key);
     const locked = () => form.saving() || isReset() || (unreadable(fieldProps.key) && !confirmed(fieldProps.key));
+    const toggleReset = () => setResets(isReset() ? resets().filter((key) => key !== fieldProps.key) : [...resets(), fieldProps.key]);
     return (
-      <div class="flex flex-col gap-1.5" id={settingControlId(fieldProps.key)}>
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <span class="text-sm font-semibold text-primary">{item().label}</span>
-          <span class="flex items-center gap-2 text-xs text-dimmed">
-            {sourceText(item(), t())}
-            <Show when={item().isCustom || isReset()}>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                disabled={form.saving()}
-                onClick={() => setResets(isReset() ? resets().filter((key) => key !== fieldProps.key) : [...resets(), fieldProps.key])}
-              >
-                {isReset() ? t().undoDefault : t().useDefault}
-              </Button>
-            </Show>
-          </span>
-        </div>
-        <p id={`${settingControlId(fieldProps.key)}-description`} class="text-xs text-dimmed">
-          {item().description}
-          <Show when={item().kind === "secret"}> {item().isCustom || item().valueSource === "env" ? t().secretSet : t().secretEmpty}</Show>
-        </p>
-        <Show when={unreadable(fieldProps.key)}>
-          <InlineGuidance tone="warning" icon="ti ti-eye-off">
-            <b>{t().unreadableTitle}</b> {t().unreadableKeep({ value: preview(item(), item().value, t()) })}
-            <Checkbox
-              label={t().replaceStored({ label: item().label })}
-              value={replace().includes(fieldProps.key)}
-              onValueChange={(checked) =>
-                setReplace(checked ? [...replace(), fieldProps.key] : replace().filter((key) => key !== fieldProps.key))
-              }
+      <SettingsField
+        id={settingControlId(fieldProps.key)}
+        label={item().label}
+        description={
+          item().kind === "secret"
+            ? `${item().description} ${item().isCustom || item().valueSource === "env" ? t().secretSet : t().secretEmpty}`
+            : item().description
+        }
+        error={undefined}
+        width={fieldWidth(item().kind)}
+        source={
+          // Only a value of its own has a way back to the default; staging that way keeps "Undo" at the same place.
+          item().isCustom || isReset() ? (
+            <Button
+              type="button"
+              variant="text"
+              size="xs"
               disabled={form.saving()}
-            />
-          </InlineGuidance>
-        </Show>
-        <Show
-          when={!isReset()}
-          fallback={<p class="text-sm text-secondary">{t().defaultApplies({ value: preview(item(), item().resetValue, t()) })}</p>}
-        >
-          <fieldset disabled={locked()} class="contents">
-            <FieldInput
-              entry={item()}
-              value={() => form.draft()[fieldProps.key]}
-              error={() => form.errors()[fieldProps.key] ?? fieldErrors()[fieldProps.key]}
-              onChange={(value) => {
-                if (fieldErrors()[fieldProps.key]) {
-                  const { [fieldProps.key]: _cleared, ...rest } = fieldErrors();
-                  setFieldErrors(rest);
-                }
-                form.update({ [fieldProps.key]: value });
-              }}
-            />
-          </fieldset>
-        </Show>
-        <Show when={conflict()?.key === fieldProps.key ? conflict() : null}>
-          {(current) => (
-            <InlineGuidance tone="warning" icon="ti ti-git-branch">
-              <b>{t().conflict({ who: current().who ?? t().someoneElse, time: timeOf(current().at) })}</b>{" "}
-              {t().conflictKeep({ value: preview(item(), current().current, t()) })}
-              <span class="mt-1 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" size="xs" onClick={() => void takeTheirs()}>
-                  {t().takeTheirs}
-                </Button>
-                <Button type="button" size="xs" onClick={keepMine}>
-                  {t().keepMine}
-                </Button>
-              </span>
-            </InlineGuidance>
-          )}
-        </Show>
-      </div>
+              aria-label={isReset() ? t().undoResetFor({ label: item().label }) : t().resetFor({ label: item().label })}
+              onClick={toggleReset}
+            >
+              {isReset() ? t().undoReset : t().reset}
+            </Button>
+          ) : (
+            sourceText(item(), t())
+          )
+        }
+      >
+        {(control) => (
+          <>
+            {/* A staged reset shows the default in the locked field, so the row keeps its footprint. */}
+            <fieldset disabled={locked()} class="contents">
+              <FieldInput
+                entry={item()}
+                describedBy={control.describedBy}
+                value={() => (isReset() ? (item().kind === "secret" ? "" : item().resetValue) : form.draft()[fieldProps.key])}
+                error={() => form.errors()[fieldProps.key] ?? fieldErrors()[fieldProps.key]}
+                onChange={(value) => {
+                  if (isReset()) return;
+                  if (fieldErrors()[fieldProps.key]) {
+                    const { [fieldProps.key]: _cleared, ...rest } = fieldErrors();
+                    setFieldErrors(rest);
+                  }
+                  form.update({ [fieldProps.key]: value });
+                }}
+              />
+            </fieldset>
+            <Show when={unreadable(fieldProps.key)}>
+              <InlineGuidance tone="warning" icon="ti ti-eye-off">
+                <b>{t().unreadableTitle}</b> {t().unreadableKeep({ value: preview(item(), item().value, t()) })}
+                <Checkbox
+                  label={t().replaceStored({ label: item().label })}
+                  value={replace().includes(fieldProps.key)}
+                  onValueChange={(checked) =>
+                    setReplace(checked ? [...replace(), fieldProps.key] : replace().filter((key) => key !== fieldProps.key))
+                  }
+                  disabled={form.saving()}
+                />
+              </InlineGuidance>
+            </Show>
+            <Show when={conflict()?.key === fieldProps.key ? conflict() : null}>
+              {(current) => (
+                <InlineGuidance tone="warning" icon="ti ti-git-branch">
+                  <b>{t().conflict({ who: current().who ?? t().someoneElse, time: timeOf(current().at) })}</b>{" "}
+                  {t().conflictKeep({ value: preview(item(), current().current, t()) })}
+                  <span class="mt-1 flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="xs" onClick={() => void takeTheirs()}>
+                      {t().takeTheirs}
+                    </Button>
+                    <Button type="button" size="xs" onClick={keepMine}>
+                      {t().keepMine}
+                    </Button>
+                  </span>
+                </InlineGuidance>
+              )}
+            </Show>
+          </>
+        )}
+      </SettingsField>
     );
   };
 
   return (
-    <div class="flex max-w-2xl flex-col gap-6">
+    <div class="flex flex-col">
       <SettingsSaveOutcome outcome={conflict() ? null : form.outcome()} onRetry={() => void form.save()} />
       <For each={props.sections}>
         {(section) => (
@@ -289,18 +316,16 @@ export default function RegistryForm(props: {
               ) : undefined
             }
           >
-            <div class="flex flex-col gap-5">
-              <For each={section.keys.filter((key) => entries().some((item) => item.key === key))}>
-                {(key) => {
-                  const condition = section.shownWhen?.[key];
-                  return (
-                    <Show when={!condition || form.draft()[condition.key] === condition.value}>
-                      <Field key={key} />
-                    </Show>
-                  );
-                }}
-              </For>
-            </div>
+            <For each={section.keys.filter((key) => entries().some((item) => item.key === key))}>
+              {(key) => {
+                const condition = section.shownWhen?.[key];
+                return (
+                  <Show when={!condition || form.draft()[condition.key] === condition.value}>
+                    <Field key={key} />
+                  </Show>
+                );
+              }}
+            </For>
           </SettingsSection>
         )}
       </For>

@@ -4,7 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { bindResourceAppAccess } from "../_internal/app-access-resources";
+import { bindResourceAppAccess, RESOURCE_ACCESS_PROBE_TIMEOUT_MS } from "../_internal/app-access-resources";
 import { compileCapabilities } from "../_internal/capabilities";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
@@ -140,7 +140,12 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
 describe("global capability search", () => {
   test("shares one deadline across resource discovery, issuance revalidation and provider I/O", async () => {
     const deadline = new AbortController();
-    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const probeDeadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      if (ms === 8_000) return deadline.signal;
+      if (ms === RESOURCE_ACCESS_PROBE_TIMEOUT_MS) return probeDeadline.signal;
+      throw new Error(`Unexpected extra search budget: ${ms}`);
+    });
     const accessSignals: AbortSignal[] = [];
     const declaration = appAccess.resources({
       adapters: {
@@ -191,12 +196,15 @@ describe("global capability search", () => {
     try {
       const response = await routes.request("/search?q=needle");
       expect(response.status).toBe(200);
-      expect(timeout).toHaveBeenCalledTimes(1);
-      expect(timeout).toHaveBeenCalledWith(8_000);
+      // One shared search deadline replaces discovery/entry defaults. The
+      // independent short discovery probe must still inherit its cancellation.
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, RESOURCE_ACCESS_PROBE_TIMEOUT_MS]);
       expect(accessSignals).toHaveLength(2);
       expect(providerSignal?.aborted).toBe(false);
       expect(accessSignals.every((signal) => !signal.aborted)).toBe(true);
+      expect(probeDeadline.signal.aborted).toBe(false);
       deadline.abort();
+      expect(probeDeadline.signal.aborted).toBe(false);
       expect(providerSignal?.aborted).toBe(true);
       expect(accessSignals.every((signal) => signal.aborted)).toBe(true);
     } finally {

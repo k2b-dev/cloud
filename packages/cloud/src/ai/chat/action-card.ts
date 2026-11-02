@@ -277,7 +277,12 @@ export const reviewActionCard = (
     app: context.app,
     question: parts("question"),
     questionText: capabilityReviewSentence(review, "question", tz),
-    reason: actionReason(code, { locale, appName: context.app.name }),
+    reason: {
+      ...actionReason(code, { locale, appName: context.app.name }),
+      // A consent-dependent Action may be remembered for the chat. Only an
+      // explicit app_asks review promises that the app asks every time.
+      ...(!review.ask ? { text: aiChatMessages(locale).approvalRunsAfter } : {}),
+    },
     preview:
       preview || review.consequences?.length
         ? {

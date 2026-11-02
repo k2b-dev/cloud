@@ -39,6 +39,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { describeDatabaseActivity } from "./fixtures/database-activity";
 import { closeMigratedDatabaseTemplate, integrationSchemaHash, retainMigratedDatabaseTemplate } from "./fixtures/test-database-template";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { runUnderHeavyLock } from "./heavy-lock";
@@ -82,6 +83,20 @@ const browserWarmupMs = 120_000;
 export const behaviorTest = /\.behavior\.test\.tsx?$/;
 /** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
 export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
+
+/** The prediction a CI shard is planned to; the time between this and its budget is the margin for slow runners. */
+const shardTargetMinutes = 15;
+
+/** A shard over its budget fails; one above the target stays green and asks for fresh weights before it fails. */
+export const shardTimeNotice = (label: string, minutes: number, maxMinutes: number | undefined): string | undefined => {
+  if (maxMinutes === undefined) return undefined;
+  const refresh = "refresh scripts/test-weights.json with `bun scripts/test-weights.ts --run <id>` or add a shard";
+  if (minutes > maxMinutes)
+    return `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${maxMinutes}-min limit; ${refresh}`;
+  if (minutes > shardTargetMinutes)
+    return `::warning title=Test shard above its target::${label} took ${minutes.toFixed(1)} min, above the ${shardTargetMinutes}-min target and close to its ${maxMinutes}-min limit; ${refresh}`;
+  return undefined;
+};
 
 /** Package scripts that split its unit suite for CI shards. */
 export const testPartPrefix = "test:part:";
@@ -499,7 +514,11 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
         suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
         remainingMs(),
       );
-      if (code !== 0) failed.push(suite.name);
+      if (code !== 0) {
+        failed.push(suite.name);
+        // Read it at once: CI Postgres drops a statement of a lost client after client_connection_check_interval.
+        if (options.integration && env.CLOUD_TEST_DATABASE_URL) console.log(await describeDatabaseActivity(env.CLOUD_TEST_DATABASE_URL));
+      }
       console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
     }
 
@@ -513,11 +532,8 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
     const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
     console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
     const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
-    if (overLimit) {
-      console.log(
-        `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
-      );
-    }
+    const notice = shardTimeNotice(label, minutes, options.maxMinutes);
+    if (notice) console.log(notice);
     if (failed.length > 0) {
       console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
       process.exitCode = 1;

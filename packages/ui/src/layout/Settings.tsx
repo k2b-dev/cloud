@@ -62,25 +62,28 @@ export type SettingsSectionProps = {
 
 /**
  * A full-page settings group: a heading, optional actions and its fields on the
- * page surface without a card. Dialogs keep using PanelDialog.Section.
+ * page surface without a card. From 860 px of its own width the heading takes a
+ * column beside the fields. Dialogs keep using PanelDialog.Section.
  */
 export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   const headingId = `k2b-settings-section-${createUniqueId()}`;
   return (
     <section class={`k2b-settings-section${props.class ? ` ${props.class}` : ""}`} aria-labelledby={headingId}>
-      <header class="k2b-settings-section__header">
-        <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <div class="k2b-settings-section__heading">
-          <h2 id={headingId}>{props.title}</h2>
-          <Show when={props.subtitle}>
-            <p>{props.subtitle}</p>
+      <div class="k2b-settings-section__layout">
+        <header class="k2b-settings-section__header">
+          <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          <div class="k2b-settings-section__heading">
+            <h2 id={headingId}>{props.title}</h2>
+            <Show when={props.subtitle}>
+              <p>{props.subtitle}</p>
+            </Show>
+          </div>
+          <Show when={props.actions}>
+            <div class="k2b-settings-section__actions">{props.actions}</div>
           </Show>
-        </div>
-        <Show when={props.actions}>
-          <div class="k2b-settings-section__actions">{props.actions}</div>
-        </Show>
-      </header>
-      <div class="k2b-settings-section__body">{props.children}</div>
+        </header>
+        <div class="k2b-settings-section__body">{props.children}</div>
+      </div>
     </section>
   );
 }
@@ -158,11 +161,27 @@ export const readSettingsError = async (
   return { message: data?.message ?? fallback, fields: data?.errors ?? {} };
 };
 
+/**
+ * The room a setting's control takes: `short` for a number, `medium` for a choice, `long` for text, and `full` for
+ * an editor, which keeps its name above it and takes the whole row.
+ */
+export type SettingsFieldWidth = "short" | "medium" | "long" | "full";
+
 export type SettingsFieldProps = {
   label: string;
+  /** One sentence of help; longer guidance belongs in the page's guide. */
   description: string;
   error: MaybeAccessor<string | undefined>;
   changed?: MaybeAccessor<boolean>;
+  /**
+   * Where the value comes from, at a fixed place after the control: quiet text such as "Default", or the one way
+   * back to it, such as a Reset button that only a value of its own shows.
+   */
+  source?: JSX.Element;
+  /** The control's width by kind, so a number never stretches like a URL. Defaults to `long`, the full column. */
+  width?: SettingsFieldWidth;
+  /** The row's id, for a link that leads to this one setting. */
+  id?: string;
   children: JSX.Element | ((control: SettingsFieldControlProps) => JSX.Element);
   class?: string;
 };
@@ -181,25 +200,33 @@ export function SettingsField(props: SettingsFieldProps): JSX.Element {
     typeof props.children === "function"
       ? (props.children as (control: SettingsFieldControlProps) => JSX.Element)({ describedBy })
       : props.children;
+  const source = children(() => props.source);
   return (
-    <div class={`k2b-settings-field ${props.class ?? ""}`}>
-      <div class="k2b-settings-field__copy">
-        <div class="k2b-settings-field__heading">
-          <strong>{props.label}</strong>
-          <Show when={props.changed !== undefined && read(props.changed)}>
-            <span>{settingsMessages().unsaved}</span>
+    <div id={props.id} class={`k2b-settings-field ${props.class ?? ""}`} data-width={props.width ?? "long"}>
+      <div class="k2b-settings-field__row">
+        <div class="k2b-settings-field__copy">
+          <div class="k2b-settings-field__heading">
+            <strong>{props.label}</strong>
+            <Show when={props.changed !== undefined && read(props.changed)}>
+              <span>{settingsMessages().unsaved}</span>
+            </Show>
+          </div>
+          <p id={descriptionId}>{props.description}</p>
+        </div>
+        <div class="k2b-settings-field__control">
+          {control()}
+          <Show when={read(props.error)}>
+            {(error) => (
+              <p id={errorId} class="k2b-settings-field__error" role="alert">
+                <i class="ti ti-alert-circle" aria-hidden="true" /> {error()}
+              </p>
+            )}
           </Show>
         </div>
-        <p id={descriptionId}>{props.description}</p>
+        <Show when={source()}>
+          <div class="k2b-settings-field__source">{source()}</div>
+        </Show>
       </div>
-      {control()}
-      <Show when={read(props.error)}>
-        {(error) => (
-          <p id={errorId} class="k2b-settings-field__error" role="alert">
-            <i class="ti ti-alert-circle" aria-hidden="true" /> {error()}
-          </p>
-        )}
-      </Show>
     </div>
   );
 }

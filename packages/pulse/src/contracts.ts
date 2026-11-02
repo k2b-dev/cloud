@@ -6,6 +6,7 @@ export const METRIC_TYPES = ["gauge", "counter"] as const;
 export type MetricType = (typeof METRIC_TYPES)[number];
 
 export type PulseBase = {
+  memberCount: number;
   store: BaseStoreStatus;
   id: string;
   name: string;

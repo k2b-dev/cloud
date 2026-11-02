@@ -3,6 +3,7 @@ import type { RequestActor } from "@k2b/cloud/contracts";
 import { type AccessSubject, ok } from "@k2b/cloud/server";
 import { z } from "zod";
 import { ALERT_CHECKS_PER_HOUR, ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
+import { DASHBOARD_PANEL_READS, DashboardDefinitionSchema, type DashboardWindow, dashboardParameters } from "../dashboard-contracts";
 import { prepareSql, SqlInputError } from "../sql-params";
 import type { ReadProfileName } from "../store/admin-contracts";
 import { READ_LIMITS, READ_PROFILES } from "../store/setup-sql";
@@ -33,7 +34,7 @@ type RunBaseSqlInput = BaseSqlInput & {
   sql: string;
   params?: Record<string, string>;
   signal?: AbortSignal;
-  via: "api" | "capability" | "sources" | "overview";
+  via: "api" | "capability" | "sources" | "overview" | "dashboard";
   runId?: string;
 };
 const actorKey = (actor: RequestActor) => (actor.kind === "user" ? `user:${actor.user.id}` : `service_account:${actor.serviceAccount.id}`);
@@ -90,6 +91,7 @@ export const runBaseSql = async (input: RunBaseSqlInput): Promise<SqlServiceResu
       ...input,
       ownerKey: actorKey(input.actor),
       countQuota: input.via === "api" || input.via === "capability",
+      baseSlots: input.via === "dashboard" ? DASHBOARD_PANEL_READS : undefined,
     });
   } catch (error) {
     return sqlFailure(error);
@@ -128,6 +130,36 @@ export const runAlertSql = async (input: {
   }
 };
 
+/** Public reads can run only a currently published, persisted panel. The token,
+ * revision and clear generation are checked again by the result projection. */
+export const runPublishedDashboardSql = async (input: {
+  dashboardId: string;
+  panelId: string;
+  revision: number;
+  resetGeneration: string;
+  tokenHash: string;
+  window: DashboardWindow;
+  signal?: AbortSignal;
+}): Promise<SqlServiceResult<SqlResult>> => {
+  try {
+    const [row] = await sql<{ base_id: string; definition: unknown }[]>`
+      SELECT d.base_id,d.definition FROM pulse.dashboards d JOIN pulse.base_stores s ON s.base_id=d.base_id
+      WHERE d.id=${input.dashboardId}::uuid AND d.revision=${input.revision} AND d.public_token_hash=${input.tokenHash}
+        AND s.reset_generation=${input.resetGeneration}::bigint AND s.state='active'`;
+    const panel = row ? DashboardDefinitionSchema.parse(row.definition).panels.find((panel) => panel.id === input.panelId) : undefined;
+    if (!row || !panel) throw new SqlError("NO_READ_ACCESS", "This dashboard publication is no longer available");
+    return await executeBaseSql(await loadSqlBase(row.base_id), {
+      sql: panel.sql,
+      params: dashboardParameters(panel, input.window),
+      ownerKey: `dashboard:${input.dashboardId}:${input.revision}`,
+      countQuota: false,
+      signal: input.signal,
+    });
+  } catch (error) {
+    return sqlFailure(error);
+  }
+};
+
 /** Both interactive and persisted background reads use the same admission,
  * cancellation observation and runner, including reader-bound KILL and leases. */
 const executeBaseSql = async (
@@ -141,6 +173,7 @@ const executeBaseSql = async (
     countQuota: boolean;
     quotaKind?: "alerts";
     freeOnly?: boolean;
+    baseSlots?: number;
     executionDeadline?: number;
   },
 ): Promise<SqlServiceResult<SqlResult>> => {
@@ -165,6 +198,7 @@ const executeBaseSql = async (
         countQuota: input.countQuota,
         quotaKind: input.quotaKind,
         freeOnly: input.freeOnly,
+        baseSlots: input.baseSlots,
         signal,
       });
       if (await sqlAdmission.cancelled(base.id, runId)) throw new SqlError("CANCELLED", "Query cancelled");

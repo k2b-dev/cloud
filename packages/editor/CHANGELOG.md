@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.5.1...npm-editor-v0.6.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.43.0 to 0.44.0
+
+## [0.5.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.5.0...npm-editor-v0.5.1) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.42.0 to 0.43.0
+
 ## [0.5.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.4.0...npm-editor-v0.5.0) (2026-11-01)
 
 

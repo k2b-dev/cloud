@@ -147,9 +147,18 @@ const STATUS_TONE: Record<AppStatusKind, "ok" | "warning" | "error" | "neutral">
 const statusLabel = (t: AppsPageMessages, status: AppStatusKind) =>
   ({ ok: t.statusOk, warn: t.statusWarn, error: t.statusError, idle: t.statusIdle })[status];
 
-/** The app's state as a dot and a word, never as colour alone. */
+const STATUSES: AppStatusKind[] = ["ok", "warn", "error", "idle"];
+
+/** The app's state as a dot and a word, never as colour alone; the dot keeps one place in every row. */
 function Status(props: { t: AppsPageMessages; status: AppStatusKind }) {
-  return <StatusBadge variant="dot" tone={STATUS_TONE[props.status]} label={statusLabel(props.t, props.status)} />;
+  return (
+    <StatusBadge
+      variant="dot"
+      tone={STATUS_TONE[props.status]}
+      label={statusLabel(props.t, props.status)}
+      labels={STATUSES.map((status) => statusLabel(props.t, status))}
+    />
+  );
 }
 
 function Tile(props: { icon: string; accent: string | null }) {

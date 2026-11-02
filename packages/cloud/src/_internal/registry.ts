@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
+import type { Ephemeral, EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import { appStatusIssues } from "../contracts/app-status";
 import { calendarSourceIssues } from "../contracts/calendar-source";
@@ -20,8 +20,9 @@ import {
 import type { PlatformBootstrapMetadata } from "../runtime/connections";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
-import { lazySync } from "./process-sync";
-import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
+import { lazySync, processSyncReaders } from "./process-sync";
+import { parseAppRegistryEntry } from "./registry-validation";
+import { createRegistryView } from "./registry-view";
 import { watchRegistryChanges } from "./registry-watch";
 import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
@@ -84,7 +85,37 @@ export const appMembershipLock = lazySync((sync) => sync.mutex(APP_MEMBERSHIP_LO
 
 export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest; presentation?: CapabilityPresentationCatalog };
 
-export const appRegistry = lazySync((sync) => sync.ephemeral<AppRegistryEntry>(APP_REGISTRY_CONFIG));
+const appRegistryViews = new WeakMap<Ephemeral<AppRegistryEntry>, { invalidate: () => void }>();
+export const appRegistry = lazySync((sync) => {
+  const registry = sync.ephemeral<AppRegistryEntry>(APP_REGISTRY_CONFIG);
+  // A completed local mutation is a read-after-write barrier. Other processes
+  // observe it through their covering watch, without caching any access decision.
+  const published: Ephemeral<AppRegistryEntry> = {
+    ...registry,
+    upsert: async (input) => {
+      try {
+        return await registry.upsert(input);
+      } finally {
+        appRegistryViews.get(published)?.invalidate();
+      }
+    },
+    touch: async (input) => {
+      try {
+        return await registry.touch(input);
+      } finally {
+        appRegistryViews.get(published)?.invalidate();
+      }
+    },
+    delete: async (input) => {
+      try {
+        return await registry.delete(input);
+      } finally {
+        appRegistryViews.get(published)?.invalidate();
+      }
+    },
+  };
+  return published;
+});
 export const capabilityRegistry = lazySync((sync) => sync.ephemeral<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG));
 
 /**
@@ -94,8 +125,8 @@ export const capabilityRegistry = lazySync((sync) => sync.ephemeral<CapabilityRe
  * Shutdown waits for received invalidations; refresh errors stop the watch.
  */
 export const watchAppRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
-  const registry = appRegistry();
-  await watchRegistryChanges({ signal, onChange, watch: (signal) => registry.watch({ prefix: APP_REGISTRY_PREFIX, signal }) });
+  const view = appRegistryView();
+  await watchRegistryChanges({ signal, onChange, watch: (signal) => view.changes(signal) });
 };
 
 /**
@@ -141,38 +172,69 @@ const reportInvalidEntry = (issue: AppRegistryIssue): void => {
   );
 };
 
+const appRegistryView = lazySync(() => {
+  const readers = processSyncReaders();
+  const registry = appRegistry();
+  const view = createRegistryView({
+    registry,
+    prefix: APP_REGISTRY_PREFIX,
+    ttlMs: APP_REGISTRY_TTL_MS,
+    signal: readers.signal,
+    read: (entry): { app: AppRegistryDetail; issue?: never } | { app?: never; issue: AppRegistryIssue } => {
+      const parsed = parseAppRegistryEntry(entry.value);
+      const reason =
+        parsed.reason ?? (entry.key !== `${APP_REGISTRY_PREFIX}${parsed.value.id}` ? "registry key must match entry id" : null);
+      if (reason || !parsed.value) {
+        const issue = { key: entry.key, version: entry.revision, reason: reason ?? "invalid entry" };
+        reportInvalidEntry(issue);
+        return { issue };
+      }
+      loggedInvalidReasons.delete(entry.key);
+      const updatedAt = entry.updatedAt.getTime();
+      return {
+        app: {
+          ...parsed.value,
+          createdAt: parsed.value.startedAt ?? updatedAt,
+          updatedAt,
+          expiresAt: updatedAt + APP_REGISTRY_TTL_MS,
+          version: entry.revision,
+        },
+      };
+    },
+  });
+  appRegistryViews.set(registry, view);
+  // Disconnect invalidates immediately, even if the KV watch silently reconnects.
+  // Reconnect requires a new covering snapshot before local reads resume.
+  const status = readers.connection?.status()[Symbol.asyncIterator]();
+  const statusTask = status
+    ? (async () => {
+        for (;;) {
+          const next = await status.next();
+          if (next.done) break;
+          if (readers.signal.aborted) break;
+          if (["disconnect", "reconnect", "reconnecting", "staleConnection", "close"].includes(next.value.type)) view.invalidate();
+        }
+      })()
+    : undefined;
+  void readers.connection?.closed().then(() => view.invalidate());
+  const stop = async () => {
+    await view.stop();
+    // NATS closes its status iterator when the process-owned connection drains.
+    // return() cannot interrupt a pending next(), so never await it before drain.
+    void statusTask?.finally(() => status?.return?.());
+    readers.stops.delete(stop);
+    appRegistryViews.delete(registry);
+  };
+  readers.stops.add(stop);
+  return view;
+});
+
 export const readAppRegistrySnapshot = async (): Promise<AppRegistrySnapshot> => {
-  const snapshot = await appRegistry().snapshot({ prefix: APP_REGISTRY_PREFIX });
-  const apps: AppRegistryDetail[] = [];
-  const issues: AppRegistryIssue[] = [];
-  const presentKeys = new Set<string>();
-
-  for (const entry of snapshot.entries) {
-    presentKeys.add(entry.key);
-    const expectedKey =
-      entry.value && typeof entry.value === "object" && "id" in entry.value ? `${APP_REGISTRY_PREFIX}${String(entry.value.id)}` : undefined;
-    const reason = entry.key !== expectedKey ? "registry key must match entry id" : validateAppRegistryEntry(entry.value);
-    if (reason) {
-      const issue = { key: entry.key, version: entry.revision, reason };
-      issues.push(issue);
-      reportInvalidEntry(issue);
-      continue;
-    }
-    loggedInvalidReasons.delete(entry.key);
-    const value = asAppRegistryEntry(entry.value)!;
-    const updatedAt = entry.updatedAt.getTime();
-    apps.push({
-      ...value,
-      createdAt: value.startedAt ?? updatedAt,
-      updatedAt,
-      expiresAt: updatedAt + APP_REGISTRY_TTL_MS,
-      version: entry.revision,
-    });
-  }
-
-  for (const key of loggedInvalidReasons.keys()) {
-    if (!presentKeys.has(key)) loggedInvalidReasons.delete(key);
-  }
+  const values = await appRegistryView().values();
+  const apps = values.flatMap((value) => (value.app ? [value.app] : []));
+  const issues = values.flatMap((value) => (value.issue ? [value.issue] : []));
+  const keys = new Set([...apps.map((app) => `${APP_REGISTRY_PREFIX}${app.id}`), ...issues.map((issue) => issue.key)]);
+  for (const key of loggedInvalidReasons.keys()) if (!keys.has(key)) loggedInvalidReasons.delete(key);
   return { apps, issues };
 };
 
@@ -191,22 +253,10 @@ export const listApps = async (): Promise<AppRegistryEntry[]> => {
   return requireUsableAppRegistry(snapshot);
 };
 
-/** Reads one live app without materializing the full registry. */
+/** Reads one live app from the process-owned registry view. */
 export const getApp = async (appId: string): Promise<AppRegistryEntry | null> => {
-  const key = `${APP_REGISTRY_PREFIX}${appId}`;
-  const snap = await appRegistry().snapshot({ prefix: key });
-  const entry = snap.entries.find((candidate) => candidate.key === key);
-  if (!entry) return null;
-  const reason =
-    !entry.value || typeof entry.value !== "object" || !("id" in entry.value) || entry.value.id !== appId
-      ? "registry key must match entry id"
-      : validateAppRegistryEntry(entry.value);
-  if (!reason) {
-    loggedInvalidReasons.delete(key);
-    return asAppRegistryEntry(entry.value);
-  }
-  reportInvalidEntry({ key, version: entry.revision, reason });
-  return null;
+  const snapshot = await readAppRegistrySnapshot();
+  return snapshot.apps.find((app) => app.id === appId) ?? null;
 };
 
 const capabilityEndpoint = (baseUrl: string): string | null => {

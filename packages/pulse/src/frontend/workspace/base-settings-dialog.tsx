@@ -45,6 +45,7 @@ type BaseSettingsDialogOptions = {
   onTabChange?: (tab: PulseSettingsTab) => void;
   onCloseRequestReady?: (request: () => Promise<boolean>) => void;
   loading: Accessor<boolean>;
+  refreshBase: () => Promise<void>;
   updateBaseSettings: (
     base: PulseBase,
     input: {
@@ -228,7 +229,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       });
       const refreshAccess = async () => {
         try {
-          await access.invalidate();
+          await Promise.all([access.invalidate(), options.refreshBase()]);
         } catch {
           if (!disposed) toast.error(t().accessChangedRefreshFailed);
         }
@@ -436,7 +437,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
             <SettingsModal.Tab id="retention" title={t().retention} icon="ti ti-clock-cog" description={t().retentionTabDescription}>
               <div class="max-w-[860px]">
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().rawDataRetention}
                   description={t().rawDataRetentionDescription}
                   error={() => undefined}
@@ -488,7 +488,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   )}
                 </SettingsField>
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().hourlyRollupRetention}
                   description={t().hourlyRollupRetentionDescription}
                   error={() => undefined}
@@ -545,7 +544,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   )}
                 </SettingsField>
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().sensitiveEventRetention}
                   description={t().sensitiveEventRetentionDescription}
                   error={() => undefined}

@@ -89,7 +89,11 @@ export const AdminAreaSaveStatusFoot = () => (
   </div>
 );
 
-/** A section that fills the width beside the first column, such as a dashboard or one form. */
+/**
+ * A section that fills the width beside the first column, such as a dashboard or one form. It is the page: its title
+ * takes the page step of the type scale, and its content starts at the title's edge, so a form or a frame inside it
+ * adds no inset of its own.
+ */
 export function AdminAreaPane(props: {
   label: string;
   description?: JSX.Element;
@@ -107,6 +111,7 @@ export function AdminAreaPane(props: {
   return (
     <AppWorkspace.MainPane
       id="section"
+      heading="page"
       label={props.label}
       description={props.description}
       lead={props.lead}

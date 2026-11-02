@@ -22,6 +22,7 @@
   padding: 0.75rem;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
+  cursor: pointer;
 }
 .k2b-ui .k2b-file-grid__item:hover {
   background: var(--k2b-hover);
@@ -113,7 +114,7 @@
 }
 .k2b-ui .k2b-file-grid__item[aria-disabled="true"] {
   color: var(--k2b-text-muted);
-  cursor: default;
+  cursor: not-allowed;
 }
 .k2b-ui .k2b-file-grid__item[aria-disabled="true"]:hover {
   background: none;
@@ -148,9 +149,6 @@
   min-width: 0;
   flex-direction: column;
   gap: 0.125rem;
-}
-.k2b-ui .k2b-file-grid[data-open-items="true"] .k2b-file-grid__item {
-  cursor: pointer;
 }
 .k2b-ui .k2b-file-grid__open {
   position: absolute;

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-01
+updated: 2026-11-02
 ---
 
 # Deployment requirements
@@ -934,6 +934,15 @@ transition and are dispatched afterwards; background notifications use the
 operator’s `app.locale` setting, and request-triggered outages retain the
 request locale.
 
+Pulse dashboards add Postgres definitions, publication hashes, and execution
+receipts to the control-data backup. Valkey stores disposable result snapshots,
+bounded to 500 entries or 64 MiB of serialized keys and data. Losing that cache
+can leave a panel waiting for its next permitted refresh; it does not permit
+another calculation in the same interval. Dashboards share SQL admission and
+read profiles but do not consume the questions quota. Public links are checked
+on every read and can be revoked by a base writer. Clearing measurements keeps
+dashboard definitions and invalidates their cached results.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
@@ -941,10 +950,39 @@ Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
 answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
 set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
 
-After a restore, Pulse compares each database’s checkpoint with Postgres and
-blocks measurement writes if they differ or the database is missing. A Cloud
-admin can recheck a corrected restore or recreate an empty database. Recreating
-removes measurements while preserving sources, source credentials, settings, and access.
+Pulse verifies each base's checkpoint before accepting measurements, mirroring
+sources, computing rollups, or pruning stored data, even while its startup scan
+is still pending. An unavailable store refuses that work while other Cloud
+applications can start normally.
+
+After a restore, Pulse blocks measurement writes if the checkpoint differs
+from Postgres or the database is missing. A Cloud admin can recheck a corrected
+restore or recreate an empty database. Recreating removes measurements while
+preserving sources, source credentials, settings, and access.
+
+Within the 24-hour idempotency window, a completed receipt returns its saved
+counts without quota or repeat writes while its reset generation and both
+committed and pending checkpoint IDs match the currently validated base.
+A checkpoint identity transition invalidates that completion. The next retry
+replays the original acceptance time, event identities, and state plan, and
+rebuilds missing metric-series mirrors. Replays pass ordinary write limits,
+including quota, and can be refused until capacity is available. Only a
+successful replay renews completion for the new identity. Existing receipts
+from before this upgrade keep their acceptance times and plans; their first
+retry must replay before completion becomes valid.
+
+Raw metrics can remain longer than their retention period while an unexpired
+receipt could need them for replay. This guarantee detects hourly checkpoint
+mismatches; it does not detect per-batch data loss within a matching checkpoint.
+Checkpoints do not recover data automatically. Restore both stores as a
+consistent set.
+
+Clearing a base increments its reset generation. An earlier scrape cannot
+write measurements, scrape history, diagnostics, or source watermarks into the
+cleared generation, even if its endpoint responds after the clear completes.
+Clear also releases the previous scrape lease. An old worker cannot release a
+new generation's lease or defer its rollups after a failure. The source
+configuration and credentials remain available for the next scrape.
 
 ## Verify readiness and upgrades
 
@@ -995,6 +1033,11 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas and the
 installation-wide `pgcrypto` extension other applications need. Updated app
 migrations no longer create that extension independently.
+
+Pulse base responses include `memberCount`, the number of configured person,
+group and agent grants with access. The sidebar reads this authorized base
+metadata; group sizes and general-access rules are not expanded into a people
+count.
 
 ### Pulse agent telemetry actions
 
@@ -1146,6 +1189,46 @@ or `null` when unknown. Clients can compare known checksums to identify the
 same file; matching filenames alone do not establish equal content. This uses
 the existing nullable column and needs no migration or configuration change.
 
+### Mail workspace count cache
+
+Mail reuses a reader's workspace view counts in the existing Valkey service for
+up to 30 seconds. Reads after 15 seconds refresh the snapshot in the background.
+A committed Mail live invalidation changes the mailbox's cache version before
+its live event is delivered. The covering workspace refresh therefore reads the
+new counts after an action; reload and the first browser render use one snapshot.
+The standalone conversation-count API continues to compute fresh counts.
+
+The cache needs no environment variable or operator-managed index. Mail adds two
+small tables at startup: the current version per mailbox and transaction-local
+pending invalidations. Pending rows are consumed at commit; versions advance in
+mailbox order after domain writes. No message or conversation backfill runs.
+
+A cold, expired, or invalidated cache computes the counts once per reader and
+version. Concurrent opens share a Valkey lease; healthy owners renew it every
+3.3 seconds. Fills across different readers use at most the shared SQL pool size
+minus one connection (at least one). At capacity, background refreshes are skipped
+and cold reads wait. Local and remote waiters have the same 30-second budget;
+after that the workspace API returns `503 MAIL_COUNTS_REFRESHING`, and a mailbox
+reload uses the existing service error page with a Home link. Browser reload
+retries the same mailbox. Live refresh keeps the current view on failure; a retry
+can reuse the completed fill.
+The mailbox page and workspace-route handlers allow 40 seconds of idle time
+while loading, then restore the normal request limit before responding. Database
+statements time out after 30 seconds, and shutdown drains fills for at most
+30 seconds. Mail never substitutes invented zero counts on this path.
+
+If Valkey is unavailable, Mail computes directly with the same local concurrency
+bound; reads can take longer. Entries expire on their own and contain only the
+counts for their mailbox, person, and current visibility. No cache flush is needed.
+
+The fast path needs a reusable snapshot. A continuously changing mailbox can
+still pay for the authoritative aggregate after each committed live invalidation,
+including background updates. Changes without live invalidation, including
+assignment eligibility changes, age out within 30 seconds on the next workspace
+read. Complete the rollout across replicas: an older image can reinstall the
+previous invalidation function, leaving only age-based refresh until a new image
+starts again.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -1192,6 +1275,27 @@ Rolling back keeps the wider constraint, and the previous version ignores
 waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
+
+### Index Mail's provider-message lookups
+
+Mail builds `mail.remote_message_refs_provider_message_idx` concurrently
+in the background. It accelerates matching a provider message across folders
+without changing message identity rules. The command-target, provider-message,
+and optional search builds share one renewable NATS lease and reserve their
+SQL connection, so ordinary queries cannot queue behind an index waiting for
+an old snapshot. Startup does not wait for these builds. A failed or busy
+build is retried at the next start; check warnings from `mail:migrate` and
+`pg_index.indisvalid` before expecting the new plan.
+
+After deployment, compare interval deltas in `pg_stat_statements` for the
+`SELECT DISTINCT remote_ref.message_id` statement that joins `mail.folders`
+and filters `connector_ref ->> 'providerMessageId'`. The new statement adds an
+`md5` equality before the full-ID equality, so it has a new query ID. Compare
+old statement intervals with new statement intervals after the index is valid:
+calls, total execution time and shared blocks read per call. The hash bounds
+index entries for legacy oversized provider IDs; the full equality still
+rejects hash collisions. This index does not reduce the number
+of statements or row writes per idle sync run.
 
 ### Index Mail's per-message command lookups
 

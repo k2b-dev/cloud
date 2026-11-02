@@ -12,7 +12,7 @@ import {
   staysInAggregatedViews,
   staysInAggregatedViewsAggregate,
 } from "./folder-display";
-import { isFollowUpConversation, isFollowUpMessage, isTrashOrJunkFolder } from "./follow-up-scope";
+import { isFollowUpConversation, isFollowUpMessage, isOpenConversation, isTrashOrJunkFolder } from "./follow-up-scope";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
 
@@ -126,7 +126,7 @@ const viewCondition = (view: MailFocusView, userId: string | null, unassigned: S
   if (view === "mine") return sql`c.work_status = 'needs_action' AND ${visibleNow()} AND ${assignedTo(userId)}`;
   if (view === "waiting") return sql`c.work_status = 'waiting' AND ${visibleNow()} AND ${assignedTo(userId)}`;
   if (view === "unassigned") return sql`c.work_status = 'needs_action' AND ${visibleNow()} AND ${aggregated} AND ${unassigned}`;
-  return sql`c.work_status <> 'done' AND ${visibleNow()} AND ${aggregated}`;
+  return sql`${isOpenConversation(sql`c`)} AND ${aggregated}`;
 };
 
 type DbFocusStats = {

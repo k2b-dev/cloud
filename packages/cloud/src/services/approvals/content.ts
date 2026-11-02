@@ -54,7 +54,7 @@ export const readApprovalContent = async (input: {
     SELECT r.details->'content' AS content FROM (${open.query}) r
     WHERE r.review_digest=${input.digest}
       AND octet_length((r.details->'content')::text) <= ${2 * CAPABILITY_MAX_REVIEW_CONTENT_BYTES + 2} LIMIT 1`;
-    const abort = () => query.cancel();
+    const abort = () => void query.cancel().catch(() => {});
     input.signal?.addEventListener("abort", abort, { once: true });
     if (input.signal?.aborted) abort();
     let rows: { content: unknown }[];

@@ -324,10 +324,17 @@ export function mailboxData(url: URL): MailboxPageData {
     listCursor: null,
     nextListCursor: null,
     listError: null,
+    // ?hidden=1207 names done conversations the list leaves out; "more" is over the count window, "unknown" uncounted.
+    hiddenDone: (() => {
+      const hidden = url.searchParams.get("hidden");
+      if (!hidden) return null;
+      if (hidden === "unknown") return { count: null, more: false };
+      return hidden === "more" ? { count: 1000, more: true } : { count: Number(hidden) || 0, more: false };
+    })(),
     listTitle: searching
       ? "Search results"
       : scheduledMode
-        ? "Scheduled"
+        ? "Outbox"
         : savedViewId
           ? savedViewId === "Saved1"
             ? "Priority view"
@@ -452,6 +459,7 @@ export function mailboxList(url: URL): MailboxListView {
     listCursor,
     nextListCursor,
     listError,
+    hiddenDone,
     listTitle,
   } = mailboxData(url);
   return {
@@ -475,6 +483,7 @@ export function mailboxList(url: URL): MailboxListView {
     listCursor,
     nextListCursor,
     listError,
+    hiddenDone,
     listTitle,
   };
 }

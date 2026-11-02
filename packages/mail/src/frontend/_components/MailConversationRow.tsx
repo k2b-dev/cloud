@@ -438,6 +438,7 @@ export default function MailConversationRow(props: {
       <Show when={!state().selectionMode && props.item.conversationId}>
         <div class="k2b-progressive-action absolute right-3 top-2 z-10">
           <Dropdown.Root
+            lazy
             position="bottom-left"
             width="15rem"
             items={[...(canWrite() ? writeActions() : []), ...cloudId.section({ conversationId: props.item.conversationId })]}

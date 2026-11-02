@@ -890,6 +890,8 @@ CREATE INDEX conversations_mailbox_assignee_idx ON mail.conversations USING btre
 
 CREATE INDEX conversations_mailbox_latest_idx ON mail.conversations USING btree (mailbox_id, latest_message_at DESC, id DESC);
 
+CREATE INDEX conversations_mailbox_open_latest_idx ON mail.conversations USING btree (mailbox_id, latest_message_at DESC, id DESC) WHERE (work_status <> 'done'::text);
+
 CREATE INDEX conversations_mailbox_snoozed_idx ON mail.conversations USING btree (mailbox_id, snoozed_until, id) WHERE (snoozed_until IS NOT NULL);
 
 CREATE INDEX conversations_mailbox_status_idx ON mail.conversations USING btree (mailbox_id, work_status, latest_message_at DESC, id DESC);

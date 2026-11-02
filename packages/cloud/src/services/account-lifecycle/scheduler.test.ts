@@ -25,6 +25,7 @@ test("scheduled lifecycle scans coalesce on a stable key, retry in minutes, and 
     };
     const modulePath = relative => new URL(relative, ${JSON.stringify(import.meta.url)}).pathname;
     mock.module(modulePath("../../_internal/process-sync.ts"), () => ({
+      processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
       lazySync: factory => { let handle; return () => handle ??= factory(sync); },
     }));
     mock.module(modulePath("../logging/index.ts"), () => ({

@@ -84,27 +84,39 @@ export default ssr<AuthContext>(async (c) => {
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await aiLive.cursor();
   const catalog = catalogPerApp(locale, auth.getAuthority(c));
-  const [settings, liveDictation, sidebar, appUrl, initialQuotas, approvals, codeList, codeExists, codeBlockPage, codeDetail, runsToday, attention] =
-    await Promise.all([
-      assistantAiSettingsState(subject),
-      getLiveDictationStatus(c.get("accessSubject")),
-      loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
-      coreSettings.get<string>("app.url"),
-      getAiChatQuotas(subject).catch(() => null),
-      // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
-      loadPendingApprovals(c, { app: "assistant" }),
-      // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
-      codeOpen && !detailCodeId ? loadCodeSummaries(invokeCode, owner).catch(() => null) : undefined,
-      codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
-      panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
-      // The shared Code page reads its Code, versions, runs and switch-on state itself and shows each failure in place.
-      detailCodeId
-        ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
-        : undefined,
-      // A missing count only leaves the line without numbers.
-      codeOpen && !detailCodeId ? countOwnRunsSince(invokeCode, startOfDayIn(timeZone, new Date())).catch(() => null) : undefined,
-      approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
-    ]);
+  const [
+    settings,
+    liveDictation,
+    sidebar,
+    appUrl,
+    initialQuotas,
+    approvals,
+    codeList,
+    codeExists,
+    codeBlockPage,
+    codeDetail,
+    runsToday,
+    attention,
+  ] = await Promise.all([
+    assistantAiSettingsState(subject),
+    getLiveDictationStatus(c.get("accessSubject")),
+    loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
+    coreSettings.get<string>("app.url"),
+    getAiChatQuotas(subject).catch(() => null),
+    // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
+    loadPendingApprovals(c, { app: "assistant" }),
+    // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
+    codeOpen && !detailCodeId ? loadCodeSummaries(invokeCode, owner).catch(() => null) : undefined,
+    codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
+    panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
+    // The shared Code page reads its Code, versions, runs and switch-on state itself and shows each failure in place.
+    detailCodeId
+      ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
+      : undefined,
+    // A missing count only leaves the line without numbers.
+    codeOpen && !detailCodeId ? countOwnRunsSince(invokeCode, startOfDayIn(timeZone, new Date())).catch(() => null) : undefined,
+    approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
+  ]);
   // The panel names its place from the first paint, and knows whether that place could have Code at all.
   const codePlace = panelScope && codeBlockPage !== undefined ? await loadCodePlace(panelScope, invokeCode, catalog) : undefined;
   // An unknown answer keeps "My apps & automations" in the sidebar, so a failure never hides the person's Code.

@@ -1622,7 +1622,16 @@ export const mailboxOperatorOperationsSchema = z
       states: operatorStateCountsSchema,
     }),
     coverage: z.object({
-      hydration: operatorCoverageSchema,
+      hydration: operatorCoverageSchema.extend({
+        timing: z
+          .object({
+            queueWaitMs: z.number().int().nonnegative().nullable(),
+            leaseWaitMs: z.number().int().nonnegative().nullable(),
+            batchMs: z.number().int().nonnegative().nullable(),
+            batchFinishedAt: z.string().datetime().nullable(),
+          })
+          .optional(),
+      }),
       search: operatorCoverageSchema,
       threads: operatorCoverageSchema,
     }),

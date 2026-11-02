@@ -18,7 +18,7 @@ Mailbox-scoped tools take `mailbox`: reuse its public ID. All resources and batc
 ## Choose the shortest useful path
 
 - For "what needs my attention?", start with `mail.conversation.focus`. No mailbox lookup is needed. Its previews help select conversations; a preview is not a complete message.
-- For text lookup across mailboxes, start with `mail.search`. Within a known mailbox use `mail.conversation.list` or the structured filters of `mail.conversation.search`.
+- For text lookup across mailboxes, start with `mail.search`. Within a known mailbox use `mail.conversation.list` or the structured filters of `mail.conversation.search`. Like the Mail lists, `mail.conversation.list` without `view` or `workStatus` lists open work only; pass `includeDone` when the task needs done or snoozed conversations too.
 - To choose a mailbox, use `mail.mailbox.browse`. Unread and needs-action counts count conversations, not individual messages. Report a returned problem when interpreting freshness. Use `mail.mailbox.read` for configuration or connection diagnosis, not before every mail task.
 - Use `mail.conversation.read` for collaboration context and the latest message window. Shared summary text may lag behind the messages. Follow `mail.message.list` pagination when the task needs the whole thread.
 - For plain message content use `mail.message.read-content`; follow nextOffset until null when full content matters. Use `mail.message.read` for the exact reply envelope and attachment metadata. Attachment text is available through `mail.attachment.read-content`, including status and continuation; a separate metadata read is unnecessary when text is already the goal.

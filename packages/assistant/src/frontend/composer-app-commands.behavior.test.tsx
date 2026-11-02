@@ -89,6 +89,8 @@ const mount = async (
   options: {
     embedded?: boolean;
     conflict?: boolean;
+    /** Answers every draft save, such as a gateway failure without a JSON body. */
+    saveResponse?: () => Response;
     loseFirstCreate?: boolean;
     replayedDraft?: AiConversation["draft"];
     project?: boolean;
@@ -186,6 +188,7 @@ const mount = async (
         const body: { content: AiConversation["draft"]["content"]; expectedRevision: number } = JSON.parse(String(init.body));
         saves.push(body);
         await options.saveGate;
+        if (options.saveResponse) return options.saveResponse();
         return options.conflict
           ? Response.json({ message: "Draft conflict" }, { status: 409 })
           : Response.json({ content: body.content, revision: body.expectedRevision + 1, updatedAt: now });
@@ -195,6 +198,11 @@ const mount = async (
         return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
       if (url.pathname.startsWith("/api/ai/skills")) return Response.json({ skills: [] });
       if (url.pathname === "/api/ai/tasks") return Response.json([]);
+      if (url.pathname === "/api/ai/conversations/new001" && options.conflict) {
+        // Another tab emptied the saved draft of the new chat.
+        const changed = { ...conversation, id: "new001", shortId: "new001", draft: { content: [], revision: 1, updatedAt: now } };
+        return Response.json({ conversation: changed, messages: [], hasMoreMessages: false, activeTurn: null, timeline: [] });
+      }
       if (url.pathname === "/api/ai/conversations/chat01")
         return Response.json({ conversation: initial, messages: [], hasMoreMessages: false, activeTurn: null, timeline: [] });
       return Response.json({ message: "unavailable" }, { status: 503 });
@@ -635,3 +643,40 @@ for (const project of [false, true]) {
     expect(h.saves).toHaveLength(0);
   });
 }
+
+const savePanelDrafts = async (h: Awaited<ReturnType<typeof mount>>) => {
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  h.window.dispatchEvent(new h.window.CustomEvent("cloud.panel.before-leave", { detail: { allowed: true } }));
+  await waitFor(() => [...h.root.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Entwürfe speichern"));
+  [...h.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Entwürfe speichern")!.click();
+};
+
+test("a new chat whose draft save fails without a conflict keeps the text and shows one localized error, no conflict", async () => {
+  const h = await mount({
+    embedded: true,
+    newChat: true,
+    saveResponse: () => new Response("Bad Gateway — upstream unavailable", { status: 502 }),
+  });
+  await savePanelDrafts(h);
+  await waitFor(() => h.saves.length === 1 && Boolean(h.root.querySelector('[role="alert"]')));
+  expect(h.root.querySelector('[role="alert"]')?.textContent).toContain("Der Entwurf konnte nicht gespeichert werden.");
+  expect(h.root.textContent).not.toContain("Failed to save conversation draft");
+  expect(h.root.textContent).not.toContain("Der gespeicherte Entwurf wurde geändert.");
+  expect(h.input.value).toBe("Plan /");
+  expect(h.creates).toHaveLength(1);
+});
+
+test("a real draft conflict shows only the conflict notice, naming an empty saved draft", async () => {
+  const h = await mount({ embedded: true, newChat: true, conflict: true });
+  await savePanelDrafts(h);
+  await waitFor(() => h.root.textContent?.includes("Der gespeicherte Entwurf wurde geändert.") ?? false);
+  expect(h.root.querySelector('[role="alert"]')).toBeNull();
+  expect(h.root.textContent).not.toContain("Draft conflict");
+  expect(h.root.textContent).toContain("Der gespeicherte Entwurf ist leer.");
+  const notice = h.root.querySelector(".k2b-notice-card[data-tone='warning'][role='status']");
+  expect([...(notice?.querySelectorAll("button") ?? [])].map((button) => button.textContent?.trim())).toEqual([
+    "Meinen Text behalten",
+    "Gespeicherten Entwurf übernehmen",
+  ]);
+  expect(h.input.value).toBe("Plan /");
+});

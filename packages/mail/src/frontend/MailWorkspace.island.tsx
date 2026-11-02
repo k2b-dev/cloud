@@ -110,6 +110,7 @@ import { createMailboxPreferences } from "./_components/mail-mailbox-preferences
 import {
   buildMailListHref,
   buildMailSearchClearHref,
+  buildMailShowDoneHref,
   isMailWorkspaceUrl,
   MAIL_SEARCH_FROM_PARAMETER,
   mailRouteUrl,
@@ -689,7 +690,14 @@ function createMailboxController(props: MailboxControllerProps) {
           pageNextCursor: reconciled.nextListCursor,
         });
         if (!merged.ok) continue;
-        next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
+        next = {
+          ...next,
+          listItems: merged.items,
+          nextListCursor: merged.nextCursor,
+          listError: reconciled.listError,
+          // The last page names the done conversations the whole list leaves out.
+          hiddenDone: reconciled.hiddenDone,
+        };
       }
       batch(() => {
         // Only the page 1 of the requested selection commits its route; an older one keeps the route shown.
@@ -2965,6 +2973,20 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       onLoadMore={controller().loadMoreConversations}
       onRefresh={controller().reconcileWorkspace}
       columns={wide ? { shared: controller().sharedMailbox(), assigneeNames: controller().assigneeNames } : undefined}
+      hiddenDone={(() => {
+        const data = controller().data;
+        if (!data.hiddenDone) return null;
+        return {
+          ...data.hiddenDone,
+          href: buildMailShowDoneHref({
+            requestUrl: mailRouteUrl(controller().requestPath()),
+            mailboxId: data.mailbox.id,
+            search: data.search,
+            folderId: data.folderId,
+            savedViewExpression: data.savedViews.find((view) => view.id === data.savedViewId)?.filter.expression ?? null,
+          }),
+        };
+      })()}
       doneToday={
         controller().data.listMode === "conversations"
           ? {

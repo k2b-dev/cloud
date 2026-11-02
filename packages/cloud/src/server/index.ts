@@ -12,6 +12,7 @@ export type { AppContext } from "./app-context";
 export { appKey } from "./app-key";
 export { clientIp, clientIpBucket } from "./client-ip";
 export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinition, type HelpDefinitionDocument } from "./help";
+export { DBIP_ATTRIBUTION, type IpCountryResult, ipCountry } from "./ip-country";
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";
 export type {
   AuthContext,

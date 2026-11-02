@@ -93,6 +93,7 @@ const data: MailboxPageData = {
   listCursor: null,
   nextListCursor: null,
   listError: null,
+  hiddenDone: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
@@ -196,7 +197,7 @@ describe("Mail workspace folder switches", () => {
       : draftsMode
         ? "Drafts"
         : scheduledMode
-          ? "Scheduled"
+          ? "Outbox"
           : savedViewId
             ? (truth.savedViews.find((view) => view.id === savedViewId)?.name ?? "All mail")
             : activeView
@@ -271,6 +272,7 @@ describe("Mail workspace folder switches", () => {
       listCursor: null,
       nextListCursor: null,
       listError: null,
+      hiddenDone: null,
       listTitle: title,
     };
   };
@@ -493,7 +495,7 @@ describe("Mail workspace folder switches", () => {
     await switchTo("scheduled=1");
     expectRequests("workspace-list", `${path}?scheduled=1`);
     expect(dom.root.textContent).toContain("Scheduled offer");
-    expect(dom.root.querySelector("h1")?.textContent).toBe("Scheduled");
+    expect(dom.root.querySelector("h1")?.textContent).toBe("Outbox");
     const scheduledLabel = link(`${path}?scheduled=1`).textContent;
     expect(location()).toBe(`${path}?scheduled=1`);
     counts();
@@ -513,7 +515,7 @@ describe("Mail workspace folder switches", () => {
     await settle();
     assertList(`${path}?folder=Filed1`, "Filed");
     counts();
-    expect(scheduledLabel).toBe("Scheduled6");
+    expect(scheduledLabel).toBe("Outbox6");
   });
 
   test("a caught-up folder switch takes mailbox and saved view names from the list and keeps counts", async () => {

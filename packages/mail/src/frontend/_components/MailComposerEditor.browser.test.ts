@@ -287,6 +287,96 @@ describe("Mail composer layout", () => {
   }, 30_000);
 });
 
+describe("Mail composer with a long message", () => {
+  // A reply quotes the whole earlier message, so the draft is far longer than the Write pane.
+  const longMessage = [
+    "Thanks, see my answer below.",
+    ...Array.from({ length: 60 }, (_, index) => `> Quoted line ${index + 1} of the earlier message.`),
+    "Last line of the reply.",
+  ].join("\n\n");
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`scrolls the message by wheel and keeps the caret visible below the toolbar on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate(() => window.mountComposer({ locale: "en", intent: "reply_all", signatureTemplateId: null, seed: true }));
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
+        await editor.fill(longMessage);
+        await settled(page);
+        const scroller = page.locator(".k2b-text-editor").locator("xpath=..");
+        const geometry = () =>
+          page.evaluate(() => {
+            const scroller = document.querySelector(".k2b-text-editor")!.parentElement!;
+            const view = scroller.getBoundingClientRect();
+            const toolbar = document.querySelector(".k2b-ste-toolbar")!.getBoundingClientRect();
+            const caret = document.querySelector(".cm-cursor")?.getBoundingClientRect();
+            return {
+              scrollTop: scroller.scrollTop,
+              overflow: scroller.scrollHeight - scroller.clientHeight,
+              view: { top: view.top, bottom: view.bottom },
+              toolbar: { top: toolbar.top, bottom: toolbar.bottom },
+              caret: caret ? { top: caret.top, bottom: caret.bottom } : null,
+            };
+          });
+        const end = await geometry();
+        expect(end.overflow).toBeGreaterThan(500);
+        // The caret at the end of the text is on screen inside the Write pane, not under the toolbar or past the pane.
+        expect(end.caret).not.toBeNull();
+        expect(end.caret!.bottom).toBeLessThanOrEqual(Math.min(end.view.bottom, label === "phone" ? end.toolbar.top : end.view.bottom) + 1);
+        if (label === "desktop") expect(end.caret!.top).toBeGreaterThanOrEqual(end.toolbar.bottom - 1);
+
+        // The Write pane itself scrolls: a wheel (desktop) or a finger (phone) moves the message back up.
+        // Mobile WebKit has no wheel, so the phone case checks that the pane accepts user scrolling and scrolls it.
+        if (label === "desktop") {
+          const box = await scroller.boundingBox();
+          if (!box) throw new Error("The Write pane is not visible");
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.wheel(0, -600);
+        } else {
+          await settled(page);
+          expect(await scroller.evaluate((element) => getComputedStyle(element).overflowY)).toMatch(/^(auto|scroll)$/);
+          await scroller.evaluate((element) => element.scrollBy({ top: -600 }));
+        }
+        await page.waitForFunction(
+          (before) => document.querySelector(".k2b-text-editor")!.parentElement!.scrollTop < before,
+          end.scrollTop,
+        );
+        const wheeled = await geometry();
+        expect(wheeled.scrollTop).toBeLessThan(end.scrollTop);
+        if (label === "desktop") {
+          // The toolbar stays where it was, right under the pane tabs.
+          expect(Math.abs(wheeled.toolbar.top - end.toolbar.top)).toBeLessThanOrEqual(1);
+        }
+
+        // The caret moved by keyboard to the start scrolls the first line into view, and back to the end.
+        await page.keyboard.press("ControlOrMeta+Home");
+        await page.waitForFunction(() => {
+          const scroller = document.querySelector(".k2b-text-editor")!.parentElement!;
+          const line = document.querySelector(".cm-line")?.getBoundingClientRect();
+          return !!line && line.top >= scroller.getBoundingClientRect().top - 1 && scroller.scrollTop < 120;
+        });
+        await page.keyboard.press("ControlOrMeta+End");
+        await page.waitForFunction(() => {
+          const scroller = document.querySelector(".k2b-text-editor")!.parentElement!;
+          return scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 120;
+        });
+        await settled(page);
+        const back = await geometry();
+        expect(back.caret).not.toBeNull();
+        expect(back.caret!.bottom).toBeLessThanOrEqual(back.view.bottom + 1);
+        if (label === "desktop") expect(back.caret!.top).toBeGreaterThanOrEqual(back.toolbar.bottom - 1);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 60_000);
+  }
+});
+
 describe("Mail composer action bar", () => {
   for (const [device, context] of [
     ["desktop", { viewport: { width: 1366, height: 900 } }],

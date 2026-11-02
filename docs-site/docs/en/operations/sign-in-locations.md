@@ -5,7 +5,7 @@ section: Operations
 order: 1146
 description: Manage bundled and uploaded sign-in location databases, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
-updated: 2026-10-28
+updated: 2026-11-01
 ---
 
 # Sign-in locations
@@ -17,12 +17,14 @@ and countries. Paired apps can request browser sign-in context through the
 [signed app approval API](./app-approval.md#read-browser-sign-in-context).
 Cloud Login displays it when the Cloud announces support; see
 [Read the request details](/en/docs/accounts/app-sign-in#read-the-request-details).
+The same City database serves application [country lookups](/en/docs/platform#look-up-a-country-on-the-server)
+through `ipCountry()`; these return no city or network details.
 Administrators can inspect and replace the databases on the admin page, through
 the admin API, and with the CLI.
 
 ## Bundled snapshot and updates
 
-Only the Core image contains the DB-IP IP to City Lite and IP to ASN Lite
+Cloud’s built-in runtime images contain the DB-IP IP to City Lite and IP to ASN Lite
 snapshot for **2026-10**, built on **2026-10-01**. The files live under
 `/app/geoip`: `dbip-city-lite.mmdb` (127 MB) and `dbip-asn-lite.mmdb` (9.6 MB)
 uncompressed. The image build takes the gzip files (about 65 MB compressed)
@@ -49,7 +51,31 @@ The databases are © DB-IP.com, licensed under
 [IP Geolocation by DB-IP](https://db-ip.com). They are decompressed from gzip
 and otherwise unmodified. The admin page shows this attribution while any
 active database is from DB-IP. Any page that displays or uses DB-IP database
-results must link to DB-IP.com.
+results must link to DB-IP.com. Application authors receive this requirement
+in the lookup result’s `attribution` field; it applies to reports using saved country
+results too. A non-DB-IP City upload removes that attribution from country
+lookup results, even if the ASN database still uses DB-IP.
+
+## Application country lookups
+
+Deploy the updated Core before applications that use `ipCountry()`.
+The helper sends a signed POST to Core using the application's enrolled app
+key and `CLOUD_CORE_INTERNAL_ORIGIN`. It needs no additional platform permission.
+Third-party images need no GeoIP files or direct GeoIP database access.
+Core uses its existing bundled snapshot or administrator upload; there is no
+second database or runtime download. Anonymous and interactive credentials
+cannot call the country route.
+
+The helper reports `available: false` when Core has no City database, cannot
+be reached, rejects the app proof, or exceeds the two-second deadline. An
+unknown, private, or invalid address returns `country: null` while preserving
+availability. A decoder failure returns no country and logs a fixed message
+once without the address. Applications can continue without country enrichment.
+
+Country requests use `security.rate_limit_per_second` for admission per
+transport peer and per app key, with counters separate from identity requests.
+HTTP 429 also resolves to `available: false`; omit country enrichment for that
+event rather than retrying immediately.
 
 ## Use your own database
 
@@ -98,8 +124,17 @@ it; uploads do not change the server's request-body limit.
 
 ## Privacy and accuracy
 
-The address stays on the server; lookup is local. The module stores and logs no
-IP address. Its result includes only browser and system codes, country, city,
+Application country lookups transmit the address only in a POST body between
+the application and Core within the installation. No external geolocation
+provider receives it. The lookup does not retain, log, audit, or cache the IP,
+and does not create a capability execution history entry. Its response contains
+only country, availability, and attribution. Applications must discard the IP
+after deriving the country; do not include it in analytics events or logs.
+The built-in request logger records no request body. Operators must also keep
+request bodies out of any proxy or external observability logs they configure.
+
+The sign-in request-context module also looks up locally and stores and logs
+no IP address. Its result includes browser and system codes, country, city,
 and network operator, plus database availability.
 
 Locations are approximate. A city can identify a provider's network node.

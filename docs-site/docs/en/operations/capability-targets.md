@@ -5,7 +5,7 @@ section: Operations
 order: 1258
 description: Upgrade Core and capability providers while applications adopt explicit resource targets.
 tags: [operations, capabilities, upgrades]
-updated: 2026-11-01
+updated: 2026-11-02
 ---
 
 # Roll out capability targets
@@ -80,6 +80,11 @@ use `core.code`, as do manual runs and secret set/delete Actions. Code Queries,
 including `code.attention` and `code.attention.list`, retain their discovery and
 filter inputs: the mandatory-target rule applies to Actions. Installation-wide
 policy changes keep their group-rule input.
+
+Pulse dashboard actions (`dashboard.save`, `dashboard.publish`,
+`dashboard.unpublish`, and `dashboard.delete`) use a `pulse.base` target with
+its public ID. Pass dashboard fields and revisions in `input`, without
+`baseId`. Dashboard list queries keep `baseId`; the CLI keeps `--base`.
 
 Examples of `code: false` include Chat Actions, Spaces invitation preparation
 and commit, and Gateway Ops' app-status forget Action. Resource-owned Code

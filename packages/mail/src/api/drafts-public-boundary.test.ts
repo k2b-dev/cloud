@@ -1,7 +1,7 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { ok } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { commands, drafts, mailboxAccess, publicResources } from "../service";
@@ -126,5 +126,101 @@ suite("Mail command public boundary", () => {
       mailboxId: "mbx123",
       target: { messageId: "msg123", folderId: "fld123" },
     });
+  });
+});
+
+suite("Mail draft seed public boundary", () => {
+  const mailboxId = "22222222-2222-4222-8222-222222222222";
+  const messageId = "33333333-3333-4333-8333-333333333333";
+  const senderIdentityId = "44444444-4444-4444-8444-444444444444";
+  const seedId = "55555555-5555-4555-8555-555555555555";
+  const publicIds: Record<string, string> = { [mailboxId]: "mbx123", [messageId]: "msg123", [senderIdentityId]: "snd123" };
+  const internalIds: Record<string, string> = { msg123: messageId, snd123: senderIdentityId };
+  const publicOrigin = {
+    kind: "derive",
+    messageId: "msg123",
+    input: { kind: "edit_as_new", senderIdentityId: "snd123", includeAttachments: true },
+  } as const;
+  const internalOrigin = { ...publicOrigin, messageId, input: { ...publicOrigin.input, senderIdentityId } };
+
+  const stubBoundary = () => {
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
+    spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async (_table, _mailbox, id) => internalIds[id] ?? null);
+    spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (_table, _mailbox, ids) => {
+      const resolved = ids.flatMap((id) => (internalIds[id] ? [internalIds[id]] : []));
+      return resolved.length === ids.length ? resolved : null;
+    });
+    spyOn(publicResources, "publicIds").mockImplementation(
+      async (table, ids) =>
+        new Map(ids.flatMap((id) => (typeof id === "string" ? ([[id, publicIds[id] ?? `${table}-missing`]] as const) : []))),
+    );
+  };
+  const post = (path: string, body: unknown) =>
+    app.request(path, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer draft-seed-boundary-test",
+        "x-forwarded-for": uniqueCallerAddress(),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+  // "Use as new message" sent the public message ID through to the service, which answered "Invalid UUID".
+  test("resolves the derived message to its UUID and returns the origin with public IDs", async () => {
+    stubBoundary();
+    const prepareDraftSeed = spyOn(drafts, "prepareDraftSeed").mockResolvedValue(
+      ok({
+        id: seedId,
+        mailboxId,
+        conversationId: null,
+        intent: "new",
+        sourceMessageId: null,
+        derivedFromMessageId: messageId,
+        derivationKind: "edit_as_new",
+        content: {
+          senderIdentityId,
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "Again",
+          body: "",
+          format: "markdown",
+          priority: "normal",
+          requestDeliveryReceipt: false,
+          requestReadReceipt: false,
+        },
+        attachments: [],
+        origin: internalOrigin,
+        createdAt: "2026-11-02T09:00:00.000Z",
+      }),
+    );
+
+    const response = await post("/mailboxes/mbx123/draft-seeds", { origin: publicOrigin });
+
+    expect(response.status).toBe(200);
+    expect(prepareDraftSeed).toHaveBeenCalledWith(expect.objectContaining({ mailboxId, origin: internalOrigin }));
+    expect(await response.json()).toMatchObject({ mailboxId: "mbx123", derivedFromMessageId: "msg123", origin: publicOrigin });
+  });
+
+  test("resolves the derived message when the composer saves the seed", async () => {
+    stubBoundary();
+    const materializeDraftSeed = spyOn(drafts, "materializeDraftSeed").mockResolvedValue(fail(err.conflict("stop after the boundary")));
+
+    await post("/mailboxes/mbx123/draft-seeds/materialize", {
+      idempotencyKey: seedId,
+      origin: publicOrigin,
+      draft: { senderIdentityId: "snd123", to: [], cc: [], bcc: [], subject: "Again", body: "" },
+    });
+
+    expect(materializeDraftSeed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId,
+        input: expect.objectContaining({ origin: internalOrigin, draft: expect.objectContaining({ senderIdentityId }) }),
+      }),
+    );
   });
 });

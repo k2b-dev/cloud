@@ -21,6 +21,7 @@ import {
   operatorActionForCommand,
   operatorActionForFolder,
 } from "./operator-actions";
+import { mailboxSyncStateCountsQuery } from "./sync-state-counts";
 
 const toIso = (value: Date | string | null): string | null =>
   value ? (value instanceof Date ? value : new Date(value)).toISOString() : null;
@@ -131,14 +132,10 @@ const loadMailboxOperations = async (
   `;
   if (!mailbox) return null;
 
-  const syncStates = await sql<{ state: string; count: number }[]>`
-    SELECT run.state, COUNT(*)::int AS count
-    FROM mail.sync_runs run
-    JOIN mail.remote_resources resource ON resource.id = run.remote_resource_id
-    WHERE resource.mailbox_id = ${mailboxId}::uuid
-      AND (run.state = 'running' OR run.started_at > now() - ${SYNC_RUN_STATUS_WINDOW_HOURS}::int * interval '1 hour')
-    GROUP BY run.state
-  `;
+  const syncStates = await sql.unsafe<{ state: string; count: number }[]>(mailboxSyncStateCountsQuery, [
+    mailboxId,
+    SYNC_RUN_STATUS_WINDOW_HOURS,
+  ]);
   const [coverage] = await sql<
     {
       messages: number;
@@ -338,6 +335,18 @@ const loadMailboxOperations = async (
   const bm25Ready = search?.bm25_ready ?? false;
   const effectiveBackend = mailbox.search_backend !== "postgres" && bm25Ready ? "pg_textsearch" : "postgres";
 
+  const [hydrationTiming] = await sql<
+    {
+      queue_wait_ms: number | string | null;
+      lease_wait_ms: number | string | null;
+      batch_ms: number | string | null;
+      batch_finished_at: Date | string | null;
+    }[]
+  >`
+    SELECT queue_wait_ms, lease_wait_ms, batch_ms, batch_finished_at
+    FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid
+  `;
+
   return mailboxOperatorOperationsSchema.parse({
     mailboxId: mailbox.short_id,
     mailboxName: mailbox.name,
@@ -352,6 +361,12 @@ const loadMailboxOperations = async (
       hydration: {
         total: Number(coverage?.messages ?? 0),
         covered: Number(coverage?.hydrated ?? 0),
+        timing: {
+          queueWaitMs: hydrationTiming?.queue_wait_ms == null ? null : Number(hydrationTiming.queue_wait_ms),
+          leaseWaitMs: hydrationTiming?.lease_wait_ms == null ? null : Number(hydrationTiming.lease_wait_ms),
+          batchMs: hydrationTiming?.batch_ms == null ? null : Number(hydrationTiming.batch_ms),
+          batchFinishedAt: toIso(hydrationTiming?.batch_finished_at ?? null),
+        },
       },
       search: {
         total: Number(coverage?.search_total ?? 0),

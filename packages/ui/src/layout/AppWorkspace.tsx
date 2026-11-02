@@ -303,6 +303,12 @@ export type AppWorkspaceMainPaneProps = {
   lead?: JSX.Element;
   /** Controls at the end of the level head. */
   actions?: JSX.Element;
+  /**
+   * Levels mode: `"page"` marks the level that holds the page itself, such as a settings form or the list of an
+   * area, rather than a column that leads there or a detail beside it. Its title takes the page step of the type
+   * scale, above every group title in it, and its content starts at the title's edge without an inset of its own.
+   */
+  heading?: "page";
   surface?: "default" | "navigation";
   open?: boolean;
   resizable?: boolean;
@@ -898,6 +904,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                     data-workspace-level-first={levelAttr("first")}
                     data-workspace-level-last={levelAttr("last")}
                     data-workspace-main-region={pane.props.id}
+                    data-workspace-heading={levelsMode() ? pane.props.heading : undefined}
                     data-workspace-mobile-active={
                       (levelsMode() ? levelClasses(levelIndex(), "shown").split(" ").includes("1") : activeMobilePane() === pane.props.id)
                         ? "true"

@@ -269,6 +269,19 @@
     color: var(--ui-app-accent-text);
   }
 
+  /* The done conversations a work list leaves out, at its end: one quiet line of fixed height, so nothing moves. */
+  .mail-hidden-done {
+    display: flex;
+    height: 2rem;
+    align-items: center;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--k2b-text-muted);
+    white-space: nowrap;
+  }
+
   /* "All done.": a calm moment in the list's place, with the way to what automations did today. */
   .mail-all-done {
     display: flex;

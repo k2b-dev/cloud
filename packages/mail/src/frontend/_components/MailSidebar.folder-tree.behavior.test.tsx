@@ -237,4 +237,40 @@ if (!isServer) {
       }
     });
   }
+
+  test("a new snapshot with the same folders keeps every folder row, and a changed folder updates", () => {
+    const dom = createDomTestHarness();
+    const { folders } = folderFixture();
+    const { default: MailSidebar, mailSidebarFixture, openMailboxFixture } = modules!;
+    const [snapshot, setSnapshot] = createSignal(structuredClone(folders));
+    const dispose = render(
+      () => (
+        <MailSidebar
+          {...mailSidebarFixture()}
+          open={{ ...openMailboxFixture(), mailboxId: "Box001", mailboxName: "Support", folders: snapshot() }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const rows = () => [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")];
+      const first = rows();
+      expect(first.length).toBeGreaterThan(0);
+      // A view transition captures every named element on its own: 350 named folder rows cost seconds per switch.
+      expect(dom.root.querySelector('[style*="view-transition-name"]')).toBeNull();
+
+      // A conversation click or live event brings new objects with the same content.
+      setSnapshot(structuredClone(folders));
+      expect(rows().every((row, index) => row === first[index])).toBe(true);
+
+      const changed = structuredClone(folders);
+      const target = changed.find((folder) => folder.name === "Archiv")!;
+      target.name = "Renamed archive";
+      setSnapshot(changed);
+      expect(dom.root.textContent).toContain("Renamed archive");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 }

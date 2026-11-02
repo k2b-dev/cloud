@@ -9,6 +9,8 @@ export type AdminOperation = {
   path: string;
   body?: boolean;
   resultFields?: readonly string[];
+  /** The operation only runs a check or a task; it reports this result instead of a save. */
+  report?: { message: string; fields?: readonly string[] };
   query?: Record<string, string>;
 };
 export const ADMIN_OPERATIONS: readonly AdminOperation[] = [
@@ -16,10 +18,30 @@ export const ADMIN_OPERATIONS: readonly AdminOperation[] = [
   { command: "settings reset", method: "DELETE", path: "/api/admin/core/settings/:key" },
   { command: "settings legacy list", method: "GET", path: "/api/admin/core/settings/legacy" },
   { command: "settings legacy delete", method: "DELETE", path: "/api/admin/core/settings/legacy" },
-  { command: "settings test pdf", method: "POST", path: "/api/admin/core/settings/test-pdf" },
-  { command: "settings test storage", method: "POST", path: "/api/admin/core/settings/test-storage" },
-  { command: "settings test freeipa", method: "POST", path: "/api/admin/core/settings/test-freeipa" },
-  { command: "ai enrichment run", method: "POST", path: "/api/admin/core/settings/run-ai-enrichment" },
+  {
+    command: "settings test pdf",
+    method: "POST",
+    path: "/api/admin/core/settings/test-pdf",
+    report: { message: "PDF rendered", fields: ["bytes", "contentType"] },
+  },
+  {
+    command: "settings test storage",
+    method: "POST",
+    path: "/api/admin/core/settings/test-storage",
+    report: { message: "Object written, read and deleted" },
+  },
+  {
+    command: "settings test freeipa",
+    method: "POST",
+    path: "/api/admin/core/settings/test-freeipa",
+    report: { message: "FreeIPA connection succeeded" },
+  },
+  {
+    command: "ai enrichment run",
+    method: "POST",
+    path: "/api/admin/core/settings/run-ai-enrichment",
+    report: { message: "AI enrichment ran", fields: ["summary"] },
+  },
   { command: "apps status", method: "GET", path: "/api/admin/apps/:app/status" },
   { command: "lifecycle deleted-accounts", method: "GET", path: "/api/admin/lifecycle/deleted-accounts" },
   { command: "lifecycle reminders", method: "GET", path: "/api/admin/lifecycle/reminders" },
@@ -172,6 +194,16 @@ export const administrationCommands = ADMIN_OPERATIONS.map((operation) => {
         ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body }),
       });
       if (!response.ok) await ctx.readJson(response);
+      if (operation.report) {
+        const data = z.record(z.string(), z.unknown()).parse(await ctx.readJson(response));
+        const report = {
+          ok: true,
+          message: operation.report.message,
+          ...Object.fromEntries((operation.report.fields ?? []).map((key) => [key, data[key]])),
+        };
+        if (!printStructured(ctx, report)) ctx.print(JSON.stringify(report));
+        return;
+      }
       // Return only explicitly selected identifiers; owner responses can include credentials or submitted settings.
       const result: Record<string, string | boolean> = { saved: true };
       if (operation.resultFields) {

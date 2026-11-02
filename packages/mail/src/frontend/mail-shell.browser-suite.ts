@@ -1432,7 +1432,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const scheduled = await open(`${boxPath}?scheduled=1&theme=${theme}`, width);
             try {
               expect(await scheduled.locator(".k2b-app-workspace__head [data-mail-queue-count]").count()).toBe(1);
-              expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Scheduled");
+              expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Outbox");
             } finally {
               await close(scheduled);
             }
@@ -1596,6 +1596,68 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           if (screenshots) await page.screenshot({ path: join(screenshots, "views-all-done-light-1440.png") });
         } finally {
           await close(page);
+        }
+      });
+
+      for (const width of [1440, 390])
+        test(`views ${width}: a work list names its hidden done conversations at its end and shows them in place`, async () => {
+          const page = await open(`${boxPath}?folder=Inbox1&hidden=1207&locale=de`, width);
+          try {
+            const footer = page.locator("[data-mail-hidden-done]");
+            await footer.waitFor({ state: "visible" });
+            expect(await footer.textContent()).toBe("1.207 erledigte Unterhaltungen·Erledigt anzeigen");
+            // One fixed line after the rows: it never moves what is above it.
+            expect((await footer.boundingBox())!.height).toBeCloseTo(32, 0);
+            const rows = page.locator("[data-mail-conversation-list] [role='list']");
+            expect((await footer.boundingBox())!.y).toBeGreaterThanOrEqual(
+              (await rows.boundingBox())!.y + (await rows.boundingBox())!.height,
+            );
+            if (screenshots) {
+              await footer.evaluate((element) => element.scrollIntoView({ block: "end" }));
+              await settled(page);
+              await page.screenshot({ path: join(screenshots, `views-hidden-done-light-${width}.png`) });
+            }
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await footer.getByRole("link", { name: "Erledigt anzeigen", exact: true }).click();
+            await response;
+            await ready(page);
+            const url = new URL(page.url());
+            expect(url.searchParams.get("folder")).toBe("Inbox1");
+            expect(JSON.parse(url.searchParams.get("search")!).expression).toEqual({
+              type: "and",
+              expressions: [
+                { type: "folder_id", folderId: "Inbox1" },
+                { type: "work_status", value: "done" },
+              ],
+            });
+            if (screenshots) await page.screenshot({ path: join(screenshots, `views-show-done-light-${width}.png`) });
+            await page.goBack();
+            await ready(page);
+            expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+            await footer.waitFor({ state: "visible" });
+          } finally {
+            await close(page);
+          }
+        });
+      test("views: an empty work list and All done still offer the done conversations", async () => {
+        for (const [path, name] of [
+          [`${boxPath}?folder=Inbox1&inbox=empty&hidden=3&locale=de`, "empty"],
+          [`${boxPath}?layout=auto&done=26,17&inbox=empty&hidden=1207&locale=de`, "all-done"],
+          [`${boxPath}?layout=auto&hidden=unknown&locale=de`, "uncounted"],
+        ] as const) {
+          const page = await open(path, 1440);
+          try {
+            const footer = page.locator("[data-mail-hidden-done]");
+            await footer.waitFor({ state: "visible" });
+            expect(await footer.getByRole("link").getAttribute("href")).toContain("/app/mail/Box001");
+            if (screenshots) {
+              await footer.evaluate((element) => element.scrollIntoView({ block: "end" }));
+              await settled(page);
+              await page.screenshot({ path: join(screenshots, `views-hidden-done-${name}-light-1440.png`) });
+            }
+          } finally {
+            await close(page);
+          }
         }
       });
 

@@ -216,10 +216,10 @@ test("20 regular/fullPage swaps keep the slot, provider, draft, pending work and
       const frame = slot?.querySelector("iframe");
       if (!slot || !frame?.contentWindow) throw new Error("Provider missing");
       Reflect.set(window, "fixtureSlot", slot);
+      Reflect.set(window, "fixtureProviderDocument", frame.contentDocument);
       Reflect.set(frame, "fixtureIdentity", "kept");
       return {
         token: Reflect.get(frame.contentWindow, "fixtureProviderToken"),
-        timeOrigin: frame.contentWindow.performance.timeOrigin,
         context: JSON.parse(frame.contentDocument?.getElementById("provider-context")?.textContent ?? "null"),
       };
     });
@@ -242,11 +242,12 @@ test("20 regular/fullPage swaps keep the slot, provider, draft, pending work and
           sameSlot: slot === Reflect.get(window, "fixtureSlot"),
           frame: Reflect.get(frame, "fixtureIdentity"),
           token: Reflect.get(frame.contentWindow, "fixtureProviderToken"),
-          timeOrigin: frame.contentWindow.performance.timeOrigin,
+          sameDocument: frame.contentDocument === Reflect.get(window, "fixtureProviderDocument"),
           context: JSON.parse(frame.contentDocument?.getElementById("provider-context")?.textContent ?? "null"),
         };
       });
-      expect(state).toMatchObject({ sameSlot: true, frame: "kept", token: initial.token, timeOrigin: initial.timeOrigin });
+      // Document identity is stable; WebKit may round timing values differently between reads.
+      expect(state).toMatchObject({ sameSlot: true, sameDocument: true, frame: "kept", token: initial.token });
       expect(state.context).toMatchObject({
         app: "fixture",
         help: [`help-${name.toLowerCase()}`],

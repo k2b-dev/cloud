@@ -14,6 +14,7 @@ import { type DocumentZipManifest, planZipEntries, writeDocumentZip } from "./do
 import type { ExpansionViewer } from "./relation-access";
 import { get as getTable } from "./tables";
 import { buildTemplateAppData } from "./template-context";
+import { resultTransaction } from "./transaction-rollback";
 import type { Table } from "./types";
 
 const WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS = 1_000;
@@ -51,54 +52,52 @@ export const createDocumentForRecord = async (params: {
       // Settings use their own cache/pool. Read them before reserving the
       // capture connection, then share this context with every HTML field.
       const templateApp = await buildTemplateAppData();
-      return sql
-        .begin(async (client) => {
-          await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
-          const template = await getStoredTemplate(params.template.id, client);
-          const table = await getTable(params.table.id, { client });
-          if (!template || !table) return fail(err.notFound(t.tableNotFound));
-          if (!template.enabled || template.deletedAt) return fail(err.badInput(t.templateDisabled));
+      return resultTransaction(async (client) => {
+        await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+        const template = await getStoredTemplate(params.template.id, client);
+        const table = await getTable(params.table.id, { client });
+        if (!template || !table) return fail(err.notFound(t.tableNotFound));
+        if (!template.enabled || template.deletedAt) return fail(err.badInput(t.templateDisabled));
 
-          const captured = await captureRecordSnapshotDraft({
-            client,
-            templateApp,
-            baseId: params.table.baseId,
-            tableId: params.table.id,
-            recordId: params.recordId,
-            actorId: params.actor.kind === "user" ? params.actor.userId : null,
-            canReadTable: params.canReadTable,
-            viewer: params.viewer,
-            dateConfig: params.dateConfig,
-          });
-          if (!captured.ok) return captured;
-          const { snapshot, record } = captured.data;
-
-          const rendered = await buildLiveRenderData({
-            client,
-            app: templateApp,
-            template,
-            table,
-            record,
-            dateConfig: params.dateConfig,
-            createdAt: new Date(record.updatedAt),
-          });
-          if (!rendered.ok) return rendered;
-
-          return ok({
-            template,
-            snapshot,
-            renderData: { ...rendered.data.data, snapshot },
-          });
-        })
-        .catch((error: unknown) => {
-          // Concurrent first captures can race on the Record's scan-code row.
-          // Roll back the whole snapshot and expose a retryable domain conflict,
-          // never a partially refreshed capture or an unhandled database error.
-          if (error instanceof Error && (("errno" in error && error.errno === "40001") || ("code" in error && error.code === "40001"))) {
-            return fail(err.conflict(t.recordChanged));
-          }
-          throw error;
+        const captured = await captureRecordSnapshotDraft({
+          client,
+          templateApp,
+          baseId: params.table.baseId,
+          tableId: params.table.id,
+          recordId: params.recordId,
+          actorId: params.actor.kind === "user" ? params.actor.userId : null,
+          canReadTable: params.canReadTable,
+          viewer: params.viewer,
+          dateConfig: params.dateConfig,
         });
+        if (!captured.ok) return captured;
+        const { snapshot, record } = captured.data;
+
+        const rendered = await buildLiveRenderData({
+          client,
+          app: templateApp,
+          template,
+          table,
+          record,
+          dateConfig: params.dateConfig,
+          createdAt: new Date(record.updatedAt),
+        });
+        if (!rendered.ok) return rendered;
+
+        return ok({
+          template,
+          snapshot,
+          renderData: { ...rendered.data.data, snapshot },
+        });
+      }).catch((error: unknown) => {
+        // Concurrent first captures can race on the Record's scan-code row.
+        // Roll back the whole snapshot and expose a retryable domain conflict,
+        // never a partially refreshed capture or an unhandled database error.
+        if (error instanceof Error && (("errno" in error && error.errno === "40001") || ("code" in error && error.code === "40001"))) {
+          return fail(err.conflict(t.recordChanged));
+        }
+        throw error;
+      });
     },
   );
 };
