@@ -3,7 +3,8 @@ import { chooseFiles } from "./files";
 
 /**
  * One "Attach" button that calls the real `chooseFiles` for a browser test, which answers the catalog, the
- * provider's Queries, and its read streams. `?single` chooses one file, `?accept=` and `?max=` pass through,
+ * provider's Queries, and its read streams. `?single` chooses one file, `?accept=`, `?max=` (`maxBytes`),
+ * `?maxFiles=`, and `?maxTotal=` (`maxTotalBytes`) pass through,
  * `?customer=` passes one `customers.customer` ref as context and `?noMatching=` its empty title.
  * Each call gets a fresh signal that `window.abortChoosing()` aborts. Each result lands in `window.chosen` as plain
  * facts. `?dropzone` opens, like Notebooks, a dialog whose `FileDropzone` chooses with
@@ -44,6 +45,8 @@ button.addEventListener("click", () => {
     multiple: !params.has("single"),
     accept: params.get("accept") ?? undefined,
     maxBytes: params.has("max") ? Number(params.get("max")) : undefined,
+    maxFiles: params.has("maxFiles") ? Number(params.get("maxFiles")) : undefined,
+    maxTotalBytes: params.has("maxTotal") ? Number(params.get("maxTotal")) : undefined,
     context: params.has("customer") ? { refs: [{ type: "customers.customer", id: params.get("customer")! }] } : undefined,
     noMatchingFiles: params.get("noMatching") ?? undefined,
     signal: choosing.signal,

@@ -1020,8 +1020,8 @@ describe("Spaces item detail in a browser", () => {
         const picked = page.waitForEvent("filechooser");
         await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
         // The page learns while idle that no app offers files, and then the click opens the device's dialog. A click
-        // before that opens the source chooser, whose first source, This device, opens the same dialog.
-        const thisDevice = page.locator('dialog[open] [role="gridcell"]').first();
+        // before that opens the chooser on This device, whose source opens the same dialog.
+        const thisDevice = page.locator('dialog[open] .cloud-file-dialog__source[aria-current="true"]');
         const chooserOpened = thisDevice.waitFor().then(
           () => true,
           () => false,

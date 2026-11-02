@@ -627,7 +627,7 @@ describe("MailComposer signature choice", () => {
       const options = chooseFiles.mock.calls[0]![0]!;
       expect(options).toMatchObject({
         multiple: true,
-        maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+        maxTotalBytes: MAX_DRAFT_ATTACHMENT_BYTES,
         noMatchingFiles: "Keine passenden Dateien für diese Empfänger",
       });
       expect(typeof options.context).toBe("function");

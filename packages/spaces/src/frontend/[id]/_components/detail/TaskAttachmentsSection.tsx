@@ -152,7 +152,12 @@ export default function TaskAttachmentsSection(props: {
    */
   const chooseAndUploadMedia = async () => {
     try {
-      const chosen = await chooseFiles({ accept: MEDIA_ACCEPT, multiple: true, maxBytes: remaining() * MAX_TASK_ATTACHMENT_SIZE_BYTES });
+      const chosen = await chooseFiles({
+        accept: MEDIA_ACCEPT,
+        multiple: true,
+        maxFiles: remaining(),
+        maxTotalBytes: remaining() * MAX_TASK_ATTACHMENT_SIZE_BYTES,
+      });
       if (chosen.length > 0) await uploadMedia(chosen);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
