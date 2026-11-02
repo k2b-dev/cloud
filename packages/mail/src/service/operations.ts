@@ -21,6 +21,7 @@ import {
   operatorActionForCommand,
   operatorActionForFolder,
 } from "./operator-actions";
+import { mailboxSyncStateCountsQuery } from "./sync-state-counts";
 
 const toIso = (value: Date | string | null): string | null =>
   value ? (value instanceof Date ? value : new Date(value)).toISOString() : null;
@@ -131,14 +132,10 @@ const loadMailboxOperations = async (
   `;
   if (!mailbox) return null;
 
-  const syncStates = await sql<{ state: string; count: number }[]>`
-    SELECT run.state, COUNT(*)::int AS count
-    FROM mail.sync_runs run
-    JOIN mail.remote_resources resource ON resource.id = run.remote_resource_id
-    WHERE resource.mailbox_id = ${mailboxId}::uuid
-      AND (run.state = 'running' OR run.started_at > now() - ${SYNC_RUN_STATUS_WINDOW_HOURS}::int * interval '1 hour')
-    GROUP BY run.state
-  `;
+  const syncStates = await sql.unsafe<{ state: string; count: number }[]>(mailboxSyncStateCountsQuery, [
+    mailboxId,
+    SYNC_RUN_STATUS_WINDOW_HOURS,
+  ]);
   const [coverage] = await sql<
     {
       messages: number;
