@@ -191,7 +191,9 @@ the watch. A failed refresh fails the read instead of serving the previous
 view. A successful local write also checks watch progress: if the watch does
 not cover its acknowledged revision within one heartbeat interval (60 seconds),
 the view is invalidated and the next read recovers it. Subsequent writes cannot
-postpone that deadline. Foreign leases due earlier trigger recovery first.
+postpone that deadline. Local lease expiry also triggers recovery in processes
+that only read the view: a fresh snapshot retains renewed entries and removes
+those that really expired.
 Registry records do not cache permission decisions: SQL grants and
 owner resource checks still run for each request. Discovery allows three
 seconds per owner within a shared six-second budget, below the ten-second

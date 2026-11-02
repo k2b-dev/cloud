@@ -85,7 +85,10 @@ natsSuite()("process-local app registry", () => {
       const raw = sync.ephemeral<typeof entry>({ id: "cloud-apps", owner: "cloud", ttlMs: 180_000, maxValueBytes: 64 * 1024 });
       const touched = await raw.upsert({ key: "apps/demo", value: entry });
       await until(async () => (await readAppRegistrySnapshot()).apps[0]?.version === touched.revision);
-      expect(await listApps()).toMatchObject([{ ...entry, updatedAt: touched.updatedAt.getTime(), version: touched.revision }]);
+      // Upsert acknowledges the writer's local send time; the watch carries
+      // the broker timestamp. Compare lease metadata against that same source.
+      const storedLease = (await raw.snapshot({ prefix: "apps/demo" })).entries[0]!;
+      expect(await listApps()).toMatchObject([{ ...entry, updatedAt: storedLease.updatedAt.getTime(), version: touched.revision }]);
       expect(await canUseApp(null, (await getApp("demo"))!)).toBe(true);
       const before = nc.stats();
       await Promise.all(

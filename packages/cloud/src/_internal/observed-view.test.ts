@@ -70,7 +70,8 @@ test("local revisions avoid I/O and revalidation; renewals, removal, TTL and wat
     setSystemTime(epoch + 180_000);
     expect(await view.values()).toHaveLength(1); // the touch renewed the TTL
     setSystemTime(epoch + 240_000);
-    expect(await view.values()).toEqual([]); // expires even without a broker event
+    expect(await view.values()).toEqual([]); // verifies expiry even without a broker event
+    expect(snapshot).toHaveBeenCalledTimes(2);
     stored = [entry("3", epoch + 240_000)];
     await send({ type: "upsert", entry: stored[0]!, revision: "3" });
     await send({ type: "delete", key: "apps/demo", revision: "4" });
@@ -82,14 +83,14 @@ test("local revisions avoid I/O and revalidation; renewals, removal, TTL and wat
     await expect(view.values()).rejects.toThrow("NATS unavailable");
     snapshotFails = false;
     expect(await view.values()).toEqual([{ revision: "5" }]);
-    expect(watch).toHaveBeenCalledTimes(2);
+    expect(watch).toHaveBeenCalledTimes(3);
     stored = [entry("1", epoch + 240_000)];
     view.invalidate();
     expect(await view.values()).toEqual([{ revision: "1" }]); // recreated bucket
     stored = [];
     await send({ type: "resync_required", requested: "5", firstAvailable: "9" });
     expect(await view.values()).toEqual([]);
-    expect(watch).toHaveBeenCalledTimes(4);
+    expect(watch).toHaveBeenCalledTimes(5);
   } finally {
     controller.abort();
     await view.stop();
@@ -179,6 +180,7 @@ test("renewals retain immutable content, update lease metadata and actively noti
     const expired = changes.next();
     f.setTime(epoch + 60_000);
     const renewed = f.entry("2");
+    f.store([renewed]);
     await f.send({ type: "upsert", entry: renewed, revision: "2" });
     expect(await f.view.get("apps/demo")).toBe(first);
     expect(f.read).toHaveBeenCalledTimes(1);
@@ -190,7 +192,7 @@ test("renewals retain immutable content, update lease metadata and actively noti
     f.expire();
     expect((await expired).value).toEqual({ type: "change" });
     expect(await f.view.values()).toEqual([]);
-    expect(f.snapshot).toHaveBeenCalledTimes(1);
+    expect(f.snapshot).toHaveBeenCalledTimes(2);
   } finally {
     await changes.return?.();
     await f.stop();
@@ -428,6 +430,33 @@ test("an uncovered own touch recovers before an earlier foreign lease expiry", a
     expect((await f.view.get("apps/foreign"))?.title).toBe("Foreign");
     expect(f.snapshot).toHaveBeenCalledTimes(3);
   } finally {
+    await f.stop();
+  }
+});
+
+test.each([true, false])("read-only stalled watches verify lease expiry once (renewed=%s)", async (renewed) => {
+  const f = observedFixture();
+  const controller = new AbortController();
+  const changes = f.view.changes(controller.signal, { initial: false })[Symbol.asyncIterator]();
+  try {
+    const original = await f.view.get("apps/demo");
+    const expired = changes.next();
+    // Only the remote publisher writes. Its renewals never reach this consumer.
+    if (renewed) f.store([f.entry("2", "Demo", epoch + 120_000)]);
+    f.setTime(epoch + 180_000);
+    f.expire();
+    expect((await expired).done).toBe(false);
+    const results = await Promise.all(Array.from({ length: 20 }, () => f.view.get("apps/demo")));
+    expect(results.every((value) => value === (renewed ? original : undefined))).toBe(true);
+    expect(f.snapshot).toHaveBeenCalledTimes(2); // startup and one shared expiry verification
+    expect(f.read).toHaveBeenCalledTimes(1);
+    f.setTime(epoch + 240_000);
+    f.expire();
+    expect(await f.view.get("apps/demo")).toBe(renewed ? original : undefined);
+    expect(f.snapshot).toHaveBeenCalledTimes(2); // no repeated verification of a dead lease
+  } finally {
+    controller.abort();
+    await changes.return?.();
     await f.stop();
   }
 });

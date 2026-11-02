@@ -67,20 +67,9 @@ export const createObservedView = <T, V>({
 
   const expire = () => {
     if (now() < nextExpiry) return false;
-    // Verify the view before expiring foreign leases when our own writes prove
-    // that the watch has fallen behind. Recovery also picks up revoked access.
-    if (coverageDue && coveredRevision < coverageDue.revision) {
-      invalidate();
-      return true;
-    }
-    let removed = false;
-    for (const [key, entry] of entries) {
-      if (entry.expiresAt <= now()) {
-        entries.delete(key);
-        removed = true;
-      }
-    }
-    if (removed) changed();
+    // A locally expired lease can mean a stalled watch, even for read-only
+    // processes. One shared snapshot must decide whether it is really dead.
+    invalidate();
     return true;
   };
   const armExpiry = () => {
