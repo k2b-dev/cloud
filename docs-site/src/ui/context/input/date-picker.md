@@ -117,8 +117,9 @@ empty value shows `placeholder` in muted text.
 
 A plain `DatePicker` and `DateTimePicker` accept `renderValue(value)` for the
 trigger content of a set value, for example the date followed by a relative
-hint. The panel and the emitted value are unchanged. A typed field shows the
-relative hint in its status line instead.
+hint. The panel and the emitted value are unchanged. In a typed `DatePicker`,
+`renderValue` replaces the resting status line under the field; while someone
+types, the line still shows the meant day.
 
 ```tsx
 <DateTimePicker
@@ -250,7 +251,7 @@ type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
 
 `DateContext` is defined under [date and locale options](/en/ui/content/intl#date-and-locale-options). `DatePicker` emits `YYYY-MM-DD`; without a timezone `DateTimePicker` emits `YYYY-MM-DDTHH:mm`, with a timezone it emits an ISO instant in UTC. With `optionalTime`, `DateTimePicker` emits `YYYY-MM-DD` for a date without time and the datetime contract with one. `DateRangePicker` follows the date contract by default and the datetime contract with `withTime=true`. Empty range endpoints are `null`, not an absent range object. Supply preset values in the same format as the controlled value.
 
-`ChoiceAppearance` is `"field" | "plain"` and defaults to `"field"`. `renderValue` only replaces the trigger content of a set value in a plain picker. `min` and `max` are date keys and apply to every picker's calendar. A typed field's `placeholder` defaults to the locale's pattern, such as `TT.MM.JJJJ` or `MM/DD/YYYY`. `presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
+`ChoiceAppearance` is `"field" | "plain"` and defaults to `"field"`. `renderValue` replaces the trigger content of a set value in a plain picker and the resting status line of a typed `DatePicker`. `min` and `max` are date keys and apply to every picker's calendar. A typed field's `placeholder` defaults to the locale's pattern, such as `TT.MM.JJJJ` or `MM/DD/YYYY`. `presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
 
 ## Accessibility
 

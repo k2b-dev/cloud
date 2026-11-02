@@ -13,7 +13,10 @@ import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
+import { confirmPrompt, contentClass, DialogHeader, type PromptContent, panelClass } from "./prompt-confirm";
 import { resolvePromptMessages } from "./prompt-messages";
+
+export { DialogHeader } from "./prompt-confirm";
 
 export interface DialogOptions {
   signal?: AbortSignal;
@@ -35,8 +38,6 @@ export interface DialogOptions {
 export interface ConfirmOptions extends DialogOptions {
   confirmationPhrase?: string;
 }
-
-type PromptContent = string | HTMLElement | JSX.Element;
 
 export type PromptSearchItem<T = unknown> = {
   /**
@@ -174,8 +175,6 @@ type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   cancelBehavior?: DialogOptions["cancelBehavior"];
 };
 
-const PHRASE_SLOT = "\u0000";
-
 const isEmpty = (value: unknown): boolean =>
   value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
 
@@ -240,27 +239,6 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
 
   return { values, errors, updateField, validateAll, reset };
 };
-
-export const DialogHeader = (props: { close: () => void; title?: string; icon?: string }): JSX.Element => (
-  <header class="k2b-dialog__header">
-    <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-    <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
-      {(title) => <h2>{title()}</h2>}
-    </Show>
-    <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
-      <i class="ti ti-x" aria-hidden="true" />
-    </button>
-  </header>
-);
-
-const panelClass = (options?: Pick<DialogOptions, "size" | "surface" | "variant">): string => {
-  const size = options?.size ?? "medium";
-  const variant = options?.variant && options.variant !== "primary" ? ` k2b-dialog--${options.variant}` : "";
-  return `k2b-dialog k2b-dialog--${size}${variant}${options?.surface === "bare" ? " is-bare" : ""}`;
-};
-
-const contentClass = (surface?: DialogOptions["surface"]): string =>
-  surface === "bare" ? "k2b-dialog__viewport is-bare" : "k2b-dialog__viewport";
 
 const renderInfo = (content: Extract<FieldSchema, { type: "info" }>["content"]): JSX.Element => {
   if (typeof content === "string") return <p>{content}</p>;
@@ -748,88 +726,7 @@ export const prompts = {
       icon: options?.icon ?? "ti ti-check",
     }),
 
-  confirm: (content: PromptContent, options?: ConfirmOptions): Promise<boolean | undefined> => {
-    const confirmationPhrase = options?.confirmationPhrase;
-    if (confirmationPhrase !== undefined && (confirmationPhrase.trim().length === 0 || /[\r\n\t]/.test(confirmationPhrase))) {
-      throw new Error("confirmationPhrase must be non-empty, visible, and single-line");
-    }
-    let confirmationInput: HTMLInputElement | undefined;
-
-    return dialogCore.open<boolean>(
-      (close) => {
-        if (!confirmationPhrase) {
-          return (
-            <div class="k2b-dialog__panel">
-              <DialogHeader title={options?.title} icon={options?.icon} close={() => close(false)} />
-              <div class="k2b-dialog__body">{content}</div>
-              <footer class="k2b-dialog__actions">
-                <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
-                  {options?.cancelText || resolveUiMessages().cancel}
-                </button>
-                <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close(true)}>
-                  {options?.confirmText || resolvePromptMessages().confirm}
-                </button>
-              </footer>
-            </div>
-          );
-        }
-
-        // The catalog owns word order; the slot marks where the verbatim phrase is rendered as code.
-        const [labelBefore, labelAfter] = resolvePromptMessages().typeToConfirm({ phrase: PHRASE_SLOT }).split(PHRASE_SLOT);
-        const [confirmationValue, setConfirmationValue] = createSignal("");
-        const canConfirm = () => confirmationValue() === confirmationPhrase;
-        const submit = (event: SubmitEvent) => {
-          event.preventDefault();
-          if (canConfirm()) close(true);
-        };
-
-        return (
-          <form class="k2b-dialog__panel" onSubmit={submit}>
-            <DialogHeader title={options?.title} icon={options?.icon} close={() => close(false)} />
-            <div class="k2b-dialog__body k2b-prompt-form">
-              <div class="k2b-prompt-copy">{content}</div>
-              <TextInput
-                ref={(element) => {
-                  confirmationInput = element;
-                }}
-                label={
-                  <>
-                    {labelBefore}
-                    <code class="k2b-confirmation-phrase">{confirmationPhrase}</code>
-                    {labelAfter}
-                  </>
-                }
-                value={confirmationValue}
-                onValueChange={setConfirmationValue}
-                autocomplete="off"
-                autocapitalize="off"
-                spellcheck={false}
-                monospace
-                required
-              />
-            </div>
-            <footer class="k2b-dialog__actions">
-              <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
-                {options?.cancelText || resolveUiMessages().cancel}
-              </button>
-              <button type="submit" class="k2b-button" data-variant={options?.variant ?? "primary"} disabled={!canConfirm()}>
-                {options?.confirmText || resolvePromptMessages().confirm}
-              </button>
-            </footer>
-          </form>
-        );
-      },
-      {
-        panelClassName: panelClass(options),
-        contentClassName: contentClass(options?.surface),
-        initialFocus: confirmationPhrase ? () => confirmationInput ?? null : undefined,
-        signal: options?.signal,
-        cancelBehavior: options?.cancelBehavior,
-        history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolvePromptMessages().confirmation,
-      },
-    );
-  },
+  confirm: confirmPrompt,
 
   prompt: promptText,
   promptNumber,

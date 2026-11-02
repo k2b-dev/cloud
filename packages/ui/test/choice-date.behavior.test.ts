@@ -1172,6 +1172,12 @@ describe("@k2b/ui choice and date browser behavior", () => {
     apply().click();
     expect(commits.at(-1)).toEqual({ start: "2026-10-20", end: "2026-10-20" });
 
+    // ...and the click after it extends that new range instead of starting yet another one.
+    await pick("2026-10-12", "2026-10-14", "2026-10-20", "2026-10-22");
+    expect(selected()).toEqual(["2026-10-20", "2026-10-22"]);
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-20", end: "2026-10-22" });
+
     dispose();
     popover.restore();
     dom.cleanup();
@@ -1210,6 +1216,47 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(commits.at(-1)).toBe(10);
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("an empty field with distant limits opens on its first allowed month, and clearing never opens the calendar", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { DatePicker, DateRangePicker } = await import("../src/inputs/DatePicker");
+    delegateEvents(["keydown", "click", "focusout", "pointerdown"], dom.document);
+    const dispose = render(
+      () => [
+        createComponent(DatePicker, {
+          label: "Later",
+          value: null,
+          min: "2099-03-01",
+          max: "2099-03-31",
+          dateConfig: { locale: "en", timeZone: "UTC" },
+        }),
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-10-05", end: "2026-10-06" },
+          clearable: true,
+          dateConfig: { locale: "en", timeZone: "UTC" },
+        }),
+      ],
+      dom.root,
+    );
+    const [later, start] = Array.from(dom.root.querySelectorAll<HTMLInputElement>(".k2b-date-field input"));
+    later!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await Bun.sleep(0);
+    expect(dom.root.querySelector(".k2b-date-calendar__title")?.textContent).toContain("2099");
+    expect((dom.document.activeElement as HTMLElement | null)?.dataset.dateDay).toBe("2099-03-01");
+    later!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    const clear = dom.root.querySelectorAll<HTMLButtonElement>(".k2b-date-field__clear")[0]!;
+    clear.dispatchEvent(new dom.window.PointerEvent("pointerdown", { bubbles: true, button: 0 }) as unknown as Event);
+    clear.click();
+    await Bun.sleep(5);
+    expect(start!.getAttribute("aria-expanded")).toBe("false");
+
+    dispose();
+    popover.restore();
     dom.cleanup();
   });
 

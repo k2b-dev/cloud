@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { prefersMenuSheet } from "../actions/phone-sheet";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
@@ -81,7 +81,7 @@ export type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
 };
 
 export type DatePickerProps = DatePickerBaseProps<string | null> & {
-  /** Trigger content of a `plain` picker for a set value, for example the date with a relative hint. */
+  /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
   renderValue?: (value: string) => JSX.Element;
 };
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
@@ -669,6 +669,15 @@ function createCalendarPopover(options: {
   };
 }
 
+/** The day an empty calendar opens on: today, moved inside min/max, so a limited field never opens on locked months only. */
+const openingDay = (value: string | null | undefined, limits: { min?: string; max?: string }, context: DateContext): string => {
+  if (value) return value;
+  const today = dateKey(new Date(), context);
+  if (limits.min && today < limits.min) return limits.min;
+  if (limits.max && today > limits.max) return limits.max;
+  return today;
+};
+
 const fieldName = (owner: { label?: JSX.Element; "aria-label"?: string }): string | undefined =>
   typeof owner.label === "string" ? owner.label : owner["aria-label"];
 
@@ -725,12 +734,14 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   const [dirty, setDirty] = createSignal(false);
   const [failure, setFailure] = createSignal<string>();
   const [announcement, setAnnouncement] = createSignal("");
-  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(props.value(), props.dateConfig()));
+  const [visibleMonth, setVisibleMonth] = createSignal(
+    parseDateValue(openingDay(props.value(), limits(), props.dateConfig()), props.dateConfig()),
+  );
   let shell: HTMLDivElement | undefined;
   let input: HTMLInputElement | undefined;
   let toggle: HTMLButtonElement | undefined;
   let statusLine: HTMLElement | undefined;
-  let sheetOpen = false;
+  const [sheetOpen, setSheetOpen] = createSignal(false);
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   const calendar = createCalendarPopover({
     anchor: () => shell,
@@ -738,7 +749,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     wide: () => Boolean(props.owner.presets?.length),
   });
   const popoverId = `${meta.controlId}-calendar`;
-  const statusId = `${meta.controlId}-status`;
+  // The status line holds the field's message slot, so it carries the `<id>-error` every field family uses.
+  const statusId = meta.errorId;
 
   const parse = (value: string): DateInputResult => parseDateInput(value, { today: today(), locale: locale() });
   const parsed = createMemo(() => (dirty() ? parse(text()) : undefined));
@@ -754,7 +766,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
       if (dirty()) return;
       setText(format(props.value()));
       setFailure(undefined);
-      setVisibleMonth(parseDateValue(props.value(), props.dateConfig()));
+      setVisibleMonth(parseDateValue(openingDay(props.value(), limits(), props.dateConfig()), props.dateConfig()));
     }),
   );
   // The calendar follows the typed day, and a refused text stops being red once it means an allowed day.
@@ -782,7 +794,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     const external = externalError();
     if (external) return { tone: "error", text: external };
     const value = props.value();
-    return { tone: "rest", text: value && !result ? restStatusText(value, today(), locale()) : "" };
+    if (!value || result) return { tone: "rest", text: "" };
+    return { tone: "rest", text: props.owner.renderValue?.(value) ?? restStatusText(value, today(), locale()) };
   });
 
   const save = (next: string | null) => {
@@ -812,7 +825,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     setText(format(props.value()));
     setDirty(false);
     setFailure(undefined);
-    setVisibleMonth(parseDateValue(props.value(), props.dateConfig()));
+    setVisibleMonth(parseDateValue(openingDay(props.value(), limits(), props.dateConfig()), props.dateConfig()));
     calendar.close();
   };
   const pick = (key: string | null) => {
@@ -824,7 +837,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   };
 
   const openSheet = async () => {
-    sheetOpen = true;
+    setSheetOpen(true);
     calendar.close();
     const { openDateSheet } = await import("./date-sheet");
     const picked = await openDateSheet<{ key: string }>({
@@ -845,7 +858,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
         />
       ),
     });
-    sheetOpen = false;
+    setSheetOpen(false);
     if (picked) pick(picked.key);
     toggle?.focus({ preventScroll: true });
   };
@@ -853,7 +866,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   const openCalendar = (focusDay: boolean) => {
     if (!interactive()) return;
     if (prefersMenuSheet()) return void openSheet();
-    if (!dirty()) setVisibleMonth(parseDateValue(props.value(), props.dateConfig()));
+    if (!dirty()) setVisibleMonth(parseDateValue(openingDay(props.value(), limits(), props.dateConfig()), props.dateConfig()));
     calendar.show();
     if (focusDay) calendar.focusDay();
   };
@@ -899,7 +912,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   };
   const onFocusOut = (event: FocusEvent) => {
     const next = event.relatedTarget as Node | null;
-    if (sheetOpen || next === input || (next && calendar.element()?.contains(next))) return;
+    if (sheetOpen() || next === input || (next && calendar.element()?.contains(next))) return;
     if (dirty()) commit();
     calendar.close();
   };
@@ -934,8 +947,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             spellcheck={false}
             role="combobox"
             aria-haspopup="dialog"
-            aria-expanded={calendar.open()}
-            aria-controls={popoverId}
+            aria-expanded={calendar.open() || sheetOpen()}
+            aria-controls={sheetOpen() ? undefined : popoverId}
             aria-describedby={[props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
               .filter(Boolean)
               .join(" ")}
@@ -985,8 +998,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
               tabIndex={-1}
               disabled={props.owner.disabled}
               aria-label={calendar.open() ? t().closeCalendar : t().openCalendar}
-              aria-expanded={calendar.open()}
-              aria-controls={popoverId}
+              aria-expanded={calendar.open() || sheetOpen()}
+              aria-controls={sheetOpen() ? undefined : popoverId}
               onClick={(event) => {
                 // Pointers are handled on pointerdown; this is activation by assistive technology.
                 if (event.detail === 0) openCalendar(true);
@@ -1079,7 +1092,9 @@ function DateRangeTextField(props: {
   const [dirty, setDirty] = createSignal(false);
   const [failure, setFailure] = createSignal<string>();
   const [announcement, setAnnouncement] = createSignal("");
-  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(props.value().start || props.value().end, props.dateConfig()));
+  const [visibleMonth, setVisibleMonth] = createSignal(
+    parseDateValue(openingDay(props.value().start || props.value().end, limits(), props.dateConfig()), props.dateConfig()),
+  );
   // The calendar's own draft: two clicks pick a range, Apply commits it.
   const [picked, setPicked] = createSignal<DateRangeValue>(props.value());
   const [anchor, setAnchor] = createSignal<string | null>(null);
@@ -1089,12 +1104,13 @@ function DateRangeTextField(props: {
   let endInput: HTMLInputElement | undefined;
   let toggle: HTMLButtonElement | undefined;
   let statusLine: HTMLElement | undefined;
-  let sheetOpen = false;
+  const [sheetOpen, setSheetOpen] = createSignal(false);
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   const wide = () => Boolean(props.owner.datePresets?.length || props.owner.presets?.length);
   const calendar = createCalendarPopover({ anchor: () => shell, below: () => statusLine, wide });
   const popoverId = `${meta.controlId}-calendar`;
-  const statusId = `${meta.controlId}-status`;
+  // The status line holds the field's message slot, so it carries the `<id>-error` every field family uses.
+  const statusId = meta.errorId;
   const name = () => fieldName(props.owner);
 
   const parse = (value: string): DateInputResult => parseDateInput(value, { today: today(), locale: locale() });
@@ -1191,11 +1207,14 @@ function DateRangeTextField(props: {
   /** Calendar clicks fill both halves at once, so the text, the status line and the calendar show the same range. */
   const pickDay = (key: string) => {
     const next = pickRangeDay(picked(), anchor(), key);
-    setPicked(next.range);
-    setAnchor(next.anchor);
-    setPreviewDate(null);
-    fill(next.range);
-    setDirty(true);
+    // One update: the start alone would read as a typed range and reset the anchor of the next click.
+    batch(() => {
+      setPicked(next.range);
+      setAnchor(next.anchor);
+      setPreviewDate(null);
+      fill(next.range);
+      setDirty(true);
+    });
   };
   const apply = (range: DateRangeValue) => {
     commitRange(range);
@@ -1211,10 +1230,12 @@ function DateRangeTextField(props: {
             presets={props.owner.datePresets}
             onSelect={(value) => {
               const next = value ? { start: value, end: value } : { start: null, end: null };
-              setPicked(next);
-              setAnchor(null);
-              fill(next);
-              setDirty(true);
+              batch(() => {
+                setPicked(next);
+                setAnchor(null);
+                fill(next);
+                setDirty(true);
+              });
               if (value) setVisibleMonth(parseDateValue(value, props.dateConfig()));
             }}
           />
@@ -1248,8 +1269,9 @@ function DateRangeTextField(props: {
   );
 
   const openSheet = async () => {
-    sheetOpen = true;
+    setSheetOpen(true);
     calendar.close();
+    const before = { start: startText(), end: endText(), dirty: dirty() };
     const { openDateSheet } = await import("./date-sheet");
     const range = await openDateSheet<DateRangeValue>({
       title: props.owner.label ?? props.owner["aria-label"],
@@ -1258,10 +1280,16 @@ function DateRangeTextField(props: {
       locale: locale() ?? "en",
       content: (close) => rangeCalendar(close),
     });
-    sheetOpen = false;
-    // A dismissed sheet saves nothing, also not the days it filled in.
+    setSheetOpen(false);
+    // A dismissed sheet saves nothing and leaves the text as it was before the sheet opened.
     if (range) commitRange(range);
-    else restore();
+    else
+      batch(() => {
+        setStartText(before.start);
+        setEndText(before.end);
+        setDirty(before.dirty);
+        setAnchor(null);
+      });
     toggle?.focus({ preventScroll: true });
   };
   const openCalendar = (focusDay: boolean) => {
@@ -1278,7 +1306,7 @@ function DateRangeTextField(props: {
 
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target as Element;
-    if (!interactive() || calendar.element()?.contains(target)) return;
+    if (!interactive() || calendar.element()?.contains(target) || target.closest(".k2b-date-field__clear")) return;
     const onIcon = target.closest(".k2b-date-field__toggle, .k2b-date-field__icon");
     if (prefersMenuSheet()) {
       if (onIcon) {
@@ -1333,7 +1361,7 @@ function DateRangeTextField(props: {
   };
   const onFocusOut = (event: FocusEvent) => {
     const next = event.relatedTarget as Node | null;
-    if (sheetOpen || (next && shell?.contains(next))) return;
+    if (sheetOpen() || (next && shell?.contains(next))) return;
     if (dirty()) commit();
     calendar.close();
   };
@@ -1344,7 +1372,6 @@ function DateRangeTextField(props: {
     autocomplete: "off",
     spellcheck: false,
     "aria-haspopup": "dialog",
-    "aria-controls": popoverId,
     onKeyDown,
     onPaste,
   } as const;
@@ -1383,9 +1410,10 @@ function DateRangeTextField(props: {
             ref={startInput}
             {...inputProps}
             role="combobox"
+            aria-controls={sheetOpen() ? undefined : popoverId}
             id={meta.controlId}
             aria-label={name() ? t().startOf({ label: name()! }) : t().start}
-            aria-expanded={calendar.open()}
+            aria-expanded={calendar.open() || sheetOpen()}
             aria-describedby={describedBy()}
             aria-invalid={invalid() ? "true" : undefined}
             aria-required={props.owner.required || undefined}
@@ -1400,8 +1428,9 @@ function DateRangeTextField(props: {
             ref={endInput}
             {...inputProps}
             role="combobox"
+            aria-controls={sheetOpen() ? undefined : popoverId}
             aria-label={name() ? t().endOf({ label: name()! }) : t().end}
-            aria-expanded={calendar.open()}
+            aria-expanded={calendar.open() || sheetOpen()}
             aria-describedby={describedBy()}
             aria-invalid={invalid() ? "true" : undefined}
             aria-required={props.owner.required || undefined}
@@ -1441,8 +1470,8 @@ function DateRangeTextField(props: {
               tabIndex={-1}
               disabled={props.owner.disabled}
               aria-label={calendar.open() ? t().closeCalendar : t().openCalendar}
-              aria-expanded={calendar.open()}
-              aria-controls={popoverId}
+              aria-expanded={calendar.open() || sheetOpen()}
+              aria-controls={sheetOpen() ? undefined : popoverId}
               onClick={(event) => {
                 if (event.detail === 0) openCalendar(true);
               }}
@@ -1502,7 +1531,7 @@ export function DatePicker(props: DatePickerProps): JSX.Element {
         valueLabel={valueLabel}
         valueContent={props.renderValue ? () => props.renderValue!(value()!) : undefined}
         clearValue={null}
-        onOpen={() => setVisibleMonth(parseDateValue(value(), dateConfig()))}
+        onOpen={() => setVisibleMonth(parseDateValue(openingDay(value(), { min: props.min, max: props.max }, dateConfig()), dateConfig()))}
         wide={Boolean(props.presets?.length)}
       >
         {(close) => (

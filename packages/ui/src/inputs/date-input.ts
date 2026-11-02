@@ -114,6 +114,9 @@ const UNITS: Record<string, DateUnit> = {
   years: "year",
 };
 
+/** Right-to-left locales put direction marks between the parts of a date. */
+const DIRECTION_MARKS = /[\u200e\u200f\u061c]/g;
+
 const pad = (value: number): string => String(value).padStart(2, "0");
 const toKey = (year: number, month: number, day: number): string => `${year}-${pad(month)}-${pad(day)}`;
 const keyParts = (key: string): [number, number, number] => {
@@ -147,10 +150,24 @@ export const weekdayOfKey = (key: string): number => (new Date(keyTime(key)).get
 /** Whole days from `from` to `to`. */
 export const daysBetweenKeys = (from: string, to: string): number => Math.round((keyTime(to) - keyTime(from)) / 86_400_000);
 
+/**
+ * The editable numeric form: the locale's order and separators, but always the Gregorian calendar with Latin digits,
+ * so the text the field shows (`ar-EG`, `th-TH`, `fa-IR` included) is text it can read back.
+ */
+const numericFormat = (locale?: string): Intl.DateTimeFormat =>
+  new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+    calendar: "gregory",
+    numberingSystem: "latn",
+  });
+
 /** The locale's order of day, month and year in a numeric date, read from Intl; day-month-year without data. */
 export const dateOrder = (locale?: string): DatePart[] => {
   try {
-    const parts = new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).formatToParts(
+    const parts = numericFormat(locale).formatToParts(
       Date.UTC(2026, 10, 22, 12),
     );
     const order = parts.map((part) => part.type).filter((type): type is DatePart => type === "day" || type === "month" || type === "year");
@@ -162,12 +179,12 @@ export const dateOrder = (locale?: string): DatePart[] => {
 
 /** The numeric form the field shows after a commit, such as `11.11.2026` or `11/11/2026`. */
 export const formatDateInput = (key: string, locale?: string): string =>
-  new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(keyTime(key));
+  numericFormat(locale).format(keyTime(key)).replace(DIRECTION_MARKS, "");
 
 /** The placeholder pattern in the locale's order, with letters from the caller (`TT.MM.JJJJ`, `MM/DD/YYYY`). */
 export const dateInputPattern = (locale: string | undefined, letters: Record<DatePart, string>): string => {
   try {
-    return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" })
+    return numericFormat(locale)
       .formatToParts(Date.UTC(2026, 10, 22, 12))
       .map((part) => (part.type === "day" || part.type === "month" || part.type === "year" ? letters[part.type] : part.value))
       .join("");
@@ -263,7 +280,8 @@ const OFFSET_TAIL = /([+-]) ?(\d{1,3}) ?([a-zäöü]*)\.?$/;
 
 const parseBase = (text: string, today: string, order: readonly DatePart[]): DateInputResult => {
   if (/^[a-zäöüß]+$/.test(text)) return parseWord(text, today);
-  let match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[t ].*)?$/);
+  // A pasted ISO date may carry a time, nothing else: "2026-11-11 nonsense" is not a date.
+  let match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[t ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:z|[+-]\d{2}:?\d{2})?)?$/);
   if (match) return build(Number(match[3]), Number(match[2]), match[1], today);
   match = text.match(/^(\d{1,2})\.? ?([a-zäöü]{3,}\.?) ?,? ?(\d{2}|\d{4})?$/);
   if (match) {
@@ -301,7 +319,7 @@ const parseBase = (text: string, today: string, order: readonly DatePart[]): Dat
  * never depends on the clock.
  */
 export const parseDateInput = (raw: string, options: { today: string; locale?: string }): DateInputResult => {
-  const text = raw.trim().replace(/\s+/g, " ").toLowerCase();
+  const text = raw.replace(DIRECTION_MARKS, "").trim().replace(/\s+/g, " ").toLowerCase();
   if (!text) return { kind: "empty" };
   const order = dateOrder(options.locale);
   const offset = text.match(OFFSET_TAIL);

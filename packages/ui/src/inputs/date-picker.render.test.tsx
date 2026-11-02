@@ -248,7 +248,7 @@ describe("@k2b/ui complete date picker migration", () => {
       expect(input).toMatch(/inputmode="numeric"/i);
       expect(input).toContain('value="27.07.2026"');
       expect(input).toContain('placeholder="TT.MM.JJJJ"');
-      expect(input).toMatch(/aria-describedby="[^"]*-status"/);
+      expect(input).toMatch(/aria-describedby="[^"]*-error"/);
       expect(html).toContain('popover="manual"');
       // The calendar renders when it opens, so a page of date fields carries no month grids.
       expect(html).not.toContain('role="grid"');
@@ -281,6 +281,13 @@ describe("@k2b/ui complete date picker migration", () => {
     expect(() => {
       for (const dispose of disposers) dispose();
     }).not.toThrow();
+  });
+
+  test("renderValue fills a typed field's resting status line", () => {
+    const html = renderToString(() =>
+      createComponent(DatePicker, { label: "Due", value: "2026-07-27", renderValue: (value: string) => `due ${value}` }),
+    );
+    expect(html).toMatch(/class="k2b-date-status"[^>]*>due 2026-07-27<\/p>/);
   });
 
   test("renders a plain date picker with presets and calendar semantics", () => {

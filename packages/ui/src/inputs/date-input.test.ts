@@ -34,6 +34,8 @@ describe("typed dates", () => {
   test("ISO and month names", () => {
     expect(date("2026-11-11")).toBe("2026-11-11");
     expect(date("2026-11-11T09:00")).toBe("2026-11-11");
+    expect(date("2026-11-11T09:00:00.000Z")).toBe("2026-11-11");
+    expect(date("2026-11-11 09:00")).toBe("2026-11-11");
     expect(date("11. November 2026")).toBe("2026-11-11");
     expect(date("11. Nov.")).toBe("2026-11-11");
     expect(date("3 März 2027")).toBe("2027-03-03");
@@ -140,6 +142,9 @@ describe("offsets", () => {
     expect(date("31.02.2026 +1")).toBe("error:day");
     expect(date("gestern + 34 + 2")).toBe("error:not-a-date");
     expect(date("in 2 wochen")).toBe("error:not-a-date");
+    expect(date("2026-11-11 +2 +3")).toBe("error:not-a-date");
+    expect(date("2026-11-11 nonsense")).toBe("error:not-a-date");
+    expect(date("2026-11-11 +2")).toBe("2026-11-13");
   });
 
   test("months end on the last day that exists", () => {
@@ -159,7 +164,8 @@ describe("formatting", () => {
   });
 
   test("a commit of the formatted text gives the same date back", () => {
-    for (const locale of ["de-DE", "en-US", "en-GB"]) {
+    // Other scripts and calendars too: the field always writes Latin digits and Gregorian years in the locale's order.
+    for (const locale of ["de-DE", "en-US", "en-GB", "ar-EG", "fa-IR", "th-TH", "ja-JP", "he-IL"]) {
       expect(date(formatDateInput("2027-02-03", locale), locale)).toBe("2027-02-03");
     }
     expect(us("tomorrow")).toEqual({ kind: "date", date: "2026-11-03", note: { kind: "day", offset: 1 } });
