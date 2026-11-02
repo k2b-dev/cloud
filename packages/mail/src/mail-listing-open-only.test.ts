@@ -30,26 +30,32 @@ describe("work lists show open conversations only", () => {
     expect(mailListingOpenOnly(listing)).toBe(expected);
   });
 
-  test("a search names its status, text and folder conditions wherever they are nested", () => {
-    const expression: MailSearchExpression = {
-      type: "and",
-      expressions: [
-        { type: "local_tag_id", tagId: "11111111-1111-4111-8111-111111111111" },
-        { type: "or", expressions: [{ type: "folder_id", folderId: "22222222-2222-4222-8222-222222222222" }, { type: "unread" }] },
-      ],
-    };
-    expect(mailSearchOpenWorkTerms(expression)).toEqual({
+  test("a search names its status and text conditions wherever they are nested, and the folders it is limited to", async () => {
+    const archive = "22222222-2222-4222-8222-222222222222";
+    const tagged: MailSearchExpression = { type: "local_tag_id", tagId: "11111111-1111-4111-8111-111111111111" };
+    expect(mailSearchOpenWorkTerms({ type: "and", expressions: [tagged, { type: "folder_id", folderId: archive }] })).toEqual({
       status: false,
       text: false,
-      folderIds: ["22222222-2222-4222-8222-222222222222"],
+      folderIds: [archive],
     });
+    // Excluding the Archive or matching it only as one alternative does not limit the list to it.
+    expect(mailSearchOpenWorkTerms({ type: "not", expression: { type: "folder_id", folderId: archive } }).folderIds).toEqual([]);
+    expect(
+      mailSearchOpenWorkTerms({ type: "or", expressions: [{ type: "folder_id", folderId: archive }, { type: "flagged" }] }).folderIds,
+    ).toEqual([]);
     expect(mailSearchOpenWorkTerms({ type: "not", expression: { type: "work_status", value: "done" } }).status).toBe(true);
     expect(mailSearchOpenWorkTerms({ type: "snoozed", value: true }).status).toBe(true);
     expect(mailSearchOpenWorkTerms({ type: "text", field: "any", query: "invoice", match: "words" }).text).toBe(true);
   });
 
-  test("the search form of the rule leaves out done and snoozed conversations", () => {
-    expect(withOpenWork({ type: "flagged" })).toEqual({ type: "and", expressions: [{ type: "flagged" }, OPEN_WORK_EXPRESSION] });
+  test("the search form of the rule leaves out done and snoozed conversations without nesting a conjunction deeper", () => {
+    expect(withOpenWork({ type: "flagged" })).toEqual({ type: "and", expressions: [{ type: "flagged" }, ...openTerms()] });
+    expect(withOpenWork({ type: "and", expressions: [{ type: "flagged" }, { type: "unread" }] })).toEqual({
+      type: "and",
+      expressions: [{ type: "flagged" }, { type: "unread" }, ...openTerms()],
+    });
     expect(mailSearchOpenWorkTerms(OPEN_WORK_EXPRESSION).status).toBe(true);
   });
 });
+
+const openTerms = () => (OPEN_WORK_EXPRESSION.type === "and" ? OPEN_WORK_EXPRESSION.expressions : []);

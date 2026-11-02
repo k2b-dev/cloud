@@ -1,5 +1,6 @@
 import type { ConversationView, FolderDisplay, MailSearchExpression } from "./contracts";
 import { buildMailFolderTree, type MailFolderTreeEntry, type MailFolderTreeNode } from "./folder-tree";
+import { guaranteedMailSearchFolderIds } from "./search-folder-scope";
 
 /**
  * The folder display rules that the server's queries and the browser's folder views share. Each display hides
@@ -107,21 +108,22 @@ export const mailRowLeavesListing = (
 /** Folders that file mail away. Their lists keep done and snoozed conversations, so filed mail stays findable. */
 export const FILING_FOLDER_ROLES: readonly string[] = ["archive", "sent", "trash", "junk", "all"];
 
-/** What a search expression asks for, as far as the open-work rule cares. */
+/**
+ * What a search expression asks for, as far as the open-work rule cares: a status or snoozed condition, a text
+ * condition, and the folders every match lies in (`guaranteedMailSearchFolderIds`). Excluding a folder does not limit
+ * the list to it.
+ */
 export const mailSearchOpenWorkTerms = (expression: MailSearchExpression): { status: boolean; text: boolean; folderIds: string[] } => {
-  if (expression.type === "and" || expression.type === "or") {
-    const parts = expression.expressions.map(mailSearchOpenWorkTerms);
-    return {
-      status: parts.some((part) => part.status),
-      text: parts.some((part) => part.text),
-      folderIds: parts.flatMap((part) => part.folderIds),
-    };
-  }
-  if (expression.type === "not") return mailSearchOpenWorkTerms(expression.expression);
+  const has = (node: MailSearchExpression, match: (term: MailSearchExpression) => boolean): boolean =>
+    node.type === "and" || node.type === "or"
+      ? node.expressions.some((child) => has(child, match))
+      : node.type === "not"
+        ? has(node.expression, match)
+        : match(node);
   return {
-    status: expression.type === "work_status" || expression.type === "snoozed",
-    text: expression.type === "text",
-    folderIds: expression.type === "folder_id" ? [expression.folderId] : [],
+    status: has(expression, (term) => term.type === "work_status" || term.type === "snoozed"),
+    text: has(expression, (term) => term.type === "text"),
+    folderIds: guaranteedMailSearchFolderIds(expression) ?? [],
   };
 };
 
@@ -145,16 +147,14 @@ export const mailListingOpenOnly = (scope: {
   !scope.folderRoles.some((role) => FILING_FOLDER_ROLES.includes(role));
 
 /** The open-work rule (`isOpenConversation`) as a search condition, for listings that run through search. */
-export const OPEN_WORK_EXPRESSION: MailSearchExpression = {
-  type: "and",
-  expressions: [
-    { type: "not", expression: { type: "work_status", value: "done" } },
-    { type: "snoozed", value: false },
-  ],
-};
+const OPEN_WORK_EXPRESSION_TERMS: MailSearchExpression[] = [
+  { type: "not", expression: { type: "work_status", value: "done" } },
+  { type: "snoozed", value: false },
+];
+export const OPEN_WORK_EXPRESSION: MailSearchExpression = { type: "and", expressions: OPEN_WORK_EXPRESSION_TERMS };
 
-/** A search expression limited to open work. */
+/** A search expression limited to open work. A top-level conjunction takes the conditions in, so the depth stays. */
 export const withOpenWork = (expression: MailSearchExpression): MailSearchExpression => ({
   type: "and",
-  expressions: [expression, OPEN_WORK_EXPRESSION],
+  expressions: [...(expression.type === "and" ? expression.expressions : [expression]), ...OPEN_WORK_EXPRESSION_TERMS],
 });

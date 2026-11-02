@@ -21,6 +21,11 @@ suite("work lists leave out done and snoozed conversations", () => {
   let accessIds: string[] = [];
   const folders: Record<"inbox" | "project" | "archive", { id: string; shortId: string }> = {} as never;
   const ids: Record<string, string> = {};
+  const id = (key: string) => {
+    const value = ids[key];
+    if (!value) throw new Error(`Unknown fixture conversation ${key}`);
+    return value;
+  };
   let tag: { id: string; shortId: string };
 
   const createConversation = async (params: {
@@ -209,11 +214,11 @@ suite("work lists leave out done and snoozed conversations", () => {
         ],
       });
       const page = unwrap(await listSavedViewConversations({ context, mailboxId, viewId: tagged }));
-      expect(page.items.map((item) => item.id)).toEqual([ids.projectOpen]);
+      expect(page.items.map((item) => item.id)).toEqual([id("projectOpen")]);
       expect(page.openOnly).toBe(true);
       expect(unwrap(await listSavedViewConversations({ context, mailboxId, viewId: tagged, includeDone: true })).items).toHaveLength(2);
       expect(unwrap(await listSavedViewConversations({ context, mailboxId, viewId: done })).items.map((item) => item.id)).toEqual([
-        ids.projectDone,
+        id("projectDone"),
       ]);
     });
   });

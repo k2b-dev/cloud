@@ -1001,21 +1001,27 @@ const mailOperationsApi = new Hono<MailApiContext>()
     }
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    publicUrl?.searchParams.delete("conversation");
-    publicUrl?.searchParams.delete("message");
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    const data = await loadMailboxListView({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    // A list's last page names the done conversations it leaves out from the cached counts; allow their bounded cold fill.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      publicUrl?.searchParams.delete("conversation");
+      publicUrl?.searchParams.delete("message");
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      const data = await loadMailboxListView({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get(
     "/mailboxes/:mailboxId/workspace-detail/:conversationId",

@@ -325,7 +325,6 @@ test.skipIf(isServer)("a work list names the done conversations it leaves out at
   const [nextCursor, setNextCursor] = createSignal<string | null>("next");
   const [locale, setLocale] = createSignal<"en" | "de">("en");
   const [error, setError] = createSignal<"load_failed" | null>(null);
-  const navigated: string[] = [];
   const dispose = render(
     () =>
       createComponent(LocaleProvider, {
@@ -345,9 +344,8 @@ test.skipIf(isServer)("a work list names the done conversations it leaves out at
             get error() {
               return error();
             },
-            onNavigate: (event: { href: string }) => {
-              navigated.push(event.href);
-            },
+            onNavigate: () => {},
+            onRefresh: async () => {},
           });
         },
       }),

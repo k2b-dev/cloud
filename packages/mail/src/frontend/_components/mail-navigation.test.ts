@@ -387,6 +387,22 @@ describe("Show done", () => {
     });
   });
 
+  test("a filter at the search size limit falls back to the Done tab instead of an invalid search", () => {
+    const words = { type: "text" as const, field: "subject" as const, query: "x".repeat(365), match: "words" as const };
+    const expression = { type: "and" as const, expressions: Array.from({ length: 6 }, () => words) };
+    const href = `/app/mail/Box001?search=${encodeURIComponent(JSON.stringify({ expression, sort: "newest" }))}`;
+    expect(resolved(href).expression).toEqual(expression);
+    expect(
+      buildMailShowDoneHref({
+        requestUrl: route(href),
+        mailboxId: "Box001",
+        search: resolved(href),
+        folderId: null,
+        savedViewExpression: null,
+      }),
+    ).toBe("/app/mail/Box001?view=done");
+  });
+
   test("a saved view searches its own condition with the status and Reset returns to the view", () => {
     const requestUrl = route("/app/mail/Box001?savedView=Saved1");
     const href = buildMailShowDoneHref({

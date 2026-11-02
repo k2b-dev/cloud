@@ -52,8 +52,8 @@ export const queryConversationViewCounts = async (
           bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
           ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated,
           -- The folders a done conversation lies in: their lists leave it out and count it in their footer.
-          CASE WHEN c.work_status = 'done' THEN array_agg(DISTINCT placement.folder_id) FILTER (WHERE placement.folder_id IS NOT NULL) END
-            AS done_folder_ids
+          -- Only done conversations collect them, so the open ones add no work.
+          array_agg(placement.folder_id) FILTER (WHERE c.work_status = 'done' AND placement.folder_id IS NOT NULL) AS done_folder_ids
         FROM mail.conversations c
         JOIN mail.conversation_messages link ON link.conversation_id = c.id
         LEFT JOIN mail.message_placements placement
@@ -102,7 +102,7 @@ export const queryConversationViewCounts = async (
           WHERE keep.mailbox_id = ${params.mailboxId}::uuid AND ${conversationVisibleTo(params.visibility, sql`keep.conversation_id`)}) AS kept,
         (SELECT jsonb_object_agg(by_folder.folder_id, by_folder.conversations)
           FROM (
-            SELECT done_folder.folder_id, COUNT(*)::int AS conversations
+            SELECT done_folder.folder_id, COUNT(DISTINCT done_scope.id)::int AS conversations
             FROM scope done_scope CROSS JOIN LATERAL unnest(done_scope.done_folder_ids) AS done_folder(folder_id)
             GROUP BY done_folder.folder_id
           ) by_folder) AS done_by_folder

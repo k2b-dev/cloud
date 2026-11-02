@@ -1,5 +1,6 @@
 import type { MailSearchExpression } from "../../contracts";
 import {
+  encodedParameterLength,
   MAIL_SEARCH_PARAMETER,
   MAX_MAIL_SEARCH_PARAMETER_LENGTH,
   mailExactAddressSearch,
@@ -164,9 +165,10 @@ export const buildMailShowDoneHref = (params: {
     base.type === "and" && base.expressions.length < 20
       ? { type: "and", expressions: [...base.expressions, done] }
       : { type: "and", expressions: [base, done] };
-  const search: Record<string, string> = {
-    [MAIL_SEARCH_PARAMETER]: JSON.stringify({ expression, sort: params.search.expression ? params.search.sort : "newest" }),
-  };
+  const value = JSON.stringify({ expression, sort: params.search.expression ? params.search.sort : "newest" });
+  // A search at its size limit has no room for the status; the Done tab still lists every done conversation.
+  if (encodedParameterLength(value) > MAX_MAIL_SEARCH_PARAMETER_LENGTH) return `/app/mail/${params.mailboxId}?view=done`;
+  const search: Record<string, string> = { [MAIL_SEARCH_PARAMETER]: value };
   if (params.folderId) search.folder = params.folderId;
   return buildMailSearchHref(params.requestUrl, search);
 };

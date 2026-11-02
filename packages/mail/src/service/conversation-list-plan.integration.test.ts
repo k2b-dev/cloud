@@ -17,7 +17,12 @@ let context: MailRequestContext;
 
 // Production reuses prepared statements behind PgBouncer, so the plan that counts is the generic one. An ordinary
 // EXPLAIN would plan with the bound values, so this executes the statement and reads what the transaction examined.
-const conversationsExamined = (view: ConversationView | null, cursor: { date: string; id: string } | null = null) =>
+const conversationsExamined = (
+  view: ConversationView | null,
+  cursor: { date: string; id: string } | null = null,
+  openOnly = false,
+  folderId: string | null = null,
+) =>
   sql.begin(async (tx) => {
     await tx`SET LOCAL plan_cache_mode = force_generic_plan`;
     // The view also holds counts this connection has not flushed yet, so only the difference belongs to the query.
@@ -34,13 +39,14 @@ const conversationsExamined = (view: ConversationView | null, cursor: { date: st
       mailboxId,
       visibility: { scope: "mailbox", permission: "admin" },
       currentUserId: userId,
-      folderId: null,
+      folderId,
       excludedFolderIds: [],
       status: null,
       view,
       unread: null,
       lapsedAssignees: [],
       aggregatedScope: null,
+      openOnly,
       cursor,
       limit: PAGE,
     })}`;
@@ -107,6 +113,18 @@ suite("conversation list plan", () => {
 
   test("the unfiltered list examines one page, whatever the mailbox size", async () => {
     expect(await conversationsExamined(null)).toBeLessThan(ABOUT_ONE_PAGE);
+  });
+
+  test("the open-work list still examines about one page instead of sorting the open conversations", async () => {
+    expect(await conversationsExamined(null, null, true)).toBeLessThan(ABOUT_ONE_PAGE);
+  });
+
+  test("a folder's open-work list reads open conversations newest first instead of every conversation in the folder", async () => {
+    const [inbox] = await sql<{ id: string }[]>`
+      SELECT f.id FROM mail.folders f JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+      WHERE rr.mailbox_id = ${mailboxId}::uuid AND f.role = 'inbox'
+    `;
+    expect(await conversationsExamined(null, null, true, inbox!.id)).toBeLessThan(2 * ABOUT_ONE_PAGE);
   });
 
   test("recently active examines one page of its own index", async () => {

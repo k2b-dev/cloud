@@ -403,27 +403,32 @@ export const conversationCandidatesQuery = (params: {
       AND NOT ('\\Seen' = ANY(unread_mp.flags))
       AND ${folderId ? sql`unread_mp.folder_id = ${folderId}::uuid` : sql`true`}
   )`;
+  const folderPlacement = (folder: string) => sql`
+    SELECT 1
+    FROM mail.conversation_messages folder_cm
+    JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
+    WHERE folder_cm.conversation_id = c.id
+      AND folder_mp.folder_id = ${folder}::uuid
+      AND folder_mp.deleted_at IS NULL
+  `;
   return sql`
     SELECT c.*
     FROM mail.conversations c
     WHERE c.mailbox_id = ${params.mailboxId}::uuid
       AND ${conversationVisibleTo(params.visibility, sql`c.id`)}
+      AND ${params.openOnly ? isOpenConversation(sql`c`) : sql`true`}
       AND ${params.status ? sql`c.work_status = ${params.status}` : sql`true`}
       AND ${conversationViewCondition(view, params.currentUserId, params.lapsedAssignees)}
-      AND ${params.openOnly ? isOpenConversation(sql`c`) : sql`true`}
       AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
       AND ${params.aggregatedScope ? staysInAggregatedViews(sql`c.id`, params.aggregatedScope) : sql`true`}
       AND ${
-        folderId
-          ? sql`EXISTS (
-              SELECT 1
-              FROM mail.conversation_messages folder_cm
-              JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
-              WHERE folder_cm.conversation_id = c.id
-                AND folder_mp.folder_id = ${folderId}::uuid
-                AND folder_mp.deleted_at IS NULL
-            )`
-          : sql`true`
+        !folderId
+          ? sql`true`
+          : params.openOnly
+            ? // A per-row check, never a join: a reused plan would otherwise start at the folder's placements and read
+              // every done conversation in a large folder, instead of the open ones newest first up to the page.
+              sql`(${folderPlacement(folderId)} LIMIT 1) IS NOT NULL`
+            : sql`EXISTS (${folderPlacement(folderId)})`
       }
       AND ${unread === null ? sql`true` : unread ? hasUnreadPlacement() : sql`NOT ${hasUnreadPlacement()}`}
       AND ${
@@ -488,19 +493,6 @@ export const listConversations = async (params: {
   const folderId = params.folderId ?? null;
   const excludedFolderIds = view === "kept" ? [] : [...new Set(params.excludedFolderIds ?? [])].sort();
   const includedPlacement = includedPlacementCondition(excludedFolderIds);
-  const cursorScope: ConversationCursorScope = {
-    mailboxId: params.mailboxId,
-    folderId,
-    excludedFolderIds,
-    status: params.status ?? null,
-    view,
-    unread: params.unread ?? null,
-    userId: currentUserId,
-  };
-  const cursor = decodeConversationCursor(params.cursor, cursorScope);
-  if (!cursor.ok) return cursor;
-  const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
-  const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
   const openOnly = await listingOpenOnly({
     mailboxId: params.mailboxId,
     view,
@@ -509,6 +501,20 @@ export const listConversations = async (params: {
     folderId,
     includeDone: params.includeDone,
   });
+  const cursorScope: ConversationCursorScope = {
+    mailboxId: params.mailboxId,
+    folderId,
+    excludedFolderIds,
+    status: params.status ?? null,
+    view,
+    unread: params.unread ?? null,
+    userId: currentUserId,
+    openOnly,
+  };
+  const cursor = decodeConversationCursor(params.cursor, cursorScope);
+  if (!cursor.ok) return cursor;
+  const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
+  const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
   // Bound all access, placement, view and cursor filters before enriching the selected page.
   const candidates = conversationCandidatesQuery({
     mailboxId: params.mailboxId,

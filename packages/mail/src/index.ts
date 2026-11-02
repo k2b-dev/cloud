@@ -5,7 +5,13 @@ import { stopMailDraftConnections } from "./api/draft-document-socket";
 import { mailCapabilities } from "./capabilities";
 import { app } from "./config";
 import { mailHelp } from "./help";
-import { buildCommandTargetIndex, buildOptionalSearchIndex, buildProviderMessageIndex, migrate } from "./migrate";
+import {
+  buildCommandTargetIndex,
+  buildOpenConversationIndex,
+  buildOptionalSearchIndex,
+  buildProviderMessageIndex,
+  migrate,
+} from "./migrate";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
@@ -39,6 +45,7 @@ const result = await app.start({
       void (async () => {
         if ((await buildCommandTargetIndex()) === "busy") return;
         if ((await buildProviderMessageIndex()) === "busy") return;
+        if ((await buildOpenConversationIndex()) === "busy") return;
         await buildOptionalSearchIndex();
       })();
     },
