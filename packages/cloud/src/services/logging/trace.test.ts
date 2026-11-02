@@ -460,7 +460,7 @@ suite("logging.trace", () => {
     }
   });
 
-  test("cleanup removes only completed traces outside retention", async () => {
+  test("cleanup removes completed and abandoned traces outside retention", async () => {
     const suffix = crypto.randomUUID();
     const source = `test:trace:cleanup:${suffix}`;
     const old = await trace.start({ name: "Old trace", source, startedAt: Date.now() - 40 * 86_400_000 });
@@ -471,10 +471,10 @@ suite("logging.trace", () => {
       await trace.end({ context: old, status: "ok", endedAt: Date.now() - 39 * 86_400_000 });
       await trace.end({ context: recent, status: "ok" });
 
-      expect(await trace.cleanup({ days: 30, source })).toBe(1);
+      expect(await trace.cleanup({ days: 30, source })).toBe(2);
       expect(await trace.getSpan({ traceId: old.traceId, spanId: old.spanId })).toBeNull();
       expect(await trace.getSpan({ traceId: recent.traceId, spanId: recent.spanId })).not.toBeNull();
-      expect(await trace.getSpan({ traceId: running.traceId, spanId: running.spanId })).not.toBeNull();
+      expect(await trace.getSpan({ traceId: running.traceId, spanId: running.spanId })).toBeNull();
     } finally {
       await sql`DELETE FROM logging.trace_spans WHERE source = ${source}`;
     }
