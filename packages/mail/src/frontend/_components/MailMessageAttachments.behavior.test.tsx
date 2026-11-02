@@ -136,7 +136,8 @@ describe("Mail attachment preview", () => {
       expect(dialog.querySelector("h2")?.textContent).toBe("Save 4 files");
       // Nothing is read before a folder is chosen; an outage of the app list is calm and offers a retry.
       expect(requested.some((url) => url.includes("/attachments/"))).toBeFalse();
-      expect(dialog.textContent).toContain("Apps that store files could not be loaded.");
+      expect(dialog.textContent).toContain("Apps not loaded");
+      expect(dialog.textContent).toContain("Try again");
     } finally {
       dialogCore.close();
       // The save dialog keeps a history entry; let it leave before the page goes away.
