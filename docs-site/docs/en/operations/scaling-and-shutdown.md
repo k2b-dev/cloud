@@ -277,6 +277,19 @@ retains the work, and the existing claim and retry rules still apply. Core's
 event gap and retention checks run once per minute, independently of signal
 volume. No new service or operator setting is required.
 
+Grids starts its 32 record-event workflow partition readers only while at least
+one enabled record-event workflow exists. Workflow changes wake the runtime
+across replicas; the existing minute reconciliation recovers missed hints.
+Readers drain when the last such workflow is disabled or removed. Their durable
+queue and partition positions remain, so events queued before startup or during
+an idle period are delivered in record order. Activation timestamps continue to
+exclude events from before a workflow was enabled.
+
+Only Core registers the hourly [one-time link cleanup](/en/docs/identity/one-time-links#operations-notes).
+Other applications still provision the shared links table before setup.
+Cleanup waits for Core to return during an outage; expired links remain invalid.
+No migration or new operator setting is required.
+
 ## Roll out replicas
 
 A clean stop of one replica keeps the application routed while another replica

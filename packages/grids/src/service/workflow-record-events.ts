@@ -23,7 +23,7 @@ import {
   recordEventWorkQueue,
   requeueRecordEventWork,
 } from "./record-events";
-import { listRecordEventWorkflows } from "./workflow-definitions";
+import { listRecordEventBaseIds, listRecordEventWorkflows } from "./workflow-definitions";
 import { machineWorkflowOwnerPrincipal } from "./workflow-machine-authority";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
@@ -262,6 +262,18 @@ export const processWorkflowRecordEventDelivery = async (
 
 export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
   let worker: Worker | undefined;
+  // Runtime hints, the safety reconcile and shutdown can overlap. Never start
+  // a replacement while the previous partition readers are still draining.
+  let transition = Promise.resolve();
+  const serialize = (apply: () => Promise<void>): Promise<void> => {
+    const next = transition.then(apply);
+    transition = next.catch(() => {});
+    return next;
+  };
+  const stop = async (): Promise<void> => {
+    await worker?.drain({ timeoutMs: RECORD_EVENT_WORK_LEASE_MS });
+    worker = undefined;
+  };
 
   const dispatch = async (event: GridsRecordEvent): Promise<void> => {
     const name = eventName(event);
@@ -324,14 +336,18 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
 
   return {
     dispatch,
-    reconcile: async (): Promise<void> => {
-      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
-        processWorkflowRecordEventDelivery(delivery, dispatch),
-      );
-    },
-    stop: async (): Promise<void> => {
-      await worker?.drain({ timeoutMs: RECORD_EVENT_WORK_LEASE_MS });
-      worker = undefined;
-    },
+    reconcile: (): Promise<void> =>
+      serialize(async () => {
+        if ((await listRecordEventBaseIds()).length === 0) {
+          await stop();
+          return;
+        }
+        // Keep the durable queue and its partition cursors across idle periods.
+        // Events published before this start remain queued in record order.
+        worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
+          processWorkflowRecordEventDelivery(delivery, dispatch),
+        );
+      }),
+    stop: (): Promise<void> => serialize(stop),
   };
 };

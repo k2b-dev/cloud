@@ -16,12 +16,12 @@ suiteFor("database", "nats")("one shared platform link retention schedule", () =
     await migrateLogging();
     connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("links-runtime");
-    for (const application of ["invoices", "website"]) {
+    for (const application of ["invoices", "core", "core"]) {
       const sync = createSync({ connection, namespace, application, defaults: { replicas: 1 } });
       instances.push(sync);
       bindProcessSync(sync);
       try {
-        stops.push(await startLinksRuntime());
+        stops.push(await startLinksRuntime(application));
       } finally {
         unbindProcessSync();
       }
@@ -39,9 +39,10 @@ suiteFor("database", "nats")("one shared platform link retention schedule", () =
     }
   });
 
-  test("different apps share one serial schedule and deduplicate the same accepted cleanup run", async () => {
-    const schedules = instances.map((sync) => sync.controls().find((control) => control.kind === "scheduler"));
-    const [first, second] = schedules;
+  test("only Core replicas register retention and deduplicate the same accepted cleanup run", async () => {
+    const schedules = instances.map((sync) => sync.controls().filter((control) => control.kind === "scheduler"));
+    expect(schedules.map((items) => items.length)).toEqual([0, 1, 1]);
+    const [first, second] = schedules.slice(1).map((items) => items[0]);
     if (!first || first.kind !== "scheduler" || !second || second.kind !== "scheduler") throw new Error("missing retention schedule");
     expect(first.id).toBe("cloud-links-retention");
     expect(second.id).toBe(first.id);

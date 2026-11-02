@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { expect, spyOn } from "bun:test";
+import { getProcessSync } from "@k2b/cloud";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { startGridsTestSync } from "../sync-test-utils";
-import { type GridsRecordEvent, publishRecordEvent, recordEventWorkQueue } from "./record-events";
+import { type GridsRecordEvent, publishRecordEvent, RECORD_EVENT_WORK_PARTITIONS, recordEventWorkQueue } from "./record-events";
 
 const natsTest = testFor("nats");
 
@@ -18,7 +19,7 @@ natsTest(
       version: 1,
       changedFieldIds: [],
       actorId: null,
-      occurredAt: new Date().toISOString(),
+      occurredAt: "2026-07-15T12:00:00.000Z",
     };
     try {
       const versions: Array<number | null> = [];
@@ -34,6 +35,79 @@ natsTest(
       expect(versions).toEqual([1, 2]);
     } finally {
       await stop();
+    }
+  },
+  30_000,
+);
+
+natsTest(
+  "lazy workflow partitions start once, drain at idle, and resume queued events in order",
+  async () => {
+    const stopSync = await startGridsTestSync();
+    const definitions = await import("./workflow-definitions");
+    const { createWorkflowRecordEventRuntime } = await import("./workflow-record-events");
+    const bases = spyOn(definitions, "listRecordEventBaseIds").mockResolvedValue([]);
+    const received: string[] = [];
+    const workflows = spyOn(definitions, "listRecordEventWorkflows").mockImplementation(async (_baseId, occurredAt) => {
+      received.push(occurredAt);
+      return [];
+    });
+    const runtime = createWorkflowRecordEventRuntime(async () => {
+      throw new Error("This test records dispatch before workflow invocation");
+    });
+    const event: GridsRecordEvent = {
+      v: 1,
+      type: "record.updated",
+      baseId: "00000000-0000-4000-8000-000000000001",
+      tableId: "00000000-0000-4000-8000-000000000002",
+      recordId: "00000000-0000-4000-8000-000000000003",
+      version: 1,
+      changedFieldIds: [],
+      actorId: null,
+      occurredAt: "2026-07-15T12:00:00.000Z",
+    };
+    const waitForDeliveries = async (count: number): Promise<void> => {
+      const deadline = performance.now() + 5_000;
+      while (received.length < count) {
+        if (performance.now() >= deadline) throw new Error("Queued record events were not delivered");
+        await Bun.sleep(20);
+      }
+    };
+    const queue = recordEventWorkQueue();
+    const processing = spyOn(queue, "process");
+    try {
+      const sync = getProcessSync();
+      await runtime.reconcile();
+      expect(sync.health().activeWorkers).toBe(0);
+      expect(processing).toHaveBeenCalledTimes(0);
+      // Publishing during the activation/start race must survive without a reader.
+      await publishRecordEvent(event);
+      await publishRecordEvent({ ...event, version: 2, occurredAt: "2026-07-15T12:00:01.000Z" });
+
+      bases.mockResolvedValue([event.baseId]);
+      await Promise.all([runtime.reconcile(), runtime.reconcile(), runtime.reconcile()]);
+      expect(processing).toHaveBeenCalledTimes(1);
+      expect(processing).toHaveBeenCalledWith({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, expect.any(Function));
+      expect(sync.health().activeWorkers).toBe(1);
+      const workQueue = (await sync.resources()).find((resource) => resource.id === "grids:workflow-record-events");
+      expect(Object.keys(workQueue?.detail?.consumers ?? {})).toHaveLength(32);
+      await waitForDeliveries(2);
+
+      bases.mockResolvedValue([]);
+      await runtime.reconcile();
+      expect(sync.health().activeWorkers).toBe(0);
+      await publishRecordEvent({ ...event, version: 3, occurredAt: "2026-07-15T12:00:02.000Z" });
+      bases.mockResolvedValue([event.baseId]);
+      await runtime.reconcile();
+      await waitForDeliveries(3);
+      expect(processing).toHaveBeenCalledTimes(2);
+      expect(received).toEqual(["2026-07-15T12:00:00.000Z", "2026-07-15T12:00:01.000Z", "2026-07-15T12:00:02.000Z"]);
+    } finally {
+      await runtime.stop();
+      processing.mockRestore();
+      workflows.mockRestore();
+      bases.mockRestore();
+      await stopSync();
     }
   },
   30_000,
