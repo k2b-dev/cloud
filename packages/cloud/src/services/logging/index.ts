@@ -3,6 +3,7 @@ import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
 import { redactLinkTokens, redactMetadata } from "./redaction";
+import { drainRetention, RETENTION_BATCH_SIZE, type RetentionOptions } from "./retention";
 import { observeSyncEvent, TRACE_STUCK_AFTER_MS, trace } from "./trace";
 import { readWebVitals } from "./web-vitals";
 
@@ -30,6 +31,8 @@ registerSettings([
   {
     key: "logs.retention_days",
     kind: "number",
+    min: 1,
+    integer: true,
     default: 30,
     description: "Automatically delete log entries older than this many days",
     group: "logs",
@@ -37,8 +40,10 @@ registerSettings([
   {
     key: "logs.trace_retention_days",
     kind: "number",
+    min: 1,
+    integer: true,
     default: 30,
-    description: "Automatically delete completed traces older than this many days",
+    description: "Automatically delete completed and abandoned traces older than this many days",
     group: "logs",
   },
 ]);
@@ -414,12 +419,21 @@ const getById = async (id: string): Promise<LogEntry | null> => {
 };
 
 /** Delete log entries older than the given number of days. */
-const cleanup = async (olderThanDays: number): Promise<{ deleted: number }> => {
-  const rows = await sql`
-    DELETE FROM logging.entries
-    WHERE created_at < now() - ${olderThanDays + " days"}::interval
-  `;
-  return { deleted: rows.count };
+const cleanup = async (olderThanDays: number, options: RetentionOptions = {}): Promise<{ deleted: number }> => {
+  if (!Number.isFinite(olderThanDays) || olderThanDays < 1) throw new Error("Retention days must be a positive number");
+  const cutoff = new Date(Date.now() - Math.trunc(olderThanDays) * 86_400_000);
+  const progress = await drainRetention(async (tx) => {
+    const rows = await tx`
+      WITH batch AS (
+        SELECT id FROM logging.entries WHERE created_at < ${cutoff}
+        ORDER BY created_at LIMIT ${RETENTION_BATCH_SIZE}
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM logging.entries e USING batch WHERE e.id = batch.id
+    `;
+    return { entries: rows.count, complete: rows.count < RETENTION_BATCH_SIZE };
+  }, options);
+  return { deleted: progress.entries ?? 0 };
 };
 
 export type LogSummary = {

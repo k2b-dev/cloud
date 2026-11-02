@@ -154,3 +154,12 @@ database. Use [audit events](/en/docs/platform/audit-events) for durable
 security evidence.
 
 Topic consumer runs are traced only when they retry or dead-letter: successful runs write no span, so high-volume consumers such as gateway telemetry do not multiply span writes.
+
+### Retain trace history
+
+`logs.trace_retention_days` defaults to 30 days. Gateway Ops removes completed
+spans by end time and abandoned open spans by start time. Events of expired
+spans are deleted in bounded batches before their parents. `trace.cleanup()`
+returns the spans removed in the current pass; a large backlog resumes on the
+next scheduled pass. See [Retention and disk space](/en/docs/operations/observability#retention-and-disk-space)
+for progress checks and physical disk reclamation.

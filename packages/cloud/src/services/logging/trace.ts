@@ -5,6 +5,7 @@ import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { isSensitiveMetadataKey, REDACTED, redactLinkTokens, redactMetadata } from "./redaction";
+import { drainRetention, RETENTION_BATCH_SIZE, type RetentionOptions } from "./retention";
 
 export type TraceAttributeValue = string | number | boolean | null | undefined;
 export type TraceAttributes = Record<string, TraceAttributeValue>;
@@ -943,15 +944,46 @@ const summary = async (options?: { sinceHours?: number }): Promise<TraceSummary>
   };
 };
 
-const cleanup = async (options: { days: number; source?: string }): Promise<number> => {
-  const days = Math.max(1, Math.trunc(options.days));
-  const result = await sql`
-    DELETE FROM logging.trace_spans
-    WHERE ended_at IS NOT NULL
-      AND ended_at < now() - (${days}::int * INTERVAL '1 day')
-      AND (${options.source ?? null}::text IS NULL OR source = ${options.source ?? null})
-  `;
-  return result.count;
+const cleanup = async (options: { days: number; source?: string } & RetentionOptions): Promise<number> => {
+  if (!Number.isFinite(options.days) || options.days < 1) throw new Error("Retention days must be a positive number");
+  const cutoff = new Date(Date.now() - Math.trunc(options.days) * 86_400_000);
+  const progress = await drainRetention(async (tx) => {
+    // Prune children explicitly: ON DELETE CASCADE alone could delete an
+    // unbounded number of events for one span. Old open spans are abandoned.
+    const events = await tx`
+      WITH expired AS MATERIALIZED (
+        SELECT trace_id, span_id FROM logging.trace_spans
+        WHERE started_at < ${cutoff}
+          AND (ended_at IS NULL OR ended_at < ${cutoff})
+          AND (${options.source ?? null}::text IS NULL OR source = ${options.source ?? null})
+        ORDER BY started_at
+        LIMIT ${RETENTION_BATCH_SIZE}
+      ), batch AS (
+        SELECT e.id FROM logging.trace_events e JOIN expired s USING (trace_id, span_id)
+        LIMIT ${RETENTION_BATCH_SIZE}
+        FOR UPDATE OF e SKIP LOCKED
+      )
+      DELETE FROM logging.trace_events e USING batch WHERE e.id = batch.id
+    `;
+    const spans = await tx`
+      WITH candidates AS MATERIALIZED (
+        SELECT s.trace_id, s.span_id FROM logging.trace_spans s
+        WHERE s.started_at < ${cutoff}
+          AND (s.ended_at IS NULL OR s.ended_at < ${cutoff})
+          AND (${options.source ?? null}::text IS NULL OR s.source = ${options.source ?? null})
+        ORDER BY s.started_at
+        LIMIT ${RETENTION_BATCH_SIZE}
+        FOR UPDATE OF s SKIP LOCKED
+      ), batch AS (
+        SELECT c.* FROM candidates c
+        WHERE NOT EXISTS (SELECT 1 FROM logging.trace_events e WHERE e.trace_id = c.trace_id AND e.span_id = c.span_id)
+      )
+      DELETE FROM logging.trace_spans s USING batch
+      WHERE s.trace_id = batch.trace_id AND s.span_id = batch.span_id
+    `;
+    return { events: events.count, spans: spans.count, complete: events.count === 0 && spans.count === 0 };
+  }, options);
+  return progress.spans ?? 0;
 };
 
 // ==========================

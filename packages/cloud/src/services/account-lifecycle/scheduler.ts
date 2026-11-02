@@ -230,10 +230,18 @@ const processLogCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
     async () => {
       if (ctx.signal.aborted) return { deleted: 0, retentionDays: 0 };
       const configured = Number((await getSetting<number | string | null>("logs.retention_days")) ?? 30);
-      const retentionDays = Number.isFinite(configured) ? configured : 30;
-      const summary = await logging.cleanup(retentionDays);
+      const retentionDays = Number.isFinite(configured) && configured >= 1 ? Math.trunc(configured) : 30;
+      let complete = false;
+      const summary = await logging.cleanup(retentionDays, {
+        signal: ctx.signal,
+        heartbeat: () => ctx.heartbeat(),
+        onProgress: async (progress) => {
+          complete = progress.complete;
+          logCleanupLog.info("Log retention cleanup progress", { ...progress, retentionDays });
+        },
+      });
       logCleanupLog.info("Log cleanup complete", { deleted: summary.deleted, retentionDays });
-      return { deleted: summary.deleted, retentionDays };
+      return { deleted: summary.deleted, retentionDays, complete };
     },
     { summarize: (summary) => summary },
   );
@@ -424,7 +432,7 @@ const doRegister = async (): Promise<void> => {
 
   await createSchedule({
     id: "app:logs:cleanup",
-    cron: cleanupCron,
+    cron: "*/5 * * * *",
     tz: scheduleTz,
     family: "app:cleanup",
     label: "Application log cleanup",

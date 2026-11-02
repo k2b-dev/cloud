@@ -14,11 +14,11 @@ const OFFLINE_AFTER_MS = 10 * 60 * 1000;
 const OFFLINE_LOG_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_CLEANUP_CRON = "0 4 * * *";
 const DEFAULT_HEALTH_CRON = "*/5 * * * *";
-const TELEMETRY_CLEANUP_CRON = "17 3 * * *";
+const TELEMETRY_CLEANUP_CRON = "*/5 * * * *";
 const HEALTH_SCHEDULE_ID = "gateway:health-webhook-check";
 const OFFLINE_AUDIT_ID = "gateway:registered-apps:offline-audit";
 const SCHEDULER_ID = "gateway-ops-lifecycle";
-/** Retention ticks heartbeat per delete batch; `trace.cleanup` runs as one statement and must fit in this window. */
+/** Retention ticks heartbeat per bounded delete batch. */
 const SCHEDULER_ACK_WAIT_MS = 5 * 60 * 1000;
 
 const gatewayOpsScheduler = lazySync((sync) => sync.scheduler({ id: SCHEDULER_ID, delivery: { ackWaitMs: SCHEDULER_ACK_WAIT_MS } }));
@@ -222,15 +222,54 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
           appId: "gateway-ops",
           category: "schedule",
         },
-        async () => {
+        async (span) => {
           const [eventsDays, rollupsDays, traceDays] = await Promise.all([
             getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
             getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
             getPositiveIntegerSetting("logs.trace_retention_days", 30),
           ]);
-          const telemetry = await cleanupTelemetry({ eventsDays, rollupsDays, heartbeat: () => context.heartbeat() });
-          const traces = await trace.cleanup({ days: traceDays });
-          const summary = { events: telemetry.events, rollups: telemetry.rollups, traces };
+          let traceProgress = { events: 0, spans: 0, complete: false };
+          const failures: unknown[] = [];
+          const traces = await trace
+            .cleanup({
+              days: traceDays,
+              signal: context.signal,
+              heartbeat: () => context.heartbeat(),
+              onProgress: async (progress) => {
+                traceProgress = { events: progress.events ?? 0, spans: progress.spans ?? 0, complete: progress.complete };
+                await trace.record({
+                  context: span,
+                  event: "retention.progress",
+                  attributes: { ...progress, traceDays },
+                  summary: { ...progress, traceDays },
+                });
+              },
+            })
+            .catch((error: unknown) => {
+              failures.push(error);
+              return traceProgress.spans;
+            });
+          const telemetry = await cleanupTelemetry({
+            eventsDays,
+            rollupsDays,
+            signal: context.signal,
+            heartbeat: () => context.heartbeat(),
+          }).catch((error: unknown) => {
+            failures.push(error);
+            return { events: 0, rollups: 0, complete: false };
+          });
+          const summary = {
+            events: telemetry.events,
+            rollups: telemetry.rollups,
+            traces,
+            traceEvents: traceProgress.events,
+            traceRetentionComplete: traceProgress.complete,
+            traceDays,
+            telemetryRetentionComplete: telemetry.complete,
+            failures: failures.length,
+          };
+          await trace.record({ context: span, event: "retention.result", summary });
+          if (failures.length) throw new AggregateError(failures, "Observability retention cleanup failed");
           log.info("Observability retention cleanup completed", summary);
           return summary;
         },

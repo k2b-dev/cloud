@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic } from "@k2b/cloud/services";
 import type { TopicEvent } from "@k2b/sync";
+import type { TransactionSQL } from "bun";
 
 const WORKER_GROUP = "postgres-writer";
 /** Duration at which a request is counted as slow, in ingest and in the UI. */
@@ -125,17 +126,18 @@ export const consumeTelemetry = async (signal: AbortSignal): Promise<void> => {
   }
 };
 
-export type TelemetryCleanupResult = { events: number; rollups: number; total: number };
+export type TelemetryCleanupResult = { events: number; rollups: number; total: number; complete: boolean };
 
 const CLEANUP_BATCH_SIZE = 10_000;
 
-const deleteExpiredEventsBatch = async (eventsDays: number): Promise<number> => {
-  const result = await sql`
+const deleteExpiredEventsBatch = async (tx: TransactionSQL, eventsDays: number): Promise<number> => {
+  const result = await tx`
     WITH expired AS (
       SELECT ctid
       FROM gateway.telemetry_events
       WHERE occurred_at < now() - (${eventsDays}::int * INTERVAL '1 day')
       LIMIT ${CLEANUP_BATCH_SIZE}
+      FOR UPDATE SKIP LOCKED
     )
     DELETE FROM gateway.telemetry_events event
     USING expired
@@ -144,13 +146,14 @@ const deleteExpiredEventsBatch = async (eventsDays: number): Promise<number> => 
   return result.count;
 };
 
-const deleteExpiredRollupsBatch = async (rollupsDays: number): Promise<number> => {
-  const result = await sql`
+const deleteExpiredRollupsBatch = async (tx: TransactionSQL, rollupsDays: number): Promise<number> => {
+  const result = await tx`
     WITH expired AS (
       SELECT ctid
       FROM gateway.telemetry_rollups_minute
       WHERE bucket < date_trunc('minute', now() - (${rollupsDays}::int * INTERVAL '1 day'))
       LIMIT ${CLEANUP_BATCH_SIZE}
+      FOR UPDATE SKIP LOCKED
     )
     DELETE FROM gateway.telemetry_rollups_minute rollup
     USING expired
@@ -161,23 +164,34 @@ const deleteExpiredRollupsBatch = async (rollupsDays: number): Promise<number> =
 
 /** Deletes in bounded batches; `heartbeat` runs after each batch so a long cleanup keeps its scheduler lease. */
 export const cleanupTelemetry = async (
-  retention: { eventsDays?: number; rollupsDays?: number; heartbeat?: () => Promise<void> } = {},
+  retention: { eventsDays?: number; rollupsDays?: number; heartbeat?: () => Promise<void>; signal?: AbortSignal } = {},
 ): Promise<TelemetryCleanupResult> => {
   const eventsDays = Math.max(1, Math.trunc(retention.eventsDays ?? 14));
   const rollupsDays = Math.max(eventsDays, Math.trunc(retention.rollupsDays ?? 90));
-  const drain = async (deleteBatch: () => Promise<number>): Promise<number> => {
+  const drain = async (deleteBatch: (tx: TransactionSQL) => Promise<number>): Promise<{ total: number; complete: boolean }> => {
+    const deadline = performance.now() + 15_000;
     let total = 0;
     let deleted: number;
     do {
-      deleted = await deleteBatch();
+      retention.signal?.throwIfAborted();
+      deleted = await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '1s'`;
+        await tx`SET LOCAL statement_timeout = '10s'`;
+        return deleteBatch(tx);
+      });
       total += deleted;
       await retention.heartbeat?.();
-    } while (deleted === CLEANUP_BATCH_SIZE);
-    return total;
+    } while (deleted === CLEANUP_BATCH_SIZE && performance.now() < deadline);
+    return { total, complete: deleted < CLEANUP_BATCH_SIZE };
   };
-  const events = await drain(() => deleteExpiredEventsBatch(eventsDays));
-  const rollups = await drain(() => deleteExpiredRollupsBatch(rollupsDays));
-  return { events, rollups, total: events + rollups };
+  const events = await drain((tx) => deleteExpiredEventsBatch(tx, eventsDays));
+  const rollups = await drain((tx) => deleteExpiredRollupsBatch(tx, rollupsDays));
+  return {
+    events: events.total,
+    rollups: rollups.total,
+    total: events.total + rollups.total,
+    complete: events.complete && rollups.complete,
+  };
 };
 
 export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary> => {
