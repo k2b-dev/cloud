@@ -4,6 +4,8 @@ import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { Hono } from "hono";
 import { suiteFor, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sendWebsiteDelivery, WebsiteDeliverySchema } from "../../examples/website-tracking";
+import { DashboardSaveSchema, dashboardParameters } from "../dashboard-contracts";
+import { projectDashboardPanel } from "../dashboard-result";
 
 let pulseCapabilities: typeof import("../capabilities")["pulseCapabilities"];
 let pulseService: typeof import("../service")["pulseService"];
@@ -190,6 +192,27 @@ suiteFor(
         context,
       );
       expect(totals.ok && totals.data.data.rows.map((row) => row.map(Number))).toEqual([[4, 2, 1]]);
+      const example = DashboardSaveSchema.parse(await Bun.file(`${import.meta.dir}/../../examples/website-dashboard.json`).json());
+      const panelData = async (panel: (typeof example.definition.panels)[number]) => {
+        const run = await pulseCapabilities.queries["sql.run"].run(
+          {
+            baseId: base.shortId,
+            sql: panel.sql,
+            params: dashboardParameters(panel, { from: "2026-10-19T00:00:00.000Z", to: "2026-10-21T00:00:00.000Z", bucket: "1d" }),
+          },
+          context,
+        );
+        if (!run.ok) throw new Error(`${panel.id}: ${run.error.code}: ${run.error.message}`);
+        return projectDashboardPanel(panel, run.data.data);
+      };
+      const results = new Map<string, Awaited<ReturnType<typeof panelData>>>();
+      for (const panel of example.definition.panels) results.set(panel.id, await panelData(panel));
+      expect(Number(results.get("views")?.rows[0]?.[0])).toBe(4);
+      expect(results.get("countries")?.rows.map(([country, views]) => [country, Number(views)])).toEqual([
+        ["DE", 2],
+        ["", 1],
+        ["FR", 1],
+      ]);
       const pin = await savedQueries.save({
         ...identity,
         baseId: base.shortId,
