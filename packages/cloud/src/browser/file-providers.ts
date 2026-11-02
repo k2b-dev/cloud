@@ -288,6 +288,21 @@ const isActive = (type: string | undefined): type is string =>
   (/^(?:text\/html|application\/xhtml\+xml|text\/xml|application\/xml|text\/xsl|application\/xslt\+xml|image\/svg\+xml)$/.test(type) ||
     type.endsWith("+xml") ||
     /(?:java|ecma)script|^text\/jsx?$|^application\/x-shockwave-flash$/.test(type));
+/** The names one kind of active content goes by: its types and its own extensions. */
+const ACTIVE_GROUPS: { types: readonly string[]; extensions: readonly string[] }[] = [
+  { types: ["text/html"], extensions: [".html", ".htm"] },
+  { types: ["application/xhtml+xml"], extensions: [".xhtml", ".xht"] },
+  { types: ["image/svg+xml"], extensions: [".svg", ".svgz"] },
+  {
+    types: ["text/javascript", "application/javascript", "application/x-javascript", "text/ecmascript", "application/ecmascript"],
+    extensions: [".js", ".mjs", ".cjs"],
+  },
+  { types: ["text/xml", "application/xml"], extensions: [".xml"] },
+];
+/** The group a type or an extension token belongs to; other `+xml` types count as XML. */
+const activeGroup = (value: string) =>
+  ACTIVE_GROUPS.find((group) => group.types.includes(value) || group.extensions.includes(value)) ??
+  (value.endsWith("+xml") ? ACTIVE_GROUPS.at(-1) : undefined);
 /** Types a target relies on and the first bytes can prove: images, PDF, audio, video, and ZIP or legacy Office files. */
 const isProvable = (type: string | undefined): type is string =>
   !!type &&
@@ -326,8 +341,10 @@ export const verifiedMediaType = (head: Uint8Array, name: string, hint: string |
     .map((token) => token.trim().toLowerCase())
     .filter(Boolean);
   // Only the active type itself, or an extension of that type such as `.svg`, names it; a matching file name never does.
-  const xml = (value: string | null) => (value === "text/xml" ? "application/xml" : value);
-  const explicit = (type: string) => tokens.some((token) => xml(token.startsWith(".") ? getMimeType(token.slice(1)) : token) === xml(type));
+  const explicit = (type: string) => {
+    const group = activeGroup(type);
+    return tokens.some((token) => token === type || (group !== undefined && activeGroup(token) === group));
+  };
   let type: string;
   let byBytes = false;
   if (proven && (isProvable(claim) || active)) {
@@ -336,7 +353,8 @@ export const verifiedMediaType = (head: Uint8Array, name: string, hint: string |
   } else if (active) type = explicit(active) ? active : OCTET_STREAM;
   else if (isProvable(claim)) type = OCTET_STREAM;
   else type = claim ?? OCTET_STREAM;
-  if (tokens.length === 0) return type;
+  // An active type that `accept` names explicitly already fits it.
+  if (tokens.length === 0 || (active !== undefined && type === active)) return type;
   // Bytes that prove a type a token asks for take that type, even under another claim.
   const proves = (token: string) =>
     !!proven &&

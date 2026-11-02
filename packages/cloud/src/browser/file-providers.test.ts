@@ -553,6 +553,15 @@ describe("proving a file's type from its first bytes", () => {
     // A name that fits an unrelated token never makes an active type accepted.
     expect(verifiedMediaType(bytes("<html>"), "notes.txt", "text/html", ".txt")).toBe("application/octet-stream");
     expect(verifiedMediaType(bytes("<html>"), "notes.txt", "text/html", ".html")).toBe("text/html");
+    // An active type's own extensions and aliases name it, whatever type the extension maps to.
+    expect(verifiedMediaType(bytes("alert(1)"), "script.js", "application/javascript", ".js")).toBe("application/javascript");
+    expect(verifiedMediaType(bytes("alert(1)"), "script.js", "application/x-javascript", "text/javascript")).toBe(
+      "application/x-javascript",
+    );
+    expect(verifiedMediaType(bytes("<html"), "page.xhtml", "application/xhtml+xml", ".xhtml")).toBe("application/xhtml+xml");
+    expect(verifiedMediaType(bytes("<html"), "page.xhtml", "application/xhtml+xml", ".html")).toBeUndefined();
+    expect(verifiedMediaType(bytes("<?xml"), "data.xml", "text/xml", ".xml")).toBe("text/xml");
+    expect(verifiedMediaType(bytes("<html>"), "page.htm", "text/html", ".htm")).toBe("text/html");
     expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", "image/*")).toBeUndefined();
     expect(verifiedMediaType(bytes("<html>"), "page.html", "text/plain", "text/*")).toBeUndefined();
     // Bytes that prove an image under an active claim are that image.
