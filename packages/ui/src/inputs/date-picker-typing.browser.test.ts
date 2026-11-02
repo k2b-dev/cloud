@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 declare global {
   interface Window {
@@ -149,6 +149,7 @@ describe("typed date field", () => {
       await input.fill("11.2.");
       expect(await popover(page).locator(".k2b-date-calendar__title").textContent()).toContain("Februar 2026");
       expect(await popover(page).locator('[data-date-day="2026-02-11"]').getAttribute("aria-selected")).toBe("true");
+      await settled(page);
       expect(rounded(await popover(page).boundingBox())).toEqual(before);
 
       await popover(page).locator('[data-date-day="2026-02-12"]').click();
@@ -247,8 +248,9 @@ describe("typed date field", () => {
     const page = await load(viewports.desktop);
     try {
       const input = field(page, "Fällig am");
-      const layout = () =>
-        page.evaluate(() => {
+      const layout = async () => {
+        await settled(page);
+        return page.evaluate(() => {
           const box = (element: Element | null) => {
             const rect = element!.getBoundingClientRect();
             return [rect.x, rect.y, rect.width, rect.height].map((value) => Math.round(value * 100) / 100);
@@ -260,6 +262,7 @@ describe("typed date field", () => {
             next: box(document.querySelectorAll(".k2b-date-field")[1]!),
           };
         });
+      };
       const rest = await layout();
       await input.hover();
       expect(await layout()).toEqual(rest);

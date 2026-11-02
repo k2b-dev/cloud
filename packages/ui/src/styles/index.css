@@ -8465,7 +8465,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-date-field__toggle > i {
-  transition: transform 150ms ease;
+  transition: transform var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-date-field[data-open="true"] .k2b-date-field__toggle > i {
