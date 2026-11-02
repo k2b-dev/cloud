@@ -5,7 +5,7 @@ import { stopMailDraftConnections } from "./api/draft-document-socket";
 import { mailCapabilities } from "./capabilities";
 import { app } from "./config";
 import { mailHelp } from "./help";
-import { buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
+import { buildCommandTargetIndex, buildOptionalSearchIndex, buildProviderMessageIndex, migrate } from "./migrate";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
@@ -32,10 +32,13 @@ const result = await app.start({
   lifecycle: {
     setup: async () => {
       await migrate();
-      // Lookups use the older index until the command index is valid; search ranks natively until
-      // the optional BM25 index is valid. Startup waits for neither build. While another build of the
-      // command index runs, the BM25 build waits for the next start: two builds at once can deadlock.
-      void buildCommandTargetIndex().then((outcome) => (outcome === "busy" ? undefined : buildOptionalSearchIndex()));
+      // Startup waits for none of these builds. A busy predecessor defers the rest until
+      // the next start: concurrent expression builds can wait on each other's snapshots.
+      void (async () => {
+        if ((await buildCommandTargetIndex()) === "busy") return;
+        if ((await buildProviderMessageIndex()) === "busy") return;
+        await buildOptionalSearchIndex();
+      })();
     },
     start: async () => {
       try {

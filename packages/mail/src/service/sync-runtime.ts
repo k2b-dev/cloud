@@ -57,6 +57,7 @@ import { hasReplySubjectPrefix, normalizeMailSubject, REPLY_SUBJECT_PREFIX_PATTE
 import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
+import { providerMessageLookupQuery } from "./provider-message-lookup";
 import {
   acquireProviderLease,
   MAIL_PROVIDER_JOB_CONCURRENCY,
@@ -598,15 +599,10 @@ const findCanonicalMessageContent = async (params: {
     if (outbound) return outbound.message_id;
   }
   if (params.message.providerMessageId) {
-    const candidates = await params.db<{ message_id: string }[]>`
-      SELECT DISTINCT remote_ref.message_id
-      FROM mail.remote_message_refs remote_ref
-      JOIN mail.folders folder ON folder.id = remote_ref.folder_id
-      WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
-        AND remote_ref.connector_ref ->> 'providerMessageId' = ${params.message.providerMessageId}
-      ORDER BY remote_ref.message_id
-      LIMIT 2
-    `;
+    const candidates = await params.db.unsafe<{ message_id: string }[]>(providerMessageLookupQuery, [
+      params.remoteResourceId,
+      params.message.providerMessageId,
+    ]);
     if (candidates.length === 1) return candidates[0]!.message_id;
     if (candidates.length > 1) return null;
   }
