@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.43.0...npm-ui-v0.43.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **ui:** the phone menu no longer rebuilds its navigation for every row ([#2440](https://github.com/k2b-dev/cloud/issues/2440)) ([ce18b0a](https://github.com/k2b-dev/cloud/commit/ce18b0abeee73208bf6da4cbb64d8eeb55ae0224))
+
 ## [0.43.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.42.0...npm-ui-v0.43.0) (2026-11-02)
 
 
