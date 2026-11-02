@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.54.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.54.0...npm-cloud-v0.54.1) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.43.0 to 0.43.1
+    * @k2b/editor bumped from 0.5.1 to 0.5.2
+
 ## [0.54.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.53.0...npm-cloud-v0.54.0) (2026-11-02)
 
 
