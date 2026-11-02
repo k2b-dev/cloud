@@ -824,3 +824,7 @@ connection checks and live rescheduling. Settings writes record keys and actor
 in audit without copying submitted values.
 
 Sync diagnostic reads redact payloads and raw error text with ordinary `read` scope. Use an explicitly approved `admin` step-up profile when unredacted dead-letter content is required.
+
+`cld admin logs list` and `logs tail` default to the last 24 hours. Use
+`--since 7d` (up to 31 days) to search older entries. JSON results include
+`sinceHours`, the applied lookback.
