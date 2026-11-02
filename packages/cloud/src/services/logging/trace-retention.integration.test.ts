@@ -51,11 +51,11 @@ suite("trace retention after upgrading a large success history", () => {
     expect(await trace.getSpan(active)).not.toBeNull();
   });
 
-  test("payload accounting heartbeats between primary-key pages of at most 10000 rows", async () => {
+  test("payload accounting scans physical ranges with bounded progress instead of random primary keys", async () => {
     await sql`INSERT INTO logging.trace_spans (trace_id, span_id, name, source)
-      SELECT 'count-' || lpad(i::text, 5, '0'), 'span', 'active', 'count-pages' FROM generate_series(1, 10001) i`;
+      SELECT md5('count-' || i::text), 'span', 'active', 'count-pages' FROM generate_series(1, 10001) i`;
     await sql`INSERT INTO logging.trace_events (trace_id, span_id, name)
-      SELECT 'count-00001', 'span', 'detail' FROM generate_series(1, 10001)`;
+      SELECT md5('count-1'), 'span', 'detail' FROM generate_series(1, 10001)`;
     let heartbeats = 0;
     expect(
       await trace.cleanup({
@@ -67,8 +67,18 @@ suite("trace retention after upgrading a large success history", () => {
         },
       }),
     ).toBe(0);
-    // Two age-delete pages, two span pages, two event pages, one minute page.
-    expect(heartbeats).toBe(7);
+    // Physical ranges are sized from the minimum tuple size, not UUID order.
+    // These wider rows require more progress pages than the former keyset scan.
+    expect(heartbeats).toBeGreaterThan(7);
+    const [layout] = await sql<Array<{ blocks: number }>>`
+      SELECT floor(10000 * 28 / current_setting('block_size')::int)::int AS blocks`;
+    const [plan] = await sql`EXPLAIN (FORMAT JSON)
+      SELECT COALESCE(SUM(pg_column_size(ROW(s.*))), 0)::text AS bytes FROM logging.trace_spans s
+      WHERE s.ctid >= '(0,0)'::tid AND s.ctid < ${`(${layout!.blocks},0)`}::tid AND source = 'count-pages'`;
+    const explanation = JSON.stringify(plan);
+    expect(explanation).toContain('"Node Type":"Tid Range Scan"');
+    expect(explanation).not.toContain('"Node Type":"Sort"');
+    expect(explanation).not.toContain('"Node Type":"Index Scan"');
     const controller = new AbortController();
     heartbeats = 0;
     await expect(
@@ -83,6 +93,15 @@ suite("trace retention after upgrading a large success history", () => {
       }),
     ).rejects.toThrow("stop counting");
     expect(heartbeats).toBe(3);
+    // Exact payload accounting across ranges still notices a one-byte excess.
+    const diagnostic = await trace.complete({ source: "count-pages", name: "failure", status: "error", startedAt: at, endedAt: at });
+    const [payload] = await sql<Array<{ bytes: string }>>`SELECT (
+      (SELECT SUM(pg_column_size(ROW(s.*))) FROM logging.trace_spans s WHERE source = 'count-pages')
+      + (SELECT SUM(pg_column_size(ROW(e.*))) FROM logging.trace_events e
+        JOIN logging.trace_spans s USING (trace_id, span_id) WHERE s.source = 'count-pages')
+    )::text AS bytes`;
+    expect(await trace.cleanup({ source: "count-pages", days: 365_000, maxBytes: Number(payload!.bytes) - 1 })).toBe(1);
+    expect(await trace.getSpan(diagnostic)).toBeNull();
   });
 
   test("invalid byte budgets warn and still remove expired rows", async () => {

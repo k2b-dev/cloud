@@ -547,8 +547,11 @@ suite("incoming automations", () => {
           '2026-07-28T10:00:00Z', '2026-07-28T10:00:02Z', '2026-07-28T10:00:02Z', 2000
         )
       `;
-      await migrate();
-      await migrate();
+      await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.activity_events_backfill_operation_idx`.simple();
+      await Promise.all([migrate(), migrate()]);
+      const [index] = await sql<{ present: boolean }[]>`
+        SELECT to_regclass('mail.activity_events_backfill_operation_idx') IS NOT NULL AS present`;
+      expect(index?.present).toBe(false);
       await sql`DELETE FROM logging.trace_spans WHERE trace_id = ${traceId}`;
       const activity = await loadMailAutomationActivity(ownerContext, mailboxId);
       expect(activity.ok).toBe(true);

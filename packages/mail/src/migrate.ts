@@ -602,16 +602,15 @@ const addSenderVerificationCommands = async (tx: SqlClient): Promise<void> => {
 
 /** Preserve the visible legacy history before routine trace cleanup can remove it. */
 const migrateBackfillActivity = async (tx: SqlClient): Promise<void> => {
-  await tx`
-    CREATE UNIQUE INDEX IF NOT EXISTS activity_events_backfill_operation_idx
-    ON mail.activity_events (mailbox_id, target_id, (metadata ->> 'operationId'))
-    WHERE action = 'incoming_automation.backfill.start'
-  `;
+  // Match the journal writer's lock: import stays idempotent before the
+  // concurrent unique index is ready, without blocking ordinary Mail writes.
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.backfill-activity', 0))`;
   await tx`
     INSERT INTO mail.activity_events (
       mailbox_id, actor_kind, action, outcome, target_type, target_id, metadata, created_at
     )
-    SELECT automation.mailbox_id, 'system', 'incoming_automation.backfill.start', 'confirmed',
+    SELECT DISTINCT ON (automation.mailbox_id, automation.id, span.attributes ->> 'mail.backfill.operation_id')
+      automation.mailbox_id, 'system', 'incoming_automation.backfill.start', 'confirmed',
       'incoming_automation', automation.id,
       jsonb_build_object(
         'operationId', span.attributes ->> 'mail.backfill.operation_id',
@@ -640,6 +639,7 @@ const migrateBackfillActivity = async (tx: SqlClient): Promise<void> => {
           AND activity.action = 'incoming_automation.backfill.start'
           AND activity.metadata ->> 'operationId' = span.attributes ->> 'mail.backfill.operation_id'
       )
+    ORDER BY automation.mailbox_id, automation.id, span.attributes ->> 'mail.backfill.operation_id', span.updated_at DESC
     ON CONFLICT DO NOTHING
   `;
 };
@@ -687,6 +687,13 @@ const INDEX_BUILD_LEASE_MS = 60_000;
 const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
 
 type BackgroundIndex = { name: string; table: string; ddl: string };
+const backfillActivityIndex: BackgroundIndex = {
+  name: "mail.activity_events_backfill_operation_idx",
+  table: "mail.activity_events",
+  ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS activity_events_backfill_operation_idx
+    ON mail.activity_events (mailbox_id, target_id, (metadata ->> 'operationId'))
+    WHERE action = 'incoming_automation.backfill.start'`,
+};
 const commandTargetIndex: BackgroundIndex = {
   name: "mail.commands_message_target_idx",
   table: "mail.commands",
@@ -775,6 +782,7 @@ const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Pr
   }
 };
 
+export const buildBackfillActivityIndex = (pool: SqlClient = sql) => buildBackgroundIndex(backfillActivityIndex, pool);
 export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);

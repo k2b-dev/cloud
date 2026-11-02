@@ -11,63 +11,63 @@ export type TraceRetentionOptions = {
   signal?: AbortSignal;
 };
 
-/** Page by the existing primary keys; a large history must renew the job's
- * lease while counting, not only once it starts deleting. No OFFSET scans.
- * Explicit ROW constructors keep count/delete sizing consistent across query
- * plans (whole-row references can use different varlena representations).
+/** A PostgreSQL heap tuple needs at least 24 aligned header bytes and a
+ * four-byte line pointer. Derive the physical range from the existing 10,000-row
+ * scan budget, so even densely packed pages stay within that row ceiling.
+ * Explicit ROW constructors keep count/delete sizing consistent across plans.
  */
 const tracePayloadBytes = async (options: TraceRetentionOptions): Promise<number> => {
   const source = options.source ?? null;
-  let bytes = 0;
-  let span: { trace_id: string; span_id: string } | undefined;
-  for (;;) {
+  const countRelation = async (
+    relation: string,
+    countPage: (from: string, until: string) => Promise<Array<{ bytes: string }>>,
+  ): Promise<number> => {
     options.signal?.throwIfAborted();
-    const after = span ? sql`(trace_id, span_id) > (${span.trace_id}, ${span.span_id})` : sql`TRUE`;
-    const rows = await sql<Array<{ trace_id: string; span_id: string; bytes: number }>>`
-      WITH page AS MATERIALIZED (
-        SELECT trace_id, span_id, pg_column_size(ROW(s.*)) AS bytes FROM logging.trace_spans s WHERE ${after}
-          AND (${source}::text IS NULL OR source = ${source})
-        ORDER BY trace_id, span_id LIMIT ${BATCH_SIZE}
-      ) SELECT * FROM page ORDER BY trace_id, span_id`;
-    bytes += rows.reduce((sum, row) => sum + row.bytes, 0);
-    await options.heartbeat?.();
-    if (rows.length < BATCH_SIZE) break;
-    span = rows.at(-1);
-  }
-  let eventId = "0";
-  for (;;) {
-    options.signal?.throwIfAborted();
-    const rows = await sql<Array<{ id: string; bytes: number }>>`
-      WITH page AS MATERIALIZED (
-        SELECT id, trace_id, span_id, pg_column_size(ROW(e.*)) AS bytes FROM logging.trace_events e
-        WHERE id > ${eventId}::bigint ORDER BY id LIMIT ${BATCH_SIZE}
-      ) SELECT id::text, CASE WHEN ${source}::text IS NULL OR EXISTS (
-          SELECT 1 FROM logging.trace_spans s WHERE s.trace_id = page.trace_id AND s.span_id = page.span_id AND s.source = ${source}
-        ) THEN bytes ELSE 0 END AS bytes FROM page ORDER BY page.id`;
-    bytes += rows.reduce((sum, row) => sum + row.bytes, 0);
-    await options.heartbeat?.();
-    if (rows.length < BATCH_SIZE) break;
-    eventId = rows.at(-1)!.id;
-  }
-  let minute: { bucket: Date; source: string; app_id: string; category: string; name: string } | undefined;
-  for (;;) {
-    options.signal?.throwIfAborted();
-    const after = minute
-      ? sql`(bucket, source, app_id, category, name) > (${minute.bucket}, ${minute.source}, ${minute.app_id}, ${minute.category}, ${minute.name})`
-      : sql`TRUE`;
-    const rows = await sql<Array<{ bucket: Date; source: string; app_id: string; category: string; name: string; bytes: number }>>`
-      WITH page AS MATERIALIZED (
-        SELECT bucket, source, app_id, category, name, pg_column_size(ROW(r.*)) AS bytes FROM logging.run_minutes r
-        WHERE ${after} AND (${source}::text IS NULL OR source = ${source})
-        ORDER BY bucket, source, app_id, category, name LIMIT ${BATCH_SIZE}
-      ) SELECT * FROM page
-        ORDER BY bucket, source, app_id, category, name`;
-    bytes += rows.reduce((sum, row) => sum + row.bytes, 0);
-    await options.heartbeat?.();
-    if (rows.length < BATCH_SIZE) break;
-    minute = rows.at(-1);
-  }
-  return bytes;
+    const [storage] = await sql<Array<{ bytes: string; block_size: number }>>`
+      SELECT pg_relation_size(${relation}::regclass)::text AS bytes,
+        current_setting('block_size')::int AS block_size`;
+    if (!storage) throw new Error("Trace relation size unavailable");
+    const blocks = Math.ceil(Number(storage.bytes) / storage.block_size);
+    const blocksPerPage = Math.max(1, Math.floor((BATCH_SIZE * 28) / storage.block_size));
+    let bytes = 0;
+    for (let block = 0; block < Math.max(1, blocks); block += blocksPerPage) {
+      options.signal?.throwIfAborted();
+      const [page] = await countPage(`(${block},0)`, `(${block + blocksPerPage},0)`);
+      bytes += Number(page?.bytes ?? 0);
+      await options.heartbeat?.();
+    }
+    return bytes;
+  };
+  // TID ranges visit adjacent heap blocks, rather than heap-fetching random
+  // trace UUIDs through the primary key. Small relations can use a sequential
+  // scan; large relations use a bounded TID range scan, without sorting rows.
+  const spans = await countRelation(
+    "logging.trace_spans",
+    (from, until) => sql`
+    SELECT COALESCE(SUM(pg_column_size(ROW(s.*))), 0)::text AS bytes
+    FROM logging.trace_spans s
+    WHERE s.ctid >= ${from}::tid AND s.ctid < ${until}::tid
+      AND (${source}::text IS NULL OR source = ${source})`,
+  );
+  const events = await countRelation(
+    "logging.trace_events",
+    (from, until) => sql`
+    SELECT COALESCE(SUM(pg_column_size(ROW(e.*))), 0)::text AS bytes
+    FROM logging.trace_events e
+    WHERE e.ctid >= ${from}::tid AND e.ctid < ${until}::tid
+      AND (${source}::text IS NULL OR EXISTS (
+        SELECT 1 FROM logging.trace_spans s WHERE s.trace_id = e.trace_id AND s.span_id = e.span_id AND s.source = ${source}
+      ))`,
+  );
+  const minutes = await countRelation(
+    "logging.run_minutes",
+    (from, until) => sql`
+    SELECT COALESCE(SUM(pg_column_size(ROW(r.*))), 0)::text AS bytes
+    FROM logging.run_minutes r
+    WHERE r.ctid >= ${from}::tid AND r.ctid < ${until}::tid
+      AND (${source}::text IS NULL OR source = ${source})`,
+  );
+  return spans + events + minutes;
 };
 
 /** Core owns scheduled retention. Size is live row payload, including events,

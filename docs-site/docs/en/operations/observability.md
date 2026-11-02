@@ -67,6 +67,10 @@ updated applications or Gateway Ops. It creates `logging.run_minutes`.
 Upgrade Mail before the first size cleanup if its existing backfill history
 must be preserved: Mail imports the last 30 days of its retained backfill
 traces into its own activity journal. Traces already deleted cannot be imported.
+The backfill activity index builds concurrently in the background; journal
+writes and imports remain idempotent before it finishes. Avoid deploying across
+the cleanup slot (default `app.cleanup_schedule`: `0 4 * * *`) until Mail's
+import is complete.
 
 Automatic Sync background runs now keep individual traces for failures,
 retries, and runs of at least 30 seconds. That threshold is Sync 7's default
@@ -105,14 +109,23 @@ be removed before their day limit when their combined payload exceeds the budget
 The default reserves one day's 1 GiB trace-growth budget;
 operators can raise it explicitly for their diagnostic history. Trace events
 count toward the budget and are deleted with their parent span. Minute rows
-share the same day and byte budget. Counting and deletion each use pages of
-at most 10,000 rows, heartbeat between pages, and honor cancellation.
+share the same day and byte budget. Payload accounting visits adjacent physical
+heap-block ranges sized from the 10,000-row batch budget (34 blocks with 8-KiB
+Postgres pages), with a heartbeat and cancellation check per range. It does not
+fetch spans in random trace-ID order. Deletion batches remain at most 10,000 rows.
 
 **First cleanup after upgrade:** an existing success history can greatly
 exceed 1 GiB. The cleanup discards routine success spans before spending the
 remaining budget on diagnostic history, even if those successes are newer
 than failures. The byte budget is not a promise to retain every problem for
 30 days; raise it before the first cleanup if more diagnostic history is needed.
+The routine-success rule applies to each span independently. A fast successful
+parent span may disappear while a failed or slow child remains; retaining a
+problem span does not retain its entire trace. Under high traffic, the shared
+byte budget can also remove Grids GraphQL spans before 24 hours. Grids'
+`gql.total24h`, error counts, and duration statistics then describe the retained
+24-hour subset, not all GraphQL requests.
+
 An invalid byte setting (zero, fractional, or non-finite) logs a warning and
 still runs age-based cleanup; size cleanup resumes after the setting is corrected.
 

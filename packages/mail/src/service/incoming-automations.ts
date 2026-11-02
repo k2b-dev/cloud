@@ -662,9 +662,6 @@ const recordActivity = async (params: {
         ...params.metadata,
       }}::jsonb
     )
-    ON CONFLICT (mailbox_id, target_id, (metadata ->> 'operationId'))
-      WHERE action = 'incoming_automation.backfill.start'
-    DO UPDATE SET metadata = mail.activity_events.metadata
     RETURNING id
   `;
   if (!activity) throw new Error("Incoming automation activity insert returned no row");
@@ -1146,14 +1143,27 @@ export const startIncomingAutomationBackfill = async (params: {
           if (!associated) {
             return fail(err.conflict("Mail automation changed before the backfill started"));
           }
-          // The journal's operation key survives replays and partial starts, independently of traces.
-          const activityId = await recordActivity({
-            db: sql,
-            context: params.context,
-            automation,
-            action: "incoming_automation.backfill.start",
-            metadata: { operationId: parsed.data.operationId, name: automation.name },
-            outcome: "requested",
+          // Startup import uses the same journal lock. Correctness does not
+          // depend on the concurrent unique index having finished building.
+          const activityId = await sql.begin(async (tx) => {
+            await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.backfill-activity', 0))`;
+            const [recorded] = await tx<{ id: string | number }[]>`
+              SELECT id FROM mail.activity_events
+              WHERE mailbox_id = ${params.mailboxId}::uuid AND target_id = ${automation.id}::uuid
+                AND action = 'incoming_automation.backfill.start'
+                AND metadata ->> 'operationId' = ${parsed.data.operationId}
+              LIMIT 1
+            `;
+            return recorded
+              ? String(recorded.id)
+              : recordActivity({
+                  db: tx,
+                  context: params.context,
+                  automation,
+                  action: "incoming_automation.backfill.start",
+                  metadata: { operationId: parsed.data.operationId, name: automation.name },
+                  outcome: "requested",
+                });
           });
           if (!existing) {
             try {
