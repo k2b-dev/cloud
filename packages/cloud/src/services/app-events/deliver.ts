@@ -202,8 +202,8 @@ export function createEventDelivery(
     }
   };
 
-  const work = async () => {
-    await reconcileSubscriptions();
+  const work = async ({ reconcile = true }: { reconcile?: boolean } = {}) => {
+    if (reconcile) await reconcileSubscriptions();
     let total = 0;
     for (let batch = 0; batch < BATCH_SIZE / CONCURRENCY; batch++) {
       const rows = await claim();

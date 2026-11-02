@@ -48,11 +48,12 @@ keyboard behavior: check those again after you remove decoration.
 
 ## Tables, states, and moved paths
 
-[DataTable](/en/ui/content/tables#presentation) follows the minimal Grids
-reference: no grid, zebra striping, or row lines; 44px rows (40px compact),
-a hover fill, a small muted header without a line, and numbers aligned right
-with tabular figures. Only tables with more than 8 columns get row hairlines,
-automatically. Do not add custom row borders.
+[DataTable](/en/ui/content/tables#presentation) is the one surface that keeps
+lines: a grey head with a stronger line below it, a line under every row, and
+lighter column lines, all drawn inside the cells. Rows are 44px (40px
+compact), numbers align right with tabular figures, and a selected row is a
+fill in the app ink without a coloured line. Do not add custom row borders or
+selection fills.
 
 Use row-height loading placeholders and distinguish empty, no results, and
 no access without adding a box. Every load error offers **Try again** through

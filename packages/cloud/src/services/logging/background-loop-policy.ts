@@ -1,5 +1,10 @@
 import type { SyncEvent } from "@k2b/sync";
 
+/** Sync 7's default delivery acknowledgement budget. Diagnostic threshold,
+ * including for applications that extend their lease; not a lease expiry.
+ */
+export const SYNC_SLOW_AFTER_MS = 30_000;
+
 // Same budget as the Sync trace observer. Declarations are static, never one per entity/run.
 // If the budget is exhausted, keep ordinary tracing rather than hiding diagnostics.
 const LIMIT = 1024;

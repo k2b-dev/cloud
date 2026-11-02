@@ -3,6 +3,14 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { syncOpsService } from "../sync/runtime";
 import type { SyncOpsCredentials, SyncScheduleRow } from "../sync/service";
 
+export type JobTraceSource = Omit<TraceSourceGroup, "errorRate">;
+
+/** Retained diagnostics are a biased sample, never an execution error rate. */
+export const jobDiagnostics = <T extends { errorRate: number }>(stats: T) => {
+  const { errorRate: _traceErrorRate, ...diagnostics } = stats;
+  return diagnostics;
+};
+
 export type ScheduleMetadata = {
   appId: string | null;
   family: string;
@@ -27,7 +35,7 @@ export type ScheduleOverviewRow = ScheduleMetadata & {
   failureCount: number;
   state: "available" | "unavailable";
   lastError: string | null;
-  trace: TraceSourceGroup | null;
+  trace: JobTraceSource | null;
 };
 
 export type TraceOnlyOverviewRow = {
@@ -51,7 +59,7 @@ export type TraceOnlyOverviewRow = {
   resourceId: null;
   resourceLabel: null;
   detailHref: null;
-  trace: TraceSourceGroup;
+  trace: JobTraceSource;
 };
 
 export type BackgroundJobOverviewRow = ScheduleOverviewRow | TraceOnlyOverviewRow;
@@ -105,10 +113,10 @@ export const normalizeScheduleMetadata = (schedule: Pick<SyncScheduleRow, "id" |
   };
 };
 
-const traceOnlyLabel = (group: TraceSourceGroup): string => group.latestName ?? group.names[0] ?? group.source;
+const traceOnlyLabel = (group: JobTraceSource): string => group.latestName ?? group.names[0] ?? group.source;
 
 export const buildBackgroundJobRows = (schedules: SyncScheduleRow[], groups: TraceSourceGroup[]): BackgroundJobOverviewRow[] => {
-  const groupsBySource = new Map(groups.map((group) => [group.source, group]));
+  const groupsBySource = new Map(groups.map((group) => [group.source, jobDiagnostics(group)]));
   const scheduledSources = new Set<string>();
 
   const rows: BackgroundJobOverviewRow[] = schedules.map((schedule) => {
@@ -155,7 +163,7 @@ export const buildBackgroundJobRows = (schedules: SyncScheduleRow[], groups: Tra
       resourceId: null,
       resourceLabel: null,
       detailHref: null,
-      trace: group,
+      trace: jobDiagnostics(group),
     });
   }
 
@@ -191,6 +199,13 @@ const rowMatchesSearch = (row: BackgroundJobOverviewRow, search: string): boolea
     .some((value) => String(value).toLowerCase().includes(needle));
 };
 
+/** Minute-only recovery must clear an older error without inventing a success span. */
+export const backgroundSourceStatus = (group: JobTraceSource) => {
+  if (group.latestStartedAt && !group.latestEndedAt) return group.latestStatus;
+  const traceAt = group.latestEndedAt ?? group.latestStartedAt;
+  return group.latestSuccessAt && (!traceAt || group.latestSuccessAt > traceAt) ? "ok" : group.latestStatus;
+};
+
 const rowMatchesHealth = (row: BackgroundJobOverviewRow, health: BackgroundJobOverviewFilter["health"]): boolean => {
   if (!health || health === "all") return true;
   const trace = row.trace;
@@ -200,8 +215,8 @@ const rowMatchesHealth = (row: BackgroundJobOverviewRow, health: BackgroundJobOv
   // ones hang forever.
   if (health === "stuck") return trace.stuck > 0;
   if (health === "running") return trace.running > 0;
-  if (health === "failed") return trace.latestStatus === "error";
-  if (health === "healthy") return trace.latestStatus === "ok";
+  if (health === "failed") return backgroundSourceStatus(trace) === "error";
+  if (health === "healthy") return backgroundSourceStatus(trace) === "ok";
   return true;
 };
 

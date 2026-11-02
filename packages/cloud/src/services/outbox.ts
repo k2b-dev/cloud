@@ -1,3 +1,4 @@
+import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/work-wake";
 import { sql } from "../runtime/clients";
 
 import { logger } from "./logging";
@@ -40,6 +41,7 @@ export type PgOutboxConfig<Row extends OutboxRow> = {
   /** Log source. */
   name: string;
   publish: (row: Row) => Promise<unknown>;
+  /** Safety scan for missed hints; known retry and claim deadlines wake independently. */
   reconcileIntervalMs: number;
   /**
    * Column whose rows are published in `sequence` order. A value waits while
@@ -61,7 +63,7 @@ export type PgOutbox<Row extends OutboxRow> = {
   dispatch(row: Row, publish?: (row: Row) => Promise<unknown>): Promise<void>;
   /** Drain every claimable row; concurrent calls join the active pass. */
   reconcile(): Promise<number>;
-  /** `reconcile()` with failures logged instead of thrown. */
+  /** Call after commit: signal other instances and reconcile locally, logging failures. */
   notify(): Promise<void>;
   start(): void;
   stop(): Promise<void>;
@@ -85,8 +87,28 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${sql.unsafe(column)} = ${value}`, sql``);
   // Sorted, so the order of the `where` entries cannot give one outbox two locks. Descending keeps the
   // lock that live outboxes (`kind`, `app_id`) always took, so replicas of two releases share it.
-  const where = Object.entries(config.where ?? {}).sort(([left], [right]) => (left < right ? 1 : -1));
-  const claimLock = `${config.table}:${JSON.stringify(Object.fromEntries(where))}`;
+  const claimLock = pgOutboxKey(config.table, config.where);
+
+  let running = false;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let dueTimer: ReturnType<typeof setTimeout> | undefined;
+  let dueDeadline = Infinity;
+  let unsubscribe: (() => void) | undefined;
+
+  const wakeAfter = (delayMs: number | null) => {
+    if (!running || delayMs === null) return;
+    const delay = Math.max(0, delayMs);
+    const deadline = performance.now() + delay;
+    if (deadline >= dueDeadline) return;
+    clearTimeout(dueTimer);
+    dueDeadline = deadline;
+    dueTimer = setTimeout(() => {
+      dueTimer = undefined;
+      dueDeadline = Infinity;
+      if (running) void run();
+    }, Math.ceil(delay));
+    dueTimer.unref();
+  };
 
   /**
    * Claims rows in sequence order, several per key, and never a row of a key
@@ -110,6 +132,17 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
                set_config('jit', 'off', true),
                pg_advisory_xact_lock(hashtextextended(${claimLock}, 0))
       `;
+      // Plan after the settings apply, and read a fresh snapshot after waiting for the claim lock.
+      const [schedule] = await tx<{ wake_after_ms: number | null }[]>`
+        SELECT extract(epoch FROM (min(GREATEST(
+          current.claimed_until,
+          CASE WHEN current.attempts > 0 THEN current.next_attempt_at END
+        )) - clock_timestamp()))::double precision * 1000 AS wake_after_ms
+        FROM ${sql.unsafe(table)} current
+        WHERE (current.claimed_until > now() OR (current.attempts > 0 AND current.next_attempt_at > now()))
+          ${matches("current")}
+      `;
+      wakeAfter(schedule?.wake_after_ms ?? null);
       // The busy probe runs per candidate (OFFSET 0 keeps the planner from turning it into a join, which
       // stale statistics can make quadratic), against an index of claimed and retried rows per key. The update looks
       // its rows up by id for the same reason: as a join, it scanned the whole table per claim.
@@ -145,14 +178,16 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     const attempts = row.attempts + 1;
     const message = error instanceof Error ? error.message : String(error);
     const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
-    await sql`
+    const [schedule] = await sql<{ wake_after_ms: number }[]>`
       UPDATE ${sql.unsafe(table)}
       SET attempts = ${attempts},
           next_attempt_at = now() + (${delaySeconds} * interval '1 second'),
           claimed_until = NULL,
           last_error = ${message.slice(0, 1_000)}
       WHERE id = ${row.id}::uuid AND attempts = ${row.attempts}
+      RETURNING extract(epoch FROM (next_attempt_at - clock_timestamp()))::double precision * 1000 AS wake_after_ms
     `;
+    wakeAfter(schedule?.wake_after_ms ?? null);
     log.warn("Outbox delivery failed", { outboxId: row.id, attempts, error: message });
   };
 
@@ -219,24 +254,44 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     return activeReconcile;
   };
 
-  const notify: PgOutbox<Row>["notify"] = async () => {
+  const run = async () => {
     await reconcile().catch((error) => {
       log.warn("Outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
     });
   };
 
-  let timer: ReturnType<typeof setInterval> | null = null;
+  const notify: PgOutbox<Row>["notify"] = async () => {
+    const local = run();
+    notifyPgOutbox(config.table, config.where);
+    await local;
+  };
 
   const start: PgOutbox<Row>["start"] = () => {
-    if (timer) return;
-    timer = setInterval(() => void notify(), config.reconcileIntervalMs);
+    if (running) return;
+    running = true;
+    try {
+      unsubscribe = subscribeWorkWake(claimLock, () => {
+        if (running) void run();
+      });
+    } catch (error) {
+      log.warn("Outbox wake subscription failed; safety scan will recover", { error: String(error) });
+    }
+    timer = setInterval(() => {
+      if (running) void run();
+    }, config.reconcileIntervalMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
-    void notify();
+    void run();
   };
 
   const stop: PgOutbox<Row>["stop"] = async () => {
+    running = false;
     if (timer) clearInterval(timer);
     timer = null;
+    clearTimeout(dueTimer);
+    dueTimer = undefined;
+    dueDeadline = Infinity;
+    unsubscribe?.();
+    unsubscribe = undefined;
     await activeReconcile;
   };
 

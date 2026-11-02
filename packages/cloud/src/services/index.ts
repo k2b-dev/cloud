@@ -34,6 +34,7 @@ export type {
   TraceEvent,
   TraceListFilter,
   TraceRunStats,
+  TraceSuccessMinutes,
   TraceSeverity,
   TraceSpan,
   TraceSpanKind,

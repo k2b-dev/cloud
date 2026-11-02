@@ -21,7 +21,7 @@ import { type TraceWindow, trace } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
-import { buildBackgroundJobRows, filterBackgroundJobRows, jobsObservabilityService } from "./service";
+import { buildBackgroundJobRows, filterBackgroundJobRows, jobDiagnostics, jobsObservabilityService } from "./service";
 
 const HealthSchema = z.enum(["all", "failed", "stuck", "running", "healthy"]).default("all");
 /** Mirrors TraceCategory plus the "all" passthrough the filter accepts. */
@@ -85,7 +85,7 @@ const app = new Hono<AuthContext>()
   /** Aggregate run counts and durations across the current trace window. */
   .get("/stats", v("query", StatsQuerySchema), async (c) => {
     const query = c.req.valid("query");
-    return respond(c, ok(await trace.stats({ filter: { ...baseTraceFilter(query.window), source: query.source } })));
+    return respond(c, ok(jobDiagnostics(await trace.stats({ filter: { ...baseTraceFilter(query.window), source: query.source } }))));
   })
 
   /** Individual runs, newest first. Scope with `source` to a single job. */

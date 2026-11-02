@@ -2,12 +2,13 @@ import type { Topic, TopicConfig } from "@k2b/sync";
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
+import { notifyPgOutbox } from "../_internal/work-wake";
 import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { createPgOutbox } from "../services/outbox";
 import type { LiveEnvelope } from "./live-engine";
 
-const RECONCILE_INTERVAL_MS = 1_000;
+const RECONCILE_INTERVAL_MS = 5_000;
 const STALE_CHECK_INTERVAL_MS = 60_000;
 
 /**
@@ -121,8 +122,12 @@ export const defineLivePublisher = <const Event extends z.ZodType>(definition: {
       if (input.access) await enqueue({ v: 1, k: input.key, a: true });
       if (data !== undefined) await enqueue({ v: 1, k: input.key, d: data });
     },
-    /** Publishes committed updates now instead of within the next second. Call it after the commit. */
-    wake: (): void => dispatchers.get(appId)?.(),
+    /** Publishes committed updates now instead of within the next safety scan. Call it after the commit. */
+    wake: (): void => {
+      const wake = dispatchers.get(appId);
+      if (wake) wake();
+      else notifyPgOutbox("events.outbox", { kind: "live", app_id: appId });
+    },
     /** The topic head. Read it before loading the snapshot it belongs to. */
     cursor: (): Promise<string> => liveTopics()(appId).head(),
   };

@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { createSync } from "@k2b/sync";
+import { connectTestNats, suiteFor, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/work-wake";
 import { sql } from "../runtime/clients";
+import { connections } from "../runtime/connections";
 import { createPgOutbox } from "./outbox";
 
 // The contract an application relies on with a table of its own, shaped as in "Migrations and transactions".
@@ -213,7 +217,134 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     expect(await pending()).toEqual([]);
   });
 
-  test("notify() logs a failing pass instead of throwing, and stop() waits for the pass in flight", async () => {
+  testFor("nats")("a committed row from another OS process wakes delivery without a safety poll", async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const sync = createSync({
+      connection,
+      namespace: testSyncNamespace("outbox-wake"),
+      application: "outbox-worker",
+      defaults: { replicas: 1 },
+    });
+    bindProcessSync(sync, connection);
+    const delivered = Promise.withResolvers<void>();
+    let count = 0;
+    const outbox = reports(async (row) => {
+      expect(row.delta).toBe(99);
+      count++;
+      delivered.resolve();
+    });
+    let terminate: (() => Promise<void>) | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let remoteHints = 0;
+    try {
+      outbox.start();
+      await outbox.reconcile();
+      unsubscribe = subscribeWorkWake(pgOutboxKey(table), () => remoteHints++);
+      await connection.flush(); // The subscription is active before the remote writer starts.
+      notifyPgOutbox(table);
+      await connection.flush();
+      expect(remoteHints).toBe(0); // Local work already woke in-process; ignore its NATS echo.
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "--no-env-file",
+          `${import.meta.dir}/../../test/integration/outbox-writer.test-fixture.ts`,
+          table,
+          connections().nats.namespace,
+          itemB,
+        ],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      terminate = async () => {
+        if (child.exitCode === null) {
+          child.kill();
+          await child.exited;
+        }
+      };
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+      await delivered.promise;
+      await outbox.stop();
+      expect(count).toBe(1);
+      expect(remoteHints).toBe(1);
+      expect(await pending()).toEqual([]);
+    } finally {
+      await terminate?.();
+      unsubscribe?.();
+      await outbox.stop();
+      await sync.drain();
+      unbindProcessSync();
+      await connection.drain();
+    }
+  });
+
+  test("known retry deadlines wake before the safety scan, including after a restart", async () => {
+    await report(sql, itemB, 80);
+    const delivered = Promise.withResolvers<void>();
+    let attempts = 0;
+    const outbox = reports(async () => {
+      if (++attempts === 1) throw new Error("Transient delivery failure");
+      delivered.resolve();
+    });
+    try {
+      outbox.start();
+      await delivered.promise;
+      await outbox.stop();
+      expect(attempts).toBe(2);
+      expect(await pending()).toEqual([]);
+
+      await report(sql, itemB, 81);
+      await sql`UPDATE ${sql.unsafe(table)} SET attempts = 1, next_attempt_at = clock_timestamp() + interval '100 milliseconds'`;
+      const resumed = Promise.withResolvers<void>();
+      const restarted = reports(async () => {
+        const [row] = await sql<{ due: boolean }[]>`SELECT next_attempt_at <= clock_timestamp() AS due FROM ${sql.unsafe(table)}`;
+        expect(row?.due).toBe(true);
+        resumed.resolve();
+      });
+      try {
+        restarted.start();
+        await resumed.promise;
+      } finally {
+        await restarted.stop();
+      }
+      expect(await pending()).toEqual([]);
+    } finally {
+      await outbox.stop();
+    }
+  });
+
+  test("deadline discovery observes retries committed while awaiting the claim lock", async () => {
+    const delivered = Promise.withResolvers<void>();
+    const outbox = reports(async () => delivered.resolve());
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${pgOutboxKey(table)}, 0))`;
+        outbox.start();
+        const lockWait = AbortSignal.timeout(2_000);
+        for (;;) {
+          lockWait.throwIfAborted();
+          const [waiting] = await sql<{ locked: boolean }[]>`
+            SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event = 'advisory'
+                AND query LIKE '%pg_advisory_xact_lock%' AND query LIKE '%set_config%') AS locked`;
+          if (waiting?.locked) break;
+          await Bun.sleep(10);
+        }
+        await report(tx, itemB, 82);
+        await tx`UPDATE ${sql.unsafe(table)} SET attempts = 1, next_attempt_at = clock_timestamp() + interval '1 second'`;
+      });
+      await delivered.promise;
+      await outbox.stop();
+      expect(await pending()).toEqual([]);
+    } finally {
+      await outbox.stop();
+    }
+  });
+
+  test("notify() publishes without start, and stop() waits for the pass in flight", async () => {
     await report(sql, itemB, 8);
     let release = () => {};
     const blocked = new Promise<void>((resolve) => {
@@ -224,11 +355,17 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       await blocked;
       published.push(row.delta);
     });
+    expect(published).toEqual([]);
+    expect(await pending()).toHaveLength(1);
     outbox.start();
     const stopped = outbox.stop();
     release();
     await stopped;
     expect(published).toEqual([8]);
+    expect(await pending()).toEqual([]);
+    await report(sql, itemB, 9);
+    await outbox.notify();
+    expect(published).toEqual([8, 9]);
     expect(await pending()).toEqual([]);
 
     const broken = createPgOutbox<StockReport>({
