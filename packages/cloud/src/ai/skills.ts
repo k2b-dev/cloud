@@ -263,6 +263,8 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
     logger("ai:skills").warn("App registry unavailable; app Skills are unavailable");
     return [];
   });
+  // Registry Skill summaries are optional. Existing app Skills remain readable
+  // through their persisted ownership and grants even without that summary.
   const usable = [...(await usableAppIds(authority, apps))];
   const resourceActor = subject?.actor;
   // App Skill brokers support independent machines, including resource bindings.

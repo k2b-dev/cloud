@@ -17,8 +17,8 @@ Create `traffic.json`:
         "id": "visits",
         "title": "Page views",
         "kind": "number",
-        "sql": "SELECT count() AS visits FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to",
-        "columns": ["visits"],
+        "sql": "SELECT count() AS value FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to",
+        "columns": ["value"],
         "width": "third"
       }
     ]
@@ -30,22 +30,30 @@ Create `traffic.json`:
 cld pulse dashboards save --base <base-id> --file traffic.json --idempotency-key website-v1 --json
 cld pulse dashboards list --base <base-id> --json
 cld pulse dashboards get <dashboard-id> --base <base-id> --json
+cld pulse dashboards panels <dashboard-id> --base <base-id>
 cld pulse dashboards panel <dashboard-id> visits --base <base-id> --range 7d --json
 ```
+
+`packages/pulse/examples/website-dashboard.json` is a complete website
+dashboard with totals, a time series, a country map, and top pages. Add a panel
+by reading the dashboard with `get`, adding it to `definition.panels`, and
+saving the whole definition.
 
 To update, add `expectedRevision` from `get` to the JSON and pass
 `--dashboard <dashboard-id>`. Reuse an idempotency key only for retries of the
 same operation; receipts last 24 hours. A revision conflict means reread
 before replacing the current dashboard.
 
-Panels can be `number`, `line`, `bar`, `table`, or `funnel`. Set `columns` to
+Panels can be `number`, `line`, `bar`, `table`, `funnel`, or `map`. Set `columns` to
 the output names the panel displays. Charts need `x`; `line` uses a DateTime
 column, while `bar` and `funnel` use categories. Optional `series` separates
 line or bar groups. A number needs one numeric value column. Without `x`, it
 accepts at most one aggregate row; with a DateTime `x`, it shows the last
 value and up to 480 trend points. Optional String columns `unit`, `detail`,
 and `detailTone` provide presentation. A funnel needs one category and one
-nonnegative value column. `unit`,
+nonnegative value column. A map needs `x` with an ISO 3166-1 alpha-2 country
+code and one nonnegative value column; rows with a null or empty country stay
+off the map. Use `"width": "full"` so that the map and its list have room. `unit`,
 `threshold`, `section`, and `width` (`third`, `half`, `full`) control display.
 Panels in a named section share optional `sectionIcon` (for example
 `ti ti-router`), `sectionDescription` (source and cadence), and `sectionColor`
@@ -73,7 +81,7 @@ only.
 
 ```sh
 cld pulse dashboards publish <dashboard-id> --base <base-id> \
-  --expected-revision 1 --columns '{"visits":["visits"]}' --yes \
+  --expected-revision 1 --columns '{"visits":["value"]}' --yes \
   --idempotency-key website-public-v1 --json
 cld pulse dashboards unpublish <dashboard-id> --base <base-id> --expected-revision 2 --yes
 cld pulse dashboards delete <dashboard-id> --base <base-id> --expected-revision 3 --yes

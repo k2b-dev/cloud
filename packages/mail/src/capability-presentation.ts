@@ -208,9 +208,9 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "delivery.list": {
-          title: "Geplante Zustellungen auflisten",
+          title: "Wartende Zustellungen auflisten",
           description:
-            "Listen Sie Zustellungen, die sich noch in einem Rückgängig-Fenster befinden oder für einen späteren Zeitpunkt geplant sind, in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
+            "Zustellungen eines bekannten Postfachs auflisten, die nach Widerrufsfrist und Versandpuffer in der Warteschlange stehen oder für später geplant sind. MailboxId von mailbox.list abrufen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -222,7 +222,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lesen Sie einen von delivery.list oder draft.send zurückgegebenen mail.delivery ref, einschließlich seines aktuellen Planungsstatus.",
           input: {
-            id: "Exaktes mail.delivery ID, zurückgegeben von „Geplante Zustellungen auflisten“ oder einer typisierten Ressource ref.",
+            id: "Exaktes mail.delivery ID, zurückgegeben von „Wartende Zustellungen auflisten“ oder einer typisierten Ressource ref.",
           },
         },
         "draft.list": {

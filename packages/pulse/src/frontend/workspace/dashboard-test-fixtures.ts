@@ -144,6 +144,15 @@ export const dashboardTestKinds: Dashboard = {
         unit: "",
         description: "Vollständige Zahlen",
       }),
+      panel("countries", "Besuche nach Land", {
+        section: "Besuche und Anfragen",
+        kind: "map",
+        width: "full",
+        columns: ["Land", "Besuche"],
+        x: "Land",
+        unit: "",
+        description: "Land aus der IP-Abfrage, ohne gespeicherte Adresse",
+      }),
     ],
   },
 };
@@ -171,7 +180,7 @@ export const dashboardTestPanelResult = (panel: DashboardPanel): DashboardPanelR
         type:
           name === "time"
             ? "DateTime('UTC')"
-            : ["Host", "Seite", "Schritt", "detail", "detailTone", "service", "host"].includes(name)
+            : ["Host", "Seite", "Schritt", "Land", "detail", "detailTone", "service", "host"].includes(name)
               ? "String"
               : "Float64",
       })),
@@ -220,28 +229,42 @@ export const dashboardTestPanelResult = (panel: DashboardPanel): DashboardPanelR
                   return panel.series ? [time, label, value] : [time, value];
                 });
               }).flat()
-            : panel.kind === "funnel"
+            : panel.kind === "map"
               ? [
-                  ["Besuch", 1200],
-                  ["Kontaktseite", 310],
-                  ["Anfrage", 28],
+                  ["DE", 12840],
+                  ["US", 7310],
+                  ["FR", 3920],
+                  ["GB", 2760],
+                  ["BR", 1480],
+                  ["JP", 1120],
+                  ["IN", 960],
+                  ["AU", 540],
+                  ["ZA", 310],
+                  ["SG", 120],
+                  [null, 45],
                 ]
-              : panel.kind === "bar"
+              : panel.kind === "funnel"
                 ? [
-                    ["/", 1200],
-                    ["/leistungen", 640],
-                    ["/kontakt", 310],
+                    ["Besuch", 1200],
+                    ["Kontaktseite", 310],
+                    ["Anfrage", 28],
                   ]
-                : panel.columns[0] === "Host"
+                : panel.kind === "bar"
                   ? [
-                      ["demo-web", 15, 59, 43],
-                      ["demo-db", 8, 71, 91],
+                      ["/", 1200],
+                      ["/leistungen", 640],
+                      ["/kontakt", 310],
                     ]
-                  : [
-                      ["/", 1200, 14],
-                      ["/leistungen", 640, 10],
-                      ["/kontakt", 310, 28],
-                    ],
+                  : panel.columns[0] === "Host"
+                    ? [
+                        ["demo-web", 15, 59, 43],
+                        ["demo-db", 8, 71, 91],
+                      ]
+                    : [
+                        ["/", 1200, 14],
+                        ["/leistungen", 640, 10],
+                        ["/kontakt", 310, 28],
+                      ],
     },
   },
 });

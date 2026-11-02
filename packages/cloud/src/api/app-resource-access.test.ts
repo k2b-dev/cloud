@@ -154,7 +154,8 @@ test("Core evaluates a remote adapter with a scoped probe; another app sends cre
     baseUrl: "http://resource.test",
     access: compileAppAccess(declaration),
   };
-  spies.push(spyOn(registry, "getApp").mockResolvedValue(target));
+  const registryRead = spyOn(registry, "getApp").mockResolvedValue(target);
+  spies.push(registryRead);
   spies.push(spyOn(coreTransport, "coreOrigin").mockResolvedValue("http://core.test"));
   const ownerRoutes = createResourceAppAccessRoutes(target);
   spies.push(spyOn(rateLimitMiddleware, "rateLimit").mockReturnValue(async (_c, next) => next()));
@@ -206,10 +207,12 @@ test("Core evaluates a remote adapter with a scoped probe; another app sends cre
     const source = new Hono<import("../server/middleware/auth").AuthContext>()
       .use(authMiddleware.auth.requireRole("authenticated"))
       .get("/pwa/", async (c) => c.json(await canUseApp(authMiddleware.auth.getAuthority(c), target)));
+    registryRead.mockClear();
     const response = await source.request("http://other.test/pwa/", {
       headers: { authorization: "Bearer wrong", cookie: "session_token=broader-session; pwa_session=original-session" },
     });
     expect(await response.json()).toBe(true);
+    expect(registryRead).toHaveBeenCalledTimes(1);
     expect(visited).toEqual(["resource.test", "resource.test", "core.test", "resource.test"]);
     spyOn(registry, "getApp").mockResolvedValueOnce(null);
     expect(

@@ -189,7 +189,7 @@ describe("Mail workspace live updates", () => {
         const url = String(input instanceof Request ? input.url : input);
         if (url.includes("/workspace-route")) {
           workspaceRequests += 1;
-          return Response.json(data);
+          return Response.json({ ...data, scheduledCount: 290 - workspaceRequests });
         }
         if (url.includes("/subscriptions")) {
           listRequests += 1;
@@ -277,6 +277,9 @@ describe("Mail workspace live updates", () => {
     event("1", "s6t.mail.5", "Conv01");
     await settle();
     expect(workspaceRequests).toBe(1);
+    const outbox = dom.root.querySelector('a[href$="?scheduled=1"]');
+    expect(outbox?.textContent).toContain("Outbox");
+    expect(outbox?.textContent).toContain("289");
 
     // Hidden, the tab misses one change; it arrives as a replay after the applied cursor, and nothing else loads.
     returnToTab();

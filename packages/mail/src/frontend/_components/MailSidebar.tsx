@@ -282,7 +282,14 @@ export default function MailSidebar(
   const [dropFolderId, setDropFolderId] = createSignal<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = createSignal<Set<string>>(new Set());
   const [moreExpanded, setMoreExpanded] = createSignal(false);
-  const folderTree = createMemo(() => buildVisibleMailFolderTree(openMailbox()?.folders ?? []));
+  // Every change of the open mailbox's data reruns what reads it, and folders may change in place. The content decides:
+  // the rows are rebuilt only when a folder really changed, not on a conversation click, which costs a mailbox with
+  // 350 folders hundreds of milliseconds.
+  const foldersContent = createMemo(() => JSON.stringify(openMailbox()?.folders ?? []));
+  const folderTree = createMemo(() => {
+    foldersContent();
+    return buildVisibleMailFolderTree(untrack(() => openMailbox()?.folders ?? []));
+  });
   const flatFolders = createMemo(() => flattenMailFolderTree(folderTree()).map(({ folder }) => folder));
   const primaryFolders = createMemo(() => flatFolders().filter((folder) => PRIMARY_FOLDER_ROLES.has(folder.role)));
   const secondaryFolders = createMemo(() => flatFolders().filter((folder) => SECONDARY_FOLDER_ROLES.has(folder.role)));
@@ -367,7 +374,6 @@ export default function MailSidebar(
           ) : undefined
         }
         title={onlyInFolder ? messages().onlyInFolderTitle({ name: folder.name }) : folder.name}
-        viewTransitionName={`mail-folder-${folder.id}`}
         navigation="enhanced"
         onNavigate={folder.selectable ? open().onNavigate : undefined}
         scroll="preserve"
@@ -430,7 +436,6 @@ export default function MailSidebar(
         icon="ti ti-calendar-time"
         active={open().scheduledMode}
         meta={<span class="tabular-nums">{open().scheduledCount || ""}</span>}
-        viewTransitionName="mail-scheduled"
         navigation="enhanced"
         onNavigate={open().onNavigate}
         scroll="preserve"
@@ -443,7 +448,6 @@ export default function MailSidebar(
         active={sendProblemsActive()}
         meta={<span class="tabular-nums">{open().viewCounts.send_problems || ""}</span>}
         title={messages().sendProblemsDescription}
-        viewTransitionName="mail-view-send_problems"
         navigation="enhanced"
         onNavigate={open().onNavigate}
         scroll="preserve"

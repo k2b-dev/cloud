@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.42.0...npm-ui-v0.43.0) (2026-11-02)
+
+
+### Features
+
+* **ui:** add a country map that shades the world by one value per country ([#2373](https://github.com/k2b-dev/cloud/issues/2373)) ([bbcea1d](https://github.com/k2b-dev/cloud/commit/bbcea1d2dd46cbb460420be85e64e14adfa31b14))
+
 ## [0.42.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.41.0...npm-ui-v0.42.0) (2026-11-01)
 
 

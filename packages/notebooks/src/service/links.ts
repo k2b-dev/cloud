@@ -318,6 +318,28 @@ export const listNoteRelations = async (params: {
 // Graph view
 // ==========================
 
+type GraphNoteRow = { id: string; short_id: string; title: string; parent_short_id: string | null; position: number; updated_at: Date };
+type GraphLinkRow = { source_note_id: string; target_note_id: string };
+
+/**
+ * The links between these pages as edges, with the pages' short IDs already at hand. Joining `notes` twice in SQL only
+ * to read them lets a stale row estimate loop over all pages for every page (#2388).
+ */
+const readGraphLinks = (links: GraphLinkRow[], notes: Array<Pick<GraphNoteRow, "id" | "short_id">>) => {
+  const shortIds = new Map(notes.map((note) => [note.id, note.short_id]));
+  const inDegree = new Map<string, number>();
+  const edges: Array<{ source: string; target: string }> = [];
+  for (const link of links) {
+    const source = shortIds.get(link.source_note_id);
+    const target = shortIds.get(link.target_note_id);
+    if (source === undefined || target === undefined) continue;
+    edges.push({ source, target });
+    inDegree.set(link.target_note_id, (inDegree.get(link.target_note_id) ?? 0) + 1);
+  }
+  edges.sort((left, right) => left.source.localeCompare(right.source) || left.target.localeCompare(right.target));
+  return { edges, inDegree };
+};
+
 /**
  * Build the per-notebook link graph: every note in the notebook becomes a
  * node, every `note_links` row whose source AND target are both inside the
@@ -349,20 +371,13 @@ export const buildNotebookGraph = async (params: { notebookId: string }): Promis
     ORDER BY n.created_at ASC, n.short_id ASC
   `;
 
-  const edgeRows = await sql<{ source_note_id: string; target_note_id: string; source_short_id: string; target_short_id: string }[]>`
-    SELECT nl.source_note_id, nl.target_note_id, src.short_id AS source_short_id, tgt.short_id AS target_short_id
+  const linkRows = await sql<GraphLinkRow[]>`
+    SELECT nl.source_note_id, nl.target_note_id
     FROM notebooks.note_links nl
     JOIN notebooks.notes src ON src.id = nl.source_note_id
-    JOIN notebooks.notes tgt ON tgt.id = nl.target_note_id
     WHERE src.notebook_id = ${notebookId}::uuid
-      AND tgt.notebook_id = ${notebookId}::uuid
-    ORDER BY src.short_id, tgt.short_id
   `;
-
-  const inDegree = new Map<string, number>();
-  for (const edge of edgeRows) {
-    inDegree.set(edge.target_note_id, (inDegree.get(edge.target_note_id) ?? 0) + 1);
-  }
+  const { edges, inDegree } = readGraphLinks(linkRows, noteRows);
 
   return {
     nodes: noteRows.map((n) => ({
@@ -373,11 +388,9 @@ export const buildNotebookGraph = async (params: { notebookId: string }): Promis
       position: n.position,
       updatedAt: n.updated_at.toISOString(),
     })),
-    edges: edgeRows.map((e) => ({ source: e.source_short_id, target: e.target_short_id })),
+    edges,
   };
 };
-
-type GraphNoteRow = { id: string; short_id: string; title: string; parent_short_id: string | null; position: number; updated_at: Date };
 
 /** Pages linked with these pages, in either direction, inside the notebook, other than `except`. Bounded by `limit`. */
 const linkedWith = async (notebookId: string, ids: string[], except: Iterable<string>, limit: number): Promise<string[]> => {
@@ -434,7 +447,7 @@ export const buildNotebookGraphAround = async (params: { notebookId: string; not
     for (const entry of missing) included.add(entry);
   }
   const idArray = sql.array([...included], "UUID");
-  const [noteRows, edgeRows, inRows] = await Promise.all([
+  const [noteRows, linkRows, inRows] = await Promise.all([
     sql<GraphNoteRow[]>`
       SELECT n.id, n.short_id, n.title, p.short_id AS parent_short_id, n.position, n.updated_at
       FROM notebooks.notes n
@@ -442,13 +455,10 @@ export const buildNotebookGraphAround = async (params: { notebookId: string; not
       WHERE n.id = ANY(${idArray}) AND n.notebook_id = ${notebookId}::uuid
       ORDER BY n.created_at ASC, n.short_id ASC
     `,
-    sql<{ source_short_id: string; target_short_id: string }[]>`
-      SELECT src.short_id AS source_short_id, tgt.short_id AS target_short_id
-      FROM notebooks.note_links nl
-      JOIN notebooks.notes src ON src.id = nl.source_note_id
-      JOIN notebooks.notes tgt ON tgt.id = nl.target_note_id
-      WHERE nl.source_note_id = ANY(${idArray}) AND nl.target_note_id = ANY(${idArray})
-      ORDER BY src.short_id, tgt.short_id
+    sql<GraphLinkRow[]>`
+      SELECT source_note_id, target_note_id
+      FROM notebooks.note_links
+      WHERE source_note_id = ANY(${idArray}) AND target_note_id = ANY(${idArray})
     `,
     // A page keeps the size its links in the whole notebook give it.
     sql<{ id: string; count: number }[]>`
@@ -470,7 +480,7 @@ export const buildNotebookGraphAround = async (params: { notebookId: string; not
       position: n.position,
       updatedAt: n.updated_at.toISOString(),
     })),
-    edges: edgeRows.map((e) => ({ source: e.source_short_id, target: e.target_short_id })),
+    edges: readGraphLinks(linkRows, noteRows).edges,
     scope: { around, total: params.total },
   };
 };

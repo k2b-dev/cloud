@@ -3904,6 +3904,28 @@ test("send cancellation uses the public command id", async () => {
   expect(JSON.parse(result.stdout)).toEqual({ cancelled: true, commandId: COMMAND_ID });
 });
 
+test("operator status prints existing outbox counts and preserves JSON", async () => {
+  const value = {
+    health: "active",
+    search: { effectiveBackend: "postgres", fallbackActive: false },
+    coverage: { hydration: { covered: 0, total: 0 }, search: { covered: 0, total: 0 }, threads: { covered: 0, total: 0 } },
+    queues: { outbox: { scheduled: 290, sending: 1, unknown: 2 }, workflows: {} },
+    attentionCommands: [],
+    nextAttentionCursor: null,
+  };
+  const server = withMailbox(async (request) =>
+    new URL(request.url).pathname.endsWith("/operations") ? api(value) : api({}, { status: 500 }),
+  );
+  servers.push(server);
+  const base = `http://127.0.0.1:${server.port}`;
+  const text = await runCli(base, ["mail", "operator", "status", "--mailbox", MAILBOX_ID]);
+  expect(text.exitCode, text.stderr).toBe(0);
+  expect(text.stdout).toContain("Outbox: 290 scheduled, 1 sending, 2 unknown");
+  const json = await runCli(base, ["--json", "mail", "operator", "status", "--mailbox", MAILBOX_ID]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout)).toEqual(value);
+});
+
 test("scheduled sends expose list and explicit cancellation disposition", async () => {
   const requests: Array<{ method: string; path: string; body: unknown }> = [];
   const server = withMailbox(async (request) => {
@@ -3932,7 +3954,7 @@ test("scheduled sends expose list and explicit cancellation disposition", async 
           },
         ],
         nextCursor: null,
-        total: 1,
+        total: 290,
       });
     }
     if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/scheduled-sends/${SCHEDULED_SEND_ID}/cancel`) {
@@ -3943,9 +3965,12 @@ test("scheduled sends expose list and explicit cancellation disposition", async 
   });
   servers.push(server);
 
+  const text = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "scheduled", "list", "--mailbox", MAILBOX_ID]);
+  expect(text.exitCode, text.stderr).toBe(0);
+  expect(text.stdout).toContain("290 waiting");
   const listed = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "scheduled", "list", "--mailbox", MAILBOX_ID]);
   expect(listed.exitCode, listed.stderr).toBe(0);
-  expect(JSON.parse(listed.stdout)).toMatchObject({ total: 1, items: [{ id: SCHEDULED_SEND_ID }] });
+  expect(JSON.parse(listed.stdout)).toMatchObject({ total: 290, items: [{ id: SCHEDULED_SEND_ID }] });
 
   const cancelled = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",

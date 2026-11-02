@@ -6,15 +6,33 @@ import { MessageSchema } from "./schemas";
 
 export const ingestResponses = {
   200: jsonResponse(z.object({ metrics: z.number(), events: z.number(), states: z.number() }), "Ingest counts"),
-  400: jsonResponse(MessageSchema, "Invalid public ID, telemetry, timestamp, or registry cap exceeded"),
+  400: jsonResponse(
+    MessageSchema.extend({ code: z.literal("BAD_INPUT") }),
+    "BAD_INPUT: invalid public ID, telemetry schema, timestamp, or registry cap exceeded",
+  ),
   403: jsonResponse(MessageSchema, "Ingest permission required"),
-  409: jsonResponse(MessageSchema, "Idempotency conflict, disabled source, base reset during ingest, or base not writable"),
+  409: jsonResponse(
+    MessageSchema,
+    "CONFLICT: idempotency or reset conflict; PULSE_SOURCE_DISABLED: paused source; PULSE_BASE_NOT_WRITABLE: paused base; recovery/storage blocks also return 409",
+  ),
   429: jsonResponse(MessageSchema, "Ingest rate limit exceeded; retry after the indicated delay"),
   503: jsonResponse(
     MessageSchema,
     "Quota/store unavailable (Retry-After: 30) or disk low (Retry-After: 300). Retry pending batches with the same Idempotency-Key",
   ),
   404: jsonResponse(MessageSchema, "Unknown ingest source"),
+};
+
+// Hono rejects malformed JSON before the schema hook. Normalize that transport
+// error on the two collector routes as well; Hono retains the raw body for v()
+// and for byte quota accounting.
+export const ingestJsonBody: MiddlewareHandler<AuthContext> = async (c, next) => {
+  try {
+    await c.req.json();
+  } catch {
+    return c.json({ code: "BAD_INPUT", message: "Malformed JSON ingest batch" }, 400);
+  }
+  await next();
 };
 
 // Both ingest routes may make five synchronous inserts with 30-second timeouts.

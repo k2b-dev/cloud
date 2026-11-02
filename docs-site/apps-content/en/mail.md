@@ -15,7 +15,7 @@ It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
 The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
-The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
+The open mailbox expands to Inbox, Drafts, Outbox, Send problems, Sent,
 Archive/Trash/Junk under **More**, and custom folders. In the sidebar, the open
 mailbox and its folders share a quiet teal surface. Other mailboxes stay readable
 and clickable with less emphasis. On a phone, open the mailbox title to reach
@@ -28,7 +28,7 @@ The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 views) and a **Search** chip for an active structured search. The **Tag** icon
 next to **Search** filters by a local tag; its tooltip
 names the selected tag. Open it to change or clear that choice.
-Remove the **Search** chip or use **Reset** to clear filters. Folders, Scheduled, and
+Remove the **Search** chip or use **Reset** to clear filters. Folders, Outbox, and
 Send problems have no view tabs. Use the magnifier or press `/` to search:
 the input replaces the views, with field and place options beside it (below it
 on a phone). Text searches the whole mailbox by default; **Place** can restrict
@@ -41,10 +41,17 @@ the head. Selection replaces the views with its count and labeled actions;
 for conversations or individual messages, plus details, tools, and Settings
 according to your access.
 
-Drafts and Scheduled show their count in the workspace head. Draft rows lead
-with the subject, followed by recipients and a preview, with the edit time and
-person who started the draft. Members with write access can open a draft to
-continue it; readers can view the list.
+Drafts and Outbox show their count in the workspace head. Outbox also shows its
+count in the sidebar. It includes immediate sends in the waiting queue after
+their undo window and sends scheduled for later. Sends stay out while Undo or its
+dispatch grace is still running. Counts and rows follow your current
+conversation access and refresh as sends complete, without reloading the page.
+Open Outbox to inspect or cancel a waiting send; cancellation is refused once
+processing has begun.
+
+Draft rows lead with the subject, followed by recipients and a preview, with
+the edit time and person who started the draft. Members with write access can
+open a draft to continue it; readers can view the list.
 
 Assignee filters in search and saved-view summaries read **Assigned to a
 specific person**. Open the search editor to change the selected

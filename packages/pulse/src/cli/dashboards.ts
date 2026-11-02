@@ -36,6 +36,20 @@ export const createDashboardCommands = (locale?: string) => {
         if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
       },
     }),
+    command("dashboards panels", {
+      summary: t({ en: "List the panels of a dashboard", de: "Panels eines Dashboards auflisten" }),
+      args: { dashboard: arg.required({ valueLabel: "dashboard-id" }) },
+      flags: baseFlag,
+      async run({ ctx, args, flags }) {
+        const base = flags.base ?? (await requireDefaultBaseRef(ctx));
+        const dashboard = await readApi<Dashboard>(
+          ctx,
+          `/bases/${encodeURIComponent(base)}/dashboards/${encodeURIComponent(args.dashboard)}`,
+        );
+        const panels = dashboard.definition.panels;
+        printJsonOrTable(ctx, panels, panels, [{ key: "id" }, { key: "title" }, { key: "kind" }, { key: "section" }, { key: "width" }]);
+      },
+    }),
     command("dashboards save", {
       summary: t({ en: "Save a dashboard from JSON", de: "Ein Dashboard aus JSON speichern" }),
       description: t({

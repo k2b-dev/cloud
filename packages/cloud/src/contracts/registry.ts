@@ -8,8 +8,8 @@ import type { DashboardWidgetPresentation, DashboardWidgetSize, WidgetSettingsDe
 
 /**
  * App-registry entry type. Populated internally by `defineApp()` + the
- * heartbeat runtime. Values are validated when read because Redis may still
- * contain records written by older or interrupted runtimes.
+ * heartbeat runtime. Values are validated before publication and once per observed NATS revision
+ * because readers may encounter records from older or interrupted runtimes.
  */
 
 export type AppRegistryNav = {

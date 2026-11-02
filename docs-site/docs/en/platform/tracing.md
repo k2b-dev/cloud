@@ -5,7 +5,7 @@ section: Platform services
 order: 540
 description: Follow one request across application and platform boundaries.
 tags: [tracing, observability, operations]
-updated: 2026-09-15
+updated: 2026-11-02
 ---
 
 # Tracing
@@ -51,6 +51,44 @@ const item = await trace.withSpan(
 
 The callback receives `{ traceId, spanId }`. Pass that context to child work
 when it belongs to the same operation.
+
+## Trace background loops only when they do work
+
+A scheduler tick or coalesced job can check for work and find none. Declare a
+static handler with `trace.backgroundSchedule(resource, scheduleId, run,
+summarize)` or `trace.backgroundJob(resource, run, summarize)`. The callback
+receives the normal Sync context. Return `null` from `summarize(result)` only
+when the successful run did no work; return a bounded summary for real work.
+
+```ts
+const processDue = trace.backgroundSchedule(
+  "inventory", "inventory:due", async () => dispatchDueItems(),
+  (dispatched) => dispatched > 0 ? { dispatched } : null,
+);
+await scheduler.create({ id: "inventory:due", cron: "* * * * *", process: processDue });
+```
+
+The handler preserves retries, cancellation and delivery behavior. A successful
+idle first attempt writes no automatic lifecycle span. Work produces one
+complete span with the callback's full start/end timing and summary. The
+wrapper queues it through the bounded trace observer without waiting for the
+trace database. These deferred spans appear on completion; use Sync's live
+worker and durable delivery state for a running loop.
+Failures and retries are still recorded, and an idle successful retry closes
+its earlier error span. A callback must report all of its effects before it
+can classify a result as idle. Summary failures are logged and cannot retry
+completed work.
+
+An opted-in callback must not call `trace.start()`, `trace.record()`,
+`trace.end()` or `trace.complete()` on its own Sync run span. Put run metadata
+in `summarize` instead. Independent domain spans and child spans with their
+own identities remain supported. Keep ordinary lifecycle tracing when a
+callback needs to manage or enrich its own run span explicitly.
+
+Declare handlers once per static job or schedule, never per entity or run.
+The registration budget matches the trace observer's 1,024-entry diagnostic
+budget; additional declarations retain ordinary lifecycle tracing. No idle
+run records, buffers or suppression keys accumulate per execution.
 
 ## Choose span fields
 
@@ -140,8 +178,9 @@ after one hour. Always end manually started spans.
 ## Trace storage and failures
 
 Cloud records Sync worker starts, completions, and dead letters automatically.
-To enrich the same span, use `trace.syncSpanKey(kind, resourceId, runId)` as
-the `spanKey`. For a durable topic handler, also pass the consumer name as the
+For handlers using ordinary lifecycle tracing, enrich the same span with
+`trace.syncSpanKey(kind, resourceId, runId)` as the `spanKey`. For a durable
+topic handler, also pass the consumer name as the
 fourth argument: `trace.syncSpanKey("topic", resourceId, eventId, consumer)`.
 Each independent consumer receives its own span, even when processing the same
 event. Use the same key when starting, recording, or ending that span.

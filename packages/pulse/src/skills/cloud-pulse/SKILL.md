@@ -212,7 +212,7 @@ SQL, parameters or output changes revoke the link; title/layout edits retain
 it. Public views expose results and presentation only. Read
 `cld pulse reference dashboards.md` before writing a definition.
 
-Choose number, line, bar, table, or funnel. Aggregate charts to at most eight
+Choose number, line, bar, table, funnel, or map (`x` holds an ISO 3166-1 alpha-2 country code). Aggregate charts to at most eight
 series and 480 points per series (3,840 marks). A dashboard supplies referenced
 `:from`, `:to` and `:bucket` on a shared grid. Do not silently reduce a requested
 result: excessive or truncated SQL produces a panel error. Panels share the

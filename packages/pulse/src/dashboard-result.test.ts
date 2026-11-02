@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DashboardDefinitionSchema, DashboardPanelSchema, dashboardWindow } from "./dashboard-contracts";
+import { DashboardDefinitionSchema, DashboardPanelSchema, DashboardSaveSchema, dashboardWindow } from "./dashboard-contracts";
 import { projectDashboardPanel } from "./dashboard-result";
 import type { SqlRows } from "./store/sql-run";
 
@@ -155,4 +155,53 @@ test("section presentation is explicit and consistent across its panels", () => 
     DashboardDefinitionSchema.safeParse({ panels: [panel, { ...panel, id: "requests2", sectionDescription: "Different source" }] }).success,
   ).toBe(false);
   expect(DashboardPanelSchema.safeParse({ ...panel, sectionColor: "url(https://invalid.example)" }).success).toBe(false);
+});
+
+const mapPanel = DashboardPanelSchema.parse({
+  id: "countries",
+  title: "Visits by country",
+  kind: "map",
+  sql: "SELECT country, count() AS visits FROM events GROUP BY country",
+  columns: ["country", "visits"],
+  x: "country",
+});
+const mapRows = (data: unknown[][]) =>
+  rows(
+    [
+      { name: "country", type: "String" },
+      { name: "visits", type: "UInt64" },
+    ],
+    data,
+  );
+
+test("a map panel keeps country codes and rows without a country", () => {
+  const data = [
+    ["DE", "12"],
+    ["", "3"],
+    [null, "1"],
+  ];
+  expect(projectDashboardPanel(mapPanel, mapRows(data)).rows).toEqual(data);
+});
+
+test("a map panel rejects names and negative or missing values instead of drawing them", () => {
+  for (const row of [
+    ["Germany", 1],
+    ["DE", -1],
+    ["DE", null],
+    ["DE", "many"],
+  ])
+    expect(() => projectDashboardPanel(mapPanel, mapRows([row]))).toThrow();
+});
+
+test("a map panel needs a country column and exactly one value column", () => {
+  const base = { id: "m", title: "M", kind: "map", sql: "SELECT 1" };
+  expect(DashboardPanelSchema.safeParse({ ...base, columns: ["country", "visits"] }).success).toBe(false);
+  expect(DashboardPanelSchema.safeParse({ ...base, columns: ["country", "a", "b"], x: "country" }).success).toBe(false);
+  expect(DashboardPanelSchema.safeParse({ ...base, columns: ["country", "a"], x: "country" }).success).toBe(true);
+});
+
+test("the documented website dashboard is a valid definition with a country map", async () => {
+  const example = await Bun.file(new URL("../examples/website-dashboard.json", import.meta.url)).json();
+  const { definition } = DashboardSaveSchema.parse(example);
+  expect(definition.panels.map((panel) => panel.kind)).toEqual(["number", "number", "number", "line", "map", "bar", "table"]);
 });

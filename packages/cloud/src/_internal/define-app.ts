@@ -118,7 +118,7 @@ import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
-import { canonicalRoute, isOwnAppPath } from "./registry-validation";
+import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
 import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
@@ -769,7 +769,7 @@ export const defineApp = <
         access: meta.access,
         name: meta.name,
         icon: meta.icon,
-        description: meta.description,
+        description: meta.description ?? "",
         presentation: meta.presentation,
         appearance: meta.appearance,
         baseUrl,
@@ -827,6 +827,9 @@ export const defineApp = <
         openapi: advertiseOpenapi ? opts.openapi : undefined,
         cliModules: cliModules.length > 0 ? cliModules : undefined,
       };
+
+      const registryError = validateAppRegistryEntry(entry);
+      if (registryError) throw new Error(`Invalid app registry entry: ${registryError}`);
 
       // Both shared entries follow one process membership; creating it touches no Sync resources.
       const membership = createRegistryMembership(meta.id, {
@@ -1129,7 +1132,11 @@ export const defineApp = <
       }
       server.use(
         "*",
-        requireAppAccess(meta, (c) => ssr.appAccessDenied(c, meta)),
+        requireAppAccess(
+          meta,
+          (c) => ssr.appAccessDenied(c, meta),
+          (c) => ssr.error(c, 503, { layout: "minimal" }),
+        ),
       );
 
       if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));

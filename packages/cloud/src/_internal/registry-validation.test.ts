@@ -13,6 +13,10 @@ const valid = {
 
 describe("validateAppRegistryEntry", () => {
   test("accepts a valid entry", () => expect(validateAppRegistryEntry(valid)).toBeNull());
+  test("accepts an empty description without accepting a non-string", () => {
+    expect(validateAppRegistryEntry({ ...valid, description: "" })).toBeNull();
+    expect(validateAppRegistryEntry({ ...valid, description: 42 })).toContain("description");
+  });
   test("accepts a package declaration and rejects unsafe package metadata", () => {
     expect(validateAppRegistryEntry({ ...valid, package: "warenfluss" })).toBeNull();
     for (const packageName of ["../mail", "a/b", "", "Mail", 42, "a".repeat(81)]) {

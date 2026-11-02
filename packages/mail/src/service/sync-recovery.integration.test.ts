@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { connections, createSql, sql } from "@k2b/cloud";
+import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
@@ -8,9 +9,11 @@ import { sha256Json } from "./canonical";
 import { createMailCommand } from "./commands";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import { getMailboxOperationalHealth } from "./health";
 import { loadImapPushPlan } from "./imap-push-runtime";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { getMailboxOperations } from "./operations";
 import { createProviderConnection, replaceProviderConnection } from "./provider-connections";
 import {
   acquireProviderLease,
@@ -18,7 +21,7 @@ import {
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
-import { claimFence, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import { claimFence, commitSyncBatch, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -396,5 +399,150 @@ suite("mail sync recovery", () => {
       code: "MAILBOX_TRANSPORT_CHANGED",
     });
     expect(await loadImapPushPlan(fixture.bindingId)).toBeNull();
+  });
+  test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
+    const fixture = await createSyncedMailbox("idle-writes");
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      status.mockRestore();
+    }
+    const [folder] = await sql<Parameters<typeof commitSyncBatch>[0]["folder"][]>`
+      SELECT id AS folder_id, ${fixture.mailboxId}::uuid AS mailbox_id, remote_resource_id,
+        0 AS sync_generation, envelope_cursor, role FROM mail.folders WHERE id = ${fixture.folderId}::uuid
+    `;
+    if (!folder || typeof folder.envelope_cursor === "string") throw new Error("Missing initialized folder cursor");
+    const cursor = folder.envelope_cursor;
+    await sql`CREATE TABLE mail.idle_write_probe (table_name text, operation text)`;
+    await sql
+      .unsafe(`CREATE FUNCTION mail.record_idle_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN INSERT INTO mail.idle_write_probe VALUES (TG_TABLE_NAME, TG_OP); RETURN NEW; END $$`)
+      .simple();
+    const tables = [
+      "remote_resources",
+      "sync_runs",
+      "folders",
+      "binding_folder_refs",
+      "provider_bindings",
+      "provider_connections",
+      "mailboxes",
+    ];
+    for (const table of tables)
+      await sql
+        .unsafe(`CREATE TRIGGER idle_write_probe AFTER INSERT OR UPDATE ON mail.${table}
+      FOR EACH ROW EXECUTE FUNCTION mail.record_idle_write()`)
+        .simple();
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const measured = createSql({ url: counter.url, max: 1, tls: false });
+    const commit = async (secretRevision = 1, afterClaim?: () => Promise<void>) => {
+      const fence = await claimFence(fixture.resourceId, fixture.bindingId, "incremental", fixture.folderId, measured);
+      await afterClaim?.();
+      return commitSyncBatch({
+        db: measured,
+        folder,
+        folderId: fixture.folderId,
+        bindingId: fixture.bindingId,
+        secretRevision,
+        fence,
+        status: EMPTY_INBOX,
+        beforeCursor: cursor,
+        cursor: structuredClone(cursor),
+        uidValidityChanged: false,
+        envelopeBatch: null,
+        envelopeKind: null,
+        flagChanges: [],
+        reconcileWindow: null,
+      });
+    };
+    try {
+      await measured`SELECT 1`;
+      await sql`UPDATE mail.remote_resources SET last_sync_at = '2026-01-01' WHERE id = ${fixture.resourceId}::uuid`;
+      await sql`TRUNCATE mail.idle_write_probe`;
+      const before = counter.count();
+      await commit();
+      const statements = counter.count() - before;
+      const writes = await sql<{ table_name: string; count: number }[]>`
+        SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name
+      `;
+      console.info("idle sync run", { statements, writes });
+      expect(statements).toBe(17); // Includes BEGIN/COMMIT for both fence claim and commit.
+      expect(writes).toEqual([
+        { table_name: "provider_bindings", count: 1 },
+        { table_name: "remote_resources", count: 2 },
+        { table_name: "sync_runs", count: 2 },
+      ]);
+      const health = await getMailboxOperationalHealth(ownerContext, fixture.mailboxId);
+      const operations = await getMailboxOperations(ownerContext, fixture.mailboxId);
+      const state = await transportState(fixture);
+      expect(state.last_sync_at!.getTime()).toBeGreaterThan(new Date("2026-01-01").getTime());
+      expect(health.ok).toBe(true);
+      expect(operations.ok).toBe(true);
+      if (health.ok) expect(JSON.stringify(health.data)).toContain(state.last_sync_at!.toISOString());
+      if (operations.ok) expect(JSON.stringify(operations.data)).toContain(state.last_sync_at!.toISOString());
+      expect(state.health).toBe("active");
+      const [run] = await sql<{ state: string; cursor_after: unknown }[]>`
+        SELECT state, cursor_after FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid
+        ORDER BY started_at DESC LIMIT 1`;
+      expect(run?.state).toBe("completed");
+      expect(run?.cursor_after).toEqual(cursor);
+
+      // Count a whole warmed idle folder batch as well as the commit seam above.
+      const originalUrl = connections().database.url;
+      const idleStatus = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+      try {
+        process.env.DATABASE_URL = counter.url;
+        await initializeTestPlatform();
+        await sql`TRUNCATE mail.idle_write_probe`;
+        const beforeBatch = counter.count();
+        const batch = await syncFolderBatch(fixture.folderId, async () => undefined);
+        const batchStatements = counter.count() - beforeBatch;
+        const batchWrites = await sql<{ table_name: string; count: number }[]>`
+          SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name`;
+        console.info("whole idle folder batch", { statements: batchStatements, writes: batchWrites });
+        expect(batchStatements).toBe(24);
+        expect(batch).toMatchObject({ imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
+        expect(batchWrites).toEqual(writes);
+      } finally {
+        idleStatus.mockRestore();
+        process.env.DATABASE_URL = originalUrl;
+        await initializeTestPlatform();
+      }
+
+      // A changed provider cursor, error and mailbox health must still write immediately.
+      await sql`UPDATE mail.binding_folder_refs SET uid_next = 99 WHERE binding_id = ${fixture.bindingId}::uuid`;
+      await sql`UPDATE mail.provider_connections SET last_error_code = 'OLD_FAILURE', last_error_message = 'old' WHERE id = ${fixture.connectionId}::uuid`;
+      await sql`UPDATE mail.mailboxes SET health = 'degraded', health_reason = 'old' WHERE id = ${fixture.mailboxId}::uuid`;
+      await sql`UPDATE mail.folders SET sync_status = 'syncing' WHERE id = ${fixture.folderId}::uuid`;
+      await sql`TRUNCATE mail.idle_write_probe`;
+      await commit();
+      for (const table of ["binding_folder_refs", "provider_connections", "mailboxes", "folders"]) {
+        expect(await sql`SELECT 1 FROM mail.idle_write_probe WHERE table_name = ${table}`).toHaveLength(1);
+      }
+      expect((await transportState(fixture)).health).toBe("active");
+      // FK checks and hydration hold KEY SHARE; idle metadata must remain compatible.
+      await measured`SET lock_timeout = '2s'`;
+      try {
+        await sql.begin(async (locker) => {
+          await locker`SELECT id FROM mail.mailboxes WHERE id = ${fixture.mailboxId}::uuid FOR KEY SHARE`;
+          await locker`SELECT id FROM mail.provider_connections WHERE id = ${fixture.connectionId}::uuid FOR KEY SHARE`;
+          await commit();
+        });
+      } finally {
+        await measured`RESET lock_timeout`;
+      }
+      await expect(
+        commit(1, async () => {
+          await sql`UPDATE mail.provider_connections SET secret_revision = 2 WHERE id = ${fixture.connectionId}::uuid`;
+        }),
+      ).rejects.toMatchObject({ code: "STALE_SYNC_BINDING", message: "Sync credentials changed before commit" });
+    } finally {
+      await measured.close();
+      await counter.close();
+      for (const table of tables) await sql.unsafe(`DROP TRIGGER idle_write_probe ON mail.${table}`).simple();
+      await sql`DROP FUNCTION mail.record_idle_write()`;
+      await sql`DROP TABLE mail.idle_write_probe`;
+    }
   });
 });

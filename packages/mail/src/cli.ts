@@ -3100,7 +3100,7 @@ const specialistCommands = {
     automation: "Create, inspect, and run guided incoming automations",
     "saved-view": "Create and manage saved conversation views",
     view: "Choose how a mailbox looks on large screens and phones",
-    scheduled: "Inspect and cancel scheduled message delivery",
+    scheduled: "Inspect and cancel messages waiting for delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
     workflow: "Create, validate, and activate Mail workflows",
@@ -3969,6 +3969,14 @@ const specialistCommands = {
               `Hydration timing: queue ${queueWaitMs == null ? "not measured" : `${queueWaitMs} ms`}, lease ${leaseWaitMs == null ? "not measured" : `${leaseWaitMs} ms`}, batch ${batchMs == null ? "not measured" : `${batchMs} ms`}${batchFinishedAt ? `, finished ${batchFinishedAt}` : ""}`,
             );
           }
+          ctx.print(
+            `Outbox: ${
+              Object.entries(value.queues.outbox)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([state, count]) => `${count} ${state}`)
+                .join(", ") || "0 waiting"
+            }`,
+          );
           ctx.print(`Attention: ${value.attentionCommands.length} commands; workflows ${value.queues.workflows.needs_attention ?? 0}`);
         }
       },
@@ -7237,7 +7245,7 @@ const specialistCommands = {
       },
     }),
     command("scheduled list", {
-      summary: "List messages waiting for scheduled delivery",
+      summary: "List messages waiting for delivery",
       flags: {
         ...mailboxFlag,
         cursor: flag.string({ description: "Pagination cursor" }),
@@ -7253,6 +7261,7 @@ const specialistCommands = {
         const query = new URLSearchParams({ limit: String(flags.limit) });
         if (flags.cursor) query.set("cursor", flags.cursor);
         const page = await readApi<ScheduledSendPage>(ctx, `/mailboxes/${mailbox.id}/scheduled-sends?${query}`);
+        if (ctx.options.output === "text") ctx.print(`${page.total} waiting`);
         printTable(
           ctx,
           { ...page, items: page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.delivery", resource)) },
@@ -7266,7 +7275,7 @@ const specialistCommands = {
             id: item.id,
           })),
           [
-            { key: "scheduled", label: "SCHEDULED" },
+            { key: "scheduled", label: "REQUESTED" },
             { key: "nextAttempt", label: "NEXT ATTEMPT" },
             { key: "to", label: "TO" },
             { key: "subject", label: "SUBJECT" },

@@ -1,10 +1,13 @@
 import { Button, Chart, type ChartCursor, DataTable, Disclosure, IconButton, Skeleton, StatCell, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, lazy, Show, Suspense } from "solid-js";
 import type { DashboardPanel } from "../../dashboard-contracts";
 import { readOverviewNumber } from "../../overview-number";
 import { usePulseMessages } from "../use-messages";
 import type { DashboardPanelResult, PublicDashboardPanel } from "./dashboard-client";
-import { dashboardCategories, dashboardCell, dashboardLine } from "./dashboard-data";
+import { dashboardCategories, dashboardCell, dashboardCountries, dashboardLine } from "./dashboard-data";
+
+// The country shapes load only for dashboards that show a map.
+const CountryMap = lazy(() => import("@k2b/ui/country-map").then((module) => ({ default: module.CountryMap })));
 
 export default function DashboardPanelView(props: {
   panel: PublicDashboardPanel | DashboardPanel;
@@ -44,6 +47,14 @@ export default function DashboardPanelView(props: {
       return { data: [], error: true };
     }
   });
+  const countryResult = createMemo(() => {
+    if (!data() || props.panel.kind !== "map") return { data: [], error: false };
+    try {
+      return { data: dashboardCountries(props.panel, data()!), error: false };
+    } catch {
+      return { data: [], error: true };
+    }
+  });
   const numberResult = createMemo(() =>
     data()?.rows.length && props.panel.kind === "number" ? readOverviewNumber({ ...data()!, truncated: false }) : null,
   );
@@ -52,7 +63,7 @@ export default function DashboardPanelView(props: {
     return result?.ok ? result.data : null;
   };
   const categories = () => categoryResult().data;
-  const malformed = () => categoryResult().error || (numberResult() !== null && !numberResult()?.ok);
+  const malformed = () => categoryResult().error || countryResult().error || (numberResult() !== null && !numberResult()?.ok);
   const failure = () =>
     malformed()
       ? t().dashboardInvalidResult
@@ -230,6 +241,17 @@ export default function DashboardPanelView(props: {
                   ],
                 })}
               />
+            </div>
+          </Show>
+          <Show when={props.panel.kind === "map"}>
+            <div class="pulse-dashboard__map">
+              <Suspense fallback={<Skeleton class="h-[170px] w-full" />}>
+                <CountryMap
+                  label={props.panel.title}
+                  data={countryResult().data}
+                  format={(value) => `${dashboardCell(value, locale())} ${props.panel.unit}`.trim()}
+                />
+              </Suspense>
             </div>
           </Show>
           <Show when={props.panel.kind === "table"}>
