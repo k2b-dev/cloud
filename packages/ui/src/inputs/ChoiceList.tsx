@@ -26,9 +26,9 @@ export type ChoiceListProps<T extends string = string> = Omit<ValueFieldProps<T 
 };
 
 /**
- * A labeled single choice shown as a short list of rows, each with a radio, a label and one sentence on what it
- * means, for a few choices whose consequences need words. Choosing changes only paint, so no row moves; `details`
- * opens under the chosen row. Use `ChoiceChips` for quick picks without explanation, `RichSelect` for longer lists
+ * A labeled single choice shown as cards, each with a radio, a label and one sentence on what it
+ * means, for a few choices whose consequences need words. Choosing changes only paint, so no card moves; `details`
+ * opens under the chosen card's row. Use `ChoiceChips` for quick picks without explanation, `RichSelect` for longer lists
  * in a dropdown, and `ChoiceTiles` when a preview decides.
  */
 export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>): JSX.Element {

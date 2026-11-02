@@ -1670,11 +1670,13 @@ const ChoiceChipsDemo = () => {
 const ChoiceListDemo = () => {
   const [level, setLevel] = createSignal<string | null>("off");
   const [duration, setDuration] = createSignal<string | null>("8h");
+  const [billing, setBilling] = createSignal<string | null>("fixed");
+  const [repeat, setRepeat] = createSignal<string | null>("once");
   return (
     <DemoCard
       id="choice-list"
       chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
-      description="A labeled radio group of rows, each with one sentence on its consequence. A quiet marker names the default, details open under the chosen row, and a save in progress shows a spinner without moving anything."
+      description="A labeled radio group of cards, each with one sentence on its consequence. Cards sit side by side while each gets 11rem and stack in narrow places. A quiet marker names the default, details open under the chosen card, and a save in progress shows a spinner without moving anything."
       code={`<ChoiceList
   label="Notifications"
   value={level}
@@ -1687,7 +1689,28 @@ const ChoiceListDemo = () => {
   details={level() === "off" ? <ChoiceChips ... /> : undefined}
 />`}
     >
-      <div class="max-w-sm">
+      <div class="grid max-w-xl gap-4">
+        <ChoiceList
+          label="How do we bill?"
+          value={billing}
+          onValueChange={setBilling}
+          options={[
+            { value: "fixed", label: "Fixed price", description: "The customer pays the agreed amount." },
+            { value: "time", label: "Time and material", description: "Hours and material go on the invoice." },
+          ]}
+        />
+        <ChoiceList
+          label="Repeat"
+          value={repeat}
+          onValueChange={setRepeat}
+          options={[
+            { value: "once", label: "Once" },
+            { value: "monthly", label: "Monthly" },
+            { value: "yearly", label: "Yearly" },
+          ]}
+        />
+      </div>
+      <div class="mt-6 max-w-sm">
         <ChoiceList
           label="Notifications"
           value={level}

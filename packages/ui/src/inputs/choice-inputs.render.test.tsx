@@ -146,8 +146,13 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(checkbox).toContain("k2b-field__required");
     expect(card).toContain('data-state="checked"');
     expect(card).toContain("ti ti-flask");
-    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).toContain("border-color: var(--k2b-action)");
-    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).not.toContain("background");
+    // A checked card takes the selected edge and fill of the edge contract, in platform blue.
+    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).toContain(
+      "--k2b-edge-color: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-share), var(--k2b-surface))",
+    );
+    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).toContain(
+      "background: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
     expect(toggle).toContain('role="switch"');
     expect(toggle).toContain("checked");
 
