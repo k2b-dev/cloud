@@ -265,7 +265,6 @@ export default function MailMessageCard(props: {
       class="group min-w-0 scroll-mt-3 py-1"
       data-mail-message-id={props.message.id}
       data-mail-direction={outgoing() ? "outgoing" : "incoming"}
-      style={`view-transition-name: mail-message-${props.message.id}`}
     >
       {/* A right-click on the message opens its "…" menu. A block host takes focus back when Escape closes it. */}
       <ContextMenu class="block" tabIndex={-1} items={messageMenu.items()} label={messageMenu.label()} keepNativeMenu>

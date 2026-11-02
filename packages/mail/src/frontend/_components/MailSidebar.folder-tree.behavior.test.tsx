@@ -256,6 +256,8 @@ if (!isServer) {
       const rows = () => [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")];
       const first = rows();
       expect(first.length).toBeGreaterThan(0);
+      // A view transition captures every named element on its own: 350 named folder rows cost seconds per switch.
+      expect(dom.root.querySelector('[style*="view-transition-name"]')).toBeNull();
 
       // A conversation click or live event brings new objects with the same content.
       setSnapshot(structuredClone(folders));

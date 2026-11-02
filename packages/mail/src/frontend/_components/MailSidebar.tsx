@@ -374,7 +374,6 @@ export default function MailSidebar(
           ) : undefined
         }
         title={onlyInFolder ? messages().onlyInFolderTitle({ name: folder.name }) : folder.name}
-        viewTransitionName={`mail-folder-${folder.id}`}
         navigation="enhanced"
         onNavigate={folder.selectable ? open().onNavigate : undefined}
         scroll="preserve"
@@ -437,7 +436,6 @@ export default function MailSidebar(
         icon="ti ti-calendar-time"
         active={open().scheduledMode}
         meta={<span class="tabular-nums">{open().scheduledCount || ""}</span>}
-        viewTransitionName="mail-scheduled"
         navigation="enhanced"
         onNavigate={open().onNavigate}
         scroll="preserve"
@@ -450,7 +448,6 @@ export default function MailSidebar(
         active={sendProblemsActive()}
         meta={<span class="tabular-nums">{open().viewCounts.send_problems || ""}</span>}
         title={messages().sendProblemsDescription}
-        viewTransitionName="mail-view-send_problems"
         navigation="enhanced"
         onNavigate={open().onNavigate}
         scroll="preserve"
