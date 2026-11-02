@@ -24,17 +24,17 @@
   color: var(--k2b-text);
   cursor: pointer;
 }
-/* Line B: hover darkens the fill, a selected item is a light fill in the
-   app's selection ink, and focus draws the 2 px edge inside, so no state
-   moves anything. */
+/* Line B: hover darkens the fill, a selected item takes the row selection
+   fill and darkens it on hover, and focus draws the 2 px edge inside, so no
+   state moves anything. */
 .k2b-ui .k2b-file-grid__item:hover {
   background: var(--k2b-edge-hover-bg);
 }
 .k2b-ui .k2b-file-grid__item[aria-selected="true"] {
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  background: var(--k2b-row-selected);
 }
 .k2b-ui .k2b-file-grid__item[aria-selected="true"]:hover {
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-row-selected));
 }
 .k2b-ui .k2b-file-grid__item:focus-visible {
   outline: var(--k2b-edge-width) solid var(--k2b-edge-focus);
