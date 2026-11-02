@@ -115,7 +115,16 @@
   font-size: 0.75rem; font-weight: 500; line-height: 1.25rem;
 }
 .k2b-ui .ai-usage-filter .k2b-choice-trigger:hover { color: var(--k2b-text); }
-.k2b-ui .ai-usage-filter--active .k2b-choice-trigger { background: var(--k2b-selected); color: var(--k2b-action); }
+/* An active facet is an active filter: the selected edge and fill of FilterChip. */
+.k2b-ui .ai-usage-filter--active .k2b-choice-trigger {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+.k2b-ui .ai-usage-filter--active .k2b-choice-trigger:hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+}
+.k2b-ui .ai-usage-filter--active .k2b-choice-trigger:focus-visible { --k2b-edge-color: var(--k2b-edge-focus); }
 /* Search menus need room for names even when their trigger is a compact chip. */
 .k2b-ui .ai-usage-filter .k2b-choice-popover {
   min-width: min(22rem, calc(100vw - 2rem));

@@ -65,6 +65,22 @@ reads `--k2b-edge-color`, the colour of the current state, for example a
 stepper that fills to the border. In forced-colors mode the border takes the
 system colour and focus adds the system outline.
 
+### Filters, buttons, and clickable cards
+
+Controls next to fields follow the same rule: the box never changes and no
+control casts a shadow.
+
+| Control | Edge | Hover | Active | Focus |
+| --- | --- | --- | --- | --- |
+| `FilterChip`, `FilterToggle` | the field edge, as a 2 px inset | `--k2b-edge-hover-bg` | selected edge and fill in the app ink | `--k2b-edge-focus` edge |
+| Secondary and subtle `Button` | 1 px `--k2b-control-border-soft`, never darker | `--k2b-edge-hover-bg` | | focus ring |
+| Interactive `Paper` | 1 px `--k2b-border-strong`, never darker | `--k2b-edge-hover-bg` | | focus ring |
+
+The selected edge mixes `--k2b-edge-selected-share` of the app ink into the
+surface; the fill mixes `--k2b-edge-selected-fill`, and on hover
+`--k2b-edge-selected-hover-fill`. All of them are white on a tinted section
+group as well.
+
 ## Selection color
 
 Selection marks where the person is or what they picked. Three optional host
@@ -98,18 +114,19 @@ sidebar row also turns semibold; its label reserves that width in advance.
 
 ### Selected tabs, segments, and filters
 
-A selected tab, view tab, or segment and an active filter chip are selection
-states, in the same family as the selected navigation row. They mark where
-the person is or what they picked, so they share the navigation fill and its
-ink. This is a decision of 19 October 2026; the shell designs approved on
-17 October 2026 show exactly this.
+A selected tab, view tab, or segment is a selection state, in the same family
+as the selected navigation row. It marks where the person is or what they
+picked, so it shares the navigation fill and its ink. This is a decision of
+19 October 2026; the shell designs approved on 17 October 2026 show exactly
+this. An active filter keeps the app ink but draws it as a selected edge with a
+light fill, so it reads as a field beside the fields it filters (see
+[Filters, buttons, and clickable cards](#filters-buttons-and-clickable-cards)).
 
 | State | Primitive | Class |
 | --- | --- | --- |
 | Selected tab | `Tabs` | `k2b-tabs` |
 | Current view | `ViewTabs` | `k2b-view-tabs` |
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
-| Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like

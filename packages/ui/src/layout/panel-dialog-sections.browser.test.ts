@@ -442,7 +442,8 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
             };
           });
           // A segmented control is soft and draws no track on either surface.
-          expect(result.loose).toEqual({ subtle: result.muted, track: "rgba(0, 0, 0, 0)", chip: result.muted });
+          // A subtle button is white with a light border on every surface; chips follow the group.
+          expect(result.loose).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.muted });
           expect(result.grouped).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.surface });
           // Fields are white with their own edge on every surface, also inside a group.
           expect(result.panelWell).toBe(result.surface);

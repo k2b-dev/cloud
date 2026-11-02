@@ -236,3 +236,164 @@ describe("field edge contract in the browser", () => {
     }
   }
 });
+
+// Filters share the field edge as a pure inset (no border); an active filter
+// takes the selected edge and fill. Secondary buttons and clickable cards keep
+// a light 1 px border in every state and change only their fill.
+const controlsEntry = resolve(import.meta.dir, "control-edge-controls.fixture.ts");
+const controlsFixture = `
+import { createComponent, render } from "solid-js/web";
+import { Button, FilterChip, FilterToggle, Paper } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+const cell = (name, make) => {
+  const node = document.createElement("div");
+  node.dataset.control = name;
+  node.style.cssText = "width:260px";
+  render(make, node);
+  return node;
+};
+const options = [{ options: [{ value: "mine", label: "Mine" }] }];
+document.getElementById("app").append(
+  cell("chip", () => createComponent(FilterChip, { label: "Owner", icon: "ti ti-user", value: [], onValueChange: () => {}, options })),
+  cell("chip-active", () => createComponent(FilterChip, { label: "Owner", icon: "ti ti-user", value: ["mine"], onValueChange: () => {}, options })),
+  cell("toggle-active", () => createComponent(FilterToggle, { label: "Only mine", icon: "ti ti-user", active: true, onClick: () => {} })),
+  cell("secondary", () => createComponent(Button, { variant: "secondary", children: "Export" })),
+  cell("subtle", () => createComponent(Button, { variant: "subtle", children: "More" })),
+  cell("card", () => createComponent(Paper, { interactive: true, tabIndex: 0, style: { padding: "12px" }, children: "Open the project" })),
+);
+`;
+const controlsBuild = await Bun.build({
+  entrypoints: [controlsEntry],
+  files: { [controlsEntry]: controlsFixture },
+  target: "browser",
+  format: "iife",
+});
+if (!controlsBuild.success) throw new AggregateError(controlsBuild.logs, "Could not bundle the control edge controls fixture.");
+const controlsScript = await controlsBuild.outputs[0]!.text();
+
+describe("filters, secondary buttons, and clickable cards in the browser", () => {
+  for (const theme of ["light", "dark"] as const) {
+    test(
+      `${theme}: fixed geometry, no shadow, border never darkens`,
+      async () => {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        try {
+          await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style>
+            <style>*,*::before,*::after{transition:none!important;animation:none!important}
+            #app{display:flex;flex-wrap:wrap;gap:16px;padding:16px;align-items:flex-start}</style></head>
+            <body class="k2b-ui" data-theme="${theme}" style="margin:0"><div id="app"></div></body></html>`);
+          await page.addScriptTag({ content: controlsScript });
+          await page.locator('[data-control="card"] .k2b-paper').waitFor();
+          // color-mix() serializes as color(srgb …); a canvas turns every colour into rgba().
+          const tokens = await page.evaluate(() => {
+            const context = document.createElement("canvas").getContext("2d")!;
+            const probe = document.createElement("span");
+            document.body.append(probe);
+            const read = (value: string) => {
+              probe.style.color = value;
+              context.clearRect(0, 0, 1, 1);
+              context.fillStyle = getComputedStyle(probe).color;
+              context.fillRect(0, 0, 1, 1);
+              const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+              return `rgba(${r}, ${g}, ${b}, ${a! / 255})`;
+            };
+            const mix = (share: string) => read(`color-mix(in srgb, var(--k2b-app-workspace-active) var(${share}), var(--k2b-surface))`);
+            const result = {
+              edge: read("var(--k2b-edge)"),
+              focus: read("var(--k2b-edge-focus)"),
+              surface: read("var(--k2b-surface)"),
+              hover: read("var(--k2b-edge-hover-bg)"),
+              selected: mix("--k2b-edge-selected-share"),
+              selectedFill: mix("--k2b-edge-selected-fill"),
+              selectedHover: mix("--k2b-edge-selected-hover-fill"),
+              soft: read("var(--k2b-control-border-soft)"),
+              cardBorder: read("var(--k2b-border-strong)"),
+            };
+            probe.remove();
+            return result;
+          });
+
+          const measure = (element: Locator) =>
+            element.evaluate((node) => {
+              const context = document.createElement("canvas").getContext("2d")!;
+              const rgba = (color: string) => {
+                context.clearRect(0, 0, 1, 1);
+                context.fillStyle = color;
+                context.fillRect(0, 0, 1, 1);
+                const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+                return `rgba(${r}, ${g}, ${b}, ${a! / 255})`;
+              };
+              const style = getComputedStyle(node);
+              const { x, y, width, height } = node.getBoundingClientRect();
+              const shadows = style.boxShadow === "none" ? [] : style.boxShadow.split(/,(?![^(]*\))/).map((part) => part.trim());
+              const inset = shadows.filter((part) => part.includes("inset"));
+              const color = inset[0]?.match(/(?:rgba?|color)\([^)]*\)/)?.[0];
+              return {
+                box: { x: x + scrollX, y: y + scrollY, width, height },
+                border: Number.parseFloat(style.borderTopWidth),
+                borderColor: rgba(style.borderTopColor),
+                inset: Number(inset[0]?.match(/(-?[\d.]+)px\s+inset/)?.[1] ?? 0),
+                insetColor: color ? rgba(color) : undefined,
+                drop: shadows.filter((part) => !part.includes("inset")),
+                background: rgba(style.backgroundColor),
+              };
+            });
+
+          type Expect = { border: number; edge: (state: string) => string; fill: (state: string) => string };
+          const filter = (rest: string, fill: string, hover: string): Expect => ({
+            border: 0,
+            edge: (state) => (state === "focus" ? tokens.focus : rest),
+            fill: (state) => (state === "hover" ? hover : fill),
+          });
+          const bordered = (color: string): Expect => ({
+            border: 1,
+            edge: () => color,
+            fill: (state) => (state === "hover" ? tokens.hover : tokens.surface),
+          });
+          const controls: Record<string, [string, Expect]> = {
+            chip: [".k2b-filter-chip", filter(tokens.edge, tokens.surface, tokens.hover)],
+            "chip-active": [".k2b-filter-chip", filter(tokens.selected, tokens.selectedFill, tokens.selectedHover)],
+            "toggle-active": [".k2b-filter-chip", filter(tokens.selected, tokens.selectedFill, tokens.selectedHover)],
+            secondary: [".k2b-button", bordered(tokens.soft)],
+            subtle: [".k2b-button", bordered(tokens.soft)],
+            card: [".k2b-paper", bordered(tokens.cardBorder)],
+          };
+
+          for (const [name, [selector, expected]] of Object.entries(controls)) {
+            const element = page.locator(`[data-control="${name}"] ${selector}`).first();
+            const seen: Record<string, Awaited<ReturnType<typeof measure>>> = {};
+            for (const state of ["rest", "hover", "focus"] as const) {
+              await page.mouse.move(5, 890);
+              await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+              if (state === "focus") await element.evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
+              if (state === "hover") await element.hover();
+              await settled(page);
+              seen[state] = await measure(element);
+              if (shots) {
+                mkdirSync(shots, { recursive: true });
+                await element.screenshot({ path: resolve(shots, `${theme}-control-${name}-${state}.png`) });
+              }
+            }
+            for (const state of ["rest", "hover", "focus"] as const) {
+              const actual = seen[state]!;
+              const label = `${theme} ${name} ${state}`;
+              expect(actual.box, `${label} box`).toEqual(seen.rest!.box);
+              expect(actual.drop, `${label} drop shadow`).toEqual([]);
+              expect(actual.border, `${label} border width`).toBe(expected.border);
+              expect(actual.background, `${label} fill`).toBe(expected.fill(state));
+              if (expected.border === 0) {
+                expect(actual.inset, `${label} edge width`).toBe(2);
+                expect(actual.insetColor, `${label} edge colour`).toBe(expected.edge(state));
+              } else {
+                expect(actual.inset, `${label} inset`).toBe(0);
+                expect(actual.borderColor, `${label} border colour`).toBe(expected.edge(state));
+              }
+            }
+          }
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+  }
+});

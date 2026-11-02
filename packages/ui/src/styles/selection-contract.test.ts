@@ -34,8 +34,6 @@ const stackedChip =
 const softControls = [
   '.k2b-ui .k2b-segmented-control__option[data-selected="true"]',
   '.k2b-ui .k2b-segmented-control__option[aria-checked="true"]',
-  '.k2b-ui .k2b-filter-chip[data-active="true"]',
-  '.k2b-ui .k2b-filter-chip[data-active="true"]:hover',
   '.k2b-ui .k2b-tabs__list button[aria-selected="true"]',
   '.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"])',
   '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',

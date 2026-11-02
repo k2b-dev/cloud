@@ -117,9 +117,10 @@ An app accent must not recolor every primary button. A red app must not make
 normal navigation look destructive. Status color must not identify an app.
 
 A selected navigation row or a row for an opened or picked object or place
-uses the app's selection fill and ink. A selected tab, view tab, or segment and
-an active filter chip share the navigation fill: like a selected row, they mark
-where the person is or what they picked. Controls keep platform blue: buttons,
+uses the app's selection fill and ink. A selected tab, view tab, or segment
+shares the navigation fill: like a selected row, it marks where the person is
+or what they picked. An active filter chip draws the app ink as a selected edge
+with a light fill. Controls keep platform blue: buttons,
 inputs, checkboxes, radios, switches, and focus rings, plus select and
 keyboard-active options, pressed toolbar buttons, and checked cards. Link text
 stays body ink; only its underline follows the app ink. Only the
