@@ -146,16 +146,21 @@ describe("@k2b/ui complete date picker migration", () => {
   ] as const) {
     test(`renders locale weekend bands in server HTML (${locale})`, () => {
       for (const render of [
-        () => createComponent(DatePicker, { label: "Date", value: "2026-10-18", dateConfig: { locale } }),
+        () => createComponent(DatePicker, { label: "Date", value: "2026-10-18", dateConfig: { locale }, appearance: "plain" }),
         () =>
-          createComponent(DateRangePicker, { label: "Range", value: { start: "2026-10-18", end: "2026-10-18" }, dateConfig: { locale } }),
+          createComponent(DateRangePicker, {
+            label: "Range",
+            value: { start: "2026-10-18", end: "2026-10-18" },
+            dateConfig: { locale },
+            appearance: "plain",
+          }),
       ]) {
         const html = renderToString(render);
         const bands = html.match(/<span[^>]*class="k2b-date-weekend"[^>]*>/g) ?? [];
         expect(bands).toHaveLength(2);
         // Solid serializes style objects without spaces after colons or a trailing semicolon.
         expect(bands[0]).toContain(`style="grid-column:${column} / span 2"`);
-        expect(bands[1]).toMatch(new RegExp(`style="grid-column:${column} / span 2;grid-row:1 / span [56]"`));
+        expect(bands[1]).toMatch(new RegExp(`style="grid-column:${column} / span 2;grid-row:1 / span 6"`));
         const weekdays = html.match(/<div class="k2b-date-weekdays"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
         const marked = [...weekdays.matchAll(/<span data-weekend="true">([^<]*)<\/span>/g)].map((match) => match[1]);
         expect(marked).toEqual([...labels]);
@@ -223,13 +228,46 @@ describe("@k2b/ui complete date picker migration", () => {
     else Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: previousWindow });
   });
 
-  test("renders a controlled date picker with presets and calendar semantics", () => {
+  test("renders a typed date field with its text, status line and a closed calendar", () => {
+    setSystemTime(new Date("2026-07-20T10:00:00.000Z"));
+    try {
+      const html = renderToString(() =>
+        createComponent(DatePicker, {
+          label: "Fällig am",
+          value: "2026-07-27",
+          clearable: true,
+          required: true,
+          dateConfig: { locale: "de-DE", timeZone: "Europe/Berlin" },
+        }),
+      );
+      const input = html.match(/<input[^>]*>/)?.[0] ?? "";
+      expect(input).toContain('role="combobox"');
+      expect(input).toContain('aria-haspopup="dialog"');
+      expect(input).toContain('aria-expanded="false"');
+      expect(input).toContain('inputmode="numeric"');
+      expect(input).toContain('value="27.07.2026"');
+      expect(input).toContain('placeholder="TT.MM.JJJJ"');
+      expect(input).toMatch(/aria-describedby="[^"]*-status"/);
+      expect(html).toContain('popover="manual"');
+      // The calendar renders when it opens, so a page of date fields carries no month grids.
+      expect(html).not.toContain('role="grid"');
+      expect(html).toMatch(/<p[^>]*class="k2b-date-status"[^>]*data-tone="rest"[^>]*>Montag, in 7 Tagen<\/p>/);
+      expect(html).toContain("k2b-input-clear-action");
+      expect(html).toContain("k2b-field__required");
+      expect(html).toContain('aria-label="Kalender öffnen"');
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test("renders a plain date picker with presets and calendar semantics", () => {
     const html = renderToString(() =>
       createComponent(DatePicker, {
         label: "Release date",
         value: "2026-07-27",
         clearable: true,
         required: true,
+        appearance: "plain",
         presets: [{ label: "Launch", value: "2026-07-27" }],
       }),
     );
@@ -241,7 +279,6 @@ describe("@k2b/ui complete date picker migration", () => {
     expect(html).toContain('aria-selected="true"');
     expect(html).toContain("Launch");
     expect(html).toContain("Clear date");
-    expect(html).toContain("k2b-input-clear-action");
     expect(html).toContain("k2b-field__required");
     // role="grid" needs rows, and exactly one day carries the roving tabindex.
     expect(html).toContain('role="row"');
@@ -256,12 +293,14 @@ describe("@k2b/ui complete date picker migration", () => {
       createComponent(DateRangePicker, {
         label: "Window",
         value: { start: null, end: null },
+        appearance: "plain",
       }),
     );
     const complete = renderToString(() =>
       createComponent(DateRangePicker, {
         label: "Window",
         value: { start: "2026-07-27", end: "2026-07-29" },
+        appearance: "plain",
       }),
     );
 
@@ -269,6 +308,7 @@ describe("@k2b/ui complete date picker migration", () => {
       createComponent(DateRangePicker, {
         label: "Window",
         value: { start: "2026-07-27", end: null },
+        appearance: "plain",
       }),
     );
 
@@ -354,7 +394,12 @@ describe("@k2b/ui complete date picker migration", () => {
     test("marks today with aria-current and a name that says so", () => {
       setSystemTime(new Date("2026-10-09T10:00:00.000Z"));
       const html = renderToString(() =>
-        createComponent(DatePicker, { label: "Due", value: null, dateConfig: { timeZone: "Europe/Berlin", locale: "en" } }),
+        createComponent(DatePicker, {
+          label: "Due",
+          value: null,
+          dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
+          appearance: "plain",
+        }),
       );
 
       expect(todayButtons(html)).toHaveLength(1);
@@ -371,7 +416,12 @@ describe("@k2b/ui complete date picker migration", () => {
     test("keeps the selection on today and names it in the render locale", () => {
       setSystemTime(new Date("2026-10-09T10:00:00.000Z"));
       const html = renderToString(() =>
-        createComponent(DatePicker, { label: "Fällig", value: "2026-10-09", dateConfig: { timeZone: "Europe/Berlin", locale: "de" } }),
+        createComponent(DatePicker, {
+          label: "Fällig",
+          value: "2026-10-09",
+          dateConfig: { timeZone: "Europe/Berlin", locale: "de" },
+          appearance: "plain",
+        }),
       );
 
       const today = dayButton(html, "2026-10-09");
@@ -387,6 +437,7 @@ describe("@k2b/ui complete date picker migration", () => {
           label: "Window",
           value: { start: "2026-09-14", end: "2026-09-18" },
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
+          appearance: "plain",
         }),
       );
 

@@ -8382,6 +8382,144 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
+/* The typed date field. Its edge, hover, focus, error and disabled looks come from the shared input shell; these
+   rules only lay out the parts. The status line always keeps its one line, so nothing below the field moves. */
+.k2b-ui .k2b-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-date-field .k2b-input {
+  padding-left: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-date-field[data-range="true"] .k2b-input {
+  flex: none;
+  width: calc(10ch + 0.75rem);
+  min-width: 0;
+  padding-inline: 0.375rem;
+}
+
+.k2b-ui .k2b-date-field__icon {
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-field[data-open="true"] .k2b-date-field__icon {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-date-field[data-readonly="true"] .k2b-date-field__icon {
+  cursor: default;
+}
+
+.k2b-ui .k2b-date-field__arrow {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-date-field__spacer {
+  flex: 1;
+}
+
+.k2b-ui .k2b-date-field__clear {
+  margin-right: 0;
+}
+
+/* A hidden clear button keeps its slot, so the text never moves. */
+.k2b-ui .k2b-date-field__clear[data-hidden="true"] {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-date-field__toggle,
+.k2b-ui .k2b-date-field__lock {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-right: 0.1875rem;
+  align-items: center;
+  justify-content: center;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-date-field__toggle {
+  padding: 0;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-field__toggle:hover:not(:disabled) {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-date-field__toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.k2b-ui .k2b-date-field__toggle > i {
+  transition: transform 150ms ease;
+}
+
+.k2b-ui .k2b-date-field[data-open="true"] .k2b-date-field__toggle > i {
+  transform: rotate(180deg);
+}
+
+/* On phones the toggle opens the calendar sheet; its touch target reaches past the drawn button. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-date-field__toggle::after {
+    content: "";
+    position: absolute;
+    inset: -0.25rem;
+  }
+}
+
+.k2b-ui .k2b-date-field .k2b-date-popover {
+  cursor: default;
+}
+
+.k2b-ui .k2b-date-status {
+  min-height: 0.9625rem;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9625rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-date-status[data-tone="draft"] {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-date-status[data-tone="error"] {
+  color: var(--k2b-danger-text);
+}
+
+/* Days on the phone sheet are full touch targets. */
+.k2b-ui .k2b-date-sheet .k2b-date-calendar__header {
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+}
+
+.k2b-ui .k2b-date-sheet .k2b-date-calendar__nav {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+.k2b-ui .k2b-date-sheet .k2b-date-grid button {
+  min-height: 2.75rem;
+  font-size: 0.9375rem;
+}
+
 .k2b-ui .k2b-date-popover {
   position: fixed;
   z-index: 1000;
@@ -8579,6 +8717,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    mixes the hover tint into the band instead. */
 .k2b-ui .k2b-date-grid button[data-weekend="true"]:hover:not([aria-selected="true"], [data-in-range="true"]) {
   background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-date-weekend));
+}
+
+/* Days outside min/max stay in place but are locked and struck through. */
+.k2b-ui .k2b-date-grid button:disabled,
+.k2b-ui .k2b-date-grid button:disabled:hover {
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.35;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.k2b-ui .k2b-date-calendar__nav:disabled,
+.k2b-ui .k2b-date-calendar__nav:disabled:hover {
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.k2b-ui .k2b-date-calendar__limits {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
 }
 
 .k2b-ui .k2b-date-grid button[data-outside="true"] {

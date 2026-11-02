@@ -1023,14 +1023,15 @@ describe("@k2b/ui choice and date browser behavior", () => {
     };
 
     const dispose = render(() => createComponent(DatePicker, { label: "Release date", value: "2026-07-27" }), dom.root);
-    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+    const input = dom.root.querySelector<HTMLInputElement>(".k2b-date-field input")!;
     const surface = dom.root.querySelector<HTMLElement>(".k2b-date-popover")!;
     expect(activeListeners).toEqual({ resize: 0, scroll: 0 });
 
-    trigger.click();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(input.getAttribute("aria-expanded")).toBe("true");
     expect(activeListeners).toEqual({ resize: 1, scroll: 1 });
     popover.setOpen(surface, false);
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
     expect(activeListeners).toEqual({ resize: 0, scroll: 0 });
 
     dispose();
@@ -1127,13 +1128,13 @@ describe("@k2b/ui choice and date browser behavior", () => {
         }),
       dom.root,
     );
-    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+    const start = dom.root.querySelector<HTMLInputElement>(".k2b-date-field input")!;
     const day = (key: string) => dom.root.querySelector<HTMLButtonElement>(`[data-date-day="${key}"]`)!;
     const apply = () => dom.root.querySelector<HTMLButtonElement>(".k2b-date-apply")!;
     const selected = () =>
       Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[data-date-day][aria-selected="true"]')).map((cell) => cell.dataset.dateDay);
     const pick = async (...keys: string[]) => {
-      trigger.click();
+      start.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
       await Bun.sleep(0);
       for (const key of keys) {
         day(key).click();
@@ -1222,7 +1223,9 @@ describe("@k2b/ui choice and date browser behavior", () => {
       dom.root,
     );
 
-    dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")?.click();
+    dom.root
+      .querySelector<HTMLInputElement>(".k2b-date-field input")
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     await Bun.sleep(0);
 
     const july31 = dom.root.querySelector<HTMLButtonElement>('[data-date-day="2026-07-31"]');
