@@ -404,6 +404,14 @@ test("a row opens its app beside the list; search and filter stay in the address
   expect(await page.locator("thead th").allInnerTexts()).toEqual(["App", "Zustand", "Problem"]);
   expect(await row("grids").getAttribute("data-selected")).toBe("true");
   expect(await page.locator('[data-app="grids"]').getAttribute("aria-current")).toBe("true");
+  // The narrower table truncates its problems instead of scrolling sideways.
+  for (const width of [1440, 1024]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await settled(page);
+    const scroller = page.locator("[data-apps-list] table").locator("xpath=..");
+    expect(await scroller.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   await page.getByRole("link", { name: /Probleme 8/ }).click();
   expect(await page.locator("tbody tr").count()).toBe(8);
@@ -450,4 +458,17 @@ test("on a phone the list keeps name and state, with the problem under the name"
   expect(await row("pulse").innerText()).toContain("Start abgelehnt");
   expect(await row("chat").innerText()).toContain("/chat");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}, 20_000);
+
+test("the detail's links follow a search typed beside it, and a just-added app steps back to the list", async () => {
+  await open("?app=mail");
+  await page.getByRole("searchbox", { name: "App suchen" }).fill("ma");
+  expect(await page.locator('[data-row="Schlüssel"]').getAttribute("href")).toBe("/admin/apps?app=mail&view=keys&q=ma");
+  expect(await page.getByRole("link", { name: "Detail schließen" }).getAttribute("href")).toBe("/admin/apps?q=ma");
+
+  // An app without any record has no page of its own until its first key, so its keys lead back to the list.
+  await open("?app=inventar&view=keys&state=added&filter=problems");
+  const back = page.locator(".k2b-app-workspace__level-back:visible");
+  expect(await back.getAttribute("aria-label")).toBe("Zurück zu Apps");
+  expect(await back.getAttribute("href")).toBe("/admin/apps?filter=problems");
 }, 20_000);

@@ -1,7 +1,7 @@
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import { Button, DataTable, type DataTableColumn, FilterToggle, Placeholder, StatusBadge, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { type AppStatusKind, type AppsListState, appsHref, matchesSearch } from "./model";
+import { type AppStatusKind, type AppsListState, type AppView, appsHref, matchesSearch } from "./model";
 import { type AppsPageMessages, appsPageMessages } from "./page-messages";
 
 /** One app as the list shows it; the server words the problem, so list and detail say the same. */
@@ -45,7 +45,13 @@ const escapeTaken = (event: KeyboardEvent) =>
  * filter stay in the URL, so the open app, reload and back keep the same rows. With an app open the table keeps only
  * name, state and problem.
  */
-export default function AppsTable(props: { rows: readonly AppsTableRow[]; selected: string | null; list: AppsListState }) {
+export default function AppsTable(props: {
+  rows: readonly AppsTableRow[];
+  selected: string | null;
+  /** The open app's view, so the filter link keeps it without JavaScript too. */
+  view: AppView | null;
+  list: AppsListState;
+}) {
   const locale = useLocale();
   const t = () => appsPageMessages.resolve([locale()]).t;
   const [q, setQ] = createSignal(props.list.q);
@@ -55,13 +61,21 @@ export default function AppsTable(props: { rows: readonly AppsTableRow[]; select
   const problemCount = () => props.rows.filter((row) => row.problematic).length;
   const href = (app: string | null) => appsHref({ app, list: list() });
   // The address follows the list at once, so reload, a copied link and back show the same rows.
-  const remember = () => {
-    const url = new URL(location.href);
+  // The server rendered the page's other links (detail rows, back, close) with the list as it was; they follow too.
+  const withList = (href: string) => {
+    const url = new URL(href, location.origin);
     url.searchParams.delete("q");
     url.searchParams.delete("filter");
     if (list().q) url.searchParams.set("q", list().q);
     if (list().problems) url.searchParams.set("filter", "problems");
-    history.replaceState(history.state, "", `${url.pathname}${url.search}`);
+    return `${url.pathname}${url.search}`;
+  };
+  const remember = () => {
+    history.replaceState(history.state, "", withList(location.href));
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href^="/admin/apps"]')) {
+      if (!link.closest("[data-apps-list]") && new URL(link.href).pathname === "/admin/apps")
+        link.setAttribute("href", withList(link.href));
+    }
   };
   const reset = () => {
     setQ("");
@@ -84,8 +98,9 @@ export default function AppsTable(props: { rows: readonly AppsTableRow[]; select
       { id: "app", header: t().columnApp, value: "name" },
       { id: "status", header: t().columnStatus, value: "status", nowrap: true, class: "w-36 min-w-36" },
       { id: "version", header: t().columnVersion, value: "release", align: "right", nowrap: true, class: `w-24 ${wide}` },
-      { id: "address", header: t().columnAddress, value: "routes", class: wide },
-      { id: "problem", header: t().columnProblem, value: "problem", class: wide },
+      { id: "address", header: t().columnAddress, value: "routes", class: `w-[24%] ${wide}` },
+      // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail.
+      { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}` },
     ];
     return props.selected ? all.filter((column) => column.id !== "version" && column.id !== "address") : all;
   };
@@ -110,7 +125,7 @@ export default function AppsTable(props: { rows: readonly AppsTableRow[]; select
           icon="ti ti-alert-triangle"
           label={t().problems({ count: problemCount() })}
           active={problems()}
-          href={appsHref({ app: props.selected, list: { q: list().q, problems: !problems() } })}
+          href={appsHref({ app: props.selected, view: props.view, list: { q: list().q, problems: !problems() } })}
           onClick={(event) => {
             event.preventDefault();
             setProblems(!problems());
@@ -175,11 +190,12 @@ export default function AppsTable(props: { rows: readonly AppsTableRow[]; select
               />
             );
           if (col.id === "version") return <span class="tabular-nums">{row.release ?? "–"}</span>;
-          if (col.id === "address") return <span class="truncate text-dimmed">{row.routes}</span>;
+          // Width 0 with a full minimum: long text never widens its column, it truncates in whatever room is left.
+          if (col.id === "address") return <span class="block w-0 min-w-full truncate text-dimmed">{row.routes}</span>;
           return (
             <Show when={row.problem} fallback={<span class="text-dimmed">–</span>}>
               {(problem) => (
-                <span class={`truncate ${PROBLEM_TONE[row.problemTone ?? "neutral"]}`} title={problem()}>
+                <span class={`block w-0 min-w-full truncate ${PROBLEM_TONE[row.problemTone ?? "neutral"]}`} title={problem()}>
                   {problem()}
                 </span>
               )}

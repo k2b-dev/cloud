@@ -237,6 +237,9 @@ export function appsHref(query: {
   return search ? `/admin/apps?${search}` : "/admin/apps";
 }
 
+/** The list state of an address, for browser code that leaves the page through its own navigation. */
+export const listStateOf = (search: string): AppsListState => parseAppsQuery(Object.fromEntries(new URLSearchParams(search))).list;
+
 /** Whether a row belongs under "Problems": it is not running cleanly or has something to do. */
 export const hasProblem = (app: Pick<AppEntry, "status" | "hints">): boolean => app.status !== "ok" || app.hints.length > 0;
 

@@ -280,6 +280,7 @@ function AppList(props: { data: AppsViewData; t: AppsPageMessages }) {
               <AppsTable
                 rows={tableRows(t, props.data.format, list().apps)}
                 selected={props.data.app?.entry.id ?? null}
+                view={props.data.detail ? props.data.query.view : null}
                 list={props.data.query.list}
               />
             </Show>
@@ -1237,7 +1238,12 @@ export function AppsView(props: { data: AppsViewData }) {
               <AppWorkspace.MainPane
                 id="app"
                 label={detailTitle(t, view, name)}
-                back={{ href: appsHref({ app: app.entry.id, list }), label: name }}
+                back={
+                  // An app added a moment ago has no page until its first key; its keys step back to the list.
+                  data.list.state === "ok" && !data.list.apps.some((entry) => entry.id === app.entry.id)
+                    ? { href: appsHref({ list }), label: t.apps }
+                    : { href: appsHref({ app: app.entry.id, list }), label: name }
+                }
                 minSize={360}
                 actions={
                   <>
