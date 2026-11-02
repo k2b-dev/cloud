@@ -5,12 +5,16 @@ import {
   type AppWorkspaceNavTreeMove,
   Avatar,
   addPanesItem,
+  BottomSheet,
   Button,
   ButtonLink,
+  bottomSheetAdaptiveOptions,
   DataPanel,
   DescriptionList,
   DetailPanel,
+  type DialogTone,
   Discussion,
+  dialogCore,
   FilterChip,
   FloatingWindow,
   IconButton,
@@ -50,6 +54,7 @@ import {
   Tag,
   TextInput,
   Toolbar,
+  toast,
   ViewTabs,
 } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -1384,6 +1389,106 @@ const [reference, setReference] = createSignal("");
   );
 };
 
+const toneExamples: Record<DialogTone, { title: string; subtitle: string; text: string; email: string }> = {
+  success: {
+    title: "Invoice RE-2026-0142 created",
+    subtitle: "Mueller Antik GmbH · €1,428.00",
+    text: "Due on 16 Nov 2026. The PDF is saved with the invoice.",
+    email: "accounts@mueller-antik.example",
+  },
+  warning: {
+    title: "Invoice RE-2026-0143 created",
+    subtitle: "Weber & Sons · €640.00",
+    text: "Weber & Sons has no email address. Print the invoice or enter an address.",
+    email: "",
+  },
+  danger: {
+    title: "Void invoice RE-2026-0139?",
+    subtitle: "Mueller Antik GmbH · €312.50",
+    text: "The invoice becomes invalid and a credit note is created.",
+    email: "",
+  },
+};
+
+const openToneDialog = (tone: DialogTone) => {
+  const example = toneExamples[tone];
+  void dialogCore.open<void>(
+    (close, context) => (
+      <BottomSheet tone={tone} onDismiss={() => context.requestDismiss()}>
+        <PanelDialog.Header title={example.title} subtitle={example.subtitle} icon="ti ti-file-invoice" close={() => close()} />
+        <PanelDialog.Body>
+          <p class="text-sm">{example.text}</p>
+          <Show when={tone !== "danger"} fallback={<TextInput label="Reason (optional)" value="" />}>
+            <TextInput label="Send to" value={example.email} placeholder="name@company.example" />
+          </Show>
+        </PanelDialog.Body>
+        <PanelDialog.Footer>
+          <Show
+            when={tone !== "danger"}
+            fallback={
+              <div class="ui-demo-row">
+                <Button variant="secondary" onClick={() => close()}>
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={() => close()}>
+                  Void invoice
+                </Button>
+              </div>
+            }
+          >
+            <div class="ui-demo-row">
+              <Button variant="secondary" onClick={() => toast("Print view opened")}>
+                Print
+              </Button>
+              <Button variant="secondary" onClick={() => toast("Invoice sent")}>
+                Send by email
+              </Button>
+              <Button onClick={() => close()}>Done</Button>
+            </div>
+          </Show>
+        </PanelDialog.Footer>
+      </BottomSheet>
+    ),
+    bottomSheetAdaptiveOptions,
+  );
+};
+
+const PanelToneDemo = () => (
+  <DemoCard
+    id="panel-dialog-tone"
+    chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
+    description="A tone gives a normal dialog a touch of success, warning or danger: a 2 px edge in its colour inside the frame and the tone's icon in the header. The frame and its content keep their exact place. Phones show the same dialog as a sheet."
+    code={`dialogCore.open<void>(
+  (close, context) => (
+    <BottomSheet tone="success" onDismiss={() => context.requestDismiss()}>
+      <PanelDialog.Header title="Invoice RE-2026-0142 created" subtitle="Mueller Antik GmbH · €1,428.00" close={() => close()} />
+      <PanelDialog.Body>
+        <TextInput label="Send to" value={email()} onValueChange={setEmail} />
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <Button variant="secondary" onClick={print}>Print</Button>
+        <Button variant="secondary" onClick={send}>Send by email</Button>
+        <Button onClick={() => close()}>Done</Button>
+      </PanelDialog.Footer>
+    </BottomSheet>
+  ),
+  bottomSheetAdaptiveOptions,
+);`}
+  >
+    <div class="ui-demo-row">
+      <Button variant="secondary" onClick={() => openToneDialog("success")}>
+        Success
+      </Button>
+      <Button variant="secondary" onClick={() => openToneDialog("warning")}>
+        Warning
+      </Button>
+      <Button variant="secondary" onClick={() => openToneDialog("danger")}>
+        Danger
+      </Button>
+    </div>
+  </DemoCard>
+);
+
 const DiscussionDemo = () => {
   const [composerOpen, setComposerOpen] = createSignal(false);
 
@@ -2277,6 +2382,7 @@ const items = [
   ),
   "panel-dialog": () => (
     <DemoGrid columns="one">
+      <PanelToneDemo />
       <PanelDemo />
     </DemoGrid>
   ),

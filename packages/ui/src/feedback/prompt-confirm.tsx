@@ -2,6 +2,7 @@ import { createSignal, type JSX, Show } from "solid-js";
 import { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
 import { dialogCore } from "./dialog-core";
+import { type DialogTone, dialogToneIcon, dialogToneLabel } from "./dialog-tone";
 import { resolvePromptMessages } from "./prompt-messages";
 import type { ConfirmOptions, DialogOptions } from "./prompts";
 
@@ -12,11 +13,22 @@ export type PromptContent = string | HTMLElement | JSX.Element;
 
 const PHRASE_SLOT = "\u0000";
 
-export const DialogHeader = (props: { close: () => void; title?: string; icon?: string }): JSX.Element => (
+/** A prompt's `variant` is its tone too: a success or danger prompt carries the dialog tone of that name. */
+export const promptTone = (variant: DialogOptions["variant"]): DialogTone | undefined =>
+  variant === "success" || variant === "danger" ? variant : undefined;
+
+export const DialogHeader = (props: { close: () => void; title?: string; icon?: string; tone?: DialogTone }): JSX.Element => (
   <header class="k2b-dialog__header">
-    <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+    <Show when={props.tone ? dialogToneIcon(props.tone) : props.icon}>
+      {(icon) => <i class={icon()} data-tone={props.tone} aria-hidden="true" />}
+    </Show>
     <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
-      {(title) => <h2>{title()}</h2>}
+      {(title) => (
+        <h2>
+          <Show when={props.tone}>{(tone) => <span class="k2b-sr-only">{dialogToneLabel(resolveUiMessages(), tone())} </span>}</Show>
+          {title()}
+        </h2>
+      )}
     </Show>
     <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
       <i class="ti ti-x" aria-hidden="true" />
@@ -45,7 +57,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
       if (!confirmationPhrase) {
         return (
           <div class="k2b-dialog__panel">
-            <DialogHeader title={options?.title} icon={options?.icon} close={() => close(false)} />
+            <DialogHeader title={options?.title} icon={options?.icon} tone={promptTone(options?.variant)} close={() => close(false)} />
             <div class="k2b-dialog__body">{content}</div>
             <footer class="k2b-dialog__actions">
               <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
@@ -70,7 +82,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
 
       return (
         <form class="k2b-dialog__panel" onSubmit={submit}>
-          <DialogHeader title={options?.title} icon={options?.icon} close={() => close(false)} />
+          <DialogHeader title={options?.title} icon={options?.icon} tone={promptTone(options?.variant)} close={() => close(false)} />
           <div class="k2b-dialog__body k2b-prompt-form">
             <div class="k2b-prompt-copy">{content}</div>
             <TextInput

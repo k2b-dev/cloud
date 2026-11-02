@@ -13,7 +13,7 @@ import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import { contentClass, DialogHeader, type PromptContent, panelClass, sharedPrompts } from "./prompt-confirm";
+import { contentClass, DialogHeader, type PromptContent, panelClass, promptTone, sharedPrompts } from "./prompt-confirm";
 import { resolvePromptMessages } from "./prompt-messages";
 
 export { DialogHeader } from "./prompt-confirm";
@@ -396,7 +396,12 @@ const PromptFormDialog = <T extends Record<string, FieldSchema>>(props: {
 
   return (
     <form class="k2b-dialog__panel" onSubmit={handleSubmit}>
-      <DialogHeader title={props.config.title} icon={props.config.icon} close={() => props.close(null)} />
+      <DialogHeader
+        title={props.config.title}
+        icon={props.config.icon}
+        tone={promptTone(props.config.variant)}
+        close={() => props.close(null)}
+      />
       <div class="k2b-dialog__body k2b-prompt-form">
         <For each={Object.entries(props.config.fields)}>
           {([key, field]) => {
@@ -701,7 +706,12 @@ export const prompts = Object.assign(sharedPrompts, {
     dialogCore.open<void>(
       (close) => (
         <div class="k2b-dialog__panel">
-          <DialogHeader title={options?.title || resolveUiMessages().info} icon={options?.icon} close={() => close()} />
+          <DialogHeader
+            title={options?.title || resolveUiMessages().info}
+            icon={options?.icon}
+            tone={promptTone(options?.variant)}
+            close={() => close()}
+          />
           <div class="k2b-dialog__body">{content}</div>
           <footer class="k2b-dialog__actions">
             <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close()}>
@@ -725,7 +735,6 @@ export const prompts = Object.assign(sharedPrompts, {
       ...options,
       variant: "success",
       title: options?.title ?? resolveUiMessages().success,
-      icon: options?.icon ?? "ti ti-check",
     }),
 
   prompt: promptText,
@@ -762,7 +771,7 @@ export const prompts = Object.assign(sharedPrompts, {
         return (
           <div class="k2b-dialog__panel k2b-dialog__stack">
             <Show when={options?.header !== false}>
-              <DialogHeader title={options?.title} icon={options?.icon} close={() => dismiss()} />
+              <DialogHeader title={options?.title} icon={options?.icon} tone={promptTone(options?.variant)} close={() => dismiss()} />
             </Show>
             <div class="k2b-dialog__content">{body}</div>
           </div>
@@ -784,7 +793,7 @@ export const prompts = Object.assign(sharedPrompts, {
     dialogCore.open(
       (close) => (
         <div class="k2b-dialog__panel">
-          <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon ?? "ti ti-alert-circle"} close={close} />
+          <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon} tone="danger" close={close} />
           <div class="k2b-dialog__body">{content}</div>
           <footer class="k2b-dialog__actions">
             <button type="button" class="k2b-button" onClick={() => close()}>

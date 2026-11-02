@@ -146,12 +146,39 @@
   }
 }
 
-.k2b-ui .k2b-dialog--danger {
-  border-color: color-mix(in srgb, var(--k2b-danger-500) 28%, var(--k2b-border-strong));
+/* A dialog tone draws a 2 px edge in its colour inside the frame: an outline
+ * with a negative offset covers the 1 px border and one pixel inside it, so
+ * the frame keeps its size and nothing in it moves, also where a phone frame
+ * has no border. Outlines paint over the content's own surface. Prompts set
+ * the tone on the frame (`k2b-dialog--<variant>`), `PanelDialog` and
+ * `BottomSheet` on their root (`data-tone`). The frame's last child is the top
+ * level of a dialog stack, so a toned level below never colours the one above. */
+.k2b-ui .k2b-dialog:is(.k2b-dialog--success, :has(> :last-child .k2b-panel-dialog[data-surface="contained"][data-tone="success"])),
+.k2b-ui .k2b-panel-dialog[data-surface="floating"][data-tone="success"] {
+  --k2b-dialog-tone: var(--k2b-edge-success);
 }
 
-.k2b-ui .k2b-dialog--success {
-  border-color: color-mix(in srgb, var(--k2b-success-500) 24%, var(--k2b-border-strong));
+.k2b-ui .k2b-dialog:is(.k2b-dialog--warning, :has(> :last-child .k2b-panel-dialog[data-surface="contained"][data-tone="warning"])),
+.k2b-ui .k2b-panel-dialog[data-surface="floating"][data-tone="warning"] {
+  --k2b-dialog-tone: var(--k2b-edge-warning);
+}
+
+.k2b-ui .k2b-dialog:is(.k2b-dialog--danger, :has(> :last-child .k2b-panel-dialog[data-surface="contained"][data-tone="danger"])),
+.k2b-ui .k2b-panel-dialog[data-surface="floating"][data-tone="danger"] {
+  --k2b-dialog-tone: var(--k2b-edge-danger);
+}
+
+/* Stronger than `.k2b-dialog:focus`, so a focused frame keeps its edge. */
+.k2b-ui
+  .k2b-dialog:not(.is-bare):is(
+    .k2b-dialog--success,
+    .k2b-dialog--warning,
+    .k2b-dialog--danger,
+    :has(> :last-child .k2b-panel-dialog[data-surface="contained"][data-tone])
+  ),
+.k2b-ui .k2b-panel-dialog[data-surface="floating"][data-tone] {
+  outline: var(--k2b-edge-width) solid var(--k2b-dialog-tone);
+  outline-offset: calc(-1 * var(--k2b-edge-width));
 }
 
 .k2b-ui .k2b-dialog.is-bare {
@@ -250,6 +277,19 @@
    behind an ellipsis. Only the title size differs. */
 .k2b-ui .k2b-dialog__header > i {
   color: var(--k2b-text-muted);
+}
+
+/* A toned prompt's icon is the tone's icon in its text colour. */
+.k2b-ui .k2b-dialog__header > i[data-tone="success"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-dialog__header > i[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-dialog__header > i[data-tone="danger"] {
+  color: var(--k2b-danger-text);
 }
 
 .k2b-ui .k2b-dialog__header h2 {
