@@ -49,6 +49,70 @@ describe("transactions that end with a value after a failed statement", () => {
     ).toEqual(failed);
   });
 
+  const withScratchTable = async (work: (name: string) => Promise<void>) => {
+    const name = `transaction_rollback_${crypto.randomUUID().replaceAll("-", "")}`;
+    await sql.unsafe(`CREATE TABLE ${name} (value text)`);
+    try {
+      await work(name);
+    } finally {
+      await sql.unsafe(`DROP TABLE ${name}`);
+    }
+  };
+  const valuesIn = async (name: string) =>
+    (await sql.unsafe<{ value: string }[]>(`SELECT value FROM ${name} ORDER BY value`)).map(({ value }) => value);
+
+  postgresTest("a transaction that does not roll back keeps its write", async () => {
+    await withScratchTable(async (name) => {
+      const value = await transactionWithRollback<string>(async (client) => {
+        await client.unsafe(`INSERT INTO ${name} VALUES ('kept')`);
+        return "committed";
+      });
+      expect(value).toBe("committed");
+      expect(await valuesIn(name)).toEqual(["kept"]);
+    });
+  });
+
+  postgresTest("a failed inner savepoint leaves the outer transaction usable", async () => {
+    await withScratchTable(async (name) => {
+      const value = await transactionWithRollback<string>(
+        async (client) => {
+          await client.unsafe(`INSERT INTO ${name} VALUES ('after')`);
+          return "committed";
+        },
+        (run) =>
+          sql.begin(async (tx) => {
+            await tx.unsafe(`INSERT INTO ${name} VALUES ('before')`);
+            await tx
+              .savepoint(async (inner) => {
+                await inner.unsafe(`INSERT INTO ${name} VALUES ('inner')`);
+                await inner`SELECT 1/0`;
+              })
+              .catch(() => undefined);
+            return run(tx);
+          }),
+      );
+      expect(value).toBe("committed");
+      expect(await valuesIn(name)).toEqual(["after", "before"]);
+    });
+  });
+
+  postgresTest("parallel calls each keep their own outcome", async () => {
+    await withScratchTable(async (name) => {
+      const outcomes = await Promise.all(
+        Array.from({ length: 6 }, (_, index) =>
+          transactionWithRollback<string>(async (client, rollback) => {
+            await client.unsafe(`INSERT INTO ${name} VALUES ('call-${index}')`);
+            if (index % 2 === 0) return `committed-${index}`;
+            await client`SELECT 1/0`.catch(() => undefined);
+            return rollback(`rolled-back-${index}`);
+          }),
+        ),
+      );
+      expect(outcomes).toEqual(["committed-0", "rolled-back-1", "committed-2", "rolled-back-3", "committed-4", "rolled-back-5"]);
+      expect(await valuesIn(name)).toEqual(["call-0", "call-2", "call-4"]);
+    });
+  });
+
   postgresTest("a document preview denied after a caught SQL error is unavailable", async () => {
     const preview = await prepareCustomAppDocumentPreview({
       baseId: testUuid(),
