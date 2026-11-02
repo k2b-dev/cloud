@@ -1,17 +1,21 @@
 import { type Context, Hono } from "hono";
 import { bindAppAccessRequest } from "../_internal/app-access-request";
-import { hasLocalResourceAppAccess } from "../_internal/app-access-resources";
-import { getApp } from "../_internal/registry";
+import { hasLocalResourceAppAccess, resourceAccessApp } from "../_internal/app-access-resources";
 import type { AppMeta } from "../contracts/app";
 import { type AuthContext, auth, type RequestAuthority } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
-import { canUseApp } from "../services/app-access";
+import { AppAccessUnavailableError, canUseApp } from "../services/app-access";
 import { resolveInvocationAuthority } from "../services/identity/invocation-actor";
 import { isInvocationJwtCandidate, verifyAppAccessProbe } from "../services/identity/invocation-token";
 
 /** Framework-only endpoint, mounted before the app gate to avoid recursive entry checks. */
 export const createResourceAppAccessRoutes = (app: Pick<AppMeta, "id" | "access">) => {
   const router = new Hono<AuthContext>();
+  router.onError((error, c) => {
+    if (!(error instanceof AppAccessUnavailableError)) throw error;
+    c.header("Cache-Control", "private, no-store");
+    return c.json({ code: error.code, app: error.app.id, message: error.message }, 503);
+  });
   if (app.access?.kind === "resources")
     router.post("/check", auth.readOnly, async (c) => {
       c.header("Cache-Control", "private, no-store");
@@ -42,7 +46,7 @@ export const createResourceAppAccessRoutes = (app: Pick<AppMeta, "id" | "access"
 };
 
 const answerCoreProbe = async (c: Context<AuthContext>, authority: RequestAuthority): Promise<Response> => {
-  const target = await getApp(c.req.param("appId") ?? "");
+  const target = await resourceAccessApp(c.req.param("appId") ?? "", c.req.raw);
   if (!target || target.access?.kind !== "resources") return c.body(null, 404);
   return c.body(null, (await canUseApp(bindAppAccessRequest(authority, c.req.raw), target)) ? 204 : 403);
 };

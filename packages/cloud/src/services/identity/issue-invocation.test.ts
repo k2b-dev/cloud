@@ -78,7 +78,7 @@ describe("checked invocation issuer", () => {
       ).rejects.toBe(reason);
       expect(signals).toEqual([deadline.signal]);
       expect(hasAnyRight).toHaveBeenCalledTimes(1);
-      expect(timeout).not.toHaveBeenCalled();
+      expect(timeout).toHaveBeenCalledWith(8_000);
       expect(denied).not.toHaveBeenCalled();
       expect(errors.mock.calls.filter(([source]) => source === "[app-access]")).toEqual([]);
       expect(sign).not.toHaveBeenCalled();

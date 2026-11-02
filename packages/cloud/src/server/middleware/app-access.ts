@@ -5,7 +5,7 @@ import { TrieRouter } from "hono/router/trie-router";
 import type { WSEvents } from "hono/ws";
 import { getApp } from "../../_internal/registry";
 import type { AppMeta } from "../../contracts/app";
-import { appAccessAuthority, canUseApp } from "../../services/app-access";
+import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../../services/app-access";
 import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { createLoginRedirectUrl } from "../../shared/redirect";
 import { type AuthContext, auth, loadAuthenticatedActor, type RequestAuthority } from "./auth";
@@ -276,6 +276,7 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
 export const requireAppAccess = (
   app: AccessApp,
   renderDenied: (c: Context<AuthContext>, message: string) => Promise<Response>,
+  renderUnavailable?: (c: Context<AuthContext>) => Promise<Response>,
 ): MiddlewareHandler<AuthContext> => {
   const isPublic = appPublicRouteMatcher(app);
   return createMiddleware<AuthContext>(async (c, next) => {
@@ -298,7 +299,16 @@ export const requireAppAccess = (
       }
       return browser ? c.redirect(createLoginRedirectUrl(c.req.url)) : c.json({ message: "Authentication required" }, 401);
     }
-    if (!(await canUseApp(resolved, app))) {
+    let allowed: boolean;
+    try {
+      allowed = await canUseApp(resolved, app);
+    } catch (error) {
+      if (!(error instanceof AppAccessUnavailableError)) throw error;
+      c.header("Cache-Control", "private, no-store");
+      c.header("Retry-After", "1");
+      return browser && renderUnavailable ? renderUnavailable(c) : c.json({ code: error.code, app: app.id, message: error.message }, 503);
+    }
+    if (!allowed) {
       recordAppAccessDenied(app.id);
       c.header("Cache-Control", "private, no-store");
       const body = appAccessDeniedBody(app);

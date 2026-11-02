@@ -35,6 +35,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
       routes: [],
       baseUrl: "http://notebooks.invalid",
       access: { kind: "signedIn" },
+      skills: { manifestHash: "a".repeat(64) },
     };
     const otherApp: AppRegistryEntry = {
       ...ownApp,

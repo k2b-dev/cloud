@@ -263,7 +263,14 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
     logger("ai:skills").warn("App registry unavailable; app Skills are unavailable");
     return [];
   });
-  const usable = [...(await usableAppIds(authority, apps))];
+  // Only publishers can own an app Skill. Do not probe unrelated resource apps
+  // for every Skill read, list or Assistant turn. Registry metadata is authoritative.
+  const usable = [
+    ...(await usableAppIds(
+      authority,
+      apps.filter((app) => app.skills),
+    )),
+  ];
   const resourceActor = subject?.actor;
   // App Skill brokers support independent machines, including resource bindings.
   // Keep identity matching and credential checks even for legacy undeclared apps.

@@ -236,3 +236,26 @@ When escalating, include:
 - the smallest reproducible action.
 
 Remove secrets and personal data.
+
+## Application access checks delay a page
+
+Resource-based app discovery has a four-second overall deadline, four probes
+in flight and a one-second limit per app. Entry into one app has an eight-second
+limit. A discovery timeout omits that app for the current request; entry failures
+return 503 and ask the caller to retry. Confirmed permission denials return 403.
+Access decisions are never cached between requests.
+
+Inspect `app-access-probe` logs for `Slow application access probe`. A probe
+that takes at least 250 ms records its app ID, hop (`app-core`, `core-owner`,
+or `owner`), total milliseconds, outcome, and phase timings for `coreOrigin`,
+`registry`, `signing`, `http`, `body`, or `adapter`, as applicable. The HTTP
+phase includes connection setup and the remote handler; it does not separate
+DNS, TLS, or remote authentication. Signing includes signer preparation and
+the signature itself. No credentials, resource IDs, request URLs, or upstream
+error payloads are logged.
+
+Each process emits at most one slow summary per app and hop per minute.
+`slowProbeCount` includes slow probes suppressed since the previous summary.
+`app-access` failures similarly include the app ID and a throttled
+`failureCount`. These counters describe observed probes, not unique users.
+Compare matching app IDs and hop timings across processes to locate the delay.
