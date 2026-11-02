@@ -75,7 +75,8 @@ const shells: Record<string, { edge: string; focus: string; text: string }> = {
   select: { edge: ".k2b-choice-trigger", focus: ".k2b-choice-trigger", text: ".k2b-choice-trigger__value" },
   combobox: { edge: ".k2b-combobox__input", focus: "input", text: "input" },
   tags: { edge: ".k2b-tags-input", focus: "input", text: ".k2b-tags-input__icon" },
-  date: { edge: ".k2b-date-trigger", focus: ".k2b-date-trigger", text: ".k2b-date-trigger__value" },
+  // A typed date field: the shared input shell with its text input.
+  date: { edge: ".k2b-input-shell", focus: "input", text: "input" },
   color: { edge: ".k2b-color-input__value", focus: ".k2b-color-input__value", text: "code" },
   compact: { edge: ".k2b-input-shell", focus: "input", text: "input" },
   "input-button": { edge: ".k2b-button", focus: ".k2b-button", text: ".k2b-button__label" },
