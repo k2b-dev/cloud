@@ -1,5 +1,6 @@
 ---
 title: Mail background database work
+navTitle: Mail database work
 section: Operations
 order: 1162
 description: Understand idle synchronization writes, freshness and runtime history retention.

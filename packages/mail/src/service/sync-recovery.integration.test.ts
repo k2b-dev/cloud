@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { connections, createSql, sql } from "@k2b/cloud";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { closePlatformClients, initializeClients } from "../../../cloud/src/runtime/clients";
+import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -493,9 +492,8 @@ suite("mail sync recovery", () => {
       const originalUrl = connections().database.url;
       const idleStatus = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
       try {
-        await closePlatformClients();
-        connections().database.url = counter.url;
-        await initializeClients();
+        process.env.DATABASE_URL = counter.url;
+        await initializeTestPlatform();
         await sql`TRUNCATE mail.idle_write_probe`;
         const beforeBatch = counter.count();
         const batch = await syncFolderBatch(fixture.folderId, async () => undefined);
@@ -508,9 +506,8 @@ suite("mail sync recovery", () => {
         expect(batchWrites).toEqual(writes);
       } finally {
         idleStatus.mockRestore();
-        await closePlatformClients();
-        connections().database.url = originalUrl;
-        await initializeClients();
+        process.env.DATABASE_URL = originalUrl;
+        await initializeTestPlatform();
       }
 
       // A changed provider cursor, error and mailbox health must still write immediately.
