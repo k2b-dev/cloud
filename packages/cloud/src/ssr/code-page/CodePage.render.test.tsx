@@ -110,8 +110,10 @@ describe("Code page states", () => {
     expect(page).toContain("an info@moebel-beispiel.de selbst");
     expect(page).toContain("Keine. Darum hat dieser Code keine Adresse, nur Automationen.");
     expect(page).toContain("Mit Gustav bearbeiten");
-    // No redundant visible title row: the sidebar marks "Code", the heading is for screen readers.
-    expect(html("overview")).toContain('<h1 class="sr-only">Code von info@moebel-beispiel.de</h1>');
+    // A place's Code is titled "Code" (mockup v17); screen readers hear whose Code it is.
+    expect(html("overview")).toContain(
+      '<h1 class="cloud-code__page-title"><span aria-hidden="true">Code</span><span class="sr-only">Code von info@moebel-beispiel.de</span></h1>',
+    );
   });
 
   test("a finished version that is still off offers switching on, names its new access and keeps the running version", () => {
@@ -270,6 +272,9 @@ describe("Code page states", () => {
     expect(text("empty")).toContain("info@moebel-beispiel.de hat noch keinen Code");
     expect(text("empty")).toContain("cld code pull mail/Mb4kd2");
     expect(text("empty")).toContain("Mit Gustav anlegen");
+    // The editor is named from the data, never as a fixed product.
+    expect(text("empty")).toContain("Gustav schreibt ihn mit dir.");
+    expect(text("empty")).not.toContain("Assistent");
     expect(text("no-access")).toContain("Diesen Code siehst du nicht");
     expect(text("error")).toContain("Der Code von info@moebel-beispiel.de konnte nicht geladen werden");
     expect(text("error")).toContain("info@moebel-beispiel.de und laufende Automationen sind nicht betroffen.");

@@ -82,7 +82,7 @@ type Fixture = {
 const fixtureCall = (page: Page, call: string) => page.evaluate(`window.${call}`);
 
 /** The component in a column of `width` px, in a viewport short enough that a far line must scroll. */
-const open = async (width: number, theme?: "dark"): Promise<Page> => {
+const open = async (width: number, theme?: "dark", shell = false): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width: Math.max(width + 48, 390), height: 700 }, reducedMotion: "reduce" });
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
@@ -91,7 +91,12 @@ const open = async (width: number, theme?: "dark"): Promise<Page> => {
     '<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>CodeDiff</title>' +
     `<style>${css}</style><style>${fonts}</style></head>` +
     `<body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}" style="margin:0;background:var(--k2b-surface)">` +
-    `<main style="padding:24px"><div id="app" style="width:${width}px"></div></main></body></html>`;
+    (shell
+      ? // An app shell that clips its overflow around a scrolling column, like a workspace level.
+        `<div id="shell" style="height:100vh;overflow:hidden"><header style="height:160px"></header>` +
+        `<main id="column" style="height:calc(100% - 160px);overflow:auto;padding:24px">` +
+        `<div style="height:400px"></div><div id="app" style="width:${width}px"></div></main><div style="height:200px"></div></div></body></html>`
+      : `<main style="padding:24px"><div id="app" style="width:${width}px"></div></main></body></html>`);
   await page.route(`${assets}page`, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: html }));
   await page.goto(`${assets}page`);
   await page.evaluate(() =>
@@ -158,6 +163,28 @@ describe("CodeDiff in a browser", () => {
         "index.ts",
         "reply.test.ts",
       ]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a mark centres its line in the nearest scrolling column and leaves the shell and the page alone", async () => {
+    const page = await open(560, undefined, true);
+    try {
+      await page.evaluate(() => (window as unknown as Fixture).setMark({ path: "reply.test.ts", line: 700 }));
+      await settled(page);
+      const measured = await page.evaluate(() => {
+        const column = document.getElementById("column")!;
+        const frame = column.getBoundingClientRect();
+        const row = document.querySelector('[data-marked="true"]')!.getBoundingClientRect();
+        return {
+          page: window.scrollY,
+          shell: document.getElementById("shell")!.scrollTop,
+          column: column.scrollTop > 0,
+          offCentre: Math.abs(row.top + row.height / 2 - (frame.top + column.clientTop + column.clientHeight / 2)),
+        };
+      });
+      expect({ ...measured, offCentre: measured.offCentre <= 1 }).toEqual({ page: 0, shell: 0, column: true, offCentre: true });
     } finally {
       await page.close();
     }

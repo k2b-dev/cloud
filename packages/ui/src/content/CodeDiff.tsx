@@ -12,6 +12,27 @@ export type CodeDiffLineKind = "same" | "add" | "del";
 
 export type CodeDiffLine = { kind: CodeDiffLineKind; text: string };
 
+/**
+ * Centres a row in its nearest vertical scroller and moves nothing else. `scrollIntoView` would also scroll every outer
+ * container, such as the app shell around a review, and cut its sidebar and list.
+ */
+const centerInScroller = (row: HTMLElement | null | undefined) => {
+  if (!row) return;
+  const view = row.ownerDocument.defaultView;
+  let scroller = row.parentElement;
+  while (scroller) {
+    const overflow = view?.getComputedStyle(scroller).overflowY ?? "";
+    if ((overflow === "auto" || overflow === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
+    scroller = scroller.parentElement;
+  }
+  const target = scroller ?? row.ownerDocument.scrollingElement;
+  if (!target) return;
+  const top = scroller ? scroller.getBoundingClientRect().top + scroller.clientTop : 0;
+  const height = scroller ? scroller.clientHeight : (view?.innerHeight ?? 0);
+  const box = row.getBoundingClientRect();
+  target.scrollBy?.({ top: box.top + box.height / 2 - (top + height / 2), behavior: "instant" });
+};
+
 export type CodeDiffFile = {
   /** Shown on the file tab and used to address the file. */
   path: string;
@@ -215,7 +236,7 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
         const needed = markPages();
         if (fold !== undefined) setOpened((current) => new Map(current).set(path, new Set([...(current.get(path) ?? []), fold])));
         if (needed > (pages().get(path) ?? 1)) setPages((current) => new Map(current).set(path, needed));
-        queueMicrotask(() => body?.querySelector(`[data-row="${target}"]`)?.scrollIntoView({ block: "center" }));
+        queueMicrotask(() => centerInScroller(body?.querySelector<HTMLElement>(`[data-row="${target}"]`)));
       },
     ),
   );

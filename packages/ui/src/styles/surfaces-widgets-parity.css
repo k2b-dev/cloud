@@ -390,6 +390,9 @@
   font-size: 0.875rem;
   line-height: 1.375rem;
 }
+/* A notice is never a control. A page moves focus to one (tabIndex -1) only to put a result where the person and
+   their screen reader are; a focus ring would mark it as something to press. Its own controls keep their rings. */
+.k2b-ui .k2b-notice-card:focus { outline: none; }
 .k2b-ui .k2b-notice-card[data-tone="info"] { --k2b-notice-ink: var(--k2b-info-text); --k2b-notice-surface: var(--k2b-info-surface); }
 .k2b-ui .k2b-notice-card[data-tone="success"] { --k2b-notice-ink: var(--k2b-success-text); --k2b-notice-surface: var(--k2b-success-surface); }
 .k2b-ui .k2b-notice-card[data-tone="warning"] { --k2b-notice-ink: var(--k2b-warning-text); --k2b-notice-surface: var(--k2b-warning-surface); }

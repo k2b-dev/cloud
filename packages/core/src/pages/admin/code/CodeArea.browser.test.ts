@@ -42,14 +42,49 @@ afterAll(async () => {
 
 const sidebarCode = () => page.locator('a[href="/admin/code"]').filter({ visible: true }).first();
 
+/** Every element that is scrolled away from its start: an approval must not move a scroller the person did not scroll. */
+const scrolled = () =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("*"))
+      .filter((element) => element.scrollTop > 0)
+      .map((element) => element.className.toString())
+      .concat(window.scrollY > 0 ? ["window"] : []),
+  );
+const inView = (text: string) =>
+  page.getByText(text, { exact: true }).evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= window.innerHeight;
+  });
+
+test("an approval opens at its header with the reasons in view", async () => {
+  for (const viewport of [
+    { width: 1280, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await goto(review, viewport);
+    await settled(page);
+    expect({ viewport: viewport.width, scrolled: await scrolled(), why: await inView("Warum du freigibst") }).toEqual({
+      viewport: viewport.width,
+      scrolled: [],
+      why: true,
+    });
+  }
+}, 20_000);
+
 test("approving sends the unchanged hash binding, shows the result and lowers the sidebar count", async () => {
   await goto(review);
   expect(await sidebarCode().innerText()).toContain("4");
   await page.getByText("„Bezieht Personen ein“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.").waitFor();
   await page.getByText("https://api.buchhaltung-beispiel.de", { exact: true }).waitFor();
+  // The person read down to the diff and decides in the footer.
+  await page.getByRole("heading", { name: "Code-Unterschied" }).scrollIntoViewIfNeeded();
   await page.getByRole("button", { name: "Version 3 freigeben" }).click();
   await page.getByText("Version 3 ist freigegeben.").waitFor();
   await page.waitForLoadState("load");
+  // The result opens in view, at the top of the reloaded review, and takes focus once.
+  await page.waitForFunction(() => document.activeElement?.id === "code-review-result");
+  expect(await scrolled()).toEqual([]);
+  expect(await inView("Version 3 ist freigegeben.")).toBe(true);
   await page.getByText("Zurücknehmen geht über „Pausieren“ am Code.", { exact: false }).waitFor();
   expect(fixture.requests).toEqual([{ path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: true } }]);
   await page.getByRole("link", { name: "Code öffnen" }).waitFor();
@@ -73,10 +108,18 @@ test("rejecting asks first and cancel changes nothing", async () => {
   expect(await sidebarCode().innerText()).toContain("3");
 }, 20_000);
 
-test("a line reference opens its file and marks the line in the Code difference", async () => {
-  await goto(review);
+test("a line reference opens its file and marks the line in the Code difference without moving the shell", async () => {
+  await goto(review, { width: 1280, height: 900 });
+  await settled(page);
   await page.getByRole("button", { name: "Zeile 11 in code.ts zeigen" }).click();
-  await page.locator('[data-marked="true"]').filter({ hasText: "spaces.space" }).waitFor();
+  const marked = page.locator('[data-marked="true"]').filter({ hasText: "spaces.space" });
+  await marked.waitFor();
+  await settled(page);
+  // Only the detail column scrolls to the line; the workspace around the list and the detail stays where it was.
+  const moved = await scrolled();
+  expect(moved.length).toBeGreaterThan(0);
+  expect(moved.filter((name) => !name.includes("k2b-app-workspace__level-body"))).toEqual([]);
+  expect(await marked.evaluate((row) => row.getBoundingClientRect().bottom <= window.innerHeight)).toBe(true);
 }, 20_000);
 
 test("an outdated, own or unloaded version cannot be approved and says why", async () => {

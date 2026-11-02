@@ -21,7 +21,7 @@ number of open Code-version approvals for the signed-in Cloud administrator.
 | Section | What it shows | Source of truth |
 | --- | --- | --- |
 | Approvals | Versions that wait for a Cloud administrator, and recently decided versions | [Code versions](/en/docs/platform/code-versions) |
-| Code in this Cloud | Every Code with owner, status and last run | [Code data model](/en/docs/platform/code-data-model) |
+| Code in this Cloud | Every Code with owner, status and last run. A resource owner shows the name its app's reader gives you, or its ID when you may not read it | [Code data model](/en/docs/platform/code-data-model) |
 | Policies › Default, Groups, Effective for …, History | The policy table, group rules, the resolved table for one person, and recent changes from the audit log | [Code policy](/en/docs/platform/code-policy) |
 | Operations › Cleanup | Cleanup jobs that wait for a target app | [Code lifecycle](/en/docs/platform/code-lifecycle) |
 | Operations › Limits | Registered Code execution and storage settings | [Code policy operations](/en/docs/operations/code-policy) |
@@ -56,7 +56,8 @@ The decision is bound to the exact version, source hash, bundle hash and
 comparison shown in the footer. Cloud rechecks all of them when you decide. A
 newer submission, a moved comparison or a Code difference that could not be
 loaded disables **Approve** and names the reason. Rejecting asks for
-confirmation. A decision cannot be withdrawn. To take an approval back, pause
+confirmation. After a decision the review reloads with its result at the top
+and moves focus there. A decision cannot be withdrawn. To take an approval back, pause
 the Code: Cloud administrators can pause and resume any Code from its detail
 under **Code in this Cloud**. Resuming checks the active version's approval
 under the current policy again.

@@ -23,8 +23,8 @@
   flex-direction: column;
   gap: 0.25rem;
 }
-/* Personal Code has no place beside the page, so its title leads. */
-.cloud-code__title {
+/* The page's h1: personal Code by its name, a place's Code as "Code". Row titles use `.cloud-code__title`. */
+.cloud-code__page-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -33,7 +33,7 @@
   font-size: 1.25rem;
   font-weight: 600;
 }
-.cloud-code__title .ti {
+.cloud-code__page-title .ti {
   color: var(--ui-app-accent-text);
 }
 .cloud-code__lead {

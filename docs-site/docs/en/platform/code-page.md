@@ -17,6 +17,8 @@ third-party application get the same page. It never names an application.
 
 ## What people see
 
+The page is titled **Code**; screen readers hear whose Code it is.
+
 - **Overview:** who the Code acts as, the running version and who switched it
   on, its automations (schedules and manual starts) with status, next run and last run,
   and its access as operation at target. A newer version that is ready but off
@@ -146,4 +148,5 @@ because the Code never gets access of its own. Gustav uses this at
 
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
 appears as **Edit with <panel>** on the page and on an empty page, with the icon
-the panel declares; the page names no application.
+the panel declares; the empty page also says that the panel writes the Code with
+the person. The page names no application.
