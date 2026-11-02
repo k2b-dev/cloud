@@ -22,15 +22,17 @@ test("production and dev templates wire only app key and Core origin into every 
         expect(service.environment.CLOUD_APP_KEY_FILE).toBeUndefined();
         continue;
       }
-      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(`/run/secrets/${id}.key`);
+      const target = id === "runner" ? "/run/runner-key/source" : `${id}.key`;
+      const mountedPath = (target: string) => (target.startsWith("/") ? target : `/run/secrets/${target}`);
+      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(mountedPath(target));
       expect(service.environment.CLOUD_CORE_INTERNAL_ORIGIN).toBe("http://app-core:3000");
       for (const key of ["DATABASE_URL", "REDIS_URL", "NATS_SERVERS", "APP_SECRET", "CLOUD_OAUTH_BROKER_SECRET"])
         expect(service.environment[key]).toBeUndefined();
-      expect(service.secrets).toEqual([{ source: `${id}-app-key`, target: `${id}.key` }]);
-      const mountedKey = service.secrets?.find((secret) => `/run/secrets/${secret.target}` === service.environment.CLOUD_APP_KEY_FILE);
+      expect(service.secrets).toEqual([{ source: `${id}-app-key`, target }]);
+      const mountedKey = service.secrets?.find((secret) => mountedPath(secret.target) === service.environment.CLOUD_APP_KEY_FILE);
       expect(mountedKey).toBeDefined();
       expect(parsed.secrets[mountedKey!.source]?.file).toBeDefined();
-      expect(service.depends_on?.["app-core"]).toEqual({ condition: "service_healthy" });
+      expect(service.depends_on?.["app-core"]).toEqual(id === "runner" ? undefined : { condition: "service_healthy" });
       expect(parsed.secrets[`${id}-app-key`]?.file).toBe(`./${development ? ".local/dev-app-keys" : "secrets"}/${id}.key`);
     }
   }

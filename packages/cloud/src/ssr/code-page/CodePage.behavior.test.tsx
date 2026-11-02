@@ -73,6 +73,11 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
         input: expectedInput,
       });
       expect(invoke.mock.calls[0]?.[0].input).toEqual(expectedInput);
+      const returnedData =
+        control === "run" || control === "rerun"
+          ? { runId: "00000000-0000-4000-8000-000000000099", duplicate: false }
+          : { state: "paused" };
+      expect(invoke.mock.calls[0]![1].safeParse(returnedData).success).toBe(true);
       expect(invoke.mock.calls[0]?.[0].idempotencyKey).toEqual(
         control === "rerun" ? `rerun:${data.state.run!.run.id}` : expect.any(String),
       );

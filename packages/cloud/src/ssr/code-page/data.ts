@@ -170,7 +170,7 @@ export const coreQuery = (capabilityId: string, input: unknown): CapabilityInvoc
   kind: "query",
   input,
 });
-/** Core wraps Code query results once more in `{ data }`. */
+/** Direct Core HTTP routes return `{ data }`; capability clients already validate their own envelope. */
 export const wrapped = <T extends z.ZodType>(schema: T) => z.object({ data: schema });
 
 export type CodePagePerson = { id: string; name: string };

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type CodePageCall, type CodePageInvoke, coreQuery, RunReadSchema, wrapped } from "./data";
+import { type CodePageCall, type CodePageInvoke, coreQuery, RunReadSchema } from "./data";
 
 /** Calls load in batches; "Show more calls" continues. Core returns one call per request. */
 export const CODE_PAGE_CALL_BATCH = 20;
@@ -57,20 +57,18 @@ export const loadCodeRunCalls = async (
   readable: boolean;
 } | null> => {
   const pages = await Promise.all(
-    Array.from({ length: size }, (_, index) =>
-      invoke(coreQuery("code.run.read", { codeId, runId, cursor: after + index }), wrapped(RunReadSchema)),
-    ),
+    Array.from({ length: size }, (_, index) => invoke(coreQuery("code.run.read", { codeId, runId, cursor: after + index }), RunReadSchema)),
   );
   const first = pages[0];
   if (!first?.ok) return null;
-  const contents = first.data.data.data.contents;
-  const run = first.data.data.data.run;
+  const contents = first.data.data.contents;
+  const run = first.data.data.run;
   if (!contents) return { run, calls: [], next: null, input: null, inputTooLarge: false, readable: false };
   const calls: CodePageCall[] = [];
   let next: number | null = null;
   for (const page of pages) {
-    if (!page.ok || !page.data.data.data.contents) break;
-    const call = page.data.data.data.contents.calls[0];
+    if (!page.ok || !page.data.data.contents) break;
+    const call = page.data.data.contents.calls[0];
     if (!call) break;
     calls.push({
       ordinal: call.ordinal,
@@ -82,7 +80,7 @@ export const loadCodeRunCalls = async (
       state: call.state,
       summary: summarizeCallResult(call.result),
     });
-    next = page.data.data.data.contents.nextCursor;
+    next = page.data.data.contents.nextCursor;
   }
   return { run, calls, next, input: contents.inputChunked ? null : contents.input, inputTooLarge: contents.inputChunked, readable: true };
 };

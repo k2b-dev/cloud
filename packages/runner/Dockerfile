@@ -1,6 +1,6 @@
 # syntax=ghcr.io/k2b-dev/mirror/docker/dockerfile:1.7-labs@sha256:b99fecfe00268a8b556fad7d9c37ee25d716ae08a5d7320e6d51c4dd83246894
 # workerd requires glibc; use the mirrored Debian Bun image, not Alpine.
-FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS build
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
 USER root
 WORKDIR /app
 RUN apt-get update && apt-get install --no-install-recommends -y gcc libc6-dev
@@ -30,7 +30,7 @@ RUN bun build packages/runner/src/index.ts --target=bun --outfile=/app/runner.js
     && bun -e 'import getExePath from "./packages/cloud/node_modules/typescript/lib/getExePath.js"; import {cp} from "node:fs/promises"; import {dirname} from "node:path"; await cp(dirname(getExePath()), "/app/compiler", {recursive:true});' \
     && chmod 755 /app/compiler/tsc
 
-FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS runtime
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS runtime
 WORKDIR /app
 COPY --from=build /app/runner.js /app/runner.js
 COPY --from=build /app/code-test.js /app/code-test.js

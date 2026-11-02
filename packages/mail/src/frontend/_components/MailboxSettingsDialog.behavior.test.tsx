@@ -107,7 +107,7 @@ describe("Mailbox settings dialog query lifecycle", () => {
     const adminContext: MailboxSettingsContext = {
       ...context,
       permission: "admin",
-      admin: { accessEntries: [], bindings: [], connections: [], folders: [], identities: [] },
+      admin: { accessEntries: [], code: null, messageCount: null, bindings: [], connections: [], folders: [], identities: [] },
     };
     const requests: { method: string; url: string; body: unknown }[] = [];
     globalThis.fetch = Object.assign(

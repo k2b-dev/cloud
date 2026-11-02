@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Context } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { capabilityResultSchema } from "../../contracts/capabilities";
 import { isAccessRefusal, loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
@@ -324,8 +325,9 @@ describe("Code page helpers", () => {
     const started = performance.now();
     expect(await loadCodeAttention(c, ref, { invoke: hanging, timeoutMs: 50 })).toBeNull();
     expect(performance.now() - started).toBeLessThan(1_000);
-    const answer = (items: Array<{ codeId: string; reasons: string[] }>) =>
-      (async () => ({ ok: true, data: { data: { data: { items } } } })) as unknown as CodePageInvoke;
+    const answer =
+      (items: Array<{ codeId: string; reasons: string[] }>): CodePageInvoke =>
+      async (_invocation, schema) => ({ ok: true, data: capabilityResultSchema(schema).parse({ data: { items } }) });
     expect(await loadCodeAttention(c, ref, { invoke: answer([]) })).toEqual({ visible: false, attention: false });
     expect(await loadCodeAttention(c, ref, { invoke: answer([{ codeId: "c_3mfa", reasons: [] }]) })).toEqual({
       visible: true,
@@ -430,40 +432,38 @@ describe("Code page helpers", () => {
   test("a failed run's detail reads further calls until its first action", async () => {
     const calls = [...Array.from({ length: 23 }, () => "query" as const), "action" as const, "query" as const];
     const reads: number[] = [];
-    const invoke = (async (invocation) => {
+    const invoke: CodePageInvoke = async (invocation, schema) => {
       const cursor = (invocation.input as { cursor: number }).cursor;
       reads.push(cursor);
       const kind = calls[cursor];
       return {
         ok: true,
-        data: {
+        data: capabilityResultSchema(schema).parse({
           data: {
-            data: {
-              run: {
-                id: "00000000-0000-4000-8000-000000000099",
-                versionId: "00000000-0000-4000-8000-000000000004",
-                trigger: "schedule",
-                entrypoint: "lieferungenEintragen",
-                state: "failed",
-                outcome: "failed",
-                createdAt: "2026-11-01T08:30:00.000Z",
-                startedAt: null,
-                endedAt: null,
-              },
-              contents: {
-                input: null,
-                inputChunked: false,
-                content: null,
-                calls: kind
-                  ? [{ ordinal: cursor + 1, kind, capability: "mail.conversation.list", call: null, result: null, state: "succeeded" }]
-                  : [],
-                nextCursor: cursor + 1 < calls.length ? cursor + 1 : null,
-              },
+            run: {
+              id: "00000000-0000-4000-8000-000000000099",
+              versionId: "00000000-0000-4000-8000-000000000004",
+              trigger: "schedule",
+              entrypoint: "lieferungenEintragen",
+              state: "failed",
+              outcome: "failed",
+              createdAt: "2026-11-01T08:30:00.000Z",
+              startedAt: null,
+              endedAt: null,
+            },
+            contents: {
+              input: null,
+              inputChunked: false,
+              content: null,
+              calls: kind
+                ? [{ ordinal: cursor + 1, kind, capability: "mail.conversation.list", call: null, result: null, state: "succeeded" }]
+                : [],
+              nextCursor: cursor + 1 < calls.length ? cursor + 1 : null,
             },
           },
-        },
+        }),
       };
-    }) as CodePageInvoke;
+    };
     const result = await loadCodeRunCallsForDetail(invoke, "c_3mfa", "00000000-0000-4000-8000-000000000099");
     expect(result?.calls.some((call) => call.kind === "action")).toBe(true);
     expect(Math.max(...reads)).toBeLessThan(40);

@@ -1079,7 +1079,10 @@ const queryDefinitions = {
       return !access.ok
         ? fail(err.forbidden("Mailbox access is required"))
         : ok({
-            data: mapMailbox({ ...mailbox.data, permission: access.data.permission }, scope.data.shortId),
+            data: {
+              ...mapMailbox({ ...mailbox.data, permission: access.data.permission }, scope.data.shortId),
+              view: { title: mailbox.data.name, permission: access.data.permission },
+            },
             summary: capabilitySummary(t.readMailbox({ name: mailbox.data.name })),
             refs: [mailboxRef(scope.data.shortId, mailbox.data.name, mailbox.data.description)],
             links: [openLink(mailboxHref(scope.data.shortId))],

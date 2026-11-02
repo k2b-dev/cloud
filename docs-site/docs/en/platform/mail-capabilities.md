@@ -5,7 +5,7 @@ section: Platform services
 order: 554
 description: Address Mail Actions at one mailbox and keep their contained resources in that mailbox.
 tags: [mail, capabilities, agents]
-updated: 2026-10-31
+updated: 2026-11-02
 ---
 
 # Mail capability targets
@@ -85,6 +85,10 @@ Spaces owns calendar events and Mail owns drafts and sending. Actions that
 cross those ownership boundaries remain subject to the calendar provider's
 `code: false` declaration for resource-owned Code. A Mail target grants no
 calendar access and does not authorize a send.
+
+`mailbox.read` includes the canonical `data.view` with the mailbox title and
+current effective permission. Core uses this view when checking whether a
+person may author or activate mailbox-owned Code.
 
 ## Code access at a mailbox
 

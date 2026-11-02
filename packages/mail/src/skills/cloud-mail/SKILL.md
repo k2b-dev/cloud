@@ -11,16 +11,16 @@ load-tools:
 
 # Work with Cloud Mail
 
-Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them. Load only the capabilities needed for the task. Reuse returned typed IDs and current revisions unchanged.
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them. Load only needed capabilities. Reuse returned typed IDs and current revisions unchanged.
 
 Mailbox-scoped tools take `mailbox`: reuse its public ID. All resources and batch members must belong to it. Readers and cross-mailbox search keep their inputs; `mail.draft.send.check` keeps `mailboxId`.
 
 ## Choose the shortest useful path
 
 - For "what needs my attention?", start with `mail.conversation.focus`. No mailbox lookup is needed. Its previews help select conversations; a preview is not a complete message.
-- For text lookup across mailboxes, start with `mail.search`. Within a known mailbox use `mail.conversation.list` or the structured filters of `mail.conversation.search`. Like the Mail lists, `mail.conversation.list` without `view` or `workStatus` lists open work only; pass `includeDone` when the task needs done or snoozed conversations too.
+- Across mailboxes, use `mail.search`. Within a mailbox use `mail.conversation.list` or the structured filters of `mail.conversation.search`. `mail.conversation.list` without `view` or `workStatus` lists open work only; pass `includeDone` to include done or snoozed conversations.
 - To choose a mailbox, use `mail.mailbox.browse`. Unread and needs-action counts count conversations, not individual messages. Report a returned problem when interpreting freshness. Use `mail.mailbox.read` for configuration or connection diagnosis, not before every mail task.
-- Use `mail.conversation.read` for collaboration context and the latest message window. Shared summary text may lag behind the messages. Follow `mail.message.list` pagination when the task needs the whole thread.
+- Use `mail.conversation.read` for collaboration context and the latest message window. Shared summary text may lag behind the messages. Paginate `mail.message.list` only when the whole thread is needed.
 - For plain message content use `mail.message.read-content`; follow nextOffset until null when full content matters. Use `mail.message.read` for the exact reply envelope and attachment metadata. Attachment text is available through `mail.attachment.read-content`, including status and continuation; a separate metadata read is unnecessary when text is already the goal.
 - Reuse current revisions and target IDs from a list for a specific requested status or assignment change. Read again when context is insufficient or a revision conflicts. Provider mark/move operations need the actual source folder; never guess it from a folder name.
 - Discover tag, member, reminder, comment, activity, delivery or unsubscribe capabilities only when the task needs them. An unsubscribe request or queued send is not confirmed delivery.

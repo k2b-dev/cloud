@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-10-31
+updated: 2026-11-02
 ---
 
 # Code policy operations
@@ -15,6 +15,12 @@ them in the same backup as Code versions and identity data. An existing policy
 is preserved on restart; an empty installation starts with the Admin preset.
 See [Code policy](/en/docs/platform/code-policy) for group precedence, revision
 conflicts and the policy capabilities.
+
+Mailbox-owned Code requires Mail's canonical `mailbox.read` response to include
+`data.view.title` and `data.view.permission`. Deploy the Mail update with Core
+before enabling this workflow. The shared Code page and attention indicator read
+the standard Core capability response envelope. No database migration or new
+setting is needed.
 
 ## Set execution budgets
 
