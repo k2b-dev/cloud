@@ -8,7 +8,9 @@ const flush = async () => {
   for (let n = 0; n < 50; n++) await Promise.resolve();
 };
 
-/** Model one heartbeat minute across N processes. Count operations, never elapsed time. */
+/** Model remote upsert notifications and local reads across N processes.
+ * Own touch/reconcile requests are counted separately in the real-NATS guard.
+ */
 const idleMinute = async (apps: number) => {
   type Value = { appId: string; content: string };
   let revision = 0;
@@ -108,7 +110,7 @@ const idleMinute = async (apps: number) => {
   }
 };
 
-test("5 and 20 apps: idle renewals never rebuild content or read NATS snapshots", async () => {
+test("5 and 20 apps: remote upserts never rebuild content or read NATS snapshots", async () => {
   const small = await idleMinute(5);
   const large = await idleMinute(20);
   console.info("registry idle operation counts", JSON.stringify([small, large]));

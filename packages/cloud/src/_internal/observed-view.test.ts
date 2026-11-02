@@ -350,3 +350,84 @@ test("local values and their JSON wire representation share one content revision
     await f.stop();
   }
 });
+
+test("a delayed own acknowledgement cannot resurrect a key after a newer remote deletion", async () => {
+  const f = observedFixture();
+  try {
+    await f.view.values();
+    await f.send({ type: "delete", key: "apps/demo", revision: "3" });
+    f.view.accept(f.entry("2", "Delayed grant"));
+    expect(await f.view.get("apps/demo")).toBeUndefined();
+    expect(f.snapshot).toHaveBeenCalledTimes(1);
+    await f.send({ type: "upsert", entry: f.entry("4", "New lease"), revision: "4" });
+    expect((await f.view.get("apps/demo"))?.title).toBe("New lease");
+  } finally {
+    await f.stop();
+  }
+});
+
+test("a silently stalled consumer recovers revoked access and renewed foreign leases after an own touch", async () => {
+  const f = observedFixture();
+  try {
+    const foreign = { ...f.entry("2", "Foreign"), key: "apps/foreign" };
+    f.store([foreign, f.entry("1")]);
+    await f.view.values();
+    f.setTime(epoch + 60_000);
+    const revoked = { ...foreign, revision: "4", updatedAt: new Date(epoch + 60_000), value: { ...foreign.value, nested: { access: [] } } };
+    // Writes succeed, but the consumer silently receives none of these events.
+    f.store([f.entry("5"), revoked]);
+    await f.view.reconcile("apps/demo");
+    expect((await f.view.get("apps/foreign"))?.nested.access).toEqual(["signedIn"]);
+    f.setTime(epoch + 100_000);
+    f.store([f.entry("6"), revoked]);
+    await f.view.reconcile("apps/demo"); // cannot postpone the first coverage deadline
+    f.setTime(epoch + 120_000);
+    f.expire();
+    f.snapshot.mockRejectedValueOnce(new Error("recovery unavailable"));
+    await expect(f.view.values()).rejects.toThrow("recovery unavailable");
+    expect((await f.view.get("apps/foreign"))?.nested.access).toEqual([]);
+    expect((await f.view.entries()).find((entry) => entry.key === "apps/foreign")?.revision).toBe("4");
+    f.setTime(epoch + 180_000);
+    f.expire();
+    expect((await f.view.get("apps/foreign"))?.title).toBe("Foreign");
+    expect(f.snapshot).toHaveBeenCalledTimes(5); // startup, 2 touches, failed recovery, recovery
+  } finally {
+    await f.stop();
+  }
+});
+
+test("watch delivery cancels the coverage deadline even if the bucket watermark includes another prefix", async () => {
+  const f = observedFixture();
+  try {
+    await f.view.values();
+    f.setTime(epoch + 60_000);
+    const renewed = f.entry("2");
+    f.snapshot.mockResolvedValueOnce({ revision: "3", entries: [renewed] });
+    await f.view.reconcile("apps/demo");
+    await f.send({ type: "upsert", entry: renewed, revision: "2" });
+    f.setTime(epoch + 120_000);
+    f.expire();
+    expect((await f.view.get("apps/demo"))?.title).toBe("Demo");
+    expect(f.snapshot).toHaveBeenCalledTimes(2);
+  } finally {
+    await f.stop();
+  }
+});
+
+test("an uncovered own touch recovers before an earlier foreign lease expiry", async () => {
+  const f = observedFixture();
+  try {
+    const foreign = { ...f.entry("2", "Foreign"), key: "apps/foreign" };
+    f.store([foreign, f.entry("1")]);
+    await f.view.values();
+    f.setTime(epoch + 150_000);
+    f.store([f.entry("4"), { ...foreign, revision: "3", updatedAt: new Date(epoch + 150_000) }]);
+    await f.view.reconcile("apps/demo");
+    f.setTime(epoch + 180_000); // foreign's old lease ends before the coverage deadline
+    f.expire();
+    expect((await f.view.get("apps/foreign"))?.title).toBe("Foreign");
+    expect(f.snapshot).toHaveBeenCalledTimes(3);
+  } finally {
+    await f.stop();
+  }
+});

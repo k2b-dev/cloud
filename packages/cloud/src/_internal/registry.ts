@@ -282,7 +282,10 @@ export const requireUsableAppRegistry = (snapshot: AppRegistrySnapshot): AppRegi
 /**
  * List all currently live (TTL-valid) app registry entries.
  */
-export const listApps = async (): Promise<AppRegistryEntry[]> => {
+export const listApps = async (): Promise<AppRegistryEntry[]> => requireUsableAppRegistry(await readAppRegistrySnapshot());
+
+/** Stable payload identities for joins; public lists retain their lease metadata. */
+const listObservedApps = async (): Promise<AppRegistryEntry[]> => {
   const values = await observedApps().values();
   const apps = values.flatMap((value) => (value.app ? [value.app] : []));
   if (!apps.length && values.some((value) => value.issue))
@@ -529,10 +532,15 @@ const resolveObservedCapability = (key: string, record: CapabilityRegistryRecord
   return null;
 };
 export const listCapabilities = async (appSnapshot?: AppRegistryEntry[]): Promise<CapabilityRegistryEntry[]> => {
-  const [entries, apps] = await Promise.all([observedCapabilities().entries(), appSnapshot ?? listApps()]);
+  const [entries, apps] = await Promise.all([observedCapabilities().entries(), appSnapshot ?? listObservedApps()]);
   const byId = new Map(apps.map((app) => [app.id, app]));
   return entries.flatMap((entry) => {
-    const capability = resolveObservedCapability(entry.key, entry.value, byId.get(entry.key.slice("capabilities/".length)));
+    const app = byId.get(entry.key.slice("capabilities/".length));
+    // Supplied snapshots belong to the caller and may change between calls.
+    // Never freeze them or cache joins under their mutable object identity.
+    const capability = appSnapshot
+      ? freezeObserved(structuredClone(resolveLiveCapabilityRegistryEntry(entry.key, entry.value, app)))
+      : resolveObservedCapability(entry.key, entry.value, app);
     return capability ? [capability] : [];
   });
 };

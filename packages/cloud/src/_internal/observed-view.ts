@@ -50,9 +50,29 @@ export const createObservedView = <T, V>({
   let cancelExpiry: (() => void) | undefined;
   let nextExpiry = Infinity;
   let coveredRevision = 0n;
+  let coverageDue: { revision: bigint; at: number } | undefined;
+
+  // A local acknowledgement can beat delivery. Give the ordered watch one
+  // heartbeat interval (TTL / 3) to cover it, without extending that deadline
+  // on subsequent writes. A silent consumer must not stay healthy forever.
+  const requireCoverage = (revision: bigint) => {
+    if (revision <= coveredRevision || coverageDue) return;
+    coverageDue = { revision, at: now() + ttlMs / 3 };
+  };
+
+  const cover = (revision: bigint) => {
+    coveredRevision = revision;
+    if (coverageDue && coveredRevision >= coverageDue.revision) coverageDue = undefined;
+  };
 
   const expire = () => {
     if (now() < nextExpiry) return false;
+    // Verify the view before expiring foreign leases when our own writes prove
+    // that the watch has fallen behind. Recovery also picks up revoked access.
+    if (coverageDue && coveredRevision < coverageDue.revision) {
+      invalidate();
+      return true;
+    }
     let removed = false;
     for (const [key, entry] of entries) {
       if (entry.expiresAt <= now()) {
@@ -67,8 +87,9 @@ export const createObservedView = <T, V>({
     cancelExpiry?.();
     cancelExpiry = undefined;
     nextExpiry = Infinity;
-    if (!healthy || signal.aborted || !entries.size) return;
-    nextExpiry = Math.min(...[...entries.values()].map((entry) => entry.expiresAt));
+    if (!healthy || signal.aborted) return;
+    nextExpiry = Math.min(coverageDue?.at ?? Infinity, ...[...entries.values()].map((entry) => entry.expiresAt));
+    if (nextExpiry === Infinity) return;
     cancelExpiry = schedule(
       () => {
         expire();
@@ -79,6 +100,7 @@ export const createObservedView = <T, V>({
   };
   const apply = (entry: EphemeralEntry<T>, authoritative = false): Change | undefined => {
     const current = entries.get(entry.key);
+    if (!authoritative && coveredRevision >= BigInt(entry.revision)) return;
     if (!authoritative && (fences.get(entry.key) ?? -1n) >= BigInt(entry.revision)) return;
     if (!authoritative && current && BigInt(current.source.revision) >= BigInt(entry.revision)) return;
     const expiresAt = entry.updatedAt.getTime() + ttlMs;
@@ -96,6 +118,7 @@ export const createObservedView = <T, V>({
   };
   const invalidate = () => {
     healthy = false;
+    coverageDue = undefined;
     generation++;
     controller?.abort();
     cancelExpiry?.();
@@ -118,6 +141,7 @@ export const createObservedView = <T, V>({
     if (generation !== ownGeneration) throw new Error("Registry changed connection during snapshot; retry the read");
     fences.clear();
     coveredRevision = BigInt(snapshot.revision);
+    coverageDue = undefined;
     const present = new Set(snapshot.entries.map((entry) => entry.key));
     for (const key of entries.keys()) if (!present.has(key)) entries.delete(key);
     // A recreated bucket can restart its revisions. Snapshot is authoritative.
@@ -141,7 +165,7 @@ export const createObservedView = <T, V>({
             )
               change = entries.delete(event.key) ? "content" : undefined;
           }
-          coveredRevision = BigInt(event.revision);
+          cover(BigInt(event.revision));
           for (const [key, revision] of fences) if (revision <= BigInt(event.revision)) fences.delete(key);
           armExpiry();
           if (change) changed(change);
@@ -157,7 +181,7 @@ export const createObservedView = <T, V>({
       }
     })();
   };
-  const ready = async () => {
+  const ready = async (): Promise<void> => {
     signal.throwIfAborted();
     if (!healthy) {
       refreshing ??= refresh().finally(() => {
@@ -166,7 +190,10 @@ export const createObservedView = <T, V>({
       await refreshing;
       if (!healthy) throw new Error("Registry watch lost during refresh; retry the read");
     }
-    if (expire()) armExpiry();
+    if (expire()) {
+      armExpiry();
+      if (!healthy) await ready();
+    }
   };
   return {
     invalidate,
@@ -178,6 +205,7 @@ export const createObservedView = <T, V>({
         return;
       }
       const change = apply(entry);
+      requireCoverage(BigInt(entry.revision));
       armExpiry();
       if (change) changed(change);
     },
@@ -198,7 +226,10 @@ export const createObservedView = <T, V>({
       if (coveredRevision > revision || (fences.get(key) ?? -1n) > revision || (current && BigInt(current.source.revision) > revision))
         return;
       const change = entry ? apply(entry) : entries.delete(key) ? "content" : undefined;
-      fences.set(key, BigInt(snapshot.revision));
+      fences.set(key, revision);
+      // The bucket watermark may include keys outside this watch's prefix.
+      // The touched key's revision is a sufficient ordered-delivery barrier.
+      requireCoverage(entry ? BigInt(entry.revision) : revision);
       armExpiry();
       if (change) changed(change);
     },

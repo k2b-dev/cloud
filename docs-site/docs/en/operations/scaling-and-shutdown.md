@@ -188,10 +188,21 @@ the 180-second lease locally, so a missing expiry event cannot keep an app live.
 A lost watch, a resync request, or a NATS disconnect invalidates the view. The
 next read shares one fresh NATS snapshot with concurrent readers and reopens
 the watch. A failed refresh fails the read instead of serving the previous
-view. Registry records do not cache permission decisions: SQL grants and
+view. A successful local write also checks watch progress: if the watch does
+not cover its acknowledged revision within one heartbeat interval (60 seconds),
+the view is invalidated and the next read recovers it. Subsequent writes cannot
+postpone that deadline. Foreign leases due earlier trigger recovery first.
+Registry records do not cache permission decisions: SQL grants and
 owner resource checks still run for each request. Discovery allows three
 seconds per owner within a shared six-second budget, below the ten-second
 request idle timeout. No migration, new service, or operator setting is required.
+
+Treat registry content returned by `getApp`, `listApps`, `getCapability`, and
+`listCapabilities` as read-only. `getApp()` and capability entries are deeply
+frozen. `listApps()` retains flat copies with frozen nested content and the
+current `updatedAt`, `expiresAt`, and `version` lease metadata. Use `structuredClone()`
+on a result when you need a mutable local copy. Passing your own app snapshot
+to `listCapabilities(snapshot)` does not freeze or modify that input.
 
 Every reader uses one logical application entry and one capability manifest per
 application ID. Use the same stable `baseUrl` for every replica.
