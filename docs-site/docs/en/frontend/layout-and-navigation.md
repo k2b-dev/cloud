@@ -688,12 +688,20 @@ scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
 when the page owns its content insets; it replaces the default shell padding.
 
+The admin sidebar shows the overview, then **Set up** (base settings, storage,
+sign-in, outgoing mail, email templates, announcements, AI), then
+**Operations** (apps, app bar, Observability, People), then app-owned groups,
+and last **Settings per app** with one entry per app's `adminHref`.
+
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` or `section: "observability"` to contribute
 its links to that shared area instead of creating a separate navigation group.
-This placement is available to any application and does not grant access; its
-routes and services still enforce their own permissions. Omit `section` for an
-independent group.
+`section: "people"` places the page of an application that manages accounts
+and groups under Operations; its link may point to the application's own page
+outside `/admin`, so the page stays available to every role the application
+admits. This placement is available to any application and does not grant
+access; its routes and services still enforce their own permissions. Omit
+`section` for an independent group.
 
 ## Build an administration area
 
