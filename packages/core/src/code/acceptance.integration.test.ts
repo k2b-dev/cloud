@@ -3,16 +3,13 @@ import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
-import {
-  type CapabilityExecutionContext,
-  capabilityResultSchema,
-  NormalizedCapabilityCallSchema,
-  type User,
-} from "@k2b/cloud/contracts";
-import { accounts, coreSettings } from "@k2b/cloud/services";
+import { type CapabilityExecutionContext, capabilityResultSchema, NormalizedCapabilityCallSchema, type User } from "@k2b/cloud/contracts";
+import { type AuthContext, userFromActor } from "@k2b/cloud/server";
+import { accounts, coreSettings, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
 import { createSync, type Sync, type Worker } from "@k2b/sync";
+import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
@@ -20,6 +17,8 @@ import {
   type AcceptanceProvider,
   AcceptanceProviderSchema,
   acceptanceProvider,
+  loadCodePage,
+  targetKey,
 } from "../../../../scripts/fixtures/code-acceptance-provider";
 import {
   codeAccessProofs,
@@ -29,6 +28,8 @@ import {
 } from "../../../../scripts/fixtures/code-platform";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
+import { createCodeActivationRoutes } from "../api/code-activation";
+import { aiCapabilities } from "../capabilities";
 import { acceptanceChecker, acceptanceDispatch, acceptanceRunners } from "./acceptance.test-fixture";
 import { type CodeContext, codeAccountDisplayName } from "./access";
 import { activateCodeVersion, processCodeActivation, readCodeActivation } from "./activation";
@@ -221,19 +222,21 @@ suiteFor(
       ok: true,
       data: providers.has(id) ? app(id) : null,
     }));
+    const coreProvider = acceptanceProvider("core", aiCapabilities);
     const reader = spyOn(catalog, "invokeCapabilityWithDataSchema").mockImplementation(async (input, schema, caller) => {
-      if (!caller.authority) throw new Error("Reader needs authority");
-      const provider = providers.get(input.appId)!;
+      const authority = caller.authority ?? (caller.cookie === "session_token=c25-page-lea" ? author.authority : null);
+      if (!authority) throw new Error("Reader needs authority");
+      const provider = input.appId === "core" ? coreProvider : providers.get(input.appId)!;
       const response = await provider.invoke({
         kind: "query",
         localId: input.capabilityId,
         input: input.input,
         expectedSchemaHash: provider.manifest.queries.find((op) => op.localId === input.capabilityId)!.schemaHash,
         context: {
-          authority: caller.authority,
-          actor: caller.authority.actor,
-          accessSubject: caller.authority.accessSubject,
-          user: caller.authority.actor.kind === "user" ? caller.authority.actor.user : null,
+          authority,
+          actor: authority.actor,
+          accessSubject: authority.accessSubject,
+          user: userFromActor(authority.actor),
           origin: "app",
           locale: "de",
           requestId: "c25-reader",
@@ -270,7 +273,9 @@ suiteFor(
     );
     restores.push(() => inspectionKeys.mockRestore());
     transport = {
-      set: async ({ item, dryRun, ...proof }) => {
+      set: async ({ item, dryRun, ...proof }, caller) => {
+        const activatingUser = userFromActor(caller.authority.actor);
+        if (!activatingUser) throw new Error("Activation needs a person");
         const appId = item.target.type.split(".")[0]!;
         const token = await signCodeAccessProof(
           appId,
@@ -279,7 +284,7 @@ suiteFor(
         );
         return providers.get(appId)!.set({
           input: { proof: token, target: item.target, operations: item.operations, dryRun },
-          context: capabilityContext(ben),
+          context: capabilityContext(activatingUser),
           dependencies: {
             db: sql,
             verifyProof: (value: string, expected: Parameters<typeof verifyCodeAccessProof>[1]) =>
@@ -318,7 +323,7 @@ suiteFor(
     restores.push(() => ownerTitle.mockRestore());
     connection = await connectTestNats();
     sync = createSync({ connection, namespace: testSyncNamespace("c25"), application: "core", defaults: { replicas: 1 } });
-    const queue = sync.queue<CodeRunWakeup>({ id: "runs", retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 } });
+    const queue = sync.queue<CodeRunWakeup>({ id: "runs", dedupeWindowMs: 60_000, retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 } });
     await sync.ready();
     runOutbox = createCodeRunOutbox(() => queue);
     const keyFixture = APP_KEY_FIXTURES[0]!;
@@ -477,6 +482,15 @@ suiteFor(
     );
     // Publish the schedule through the real Sync scheduler. The permanent run request is a single delivery.
     const scheduler = sync.scheduler({ id: "acceptance" });
+    const createSchedule = scheduler.create.bind(scheduler);
+    const registration = spyOn(scheduler, "create").mockImplementation((definition) =>
+      createSchedule({
+        ...definition,
+        // Only this suite's runNow deliveries enter Core; a real Monday cron cannot add a third run.
+        process: (tick) => (tick.trigger === "manual" ? definition.process(tick) : Promise.resolve()),
+      }),
+    );
+    restores.push(() => registration.mockRestore());
     await createCodeScheduleReconciler(scheduler)();
     fleet.synchronizeNextPair();
     worker = await scheduler.process();
@@ -490,7 +504,7 @@ suiteFor(
     expect(runs).toHaveLength(2);
     const results = await Promise.all(runs.map((run) => completed(run.code_id, run.id)));
     for (const run of results) {
-      expect(run.run.state).toBe("succeeded");
+      expect({ run: run.run, calls: run.calls }).toMatchObject({ run: { state: "succeeded" } });
       expect(run.calls).toHaveLength(1);
       expect(run.calls[0]?.state).toBe("succeeded");
       expect(run.calls[0]?.ordinal).toBe(1);
@@ -500,7 +514,7 @@ suiteFor(
     const scheduledRunIds = new Set(runs.map((run) => run.id));
     // One occupied slot per supervisor plus the barrier proves both accepted this scheduled pair.
     expect(fleet.engines.map((engine) => engine.executed.filter((id) => scheduledRunIds.has(id)).length)).toEqual([1, 1]);
-    expect(await sql`SELECT instance_id FROM code.runner_instances ORDER BY instance_id`).toEqual(
+    expect(await sql<{ instance_id: string }[]>`SELECT instance_id FROM code.runner_instances ORDER BY instance_id`).toEqual(
       fleet.runners.map((runner) => ({ instance_id: runner.instanceId })).sort((a, b) => a.instance_id.localeCompare(b.instance_id)),
     );
     const repeat = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-repeat" }, author);
@@ -546,7 +560,78 @@ suiteFor(
     const failed = await completed(codeId, revoked.run.runId);
     expect(failed.run.state).toBe("failed");
     expect(failed.calls[0]).toMatchObject({ state: "failed", result: { ok: false, error: { code: "not_found" } } });
-    expect(codePageMessages.resolve(["de"]).t.removed).toBe("Zugriff entfernt");
+    // Load the real page model through Core queries and the activation access route.
+    const pageApp = new Hono<AuthContext>();
+    pageApp.use("*", async (c, next) => {
+      c.set("actor", author.authority.actor);
+      c.set("user", lea);
+      c.set("accessSubject", author.authority.accessSubject);
+      c.set("credentialKind", "session");
+      c.set("runtime", { apps: [] });
+      await next();
+    });
+    pageApp.route("/api/code", createCodeActivationRoutes());
+    pageApp.get("/page", async (c) =>
+      c.json(
+        await loadCodePage(c, {
+          owner: { ref: mailboxRef, title: "rechnung@beispiel.test" },
+          href: "/page",
+          canManageOwner: false,
+        }),
+      ),
+    );
+    // Supply the browser credential at the authentication seam; the route still resolves its own authority.
+    const pageSession = spyOn(session, "authenticateRequest").mockImplementation(async (_c, token) =>
+      token === "c25-page-lea"
+        ? {
+            user: lea,
+            data: { userId: lea.id, sid: crypto.randomUUID(), authEpoch: 0, expiresAt: "2099-01-01T00:00:00.000Z", kind: "web" },
+          }
+        : null,
+    );
+    const pageFetch = spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const request = new Request(url, init);
+      if (new URL(request.url).pathname !== "/api/code/access") throw new Error("Unexpected page transport");
+      return pageApp.fetch(request);
+    });
+    try {
+      await coreSettings.set("app.url", issuer);
+      const response = await pageApp.request("/page", { headers: { cookie: "session_token=c25-page-lea" } });
+      const pageValue: unknown = await response.json();
+      const page = z
+        .object({
+          state: z.object({
+            kind: z.literal("ready"),
+            code: z.object({ id: z.string() }),
+            access: z.array(z.object({ target: z.object({ ref: z.object({ type: z.string(), id: z.string() }) }), state: z.string() })),
+            automations: z.array(
+              z.object({
+                entrypoint: z.string(),
+                missingTargets: z.array(z.string()),
+                missingProven: z.boolean(),
+                lastRun: z.object({ id: z.string(), state: z.string() }).nullable(),
+              }),
+            ),
+          }),
+        })
+        .parse(pageValue);
+      expect(page.state.code.id).toBe(codeId);
+      expect(page.state.access).toContainEqual(
+        expect.objectContaining({ target: expect.objectContaining({ ref: space }), state: "removed" }),
+      );
+      expect(page.state.automations).toContainEqual(
+        expect.objectContaining({
+          entrypoint: "monday",
+          missingTargets: [targetKey(space)],
+          missingProven: true,
+          lastRun: expect.objectContaining({ id: revoked.run.runId, state: "failed" }),
+        }),
+      );
+      expect(codePageMessages.resolve(["de"]).t.removed).toBe("Zugriff entfernt");
+    } finally {
+      pageFetch.mockRestore();
+      pageSession.mockRestore();
+    }
     expect(await sql<{ generation: number }[]>`SELECT generation FROM code.runs WHERE id=${revoked.run.runId}::uuid`).toEqual([
       { generation: 1 },
     ]);
@@ -566,6 +651,11 @@ suiteFor(
     ])
       expect(JSON.stringify(value)).not.toContain(secretValue);
 
+    // Restore access by an explicit manager activation so deletion must remove a live target share.
+    await activate(codeId, updateVersion.submission.version.id, proof(manager));
+    expect(await spaces.permission({ spaceId: internalSpaceId, subject: { type: "service_account", serviceAccountId: account } })).toBe(
+      "write",
+    );
     expect((await deleteMailbox(manager, mailboxId)).ok).toBe(true);
     for (const row of await codeOwnerDeletedOutbox.claim()) await codeOwnerDeletedOutbox.dispatch(row);
     expect(await findCode(codeId)).toMatchObject({ state: "deleting" });
@@ -590,6 +680,10 @@ suiteFor(
     }
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${account}::uuid`).toHaveLength(0);
     expect(await sql`SELECT id FROM auth.access WHERE service_account_id=${account}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM capabilities.code_access_grants WHERE principal=${account}::uuid AND NOT revoked`).toHaveLength(0);
+    expect(await spaces.accessList(internalSpaceId)).not.toContainEqual(
+      expect.objectContaining({ principal: { type: "service_account", serviceAccountId: account } }),
+    );
     expect(await transport.list("spaces", account)).toEqual([]);
     expect(await transport.list("mail", account)).toEqual([]);
     expect(await findCode(personalId)).not.toBeNull();

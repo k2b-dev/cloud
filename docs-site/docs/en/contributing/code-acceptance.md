@@ -15,7 +15,7 @@ acceptance expectations for Code Phase 0+1. Run it through the repository
 runner with the test infrastructure described in [Testing](/en/docs/contributing/testing):
 
 ```sh
-bun run test --integration --filter packages/core/src/code/acceptance.integration.test.ts
+bun run test --integration --filter src/code/acceptance.integration
 ```
 
 The suite requires `CLOUD_TEST_DATABASE_URL`, `CLOUD_TEST_NATS_SERVERS` and
@@ -27,7 +27,9 @@ The story covers Lea checking resource Code for `rechnung@beispiel.test`,
 Ben activating it, a Monday schedule creating a Space task, and personal Code
 creating a mail draft. It asserts the permission preview, ordered calls,
 idempotency, an update-only version, access removal and cleanup after mailbox
-deletion. The fixture uses `Sp4kd2` for the conceptual `sp_4kd2`, following
+deletion, including a live target grant restored by an explicit manager activation
+before deletion. Removed access is attributed through the real Code page model
+and failed call history. The fixture uses `Sp4kd2` for the conceptual `sp_4kd2`, following
 Spaces' six-character public ID contract.
 
 Additional assertions cover a foreign Space shared with all signed-in people,
@@ -40,7 +42,8 @@ asserts rejection before approval, the declared origin and policy row in the
 saved version, and the exact HTTP grant in the activated mandate.
 
 Two production Runner supervisors share Core's real Postgres and NATS
-coordination. Each supervisor has one slot. A barrier and per-supervisor run
+coordination. The suite delivers controlled `runNow` ticks and ignores unrelated
+wall-clock cron arrivals. Each supervisor has one slot. A barrier and per-supervisor run
 IDs prove that each executes one of the two scheduled runs. The same two
 supervisors remain running for the repeat, update, revoked-access and HTTP
 attempts. The checker runs through its native isolation launcher. Only fixture source is imported

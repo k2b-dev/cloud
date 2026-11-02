@@ -52,7 +52,11 @@ class FixtureEngine implements RunnerEngine {
     if (!loaded) throw new Error("Missing acceptance bundle");
     signal.throwIfAborted();
     await this.enter(signal);
-    const module: unknown = await import(`data:text/javascript;base64,${Buffer.from(loaded.source).toString("base64")}#${lease.runId}`);
+    // Bun includes a data-URL fragment in its base64 decoder. A unique comment gives each
+    // attempt a fresh module instance without changing the checked program's behavior.
+    const module: unknown = await import(
+      `data:text/javascript;base64,${Buffer.from(loaded.source + "\n// " + lease.runId).toString("base64")}`
+    );
     const entrypoint = z.record(z.string(), z.unknown()).parse(module)[lease.entrypoint];
     if (typeof entrypoint !== "function") throw new Error("Missing acceptance entrypoint");
     this.executed.push(lease.runId);
@@ -144,7 +148,14 @@ export function acceptanceDispatch(providers: Map<string, AcceptanceProvider>, i
         ...(!review && headers.has("idempotency-key") ? { idempotencyKey: headers.get("idempotency-key")! } : {}),
       };
       const body = CapabilityInvocationBodySchema.parse(await c.req.json());
-      return compiled.invoke({ localId, ...body, expectedSchemaHash: definition.schemaHash, context, kind, review });
+      return compiled.invoke({
+        localId,
+        ...body,
+        expectedSchemaHash: headers.get("x-cloud-capability-schema-hash"),
+        context,
+        kind,
+        review,
+      });
     });
     return provider.fetch(new Request(String(url), init));
   };

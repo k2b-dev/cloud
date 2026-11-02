@@ -52,7 +52,7 @@ export type { CodeAttention, CodePageData, CodePageTab } from "./data";
 /** The browser calls Core's public Code capabilities with the person's own session, like any page. */
 const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
 /** Pause and resume return only the new state; the page reloads to show it. */
-const ChangedSchema = wrapped(z.object({ state: z.string() }));
+const ChangedSchema = z.object({ state: z.string() });
 
 /** Polls bound the wait in the dialog; activation keeps going durably in Core after that. */
 const ACTIVATION_POLLS = 90;
@@ -843,12 +843,12 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
         input: { entrypoint: props.automation.entrypoint, input: null },
         idempotencyKey: crypto.randomUUID(),
       },
-      wrapped(StartSchema),
+      StartSchema,
     );
     setStarting(false);
     if (!result.ok) return toast.error(result.error.message);
     toast.success(t().runStarted);
-    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.data.runId }));
+    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
   };
   const schedule = () =>
     props.automation.kind === "schedule" && props.automation.cron
@@ -967,15 +967,12 @@ function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText 
     if (!next || loading()) return;
     setLoading(true);
     setFailed(false);
-    const result = await browserInvoke(
-      coreQuery("code.run.list", { codeId: props.state.code.id, limit: 20, cursor: next }),
-      wrapped(RunListSchema),
-    );
+    const result = await browserInvoke(coreQuery("code.run.list", { codeId: props.state.code.id, limit: 20, cursor: next }), RunListSchema);
     setLoading(false);
     if (!result.ok) return setFailed(true);
     const numbers = new Map(props.state.versions.map((version) => [version.id, version.number]));
-    setItems([...items(), ...result.data.data.data.items.map((run) => ({ ...run, versionNumber: numbers.get(run.versionId) ?? null }))]);
-    setCursor(result.data.data.data.nextCursor);
+    setItems([...items(), ...result.data.data.items.map((run) => ({ ...run, versionNumber: numbers.get(run.versionId) ?? null }))]);
+    setCursor(result.data.data.nextCursor);
   };
   return (
     <div class="cloud-code__body cloud-code__runs">
@@ -1085,12 +1082,12 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
         // One rerun per failed run, also after a lost response or a double click.
         idempotencyKey: `rerun:${run().id}`,
       },
-      wrapped(StartSchema),
+      StartSchema,
     );
     setRerunning(false);
     if (!result.ok) return toast.error(t().rerunFailed);
     toast.success(t().rerunStarted);
-    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.data.runId }));
+    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
   };
   const canViewWithPanel = () => props.state.permission === "editor" && props.data.editor !== null;
   /** Looking at a failed run with the panel; the panel reads this page's place as its context. */

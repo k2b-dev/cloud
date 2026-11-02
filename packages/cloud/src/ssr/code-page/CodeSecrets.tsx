@@ -5,7 +5,7 @@ import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeSecretBindingSchema, CodeSecretNameSchema, codeSecretPlaceholder } from "../../contracts/code-secrets";
-import { type CodePageData, type CodePageReady, type CodePageSecret, SecretSetSchema, wrapped } from "./data";
+import { type CodePageData, type CodePageReady, type CodePageSecret, SecretSetSchema } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
 
 /** Same-origin Core routes the CLI uses too; a check against a Runner may outlast an ordinary capability call. */
@@ -30,7 +30,7 @@ const authoring = async <T extends z.ZodType>(
 };
 const AllowedSchema = z.object({ allowed: z.boolean() });
 const SubmittedSchema = z.object({ submission: z.object({ version: z.object({ number: z.number() }) }) });
-const DeletedSchema = wrapped(z.object({ deleted: z.boolean() }));
+const DeletedSchema = z.object({ deleted: z.boolean() });
 
 const pageUrl = (data: CodePageData, params: Record<string, string>) =>
   `${data.href}?${new URLSearchParams({ tab: "secrets", ...params }).toString()}`;
@@ -73,7 +73,7 @@ const bindingErrors = (draft: BindingDraft, t: CodePageMessages): BindingErrors 
 const writeSecret = (codeId: string, input: { name: string; value: string; binding_revision: string | null; binding?: unknown }) =>
   invokeCapabilityWithDataSchema(
     { appId: "core", capabilityId: "code.secret.set", kind: "action", target: { type: "core.code", id: codeId }, input },
-    wrapped(SecretSetSchema),
+    SecretSetSchema,
   );
 const writeFailure = (status: number, t: CodePageMessages) =>
   status === 409 ? t.secretNameTaken : status === 403 ? t.secretSetRefused : status >= 500 ? t.secretSetUnknown : t.secretSetFailed;
