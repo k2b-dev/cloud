@@ -80,7 +80,7 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
   const showAccessMessage = () => serversChanged(form.draft()) || accessRequired() || Boolean(form.errors().access);
   const disabled = (key: Key) => form.saving() || (unreadable()[key] && !replace()[key]);
   return (
-    <div class="flex max-w-2xl flex-col gap-4 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
+    <div class="flex max-w-2xl flex-col gap-4 pb-[var(--ui-space-shell)]">
       <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
       <Show when={keys.some((key) => unreadable()[key])}>
         <NoticeCard tone="warning" title={g().unreadableTitle} detail={g().unreadableDetail}>
