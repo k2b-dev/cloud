@@ -115,8 +115,17 @@ natsSuite()("process-local app registry", () => {
           capabilityTitle = (await getCapability("demo"))?.presentation?.translations.de?.queries?.ping?.title;
         },
       });
+      const livenessController = new AbortController();
+      let observedLease: string | undefined;
+      const livenessWatch = watchAppRegistry({
+        signal: livenessController.signal,
+        onChange: async () => {
+          observedLease = (await readAppRegistrySnapshot()).apps.find((app) => app.id === "demo")?.version;
+        },
+      });
       try {
         await until(async () => refreshes === 1);
+        await until(async () => observedLease === touched.revision);
         await rawCapabilities.upsert({
           key: "capabilities/demo",
           value: {
@@ -130,8 +139,21 @@ natsSuite()("process-local app registry", () => {
         await until(async () => capabilityTitle === "Neu");
         expect(refreshes).toBe(2); // capability-only changes do not wait for an app heartbeat
         expect(capabilitySnapshot).toHaveBeenCalledTimes(1);
+        const beforeHeartbeat = nc.stats().outMsgs;
+        const heartbeat = await raw.upsert({ key: "apps/demo", value: entry });
+        const afterWrite = nc.stats().outMsgs;
+        await until(async () => observedLease === heartbeat.revision);
+        // Core's skill retries and gateway-ops' lastSeenAt get the renewed lease,
+        // while runtime consumers and content validation remain idle.
+        expect(refreshes).toBe(2);
+        expect(parse).toHaveBeenCalledTimes(1);
+        expect(snapshot).toHaveBeenCalledTimes(1);
+        expect(nc.stats().outMsgs).toBe(afterWrite);
+        expect(afterWrite - beforeHeartbeat).toBeGreaterThan(0);
       } finally {
+        livenessController.abort();
         runtimeController.abort();
+        await livenessWatch;
         await runtimeWatch;
       }
       // Local touch applies the acknowledged lease without restarting the watch or revalidating content.
@@ -249,7 +271,7 @@ natsSuite()("registry idle scaling", () => {
           tasks.push(
             watchRegistryChanges({
               signal: controller.signal,
-              watch: (signal) => view.changes(signal, false),
+              watch: (signal) => view.changes(signal, { initial: false }),
               onChange: async () => {
                 await view.values();
                 rebuilds++;

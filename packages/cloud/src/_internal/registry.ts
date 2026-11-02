@@ -143,13 +143,14 @@ export const capabilityRegistry = capabilitiesObserved.published;
 
 /**
  * Follow the app registry until `signal` aborts. The watch first replays the
- * current entries, then streams changes. While a refresh runs, further events
- * coalesce into one follow-up refresh. Resync also refreshes an empty registry.
+ * current entries, then streams content changes and lease renewals. While a
+ * refresh runs, further events coalesce into one follow-up refresh. Resync also
+ * refreshes an empty registry.
  * Shutdown waits for received invalidations; refresh errors stop the watch.
  */
 export const watchAppRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
   const view = observedApps();
-  await watchRegistryChanges({ signal, onChange, watch: (signal) => view.changes(signal) });
+  await watchRegistryChanges({ signal, onChange, watch: (signal) => view.changes(signal, { liveness: true }) });
 };
 
 /**
@@ -564,7 +565,7 @@ export const watchRuntimeRegistry = async ({ signal, onChange }: { signal: Abort
         signal.addEventListener("abort", abort, { once: true });
         if (signal.aborted) abort();
         const tasks = views.map(async (view) => {
-          for await (const _ of view.changes(controller.signal, false)) notify();
+          for await (const _ of view.changes(controller.signal, { initial: false })) notify();
         });
         try {
           while (!signal.aborted) {

@@ -37,9 +37,10 @@ export const createObservedView = <T, V>({
   // A per-key read after a local write can run ahead of the covering watch.
   // Keep its fence only until that ordered watch catches up.
   const fences = new Map<string, bigint>();
-  const listeners = new Set<() => void>();
-  const changed = () => {
-    for (const listener of listeners) listener();
+  type Change = "content" | "lease";
+  const listeners = new Set<{ notify: () => void; liveness: boolean }>();
+  const changed = (kind: Change = "content") => {
+    for (const listener of listeners) if (kind === "content" || listener.liveness) listener.notify();
   };
   let healthy = false;
   let refreshing: Promise<void> | undefined;
@@ -76,12 +77,12 @@ export const createObservedView = <T, V>({
       Math.max(0, nextExpiry - now()),
     );
   };
-  const apply = (entry: EphemeralEntry<T>, authoritative = false): boolean => {
+  const apply = (entry: EphemeralEntry<T>, authoritative = false): Change | undefined => {
     const current = entries.get(entry.key);
-    if (!authoritative && (fences.get(entry.key) ?? -1n) >= BigInt(entry.revision)) return false;
-    if (!authoritative && current && BigInt(current.source.revision) >= BigInt(entry.revision)) return false;
+    if (!authoritative && (fences.get(entry.key) ?? -1n) >= BigInt(entry.revision)) return;
+    if (!authoritative && current && BigInt(current.source.revision) >= BigInt(entry.revision)) return;
     const expiresAt = entry.updatedAt.getTime() + ttlMs;
-    if (expiresAt <= now()) return entries.delete(entry.key);
+    if (expiresAt <= now()) return entries.delete(entry.key) ? "content" : undefined;
     // Hash the wire content: local upsert values may still contain omitted undefined fields.
     const digest = createHash("sha256")
       .update(JSON.stringify(entry.value ?? null))
@@ -91,7 +92,7 @@ export const createObservedView = <T, V>({
     const value = sameContent ? current.source.value : freezeObserved(structuredClone(entry.value));
     const source = { ...entry, value };
     entries.set(entry.key, { source, expiresAt, digest, value: sameContent ? current.value : freezeObserved(read(source)) });
-    return !sameContent;
+    return sameContent ? "lease" : "content";
   };
   const invalidate = () => {
     healthy = false;
@@ -130,20 +131,20 @@ export const createObservedView = <T, V>({
         for await (const event of registry.watch({ prefix, after: snapshot.revision, signal: watchSignal })) {
           if (watchSignal.aborted || generation !== ownGeneration) break;
           if (event.type === "resync_required") break;
-          let dirty = false;
-          if (event.type === "upsert") dirty = apply(event.entry);
+          let change: Change | undefined;
+          if (event.type === "upsert") change = apply(event.entry);
           else {
             const current = entries.get(event.key);
             if (
               (fences.get(event.key) ?? -1n) < BigInt(event.revision) &&
               (!current || BigInt(current.source.revision) < BigInt(event.revision))
             )
-              dirty = entries.delete(event.key);
+              change = entries.delete(event.key) ? "content" : undefined;
           }
           coveredRevision = BigInt(event.revision);
           for (const [key, revision] of fences) if (revision <= BigInt(event.revision)) fences.delete(key);
           armExpiry();
-          if (dirty) changed();
+          if (change) changed(change);
         }
       } catch {
         // A failed watch never serves stale state; the next reader takes one shared snapshot.
@@ -176,9 +177,9 @@ export const createObservedView = <T, V>({
         invalidate();
         return;
       }
-      const dirty = apply(entry);
+      const change = apply(entry);
       armExpiry();
-      if (dirty) changed();
+      if (change) changed(change);
     },
     /** Sync's boolean mutations need an authoritative per-key read, not a view restart. */
     reconcile: async (key: string) => {
@@ -196,12 +197,15 @@ export const createObservedView = <T, V>({
       const revision = BigInt(snapshot.revision);
       if (coveredRevision > revision || (fences.get(key) ?? -1n) > revision || (current && BigInt(current.source.revision) > revision))
         return;
-      const dirty = entry ? apply(entry) : entries.delete(key);
+      const change = entry ? apply(entry) : entries.delete(key) ? "content" : undefined;
       fences.set(key, BigInt(snapshot.revision));
       armExpiry();
-      if (dirty) changed();
+      if (change) changed(change);
     },
-    changes: (watchSignal: AbortSignal, initial = true): AsyncIterable<{ type: string }> => ({
+    changes: (
+      watchSignal: AbortSignal,
+      { initial = true, liveness = false }: { initial?: boolean; liveness?: boolean } = {},
+    ): AsyncIterable<{ type: string }> => ({
       async *[Symbol.asyncIterator]() {
         let dirty = initial;
         let wake: (() => void) | undefined;
@@ -209,7 +213,8 @@ export const createObservedView = <T, V>({
           dirty = true;
           wake?.();
         };
-        listeners.add(notify);
+        const listener = { notify, liveness };
+        listeners.add(listener);
         watchSignal.addEventListener("abort", notify, { once: true });
         try {
           while (!watchSignal.aborted) {
@@ -222,7 +227,7 @@ export const createObservedView = <T, V>({
             yield { type: "change" };
           }
         } finally {
-          listeners.delete(notify);
+          listeners.delete(listener);
           watchSignal.removeEventListener("abort", notify);
         }
       },

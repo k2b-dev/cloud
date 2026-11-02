@@ -170,7 +170,7 @@ const observedFixture = () => {
 
 test("renewals retain immutable content, update lease metadata and actively notify on expiry", async () => {
   const f = observedFixture();
-  const changes = f.view.changes(new AbortController().signal, false)[Symbol.asyncIterator]();
+  const changes = f.view.changes(new AbortController().signal, { initial: false })[Symbol.asyncIterator]();
   try {
     const first = await f.view.get("apps/demo");
     expect(Object.isFrozen(first)).toBe(true);
@@ -215,6 +215,60 @@ test("local writes update just one entry and fence delayed watch events after de
     await f.send({ type: "delete", key: "apps/demo", revision: "5" });
     expect((await f.view.get("apps/demo"))?.title).toBe("Reborn");
   } finally {
+    await f.stop();
+  }
+});
+
+test("liveness subscribers see renewed leases while content subscribers stay idle", async () => {
+  const f = observedFixture();
+  const controller = new AbortController();
+  const content = f.view.changes(controller.signal, { initial: false })[Symbol.asyncIterator]();
+  const liveness = f.view.changes(controller.signal, { initial: false, liveness: true })[Symbol.asyncIterator]();
+  let contentChanged = false;
+  const nextContent = content.next().then((event) => {
+    contentChanged = !event.done;
+    return event;
+  });
+  try {
+    const original = await f.view.get("apps/demo");
+    f.setTime(epoch + 60_000);
+    let renewed = liveness.next();
+    await f.send({ type: "upsert", entry: f.entry("2"), revision: "2" });
+    expect((await renewed).done).toBe(false);
+    expect(contentChanged).toBe(false);
+    expect((await f.view.entries())[0]?.updatedAt.getTime()).toBe(epoch + 60_000);
+
+    renewed = liveness.next();
+    let duplicateNotified = false;
+    void renewed.then(() => {
+      duplicateNotified = true;
+    });
+    await f.send({ type: "upsert", entry: f.entry("2"), revision: "2" });
+    expect(duplicateNotified).toBe(false);
+    f.view.accept(f.entry("3"));
+    expect((await renewed).done).toBe(false);
+    expect(contentChanged).toBe(false);
+
+    renewed = liveness.next();
+    f.store([f.entry("4")]);
+    await f.view.reconcile("apps/demo");
+    expect((await renewed).done).toBe(false);
+    expect(contentChanged).toBe(false);
+    expect(await f.view.get("apps/demo")).toBe(original);
+    expect(f.read).toHaveBeenCalledTimes(1);
+    expect(f.snapshot).toHaveBeenCalledTimes(2); // initial and the explicit per-key reconciliation
+
+    const changed = liveness.next();
+    await f.send({ type: "upsert", entry: f.entry("5", "Changed"), revision: "5" });
+    expect((await changed).done).toBe(false);
+    expect((await nextContent).done).toBe(false);
+    expect(contentChanged).toBe(true);
+    expect((await f.view.get("apps/demo"))?.title).toBe("Changed");
+  } finally {
+    controller.abort();
+    await nextContent;
+    await content.return?.();
+    await liveness.return?.();
     await f.stop();
   }
 });
