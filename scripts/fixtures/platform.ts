@@ -10,4 +10,5 @@ export const initializeTestPlatform = async (appId = hasConnections() ? connecti
 };
 
 export { connectNats } from "../../packages/cloud/src/_internal/nats-connection";
+export { getProcessNats } from "../../packages/cloud/src/_internal/process-sync";
 export { stubConnections } from "../../packages/cloud/src/runtime/connections.test-fixture";
