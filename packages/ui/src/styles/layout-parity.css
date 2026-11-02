@@ -3945,13 +3945,6 @@ html:has(.k2b-mobile-shell) body {
   overscroll-behavior: none;
 }
 
-/* No pinch zoom on the whole page, portalled dialogs and menus included. iOS
-   ignores `user-scalable=no`; it honours touch-action. Zero specificity, so a
-   component's own touch-action, such as a drag handle's `none`, still wins. */
-:where(html[data-k2b-mobile-shell] *) {
-  touch-action: pan-x pan-y;
-}
-
 /* App-sized controls on every pointer: 44 px targets, and 16 px field text,
    so iOS never zooms into a focused field. */
 html:has(.k2b-mobile-shell) .k2b-button,

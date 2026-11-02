@@ -230,15 +230,6 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
   let root!: HTMLDivElement;
 
   onMount(() => onCleanup(observeMobileShell(root)));
-  // Marks the document for the pinch-zoom rule, which also covers portalled dialogs and menus.
-  onMount(() => {
-    const html = document.documentElement;
-    html.toggleAttribute("data-k2b-mobile-shell", true);
-    onCleanup(() => {
-      if (!document.querySelector(".k2b-mobile-shell")) html.removeAttribute("data-k2b-mobile-shell");
-    });
-  });
-
   return (
     <div
       ref={root}
@@ -253,6 +244,11 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
         </Show>
       </main>
       {props.footer}
+      {/* No pinch zoom on the whole page, portalled dialogs and menus included, also before hydration. iOS ignores
+          `user-scalable=no`; it honours touch-action. It lives here, not behind `html:has(.k2b-mobile-shell) *`, which
+          would restyle the document on every `:has()` change. Zero specificity, so a component's own touch-action,
+          such as a drag handle's `none`, still wins. */}
+      <style innerHTML=":where(html *) { touch-action: pan-x pan-y; }" />
     </div>
   );
 }
