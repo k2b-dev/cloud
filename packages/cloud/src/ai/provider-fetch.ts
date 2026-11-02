@@ -49,7 +49,8 @@ export const retryAfterMs = (headers: Headers, now = Date.now()): number | undef
 const refusedStatus = (status: number) => (status >= 400 && status < 500) || status === 503 || status === 529;
 
 /** Bun's codes for a request that never left: no connection, or no address for the host. */
-const unsentCodes = new Set(["ConnectionRefused", "ENOTFOUND"]);
+// Bun before 1.4.3 reports a refused connection as `ConnectionRefused`.
+const unsentCodes = new Set(["ECONNREFUSED", "ConnectionRefused", "ENOTFOUND"]);
 const unsent = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" && unsentCodes.has(error.code);
 
