@@ -750,7 +750,8 @@ describe("@k2b/ui complete choice input migrations", () => {
   });
 
   test("gives steppers, colour buttons and disabled sliders a visible state", () => {
-    expect(cssRule(".k2b-ui .k2b-number-input__step:focus-visible")).toContain("var(--k2b-focus-ring)");
+    // A focused stepper draws the field's focus edge inside its own box.
+    expect(cssRule(".k2b-ui .k2b-number-input__step:focus-visible")).toContain("var(--k2b-edge-focus)");
     expect(cssRule(".k2b-ui .k2b-slider input:disabled")).toContain("cursor: not-allowed");
     const disabled = renderToString(() =>
       createComponent(Slider, {
