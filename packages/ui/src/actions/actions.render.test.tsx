@@ -1363,7 +1363,9 @@ describe("FilterToggle", () => {
     expect(active).toContain(
       "--k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))",
     );
-    expect(active).toContain("background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))");
+    expect(active).toContain(
+      "background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
     expect(active).toContain("color: var(--k2b-app-workspace-active)");
     expect(rule(".k2b-ui a.k2b-filter-chip")).toContain("text-decoration: none");
   });
