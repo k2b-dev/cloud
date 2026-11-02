@@ -143,6 +143,9 @@
   --k2b-edge-selected-hover-fill: 14%;
   /* The 1 px border of secondary buttons: light in every state. */
   --k2b-control-border-soft: #c8c8d0;
+  /* The grey track of a segmented control, and an option hovered on it. */
+  --k2b-tray: #ececef;
+  --k2b-tray-hover: rgb(9 9 11 / 0.06);
   --k2b-info-surface: var(--k2b-accent-50);
   --k2b-info-text: var(--k2b-accent-700);
   --k2b-success-surface: #ecfdf5;
@@ -309,6 +312,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-focus: var(--k2b-accent-300);
   --k2b-edge-selected-share: 55%;
   --k2b-control-border-soft: #46505c;
+  --k2b-tray: #1a2028;
+  --k2b-tray-hover: rgb(255 255 255 / 0.08);
   --k2b-info-surface: var(--k2b-accent-950);
   --k2b-info-text: var(--k2b-accent-300);
   --k2b-success-surface: #052e26;
@@ -2266,50 +2271,60 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   animation: k2b-spin 900ms linear infinite;
 }
 
-/* Soft segments: no tray, no separators, no ring. The selected option is a
-   fill in the app's selection tint with its ink. Padding, option spacing,
-   and type keep the control's former box, so toolbars that fit before still
-   fit. */
+/* Segments switch between views. The options sit on a grey track; the
+   selected one is the thumb: the selected edge and fill in the app's ink.
+   Options have no edge until selected, and focus turns the edge blue. Every
+   option keeps its box in every state, and nothing casts a shadow. With the
+   track the control is as tall as a field. */
 .k2b-ui .k2b-segmented-control {
   @apply inline-flex w-full items-stretch;
-  padding: calc(0.125rem + 1px);
+  gap: 2px;
+  padding: 3px;
   border: 0;
-  border-radius: var(--k2b-radius-surface);
-  background: transparent;
+  border-radius: calc(var(--k2b-radius-control) + 3px);
+  background: var(--k2b-tray);
 }
 
 .k2b-ui .k2b-segmented-control__option {
   @apply relative inline-flex min-w-0 flex-1 items-center justify-center;
-  min-height: 2rem;
+  --k2b-edge-color: transparent;
+  min-height: 1.875rem;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: transparent;
-  font-size: 0.75rem;
-  line-height: 1rem;
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
   cursor: pointer;
   transition:
     background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
     color 150ms ease-out;
 }
 
 .k2b-ui .k2b-segmented-control[data-size="sm"] .k2b-segmented-control__option {
   min-height: 1.75rem;
   padding: 0.1875rem 0.5rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
-.k2b-ui .k2b-segmented-control__option:not(:disabled, [aria-checked="true"]):hover {
+.k2b-ui .k2b-segmented-control__option:not(:disabled, [aria-checked="true"], [data-selected="true"]):hover {
   color: var(--k2b-text);
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-tray-hover);
 }
 
-.k2b-ui .k2b-segmented-control__option[data-selected="true"],
-.k2b-ui .k2b-segmented-control__option[aria-checked="true"] {
+.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"]) {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-selected);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"]):not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
 }
 
 @media (forced-colors: active) {
@@ -2317,11 +2332,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     text-decoration: underline 2px;
     text-underline-offset: 0.3em;
   }
+
+  .k2b-ui .k2b-segmented-control__option:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
 }
 
+/* Focus turns the same edge blue, also on the selected option. */
 .k2b-ui .k2b-segmented-control__option:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: min(var(--k2b-focus-offset), 1px);
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
 }
 
 .k2b-ui .k2b-segmented-control__option:disabled {
@@ -5979,14 +6000,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-transform: uppercase;
 }
 
-/* A few short radio choices side by side: the SegmentedControl's inset track inside a menu.
-   Labels only; the selected segment is raised, so no check mark has to fit. */
+/* A few short radio choices side by side: the SegmentedControl's track inside a menu.
+   Labels only; the selected segment is the thumb, so no check mark has to fit. */
 .k2b-ui .k2b-dropdown__row {
   display: flex;
-  gap: 0.125rem;
-  padding: 0.125rem;
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-field-surface, var(--k2b-surface-muted));
+  gap: 2px;
+  padding: 3px;
+  border-radius: calc(var(--k2b-radius-control) + 3px);
+  background: var(--k2b-tray);
 }
 
 .k2b-ui .k2b-dropdown__row > .k2b-dropdown__item {
@@ -6007,15 +6028,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"] {
-  color: var(--k2b-text);
-  background: var(--k2b-surface);
-  box-shadow: 0 0 0 1px var(--k2b-border);
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
 }
 
-/* The raised segment keeps its surface under the pointer, so focus shows as the shared ring. */
+/* On the track, an option darkens like a segment; the thumb keeps its fill under the pointer. */
+.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item:not([data-selected="true"]):is(:hover, :focus-visible) {
+  background: var(--k2b-tray-hover);
+}
+
+/* Focus turns the edge blue, also on the thumb. */
 .k2b-ui .k2b-dropdown__row > .k2b-dropdown__item:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: min(var(--k2b-focus-offset), 1px);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  outline: none;
 }
 
 /* A row with a secondary action, such as "Only": the action keeps its place while hidden, so the row never changes
@@ -14712,11 +14738,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-start;
 }
 
-/* Soft tabs: no tray, no baseline, no separators, no ring. The list scrolls
-   sideways only; a selected tab is a fill in the app's selection tint with
-   its ink. Every tab keeps its weight and box in every state, so selecting or
-   hovering one never moves a neighbour. The focus ring sits inside the tab,
-   where the scrolling list cannot clip it. */
+/* Tabs: no tray, no baseline, no separators. The list scrolls sideways only;
+   a tab has no edge until selected, then it takes the selected edge and fill
+   in the app's ink. Every tab keeps its weight and box in every state, so
+   selecting or hovering one never moves a neighbour. Focus turns the edge
+   blue inside the tab, where the scrolling list cannot clip it. */
 .k2b-ui .k2b-tabs__list {
   display: flex;
   min-width: 0;
@@ -14742,14 +14768,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0.625rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
+  --k2b-edge-color: transparent;
   color: var(--k2b-text-secondary);
   background: transparent;
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
   font: inherit;
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
   transition:
     background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
     color 150ms ease-out;
 }
 
@@ -14758,8 +14787,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-selected);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-tabs__list button[aria-selected="true"]:hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
 }
 
 .k2b-ui .k2b-tabs__list button:hover:not(:disabled, [aria-selected="true"]) {
@@ -14771,20 +14805,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 .k2b-ui .k2b-tabs__list button:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
 }
 
-/* Forced colours drop the fill; an underline marks the selected tab
-   without changing its box. */
+/* Forced colours drop the fill and the edge; an underline marks the selected
+   tab without changing its box, and focus takes the system outline. */
 @media (forced-colors: active) {
   .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
     text-decoration: underline 2px;
     text-underline-offset: 0.3em;
   }
+
+  .k2b-ui .k2b-tabs__list button:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
 }
-/* View tabs: links to the views of one object, in the same soft look as the
-   tabs. The open view is a fill in the app's selection tint with its ink;
+/* View tabs: links to the views of one object, in the same look as the
+   tabs. The open view takes the selected edge and fill in the app's ink;
    weight and box never change, so nothing beside a tab moves. "More +n" ends
    the strip with the views that do not get a place. Every view keeps its
    full label and count at any width: a strip too narrow for its views
@@ -14839,8 +14878,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0.625rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
+  --k2b-edge-color: transparent;
   color: var(--k2b-text-secondary);
   background: transparent;
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
@@ -14850,6 +14891,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
   transition:
     background-color var(--k2b-motion-fast) var(--k2b-ease-out),
+    box-shadow var(--k2b-motion-fast) var(--k2b-ease-out),
     color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
@@ -14875,8 +14917,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-view-tabs__tab[aria-current="page"] {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-selected);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"]:hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
 }
 
 .k2b-ui .k2b-view-tabs__tab[aria-current="page"] :is(i, .k2b-view-tabs__count) {
@@ -14884,8 +14931,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-view-tabs__tab:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
 }
 
 .k2b-ui .k2b-view-tabs__more-trigger > i {
@@ -14903,6 +14950,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-view-tabs__tab[aria-current="page"] {
     text-decoration: underline 2px;
     text-underline-offset: 0.3em;
+  }
+
+  .k2b-ui .k2b-view-tabs__tab:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
   }
 }
 
@@ -15493,12 +15545,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close {
   opacity:1;
 }
-/* Pill tabs carry a close button: the item is the soft tab, so the selection
-   fill and the hover fill cover the label and its close button together. */
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:transparent; transition:background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+/* Pill tabs carry a close button: the item is the tab, so the selected edge,
+   the selection fill and the hover fill cover the label and its close button
+   together. The tab inside shows only the focus edge. */
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { --k2b-edge-color: transparent; border-radius:.75rem; padding-right:.25rem; background:transparent; box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color); transition:background-color var(--k2b-motion-fast) var(--k2b-ease-out), box-shadow var(--k2b-motion-fast) var(--k2b-ease-out); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover { background:var(--k2b-app-workspace-hover); }
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) { background:var(--k2b-app-workspace-selected); }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) { --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface)); background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface)); }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]):hover { background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface)); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list button[role="tab"] { border:0; margin:0; border-radius:.75rem; max-width:16rem; background:transparent; }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list button[role="tab"]:not(:focus-visible) { --k2b-edge-color: transparent; }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) .k2b-tabs__close { color:var(--k2b-app-workspace-active); }
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__bar { flex-direction:column; }
 

@@ -433,7 +433,13 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
             });
             const scope = document.getElementById("fills")!;
             const group = scope.querySelector(".k2b-panel-dialog__section-body")!;
+            const probe = document.createElement("i");
+            probe.style.background = "var(--k2b-tray)";
+            scope.append(probe);
+            const tray = getComputedStyle(probe).backgroundColor;
+            probe.remove();
             return {
+              tray,
               muted: getComputedStyle(document.getElementById("muted")!).backgroundColor,
               surface: getComputedStyle(document.getElementById("surface")!).backgroundColor,
               loose: fill(scope.querySelector(".k2b-panel-dialog__body")!),
@@ -441,10 +447,10 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
               panelWell: getComputedStyle(group.querySelector(".k2b-detail-panel__group .k2b-input-shell")!).backgroundColor,
             };
           });
-          // A segmented control is soft and draws no track on either surface.
-          // A subtle button is white with a light border on every surface; chips follow the group.
-          expect(result.loose).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.muted });
-          expect(result.grouped).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.surface });
+          // A segmented control keeps its grey track and a subtle button is white with a light
+          // border on every surface; chips follow the group.
+          expect(result.loose).toEqual({ subtle: result.surface, track: result.tray, chip: result.muted });
+          expect(result.grouped).toEqual({ subtle: result.surface, track: result.tray, chip: result.surface });
           // Fields are white with their own edge on every surface, also inside a group.
           expect(result.panelWell).toBe(result.surface);
 

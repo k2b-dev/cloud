@@ -568,9 +568,11 @@ describe("@k2b/ui complete action migrations", () => {
       /role="group" aria-label="Sort"><div class="k2b-dropdown__label">Sort<\/div>(?:<!--[^>]*-->)*<div class="k2b-dropdown__row">/,
     );
     expect(html.match(/<div class="k2b-dropdown__row">(.*?)<\/div><\/div>/s)?.[1]?.match(/role="menuitemradio"/g)).toHaveLength(2);
-    expect(rule(".k2b-ui .k2b-dropdown__row")).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(rule(".k2b-ui .k2b-dropdown__row")).toContain("background: var(--k2b-tray)");
     expect(rule(".k2b-ui .k2b-dropdown__row > .k2b-dropdown__item > i")).toContain("display: none");
-    expect(rule('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]')).toContain("background: var(--k2b-surface)");
+    expect(rule('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]')).toContain(
+      "background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
 
     // A row of choices is no set of actions: without a label its group stays unnamed instead of "Actions".
     const unlabeled = renderToString(() =>
@@ -914,19 +916,22 @@ describe("@k2b/ui complete action migrations", () => {
 });
 
 describe("@k2b/ui action geometry parity", () => {
-  test("segments keep control-sized, flex-1 geometry", () => {
+  test("segments keep field-sized, flex-1 geometry on a grey track", () => {
     const control = rule(".k2b-ui .k2b-segmented-control");
     const option = rule(".k2b-ui .k2b-segmented-control__option");
 
     expect(control).toContain("w-full");
     expect(control).toContain("items-stretch");
-    expect(control).toContain("background: transparent");
+    expect(control).toContain("background: var(--k2b-tray)");
+    // A 3 px track around 30 px options: as tall as a field.
+    expect(control).toContain("padding: 3px");
+    expect(control).toContain("gap: 2px");
     expect(option).toContain("flex-1");
-    expect(option).toContain("min-height: 2rem");
+    expect(option).toContain("min-height: 1.875rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
-    // The soft look keeps the former box: no added weight, no gap between options.
+    expect(option).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
+    // Selection never adds weight.
     expect(option).not.toContain("font-weight");
-    expect(control).not.toContain("gap");
     expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
   });
 
