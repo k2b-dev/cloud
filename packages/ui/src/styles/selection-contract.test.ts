@@ -82,9 +82,10 @@ describe("selection hooks", () => {
       const selected = declarations(selector);
       expect(selected.get("--k2b-edge-color"), selector).toEqual([selectedEdge]);
       expect(selected.get("background"), selector).toEqual([selectedFill]);
-      expect([...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?)$/.test(property)), selector).toEqual(
-        [],
-      );
+      expect(
+        [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?)$/.test(property)),
+        selector,
+      ).toEqual([]);
     }
     const row = declarations('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]');
     expect(row.get("background")).toEqual([selectedFill]);

@@ -243,7 +243,7 @@ describe("field edge contract in the browser", () => {
 const controlsEntry = resolve(import.meta.dir, "control-edge-controls.fixture.ts");
 const controlsFixture = `
 import { createComponent, render } from "solid-js/web";
-import { Button, FilterChip, FilterToggle, Paper } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Button, FilterChip, FilterToggle, Paper, SegmentedControl, Tabs, ViewTabs } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const cell = (name, make) => {
   const node = document.createElement("div");
   node.dataset.control = name;
@@ -259,6 +259,9 @@ document.getElementById("app").append(
   cell("secondary", () => createComponent(Button, { variant: "secondary", children: "Export" })),
   cell("subtle", () => createComponent(Button, { variant: "subtle", children: "More" })),
   cell("card", () => createComponent(Paper, { interactive: true, tabIndex: 0, style: { padding: "12px" }, children: "Open the project" })),
+  cell("segment", () => createComponent(SegmentedControl, { value: "list", onValueChange: () => {}, ariaLabel: "View", options: [{ value: "list", label: "List" }, { value: "board", label: "Board" }] })),
+  cell("tabs", () => createComponent(Tabs, { value: "a", onValueChange: () => {}, ariaLabel: "Panels", options: [{ value: "a", label: "Details" }, { value: "b", label: "History" }] })),
+  cell("views", () => createComponent(ViewTabs, { label: "Views", current: "all", items: [{ id: "all", label: "All", href: "#all" }, { id: "mine", label: "Mine", href: "#mine" }] })),
 );
 `;
 const controlsBuild = await Bun.build({
@@ -307,6 +310,10 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               selectedHover: mix("--k2b-edge-selected-hover-fill"),
               soft: read("var(--k2b-control-border-soft)"),
               cardBorder: read("var(--k2b-border-strong)"),
+              tray: read("var(--k2b-tray)"),
+              trayHover: read("var(--k2b-tray-hover)"),
+              tabHover: read("var(--k2b-app-workspace-hover)"),
+              none: read("transparent"),
             };
             probe.remove();
             return result;
@@ -349,17 +356,31 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
             edge: () => color,
             fill: (state) => (state === "hover" ? tokens.hover : tokens.surface),
           });
-          const controls: Record<string, [string, Expect]> = {
+          // Group members (segment options, tabs, views) have no edge until selected.
+          const member = (hover: string) => filter(tokens.none, tokens.none, hover);
+          const selected = filter(tokens.selected, tokens.selectedFill, tokens.selectedHover);
+          const controls: Record<string, [string, Expect, string?]> = {
             chip: [".k2b-filter-chip", filter(tokens.edge, tokens.surface, tokens.hover)],
             "chip-active": [".k2b-filter-chip", filter(tokens.selected, tokens.selectedFill, tokens.selectedHover)],
             "toggle-active": [".k2b-filter-chip", filter(tokens.selected, tokens.selectedFill, tokens.selectedHover)],
             secondary: [".k2b-button", bordered(tokens.soft)],
             subtle: [".k2b-button", bordered(tokens.soft)],
             card: [".k2b-paper", bordered(tokens.cardBorder)],
+            segment: ['.k2b-segmented-control__option:not([aria-checked="true"])', member(tokens.trayHover)],
+            "segment-selected": ['.k2b-segmented-control__option[aria-checked="true"]', selected, "segment"],
+            tab: ['[role="tab"]:not([aria-selected="true"])', member(tokens.tabHover), "tabs"],
+            "tab-selected": ['[role="tab"][aria-selected="true"]', selected, "tabs"],
+            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', member(tokens.tabHover), "views"],
+            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', selected, "views"],
           };
 
-          for (const [name, [selector, expected]] of Object.entries(controls)) {
-            const element = page.locator(`[data-control="${name}"] ${selector}`).first();
+          // Segment options sit on the grey track.
+          const track = await measure(page.locator('[data-control="segment"] .k2b-segmented-control'));
+          expect(track.background, `${theme} segment track`).toBe(tokens.tray);
+          expect(track.drop, `${theme} segment track shadow`).toEqual([]);
+
+          for (const [name, [selector, expected, cell]] of Object.entries(controls)) {
+            const element = page.locator(`[data-control="${cell ?? name}"] ${selector}`).first();
             const seen: Record<string, Awaited<ReturnType<typeof measure>>> = {};
             for (const state of ["rest", "hover", "focus"] as const) {
               await page.mouse.move(5, 890);
