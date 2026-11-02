@@ -7,12 +7,15 @@ export const createRegistryView = <T, V>({
   ttlMs,
   signal,
   read,
+  now = () => performance.timeOrigin + performance.now(),
 }: {
   registry: Pick<Ephemeral<T>, "snapshot" | "watch">;
   prefix: string;
   ttlMs: number;
   signal: AbortSignal;
   read: (entry: EphemeralEntry<T>) => V;
+  /** Epoch-based monotonic clock: wall-clock adjustments must not expire live leases. */
+  now?: () => number;
 }) => {
   const entries = new Map<string, { revision: string; expiresAt: number; value: V }>();
   const listeners = new Set<() => void>();
@@ -27,7 +30,7 @@ export const createRegistryView = <T, V>({
 
   const apply = (entry: EphemeralEntry<T>) => {
     const expiresAt = entry.updatedAt.getTime() + ttlMs;
-    if (expiresAt <= Date.now()) return;
+    if (expiresAt <= now()) return;
     const current = entries.get(entry.key);
     if (current && BigInt(current.revision) >= BigInt(entry.revision)) return;
     entries.set(entry.key, { revision: entry.revision, expiresAt, value: read(entry) });
@@ -129,8 +132,8 @@ export const createRegistryView = <T, V>({
         await refreshing;
         if (!healthy) throw new Error("App registry watch lost during refresh; retry the read");
       }
-      const now = Date.now();
-      for (const [key, entry] of entries) if (entry.expiresAt <= now) entries.delete(key);
+      const observedAt = now();
+      for (const [key, entry] of entries) if (entry.expiresAt <= observedAt) entries.delete(key);
       return [...entries.values()].map((entry) => structuredClone(entry.value));
     },
   };

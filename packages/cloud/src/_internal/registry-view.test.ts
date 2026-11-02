@@ -44,7 +44,14 @@ test("local revisions avoid I/O and revalidation; renewals, removal, TTL and wat
     }
   });
   const read = mock((item: EphemeralEntry<string>) => ({ revision: item.revision }));
-  const view = createRegistryView({ registry: { snapshot, watch }, prefix: "apps/", ttlMs: 180_000, signal: controller.signal, read });
+  const view = createRegistryView({
+    registry: { snapshot, watch },
+    prefix: "apps/",
+    ttlMs: 180_000,
+    signal: controller.signal,
+    read,
+    now: () => Date.now(),
+  });
   const send = async (event?: EphemeralEvent<string>) => {
     if (event) pending.push(event);
     notify?.();

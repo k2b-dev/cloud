@@ -17,9 +17,10 @@ const invalid = (path: string, expected: string): string => `${path} must be ${e
 
 export const validateAppRegistryEntry = (value: unknown): string | null => {
   if (!isRecord(value)) return "entry must be an object";
-  for (const field of ["id", "name", "icon", "description", "baseUrl"] as const) {
+  for (const field of ["id", "name", "icon", "baseUrl"] as const) {
     if (!isString(value[field]) || value[field].length === 0) return invalid(field, "a non-empty string");
   }
+  if (!isString(value.description)) return invalid("description", "a string");
   if (value.public !== undefined && value.public !== true) return invalid("public", "true when present");
   if (value.package !== undefined && (typeof value.package !== "string" || !/^[a-z][a-z0-9-]{0,79}$/.test(value.package))) {
     return invalid("package", "a lowercase package name of 1–80 characters");

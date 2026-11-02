@@ -769,7 +769,7 @@ export const defineApp = <
         access: meta.access,
         name: meta.name,
         icon: meta.icon,
-        description: meta.description,
+        description: meta.description ?? "",
         presentation: meta.presentation,
         appearance: meta.appearance,
         baseUrl,
