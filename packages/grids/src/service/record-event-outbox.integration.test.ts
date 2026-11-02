@@ -7,6 +7,7 @@ import { migrate } from "../migrate";
 import { startGridsTestSync } from "../sync-test-utils";
 import type { SqlClient } from "./audit";
 import { remove as removeBase, restore as restoreBase } from "./bases";
+import * as federatedTables from "./federated-tables";
 import {
   captureRecordEventSnapshot,
   claimRecordEventOutboxBatch,
@@ -182,6 +183,32 @@ describe("record event outbox integration", () => {
       expect(await listRecordEventBaseIds()).toContain(fixture.baseId);
     } finally {
       hints.mockRestore();
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("failed post-commit workflow hints preserve trash/restore success and source refresh", async () => {
+    const fixture = createFixture();
+    const hints = spyOn(workflowRuntimeEvents, "emitWorkflowRuntimeEvent").mockRejectedValue(new Error("hint unavailable"));
+    const refresh = spyOn(federatedTables, "refreshForSourceBase");
+    try {
+      await insertFixture(fixture);
+      expect((await removeBase(fixture.baseId, fixture.actorId)).ok).toBe(true);
+      const [trashed] = await sql<Array<{ deleted: boolean }>>`
+        SELECT deleted_at IS NOT NULL AS deleted FROM grids.bases WHERE id = ${fixture.baseId}::uuid
+      `;
+      expect(trashed?.deleted).toBe(true);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect((await restoreBase(fixture.baseId, fixture.actorId)).ok).toBe(true);
+      const [restored] = await sql<Array<{ deleted: boolean }>>`
+        SELECT deleted_at IS NOT NULL AS deleted FROM grids.bases WHERE id = ${fixture.baseId}::uuid
+      `;
+      expect(restored?.deleted).toBe(false);
+      expect(hints).toHaveBeenCalledTimes(2);
+      expect(refresh).toHaveBeenCalledTimes(2);
+    } finally {
+      hints.mockRestore();
+      refresh.mockRestore();
       await cleanupFixture(fixture);
     }
   });
