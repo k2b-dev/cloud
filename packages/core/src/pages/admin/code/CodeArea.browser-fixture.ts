@@ -122,6 +122,8 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     // A decision persists until reset, so the reloaded page shows its result and the sidebar count drops.
     const decision = query.id ? decisions.get(query.id) : undefined;
     if (data && decision !== undefined) data.approval = fixtureApprovalDetail(decision ? "approved" : "rejected");
+    if (data?.approvals && typeof data.approvals === "object")
+      data.approvals = { ...data.approvals, items: data.approvals.items.filter((item) => !decisions.has(item.versionId)) };
     const waiting = 4 - decisions.size;
     if (data && data.summary !== null && typeof data.summary === "object") data.summary = { ...data.summary, approvals: waiting };
     c.set("adminCodeApprovals", state === "noperm" ? undefined : waiting);

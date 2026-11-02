@@ -215,6 +215,7 @@ export const fixtureApprovalDetail = (
               },
             ],
     staleComparison: false,
+    automations: [{ entrypoint: "lieferungenEintragen", title: "Lieferungen eintragen" }, { entrypoint: "legacyJob" }],
     permissions: first
       ? [
           { operation: "mail.message.list", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 5, change: "added" },

@@ -182,6 +182,7 @@ export function approvalReviewProps(
         source: row.source === "group" ? t.fromGroups({ groups: row.groups.join(", ") }) : t.fromDefault,
       }),
     ),
+    automations: detail.automations,
     rights: detail.permissions.map((permission) => {
       const typeTitle = permission.target ? (detail.titles.types[permission.target.type] ?? permission.target.type) : "";
       return {
@@ -668,7 +669,7 @@ export function CodeAreaView(props: Props) {
                 {(run) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
                     <span>
-                      {t.runState({ s: run.state })} · {t.trigger({ t: run.trigger })} <code class="text-xs">{run.entrypoint}</code>
+                      {t.runState({ s: run.state })} · {t.trigger({ t: run.trigger })} <span>{run.title ?? run.entrypoint}</span>
                     </span>
                     <span class="text-(--k2b-text-muted)">{when(run.createdAt)}</span>
                   </li>

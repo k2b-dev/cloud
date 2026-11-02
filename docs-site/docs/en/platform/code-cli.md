@@ -72,6 +72,11 @@ person's own rights and never asks for target-admin grants. Phase 1 supports
 named schedules and hand starts; future page, webhook and database syntax fails
 checking.
 
+Human check and run output uses each automation's reviewed title followed by
+its identifier in parentheses. Without a title, it shows the identifier. JSON
+keeps `entrypoint` unchanged and adds the optional `title`; pass the identifier
+to `cld code run`.
+
 ## Test with fixed fixtures
 
 ```sh

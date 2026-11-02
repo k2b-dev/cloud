@@ -58,6 +58,7 @@ describe.skipIf(isServer)("A card's history", () => {
             href: "/app/mail/m1/code",
             runHref: "/app/mail/m1/code?tab=runs&run=r1",
           }),
+          entry("3", "Angelegt von Code von info@ (legacyJob)", { name: "Code von info@", href: null, runHref: null }),
           entry("2", "Angelegt von Code (gelöscht)", { name: "Code (gelöscht)", href: null, runHref: null }),
         ],
         nextCursor: null,
@@ -70,6 +71,8 @@ describe.skipIf(isServer)("A card's history", () => {
       ["Lauf öffnen", "/app/mail/m1/code?tab=runs&run=r1"],
     ]);
     expect(dom.document.body.textContent).toContain("Angelegt von Code (gelöscht)");
+    expect(dom.document.body.textContent).toContain("Angelegt von Code von info@ (Lieferungen eintragen)");
+    expect(dom.document.body.textContent).toContain("Angelegt von Code von info@ (legacyJob)");
   });
 
   test("a failed load says so and retries in place", async () => {

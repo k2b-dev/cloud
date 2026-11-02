@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import ts from "@typescript/typescript6";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
+import { CodeAutomationTitleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeWorkflowSchedule } from "../workflows/runtime/schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
@@ -329,6 +330,20 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             const nameValue = nameProperty && ts.isPropertyAssignment(nameProperty) ? nameProperty.initializer : undefined;
             const names = nameValue && ts.isStringLiteralLike(nameValue) ? [nameValue.text] : nameType && strings(nameType);
             const name = options ? (names?.length === 1 ? names[0] : undefined) : `schedule:${result.entrypoints.length}`;
+            const titleType = options && propertyType(checker.getTypeAtLocation(options), "title", options);
+            const titleProperty =
+              options && ts.isObjectLiteralExpression(options)
+                ? options.properties.find((p) => ts.isPropertyAssignment(p) && p.name.getText() === "title")
+                : undefined;
+            const titleValue = titleProperty && ts.isPropertyAssignment(titleProperty) ? titleProperty.initializer : undefined;
+            const titles = titleValue && ts.isStringLiteralLike(titleValue) ? [titleValue.text] : titleType && strings(titleType);
+            const title = titles?.length === 1 ? CodeAutomationTitleSchema.safeParse(titles[0]) : null;
+            if (titleType && !(titleType.flags & ts.TypeFlags.Undefined) && (!title || !title.success))
+              report(
+                options!,
+                "code_static_title",
+                "Der Titel muss konstanter Klartext mit 1 bis 200 Zeichen sein, ohne Markup, Steuer- oder Formatzeichen.",
+              );
             if (
               !cron ||
               cron.length !== 1 ||
@@ -352,6 +367,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               result.entrypoints.push({
                 kind: "schedule",
                 entrypoint: name,
+                ...(title?.success ? { title: title.data } : {}),
                 cron: cron[0]!,
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,

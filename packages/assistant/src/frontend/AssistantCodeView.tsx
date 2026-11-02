@@ -62,6 +62,8 @@ export const codeScheduleLine = (code: CodeSummary, locale: string, timeZone: st
   const next = nextCodeRun(code);
   return [
     automations.length > 1 ? t.codeAutomationCount({ count: automations.length }) : t.codeKind,
+    // The Code's own name heads the row, so only a declared title adds to it; an export name is no news here.
+    ...(single?.title ? [single.title] : []),
     ...(single ? [single.cron ? describeCodeSchedule(single.cron, locale) : t.codeManualStart] : []),
     ...(next ? [t.codeNextRun({ when: formatCodeNextRun(next, locale, timeZone) })] : []),
   ].join(" · ");

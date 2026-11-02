@@ -121,6 +121,7 @@ export const CodeActivationPreviewSchema = z
     codeId: CodeIdSchema,
     title: z.string(),
     ownerKind: z.enum(["person", "resource", "app"]),
+    automations: z.array(z.object({ entrypoint: z.string(), title: z.string().optional() }).strict()).optional(),
     versionId: z.uuid(),
     number: z.number().int().positive(),
     /** The running version's number; null when none runs. */

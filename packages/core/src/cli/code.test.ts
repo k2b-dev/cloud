@@ -6,7 +6,7 @@ import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cl
 import { codeTestFailure } from "@k2b/cloud/code";
 import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
-import code from "./code";
+import code, { printCodeCheck } from "./code";
 import { codeProjectFolder, listCodeProjects, loadCodeProject, readCodeFiles, writeCodeProject } from "./code-files";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
@@ -1045,4 +1045,36 @@ test("status with no current project and no default code folder returns an empty
   expect(exit).toBe(0);
   expect(stderr).toBe("");
   expect(JSON.parse(stdout)).toEqual([]);
+});
+
+test("human check output uses reviewed titles and JSON retains both titles and stable entrypoints", async () => {
+  const data = structuredClone(checked);
+  if (!data.result.ok || !data.manifest) throw new Error("Expected successful check");
+  const entries = [
+    { kind: "schedule" as const, entrypoint: "deliver", title: "Lieferungen eintragen", cron: "0 8 * * 1", file: "code.ts", line: 1 },
+    { kind: "manual" as const, entrypoint: "legacy", cron: null, file: "code.ts", line: 2 },
+  ];
+  data.result.manifest.entrypoints = entries;
+  data.manifest.entrypoints = entries;
+  const human = context([], {}, "text");
+  printCodeCheck(human.ctx, data);
+  expect(human.printed.join("\n")).toContain("Lieferungen eintragen (deliver) · 0 8 * * 1");
+  expect(human.printed.join("\n")).toContain("legacy · Handstart");
+  const { directory } = await project();
+  const machine = context(["check", directory], {}, "json", () => Response.json(data));
+  expect(await code.run(machine.ctx)).toBe(0);
+  expect(machine.printed[0]).toMatchObject({ result: { manifest: { entrypoints: entries } } });
+});
+
+test("human runs keep the command identifier beside a reviewed title and JSON preserves both fields", async () => {
+  const { directory } = await project();
+  const run = { ...runMetadata, title: "Lieferungen eintragen" };
+  const data = { version: 1, items: [run, runMetadata], nextCursor: null };
+  const human = context(["runs", directory], {}, "text", () => Response.json(data));
+  expect(await code.run(human.ctx)).toBe(0);
+  expect(human.printed.join("\n")).toContain("Lieferungen eintragen (monday)");
+  expect(human.printed.join("\n")).toContain(" · monday · ");
+  const machine = context(["runs", directory], {}, "json", () => Response.json(data));
+  expect(await code.run(machine.ctx)).toBe(0);
+  expect(machine.printed).toEqual([data]);
 });

@@ -266,7 +266,7 @@ and their job proof/lease/result types. These are private runner transport
 contracts, not author-callable capabilities.
 
 The contracts barrel exports `CodeCheckedVersionManifestSchema`,
-`CodeCheckedVersionManifest`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,
+`CodeCheckedVersionManifest`, `CodeAutomationTitleSchema`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,
 `CodePolicyRowSchema` and `CodePolicyManifestSchema` for the checker and Core's
 version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
 These schemas describe evidence; they grant no execution or resource access.

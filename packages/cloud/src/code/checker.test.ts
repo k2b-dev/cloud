@@ -520,3 +520,21 @@ test("destructured HTTP methods retain internet evidence through their SDK signa
   expect(result).toMatchObject({ ok: true });
   if (result.ok) expect(result.manifest.internet).toEqual(["https://api.example"]);
 });
+
+test("a titled schedule runs by its stable identifier and a title change changes version evidence", async () => {
+  const source = schedule("return;").replace('{ name: "weekly" }', '{ name: "weekly", title: "  Weekly report  " }');
+  const result = await check(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.manifest.entrypoints[0]).toMatchObject({ entrypoint: "weekly", title: "Weekly report" });
+  const path = join(directory, "titled.mjs");
+  await writeFile(path, result.bundle);
+  const module = await import(path);
+  expect(await module.weekly(null, { call: async () => null })).toBeUndefined();
+  const changed = await check(source.replace("Weekly report", "Weekly summary"));
+  expect(changed.ok).toBe(true);
+  if (!changed.ok) return;
+  expect(changed.manifest.entrypoints[0]?.title).toBe("Weekly summary");
+  expect(changed.manifest.hashes.source).not.toBe(result.manifest.hashes.source);
+  expect(changed.manifest.hashes.bundle).not.toBe(result.manifest.hashes.bundle);
+});

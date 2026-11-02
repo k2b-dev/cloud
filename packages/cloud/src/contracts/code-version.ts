@@ -2,6 +2,14 @@ import { z } from "zod";
 import { CodeInternetOriginsSchema } from "./code-internet";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
 
+/** Automation display title: the Code title's 200-character budget, one line of escaped plain text. */
+export const CodeAutomationTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[^<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
+
 const hash = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
@@ -73,6 +81,7 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
         .object({
           kind: z.enum(["schedule", "manual"]).describe("Scheduled or manually invoked entrypoint."),
           entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
+          title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
           cron: z.string().nullable().describe("Five-field schedule expression, or null for manual execution."),
           file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
           line: z.number().int().positive().describe("One-based source line."),

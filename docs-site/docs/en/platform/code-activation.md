@@ -49,6 +49,10 @@ capability invocation.
 The version card in chat and `cld code activate` read the preview. The Code page's
 dialog reads `/activation/check`, described below.
 
+Activation previews carry optional `automations`: `{ entrypoint, title? }`
+from the reviewed version. Consumers show the title when present and keep the
+entrypoint as the execution key.
+
 The preview requires the same rights as activating, but also answers phones and
 non-interactive credentials, with `allowed: { allowed: false, reason }`. For the
 newest waiting version it returns one row per target with `check`: `manages`,
@@ -84,6 +88,10 @@ entrypoints whose calls use these operations at this target, from the checker's
 (`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
 finishes). Names follow directory visibility: members see other people's names;
 guests see only their own.
+
+Target-grant details keep `automations` as identifiers and add optional
+`automationTitles`, keyed by those identifiers, for readable names in access
+and removal dialogs. Those dialogs retain the identifier beside the title.
 
 Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;
 Core returns the existing process. Reusing it for another Code, version or

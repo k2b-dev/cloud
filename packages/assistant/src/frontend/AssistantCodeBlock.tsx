@@ -278,7 +278,7 @@ export default function AssistantCodeBlock(props: {
                                 aria-hidden="true"
                               />
                               <span class="flex min-w-0 flex-col">
-                                <span class="truncate text-primary">{automation.entrypoint}</span>
+                                <span class="truncate text-primary">{automation.title ?? automation.entrypoint}</span>
                                 <span class="truncate text-sm text-secondary">{automationLine(automation)}</span>
                               </span>
                               <CodeStatusBadge code={code} status={automationStatus(code, automation)} />

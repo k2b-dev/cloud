@@ -43,6 +43,7 @@ export type CodeApprovalReviewProps = {
   newer: { number: number; author: string; href: string } | null;
   why: string[];
   rights: CodeApprovalRight[];
+  automations?: Array<{ entrypoint: string; title?: string }>;
   internet: string[];
   secrets: CodeSecretVersionBinding[];
   diffHeader: string;
@@ -200,6 +201,23 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     <div class="flex min-h-full flex-col">
       <div class="grid flex-1 content-start gap-6 px-2 pt-1 pb-6">
         <Show when={decidedNotice()}>{(notice) => notice()}</Show>
+        <Show when={props.automations?.length}>
+          <section>
+            <h3 class="text-sm font-medium">{t().automations}</h3>
+            <ul class="mt-2 grid gap-1 text-sm text-secondary">
+              <For each={props.automations}>
+                {(entry) => (
+                  <li>
+                    <bdi>{entry.title ?? entry.entrypoint}</bdi>
+                    <Show when={entry.title}>
+                      <code class="ml-2 text-xs text-dimmed">{entry.entrypoint}</code>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
 
         <Show when={props.status === "expired" || props.status === "cancelled"}>
           <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />

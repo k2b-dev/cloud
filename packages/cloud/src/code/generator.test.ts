@@ -37,12 +37,12 @@ type TestModule = {
   work_shop: { workshop(id: string): TestHandle; item(id: string): object; app(): { catalog: { list(input: object): Promise<unknown> } } };
   owner: TestHandle;
   app: {
-    schedule(cron: string, fn: () => void | Promise<void>, options?: { name: string }): unknown;
+    schedule(cron: string, fn: () => void | Promise<void>, options?: { name: string; title?: string }): unknown;
     get(path: string, fn: () => Response): unknown;
   };
   __codeSdk: {
     bind(bridge: CodeSdkBridge): void;
-    entries(): Array<{ kind: string; entrypoint: string; cron: string }>;
+    entries(): Array<{ kind: string; entrypoint: string; cron: string; title?: string }>;
     diagnostics(): Array<{ message: string }>;
     run(entrypoint: string): Promise<unknown>;
   };
@@ -293,11 +293,17 @@ describe("generated runtime through the canonical call seam", () => {
     expect(sdk.__codeSdk.entries()).toEqual([{ kind: "schedule", entrypoint: "schedule:0", cron: "0 8 * * 1" }]);
     await sdk.__codeSdk.run("schedule:0");
     expect(calls).toBe(1);
-    sdk.app.schedule("0 9 * * 1", () => {}, { name: "weekly-review" });
-    expect(sdk.__codeSdk.entries()[1]?.entrypoint).toBe("weekly-review");
+    sdk.app.schedule("0 9 * * 1", () => {}, { name: "weekly-review", title: "  Weekly review  " });
+    expect(sdk.__codeSdk.entries()[1]).toEqual({
+      kind: "schedule",
+      entrypoint: "weekly-review",
+      cron: "0 9 * * 1",
+      title: "Weekly review",
+    });
     await sdk.__codeSdk.run("weekly-review");
     expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "weekly-review" })).toThrow("duplicate_schedule_name");
     expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "bad name" })).toThrow("invalid_schedule_name");
+    expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "invalid-title", title: "<b>Bad</b>" })).toThrow("invalid_schedule_title");
     await expect(sdk.__codeSdk.run("missing")).rejects.toThrow("missing_entrypoint");
     expect(() => sdk.app.get("/", () => new Response("ok"))).toThrow("kommt in Phase 2");
     expect(sdk.__codeSdk.diagnostics()).toMatchObject([{ message: "app.get kommt in Phase 2" }]);

@@ -264,7 +264,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     declarations.push(
       `export type CodeEvents = { ${events.join("; ")} };`,
       `export type CodeApp = {
-  schedule(cron: string, handler: CodeScheduleHandler, options?: { name: string }): CodeApp;
+  schedule(cron: string, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
   /** Phase 3; check reports code_phase_unavailable. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;

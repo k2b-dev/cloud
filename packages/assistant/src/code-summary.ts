@@ -32,6 +32,7 @@ const AutomationListSchema = z.object({
   items: z.array(
     z.object({
       entrypoint: z.string(),
+      title: z.string().optional(),
       kind: z.enum(["schedule", "manual"]),
       cron: z.string().nullable(),
       nextRunAt: z.string().nullable(),

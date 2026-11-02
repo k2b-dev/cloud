@@ -4,6 +4,7 @@ import {
   type CapabilitySemanticLink,
   type CloudResourceReaderView,
   CloudResourceReaderViewSchema,
+  CodeAutomationTitleSchema,
   cloudResourceHref,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
@@ -38,12 +39,18 @@ export async function readCodeWorkload(
   const [versionId, runId, extra] = id.split("~");
   if (!versionId || !UUID.test(versionId) || extra !== undefined || (runId !== undefined && !UUID.test(runId)))
     throw new CodeDataError("NOT_FOUND", "Code not found.");
-  const [version] = await sql<{ code_id: string }[]>`SELECT code_id FROM code.versions WHERE id=${versionId}::uuid`;
+  const [version] = await sql<
+    { code_id: string; manifest: unknown }[]
+  >`SELECT code_id,manifest FROM code.versions WHERE id=${versionId}::uuid`;
   if (!version) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const { code, permission } = await readCode(version.code_id, context);
   const [run] = runId
     ? await sql<{ entrypoint: string }[]>`SELECT entrypoint FROM code.runs WHERE id=${runId}::uuid AND version_id=${versionId}::uuid`
     : [];
+  const manifest = z
+    .object({ entrypoints: z.array(z.object({ entrypoint: z.string(), title: CodeAutomationTitleSchema.optional() })) })
+    .safeParse(version.manifest);
+  const title = run && manifest.success ? manifest.data.entrypoints.find((entry) => entry.entrypoint === run.entrypoint)?.title : undefined;
   // Reading the Code does not prove the viewer may open its owner, whose page checks that itself.
   const ownerName = await codeAccountDisplayName(code, context).catch(() => null);
   const page = ownerName ? await pageOf(code, context) : null;
@@ -57,7 +64,7 @@ export async function readCodeWorkload(
   return {
     view: {
       title: (ownerName ?? code.title).slice(0, 500),
-      ...(run ? { context: run.entrypoint.slice(0, 200) } : {}),
+      ...(run ? { context: (title ?? run.entrypoint).slice(0, 200) } : {}),
       permission: permission === "editor" ? "write" : "read",
     },
     links,

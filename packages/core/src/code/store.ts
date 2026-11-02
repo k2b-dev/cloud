@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "@k2b/cloud";
-import { type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
+import { CodeAutomationTitleSchema, type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
@@ -362,6 +362,7 @@ type RunRow = {
   version_id: string;
   trigger: CodeRun["trigger"];
   entrypoint: string;
+  title: string | null;
   state: CodeRun["state"];
   outcome: string | null;
   input: unknown;
@@ -374,20 +375,24 @@ type RunRow = {
   rerun_by_name: string | null;
 };
 /** Like directory search: members see other people's names, guests only their own. */
-const mapRun = (row: RunRow, viewer: { id: string; roles: readonly string[] }): CodeRun => ({
-  id: row.id,
-  codeId: row.code_id,
-  versionId: row.version_id,
-  trigger: row.trigger,
-  entrypoint: row.entrypoint,
-  state: row.state,
-  outcome: row.outcome,
-  createdAt: row.created_at.toISOString(),
-  startedAt: row.started_at?.toISOString() ?? null,
-  endedAt: row.ended_at?.toISOString() ?? null,
-  rerunOf: row.rerun_of,
-  rerunByName: row.rerun_by && (viewer.roles.includes("user") || row.rerun_by === viewer.id) ? row.rerun_by_name : null,
-});
+const mapRun = (row: RunRow, viewer: { id: string; roles: readonly string[] }): CodeRun => {
+  const title = CodeAutomationTitleSchema.safeParse(row.title);
+  return {
+    id: row.id,
+    codeId: row.code_id,
+    versionId: row.version_id,
+    trigger: row.trigger,
+    entrypoint: row.entrypoint,
+    ...(title.success ? { title: title.data } : {}),
+    state: row.state,
+    outcome: row.outcome,
+    createdAt: row.created_at.toISOString(),
+    startedAt: row.started_at?.toISOString() ?? null,
+    endedAt: row.ended_at?.toISOString() ?? null,
+    rerunOf: row.rerun_of,
+    rerunByName: row.rerun_by && (viewer.roles.includes("user") || row.rerun_by === viewer.id) ? row.rerun_by_name : null,
+  };
+};
 /** Public run metadata deliberately has no input, output or calls. */
 export const listCodeRuns = async (input: { codeId: string; cursor?: string; limit: number }, context: CodeContext) => {
   await readCode(input.codeId, context);
@@ -395,9 +400,10 @@ export const listCodeRuns = async (input: { codeId: string; cursor?: string; lim
   const rows = await sql<
     (RunRow & { cursor_time: string })[]
   >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
+    (SELECT e->>'title' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v.manifest->'entrypoints')='array' THEN v.manifest->'entrypoints' ELSE '[]'::jsonb END) e WHERE e->>'entrypoint'=r.entrypoint LIMIT 1) AS title,
     COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid) AS rerun_by_name,
     to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
-    FROM code.runs r LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId}
+    FROM code.runs r LEFT JOIN code.versions v ON v.id=r.version_id LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId}
     AND (${at ?? null}::timestamptz IS NULL OR (r.created_at,r.id) < (${at ?? null}::timestamptz,${id ?? null}::uuid))
     ORDER BY r.created_at DESC,r.id DESC LIMIT ${input.limit + 1}`;
   const viewer = codePerson(context);
@@ -421,8 +427,9 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
   const [row] = await sql<
     RunRow[]
   >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
+    (SELECT e->>'title' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v.manifest->'entrypoints')='array' THEN v.manifest->'entrypoints' ELSE '[]'::jsonb END) e WHERE e->>'entrypoint'=r.entrypoint LIMIT 1) AS title,
     COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid) AS rerun_by_name
-    FROM code.runs r LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId} AND r.id = ${input.runId}::uuid`;
+    FROM code.runs r LEFT JOIN code.versions v ON v.id=r.version_id LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId} AND r.id = ${input.runId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code run not found.");
   const viewer = codePerson(context);
   if (permission === "reader") return { run: mapRun(row, viewer), contents: null };

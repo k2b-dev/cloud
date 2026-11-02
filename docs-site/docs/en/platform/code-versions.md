@@ -74,7 +74,7 @@ from `@k2b/cloud/contracts` and re-exported by Core's `code/index.ts`. The host
 copies these fields unchanged from the checker's `checkCode` result:
 
 - `version: 1`;
-- `entrypoints`: `{ kind: "schedule" | "manual", entrypoint, cron, file, line }`;
+- `entrypoints`: `{ kind: "schedule" | "manual", entrypoint, title?, cron, file, line }`;
 - `permissions`: `{ operation, target, file, line }`, retaining separate source
   rows for literal targets and references. An app-wide operation has a null
   target; dynamic personal targets have a null `target.id`;
@@ -87,7 +87,7 @@ and any AI or internet use. Core resolves each declared operation in the current
 catalog and refuses missing classifications or operations unavailable to Code.
 `code: false` actions remain available to personal Code acting with person
 authority; resource-owned and app-owned Code cannot use them. Keep the checker's
-permission rows and entrypoints unchanged; locations are one-based. Core validates
+permission rows and entrypoints (including optional titles) unchanged; locations are one-based. Core validates
 their source locations.
 
 Source hashing matches the checker: SHA-256 over UTF-8
@@ -97,6 +97,13 @@ the exact UTF-8 bundle. The manifest is saved at version creation and cannot be
 replaced later. A manifest never grants permission to make a call. Dispatch
 checks each actual operation against current policy, version approval, mandate
 and resource access.
+
+Automation titles use `CodeAutomationTitleSchema`: trimmed, 1–200 characters,
+one line of plain text without HTML markup or control/format characters.
+A title belongs to this immutable manifest. A title change creates a new
+version and follows the existing approval rules. `entrypoint` remains the key
+for execution, JSON, audit and URLs; human displays use `title ?? entrypoint`.
+Historical runs use the title of their own version.
 
 ## Compare what will be approved
 

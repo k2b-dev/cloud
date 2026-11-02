@@ -16,7 +16,9 @@ versioned JSON result intact; these are the same contracts as `cld code`.
    No guessed operations or resource IDs. A Space task can omit `columnId`;
    it goes into the first open column.
 3. Write `app.schedule` in `code.ts`, default-exporting `app`. Give schedules
-   stable names. Required action idempotency keys describe the intended effect
+   stable names and a short human title next to the name, for example
+   `{ name: "weekly-review", title: "Weekly review" }` in the declaration options.
+   Required action idempotency keys describe the intended effect
    so retries use the same key. `code_write({project,path,content})` returns
    a complete replacement project. Retain it for the next write. These drafts
    stay in the chat until submit; pull retrieves the last submitted version.

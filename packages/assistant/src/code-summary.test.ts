@@ -94,6 +94,7 @@ test("lists one owner's Code with its newest run; a missing run history keeps th
 test("a Code carries its automations, removed access and earliest next run", async () => {
   const automation = (entrypoint: string, nextRunAt: string | null, missing = false) => ({
     entrypoint,
+    ...(entrypoint === "deliveries" ? { title: "Lieferungen eintragen" } : {}),
     kind: "schedule",
     cron: "0 7 * * 1",
     nextRunAt,
@@ -111,6 +112,7 @@ test("a Code carries its automations, removed access and earliest next run", asy
   });
   const [item] = (await loadCodeSummaries(core.invoke, { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } })).items;
   expect(item!.automations!.map((entry) => entry.entrypoint)).toEqual(["sort", "deliveries"]);
+  expect(item!.automations!.map((entry) => entry.title)).toEqual([undefined, "Lieferungen eintragen"]);
   expect(nextCodeRun(item!)).toBe("2026-11-02T06:00:00.000Z");
   expect(codeStatus(item!)).toEqual({ key: "access_missing", tone: "warning" });
   // Only the automation that needs the access lacks it; the other keeps running.

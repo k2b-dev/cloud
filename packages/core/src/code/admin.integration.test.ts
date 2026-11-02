@@ -30,7 +30,7 @@ import type { CodeSourceFiles } from "./contracts";
 import { readCodePolicySnapshot, updateCodePolicy } from "./policy";
 import * as runnerJobs from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { codeBundleHash, codeSourceHash, insertCodeRun } from "./store";
+import { codeBundleHash, codeSourceHash, insertCodeRun, listCodeRuns, readCodeRun } from "./store";
 import type { CodeCheckedVersionManifest } from "./version-contracts";
 import { decideCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
 import { readCodeWorkload } from "./workload-reader";
@@ -107,7 +107,7 @@ const submission = (codeId: string, source: string, baseVersionId: string | null
     version: 1,
     entry: "code.ts",
     hashes: { source: codeSourceHash(sourceFiles, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-    entrypoints: [{ kind: "schedule", entrypoint: "weekly", cron: "0 8 * * 1", file: "code.ts", line: 1 }],
+    entrypoints: [{ kind: "schedule", entrypoint: "weekly", title: "Lieferungen eintragen", cron: "0 8 * * 1", file: "code.ts", line: 1 }],
     ai: false,
     policyRows: ["silent_shared"],
     permissions: [{ operation: "example.item.change", target: { type: "example.item", id: "item_1" }, file: "code.ts", line: 2 }],
@@ -223,12 +223,25 @@ databaseSuite()("C22 Administration › Code read model", () => {
 
     await decideCodeVersion(first.binding, true, reviewer);
     expect((await codeVersions()).total).toBe(0);
+    expect(
+      (
+        await countPending({
+          approverUserId: reviewerId,
+          roleContext: { kind: "request", authority: reviewer.authority },
+          kind: "code_version",
+          timeoutMs: 250,
+        })
+      ).total,
+    ).toBe(0);
+    expect((await readCodeAdminSummary(reviewer)).approvals).toBe(0);
+    expect((await listCodeAdminCodes({ status: "waiting" }, reviewer)).total).toBe(0);
     expect(await listCodeAdminApprovals(reviewer)).toEqual({ items: [], nextCursor: null });
     expect(await listCodeAdminDecided(reviewer)).toEqual([
       expect.objectContaining({ versionId: first.version.id, approved: true, soleAdmin: false, decidedBy: "Ben Schulz" }),
     ]);
     expect(await readCodeAdminApproval(first.version.id, reviewer)).toMatchObject({
       status: "approved",
+      automations: [{ entrypoint: "weekly", title: "Lieferungen eintragen" }],
       canApprove: false,
       decision: { approved: true, decidedByName: "Ben Schulz" },
     });
@@ -275,11 +288,23 @@ databaseSuite()("C22 Administration › Code read model", () => {
       codeId: "c_origin",
       versionId: version.version.id,
       trigger: "schedule",
-      entrypoint: "Lieferungen eintragen",
+      entrypoint: "weekly",
       input: null,
     });
+    const next = submission("c_origin", "export const c = 4;\nexample.item.change();", version.version.id);
+    next.manifest.entrypoints[0]!.title = "Lieferungen prüfen";
+    await submitCodeVersion(next, author);
+    // Run labels remain pinned to the run's version after a newer title is submitted.
     const read = await readCodeWorkload(`${version.version.id}~${runId}`, author);
     expect(read.view).toEqual({ title: "Wochenbericht", context: "Lieferungen eintragen", permission: "write" });
+    expect((await listCodeRuns({ codeId: "c_origin", limit: 10 }, author)).items[0]).toMatchObject({
+      entrypoint: "weekly",
+      title: "Lieferungen eintragen",
+    });
+    expect((await readCodeRun({ codeId: "c_origin", runId }, author)).run).toMatchObject({
+      entrypoint: "weekly",
+      title: "Lieferungen eintragen",
+    });
     // A person's Code has no owner page to link to.
     expect(read.links).toEqual([]);
     expect((await readCodeWorkload(version.version.id, author)).view.context).toBeUndefined();

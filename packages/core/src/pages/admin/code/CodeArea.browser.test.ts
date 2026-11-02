@@ -93,6 +93,8 @@ test("the decision bar keeps reject and approve on one row under the binding lin
 
 test("approving sends the unchanged hash binding, shows the result and lowers the sidebar count", async () => {
   await goto(review);
+  await page.getByText("Lieferungen eintragen", { exact: true }).waitFor();
+  expect(await page.getByText("lieferungenEintragen", { exact: true }).count()).toBe(1);
   expect(await sidebarCode().innerText()).toContain("4");
   await page.getByText("„Bezieht Personen ein“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.").waitFor();
   await page.getByText("https://api.buchhaltung-beispiel.de", { exact: true }).waitFor();
@@ -110,6 +112,11 @@ test("approving sends the unchanged hash binding, shows the result and lowers th
   await page.getByRole("link", { name: "Code öffnen" }).waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).count()).toBe(0);
   expect(await sidebarCode().innerText()).toContain("3");
+  expect(await page.locator(`a[href*="sec=approvals"][href*="id=${FIXTURE_VERSIONS.rueckruf3}"]`).count()).toBe(0);
+  await page.reload();
+  await page.getByText("Version 3 ist freigegeben.").waitFor();
+  expect(await sidebarCode().innerText()).toContain("3");
+  expect(await page.locator(`a[href*="sec=approvals"][href*="id=${FIXTURE_VERSIONS.rueckruf3}"]`).count()).toBe(0);
 }, 20_000);
 
 test("rejecting asks first and cancel changes nothing", async () => {

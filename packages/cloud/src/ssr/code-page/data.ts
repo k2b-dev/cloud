@@ -53,7 +53,9 @@ export const ManifestSchema = z.object({
   /** Reviewed secret bindings: which secret and destination this version may use, for the secrets tab. */
   secrets: z.array(z.object({ name: z.string(), binding_revision: z.string(), origin: z.string() })).optional(),
   internet: CodeInternetOriginsSchema.optional(),
-  entrypoints: z.array(z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), cron: z.string().nullable() })),
+  entrypoints: z.array(
+    z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), title: z.string().optional(), cron: z.string().nullable() }),
+  ),
   permissions: z.array(PermissionSchema),
 });
 export const VersionDiffSchema = z.object({
@@ -67,6 +69,7 @@ const RunSchema = z.object({
   versionId: z.string(),
   trigger: z.enum(["manual", "schedule", "event", "path"]),
   entrypoint: z.string(),
+  title: z.string().optional(),
   state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
   outcome: z.string().nullable(),
   createdAt: z.string(),
@@ -140,7 +143,9 @@ export const ActivationCheckSchema = z.object({
 });
 export type CodeActivationCheck = z.infer<typeof ActivationCheckSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
-export const AutomationListSchema = z.object({ items: z.array(z.object({ entrypoint: z.string(), nextRunAt: z.string().nullable() })) });
+export const AutomationListSchema = z.object({
+  items: z.array(z.object({ entrypoint: z.string(), title: z.string().optional(), nextRunAt: z.string().nullable() })),
+});
 /** Metadata only: Core has no operation that returns a secret's value. */
 const SecretSchema = z.object({
   name: z.string(),
@@ -233,6 +238,8 @@ export type CodePageRunDetail = {
 };
 export type CodePageAutomation = {
   entrypoint: string;
+  /** Reviewed human title; absent on older versions. */
+  title?: string;
   kind: "schedule" | "manual";
   cron: string | null;
   /** Only the waiting version has it. */

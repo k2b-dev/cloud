@@ -42,6 +42,7 @@ export const codeAdminMessages = i18n.define({
   messages: {
     en: {
       area: "Code",
+      automations: "Automations",
       areaSub: "Everything that runs as Code in Cloud",
       approvals: "Approvals",
       allCode: "Code in this Cloud",
@@ -372,6 +373,7 @@ export const codeAdminMessages = i18n.define({
     },
     de: {
       area: "Code",
+      automations: "Automationen",
       areaSub: "Alles, was als Code in Cloud läuft",
       approvals: "Freigaben",
       allCode: "Code in dieser Cloud",

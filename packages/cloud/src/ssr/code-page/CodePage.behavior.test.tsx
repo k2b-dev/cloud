@@ -31,7 +31,11 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
     const notice = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const data = codePageFixture(control.startsWith("resume") ? "paused" : control === "rerun" ? "run-failed" : "overview", "en");
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
-    if (control === "run") data.state.automations![0]!.kind = "manual";
+    if (control === "run") {
+      data.state.automations![0]!.kind = "manual";
+      data.state.automations![0]!.title = "Review deliveries";
+    }
+    if (control === "rerun") data.state.run!.run.title = "Review deliveries";
     const expectedInput =
       control === "run"
         ? { entrypoint: data.state.automations![0]!.entrypoint, input: null }
@@ -49,6 +53,7 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
         }),
       dom.root,
     );
+    if (control === "run" || control === "rerun") expect(dom.root.textContent).toContain("Review deliveries");
     const button = (label: string) => {
       const match = [...dom.document.querySelectorAll<HTMLElement>("button, [role=menuitem]")].find(
         (element) => element.textContent?.trim() === label || element.getAttribute("aria-label") === label,

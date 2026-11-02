@@ -86,6 +86,8 @@ export type CodeAdminApprovalDetail = {
   permissions: CodeAdminPermissionChange[];
   why: CodeAdminWhyRow[];
   ai: boolean;
+  /** Reviewed automation names; identifiers remain the keys. */
+  automations?: Array<{ entrypoint: string; title?: string }>;
   newer: { versionId: string; number: number; author: string | null; submittedAt: string } | null;
   /** Only the advisory C5 eligibility; the decision rechecks it under locks. */
   canApprove: boolean;
@@ -474,6 +476,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
     permissions,
     why: manifest ? await whyRows(owner, row.created_by, manifest.policyRows) : [],
     ai: manifest?.ai ?? false,
+    automations: manifest?.entrypoints.map(({ entrypoint, title }) => ({ entrypoint, ...(title === undefined ? {} : { title }) })) ?? [],
     newer: newer ? { versionId: newer.id, number: newer.number, author: newer.author, submittedAt: iso(newer.created_at) } : null,
     canApprove,
     own: row.created_by === admin.id,

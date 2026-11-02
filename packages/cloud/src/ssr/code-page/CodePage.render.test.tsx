@@ -505,3 +505,41 @@ test("internet lists distinguish running/waiting versions, historical selection,
   expect(text("internet-failed")).toContain("Die Ursprünge im Internet konnten nicht geladen werden.");
   expect(text("internet-failed")).toContain("Erneut versuchen");
 });
+
+test("automation rows and missing-access messages use reviewed titles with identifier fallback", () => {
+  for (const state of ["overview", "removed", "waiting"] as const) {
+    const data = codePageFixture(state, "de");
+    if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+    for (const automation of data.state.automations ?? []) automation.title = "Lieferungen eintragen";
+    const rendered = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+    const text = rendered.replaceAll(/<[^>]+>/g, " ");
+    expect(text).toContain("Lieferungen eintragen");
+    expect(text).not.toContain("anfragenSortieren");
+    if (state === "removed") expect(text).toContain("„Lieferungen eintragen“");
+  }
+  expect(html("overview")).toContain("anfragenSortieren");
+});
+
+test("run lists and details use the run's title with identifier fallback", () => {
+  const data = codePageFixture("runs", "de");
+  if (data.state.kind !== "ready" || !data.state.run || !data.state.runs) throw new Error("Expected run fixture");
+  data.state.run.run.title = "Lieferungen eintragen";
+  data.state.runs.items[0]!.title = "Lieferungen eintragen";
+  const rendered = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data });
+      },
+    }),
+  ).replaceAll(/<!--[^>]*-->/g, "");
+  expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(rendered).toContain("anfragenSortieren");
+});
