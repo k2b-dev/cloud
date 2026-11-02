@@ -65,11 +65,17 @@ afterAll(async () => {
 const load = async (options: (typeof viewports)[keyof typeof viewports]) => {
   const page = await browser.newPage({ ...options, timezoneId: "UTC", locale: "de-DE" });
   await page.clock.install({ time: new Date("2026-11-02T10:00:00.000Z") });
-  await page.setContent(
-    `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
-      `<style>*, *::before, *::after { transition: none !important }</style></head>` +
-      `<body class="k2b-ui"><main id="app" style="display:flex;flex-direction:column;gap:12px;padding:24px;max-width:320px"></main></body></html>`,
+  // A real http document: WebKit keeps no same-URL history entries for about:blank, which the phone sheet uses.
+  await page.route("https://dates.test/", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body:
+        `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
+        `<style>*, *::before, *::after { transition: none !important }</style></head>` +
+        `<body class="k2b-ui"><main id="app" style="display:flex;flex-direction:column;gap:12px;padding:24px;max-width:320px"></main></body></html>`,
+    }),
   );
+  await page.goto("https://dates.test/");
   await page.addScriptTag({ content: script });
   await page.locator(".k2b-date-field input").first().waitFor();
   return page;
@@ -311,10 +317,17 @@ describe("typed date field", () => {
       const day = sheet.locator('[data-date-day="2026-11-20"]');
       expect((await day.boundingBox())!.height).toBeGreaterThanOrEqual(44);
       await day.tap();
-      await page.waitForFunction(() => document.querySelector("dialog[open]") === null);
+      // The day is saved with the tap; focus returns to the toggle once the sheet and its history entry are gone.
       expect(await input.inputValue()).toBe("20.11.2026");
       expect(await commits(page)).toEqual(["2026-11-20"]);
-      expect(await toggle.evaluate((element) => element === document.activeElement)).toBe(true);
+      await page.waitForFunction(() => document.querySelector("dialog[open]") === null);
+      await toggle.evaluate(
+        (element) =>
+          new Promise<void>((done) => {
+            const check = () => (element === document.activeElement ? done() : requestAnimationFrame(check));
+            check();
+          }),
+      );
       expect(rounded(await page.locator(".k2b-date-field .k2b-input-shell").first().boundingBox())).toEqual(shell);
     } finally {
       await page.close();

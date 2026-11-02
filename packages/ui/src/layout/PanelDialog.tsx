@@ -2,7 +2,7 @@ import { createContext, createEffect, createSignal, createUniqueId, type JSX, Sh
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
-import { confirmPrompt } from "../feedback/prompt-confirm";
+import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
 import { useUiMessages } from "../intl/messages";
 import { usePanelDialogMessages } from "./panel-dialog-messages";
@@ -102,7 +102,7 @@ export const confirmDiscardIfDirty = async (dirty: boolean | (() => boolean)): P
   const hasChanges = typeof dirty === "function" ? dirty() : dirty;
   if (!hasChanges) return true;
   return Boolean(
-    await confirmPrompt(resolvePromptMessages().discardUnsavedChanges, {
+    await sharedPrompts.confirm(resolvePromptMessages().discardUnsavedChanges, {
       title: resolvePromptMessages().unsavedChangesTitle,
       variant: "danger",
       confirmText: resolvePromptMessages().discard,

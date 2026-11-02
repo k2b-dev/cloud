@@ -840,7 +840,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     setSheetOpen(true);
     calendar.close();
     const { openDateSheet } = await import("./date-sheet");
-    const picked = await openDateSheet<{ key: string }>({
+    await openDateSheet<string>({
       title: props.owner.label ?? props.owner["aria-label"],
       subtitle: props.value() ? formatDateLong(props.value()!, locale()) : t().noDate,
       ariaLabel: fieldName(props.owner),
@@ -851,7 +851,11 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
           setVisibleMonth={setVisibleMonth}
           selected={draftKey}
           focusDate={draftKey}
-          onSelect={(key) => close({ key })}
+          onSelect={(key) => {
+            // Saved at once: the sheet's promise settles only after its history entry has gone.
+            pick(key);
+            close(key);
+          }}
           dateConfig={props.dateConfig()}
           min={props.owner.min}
           max={props.owner.max}
@@ -859,7 +863,6 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
       ),
     });
     setSheetOpen(false);
-    if (picked) pick(picked.key);
     toggle?.focus({ preventScroll: true });
   };
   /** Phones open the calendar as a sheet; there the text only brings up the keypad. */
@@ -1278,12 +1281,16 @@ function DateRangeTextField(props: {
       subtitle: rangeStatusText(props.value(), locale(), t()) || t().noDate,
       ariaLabel: name(),
       locale: locale() ?? "en",
-      content: (close) => rangeCalendar(close),
+      content: (close) =>
+        rangeCalendar((next) => {
+          // Saved at once, as in the single date sheet.
+          commitRange(next);
+          close(next);
+        }),
     });
     setSheetOpen(false);
     // A dismissed sheet saves nothing and leaves the text as it was before the sheet opened.
-    if (range) commitRange(range);
-    else
+    if (!range)
       batch(() => {
         setStartText(before.start);
         setEndText(before.end);

@@ -115,3 +115,6 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
     },
   );
 };
+
+/** `prompts` starts as this object; `PanelDialog` asks through it, so it reaches a replaced `prompts.confirm` too. */
+export const sharedPrompts = { confirm: confirmPrompt };

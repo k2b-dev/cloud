@@ -13,7 +13,7 @@ import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import { confirmPrompt, contentClass, DialogHeader, type PromptContent, panelClass } from "./prompt-confirm";
+import { contentClass, DialogHeader, type PromptContent, panelClass, sharedPrompts } from "./prompt-confirm";
 import { resolvePromptMessages } from "./prompt-messages";
 
 export { DialogHeader } from "./prompt-confirm";
@@ -694,7 +694,9 @@ const promptNumber = (
     })
     .then((result) => result?.value ?? null);
 
-export const prompts = {
+// The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`
+// (for example in a test) therefore reaches every confirmation.
+export const prompts = Object.assign(sharedPrompts, {
   alert: (content: PromptContent, options?: DialogOptions): Promise<void | undefined> =>
     dialogCore.open<void>(
       (close) => (
@@ -725,8 +727,6 @@ export const prompts = {
       title: options?.title ?? resolveUiMessages().success,
       icon: options?.icon ?? "ti ti-check",
     }),
-
-  confirm: confirmPrompt,
 
   prompt: promptText,
   promptNumber,
@@ -802,4 +802,4 @@ export const prompts = {
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().error,
       },
     ),
-};
+});

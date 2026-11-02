@@ -41,16 +41,18 @@ export type DateInputResult =
   | { kind: "error"; error: DateInputError };
 
 /** Weekday indexes count from Monday (0) to Sunday (6). */
-const DAY_WORDS: Record<string, number> = {
-  vorgestern: -2,
-  gestern: -1,
-  heute: 0,
-  morgen: 1,
-  übermorgen: 2,
-  yesterday: -1,
-  today: 0,
-  tomorrow: 1,
-};
+// Pairs, not object keys: a bundler prints a key such as `übermorgen` as a bare identifier, and a script read as
+// Latin-1 then stops at its first non-ASCII byte.
+const DAY_WORDS: readonly (readonly [string, number])[] = [
+  ["vorgestern", -2],
+  ["gestern", -1],
+  ["heute", 0],
+  ["morgen", 1],
+  ["übermorgen", 2],
+  ["yesterday", -1],
+  ["today", 0],
+  ["tomorrow", 1],
+];
 const WEEKDAY_NAMES: readonly (readonly string[])[] = [
   ["montag", "monday"],
   ["dienstag", "tuesday"],
@@ -167,9 +169,7 @@ const numericFormat = (locale?: string): Intl.DateTimeFormat =>
 /** The locale's order of day, month and year in a numeric date, read from Intl; day-month-year without data. */
 export const dateOrder = (locale?: string): DatePart[] => {
   try {
-    const parts = numericFormat(locale).formatToParts(
-      Date.UTC(2026, 10, 22, 12),
-    );
+    const parts = numericFormat(locale).formatToParts(Date.UTC(2026, 10, 22, 12));
     const order = parts.map((part) => part.type).filter((type): type is DatePart => type === "day" || type === "month" || type === "year");
     return order.length === 3 ? order : ["day", "month", "year"];
   } catch {
@@ -240,7 +240,7 @@ const parseWord = (word: string, today: string): DateInputResult => {
   const abbreviation = WEEKDAY_ABBREVIATIONS.findIndex((names) => names.includes(word));
   if (abbreviation >= 0) return weekdayDate(abbreviation, today);
   const candidates: { key: string; exact: boolean; resolve: () => DateInputResult }[] = [];
-  for (const [name, offset] of Object.entries(DAY_WORDS)) {
+  for (const [name, offset] of DAY_WORDS) {
     if (name === word || (word.length >= 3 && name.startsWith(word))) {
       candidates.push({
         key: `day:${offset}`,
