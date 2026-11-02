@@ -329,11 +329,17 @@ describe("Mail composer with a long message", () => {
         expect(end.caret!.bottom).toBeLessThanOrEqual(Math.min(end.view.bottom, label === "phone" ? end.toolbar.top : end.view.bottom) + 1);
         if (label === "desktop") expect(end.caret!.top).toBeGreaterThanOrEqual(end.toolbar.bottom - 1);
 
-        // A wheel over the message scrolls it back up.
-        const box = await scroller.boundingBox();
-        if (!box) throw new Error("The Write pane is not visible");
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        await page.mouse.wheel(0, -600);
+        // The Write pane itself scrolls: a wheel (desktop) or a finger (phone) moves the message back up.
+        // Mobile WebKit has no wheel, so the phone case checks that the pane accepts user scrolling and scrolls it.
+        if (label === "desktop") {
+          const box = await scroller.boundingBox();
+          if (!box) throw new Error("The Write pane is not visible");
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.wheel(0, -600);
+        } else {
+          expect(await scroller.evaluate((element) => getComputedStyle(element).overflowY)).toMatch(/^(auto|scroll)$/);
+          await scroller.evaluate((element) => element.scrollBy({ top: -600 }));
+        }
         await page.waitForFunction(
           (before) => document.querySelector(".k2b-text-editor")!.parentElement!.scrollTop < before,
           end.scrollTop,
