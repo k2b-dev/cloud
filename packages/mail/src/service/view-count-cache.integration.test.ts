@@ -29,6 +29,7 @@ const counts = (value: number): ConversationViewCounts => ({
   recently_active: value,
   kept: value,
 });
+const snapshot = (value: number) => ({ views: counts(value), doneByFolder: {} });
 
 suite("Mail count cache", () => {
   let context: MailRequestContext;
@@ -142,7 +143,7 @@ suite("Mail count cache", () => {
             { mailboxId, currentUserId: userId, visibility: { scope: "mailbox", permission: "admin" } },
             tx,
           ),
-        ).toEqual(counts(0));
+        ).toEqual(snapshot(0));
       });
     } finally {
       await pool.close();
@@ -163,11 +164,11 @@ suite("Mail count cache", () => {
           reader: ownReader,
           load: async () => {
             await redis.send("DEL", [`${key}:fill`]);
-            return counts(6);
+            return snapshot(6);
           },
         }),
-      ).toEqual(counts(6));
-      expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(99) })).toEqual(counts(6));
+      ).toEqual(snapshot(6));
+      expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(99) })).toEqual(snapshot(6));
     } finally {
       spy.mockRestore();
     }
@@ -178,15 +179,15 @@ suite("Mail count cache", () => {
     const load = async () => {
       calls++;
       await Bun.sleep(30);
-      return counts(7);
+      return snapshot(7);
     };
     const results = await Promise.all(
       Array.from({ length: 20 }, () => cachedConversationViewCounts({ mailboxId, reader: ownReader, load })),
     );
-    expect(results).toEqual(Array.from({ length: 20 }, () => counts(7)));
+    expect(results).toEqual(Array.from({ length: 20 }, () => snapshot(7)));
     expect(calls).toBe(1);
-    expect(await cachedConversationViewCounts({ mailboxId, reader: reader(), load: async () => counts(2) })).toEqual(counts(2));
-    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(99) })).toEqual(counts(7));
+    expect(await cachedConversationViewCounts({ mailboxId, reader: reader(), load: async () => snapshot(2) })).toEqual(snapshot(2));
+    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(99) })).toEqual(snapshot(7));
   });
   test("uses the distributed fill lease, rather than starting another computation", async () => {
     const ownReader = reader();
@@ -197,7 +198,7 @@ suite("Mail count cache", () => {
       return send(name, args);
     });
     try {
-      await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(1) });
+      await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(1) });
     } finally {
       spy.mockRestore();
     }
@@ -210,13 +211,13 @@ suite("Mail count cache", () => {
       reader: ownReader,
       load: async () => {
         calls++;
-        return counts(99);
+        return snapshot(99);
       },
     });
     await Bun.sleep(100);
-    await redis.send("SET", [key, JSON.stringify({ at: Date.now(), counts: counts(3) }), "PX", "30000"]);
+    await redis.send("SET", [key, JSON.stringify({ at: Date.now(), counts: snapshot(3) }), "PX", "30000"]);
     try {
-      expect(await result).toEqual(counts(3));
+      expect(await result).toEqual(snapshot(3));
       expect(calls).toBe(0);
     } finally {
       await redis.send("DEL", [key, `${key}:fill`]);
@@ -243,7 +244,7 @@ suite("Mail count cache", () => {
       calls++;
       started();
       await gate;
-      return counts(4);
+      return snapshot(4);
     };
     const first = cachedConversationViewCounts({ mailboxId, reader: ownReader, load });
     try {
@@ -253,8 +254,8 @@ suite("Mail count cache", () => {
       expect(await redis.send("GET", [`${key}:fill`])).not.toBeNull();
       const second = cachedConversationViewCounts({ mailboxId, reader: ownReader, load });
       finish();
-      expect(await first).toEqual(counts(4));
-      expect(await second).toEqual(counts(4));
+      expect(await first).toEqual(snapshot(4));
+      expect(await second).toEqual(snapshot(4));
       expect(calls).toBe(1);
     } finally {
       finish();
@@ -283,7 +284,7 @@ suite("Mail count cache", () => {
           if (active === limit) full();
           await gate;
           active--;
-          return counts(1);
+          return snapshot(1);
         },
       }),
     );
@@ -292,23 +293,23 @@ suite("Mail count cache", () => {
       expect(peak).toBe(limit);
     } finally {
       release();
-      expect((await Promise.all(work)).every((value) => value.mine === 1)).toBe(true);
+      expect((await Promise.all(work)).every((value) => value.views.mine === 1)).toBe(true);
     }
     expect(peak).toBe(limit);
   });
   test("live invalidation commits a new version; rollback keeps the previous snapshot", async () => {
     const ownReader = reader();
-    const get = (value: number) => cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(value) });
-    expect(await get(1)).toEqual(counts(1));
+    const get = (value: number) => cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(value) });
+    expect(await get(1)).toEqual(snapshot(1));
     await expect(
       sql.begin(async (tx) => {
         await enqueueMailInvalidation(tx, { mailboxId });
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect(await get(2)).toEqual(counts(1));
+    expect(await get(2)).toEqual(snapshot(1));
     await invalidate();
-    expect(await get(2)).toEqual(counts(2));
+    expect(await get(2)).toEqual(snapshot(2));
   });
   test("invalidating writers do not acquire the shared version lock before commit", async () => {
     let unlock!: () => void;
@@ -375,7 +376,7 @@ suite("Mail count cache", () => {
   });
   test("an old computation cannot refill the version after a committed action", async () => {
     const ownReader = reader();
-    let finish!: (value: ConversationViewCounts) => void;
+    let finish!: (value: ReturnType<typeof snapshot>) => void;
     let started!: () => void;
     const ready = new Promise<void>((resolve) => {
       started = resolve;
@@ -392,24 +393,24 @@ suite("Mail count cache", () => {
     });
     await ready;
     await invalidate();
-    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(2) })).toEqual(counts(2));
-    finish(counts(1));
+    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(2) })).toEqual(snapshot(2));
+    finish(snapshot(1));
     await old;
-    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(99) })).toEqual(counts(2));
+    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(99) })).toEqual(snapshot(2));
   });
   test("expires after 30 seconds and quietly refreshes after 15 seconds", async () => {
     const at = new Date("2026-10-01T00:00:00Z");
     setSystemTime(at);
     const ownReader = reader();
-    const get = (value: number) => cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(value) });
-    expect(await get(1)).toEqual(counts(1));
+    const get = (value: number) => cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(value) });
+    expect(await get(1)).toEqual(snapshot(1));
     setSystemTime(at.getTime() + VIEW_COUNT_MAX_AGE_MS);
-    expect(await get(2)).toEqual(counts(2));
+    expect(await get(2)).toEqual(snapshot(2));
     setSystemTime(at.getTime() + VIEW_COUNT_MAX_AGE_MS + 15_000);
-    expect(await get(3)).toEqual(counts(2));
+    expect(await get(3)).toEqual(snapshot(2));
     // Await a covering read after the background fill (no wall-clock TTL sleep).
     await Bun.sleep(50);
-    expect(await get(4)).toEqual(counts(3));
+    expect(await get(4)).toEqual(snapshot(3));
   });
   test("an overloaded owner fails waiters without starting duplicate database work", async () => {
     const ownReader = reader();
@@ -434,7 +435,7 @@ suite("Mail count cache", () => {
       reader: ownReader,
       load: async () => {
         calls++;
-        return counts(9);
+        return snapshot(9);
       },
     });
     // Capture rejection without starting Bun's async matcher before advancing the clock.
@@ -464,7 +465,7 @@ suite("Mail count cache", () => {
         },
       }),
     ).rejects.toThrow("database down");
-    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => counts(5) })).toEqual(counts(5));
+    expect(await cachedConversationViewCounts({ mailboxId, reader: ownReader, load: async () => snapshot(5) })).toEqual(snapshot(5));
   });
   test.each(["rejected", "unresponsive"] as const)("Valkey %s falls back to a coalesced authoritative load", async (mode) => {
     const spy = spyOn(redis, "send").mockImplementation(() =>
@@ -481,12 +482,12 @@ suite("Mail count cache", () => {
             load: async () => {
               calls++;
               await Bun.sleep(30);
-              return counts(8);
+              return snapshot(8);
             },
           }),
         ),
       );
-      expect(results.every((result) => result.needs_action === 8)).toBe(true);
+      expect(results.every((result) => result.views.needs_action === 8)).toBe(true);
       expect(calls).toBe(1);
     } finally {
       spy.mockRestore();

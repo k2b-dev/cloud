@@ -1895,10 +1895,24 @@ const everydayCommands = (t: Translate) => {
         view: flag.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active", "kept"] as const, {
           description: t({ en: "Built-in collaboration view", de: "Eingebaute Zusammenarbeitsansicht" }),
         }),
+        includeDone: flag.boolean({
+          name: "include-done",
+          description: t({
+            en: "Also list done and snoozed conversations, which mailbox and work-folder lists leave out",
+            de: "Auch erledigte und zurückgestellte Unterhaltungen listen, die Postfach- und Arbeitsordner-Listen auslassen",
+          }),
+        }),
         cursor: flag.string({ description: t({ en: "Cursor from a previous page", de: "Cursor einer vorherigen Seite" }) }),
         limit: flag.int({ min: 1, max: 100, default: 50 }),
       },
-      examples: ["cld mail ls", "cld mail ls Support", 'cld mail ls "Support:Projekte / 2025"', "cld mail ls Support --view mine --json"],
+      examples: [
+        "cld mail ls",
+        "cld mail ls Support",
+        'cld mail ls "Support:Projekte / 2025"',
+        "cld mail ls Support --view mine --json",
+        "cld mail ls Support --status done",
+        "cld mail ls Support --include-done",
+      ],
       run: async ({ ctx, args, flags }) => {
         if (!args.scope) {
           const mailboxes = await listMailboxes(ctx);
@@ -1935,8 +1949,9 @@ const everydayCommands = (t: Translate) => {
         if (folder) query.set("folderId", folder.id);
         if (flags.status) query.set("status", flags.status);
         if (flags.view) query.set("view", flags.view);
+        if (flags.includeDone) query.set("includeDone", "true");
         if (flags.cursor) query.set("cursor", flags.cursor);
-        const page = await readApi<{ items: ConversationSummary[]; nextCursor: string | null }>(
+        const page = await readApi<{ items: ConversationSummary[]; nextCursor: string | null; openOnly: boolean }>(
           ctx,
           `/mailboxes/${mailbox.id}/conversations?${query}`,
         );
@@ -1960,6 +1975,13 @@ const everydayCommands = (t: Translate) => {
             { key: "id", label: "ID" },
           ],
         );
+        if (page.openOnly && ctx.options.output === "text")
+          ctx.error(
+            t({
+              en: "Done and snoozed conversations are hidden; --status done or --include-done shows them.",
+              de: "Erledigte und zurückgestellte Unterhaltungen sind ausgeblendet; --status done oder --include-done zeigt sie.",
+            }),
+          );
       },
     }),
     command("show", {

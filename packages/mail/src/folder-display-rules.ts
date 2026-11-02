@@ -1,4 +1,4 @@
-import type { ConversationView, FolderDisplay } from "./contracts";
+import type { ConversationView, FolderDisplay, MailSearchExpression } from "./contracts";
 import { buildMailFolderTree, type MailFolderTreeEntry, type MailFolderTreeNode } from "./folder-tree";
 
 /**
@@ -103,3 +103,58 @@ export const mailRowLeavesListing = (
     }) === false
   );
 };
+
+/** Folders that file mail away. Their lists keep done and snoozed conversations, so filed mail stays findable. */
+export const FILING_FOLDER_ROLES: readonly string[] = ["archive", "sent", "trash", "junk", "all"];
+
+/** What a search expression asks for, as far as the open-work rule cares. */
+export const mailSearchOpenWorkTerms = (expression: MailSearchExpression): { status: boolean; text: boolean; folderIds: string[] } => {
+  if (expression.type === "and" || expression.type === "or") {
+    const parts = expression.expressions.map(mailSearchOpenWorkTerms);
+    return {
+      status: parts.some((part) => part.status),
+      text: parts.some((part) => part.text),
+      folderIds: parts.flatMap((part) => part.folderIds),
+    };
+  }
+  if (expression.type === "not") return mailSearchOpenWorkTerms(expression.expression);
+  return {
+    status: expression.type === "work_status" || expression.type === "snoozed",
+    text: expression.type === "text",
+    folderIds: expression.type === "folder_id" ? [expression.folderId] : [],
+  };
+};
+
+/**
+ * Whether a work list shows open conversations only, leaving out done and snoozed ones like the Focus view "All active".
+ * It applies to All mail, folders, tags, filters and saved views. Work views keep their own rule, an explicit status
+ * condition wins, a text search finds everything, and filing folders (Archive, Sent, Trash, Junk, All Mail) show
+ * everything.
+ */
+export const mailListingOpenOnly = (scope: {
+  activeView: ConversationView | null;
+  /** A status parameter or a work-status or snoozed condition. */
+  explicitStatus: boolean;
+  textSearch: boolean;
+  /** The roles of the folders the listing is limited to: the open folder and the search's folder conditions. */
+  folderRoles: readonly string[];
+}): boolean =>
+  scope.activeView === null &&
+  !scope.explicitStatus &&
+  !scope.textSearch &&
+  !scope.folderRoles.some((role) => FILING_FOLDER_ROLES.includes(role));
+
+/** The open-work rule (`isOpenConversation`) as a search condition, for listings that run through search. */
+export const OPEN_WORK_EXPRESSION: MailSearchExpression = {
+  type: "and",
+  expressions: [
+    { type: "not", expression: { type: "work_status", value: "done" } },
+    { type: "snoozed", value: false },
+  ],
+};
+
+/** A search expression limited to open work. */
+export const withOpenWork = (expression: MailSearchExpression): MailSearchExpression => ({
+  type: "and",
+  expressions: [expression, OPEN_WORK_EXPRESSION],
+});

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MAIL_SEARCH_PARAMETER, parseMailSearchState, serializeMailSearchState } from "../../search-state";
+import { MAIL_SEARCH_PARAMETER, parseMailSearchState, resolveMailSearchRoute, serializeMailSearchState } from "../../search-state";
 import { MAX_MAIL_SEARCH_PARAMETER_LENGTH, MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../../search-url";
 import {
   buildExactParticipantSearchHref,
@@ -10,6 +10,7 @@ import {
   buildMailSearchClearHref,
   buildMailSearchHref,
   buildMailSelectionHref,
+  buildMailShowDoneHref,
   isMailListItemActive,
   isMailWorkspaceUrl,
   type MailListItem,
@@ -323,5 +324,80 @@ describe("Mail search origin", () => {
     expect(selected.searchParams.get("searchFrom")).toBe("view=needs_action");
     expect(new URL(buildMailListHref(selected), source.origin).searchParams.get("searchFrom")).toBe("view=needs_action");
     expect(new URL(buildMailListHref(selected, true), source.origin).searchParams.has("searchFrom")).toBe(false);
+  });
+});
+
+describe("Show done", () => {
+  const route = (href: string) => mailRouteUrl(href);
+  const searchOf = (href: string) => {
+    const url = mailRouteUrl(href);
+    return { url, state: JSON.parse(url.searchParams.get(MAIL_SEARCH_PARAMETER) ?? "null") };
+  };
+  const resolved = (href: string) => resolveMailSearchRoute(mailRouteUrl(href));
+
+  test("All mail opens the Done tab", () => {
+    const requestUrl = route("/app/mail/Box001");
+    expect(
+      buildMailShowDoneHref({
+        requestUrl,
+        mailboxId: "Box001",
+        search: resolved("/app/mail/Box001"),
+        folderId: null,
+        savedViewExpression: null,
+      }),
+    ).toBe("/app/mail/Box001?view=done");
+  });
+
+  test("a folder adds the status condition and Reset returns to the folder's open list", () => {
+    const requestUrl = route("/app/mail/Box001?folder=Inbox1");
+    const href = buildMailShowDoneHref({
+      requestUrl,
+      mailboxId: "Box001",
+      search: resolved(requestUrl.href),
+      folderId: "Inbox1",
+      savedViewExpression: null,
+    });
+    const { url, state } = searchOf(href);
+    expect(url.searchParams.get("folder")).toBe("Inbox1");
+    expect(state.expression).toEqual({
+      type: "and",
+      expressions: [
+        { type: "folder_id", folderId: "Inbox1" },
+        { type: "work_status", value: "done" },
+      ],
+    });
+    expect(buildMailSearchClearHref(url)).toBe("/app/mail/Box001?folder=Inbox1");
+  });
+
+  test("a tag or filter keeps its conditions and adds the status", () => {
+    const tagged = `/app/mail/Box001?search=${encodeURIComponent(JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" }))}`;
+    const href = buildMailShowDoneHref({
+      requestUrl: route(tagged),
+      mailboxId: "Box001",
+      search: resolved(tagged),
+      folderId: null,
+      savedViewExpression: null,
+    });
+    expect(searchOf(href).state.expression).toEqual({
+      type: "and",
+      expressions: [
+        { type: "local_tag_id", tagId: "Tag001" },
+        { type: "work_status", value: "done" },
+      ],
+    });
+  });
+
+  test("a saved view searches its own condition with the status and Reset returns to the view", () => {
+    const requestUrl = route("/app/mail/Box001?savedView=Saved1");
+    const href = buildMailShowDoneHref({
+      requestUrl,
+      mailboxId: "Box001",
+      search: resolved(requestUrl.href),
+      folderId: null,
+      savedViewExpression: { type: "flagged" },
+    });
+    const { url, state } = searchOf(href);
+    expect(state.expression).toEqual({ type: "and", expressions: [{ type: "flagged" }, { type: "work_status", value: "done" }] });
+    expect(buildMailSearchClearHref(url)).toBe("/app/mail/Box001?savedView=Saved1");
   });
 });

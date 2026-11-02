@@ -313,3 +313,75 @@ test.skipIf(isServer)("an old page completion cannot mark the new A list as fail
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("a work list names the done conversations it leaves out at its end, with the way to them", async () => {
+  const dom = createDomTestHarness();
+  const [{ default: MailConversationList }, { LocaleProvider }] = await Promise.all([import("./MailConversationList"), import("@k2b/ui")]);
+  const [hidden, setHidden] = createSignal<{ count: number | null; more: boolean; href: string } | null>({
+    count: 1207,
+    more: false,
+    href: "/app/mail/Box001?view=done",
+  });
+  const [nextCursor, setNextCursor] = createSignal<string | null>("next");
+  const [locale, setLocale] = createSignal<"en" | "de">("en");
+  const [error, setError] = createSignal<"load_failed" | null>(null);
+  const navigated: string[] = [];
+  const dispose = render(
+    () =>
+      createComponent(LocaleProvider, {
+        get locale() {
+          return locale();
+        },
+        get children() {
+          return createComponent(MailConversationList, {
+            ...listProps("/app/mail/Box001"),
+            title: "All",
+            get hiddenDone() {
+              return hidden();
+            },
+            get nextCursor() {
+              return nextCursor();
+            },
+            get error() {
+              return error();
+            },
+            onNavigate: (event: { href: string }) => {
+              navigated.push(event.href);
+            },
+          });
+        },
+      }),
+    dom.root,
+  );
+  const footer = () => dom.root.querySelector<HTMLElement>("[data-mail-hidden-done]");
+  try {
+    // More pages follow: the footer waits for the list's end.
+    expect(footer()).toBeNull();
+    setNextCursor(null);
+    expect(footer()?.textContent).toBe("1,207 done conversations·Show done");
+    // An empty list keeps its empty state and still offers the way to done conversations.
+    expect(dom.root.querySelector(".k2b-placeholder")).not.toBeNull();
+    const link = footer()!.querySelector<HTMLAnchorElement>("[data-mail-show-done]")!;
+    expect(link.getAttribute("href")).toBe("/app/mail/Box001?view=done");
+    setLocale("de");
+    expect(footer()?.textContent).toBe("1.207 erledigte Unterhaltungen·Erledigt anzeigen");
+    setHidden({ count: 1, more: false, href: "/app/mail/Box001?view=done" });
+    expect(footer()?.textContent).toBe("1 erledigte Unterhaltung·Erledigt anzeigen");
+    setHidden({ count: 1000, more: true, href: "/app/mail/Box001?view=done" });
+    expect(footer()?.textContent).toBe("Mehr als 1.000 erledigte Unterhaltungen·Erledigt anzeigen");
+    // An uncounted list still offers the link; a list without done conversations shows no footer.
+    setHidden({ count: null, more: false, href: "/app/mail/Box001?view=done" });
+    expect(footer()?.textContent).toBe("Erledigt anzeigen");
+    setHidden({ count: 0, more: false, href: "/app/mail/Box001?view=done" });
+    expect(footer()).toBeNull();
+    // A failed list shows its error and retry, not the footer.
+    setHidden({ count: 3, more: false, href: "/app/mail/Box001?view=done" });
+    setError("load_failed");
+    expect(footer()).toBeNull();
+    setError(null);
+    expect(footer()).not.toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

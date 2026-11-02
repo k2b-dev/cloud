@@ -274,10 +274,19 @@ const mailboxOperationsQuerySchema = z.object({
   attentionCursor: z.string().max(2_000).optional(),
   attentionLimit: z.coerce.number().int().min(1).max(200).default(100),
 });
+/** Work lists leave out done and snoozed conversations; `includeDone=true` lists them too. */
+const includeDoneQuerySchema = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value === "true")
+  .describe(
+    "Also list done and snoozed conversations. Without a view, status or filing folder (Archive, Sent, Trash, Junk, All Mail), the list leaves them out.",
+  );
 const conversationQuerySchema = cursorQuerySchema.extend({
   folderId: ResourceShortIdSchema.optional(),
   status: z.enum(["needs_action", "waiting", "done"]).optional(),
   view: conversationViewSchema.optional(),
+  includeDone: includeDoneQuerySchema,
 });
 const mailFocusQuerySchema = cursorQuerySchema.extend({
   view: mailFocusViewSchema.default("mine"),
@@ -1879,7 +1888,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get(
     "/mailboxes/:mailboxId/saved-views/:viewId/conversations",
     v("param", mailboxAndIdParamSchema("viewId")),
-    v("query", cursorQuerySchema),
+    v("query", cursorQuerySchema.extend({ includeDone: includeDoneQuerySchema })),
     async (c) =>
       respondConversations(
         c,

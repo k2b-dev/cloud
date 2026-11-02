@@ -1,10 +1,19 @@
 import { sql } from "@k2b/cloud";
+import { z } from "zod";
 import { conversationVisibleTo, type MailboxAccess } from "./access";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { hasSendProblem } from "./conversation-timeline";
 import { loadAggregatedViewScope, staysInAggregatedViewsAggregate } from "./folder-display";
 import { isFollowUpMessage } from "./follow-up-scope";
 import type { ConversationViewCounts } from "./messages";
+
+const doneByFolderSchema = z.preprocess(
+  (value) => (typeof value === "string" ? JSON.parse(value) : value),
+  z.record(z.uuid(), z.number().int().nonnegative()),
+);
+
+/** The view counts and, per folder, the done conversations its list leaves out. */
+export type MailboxConversationCounts = { views: ConversationViewCounts; doneByFolder: Record<string, number> };
 
 /** The authoritative query, also used to measure the prepared statement on a fixture transaction. */
 export const queryConversationViewCounts = async (
@@ -14,7 +23,7 @@ export const queryConversationViewCounts = async (
     visibility: MailboxAccess;
   },
   db: typeof sql,
-): Promise<ConversationViewCounts> => {
+): Promise<MailboxConversationCounts> => {
   const [lapsedAssignees, aggregatedScope] = await Promise.all([
     listLapsedAssignees({ mailboxIds: [params.mailboxId], db }),
     loadAggregatedViewScope([params.mailboxId], db),
@@ -30,8 +39,35 @@ export const queryConversationViewCounts = async (
       send_problems: number;
       recently_active: number;
       kept: number;
+      done_by_folder: unknown;
     }[]
   >`
+      WITH scope AS MATERIALIZED (
+        SELECT
+          c.id,
+          c.mailbox_id,
+          c.work_status,
+          c.snoozed_until,
+          bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
+          bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
+          ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated,
+          -- The folders a done conversation lies in: their lists leave it out and count it in their footer.
+          CASE WHEN c.work_status = 'done' THEN array_agg(DISTINCT placement.folder_id) FILTER (WHERE placement.folder_id IS NOT NULL) END
+            AS done_folder_ids
+        FROM mail.conversations c
+        JOIN mail.conversation_messages link ON link.conversation_id = c.id
+        LEFT JOIN mail.message_placements placement
+          ON placement.message_id = link.message_id
+         AND placement.deleted_at IS NULL
+        LEFT JOIN mail.outbox_submissions outbox
+          ON outbox.message_id = link.message_id
+         AND outbox.state <> 'cancelled'
+        WHERE c.mailbox_id = ${params.mailboxId}::uuid
+          AND ${conversationVisibleTo(params.visibility, sql`c.id`)}
+        GROUP BY c.id
+        -- A conversation counts while one of its messages is filed somewhere or on its way out.
+        HAVING bool_or(placement.message_id IS NOT NULL OR outbox.id IS NOT NULL)
+      )
       SELECT
         COUNT(*) FILTER (
           WHERE scope.aggregated
@@ -63,32 +99,16 @@ export const queryConversationViewCounts = async (
         COUNT(*) FILTER (WHERE scope.send_problem)::int AS send_problems,
         COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active,
         (SELECT COUNT(*)::int FROM mail.conversation_keeps keep
-          WHERE keep.mailbox_id = ${params.mailboxId}::uuid AND ${conversationVisibleTo(params.visibility, sql`keep.conversation_id`)}) AS kept
-      FROM (
-        SELECT
-          c.id,
-          c.mailbox_id,
-          c.work_status,
-          c.snoozed_until,
-          bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
-          bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
-          ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated
-        FROM mail.conversations c
-        JOIN mail.conversation_messages link ON link.conversation_id = c.id
-        LEFT JOIN mail.message_placements placement
-          ON placement.message_id = link.message_id
-         AND placement.deleted_at IS NULL
-        LEFT JOIN mail.outbox_submissions outbox
-          ON outbox.message_id = link.message_id
-         AND outbox.state <> 'cancelled'
-        WHERE c.mailbox_id = ${params.mailboxId}::uuid
-      AND ${conversationVisibleTo(params.visibility, sql`c.id`)}
-        GROUP BY c.id
-        -- A conversation counts while one of its messages is filed somewhere or on its way out.
-        HAVING bool_or(placement.message_id IS NOT NULL OR outbox.id IS NOT NULL)
-      ) scope
+          WHERE keep.mailbox_id = ${params.mailboxId}::uuid AND ${conversationVisibleTo(params.visibility, sql`keep.conversation_id`)}) AS kept,
+        (SELECT jsonb_object_agg(by_folder.folder_id, by_folder.conversations)
+          FROM (
+            SELECT done_folder.folder_id, COUNT(*)::int AS conversations
+            FROM scope done_scope CROSS JOIN LATERAL unnest(done_scope.done_folder_ids) AS done_folder(folder_id)
+            GROUP BY done_folder.folder_id
+          ) by_folder) AS done_by_folder
+      FROM scope
     `;
-  return {
+  const views = {
     needs_action: row?.needs_action ?? 0,
     mine: row?.mine ?? 0,
     unassigned: row?.unassigned ?? 0,
@@ -99,4 +119,5 @@ export const queryConversationViewCounts = async (
     recently_active: row?.recently_active ?? 0,
     kept: row?.kept ?? 0,
   };
+  return { views, doneByFolder: doneByFolderSchema.parse(row?.done_by_folder ?? {}) };
 };

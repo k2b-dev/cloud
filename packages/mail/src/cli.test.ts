@@ -2204,12 +2204,15 @@ test("ls lists mailboxes, or a folder's conversations with a built-in view", asy
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders`) return api([inbox]);
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations`) {
       queries.push(url.search);
-      return api({ items: [], nextCursor: null });
+      // Like the API: a list without view, status or includeDone leaves out done and snoozed conversations.
+      const openOnly = !url.searchParams.has("view") && !url.searchParams.has("status") && !url.searchParams.has("includeDone");
+      return api({ items: [], nextCursor: null, openOnly });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
   servers.push(server);
   const cli = (...args: string[]) => runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "ls", ...args]);
+  const text = (...args: string[]) => runCli(`http://127.0.0.1:${server.port}`, ["mail", "ls", ...args]);
 
   const mailboxes = await cli();
   expect(mailboxes.exitCode, mailboxes.stderr).toBe(0);
@@ -2220,11 +2223,23 @@ test("ls lists mailboxes, or a folder's conversations with a built-in view", asy
   const folder = await cli("Support:INBOX", "--view", "mine");
   expect(folder.exitCode, folder.stderr).toBe(0);
   expect(Object.fromEntries(new URLSearchParams(queries.at(-1)))).toEqual({ limit: "50", folderId: FOLDER_ID, view: "mine" });
-  expect(JSON.parse(folder.stdout)).toEqual({ items: [], nextCursor: null });
+  expect(JSON.parse(folder.stdout)).toEqual({ items: [], nextCursor: null, openOnly: false });
 
   const whole = await cli(MAILBOX_ID, "--status", "waiting");
   expect(whole.exitCode, whole.stderr).toBe(0);
   expect(Object.fromEntries(new URLSearchParams(queries.at(-1)))).toEqual({ limit: "50", status: "waiting" });
+
+  // Text output says that done conversations are hidden and how to show them; JSON stays clean.
+  const open = await text(MAILBOX_ID);
+  expect(open.exitCode, open.stderr).toBe(0);
+  expect(open.stderr).toContain("Done and snoozed conversations are hidden; --status done or --include-done shows them.");
+  const openJson = await cli(MAILBOX_ID);
+  expect(openJson.stderr).toBe("");
+  expect(JSON.parse(openJson.stdout).openOnly).toBe(true);
+  const everything = await text(MAILBOX_ID, "--include-done");
+  expect(everything.exitCode, everything.stderr).toBe(0);
+  expect(Object.fromEntries(new URLSearchParams(queries.at(-1)))).toEqual({ limit: "50", includeDone: "true" });
+  expect(everything.stderr).not.toContain("hidden");
 
   const local = await cli("./INBOX");
   expect(local.exitCode).toBe(1);

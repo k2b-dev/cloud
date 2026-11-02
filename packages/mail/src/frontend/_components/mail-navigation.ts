@@ -1,4 +1,10 @@
-import { MAIL_SEARCH_PARAMETER, MAX_MAIL_SEARCH_PARAMETER_LENGTH, mailExactAddressSearch } from "../../search-url";
+import type { MailSearchExpression } from "../../contracts";
+import {
+  MAIL_SEARCH_PARAMETER,
+  MAX_MAIL_SEARCH_PARAMETER_LENGTH,
+  mailExactAddressSearch,
+  type ResolvedMailSearchRoute,
+} from "../../search-url";
 import type { MailListItem } from "../../service/workspace";
 
 export type { MailListItem } from "../../service/workspace";
@@ -138,3 +144,29 @@ export const isMailListItemActive = (
     : item.conversationId
       ? item.conversationId === selectedConversationId
       : item.id === selectedMessageId;
+
+/**
+ * Where "Show done" leads from a work list that leaves done conversations out. All mail opens the Done tab. A folder,
+ * tag, filter or saved view adds the condition "Status: Done" to its search, so Reset returns to the open list.
+ */
+export const buildMailShowDoneHref = (params: {
+  requestUrl: URL;
+  mailboxId: string;
+  search: ResolvedMailSearchRoute;
+  folderId: string | null;
+  savedViewExpression: MailSearchExpression | null;
+}): string => {
+  const base: MailSearchExpression | null =
+    params.search.expression ?? params.savedViewExpression ?? (params.folderId ? { type: "folder_id", folderId: params.folderId } : null);
+  if (!base) return `/app/mail/${params.mailboxId}?view=done`;
+  const done: MailSearchExpression = { type: "work_status", value: "done" };
+  const expression: MailSearchExpression =
+    base.type === "and" && base.expressions.length < 20
+      ? { type: "and", expressions: [...base.expressions, done] }
+      : { type: "and", expressions: [base, done] };
+  const search: Record<string, string> = {
+    [MAIL_SEARCH_PARAMETER]: JSON.stringify({ expression, sort: params.search.expression ? params.search.sort : "newest" }),
+  };
+  if (params.folderId) search.folder = params.folderId;
+  return buildMailSearchHref(params.requestUrl, search);
+};

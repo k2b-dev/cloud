@@ -107,13 +107,13 @@ suite("cached workspace counts at 46,000 conversations", () => {
       });
     }
     if (!expected) throw new Error("Missing authoritative counts");
-    expect(expected.recently_active).toBe(46_000);
+    expect(expected.views.recently_active).toBe(46_000);
     const params = { context: contextFor(owner), mailboxId, cached: true };
-    expect(unwrap(await getConversationViewCounts(params))).toEqual(expected);
+    expect(unwrap(await getConversationViewCounts(params))).toEqual(expected.views);
     const warm: number[] = [];
     for (let run = 0; run < 7; run++) {
       const start = performance.now();
-      expect(unwrap(await getConversationViewCounts(params))).toEqual(expected);
+      expect(unwrap(await getConversationViewCounts(params))).toEqual(expected.views);
       warm.push(performance.now() - start);
     }
     console.info(
