@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-30
+updated: 2026-11-02
 ---
 
 # Testing
@@ -1186,9 +1186,18 @@ page with an island using the installed production build script, and starts
 the app against disposable services. Normal pull requests use the workspace
 tarballs. On a release pull request, whose diff changes
 `.release-please-manifest.json`, it runs with `--release`, also in the merge
-queue: each pinned `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` version already on npm comes from
-npm; only a version this release publishes comes from its tarball. The check
-fails when npm cannot be reached. Run it locally with Docker and npm available:
+queue. Older sibling pins still come from npm. For a published pin equal to the
+workspace version, it compares the tarballs’ TypeScript files and public package
+metadata before choosing npm. If Cloud’s own version is already published, the
+checkout is a snapshot: changed sibling sources use current tarballs. If Cloud’s
+version is unpublished, changed same-version sibling sources fail with “source
+changed without a version bump”. Refresh a stale release PR, or land a scoped
+`fix`/`feat` commit for the affected package so release-please bumps it. This is a
+byte comparison, so shipped comments and compiler output changes also count.
+Matching
+published types come from npm, and unpublished sibling pins must match the
+workspace version. Registry or comparison failures fail the check. Run it locally
+with Docker and npm available:
 
 ```bash
 bun run --cwd packages/ui build
