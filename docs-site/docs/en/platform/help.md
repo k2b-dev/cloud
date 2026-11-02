@@ -379,16 +379,17 @@ Do not mount a Help API router, render a `Layout.HelpDocuments` registrar, or
 add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
-The existing app heartbeat renews the published collection before renewing app
-registration. If the collection disappears, that heartbeat republishes it from
-the application declaration. Core must recreate a missing schema before this
-can succeed. Persistent registration failures use the existing app-lease
-failure policy and restart the process.
+Cloud writes the collection before advertising the app at startup. Successful
+publication is remembered by content hash; unchanged heartbeats do not write
+the collection again. A failed publication remains retryable through the
+existing heartbeat failure policy.
 
-Core removes at most one expired collection per minute. A collection becomes
-eligible after six minutes without renewal: two app-lease lifetimes. Stopping
-one replica does not delete Help used by another. Stored collections from
-unavailable applications are not exposed as current Help.
+Core retains all stored versions while the app is present in the observed
+registry, including versions used by older replicas during a rolling update.
+When the app leaves the registry, Core starts a one-day retention period.
+Returning before that deadline cancels deletion. Stored collections from
+unavailable applications are not exposed as current Help. Retention uses
+registry membership, never the age of a publication or its last renewal.
 
 ## Use the automatically derived surfaces
 
@@ -500,7 +501,7 @@ isolated from ordinary chat and app capabilities; a later tool call can retry.
 Every reader selects the hash advertised by the current app registration.
 Missing articles or versions are not served from an older collection. Database
 failures remain errors rather than appearing as successful empty searches.
-The application heartbeat can restore a missing collection.
+Restart the application to republish a collection removed from the database.
 
 ## Search product guidance
 

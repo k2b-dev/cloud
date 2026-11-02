@@ -1,12 +1,11 @@
 import type { SQL } from "bun";
-import { APP_REGISTRY_TTL_MS } from "../../_internal/registry";
+import { listApps } from "../../_internal/registry";
 import { sql } from "../../runtime/clients";
 import type { HelpAccessLevel, HelpKind } from "../../shared/help";
+import { cleanupAppCatalogs } from "../app-catalog-store";
 import { ensureSchema, toPgTextArray } from "../postgres";
 import type { HelpCorpus, HelpMetadata } from "./types";
 
-// One expired app lease of grace after an app can no longer be discovered.
-export const HELP_RETENTION_MS = APP_REGISTRY_TTL_MS * 2;
 export const HELP_RESOURCE_PAGE_SIZE = 100;
 const searchConfigs = ["english", "german", "simple"] as const;
 
@@ -19,7 +18,7 @@ export const migrateHelp = async (db: SQL = sql): Promise<void> => {
     last_seen_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (app_id, manifest_hash)
   )`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS help_expiry_idx ON help.corpora(last_seen_at)`.simple();
+    await tx`ALTER TABLE help.corpora ADD COLUMN IF NOT EXISTS unregistered_at timestamptz`.simple();
     await tx`CREATE TABLE IF NOT EXISTS help.documents (
     app_id text NOT NULL, manifest_hash text NOT NULL, locale text NOT NULL, document_id text NOT NULL,
     title text NOT NULL, description text, icon text, sort_order integer NOT NULL,
@@ -56,7 +55,7 @@ export const migrateHelp = async (db: SQL = sql): Promise<void> => {
   }
 };
 
-/** Commit the complete source once; subsequent app heartbeats only renew its lease. */
+/** Commit the complete source once per hash; older clients may still renew last_seen_at. */
 export const registerHelp = async (corpus: HelpCorpus, db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SET LOCAL statement_timeout = '10s'`.simple();
@@ -85,16 +84,14 @@ export const registerHelp = async (corpus: HelpCorpus, db: SQL = sql): Promise<v
   });
 };
 
-/** Row locks serialize cleanup with publication/renewal. Delete at most one corpus per tick. */
+/** Explicit Help cleanup uses the same registry-based retention as Core. */
 export const cleanupHelp = async (db: SQL = sql): Promise<void> => {
-  await db.begin(async (tx) => {
-    await tx`SET LOCAL statement_timeout = '10s'`.simple();
-    await tx`DELETE FROM help.corpora WHERE (app_id, manifest_hash) IN (
-    SELECT app_id, manifest_hash FROM help.corpora
-    WHERE last_seen_at < now() - ${HELP_RETENTION_MS} * interval '1 millisecond'
-    ORDER BY last_seen_at LIMIT 1 FOR UPDATE SKIP LOCKED
-  )`;
-  });
+  await cleanupAppCatalogs(
+    (await listApps()).map((app) => app.id),
+    db,
+    undefined,
+    ["help.corpora"],
+  );
 };
 
 export type HelpSelection = { app_id: string; app_name: string; manifest_hash: string; locales: string[] };

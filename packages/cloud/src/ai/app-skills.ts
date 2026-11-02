@@ -77,7 +77,7 @@ export const registerAppSkills = async (
   skills: readonly AppSkillDefinition[],
   manifestHash: string,
   db: SQL = sql,
-): Promise<void> => {
+): Promise<boolean> => {
   try {
     await db.begin(async (tx) => {
       await tx`SET LOCAL statement_timeout = '10s'`.simple();
@@ -88,12 +88,13 @@ export const registerAppSkills = async (
         VALUES (${appId}, ${manifestHash}, (${JSON.stringify(skills)}::text)::jsonb)
         ON CONFLICT (app_id, manifest_hash) DO UPDATE SET last_seen_at = now()`;
     });
+    return true;
   } catch (error) {
     // Bun's PostgresError carries the SQLSTATE in `errno`; `code` names the driver error class.
     const state = error && typeof error === "object" ? ("errno" in error ? error.errno : "code" in error ? error.code : null) : null;
     if (["42P01", "3F000", "42703"].includes(String(state))) {
       logger("ai:app-skills").warn("App skill schema is not available yet; next heartbeat will retry", { appId });
-      return;
+      return false;
     }
     throw error;
   }

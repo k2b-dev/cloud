@@ -19,6 +19,7 @@ import { createAppQueryRoutes } from "./app-queries";
 import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
+import { createCatalogPublication } from "./catalog-publication";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -838,13 +839,16 @@ export const defineApp = <
         startedAt: entry.startedAt,
         bootstrap: connections().bootstrap,
       });
+      const publishHelp = createCatalogPublication();
+      const publishSkills = createCatalogPublication();
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {
         registry: appRegistry(),
         membership,
         beforeWrite: async () => {
-          if (compiledHelp) await registerHelp(compiledHelp.corpus);
-          if (appSkills && skillsManifestHash) await registerAppSkills(meta.id, appSkills, skillsManifestHash);
+          if (compiledHelp) await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus));
+          if (appSkills && skillsManifestHash)
+            await publishSkills(skillsManifestHash, () => registerAppSkills(meta.id, appSkills, skillsManifestHash));
         },
         onError: (error) =>
           log.error("Registry heartbeat failed", {

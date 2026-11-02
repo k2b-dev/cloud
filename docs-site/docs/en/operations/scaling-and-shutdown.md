@@ -35,6 +35,21 @@ bun run --cwd packages/ui build
 bun --no-env-file scripts/scale-acceptance.ts
 ```
 
+## Upgrade Help and Skill publication
+
+Upgrade all Core replicas before upgrading application publishers. New
+publishers write Help and Skill catalogs at startup and when content changes.
+Old Core versions still delete catalogs by renewal age and must not remain
+active alongside these publishers.
+
+Core accepts the existing catalog tables and renewal statements from
+`@k2b/cloud 0.55.0` applications. Their minute-by-minute writes remain
+compatible. New Core uses registry membership for retention; a healthy app's
+catalog does not expire because it has stopped renewing a timestamp. Core
+keeps all catalog versions during rolling updates and deletes sources one day
+after the app leaves the registry. Restart an application to restore catalog
+sources removed manually from the database.
+
 ## Allow synchronous capability responses
 
 Synchronous capability Queries now have a shared 45-second dispatch budget,

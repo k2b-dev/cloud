@@ -172,7 +172,15 @@ that revision for the rest of the turn.
 The app publishes its Skills with its registration, like
 [Help](/en/docs/platform/help). During a rolling update, the most recently
 started instance decides the content. Core installs and updates the Skills in
-the background; it never runs app code.
+the background; it never runs app code. Successful publication is remembered by
+content hash, so unchanged heartbeats do not write the catalog again. Missing
+schemas and failed writes remain retryable.
+
+Core keeps catalog sources while any replica of the app is registered,
+regardless of publication age. After the app leaves the observed registry,
+Core retains the sources for one day; returning cancels deletion. This removes
+catalog sources only. Installed Skills, administrator changes, and deletion
+markers remain intact. Unavailable apps are excluded from Skill discovery.
 
 To rename a Skill, ship it under the new name. The old one becomes unavailable
 and an administrator can delete it.

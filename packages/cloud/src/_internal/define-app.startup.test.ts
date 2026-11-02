@@ -1,6 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
+import * as appSkills from "../ai/app-skills";
 import { stubConnections } from "../runtime/connections.test-fixture";
+import { defineHelp } from "../server/help";
+import * as helpStore from "../services/help/store";
 import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
@@ -17,6 +20,9 @@ describe("application startup readiness", () => {
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
       const events: string[] = [];
+      let publishCatalogs: (() => Promise<void>) | undefined;
+      const helpWrite = spyOn(helpStore, "registerHelp").mockResolvedValue(undefined);
+      const skillWrite = spyOn(appSkills, "registerAppSkills").mockResolvedValue(true);
 
       const signals = ["SIGTERM", "SIGINT"] as const;
       const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -38,6 +44,8 @@ describe("application startup readiness", () => {
         }),
       } as unknown as Sync;
       const spies = [
+        helpWrite,
+        skillWrite,
         spyOn(workload, "createAppWorkloadCredential").mockImplementation(() => ({
           start: () => step("workload"),
           refresh: async () => {},
@@ -73,11 +81,17 @@ describe("application startup readiness", () => {
           adopt: async () => {},
           renew: async () => {},
         }),
-        spyOn(heartbeat, "createHeartbeat").mockReturnValue({
-          start: () => step("advertise"),
-          stop: async () => {
-            events.push("unregister");
-          },
+        spyOn(heartbeat, "createHeartbeat").mockImplementation((_id, _entry, options) => {
+          publishCatalogs = options.beforeWrite;
+          return {
+            start: async () => {
+              await publishCatalogs?.();
+              await step("advertise");
+            },
+            stop: async () => {
+              events.push("unregister");
+            },
+          };
         }),
         spyOn(watcher, "ensureRuntimeWatcher").mockImplementation(() => step("watch")),
         spyOn(watcher, "stopRuntimeWatcher").mockImplementation(() => step("stop-watch")),
@@ -92,6 +106,7 @@ describe("application startup readiness", () => {
       ];
       try {
         const app = defineApp({
+          skills: [appSkills.skill({ markdown: "---\nname: startup-test\ndescription: Verify publication.\n---\nRead the help." })],
           id: "startup-test",
           name: "Startup test",
           icon: "box",
@@ -100,6 +115,7 @@ describe("application startup readiness", () => {
           routes: ["/api/startup-test"],
         });
         const started = app.start({
+          help: defineHelp({ documents: ["---\nid: start\ntitle: Start\n---\nRead the guide."] }),
           fetch: () => new Response("application"),
           skipSetup,
           ...(mode === "calendar"
@@ -138,6 +154,10 @@ describe("application startup readiness", () => {
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else {
           const server = await started;
+          expect(publishCatalogs).toBeDefined();
+          for (let round = 0; round < 60; round++) await publishCatalogs!();
+          expect(helpWrite).toHaveBeenCalledTimes(1);
+          expect(skillWrite).toHaveBeenCalledTimes(1);
           if (skipSetup) {
             expect(events).not.toContain("setup");
             expect(events).not.toContain("setup-lock-ready");
