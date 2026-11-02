@@ -2,6 +2,7 @@ import { createContext, createEffect, createSignal, createUniqueId, type JSX, Sh
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
+import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
 import { useUiMessages } from "../intl/messages";
@@ -13,6 +14,8 @@ export type PanelDialogSurface = "contained" | "floating";
 export type PanelDialogProps = {
   children: JSX.Element;
   surface?: PanelDialogSurface;
+  /** A 2 px edge in the tone's colour inside the dialog frame; the header shows the tone's icon instead of its own. */
+  tone?: DialogTone;
 };
 
 export type PanelDialogHeaderProps = {
@@ -71,6 +74,7 @@ type PanelDialogComponent = ((props: PanelDialogProps) => JSX.Element) & {
 
 const PanelDialogSurfaceContext = createContext<PanelDialogSurface>("contained");
 const usePanelDialogSurface = () => useContext(PanelDialogSurfaceContext);
+const PanelDialogToneContext = createContext<() => DialogTone | undefined>(() => undefined);
 
 const panelDialogBasePanelClass = "k2b-dialog k2b-panel-dialog-frame";
 
@@ -112,16 +116,28 @@ export const confirmDiscardIfDirty = async (dirty: boolean | (() => boolean)): P
 
 const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
   const messages = useUiMessages();
+  const tone = useContext(PanelDialogToneContext);
+  const icon = () => {
+    const value = tone();
+    return value ? dialogToneIcon(value) : props.icon;
+  };
   return (
     <header class="k2b-panel-dialog__header" data-surface={usePanelDialogSurface()} data-has-subtitle={Boolean(props.subtitle)}>
-      <Show when={props.icon}>
+      <Show when={icon()}>
         {(icon) => (
-          <span class="k2b-panel-dialog__icon k2b-icon-tile" aria-hidden="true">
+          <span class="k2b-panel-dialog__icon k2b-icon-tile" data-tone={tone()} aria-hidden="true">
             <i class={icon()} />
           </span>
         )}
       </Show>
       <div class="k2b-panel-dialog__heading">
+        <Show when={tone()}>
+          {(value) => (
+            <span class="k2b-sr-only" data-dialog-tone-label>
+              {dialogToneLabel(messages(), value())}
+            </span>
+          )}
+        </Show>
         <h2>{props.title}</h2>
         <Show when={props.subtitle}>
           <p>{props.subtitle}</p>
@@ -283,9 +299,11 @@ const PanelDialog = ((props: PanelDialogProps): JSX.Element => {
   const surface = props.surface ?? "contained";
   return (
     <PanelDialogSurfaceContext.Provider value={surface}>
-      <div class="k2b-panel-dialog" data-surface={surface}>
-        {props.children}
-      </div>
+      <PanelDialogToneContext.Provider value={() => props.tone}>
+        <div class="k2b-panel-dialog" data-surface={surface} data-tone={props.tone}>
+          {props.children}
+        </div>
+      </PanelDialogToneContext.Provider>
     </PanelDialogSurfaceContext.Provider>
   );
 }) as PanelDialogComponent;

@@ -134,6 +134,9 @@
   --k2b-edge-width: 2px;
   --k2b-edge-focus: var(--k2b-accent-700);
   --k2b-edge-danger: var(--k2b-danger-500);
+  /* Dialog tones; each keeps 3:1 against the dialog surface. */
+  --k2b-edge-success: var(--k2b-success-600);
+  --k2b-edge-warning: #d97706;
   --k2b-edge-hover-bg: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
   /* A selected choice or active filter: a light edge and fill in the app's
      selection ink. The share is mixed where it is used, so an app scope that
@@ -311,6 +314,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 55%, var(--k2b-surface));
   --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
   --k2b-edge-focus: var(--k2b-accent-300);
+  --k2b-edge-success: var(--k2b-success-500);
+  --k2b-edge-warning: var(--k2b-warning-500);
   --k2b-edge-selected-share: 55%;
   --k2b-control-border-soft: #46505c;
   --k2b-tray: #1a2028;
@@ -4313,6 +4318,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 2rem;
   color: var(--k2b-app-workspace-active);
   font-size: 1.125rem;
+}
+
+/* A toned dialog's icon chip takes the tone's text colour. */
+.k2b-ui .k2b-panel-dialog__icon[data-tone="success"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-panel-dialog__icon[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-panel-dialog__icon[data-tone="danger"] {
+  color: var(--k2b-danger-text);
 }
 
 .k2b-ui .k2b-panel-dialog__heading {

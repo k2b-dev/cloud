@@ -139,6 +139,9 @@ Choose one channel per outcome:
   dialog that can stay open until the server answers;
 - `prompts.confirm()` before a destructive action that cannot be undone, and
   `prompts.error()` only for a failure the user must read and decide on;
+- a dialog with a `tone` when the outcome opens follow-up actions in the same
+  place, such as an invoice that was created and can now be printed or sent
+  (see [PanelDialog tone](/en/ui/layout/panel-dialog#tone));
 - a visible error state for failed content loading.
 
 The [Toast](/en/ui/feedback/toast#use-toast) context explains the rule and
