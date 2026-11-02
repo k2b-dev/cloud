@@ -1260,6 +1260,55 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("an untouched typed date field never reports a change", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { DatePicker, DateRangePicker } = await import("../src/inputs/DatePicker");
+    delegateEvents(["keydown", "click", "focusout", "pointerdown", "input"], dom.document);
+    const reports: unknown[] = [];
+    const [value, setValue] = createSignal<string | null>("2026-10-05");
+    const dispose = render(
+      () => [
+        createComponent(DatePicker, {
+          label: "Due",
+          get value() {
+            return value();
+          },
+          dateConfig: { locale: "en", timeZone: "America/New_York" },
+          onValueChange: (next) => reports.push(next),
+          onValueCommit: (next) => reports.push(next),
+        }),
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-10-05", end: "2026-10-06" },
+          dateConfig: { locale: "en", timeZone: "America/New_York" },
+          onValueChange: (next) => reports.push(next),
+          onValueCommit: (next) => reports.push(next),
+        }),
+      ],
+      dom.root,
+    );
+    const inputs = Array.from(dom.root.querySelectorAll<HTMLInputElement>(".k2b-date-field input"));
+    for (const input of inputs) {
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await Bun.sleep(0);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+      input.blur();
+    }
+    // A value set from outside replaces the text without echoing it back.
+    setValue("2026-10-09");
+    await Bun.sleep(0);
+    expect(inputs[0]!.value).toBe("10/09/2026");
+    expect(reports).toEqual([]);
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("keeps focus on the next day across a month boundary", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
