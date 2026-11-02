@@ -128,6 +128,7 @@ read as controls (see
 | Current view | `ViewTabs` | `k2b-view-tabs` |
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
 | Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
+| Selected choice in a menu's segment row | `Dropdown` | `k2b-dropdown` |
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like
