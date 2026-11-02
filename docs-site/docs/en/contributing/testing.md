@@ -1469,6 +1469,19 @@ application's origin checks still apply. Grids reports only known refusal
 codes and close metadata; it does not print cookies, frame bodies, or arbitrary
 close reasons.
 
+### Read what a failed suite left running
+
+After an integration suite fails, the runner prints `Database activity:` next
+to the suite's output: every statement still running on the test server, how
+long it has run, what it waits on, and which backends block it. A statement
+listed there outlived its test.
+
+Such a statement cannot stall the suites after it in the `integration` and
+`packed` jobs: their PostgreSQL sets `client_connection_check_interval`, so it
+ends within seconds of its test process and logs `connection to client lost`.
+Find its plan in the slow statement log below only when it finished; otherwise
+the activity line has its text.
+
 ### Read slow statements from a CI run
 
 The test PostgreSQL in the `integration`, `grids`, and `packed` jobs logs every
