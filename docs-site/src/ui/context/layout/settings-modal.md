@@ -60,9 +60,12 @@ create another outer surface.
 
 `SettingsSection` groups one coherent set of page settings. It renders like
 `SettingsGroup`: a heading, an optional subtitle, and its fields directly on
-the page surface, with no card, header rule, or lines between fields. About
-2rem of space separates sections, so the page stays the only frame, and the
-page title sits one size step above the section titles. Header actions stay
+the page surface, with no card, header rule, or lines between fields. 1.5rem
+of space separates sections, so the page stays the only frame. The type scale
+has four steps: 18 px page title, 14 px section and group titles, 13 px field
+names and content, 12 px help. From 860 px of its own width, a section puts
+its heading in a 168 px column beside its fields; the heading stays in view
+while the fields scroll. Narrower, the heading sits above them. Header actions stay
 beside the heading while it keeps about 16rem and wrap below it otherwise, so
 a single icon action still fits on a phone. Actions that do not fit on one
 row wrap onto further rows and never reach past the section's edge. The
@@ -174,6 +177,21 @@ optional reactive dirty accessor, and a control. Use its render-function child
 and pass `describedBy` to the control's `aria-describedby` so screen readers
 announce the visible description and current validation error.
 
+One setting is one row: the name with one sentence of help, the control, and
+an optional `source`. From 640 px of the field's own width (not the viewport),
+the three share a line in fixed columns, so every name, control, and source of
+a page starts at one edge; this holds in dialogs too. Narrower, the source
+stays beside the name and the control takes the full width below. Messages
+about the value, such as an error, a conflict, or an unreadable stored value,
+sit under the control. `width` sizes the control by kind: `short` for a number
+(160 px with its steppers), `medium` for a choice (280 px), `long` for text
+(the column, default), and `full` for an editor, which keeps its name above it.
+`source` says where the value comes from, such as "Default", or offers the one
+way back: a `Button variant="text"` there reads as quiet text. Show Reset only
+for a value of its own, and keep Undo at the same place while a reset waits
+for Save. The field has no side inset; the surface around it owns the edge,
+and `id` names the row for a link to one setting.
+
 `SettingsSaveBar` uses reactive `changeCount` and `loading` accessors. It
 appears only while the count is greater than zero and disables its actions
 while loading. Use reactive `saveDisabled` when validation should disable Save
@@ -236,9 +254,11 @@ type SettingsGroupActionProps = {
   children: JSX.Element;
 };
 
+type SettingsFieldWidth = "short" | "medium" | "long" | "full";
+
 type SettingsFieldProps = {
   label: string; description: string; error: MaybeAccessor<string | undefined>;
-  changed?: MaybeAccessor<boolean>;
+  changed?: MaybeAccessor<boolean>; source?: JSX.Element; width?: SettingsFieldWidth; id?: string;
   children: JSX.Element | ((control: SettingsFieldControlProps) => JSX.Element); class?: string;
 };
 

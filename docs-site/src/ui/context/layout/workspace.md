@@ -381,7 +381,12 @@ of a list the phone no longer shows, focus moves to the title of the selected
 level.
 
 Each level head is a 46 px row without a line under it: the `label` as the
-title, an optional one-line `description`, and trailing `actions`. An optional
+title, an optional one-line `description`, and trailing `actions`. Mark the
+level that holds the page itself, such as a settings form, with
+`heading="page"`: its title takes the 18 px page step, above every group title
+in it, and its content starts at the title's edge, so a form or a frame inside
+it adds no inset of its own. Columns that lead there and details beside it keep
+the 14 px column step. An optional
 `lead` puts a small mark before the title, such as the colour dot of the
 object's container. Every level
 starts below the same 8 px top inset, so the titles of side by side heads share
@@ -1187,7 +1192,7 @@ type AppWorkspaceMainPaneProps = {
   id: string; label: string; surface?: "default" | "navigation"; open?: boolean; resizable?: boolean;
   resizeShadow?: boolean; defaultSize?: number | AppWorkspaceWidthShare; minSize?: number; maxSize?: number; class?: string;
   scroll?: boolean; scrollFade?: boolean; children: JSX.Element;
-  href?: string; description?: JSX.Element; actions?: JSX.Element;
+  href?: string; description?: JSX.Element; actions?: JSX.Element; heading?: "page";
 };
 
 type AppWorkspaceDetailProps = {
