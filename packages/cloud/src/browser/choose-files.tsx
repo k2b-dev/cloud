@@ -2,7 +2,7 @@ import { showFileDialog } from "@k2b/stdlib/browser";
 import { dialogCore, panelDialogWorkspaceOptions } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
-import type { FileProviderCaller } from "./file-providers";
+import type { FileProviderCaller, FileProviderSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
 
@@ -31,15 +31,24 @@ export const createFileChoosing = (
         picked.then(resolve, () => resolve([])).finally(() => signal?.removeEventListener("abort", abort));
       });
     }
+    // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
+    let open = true;
+    const settle = (request: Promise<readonly FileProviderSource[]>) =>
+      request.then(
+        (value) => {
+          if (open) setProviders({ state: "ready", providers: value });
+        },
+        () => {
+          if (open) setProviders({ state: "error" });
+        },
+      );
     const load = () => {
       setProviders({ state: "loading" });
-      list.providers().then(
-        (value) => setProviders({ state: "ready", providers: value }),
-        () => setProviders({ state: "error" }),
-      );
+      void settle(list.providers());
     };
-    if (!known) load();
+    if (known) void settle(list.refresh());
+    else load();
     return (async () => {
       let abort = () => {};
       const chooser = await Promise.race([
@@ -57,12 +66,16 @@ export const createFileChoosing = (
           {
             ...panelDialogWorkspaceOptions,
             panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
-            initialFocus: (dialog) => dialog.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]'),
+            initialFocus: (dialog) => dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]'),
             signal: options.signal,
             history: true,
           },
         )
-        .then((files) => files ?? []);
+        .then((files) => files ?? [])
+        .finally(() => {
+          // Answers that arrive after the dialog closed are dropped.
+          open = false;
+        });
     })();
   };
 

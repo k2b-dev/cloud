@@ -30,8 +30,10 @@ import {
   providerIcon,
   readProviderFile,
   readSaveSource,
+  safeFileName,
   saveableName,
   saveProviderFile,
+  verifiedMediaType,
 } from "./file-providers";
 
 const run = (): CapabilityInvocationResult<never> => ({ ok: false, error: { code: "INTERNAL", message: "Not invoked.", status: 500 } });
@@ -479,6 +481,75 @@ describe("saving into a provider", () => {
   });
 });
 
+describe("cleaning a provider's file names", () => {
+  test("removes control characters, path separators, and bidi controls, so a name shows what it is", () => {
+    expect(safeFileName("rechnung\u202Efdp.exe")).toBe("rechnungfdp.exe");
+    expect(safeFileName("a\u2066b\u2069c\u200F.pdf")).toBe("abc.pdf");
+    expect(safeFileName("../etc/passwd")).toBe("..etcpasswd");
+    expect(safeFileName("C:\\temp\\x.txt")).toBe("C:tempx.txt");
+    expect(safeFileName("line\nbreak\u0000\u009f.md")).toBe("linebreak.md");
+    expect(safeFileName("  Report.pdf  ")).toBe("Report.pdf");
+    expect(safeFileName("\u202E")).toBe("file");
+    expect(safeFileName("..")).toBe("file");
+  });
+
+  test("keeps at most 255 UTF-8 bytes and the extension, without cutting a character in half", () => {
+    const long = `${"ä".repeat(200)}.pdf`;
+    const short = safeFileName(long);
+    expect(new TextEncoder().encode(short).byteLength).toBeLessThanOrEqual(255);
+    expect(short.endsWith(".pdf")).toBe(true);
+    expect(short.startsWith("ää")).toBe(true);
+    expect(short).not.toContain("\uFFFD");
+    const emoji = safeFileName(`${"😀".repeat(70)}.txt`);
+    expect(new TextEncoder().encode(emoji).byteLength).toBeLessThanOrEqual(255);
+    expect([...emoji.slice(0, -4)].every((character) => character === "😀")).toBe(true);
+  });
+
+  test("a listed folder shows cleaned names", async () => {
+    const page = await listProviderFolder(
+      provider,
+      {},
+      {
+        locale: "en",
+        fetch: async () => json({ data: { writable: false, items: [file("a", 3, { name: "rechnung\u202Efdp.exe" })], next: null } }),
+      },
+    );
+    expect(page.items[0]?.name).toBe("rechnungfdp.exe");
+  });
+});
+
+describe("proving a file's type from its first bytes", () => {
+  const bytes = (...values: (number | string)[]) =>
+    new Uint8Array(values.flatMap((value) => (typeof value === "string" ? [...value].map((char) => char.charCodeAt(0)) : [value])));
+
+  test("names images, PDF, audio, and video by their signatures, everything else application/octet-stream", () => {
+    expect(verifiedMediaType(bytes(0xff, 0xd8, 0xff, 0xe0), "a.jpg", "image/jpeg")).toBe("image/jpeg");
+    expect(verifiedMediaType(bytes("GIF89a"), "a.gif", undefined)).toBe("image/gif");
+    expect(verifiedMediaType(bytes("RIFF", 0, 0, 0, 0, "WEBP"), "a.webp", undefined)).toBe("image/webp");
+    expect(verifiedMediaType(bytes("%PDF-1.7"), "a.pdf", "text/html")).toBe("application/pdf");
+    expect(verifiedMediaType(bytes(0, 0, 0, 0x18, "ftypisom"), "a.mp4", undefined)).toBe("video/mp4");
+    expect(verifiedMediaType(bytes(0, 0, 0, 0x18, "ftypavif"), "a.avif", undefined)).toBe("image/avif");
+    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("# Notes"), "notes.md", "text/markdown")).toBe("application/octet-stream");
+  });
+
+  test("an accept that names images or PDF takes only bytes that prove a matching type", () => {
+    const pdf = bytes("%PDF-1.4");
+    expect(verifiedMediaType(pdf, "report.pdf", "application/pdf", "application/pdf")).toBe("application/pdf");
+    expect(verifiedMediaType(pdf, "report.pdf", "application/pdf", ".pdf")).toBe("application/pdf");
+    expect(verifiedMediaType(pdf, "report.png", "image/png", "image/*")).toBeUndefined();
+    expect(verifiedMediaType(bytes("<html>"), "photo.png", "image/png", "image/png,image/jpeg")).toBeUndefined();
+    expect(verifiedMediaType(bytes(0xff, 0xd8, 0xff), "photo.jpeg", "image/jpeg", ".jpeg")).toBe("image/jpeg");
+  });
+
+  test("tokens bytes cannot prove still take a file by its name or hint, as application/octet-stream", () => {
+    const docx = bytes("PK", 3, 4);
+    expect(verifiedMediaType(docx, "letter.docx", undefined, "image/*,.docx")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("plain"), "notes.txt", "text/plain", "text/*")).toBe("application/octet-stream");
+    expect(verifiedMediaType(docx, "letter.zip", undefined, "image/*,.docx")).toBeUndefined();
+  });
+});
+
 describe("browsing a provider", () => {
   test("asks for one page of a folder with the chooser's page size", async () => {
     let body: unknown;
@@ -530,7 +601,7 @@ describe("reading a provider file", () => {
     return { calls, fetch };
   };
 
-  test("returns a File with the listed name, the stream's media type, and progress", async () => {
+  test("returns a File with the listed name, the type its bytes prove, and progress", async () => {
     const { calls, fetch } = reader(new TextEncoder().encode("hello"), 5, "application/pdf");
     const progress: number[] = [];
     const result = await readProviderFile(provider, file("notes", 5, { updatedAt: "2026-10-01T10:00:00Z" }), {
@@ -541,7 +612,8 @@ describe("reading a provider file", () => {
     });
     expect(calls).toEqual(["/api/capabilities/v1/queries/drive/file.read", "/api/capabilities/v1/streams/read"]);
     expect(result.name).toBe("notes.txt");
-    expect(result.type).toBe("application/pdf");
+    // "hello" is no PDF: the provider's type is only a hint.
+    expect(result.type).toBe("application/octet-stream");
     expect(result.lastModified).toBe(Date.parse("2026-10-01T10:00:00Z"));
     expect(await result.text()).toBe("hello");
     expect(progress).toEqual([0, 5]);
@@ -591,6 +663,28 @@ describe("reading a provider file", () => {
     const read = readProviderFile(provider, file("a", 100), { locale: "en", fetch, maxBytes: 1000, signal: abort.signal });
     await expect(read).rejects.toBeDefined();
     expect(pulls).toBeLessThan(100);
+  });
+
+  test("cleans the name and takes the type from the first bytes, refusing content that does not fit accept", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const photo = reader(png, png.length, "image/png");
+    const listed = file("photo", png.length, { name: "rechnung\u202Efdp.png", mediaType: "image/png" });
+    const result = await readProviderFile(provider, listed, { locale: "en", fetch: photo.fetch, maxBytes: 100, accept: "image/*" });
+    expect(result.name).toBe("rechnungfdp.png");
+    expect(result.type).toBe("image/png");
+
+    // A page claimed to be an image, with a fitting extension, is refused once its bytes are read.
+    const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
+    const fake = reader(html, html.length, "image/png");
+    const disguised = file("fake", html.length, { name: "photo.png", mediaType: "image/png" });
+    await expect(
+      readProviderFile(provider, disguised, { locale: "en", fetch: fake.fetch, maxBytes: 100, accept: "image/*" }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_MEDIA_TYPE", status: 415 });
+
+    // Without accept the same bytes come back, as application/octet-stream instead of the claimed type.
+    const plain = reader(html, html.length, "image/png");
+    const kept = await readProviderFile(provider, disguised, { locale: "en", fetch: plain.fetch, maxBytes: 100 });
+    expect(kept.type).toBe("application/octet-stream");
   });
 
   test("runs at most the given number of reads at once", async () => {

@@ -14,7 +14,6 @@ packages/chat/src/styles/app-host.browser.test.ts | 2
 packages/cloud/src/ai/chat/live-turn.browser.test.ts | 40
 packages/cloud/src/ai/chat/view-block.browser.test.ts | 22
 packages/cloud/src/browser/CloudResourceSearch.browser.test.ts | 1
-packages/cloud/src/browser/choose-files.browser.test.ts | 2
 packages/cloud/src/ssr/LayoutHeader.browser.test.ts | 2
 packages/cloud/src/ssr/LayoutHelp.browser.test.ts | 3
 packages/cloud/src/ssr/LayoutHelp.hydration.browser.test.ts | 1

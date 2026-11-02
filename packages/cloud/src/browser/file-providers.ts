@@ -40,7 +40,36 @@ export type FileProviderCaller = Pick<CapabilityHttpOptions, "fetch" | "baseUrl"
 /** The page size the chooser asks for; the contract allows 1 to 100. */
 export const FILE_PROVIDER_PAGE_SIZE = 50;
 /** At most this many provider reads run at the same time. */
-export const FILE_PROVIDER_PARALLEL_READS = 2;
+export const FILE_PROVIDER_PARALLEL_READS = 3;
+
+/**
+ * Control characters, path separators, and the bidi marks, embeddings, overrides, and isolates (U+061C, U+200E, U+200F,
+ * U+202A–U+202E, U+2066–U+2069) that make a name such as `invoice\u202Efdp.exe` look like `invoiceexe.pdf`.
+ */
+const UNSAFE_NAME_CHARACTERS = /[\u0000-\u001f\u007f-\u009f/\\\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+const utf8 = new TextEncoder();
+const byteLength = (value: string) => utf8.encode(value).byteLength;
+
+/**
+ * A provider's file name as the chooser shows and returns it: without control characters, path separators, and bidi
+ * controls, at most 255 UTF-8 bytes with its extension kept, and `file` when nothing is left. Show it as text only.
+ */
+export const safeFileName = (name: string): string => {
+  const cleaned = name.replace(UNSAFE_NAME_CHARACTERS, "").trim();
+  if (cleaned === "" || cleaned === "." || cleaned === "..") return "file";
+  if (byteLength(cleaned) <= 255) return cleaned;
+  const dot = cleaned.lastIndexOf(".");
+  const extension = dot > 0 && byteLength(cleaned.slice(dot)) <= 32 ? cleaned.slice(dot) : "";
+  let stem = "";
+  let used = byteLength(extension);
+  // Whole code points only, so a cut never leaves half a character.
+  for (const character of cleaned.slice(0, cleaned.length - extension.length)) {
+    used += byteLength(character);
+    if (used > 255) break;
+    stem += character;
+  }
+  return `${stem.trimEnd()}${extension}`;
+};
 
 const ICON = /^ti(?: ti-[a-z0-9-]{1,60}){1,2}$/;
 /** Icons come from other applications; only a Tabler icon class may reach the DOM, never arbitrary classes. */
@@ -146,7 +175,8 @@ export const listProviderFolder = async (
     options(caller),
   );
   if (!result.ok) throw failure(result.error);
-  return { items: result.data.data.items, next: result.data.data.next, writable: result.data.data.writable };
+  const items = result.data.data.items.map((entry) => ({ ...entry, name: safeFileName(entry.name) }));
+  return { items, next: result.data.data.next, writable: result.data.data.writable };
 };
 
 export type EntryProblem = "type" | "size";
@@ -159,6 +189,57 @@ export const entryProblem = (entry: FileProviderEntry, accept: string | undefine
   return undefined;
 };
 
+const OCTET_STREAM = "application/octet-stream";
+const ascii = (bytes: Uint8Array, from: number, text: string) =>
+  [...text].every((char, index) => bytes[from + index] === char.charCodeAt(0));
+const brand = (bytes: Uint8Array, ...brands: string[]) => ascii(bytes, 4, "ftyp") && brands.some((value) => ascii(bytes, 8, value));
+
+/** Types the first bytes can prove, with the extensions an `accept` may name them by. */
+const SIGNATURES: { type: string; extensions: string[]; matches: (bytes: Uint8Array) => boolean }[] = [
+  { type: "image/png", extensions: [".png"], matches: (b) => ascii(b, 0, "\x89PNG\r\n\x1a\n") },
+  { type: "image/jpeg", extensions: [".jpg", ".jpeg"], matches: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { type: "image/gif", extensions: [".gif"], matches: (b) => ascii(b, 0, "GIF87a") || ascii(b, 0, "GIF89a") },
+  { type: "image/webp", extensions: [".webp"], matches: (b) => ascii(b, 0, "RIFF") && ascii(b, 8, "WEBP") },
+  { type: "image/avif", extensions: [".avif"], matches: (b) => brand(b, "avif", "avis") },
+  { type: "image/heic", extensions: [".heic", ".heif"], matches: (b) => brand(b, "heic", "heix", "heim", "heis", "hevc") },
+  { type: "image/heif", extensions: [".heif"], matches: (b) => brand(b, "mif1", "msf1") },
+  { type: "image/tiff", extensions: [".tif", ".tiff"], matches: (b) => ascii(b, 0, "II*\0") || ascii(b, 0, "MM\0*") },
+  { type: "application/pdf", extensions: [".pdf"], matches: (b) => ascii(b, 0, "%PDF-") },
+  { type: "video/quicktime", extensions: [".mov"], matches: (b) => brand(b, "qt  ") },
+  { type: "audio/mp4", extensions: [".m4a"], matches: (b) => brand(b, "M4A ") },
+  { type: "video/mp4", extensions: [".mp4", ".m4v"], matches: (b) => ascii(b, 4, "ftyp") },
+  { type: "video/webm", extensions: [".webm", ".mkv"], matches: (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3 },
+  { type: "audio/mpeg", extensions: [".mp3"], matches: (b) => ascii(b, 0, "ID3") || (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0) },
+  { type: "audio/wav", extensions: [".wav"], matches: (b) => ascii(b, 0, "RIFF") && ascii(b, 8, "WAVE") },
+  { type: "audio/ogg", extensions: [".ogg", ".oga", ".opus"], matches: (b) => ascii(b, 0, "OggS") },
+  { type: "audio/flac", extensions: [".flac"], matches: (b) => ascii(b, 0, "fLaC") },
+];
+/** How many first bytes `verifiedMediaType` reads. */
+export const MEDIA_TYPE_HEAD_BYTES = 16;
+
+/** The `accept` tokens the first bytes can prove: images, PDF, and the audio and video types above. */
+const provable = (token: string) =>
+  /^(?:image|audio|video)\//.test(token) || SIGNATURES.some((entry) => entry.type === token || entry.extensions.includes(token));
+
+/**
+ * The media type a read file gets. A provider's type is only a hint: the type is what the first bytes prove, otherwise
+ * `application/octet-stream`. When `accept` names images, PDF, audio, or video, only bytes that prove a matching type
+ * pass; tokens bytes cannot prove, such as `.docx` or `text/*`, still take a file by its name or hinted type, as
+ * `application/octet-stream`. `undefined` means the bytes do not fit `accept`.
+ */
+export const verifiedMediaType = (head: Uint8Array, name: string, hint: string | undefined, accept?: string): string | undefined => {
+  const proven = SIGNATURES.find((entry) => entry.matches(head));
+  if (!accept) return proven?.type ?? OCTET_STREAM;
+  if (proven?.extensions.some((extension) => checkMimeType(new File([], `file${extension}`, { type: proven.type }), accept)))
+    return proven.type;
+  const unprovable = accept
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token && !provable(token))
+    .join(",");
+  return unprovable && checkMimeType(new File([], name, { type: hint ?? "" }), unprovable) ? OCTET_STREAM : undefined;
+};
+
 const streamFailure = async (response: Response): Promise<FileProviderError> => {
   const body = CapabilityErrorSchema.safeParse(await response.json().catch(() => null));
   return body.success
@@ -169,8 +250,9 @@ const streamFailure = async (response: Response): Promise<FileProviderError> => 
 /**
  * Reads one file through the provider's read stream into a `File`. Before any byte moves it checks the read's own
  * size and media type against `maxBytes` and `accept` again, since the file may have changed since it was listed.
- * It rejects a body that differs from the announced size and reports received bytes. Aborting the signal cancels
- * the transfer.
+ * It rejects a body that differs from the announced size and reports received bytes. The file's name is cleaned with
+ * `safeFileName`, and its type is what its first bytes prove (`verifiedMediaType`). Aborting the signal cancels the
+ * transfer and drops what was read.
  */
 export const readProviderFile = async (
   provider: FileProviderSource,
@@ -187,6 +269,8 @@ export const readProviderFile = async (
     FileProviderReadDataSchema,
     options(caller),
   );
+  // An answer that arrives after the reader stopped opens no stream.
+  caller.signal?.throwIfAborted();
   if (!result.ok) throw failure(result.error);
   const stream = result.data.stream;
   if (stream?.direction !== "read") throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned no read stream", 502);
@@ -221,8 +305,17 @@ export const readProviderFile = async (
     throw new FileProviderError("APP_UNAVAILABLE", "The file could not be read", navigator.onLine === false ? 0 : 503);
   }
   if (loaded !== stream.size) throw new FileProviderError("INVALID_APP_RESPONSE", "The file ended early", 502);
+  const name = safeFileName(entry.name);
+  const head = new Uint8Array(Math.min(MEDIA_TYPE_HEAD_BYTES, loaded));
+  for (let offset = 0, index = 0; offset < head.length; index++) {
+    const part = chunks[index]!.subarray(0, head.length - offset);
+    head.set(part, offset);
+    offset += part.byteLength;
+  }
+  const type = verifiedMediaType(head, name, stream.mediaType, caller.accept);
+  if (type === undefined) throw new FileProviderError("UNSUPPORTED_MEDIA_TYPE", "The file content does not match the accepted types", 415);
   const lastModified = entry.updatedAt ? Date.parse(entry.updatedAt) : Date.now();
-  return new File(chunks, entry.name, { type: stream.mediaType, lastModified });
+  return new File(chunks, name, { type, lastModified });
 };
 
 /** Runs `work` for every item, at most `limit` at once. `work` handles its own failures. */
@@ -256,6 +349,7 @@ export const isSaveableName = (name: string): boolean => nameSchema.safeParse(na
 /** A name every provider accepts: separators and control characters become `_`, and an empty name becomes `file`. */
 export const saveableName = (name: string): string => {
   const cleaned = name
+    .replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/[/\\\u0000-\u001f\u007f]/g, "_")
     .trim()
     .slice(0, 255);

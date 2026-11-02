@@ -13,9 +13,11 @@ const saving = createFileSaving(providers);
  * Lets the user choose files from this device or from any Cloud application that offers files.
  *
  * Call it from the click or key handler of your attach action. Without providers it opens the device's file
- * dialog directly; otherwise it opens the source chooser, "This device" first. Files from a provider are read
- * through its stream, at most two at a time, and never above `min(maxBytes, provider limit)`. Hand the result
- * to your existing upload path: it resolves the chosen `File`s, or `[]` when the user cancels.
+ * dialog directly; otherwise it opens a compact file dialog on "This device", with every provider beside it. Files
+ * from a provider are read through its stream, at most three at a time, never above `maxBytes` or the provider's
+ * limit; `maxFiles` and `maxTotalBytes` bound one choice. Their names are cleaned and their type is what their first
+ * bytes prove. Hand the result to your existing upload path: it resolves the chosen `File`s, or `[]` when the user
+ * cancels.
  */
 export const chooseFiles = createFileChoosing(providers);
 

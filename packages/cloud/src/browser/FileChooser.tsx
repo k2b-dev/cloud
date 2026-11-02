@@ -3,10 +3,9 @@ import {
   Button,
   createCollectionSelection,
   FileDropTarget,
+  FileDropzone,
   FileGrid,
   Format,
-  PanelDialog,
-  Placeholder,
   ProgressBar,
   StatusBadge,
   type StatusTone,
@@ -16,6 +15,7 @@ import { batch, createMemo, createSignal, For, type JSX, Match, onCleanup, Show,
 import { createStore } from "solid-js/store";
 import type { FileProviderContext, FileProviderEntry, FileProviderTag } from "../contracts/file-provider";
 import { fileChooserMessages } from "./file-chooser-messages";
+import { FileDialogFrame, type FileDialogSource, FileDialogSources } from "./file-dialog";
 import {
   type EntryProblem,
   eachLimited,
@@ -34,11 +34,15 @@ export type ChooseFilesOptions = {
   accept?: string;
   /** Allow choosing several files. Defaults to `false`. */
   multiple?: boolean;
-  /**
-   * The most bytes the consumer takes from providers in one choice: no single file and no selection together goes
-   * above it, so it also bounds what the browser holds. The provider's own read limit applies to each file as well.
-   */
+  /** The largest single file the consumer takes from a provider. The provider's own read limit applies as well. */
   maxBytes?: number;
+  /** The most files one choice may hold, for example the attachments a draft can still take. */
+  maxFiles?: number;
+  /**
+   * The most bytes the chosen provider files may hold together, for example a mail's attachment limit. It also bounds
+   * what the browser holds while it reads them. Without it, only the limit per file applies.
+   */
+  maxTotalBytes?: number;
   /**
    * What the person is working on, as resource refs, for providers that understand it. Only providers whose `list`
    * accepts `context` receive it; others list as before. A function runs only when the person opens such a provider,
@@ -54,7 +58,7 @@ export type ChooseFilesOptions = {
 export type FileProviderList = { state: "loading" } | { state: "ready"; providers: readonly FileProviderSource[] } | { state: "error" };
 
 type FileEntry = Extract<FileProviderEntry, { kind: "file" }>;
-type SourceRow = { id: string; name: string; icon: string; provider?: FileProviderSource };
+type SourceRow = FileDialogSource & { provider?: FileProviderSource };
 type Download = {
   entry: FileEntry;
   loaded: number;
@@ -64,6 +68,8 @@ type Download = {
   /** Why a read was refused: the file changed after it was listed and no longer fits. */
   reason?: EntryProblem;
 };
+
+const DEVICE = "device";
 
 const TAG_TONES: Record<NonNullable<FileProviderTag["tone"]>, StatusTone> = {
   neutral: "neutral",
@@ -77,9 +83,31 @@ export const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZ
 export const entryIcon = (entry: FileProviderEntry) =>
   providerIcon(entry.icon, `ti ${fileIcons.getFileIcon({ name: entry.name, type: entry.kind === "folder" ? "directory" : "file" })}`);
 
+/** The neutral tile of a file or folder row; only the folder glyph carries a colour. */
+export const EntryTile = (props: { entry: FileProviderEntry }): JSX.Element => (
+  <span class="cloud-file-dialog__tile" data-kind={props.entry.kind} aria-hidden="true">
+    <i class={entryIcon(props.entry)} />
+  </span>
+);
+
+/** "1.2 MB · 28/10/2026" for a file, "Folder · 28/10/2026" for a folder. */
+export const EntryFacts = (props: { entry: FileProviderEntry; folder: string }): JSX.Element => (
+  <>
+    {props.entry.kind === "file" ? <Format.Bytes value={props.entry.size} /> : props.folder}
+    <Show when={props.entry.updatedAt}>
+      {(updated) => (
+        <>
+          <span aria-hidden="true"> · </span>
+          <Format.Date value={updated()} timeZone={localTimeZone()} />
+        </>
+      )}
+    </Show>
+  </>
+);
+
 /**
- * The shared file chooser: "This device" first, then every provider; inside a provider, its folders page by page.
- * It resolves the chosen files, read through the providers' streams, or `[]`.
+ * The shared file chooser: the sources on the left, "This device" first and open; inside a provider, its folders
+ * page by page. It resolves the chosen files, read through the providers' streams, or `[]`.
  */
 export function FileChooser(props: {
   options: ChooseFilesOptions;
@@ -91,6 +119,7 @@ export function FileChooser(props: {
   const locale = useLocale();
   const t = () => fileChooserMessages.resolve([locale()]).t;
   const multiple = props.options.multiple ?? false;
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale() });
   let deviceInput: HTMLInputElement | undefined;
   let root: HTMLDivElement | undefined;
 
@@ -99,38 +128,69 @@ export function FileChooser(props: {
     queueMicrotask(() => {
       const active = document.activeElement;
       if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
-      const first = location() ? items()[0]?.id : sources()[0]?.id;
-      if (first) (location() ? selection : sourceSelection).focus(first);
+      const first = items()[0]?.id;
+      if (location() && first) selection.focus(first);
+      else root?.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]')?.focus();
     });
   };
-  const folder = createProviderFolder({ caller: props.caller, t, settled: refocus, context: props.options.context });
+  /** Providers that answered 403 or 404 at their root; they leave the list for this dialog. */
+  const [gone, setGone] = createSignal<ReadonlySet<string>>(new Set());
+  const [goneNote, setGoneNote] = createSignal<string>();
+  const folder = createProviderFolder({
+    caller: props.caller,
+    t,
+    settled: refocus,
+    context: props.options.context,
+    gone: (provider) => {
+      setGone(new Set([...gone(), provider.appId]));
+      setGoneNote(t().sourceGone({ app: provider.name }));
+    },
+  });
   const { location, items, openFolder } = folder;
   const [downloads, setDownloads] = createStore<Download[]>([]);
   const [downloading, setDownloading] = createSignal(false);
   let transfer: AbortController | undefined;
-  onCleanup(() => transfer?.abort());
+  // Closing stops every read and lets go of the bytes already read.
+  onCleanup(() => {
+    transfer?.abort();
+    setDownloads([]);
+  });
 
-  const budget = props.options.maxBytes ?? Number.POSITIVE_INFINITY;
-  /** The largest single file: the consumer's budget or the provider's read limit, whichever is smaller. */
-  const limit = () => Math.min(budget, location()?.provider.maxBytes ?? Number.POSITIVE_INFINITY);
+  const maxFiles = props.options.maxFiles;
+  const maxTotal = props.options.maxTotalBytes;
+  /** The largest single file: the consumer's limits or the provider's read limit, whichever is smallest. */
+  const limit = () =>
+    Math.min(
+      props.options.maxBytes ?? Number.POSITIVE_INFINITY,
+      maxTotal ?? Number.POSITIVE_INFINITY,
+      location()?.provider.maxBytes ?? Number.POSITIVE_INFINITY,
+    );
   const problem = (entry: FileProviderEntry): EntryProblem | undefined => entryProblem(entry, props.options.accept, limit());
 
-  // Rows keep their identity, so providers that arrive later do not re-create the row that has focus.
-  const device = createMemo<SourceRow>(() => ({ id: "device", name: t().device, icon: "ti ti-device-laptop" }));
-  const providerRows = new Map<FileProviderSource, SourceRow>();
+  // Rows keep their identity by app, so a refreshed catalog does not re-create the row that has focus.
+  const device = createMemo<SourceRow>(() => ({ id: DEVICE, name: t().device, icon: "ti ti-device-laptop" }));
+  const providerRows = new Map<string, SourceRow>();
   const providerRow = (provider: FileProviderSource): SourceRow => {
-    const row = providerRows.get(provider) ?? { id: `app:${provider.appId}`, name: provider.name, icon: provider.icon, provider };
-    providerRows.set(provider, row);
+    const id = `app:${provider.appId}`;
+    const kept = providerRows.get(id);
+    if (kept && kept.name === provider.name && kept.icon === provider.icon) {
+      kept.provider = provider;
+      return kept;
+    }
+    const row = { id, name: provider.name, icon: provider.icon, provider };
+    providerRows.set(id, row);
     return row;
   };
   const sources = createMemo<SourceRow[]>(() => {
     const list = props.providers();
-    const rows = [device(), ...(list.state === "ready" ? list.providers.map(providerRow) : [])];
-    const needle = folder.filter().trim().toLocaleLowerCase();
-    return needle ? rows.filter((row) => row.name.toLocaleLowerCase().includes(needle)) : rows;
+    const providers = list.state === "ready" ? list.providers.filter((provider) => !gone().has(provider.appId)) : [];
+    return [device(), ...providers.map(providerRow)];
   });
-  // Sources open on activation and keep no selection, so Escape always closes the chooser from here.
-  const sourceSelection = createCollectionSelection({ ids: () => sources().map((row) => row.id), multiple: false, checklist: true });
+  const current = () => {
+    const open = location();
+    return open ? `app:${open.provider.appId}` : DEVICE;
+  };
+
   // Files that do not fit stay in focus order, so the keyboard and screen readers reach the reason, but cannot be chosen.
   const blocked = createMemo(() => new Set(items().flatMap((entry) => (problem(entry) ? [entry.id] : []))));
   const selection = createCollectionSelection({
@@ -142,20 +202,39 @@ export function FileChooser(props: {
   const chosen = createMemo(() =>
     items().filter((entry): entry is FileEntry => entry.kind === "file" && selection.selected().has(entry.id)),
   );
-  const overBudget = () => chosen().reduce((sum, entry) => sum + entry.size, 0) > budget;
+  const total = () => chosen().reduce((sum, entry) => sum + entry.size, 0);
+  /** Why the selection cannot be added, or `undefined` when it fits. */
+  const overLimit = () => {
+    if (multiple && maxFiles !== undefined && chosen().length > maxFiles) return t().tooMany({ count: maxFiles });
+    if (maxTotal !== undefined && total() > maxTotal) return t().tooLargeTogether({ limit: bytes(maxTotal) });
+    return undefined;
+  };
+  /** The consumer's limits in one line, for the drop zone and the status before anything is chosen. */
+  const limits = () =>
+    [
+      props.options.maxBytes !== undefined ? t().limitPerFile({ limit: bytes(props.options.maxBytes) }) : "",
+      multiple && maxFiles !== undefined ? t().limitFiles({ count: maxFiles }) : "",
+      maxTotal !== undefined ? t().limitTotal({ limit: bytes(maxTotal) }) : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
 
   const openSource = (row: SourceRow) => {
-    sourceSelection.clear();
-    // A click or key press on the row is the user activation the native picker needs.
-    if (!row.provider) deviceInput?.click();
-    else folder.openProvider(row.provider);
+    setGoneNote(undefined);
+    const open = location();
+    // A second click on the open source, such as the rest of a double-click, keeps its root as it is.
+    if (row.provider && open?.provider.appId === row.provider.appId && open.trail.length === 1) return;
+    if (row.provider) return folder.openProvider(row.provider);
+    if (location()) folder.navigate(null);
+    // The click or key press on the row is the user activation the native picker needs.
+    deviceInput?.click();
   };
 
   const add = async () => {
     const files = chosen();
-    if (files.length === 0 || overBudget() || (downloading() && !failed())) return;
-    const current = location();
-    if (!current) return;
+    if (files.length === 0 || overLimit() || (downloading() && !failed())) return;
+    const open = location();
+    if (!open) return;
     transfer?.abort();
     const pending = new AbortController();
     transfer = pending;
@@ -172,12 +251,14 @@ export function FileChooser(props: {
         if (pending.signal.aborted || downloads[index]!.state === "done") return;
         setDownloads(index, { state: "loading", loaded: 0 });
         try {
-          const file = await readProviderFile(current.provider, downloads[index]!.entry, {
+          const file = await readProviderFile(open.provider, downloads[index]!.entry, {
             ...props.caller(),
             maxBytes: limit(),
             accept: props.options.accept,
             signal: pending.signal,
-            onProgress: (loaded, total) => setDownloads(index, { loaded, total }),
+            onProgress: (loaded, size) => {
+              if (!pending.signal.aborted) setDownloads(index, { loaded, total: size });
+            },
           });
           if (!pending.signal.aborted) setDownloads(index, { state: "done", file });
         } catch (cause) {
@@ -206,18 +287,23 @@ export function FileChooser(props: {
   const ready = () => downloads.filter((item) => item.state === "done").length;
   const progress = () => t().downloading({ done: ready(), total: downloads.length, failed: failures() });
 
-  const renderTags = (tags: readonly FileProviderTag[] | undefined) => (
-    <For each={tags ?? []}>
-      {(tag) => <StatusBadge tone={TAG_TONES[tag.tone ?? "neutral"]} icon={null} label={tag.label} class="cloud-file-chooser__tag" />}
-    </For>
-  );
+  const reason = (entry: FileProviderEntry) => {
+    const why = problem(entry);
+    if (!why) return undefined;
+    return why === "size"
+      ? { long: t().tooLarge({ limit: bytes(limit()) }), short: t().tooLargeShort({ limit: bytes(limit()) }) }
+      : { long: t().wrongType, short: t().wrongTypeShort };
+  };
 
   return (
-    <PanelDialog>
-      {/* `display: contents`, so header, body, and footer stay the panel's own rows. */}
-      <div ref={root} class="cloud-file-chooser">
-        <PanelDialog.Header title={t().title({ multiple })} close={() => props.close([])} />
-        {/* Files dropped anywhere on the open chooser are taken like files picked from this device. */}
+    <FileDialogFrame
+      ref={(element) => {
+        root = element;
+      }}
+      title={t().title({ multiple })}
+      close={() => props.close([])}
+      overlay={
+        // Files dropped anywhere on the open chooser are taken like files picked from this device.
         <FileDropTarget
           label={t().dropToChoose({ multiple })}
           accept={props.options.accept}
@@ -227,169 +313,166 @@ export function FileChooser(props: {
             if (files.length > 0) props.close(files);
           }}
         />
-        <FolderToolbar folder={folder} t={t} disabled={downloading()} sources />
-        <PanelDialog.Body>
-          <input
-            ref={deviceInput}
-            type="file"
-            hidden
-            accept={props.options.accept}
-            multiple={multiple}
-            onChange={(event) => {
-              const files = Array.from(event.currentTarget.files ?? []);
-              event.currentTarget.value = "";
-              if (files.length > 0) props.close(files);
-            }}
-          />
-          <Switch>
-            <Match when={downloading()}>
-              <ul class="cloud-file-chooser__downloads" aria-label={progress()}>
-                <For each={downloads}>
-                  {(item) => (
-                    <li>
-                      <div class="cloud-file-chooser__download-line">
-                        <span class="cloud-file-chooser__download-name" title={item.entry.name}>
-                          {item.entry.name}
-                        </span>
-                        <span class="cloud-file-chooser__download-state" data-state={item.state}>
-                          <Switch fallback={<Format.Percent value={item.total ? item.loaded / item.total : 0} clamp />}>
-                            <Match when={item.state === "waiting"}>{t().waiting}</Match>
-                            <Match when={item.state === "error" && item.reason === "size"}>
-                              {t().tooLarge({ limit: text.pprintBytes(limit(), { locale: locale() }) })}
-                            </Match>
-                            <Match when={item.state === "error" && item.reason === "type"}>{t().wrongType}</Match>
-                            <Match when={item.state === "error"}>{t().readFailed}</Match>
-                          </Switch>
-                        </span>
-                      </div>
-                      <ProgressBar
-                        size="xs"
-                        tone={item.state === "error" ? "danger" : item.state === "done" ? "success" : "info"}
-                        value={item.state === "done" ? 100 : item.total ? (item.loaded / item.total) * 100 : 0}
-                        label={t().downloadProgress({ name: item.entry.name })}
-                      />
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Match>
-            <Match when={!location()}>
-              <FileGrid
-                rows={sources()}
-                getRowId={(row) => row.id}
-                selection={sourceSelection}
-                label={t().sourceList}
-                layout="list"
-                renderPreview={(row) => <i class={`${row.icon} cloud-file-chooser__icon`} aria-hidden="true" />}
-                renderLabel={(row) => row.name}
-                onRowClick={openSource}
-                onOpen={openSource}
-              />
-              <Switch>
-                <Match when={props.providers().state === "loading"}>
-                  <Placeholder state="loading" variant="inline" align="left" description={t().providersLoading} />
-                </Match>
-                <Match when={props.providers().state === "error"}>
-                  <Placeholder
-                    state="error"
-                    variant="inline"
-                    align="left"
-                    description={t().providersFailed}
-                    action={
-                      <Button size="sm" variant="secondary" onClick={props.retryProviders}>
-                        {t().retry}
-                      </Button>
-                    }
+      }
+      sources={
+        <FileDialogSources
+          label={t().sourceList}
+          rows={sources()}
+          current={current()}
+          state={props.providers().state}
+          loading={t().providersLoading}
+          failed={t().providersFailed}
+          retry={t().retry}
+          disabled={downloading()}
+          onOpen={openSource}
+          onRetry={props.retryProviders}
+        />
+      }
+      toolbar={location() ? <FolderToolbar folder={folder} t={t} disabled={downloading()} /> : undefined}
+      status={
+        <Switch>
+          <Match when={downloading()}>{progress()}</Match>
+          <Match when={goneNote()}>{goneNote()}</Match>
+          <Match when={!location()}>{null}</Match>
+          <Match when={overLimit()}>{overLimit()}</Match>
+          <Match when={chosen().length > 0}>{t().selected({ count: chosen().length })}</Match>
+          <Match when={limits()}>{`${t().selectHint({ multiple })} · ${limits()}`}</Match>
+          <Match when={true}>{t().selectHint({ multiple })}</Match>
+        </Switch>
+      }
+      statusError={Boolean(!downloading() && location() && overLimit()) || (downloading() && failed())}
+      actions={
+        <>
+          {/* Cancel stops a transfer first; Add tries failed files again. Add keeps one width for every count. */}
+          <Button variant="secondary" data-file-chooser-cancel onClick={() => (downloading() ? stop() : props.close([]))}>
+            {t().cancel}
+          </Button>
+          <Button
+            class="cloud-file-chooser__add"
+            variant="primary"
+            disabled={!location() || chosen().length === 0 || Boolean(overLimit()) || (downloading() && !failed())}
+            onClick={() => void add()}
+          >
+            {location() && chosen().length > 0 ? t().addCount({ count: chosen().length }) : t().add}
+          </Button>
+        </>
+      }
+    >
+      <input
+        ref={deviceInput}
+        type="file"
+        hidden
+        accept={props.options.accept}
+        multiple={multiple}
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          if (files.length > 0) props.close(files);
+        }}
+      />
+      <Switch>
+        <Match when={downloading()}>
+          <ul class="cloud-file-chooser__downloads" aria-label={progress()}>
+            <For each={downloads}>
+              {(item) => (
+                <li>
+                  <div class="cloud-file-chooser__download-line">
+                    <span class="cloud-file-chooser__download-name" title={item.entry.name}>
+                      {item.entry.name}
+                    </span>
+                    <span class="cloud-file-chooser__download-state" data-state={item.state}>
+                      <Switch fallback={<Format.Percent value={item.total ? item.loaded / item.total : 0} clamp />}>
+                        <Match when={item.state === "waiting"}>{t().waiting}</Match>
+                        <Match when={item.state === "done"}>{t().ready}</Match>
+                        <Match when={item.state === "error" && item.reason === "size"}>{t().tooLarge({ limit: bytes(limit()) })}</Match>
+                        <Match when={item.state === "error" && item.reason === "type"}>{t().wrongType}</Match>
+                        <Match when={item.state === "error"}>{t().readFailed}</Match>
+                      </Switch>
+                    </span>
+                  </div>
+                  <ProgressBar
+                    size="xs"
+                    tone={item.state === "error" ? "danger" : item.state === "done" ? "success" : "info"}
+                    value={item.state === "done" || item.state === "error" ? 100 : item.total ? (item.loaded / item.total) * 100 : 0}
+                    label={t().downloadProgress({ name: item.entry.name })}
                   />
-                </Match>
-              </Switch>
-            </Match>
-            <Match when={true}>
-              <FolderContents folder={folder} t={t} noMatchingFiles={props.options.noMatchingFiles}>
-                <FileGrid
-                  rows={items()}
-                  getRowId={(entry) => entry.id}
-                  selection={selection}
-                  label={t().entries({ folder: folder.folderName() })}
-                  layout="list"
-                  renderPreview={(entry) => (
-                    <i
-                      class={`${selection.selected().has(entry.id) && entry.kind === "file" ? "ti ti-circle-check" : entryIcon(entry)} cloud-file-chooser__icon`}
-                      data-selected={selection.selected().has(entry.id) && entry.kind === "file" ? "true" : undefined}
-                      aria-hidden="true"
-                    />
-                  )}
-                  renderLabel={(entry) => <span title={entry.name}>{entry.name}</span>}
-                  renderMeta={(entry) =>
-                    entry.kind === "folder" && !entry.tags?.length ? null : (
-                      <span class="cloud-file-chooser__meta">
-                        <Switch>
-                          <Match when={entry.kind === "file" && problem(entry) === "size"}>
-                            <span>{t().tooLarge({ limit: text.pprintBytes(limit(), { locale: locale() }) })}</span>
-                          </Match>
-                          <Match when={entry.kind === "file" && problem(entry) === "type"}>
-                            <span>{t().wrongType}</span>
-                          </Match>
-                          <Match when={entry.kind === "file" ? entry : undefined}>
-                            {(file) => (
-                              <>
-                                <Format.Bytes value={file().size} />
-                                <Show when={file().updatedAt}>
-                                  {(updated) => (
-                                    <>
-                                      <span aria-hidden="true">·</span>
-                                      <Format.Date value={updated()} timeZone={localTimeZone()} />
-                                    </>
-                                  )}
-                                </Show>
-                              </>
-                            )}
-                          </Match>
-                        </Switch>
-                        {renderTags(entry.tags)}
-                      </span>
-                    )
-                  }
-                  onRowClick={(entry) => {
-                    if (entry.kind === "folder") openFolder(entry);
-                  }}
-                  onOpen={(entry) => {
-                    if (entry.kind === "folder") return openFolder(entry);
-                    if (!selection.selected().has(entry.id)) selection.toggle(entry.id);
-                    void add();
-                  }}
-                />
-              </FolderContents>
-            </Match>
-          </Switch>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
-          <span class="cloud-file-chooser__status" role="status">
-            <Switch>
-              <Match when={downloading()}>{progress()}</Match>
-              <Match when={!location()}>{null}</Match>
-              <Match when={overBudget()}>{t().tooLargeTogether({ limit: text.pprintBytes(budget, { locale: locale() }) })}</Match>
-              <Match when={chosen().length > 0}>{t().selected({ count: chosen().length })}</Match>
-              <Match when={true}>{t().selectHint({ multiple })}</Match>
-            </Switch>
-          </span>
-          {/* Labels never change, so the buttons keep their place. Cancel stops a transfer first; Add tries failed files again. */}
-          <div class="cloud-file-chooser__actions">
-            <Button variant="ghost" data-file-chooser-cancel onClick={() => (downloading() ? stop() : props.close([]))}>
-              {t().cancel}
-            </Button>
-            <Show when={location()}>
-              <Button
-                variant="primary"
-                disabled={chosen().length === 0 || overBudget() || (downloading() && !failed())}
-                onClick={() => void add()}
-              >
-                {t().add}
-              </Button>
-            </Show>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Match>
+        <Match when={!location()}>
+          <div class="cloud-file-dialog__device">
+            <FileDropzone
+              label={t().deviceLabel({ multiple })}
+              icon="ti ti-upload"
+              title={t().deviceTitle({ multiple })}
+              subtitle={
+                <>
+                  <span class="cloud-file-dialog__wide">{t().deviceSubtitle}</span>
+                  <span class="cloud-file-dialog__narrow">{t().deviceSubtitlePhone}</span>
+                </>
+              }
+              hint={limits() ? `${limits().charAt(0).toLocaleUpperCase(locale())}${limits().slice(1)}` : undefined}
+              accept={props.options.accept}
+              multiple={multiple}
+              dropLabel={t().dropToChoose({ multiple })}
+              onDrop={(files) => {
+                if (files.length > 0) props.close(files);
+              }}
+            />
           </div>
-        </PanelDialog.Footer>
-      </div>
-    </PanelDialog>
+        </Match>
+        <Match when={true}>
+          <FolderContents folder={folder} t={t} noMatchingFiles={props.options.noMatchingFiles}>
+            <FileGrid
+              rows={items()}
+              getRowId={(entry) => entry.id}
+              selection={selection}
+              checks={(entry) => entry.kind === "file"}
+              label={t().entries({ folder: folder.folderName() })}
+              layout="list"
+              renderPreview={(entry) => <EntryTile entry={entry} />}
+              renderLabel={(entry) => (
+                <span class="cloud-file-dialog__name-line">
+                  <span class="cloud-file-dialog__name" title={entry.name}>
+                    {entry.name}
+                  </span>
+                  <For each={entry.tags ?? []}>
+                    {(tag) => (
+                      <StatusBadge tone={TAG_TONES[tag.tone ?? "neutral"]} icon={null} label={tag.label} class="cloud-file-chooser__tag" />
+                    )}
+                  </For>
+                </span>
+              )}
+              renderMeta={(entry) => (
+                <span class="cloud-file-chooser__meta">
+                  <Show when={reason(entry)} fallback={<EntryFacts entry={entry} folder={t().folder} />}>
+                    {(why) => (
+                      <>
+                        <i class="ti ti-ban" aria-hidden="true" />
+                        <span class="cloud-file-dialog__wide">{why().long}</span>
+                        <span class="cloud-file-dialog__narrow">{why().short}</span>
+                      </>
+                    )}
+                  </Show>
+                </span>
+              )}
+              renderActions={(entry) =>
+                entry.kind === "folder" ? <i class="ti ti-chevron-right cloud-file-dialog__chevron" aria-hidden="true" /> : null
+              }
+              onRowClick={(entry) => {
+                if (entry.kind === "folder") openFolder(entry);
+              }}
+              onOpen={(entry) => {
+                if (entry.kind === "folder") return openFolder(entry);
+                if (!selection.selected().has(entry.id)) selection.toggle(entry.id);
+                void add();
+              }}
+            />
+          </FolderContents>
+        </Match>
+      </Switch>
+    </FileDialogFrame>
   );
 }
