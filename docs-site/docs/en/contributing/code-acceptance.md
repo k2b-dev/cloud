@@ -5,7 +5,7 @@ section: Contributing
 order: 1317
 description: Verify the mailbox schedule, Space task, personal draft and lifecycle story with two in-process runners.
 tags: [contributing, code, testing]
-updated: 2026-11-01
+updated: 2026-11-02
 ---
 
 # Code acceptance
@@ -31,12 +31,19 @@ deletion. The fixture uses `Sp4kd2` for the conceptual `sp_4kd2`, following
 Spaces' six-character public ID contract.
 
 Additional assertions cover a foreign Space shared with all signed-in people,
-a phone activation attempt, and a version-bound credential whose value is
-echoed by an HTTP fixture or included in its thrown error.
+a phone activation attempt with otherwise valid browser authority, and a
+version-bound credential whose value is echoed by an HTTP fixture or included
+in its thrown error. The HTTP version goes through the CLI/chat authoring
+service, which selects the current credential bindings and reruns the real
+checker before saving. Personal Code also needs internet approval: the suite
+asserts rejection before approval, the declared origin and policy row in the
+saved version, and the exact HTTP grant in the activated mandate.
 
 Two production Runner supervisors share Core's real Postgres and NATS
-coordination. A barrier requires both supervisors to accept work. The checker
-runs through its native isolation launcher. Only fixture source is imported
+coordination. Each supervisor has one slot. A barrier and per-supervisor run
+IDs prove that each executes one of the two scheduled runs. The same two
+supervisors remain running for the repeat, update, revoked-access and HTTP
+attempts. The checker runs through its native isolation launcher. Only fixture source is imported
 by the in-process execution engine; the separate Runner isolation tests own
 workerd confinement. Provider delivery and external HTTP responses stay in
 process. Action delivery uses the real invocation middleware, signature

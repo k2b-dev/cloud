@@ -3,7 +3,12 @@ import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
-import { type CapabilityExecutionContext, capabilityResultSchema, type User } from "@k2b/cloud/contracts";
+import {
+  type CapabilityExecutionContext,
+  capabilityResultSchema,
+  NormalizedCapabilityCallSchema,
+  type User,
+} from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
@@ -38,7 +43,7 @@ import { type CodeRunWakeup, createCodeRunOutbox, createCodeScheduleReconciler }
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { addCodeShare, findCode, readCodeRun } from "./store";
 import type { CodeVersionSubmission } from "./version-contracts";
-import { decideCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
+import { decideCodeVersion, startCodeVersionApprovals } from "./versions";
 
 // Select an isolated clone containing the real Core, Mail and Spaces migrations before domain setup.
 await import("../../../mail/test/integration-preload");
@@ -444,13 +449,17 @@ suiteFor(
     if (!dynamic.result.ok) expect(dynamic.result.diagnostics).toContainEqual(expect.objectContaining({ code: "code_dynamic_target" }));
     const submitted = await code.submit({ codeId, entry: "code.ts", files: creation, baseVersionId: null }, author);
     const personalVersion = await code.submit({ codeId: personalId, entry: "code.ts", files: personalFiles, baseVersionId: null }, author);
-    const phone: CodeContext = { ...manager, authority: { ...manager.authority, actor: { kind: "user", user: ben, sessionKind: "app" } } };
-    await expect(
-      activateCodeVersion({ codeId, versionId: submitted.submission.version.id, activationId: crypto.randomUUID() }, phone),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
     await approve(submitted.submission);
     await approve(personalVersion.submission);
+    const browser = proof(manager);
+    const phone: CodeContext = {
+      ...browser,
+      authority: { ...browser.authority, actor: { kind: "user", user: ben, sessionKind: "app" } },
+    };
+    await expect(
+      activateCodeVersion({ codeId, versionId: submitted.submission.version.id, activationId: crypto.randomUUID() }, phone),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("phone") });
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
     await activate(codeId, submitted.submission.version.id, proof(manager));
     await activate(personalId, personalVersion.submission.version.id, proof(author));
     const account = (await findCode(codeId))!.serviceAccountId!;
@@ -484,10 +493,16 @@ suiteFor(
       expect(run.run.state).toBe("succeeded");
       expect(run.calls).toHaveLength(1);
       expect(run.calls[0]?.state).toBe("succeeded");
+      expect(run.calls[0]?.ordinal).toBe(1);
+      expect(run.run.trigger).toBe("schedule");
     }
     expect(new Set(results.map((run) => run.calls[0]?.capability))).toEqual(new Set(["spaces.task.create", "mail.draft.create"]));
-    expect(fleet.engines.every((engine) => engine.executed.length > 0)).toBe(true);
-    expect(await sql`SELECT instance_id FROM code.runner_instances`).toHaveLength(2);
+    const scheduledRunIds = new Set(runs.map((run) => run.id));
+    // One occupied slot per supervisor plus the barrier proves both accepted this scheduled pair.
+    expect(fleet.engines.map((engine) => engine.executed.filter((id) => scheduledRunIds.has(id)).length)).toEqual([1, 1]);
+    expect(await sql`SELECT instance_id FROM code.runner_instances ORDER BY instance_id`).toEqual(
+      fleet.runners.map((runner) => ({ instance_id: runner.instanceId })).sort((a, b) => a.instance_id.localeCompare(b.instance_id)),
+    );
     const repeat = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-repeat" }, author);
     expect((await completed(codeId, repeat.run.runId)).run.state).toBe("succeeded");
     expect(
@@ -499,7 +514,7 @@ suiteFor(
     fleet.foreignRuns.set(foreign.run.runId, { type: "spaces.space", id: foreignId });
     const foreignResult = await completed(codeId, foreign.run.runId);
     expect(foreignResult.run.state).toBe("failed");
-    expect(foreignResult.calls[0]?.call?.target).toEqual({ type: "spaces.space", id: foreignId });
+    expect(NormalizedCapabilityCallSchema.parse(foreignResult.calls[0]?.call).target).toEqual({ type: "spaces.space", id: foreignId });
     expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "mandate_forbidden" } });
     expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
 
@@ -596,27 +611,34 @@ suiteFor(
 try { await http.fetch("https://bank.example/v1/error", { headers: { authorization: "Bearer " + secrets.BANK } }); } catch { /* The run handles the visible HTTP refusal. */ }`);
     const checked = await code.check({ codeId, files, entry: "code.ts" }, author);
     if (!checked.result.ok || !checked.manifest) throw new Error("Secret acceptance source did not check");
-    expect(checked.manifest.internet).toBe(true);
+    expect(checked.manifest.internet).toEqual(["https://bank.example"]);
     expect(checked.manifest.policyRows).toContain("internet");
+    // The CLI/chat authoring service selects current bindings; C8 reruns the real checker.
+    const submitted = await code.submit({ codeId, entry: "code.ts", files, baseVersionId: null }, author);
     const { configured: _configured, ...binding } = stored.secret;
-    // C11's documented selected-binding seam; C8 still reruns the real checker before accepting it.
-    const submitted = await submitCodeVersion(
-      {
-        codeId,
-        sourceFiles: files,
-        bundle: checked.result.bundle,
-        manifest: { ...checked.manifest, secrets: [binding] },
-        baseVersionId: null,
-      },
-      author,
-    );
-    await approve(submitted);
-    await activate(codeId, submitted.version.id, proof(author));
+    const [version] = await sql<{ manifest: { secrets: unknown[]; internet: string[]; policyRows: string[] } }[]>`
+      SELECT manifest FROM code.versions WHERE id=${submitted.submission.version.id}::uuid`;
+    expect(version!.manifest.secrets).toEqual([binding]);
+    expect(version!.manifest.internet).toEqual(["https://bank.example"]);
+    expect(version!.manifest.policyRows).toContain("internet");
+    expect(submitted.submission.status).toBe("pending");
+    // Internet approval is required even for personal Code; activation must leave no state before approval.
+    await expect(
+      activateCodeVersion({ codeId, versionId: submitted.submission.version.id, activationId: crypto.randomUUID() }, proof(author)),
+    ).rejects.toMatchObject({ code: "code_approval_required" });
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
+    await approve(submitted.submission);
+    await activate(codeId, submitted.submission.version.id, proof(author));
+    const [mandate] = await sql<{ policy: { operations: string[]; grants: unknown[] } }[]>`
+      SELECT policy FROM auth.mandates WHERE workload_id=${submitted.submission.version.id} AND state='active'`;
+    expect(mandate!.policy.operations).toContain("runtime.http");
+    expect(mandate!.policy.grants).toContainEqual({ kind: "http", fixedInput: { origin: "https://bank.example" } });
     const requested = await code.run({ codeId, entrypoint: "monday", input: null, idempotencyKey: "c25-http" }, author);
     const result = await completed(codeId, requested.run.runId);
     expect(result.run.state).toBe("succeeded");
     expect(sentHttp).toEqual(["https://bank.example/v1/echo", "https://bank.example/v1/error"]);
     expect(result.calls.map((call) => call.state)).toEqual(["succeeded", "failed"]);
+    expect(result.calls.map((call) => call.ordinal)).toEqual([1, 2]);
     expect(result.calls[1]?.result).toEqual({ ok: false, error: { code: "code_http_failed" } });
     const body = z.object({ ok: z.literal(true), data: z.object({ body: z.string() }) }).parse(result.calls[0]?.result).data.body;
     const decoded = Buffer.from(body, "base64").toString();
