@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { TrieRouter } from "hono/router/trie-router";
 import type { WSEvents } from "hono/ws";
+import { startPageResourceAccess } from "../../_internal/app-access-resources";
 import { getApp } from "../../_internal/registry";
 import type { AppMeta } from "../../contracts/app";
 import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../../services/app-access";
@@ -299,6 +300,7 @@ export const requireAppAccess = (
       }
       return browser ? c.redirect(createLoginRedirectUrl(c.req.url)) : c.json({ message: "Authentication required" }, 401);
     }
+    if (browser) startPageResourceAccess(resolved);
     let allowed: boolean;
     try {
       allowed = await canUseApp(resolved, app);

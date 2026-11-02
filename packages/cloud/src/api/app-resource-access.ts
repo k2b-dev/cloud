@@ -14,6 +14,7 @@ export const createResourceAppAccessRoutes = (app: Pick<AppMeta, "id" | "access"
   router.onError((error, c) => {
     if (!(error instanceof AppAccessUnavailableError)) throw error;
     c.header("Cache-Control", "private, no-store");
+    c.header("Retry-After", "1");
     return c.json({ code: error.code, app: error.app.id, message: error.message }, 503);
   });
   if (app.access?.kind === "resources")

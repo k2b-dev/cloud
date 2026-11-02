@@ -36,13 +36,15 @@ export const resourceAccessApp = (appId: string, request?: Request): Promise<App
 };
 const requestDeadlines = new WeakMap<Request, AbortSignal>();
 
+/** Only browser entry and SSR share a page deadline; long-running API handlers keep fresh check budgets. */
+export const startPageResourceAccess = (authority: RequestAuthority | null): void => {
+  const request = authority && appAccessRequest(authority);
+  if (request && !requestDeadlines.has(request)) requestDeadlines.set(request, AbortSignal.timeout(RESOURCE_ACCESS_ENTRY_TIMEOUT_MS));
+};
+
 export const resourceAccessSignal = (authority: RequestAuthority, budget: number, caller?: AbortSignal): AbortSignal => {
   const request = appAccessRequest(authority);
-  let requestDeadline = request && requestDeadlines.get(request);
-  if (request && !requestDeadline) {
-    requestDeadline = AbortSignal.timeout(RESOURCE_ACCESS_ENTRY_TIMEOUT_MS);
-    requestDeadlines.set(request, requestDeadline);
-  }
+  const requestDeadline = request && requestDeadlines.get(request);
   return AbortSignal.any([
     AbortSignal.timeout(budget),
     ...(requestDeadline ? [requestDeadline] : []),

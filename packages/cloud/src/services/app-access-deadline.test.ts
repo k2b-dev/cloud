@@ -2,14 +2,14 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { bindAppAccessRequest } from "../_internal/app-access-request";
-import { bindResourceAppAccess, resourceAppAccess } from "../_internal/app-access-resources";
+import { bindResourceAppAccess, resourceAppAccess, startPageResourceAccess } from "../_internal/app-access-resources";
 import { createStatusPreservingSsrHandler } from "../_internal/status-preserving-ssr";
 import { appAccess, compileAppAccess, type ResourceAppAccessAdapter } from "../contracts/app-access";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { getDisplayRuntimeContext } from "../ssr/runtime";
-import { usableAppIds } from "./app-access";
+import { AppAccessUnavailableError, canUseApp, usableAppIds } from "./app-access";
 import { buildProjectedUser } from "./session/user";
 
 useUnitClients();
@@ -191,5 +191,45 @@ test("slow probe diagnostics identify the hop and phase, throttle repeated probe
     logger.mockRestore();
     wallClock.mockRestore();
     setSystemTime();
+  }
+});
+
+test("long-running non-page requests receive a fresh check budget after an earlier budget expires", async () => {
+  const fixture = bind("long-running", async () => true);
+  const current = bindAppAccessRequest({ ...authority }, new Request("http://fixture.invalid/api/capabilities"));
+  const budgets: AbortController[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => {
+    const controller = new AbortController();
+    budgets.push(controller);
+    return controller.signal;
+  });
+  try {
+    expect(await canUseApp(current, fixture.app)).toBe(true);
+    for (const budget of budgets) budget.abort(new DOMException("earlier deadline", "TimeoutError"));
+    expect(await canUseApp(current, fixture.app)).toBe(true);
+  } finally {
+    fixture.stop();
+    timeout.mockRestore();
+  }
+});
+
+test("browser entry and its later SSR discovery share the page deadline", async () => {
+  const fixture = bind("page-deadline", async () => true);
+  const current = bindAppAccessRequest({ ...authority }, new Request("http://fixture.invalid/app/page"));
+  const budgets: AbortController[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => {
+    const controller = new AbortController();
+    budgets.push(controller);
+    return controller.signal;
+  });
+  try {
+    startPageResourceAccess(current);
+    expect(await canUseApp(current, fixture.app)).toBe(true);
+    budgets[0]!.abort(new DOMException("page deadline", "TimeoutError"));
+    expect(await usableAppIds(current, [fixture.app])).toEqual(new Set());
+    await expect(canUseApp(current, fixture.app)).rejects.toBeInstanceOf(AppAccessUnavailableError);
+  } finally {
+    fixture.stop();
+    timeout.mockRestore();
   }
 });

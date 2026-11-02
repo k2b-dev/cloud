@@ -152,8 +152,9 @@ that signal.
 
 Entry into one application allows up to eight seconds for its resource check,
 below the server's ten-second idle timeout and the live-revalidation check
-limit. Entry and subsequent discovery share the originating request's
-eight-second resource deadline. A confirmed denial returns 403; a failed or
+limit. Browser entry and subsequent SSR discovery share the page request's
+eight-second resource deadline. Long-running API handlers receive a fresh
+budget for each later access check. A confirmed denial returns 403; a failed or
 timed-out resource check returns 503 with `code: "app_access_unavailable"`
 and a retry message. `canUseApp` throws `AppAccessUnavailableError` for that
 unavailable check; `usableAppIds` omits the affected app. An aborted caller
