@@ -145,7 +145,9 @@ Run cross-app discovery through Core with an admitted credential; an
 invocation handler cannot exchange its token for a broader app catalog. An expired credential denies access. Discovery runs at most four resource
 probes at once, each with a fresh one-second limit under a four-second overall
 deadline. An unavailable or timed-out app is omitted only from that request;
-other apps retain their results. Caller signals can shorten these limits.
+other apps retain their results. A supplied caller signal replaces the overall
+default deadline; the caller must bound it. Discovery retains the one-second
+per-app limit under that caller deadline.
 Universal Search also shares its eight-second signal with invocation signing
 and provider requests. Registry reads and grants SQL are not cancelled by
 that signal.

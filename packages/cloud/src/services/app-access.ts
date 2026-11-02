@@ -106,7 +106,8 @@ const reportResourceFailure = (appId: string) => {
  * One authoritative SQL read for all configurable lists; resource rules query the owning adapters.
  * No cross-request grant cache: revocation applies on the next request.
  * Pass the reserved transaction as `db` when checking access inside a guarded operation.
- * A supplied `signal` can shorten the resource budget, never extend it.
+ * A supplied `signal` replaces the overall default budget; the caller must bound it.
+ * Discovery still gives every app its own short probe limit.
  */
 export const usableAppIds = async (
   authority: RequestAuthority | null,

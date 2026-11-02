@@ -46,9 +46,8 @@ export const resourceAccessSignal = (authority: RequestAuthority, budget: number
   const request = appAccessRequest(authority);
   const requestDeadline = request && requestDeadlines.get(request);
   return AbortSignal.any([
-    AbortSignal.timeout(budget),
+    caller ?? AbortSignal.timeout(budget),
     ...(requestDeadline ? [requestDeadline] : []),
-    ...(caller ? [caller] : []),
     ...(request ? [request.signal] : []),
   ]);
 };

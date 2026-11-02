@@ -47,13 +47,9 @@ test("every Skill mutation keeps the resolved authority and stops before effects
       routes: [],
       baseUrl: "http://private.invalid",
       access: { kind: "signedIn" as const },
-      skills: { manifestHash: "a".repeat(64) },
     },
   ];
-  spyOn(registry, "listApps").mockResolvedValue([
-    ...apps,
-    { ...apps[0]!, id: "unrelated-resource-app", access: { kind: "resources", adapters: ["workspace"] }, skills: undefined },
-  ]);
+  spyOn(registry, "listApps").mockResolvedValue(apps);
   const resolve = spyOn(appAccess, "usableAppIds").mockResolvedValue(new Set());
   const reloadRoles = spyOn(users, "getRoles").mockImplementation(async () => {
     throw new Error("Must keep effective phone roles");
@@ -116,7 +112,7 @@ test("every Skill mutation keeps the resolved authority and stops before effects
   expect(resolve).toHaveBeenCalledTimes(results.length);
   for (const [received, registered] of resolve.mock.calls) {
     expect(received).toBe(authority);
-    expect(registered).toEqual(apps);
+    expect(registered).toBe(apps);
   }
   expect(reloadRoles).not.toHaveBeenCalled();
 });

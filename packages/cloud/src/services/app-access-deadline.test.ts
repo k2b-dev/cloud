@@ -88,7 +88,7 @@ test("an app page answers with healthy apps despite a stalled owner, and the nex
   }
 }, 4000);
 
-test("a full queue has a shared deadline below the server idle timeout even with an unbounded caller signal", async () => {
+test("a full queue has a default shared deadline below the server idle timeout", async () => {
   let active = 0;
   let peak = 0;
   let started = 0;
@@ -115,7 +115,6 @@ test("a full queue has a shared deadline below the server idle timeout even with
       await usableAppIds(
         authority,
         fixtures.map(({ app }) => app),
-        { signal: new AbortController().signal },
       ),
     ).toEqual(new Set());
     expect(performance.now() - begin).toBeLessThan((REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
