@@ -708,7 +708,9 @@ access; its routes and services still enforce their own permissions. Omit
 An administration area groups related admin pages: its sections form a first
 column, and the open section sits beside it as `AppWorkspace` levels.
 `AdminArea` from `@k2b/cloud/ssr` renders the admin layout, the first column and
-the levels; the owner builds every section's content by hand.
+the levels; the owner builds every section's content by hand. `AdminAreaPane`
+is the page level: its title is the page title, and its content starts at that
+title's edge, so a form inside it adds no side inset of its own.
 
 ```tsx
 <AdminArea
