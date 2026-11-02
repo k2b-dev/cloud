@@ -581,7 +581,7 @@ for (const width of [1440, 1194, 834, 390])
   });
 
 for (const theme of ["light", "dark"])
-  test(`${theme}: tabs, chips, and segments keep the soft style contract`, async () => {
+  test(`${theme}: tabs, chips, and segments keep the edge style contract`, async () => {
     const page = await load({}, 1440);
     try {
       await page.locator("html").evaluate((element, theme) => {
@@ -615,7 +615,13 @@ for (const theme of ["light", "dark"])
               display: css.display,
             };
           });
+        const probe = document.createElement("i");
+        probe.style.background = "var(--k2b-tray)";
+        document.body.append(probe);
+        const tray = getComputedStyle(probe).backgroundColor;
+        probe.remove();
         return {
+          tray,
           lists: read(".k2b-tabs__list,.k2b-view-tabs__list"),
           tabs: read('[role="tab"],.k2b-view-tabs__item > a'),
           chips: read(".k2b-filter-chip"),
@@ -629,14 +635,17 @@ for (const theme of ["light", "dark"])
         expect(list.shadow).toBe("none");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);
       }
+      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline.
+      const insetOnly = (shadow: string) => shadow === "none" || shadow.split(/,(?![^(]*\))/).every((part) => part.includes("inset"));
       for (const tab of styles.tabs) {
-        expect(tab.shadow).toBe("none");
+        expect(insetOnly(tab.shadow), tab.shadow).toBe(true);
         expect(tab.borders[2]).toBe("0px");
       }
       expect(new Set(styles.tabs.map((tab) => tab.weight)).size).toBe(1);
       for (const chip of styles.chips) expect(chip.borders).toEqual(["0px", "0px", "0px", "0px"]);
-      for (const segment of styles.segments) expect(segment.background).toBe("rgba(0, 0, 0, 0)");
-      for (const segment of styles.selectedSegment) expect(segment.shadow).toBe("none");
+      // Segments sit on the grey track; the selected thumb has an inset edge and no shadow.
+      for (const segment of styles.segments) expect(segment.background).toBe(styles.tray);
+      for (const segment of styles.selectedSegment) expect(insetOnly(segment.shadow), segment.shadow).toBe(true);
       for (const separator of styles.separators)
         expect(separator.content === "none" || separator.content === "normal" || separator.display === "none").toBe(true);
     } finally {

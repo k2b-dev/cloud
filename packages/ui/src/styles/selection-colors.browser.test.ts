@@ -83,7 +83,6 @@ render(() => {
   const probes = document.createElement("div");
   probes.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;pointer-events:none";
   for (const [name, declaration] of Object.entries({
-    selected: "background:var(--k2b-selected)",
     edgeSelected: "background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
     solid: "background:var(--k2b-action-solid)",
     link: "color:var(--k2b-link-accent)",
@@ -324,23 +323,12 @@ describe("selection colors in the browser", () => {
             await page.mouse.move(1400, 1100);
             await settled(page);
 
-            const selected = (await paint(page.locator("#probe-selected"))).background;
+            // Tabs, views, segments, and active filters share the selected edge and fill, mixed from the host ink.
+            const edgeSelected = (await paint(page.locator("#probe-edgeSelected"))).background;
             for (const selector of [
               '.k2b-tabs__list button[aria-selected="true"]',
               '.k2b-view-tabs__tab[aria-current="page"]',
               '.k2b-segmented-control__option[data-selected="true"]',
-            ]) {
-              await settled(page);
-              const actual = await paint(page.locator(`#controls ${selector}`));
-              expect(actual.background, `${selector}: selection fill`).toEqual(colors ? rgb(colors.nav) : selected);
-              expect(Number(actual.alpha), `${selector}: selection must have a painted background`).toBeGreaterThan(0);
-              if (colors) expect(actual.ink, `${selector}: host ink`).toEqual(rgb(colors.ink));
-              expect(contrast(actual.ink, actual.background), `${selector}: selected text contrast`).toBeGreaterThanOrEqual(4.5);
-            }
-
-            // Active filters share the selected edge and fill of every choice, mixed from the host ink.
-            const edgeSelected = (await paint(page.locator("#probe-edgeSelected"))).background;
-            for (const selector of [
               '.k2b-filter-chip[data-active="true"][aria-haspopup]',
               '.k2b-filter-chip[data-active="true"][aria-pressed="true"]',
             ]) {

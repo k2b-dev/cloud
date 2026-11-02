@@ -30,14 +30,16 @@ const navFill = [
 // The stacked object chip below 64rem (#1441) is the same selected navigation fill.
 const stackedChip =
   '.k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop :is( .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item ):is(.is-active, [aria-current], :has(> [aria-current]))';
-// The soft tabs, view tabs, segments, and active filter chips (#1493) share the navigation fill.
-const softControls = [
-  '.k2b-ui .k2b-segmented-control__option[data-selected="true"]',
-  '.k2b-ui .k2b-segmented-control__option[aria-checked="true"]',
+// Tabs, view tabs, segments, and a menu's segment row take the selected edge and fill in the app ink, like an
+// active filter chip: no navigation fill.
+const edgeSelected = [
+  '.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"])',
   '.k2b-ui .k2b-tabs__list button[aria-selected="true"]',
   '.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"])',
   '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',
 ];
+const selectedEdge = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))";
+const selectedFill = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";
 const navInk = [
   `${sidebar}.is-active`,
   `${sidebar}[data-variant="object"].is-active:not(.has-action)`,
@@ -71,6 +73,21 @@ describe("selection hooks", () => {
     expect(cssDeclarations(chip.map((rule) => rule.body).join(";")).get("background")).toEqual(["var(--k2b-app-workspace-selected)"]);
     for (const selector of navInk) expect(declarations(selector).get("color"), selector).toEqual(["var(--k2b-app-workspace-active)"]);
     expect(declarations(`${sidebar}.is-active`).get("font-weight")).toEqual(["600"]);
+  });
+
+  test("tabs, view tabs, and segments take the selected edge and fill in the host ink", () => {
+    for (const selector of edgeSelected) {
+      const selected = declarations(selector);
+      expect(selected.get("--k2b-edge-color"), selector).toEqual([selectedEdge]);
+      expect(selected.get("background"), selector).toEqual([selectedFill]);
+      expect(
+        [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?)$/.test(property)),
+        selector,
+      ).toEqual([]);
+    }
+    const row = declarations('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]');
+    expect(row.get("background")).toEqual([selectedFill]);
+    expect(row.get("box-shadow")).toEqual([`inset 0 0 0 var(--k2b-edge-width) ${selectedEdge}`]);
   });
 
   test("content selection changes paint without weight, padding, or border width", () => {
@@ -110,17 +127,14 @@ describe("selection hooks", () => {
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-selected)"]);
   });
 
-  test("other controls retain their existing platform surfaces and solid action fill", () => {
-    expect(declarations('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]').get("background")).toEqual([
-      "var(--k2b-surface)",
-    ]);
+  test("other controls retain their solid action fill", () => {
     for (const selector of ['.k2b-ui .k2b-date-grid button[aria-selected="true"]', '.k2b-ui .k2b-date-months button[data-selected="true"]'])
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-action-solid)"]);
   });
 
   test("only the listed navigation and content rules consume selection hooks", () => {
     for (const [hook, allowed] of [
-      ["--k2b-app-workspace-selected", [...navFill, stackedChip, ...softControls]],
+      ["--k2b-app-workspace-selected", [...navFill, stackedChip]],
       ["--k2b-row-selected", rows],
     ] as const) {
       const consumers = rules.filter((rule) => [...cssDeclarations(rule.body).values()].flat().some((value) => value.includes(hook)));

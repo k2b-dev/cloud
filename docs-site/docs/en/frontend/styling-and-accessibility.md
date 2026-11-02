@@ -119,9 +119,8 @@ normal navigation look destructive. Status color must not identify an app.
 
 A selected navigation row or a row for an opened or picked object or place
 uses the app's selection fill and ink. A selected tab, view tab, or segment
-shares the navigation fill: like a selected row, it marks where the person is
-or what they picked. An active filter chip draws the app ink as a selected edge
-with a light fill. Controls keep platform blue: buttons,
+and an active filter chip mark where the person is or what they picked in the
+same app ink, drawn as a selected edge with a light fill. Controls keep platform blue: buttons,
 inputs, checkboxes, radios, switches, and focus rings, plus select and
 keyboard-active options, pressed toolbar buttons, and checked cards. Link text
 stays body ink; only its underline follows the app ink. Only the
@@ -205,8 +204,8 @@ contrast on Cloud's theme and selection surfaces. `--ui-app-selected` and
 and the sidebar. Cloud maps these fills to `--k2b-row-selected` and
 `--k2b-app-workspace-selected`, with `--k2b-app-workspace-active` for
 navigation ink. Tabs, view tabs, segmented controls, and active filter chips
-share the navigation fill; other controls and options retain their platform
-colors.
+mix their selected edge and fill from that ink; other controls and options
+retain their platform colors.
 
 When app-owned CSS is necessary, use the semantic theme variables already
 provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use
