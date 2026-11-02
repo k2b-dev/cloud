@@ -171,6 +171,7 @@ instead of adding a group of its own:
 | --- | --- | --- |
 | `"ai"` | AI | The AI area lists the links among its own sections. |
 | `"observability"` | Observability | One entry, Observability, that stays active on every contributed link. The area lists other apps' links under **From apps** in its first column. |
+| `"people"` | Operations | The link as an entry under **Operations**, for the app that manages accounts and groups. The link may lead to the app's own page outside `/admin`; same-origin paths only. Needs a Core of the same release or newer. |
 
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.

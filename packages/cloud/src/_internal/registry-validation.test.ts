@@ -23,6 +23,15 @@ describe("validateAppRegistryEntry", () => {
       expect(validateAppRegistryEntry({ ...valid, package: packageName })).toContain("package");
     }
   });
+  test("keeps an entry whose admin group names an area this reader does not know", () => {
+    const group = (section: unknown) => ({
+      ...valid,
+      adminNav: [{ section, label: "People", links: [{ label: "People", href: "/app/people", icon: "ti-users" }] }],
+    });
+    expect(validateAppRegistryEntry(group("people"))).toBeNull();
+    expect(validateAppRegistryEntry(group("a-later-area"))).toBeNull();
+    expect(validateAppRegistryEntry(group(42))).toContain("adminNav");
+  });
   test("rejects a scalar entry", () => expect(validateAppRegistryEntry("broken")).toBe("entry must be an object"));
   test("rejects invalid routes", () => expect(validateAppRegistryEntry({ ...valid, routes: ["auth"] })).toContain("routes"));
   test("rejects a non-HTTP or credential-bearing base URL", () => {

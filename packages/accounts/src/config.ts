@@ -17,6 +17,8 @@ export const app = defineApp({
         name: "Zugänge",
         description: "Konten, Gruppen, Zugriffe und Kontoanfragen verwalten.",
         widgets: { "admin-queue": { title: "Administrationsaufgaben", description: "Offene Kontoanfragen und bald ablaufende Konten." } },
+        adminGroups: { people: "Personen" },
+        adminLinks: { "/app/accounts": "Personen" },
       },
     },
   },
@@ -31,6 +33,10 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user"],
   },
+  // The admin bar leads to People here, under Operations; the page stays in this app for every role.
+  adminNav: [
+    { section: "people", id: "people", label: "People", links: [{ label: "People", href: "/app/accounts", icon: "ti ti-users" }] },
+  ],
   widgets: [
     {
       id: "admin-queue",
