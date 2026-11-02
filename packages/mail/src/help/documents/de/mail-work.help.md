@@ -63,12 +63,14 @@ Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zus
 | Kopfbereich → Mehr | Erledigt | Als erledigt markierte Unterhaltungen |
 | Kopfbereich | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
 | Kopfbereich | Nicht zugewiesen | Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann, zum Beispiel weil die zugewiesenen Personen keinen Zugriff mehr haben |
-| Kopfbereich | Alle | E-Mails aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
+| Kopfbereich | Alle | Offene Unterhaltungen aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
 | Kopfbereich → Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
 | Kopfbereich → Mehr | Aufbewahrt | Vor dem Löschen geschützte Unterhaltungen aus jedem Ordner |
 | Seitenleiste → geöffnetes Postfach | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
 Anbieterordner sind eine andere Ebene. Verschiebst du eine Unterhaltung in Archiv, Papierkorb, Spam oder einen anderen Anbieterordner, verschiebt sich auch die E-Mail beim Anbieter. Andere Programme können das zeigen. Markierst du eine Unterhaltung als **Erledigt**, ändert sich nur der Status der Nachverfolgung in Cloud. Die E-Mail wird weder archiviert noch verschoben oder als gelesen markiert. Der Posteingang beim Anbieter bleibt unverändert.
+
+**Alle**, der Posteingang, eigene Ordner, Tags, Filter und gespeicherte Ansichten zeigen nur offene Unterhaltungen. Erledigte und auf **Später** gestellte Unterhaltungen fehlen dort. Am Listenende steht, wie viele erledigte Unterhaltungen die Liste auslässt, zum Beispiel „1.207 erledigte Unterhaltungen · Erledigt anzeigen“. In **Alle** öffnet **Erledigt anzeigen** den Tab **Erledigt**. In einem Ordner, Tag oder Filter ergänzt der Link die Bedingung **Bearbeitungsstatus: Erledigt**. **Zurücksetzen** führt zurück zur offenen Liste. Archiv, Gesendet, Papierkorb, Spam und die Textsuche zeigen weiterhin alles. Die Zahl ungelesener E-Mails eines Ordners zählt nur offene Unterhaltungen.
 
 Mit Zugriff **Verwalten** hältst du die E-Mails eines Ordners in diesem Ordner, etwa bei einem gemeinsamen Teamordner (**Nur im Ordner**). Seine Unterhaltungen fehlen dann in diesen Ansichten und ihren Zählern:
 

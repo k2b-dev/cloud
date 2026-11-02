@@ -220,6 +220,7 @@ describe("Mail workspace conversation open", () => {
       listCursor: cursor,
       nextListCursor: page.next,
       listError: null,
+      hiddenDone: null,
       listTitle: "Inbox",
     };
   };

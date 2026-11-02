@@ -69,6 +69,7 @@ const listFields = [
   "listCursor",
   "nextListCursor",
   "listError",
+  "hiddenDone",
   "listTitle",
 ] as const;
 const listPart = (data: MailboxListView) =>

@@ -95,6 +95,8 @@ export default function MailConversationList(props: {
   columns?: { shared: boolean; assigneeNames: (userIds: readonly string[]) => string[] };
   /** Conversations done today and how many still need action; drives the done line and "All done." */
   doneToday?: { done: number; automated: number; open: number; logHref: string } | null;
+  /** The done conversations this work list leaves out, named at its end, and where "Show done" leads. */
+  hiddenDone?: { count: number | null; more: boolean; href: string } | null;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
@@ -210,6 +212,17 @@ export default function MailConversationList(props: {
           ? messages().dayWeek
           : messages().dayEarlier;
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
+  /** The footer names the done conversations once the list reached its end; an uncounted list still offers the link. */
+  const hiddenDone = () => {
+    const hidden = props.hiddenDone;
+    if (!hidden || props.error || props.nextCursor || hidden.count === 0) return null;
+    return hidden;
+  };
+  const hiddenDoneText = (hidden: { count: number | null; more: boolean }) => {
+    if (hidden.count === null) return null;
+    const formatted = new Intl.NumberFormat(locale()).format(hidden.count);
+    return hidden.more ? messages().hiddenDoneMore({ formatted }) : messages().hiddenDone({ count: hidden.count, formatted });
+  };
   /** The columns view's time column fits the longest time the rows' date context shows; the server renders the same samples. */
   const timeColumnSizer = createMemo(() =>
     props.columns ? mailTimeColumnSizer(mailTimeColumnSamples(props.dateConfig, new Date())) : undefined,
@@ -546,6 +559,31 @@ export default function MailConversationList(props: {
             <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
               {messages().shown({ count: props.items.length })}
             </p>
+          </Show>
+          <Show when={hiddenDone()}>
+            {(hidden) => (
+              <p class="mail-hidden-done" data-mail-hidden-done>
+                <Show when={hiddenDoneText(hidden())}>
+                  {(text) => (
+                    <>
+                      <span>{text()}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
+                </Show>
+                <ButtonLink
+                  href={hidden().href}
+                  variant="text"
+                  size="xs"
+                  navigation="enhanced"
+                  onNavigate={props.onNavigate}
+                  scroll="preserve"
+                  data-mail-show-done
+                >
+                  {messages().showDone}
+                </ButtonLink>
+              </p>
+            )}
           </Show>
           <Show when={nextHref()}>
             {(href) => (

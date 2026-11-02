@@ -349,6 +349,10 @@ export const ConversationListInputSchema = z
       .nullable()
       .optional()
       .describe("Optional saved work queue view."),
+    includeDone: z
+      .boolean()
+      .optional()
+      .describe("Also list done and snoozed conversations, which the list leaves out without a view, work status, or filing folder."),
     cursor: CursorSchema,
     limit: VocabularyLimitSchema,
   })

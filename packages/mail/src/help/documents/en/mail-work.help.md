@@ -63,12 +63,14 @@ The view tabs in the head show what happens next and who owns the work. Open **M
 | Head → More | Done | Conversations marked Done |
 | Head tabs | Assigned to me | Conversations assigned to you |
 | Head tabs | Unassigned | Conversations with no assignee who can still work on them, for example because the assignees lost their access |
-| Head tabs | All | Mail from every provider folder except Trash, Junk, and folders whose mail stays inside them |
+| Head tabs | All | Open conversations from every provider folder except Trash, Junk, and folders whose mail stays inside them |
 | Head → More | Recent activity | Recently changed conversations |
 | Head → More | Kept | Conversations protected from deletion, from every folder |
 | Sidebar → open mailbox | Scheduled | Messages that wait for later delivery |
 
 Provider folders are a different layer. When you move a conversation to Archive, Trash, Junk, or another provider folder, the remote mail moves too. Other clients can show this. Marking a conversation **Done** changes only the Cloud follow-up state. It does not archive, move, or mark the email read. The provider Inbox stays unchanged.
+
+**All**, the Inbox, your own folders, tags, filters, and saved views show open conversations only. Conversations marked **Done** or set to **Later** are left out there. The end of the list says how many done conversations it leaves out, for example "1,207 done conversations · Show done". In **All**, **Show done** opens the **Done** tab. In a folder, tag, or filter, the link adds the condition **Work status: Done**. **Reset** returns to the open list. Archive, Sent, Trash, Junk, and text search still show everything. A folder's unread count counts open conversations only.
 
 With **Manage** access, you can keep the mail of a folder inside that folder, for example a shared team folder (**Only in the folder**). Its conversations then stay out of these views and their counts:
 

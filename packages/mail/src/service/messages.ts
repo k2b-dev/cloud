@@ -2,8 +2,8 @@ import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import { z } from "zod";
-import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
-import { isAggregatedListing } from "../folder-display-rules";
+import type { ConversationView, ConversationWorkStatus, FolderDisplay, MailSearchExpression } from "../contracts";
+import { FILING_FOLDER_ROLES, isAggregatedListing, mailListingOpenOnly, mailSearchOpenWorkTerms } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { conversationVisibleTo, draftVisibleTo, type MailboxAccess, messageVisibleTo, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
@@ -20,14 +20,14 @@ import {
   loadAggregatedViewScope,
   staysInAggregatedViews,
 } from "./folder-display";
-import { FOLLOW_UP_VIEWS, isFollowUpConversation } from "./follow-up-scope";
+import { FOLLOW_UP_VIEWS, isFollowUpConversation, isOpenConversation } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { type MessageRemoteContent, resolveMessagesRemoteContent } from "./remote-content";
 import { assessMessages } from "./security";
 import { cachedConversationViewCounts } from "./view-count-cache";
-import { queryConversationViewCounts } from "./view-count-query";
+import { type MailboxConversationCounts, queryConversationViewCounts } from "./view-count-query";
 
 type DateCursor = { version: 1; date: string; id: string };
 
@@ -161,6 +161,17 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
         AND placement.deleted_at IS NULL
         AND ${messageVisibleTo(visibility, sql`placement.message_id`)}
         AND NOT ('\\Seen' = ANY(placement.flags))
+        -- Like the folder's list, a work folder counts only open conversations; filing folders count everything.
+        AND (
+          COALESCE(role_override.role, f.role) IN (SELECT value FROM jsonb_array_elements_text(${FILING_FOLDER_ROLES}::jsonb))
+          OR NOT EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages closed_cm
+            JOIN mail.conversations closed_c ON closed_c.id = closed_cm.conversation_id
+            WHERE closed_cm.message_id = placement.message_id
+              AND NOT ${isOpenConversation(sql`closed_c`)}
+          )
+        )
     ) unread_counts ON true
     WHERE rr.mailbox_id = ${mailboxId}::uuid
       AND NOT (f.discovery_state = 'missing' AND f.dismissed_at IS NOT NULL)
@@ -283,6 +294,42 @@ const includedPlacementCondition = (excludedFolderIds: readonly string[]) => (fo
   ))
 `;
 
+/** The roles of these folders of a mailbox, by their configured role or else the provider's, as the folder list shows them. */
+export const folderRoles = async (mailboxId: string, folderIds: readonly string[]): Promise<string[]> => {
+  if (folderIds.length === 0) return [];
+  const rows = await sql<{ role: string }[]>`
+    SELECT COALESCE(role_override.role, f.role) AS role
+    FROM mail.folders f
+    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+    LEFT JOIN mail.folder_role_overrides role_override
+      ON role_override.mailbox_id = rr.mailbox_id
+     AND role_override.folder_id = f.id
+    WHERE rr.mailbox_id = ${mailboxId}::uuid
+      AND f.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[...new Set(folderIds)]}::jsonb))
+  `;
+  return rows.map((row) => row.role);
+};
+
+/**
+ * Whether this listing shows open conversations only (`mailListingOpenOnly`), with the roles of the folders it is
+ * limited to: the open folder and the folder conditions of its search.
+ */
+export const listingOpenOnly = async (params: {
+  mailboxId: string;
+  view: ConversationView | null;
+  status: ConversationWorkStatus | null;
+  expression: MailSearchExpression | null;
+  folderId: string | null;
+  includeDone?: boolean;
+}): Promise<boolean> => {
+  if (params.includeDone) return false;
+  const terms = params.expression ? mailSearchOpenWorkTerms(params.expression) : { status: false, text: false, folderIds: [] };
+  const scope = { activeView: params.view, explicitStatus: params.status !== null || terms.status, textSearch: terms.text };
+  if (!mailListingOpenOnly({ ...scope, folderRoles: [] })) return false;
+  const folderIds = [...(params.folderId ? [params.folderId] : []), ...terms.folderIds];
+  return mailListingOpenOnly({ ...scope, folderRoles: await folderRoles(params.mailboxId, folderIds) });
+};
+
 /** The indexed column a listing sorts by. A plain column, never a CASE on a parameter, lets PostgreSQL read the index in order and stop at the page. */
 const conversationSortColumn = (view: ConversationView | null) =>
   view === "recently_active" ? sql`c.updated_at` : sql`c.latest_message_at`;
@@ -339,6 +386,8 @@ export const conversationCandidatesQuery = (params: {
   unread: boolean | null;
   lapsedAssignees: LapsedAssignee[];
   aggregatedScope: AggregatedViewScope | null;
+  /** Leave out done and snoozed conversations (`mailListingOpenOnly`). */
+  openOnly?: boolean;
   cursor: { date: string; id: string } | null;
   limit: number;
 }): Bun.SQL.Query<unknown> => {
@@ -354,26 +403,32 @@ export const conversationCandidatesQuery = (params: {
       AND NOT ('\\Seen' = ANY(unread_mp.flags))
       AND ${folderId ? sql`unread_mp.folder_id = ${folderId}::uuid` : sql`true`}
   )`;
+  const folderPlacement = (folder: string) => sql`
+    SELECT 1
+    FROM mail.conversation_messages folder_cm
+    JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
+    WHERE folder_cm.conversation_id = c.id
+      AND folder_mp.folder_id = ${folder}::uuid
+      AND folder_mp.deleted_at IS NULL
+  `;
   return sql`
     SELECT c.*
     FROM mail.conversations c
     WHERE c.mailbox_id = ${params.mailboxId}::uuid
       AND ${conversationVisibleTo(params.visibility, sql`c.id`)}
+      AND ${params.openOnly ? isOpenConversation(sql`c`) : sql`true`}
       AND ${params.status ? sql`c.work_status = ${params.status}` : sql`true`}
       AND ${conversationViewCondition(view, params.currentUserId, params.lapsedAssignees)}
       AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
       AND ${params.aggregatedScope ? staysInAggregatedViews(sql`c.id`, params.aggregatedScope) : sql`true`}
       AND ${
-        folderId
-          ? sql`EXISTS (
-              SELECT 1
-              FROM mail.conversation_messages folder_cm
-              JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
-              WHERE folder_cm.conversation_id = c.id
-                AND folder_mp.folder_id = ${folderId}::uuid
-                AND folder_mp.deleted_at IS NULL
-            )`
-          : sql`true`
+        !folderId
+          ? sql`true`
+          : params.openOnly
+            ? // A per-row check, never a join: a reused plan would otherwise start at the folder's placements and read
+              // every done conversation in a large folder, instead of the open ones newest first up to the page.
+              sql`(${folderPlacement(folderId)} LIMIT 1) IS NOT NULL`
+            : sql`EXISTS (${folderPlacement(folderId)})`
       }
       AND ${unread === null ? sql`true` : unread ? hasUnreadPlacement() : sql`NOT ${hasUnreadPlacement()}`}
       AND ${
@@ -418,9 +473,11 @@ export const listConversations = async (params: {
   status?: ConversationWorkStatus | null;
   view?: ConversationView | null;
   unread?: boolean | null;
+  /** Also list done and snoozed conversations where the list would leave them out. */
+  includeDone?: boolean;
   cursor?: string;
   limit?: number;
-}): Promise<Result<{ items: ConversationSummary[]; nextCursor: string | null }>> => {
+}): Promise<Result<{ items: ConversationSummary[]; nextCursor: string | null; openOnly: boolean }>> => {
   const access = await resolveMailExecution({
     mailboxId: params.mailboxId,
     operation: "actorRead",
@@ -436,6 +493,14 @@ export const listConversations = async (params: {
   const folderId = params.folderId ?? null;
   const excludedFolderIds = view === "kept" ? [] : [...new Set(params.excludedFolderIds ?? [])].sort();
   const includedPlacement = includedPlacementCondition(excludedFolderIds);
+  const openOnly = await listingOpenOnly({
+    mailboxId: params.mailboxId,
+    view,
+    status: params.status ?? null,
+    expression: null,
+    folderId,
+    includeDone: params.includeDone,
+  });
   const cursorScope: ConversationCursorScope = {
     mailboxId: params.mailboxId,
     folderId,
@@ -444,6 +509,7 @@ export const listConversations = async (params: {
     view,
     unread: params.unread ?? null,
     userId: currentUserId,
+    openOnly,
   };
   const cursor = decodeConversationCursor(params.cursor, cursorScope);
   if (!cursor.ok) return cursor;
@@ -461,6 +527,7 @@ export const listConversations = async (params: {
     unread: params.unread ?? null,
     lapsedAssignees,
     aggregatedScope,
+    openOnly,
     cursor: cursor.data ?? null,
     limit: limit + 1,
   });
@@ -619,6 +686,7 @@ export const listConversations = async (params: {
   return ok({
     items,
     nextCursor: hasMore && last && lastRow ? encodeConversationCursor({ scope: cursorScope, date: lastRow.cursor_at, id: last.id }) : null,
+    openOnly,
   });
 };
 
@@ -688,6 +756,16 @@ export const getConversationViewCounts = async (params: {
   /** Workspace snapshots reuse counts; standalone reads stay authoritative. */
   cached?: boolean;
 }): Promise<Result<ConversationViewCounts>> => {
+  const counts = await getMailboxConversationCounts(params);
+  return counts.ok ? ok(counts.data.views) : counts;
+};
+
+/** The view counts and the done conversations each folder's list leaves out, from one query and one cached snapshot. */
+export const getMailboxConversationCounts = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  cached?: boolean;
+}): Promise<Result<MailboxConversationCounts>> => {
   const access = await resolveMailExecution({
     mailboxId: params.mailboxId,
     operation: "actorRead",

@@ -2,7 +2,7 @@ import { redis, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { z } from "zod";
 import { conversationViewSchema } from "../contracts";
-import type { ConversationViewCounts } from "./messages";
+import type { MailboxConversationCounts } from "./view-count-query";
 
 // The snapshot may be reused for 30 seconds. Reads in its second half quietly renew it.
 // Live invalidations change its Postgres version in the writer's transaction, so the
@@ -15,11 +15,14 @@ const CACHE_COMMAND_MS = 100;
 const log = logger("mail:view-count-cache");
 const snapshotSchema = z.object({
   at: z.number().finite(),
-  counts: z.record(conversationViewSchema, z.number().int().nonnegative()),
+  counts: z.object({
+    views: z.record(conversationViewSchema, z.number().int().nonnegative()),
+    doneByFolder: z.record(z.uuid(), z.number().int().nonnegative()),
+  }),
 });
 export class CountRefreshBusy extends Error {}
 
-const pending = new Map<string, Promise<ConversationViewCounts>>();
+const pending = new Map<string, Promise<MailboxConversationCounts>>();
 const complete = `redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
 if redis.call('GET', KEYS[2]) == ARGV[1] then redis.call('DEL', KEYS[2]) end
 return 1`;
@@ -58,7 +61,7 @@ const read = async (key: string) => {
 
 // Leave one shared connection available for the rest of the workspace. This also bounds
 // fallback computations during a Valkey outage; different readers never share a snapshot.
-const activeLoads = new Set<Promise<ConversationViewCounts>>();
+const activeLoads = new Set<Promise<MailboxConversationCounts>>();
 const loadLimit = () => Math.max(1, (sql.options.max ?? 10) - 1);
 const waitFor = async <T>(task: Promise<T>, ms = FILL_WAIT_MS): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -73,7 +76,7 @@ const waitFor = async <T>(task: Promise<T>, ms = FILL_WAIT_MS): Promise<T> => {
     clearTimeout(timer);
   }
 };
-const boundedLoad = async (load: () => Promise<ConversationViewCounts>) => {
+const boundedLoad = async (load: () => Promise<MailboxConversationCounts>) => {
   const deadline = Date.now() + FILL_WAIT_MS;
   while (activeLoads.size >= loadLimit()) {
     await waitFor(Promise.race([...activeLoads].map((task) => task.catch(() => undefined))), deadline - Date.now());
@@ -87,7 +90,7 @@ const boundedLoad = async (load: () => Promise<ConversationViewCounts>) => {
   }
 };
 
-const fill = (key: string, load: () => Promise<ConversationViewCounts>): Promise<ConversationViewCounts> => {
+const fill = (key: string, load: () => Promise<MailboxConversationCounts>): Promise<MailboxConversationCounts> => {
   const existing = pending.get(key);
   if (existing) return existing;
   const task = (async () => {
@@ -149,14 +152,14 @@ const fill = (key: string, load: () => Promise<ConversationViewCounts>): Promise
 export const cachedConversationViewCounts = async (params: {
   mailboxId: string;
   reader: string;
-  load: () => Promise<ConversationViewCounts>;
-}): Promise<ConversationViewCounts> => {
+  load: () => Promise<MailboxConversationCounts>;
+}): Promise<MailboxConversationCounts> => {
   const [version] = await sql<[{ database: string; version: string }]>`
     SELECT current_database() AS database, COALESCE(version::text, 'initial') AS version
     FROM (SELECT 1) singleton
     LEFT JOIN mail.mailbox_read_versions ON mailbox_id = ${params.mailboxId}::uuid
   `;
-  const key = `mail:view-counts:v1:${version.database}:${params.mailboxId}:${Buffer.from(params.reader).toString("base64url")}:${version.version}`;
+  const key = `mail:view-counts:v2:${version.database}:${params.mailboxId}:${Buffer.from(params.reader).toString("base64url")}:${version.version}`;
   let snapshot: Awaited<ReturnType<typeof read>>;
   try {
     snapshot = await read(key);

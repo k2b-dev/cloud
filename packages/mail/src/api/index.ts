@@ -276,10 +276,19 @@ const mailboxOperationsQuerySchema = z.object({
   attentionCursor: z.string().max(2_000).optional(),
   attentionLimit: z.coerce.number().int().min(1).max(200).default(100),
 });
+/** Work lists leave out done and snoozed conversations; `includeDone=true` lists them too. */
+const includeDoneQuerySchema = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value === "true")
+  .describe(
+    "Also list done and snoozed conversations. Without a view, status or filing folder (Archive, Sent, Trash, Junk, All Mail), the list leaves them out.",
+  );
 const conversationQuerySchema = cursorQuerySchema.extend({
   folderId: ResourceShortIdSchema.optional(),
   status: z.enum(["needs_action", "waiting", "done"]).optional(),
   view: conversationViewSchema.optional(),
+  includeDone: includeDoneQuerySchema,
 });
 const mailFocusQuerySchema = cursorQuerySchema.extend({
   view: mailFocusViewSchema.default("mine"),
@@ -994,21 +1003,27 @@ const mailOperationsApi = new Hono<MailApiContext>()
     }
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    publicUrl?.searchParams.delete("conversation");
-    publicUrl?.searchParams.delete("message");
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    const data = await loadMailboxListView({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    // A list's last page names the done conversations it leaves out from the cached counts; allow their bounded cold fill.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      publicUrl?.searchParams.delete("conversation");
+      publicUrl?.searchParams.delete("message");
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      const data = await loadMailboxListView({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get(
     "/mailboxes/:mailboxId/workspace-detail/:conversationId",
@@ -1881,7 +1896,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get(
     "/mailboxes/:mailboxId/saved-views/:viewId/conversations",
     v("param", mailboxAndIdParamSchema("viewId")),
-    v("query", cursorQuerySchema),
+    v("query", cursorQuerySchema.extend({ includeDone: includeDoneQuerySchema })),
     async (c) =>
       respondConversations(
         c,

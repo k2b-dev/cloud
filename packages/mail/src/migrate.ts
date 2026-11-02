@@ -657,6 +657,15 @@ const providerMessageIndex: BackgroundIndex = {
     WHERE connector_ref ->> 'providerMessageId' IS NOT NULL`,
 };
 
+// Work lists show open conversations only; without it, a folder's list reads past every done conversation.
+const openConversationIndex: BackgroundIndex = {
+  name: "mail.conversations_mailbox_open_latest_idx",
+  table: "mail.conversations",
+  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS conversations_mailbox_open_latest_idx
+    ON mail.conversations USING btree (mailbox_id, latest_message_at DESC, id DESC)
+    WHERE (work_status <> 'done'::text)`,
+};
+
 type IndexConnection = Awaited<ReturnType<SqlClient["reserve"]>>;
 const readBackgroundIndexState = async (db: SqlClient | IndexConnection, index: BackgroundIndex) => {
   const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
@@ -723,6 +732,7 @@ const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Pr
 
 export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
+export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
