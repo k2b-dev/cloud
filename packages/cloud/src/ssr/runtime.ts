@@ -3,6 +3,7 @@
  * Extracted from _core/runtime-helpers.ts — only the generic parts.
  */
 import type { Context } from "hono";
+import { startPageResourceAccess } from "../_internal/app-access-resources";
 import type { CloudRuntime } from "../contracts/app";
 import { getLocale } from "../server/locale";
 import { appAccessAuthority } from "../services/app-access";
@@ -56,7 +57,9 @@ const displayApps = new WeakMap<object, RuntimeContext["apps"]>();
 /** Called after route authentication, before page data and synchronous layouts render. Routing keeps the full runtime. */
 export const preloadDisplayApps = async (c: Context): Promise<void> => {
   if (!c.get("runtime") || displayApps.has(c)) return;
-  displayApps.set(c, await discoverableApps(appAccessAuthority(c), getRuntimeContext(c).apps));
+  const authority = appAccessAuthority(c);
+  startPageResourceAccess(authority);
+  displayApps.set(c, await discoverableApps(authority, getRuntimeContext(c).apps));
 };
 
 /** Display-only projection. A caller outside the SSR adapter must preload declared app access first. */

@@ -1129,7 +1129,11 @@ export const defineApp = <
       }
       server.use(
         "*",
-        requireAppAccess(meta, (c) => ssr.appAccessDenied(c, meta)),
+        requireAppAccess(
+          meta,
+          (c) => ssr.appAccessDenied(c, meta),
+          (c) => ssr.error(c, 503, { layout: "minimal" }),
+        ),
       );
 
       if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));

@@ -1,6 +1,13 @@
 import type { SQL } from "bun";
 import type { Context } from "hono";
-import { RESOURCE_ACCESS_TIMEOUT_MS, resourceAppAccess } from "../_internal/app-access-resources";
+import {
+  RESOURCE_ACCESS_ENTRY_TIMEOUT_MS,
+  RESOURCE_ACCESS_PROBE_TIMEOUT_MS,
+  RESOURCE_ACCESS_TIMEOUT_MS,
+  resourceAccessSignal,
+  resourceAppAccess,
+} from "../_internal/app-access-resources";
+import { startBounded } from "../api/fanout";
 import type { AppMeta } from "../contracts/app";
 import { AppAccessRuleSchema, type FixedAppAccessRule } from "../contracts/app-access";
 import { sql } from "../runtime/clients";
@@ -80,11 +87,27 @@ const reportFailure = () => {
   logger("app-access").error("Application access could not be resolved; affected applications are unavailable");
 };
 
+const resourceFailures = new Map<string, { at: number; count: number }>();
+const reportResourceFailure = (appId: string) => {
+  const previous = resourceFailures.get(appId);
+  const count = (previous?.count ?? 0) + 1;
+  if (previous && Date.now() - previous.at < 60_000) {
+    previous.count = count;
+    return;
+  }
+  resourceFailures.set(appId, { at: Date.now(), count: 0 });
+  logger("app-access").error("Application resource access could not be resolved; application is unavailable", {
+    appId,
+    failureCount: count,
+  });
+};
+
 /**
  * One authoritative SQL read for all configurable lists; resource rules query the owning adapters.
  * No cross-request grant cache: revocation applies on the next request.
  * Pass the reserved transaction as `db` when checking access inside a guarded operation.
- * A supplied `signal` replaces the default resource budget; the caller must bound it.
+ * A supplied `signal` replaces the overall default budget; the caller must bound it.
+ * Discovery still gives every app its own short probe limit.
  */
 export const usableAppIds = async (
   authority: RequestAuthority | null,
@@ -94,15 +117,30 @@ export const usableAppIds = async (
   const db = options.db ?? sql;
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
-  let resourceSignal = options.signal;
-  // Sequential: one existence probe in flight per decision, no resource enumeration.
-  for (const app of apps) {
-    if (app.access?.kind !== "resources" || !credentialAllows(authority, app.id)) continue;
-    resourceSignal ??= AbortSignal.timeout(RESOURCE_ACCESS_TIMEOUT_MS);
-    try {
-      if (await resourceAppAccess(authority, app, { ...options, signal: resourceSignal })) allowed.add(app.id);
-    } catch {
-      if (!options.signal?.aborted) reportFailure();
+  const resources = apps.filter((app) => app.access?.kind === "resources" && credentialAllows(authority, app.id));
+  if (resources.length) {
+    const signal = resourceAccessSignal(authority, RESOURCE_ACCESS_TIMEOUT_MS, options.signal);
+    // Operational budget: at most eight HTTP requests in flight per decision
+    // (source -> Core -> owner), so four existence probes. Never enumerate resources.
+    const pending = startBounded(
+      resources,
+      4,
+      async (app) => {
+        const probeSignal = AbortSignal.any([signal, AbortSignal.timeout(RESOURCE_ACCESS_PROBE_TIMEOUT_MS)]);
+        return resourceAppAccess(authority, app, { ...options, signal: probeSignal });
+      },
+      signal,
+    );
+    const decisions = await Promise.all(pending);
+    for (const [index, decision] of decisions.entries()) {
+      const app = resources[index];
+      if (!app) continue;
+      if (decision.status === "fulfilled") {
+        if (decision.value) allowed.add(app.id);
+      } else if (!options.signal?.aborted) {
+        // No authority, credential, resource IDs or upstream errors in this log.
+        reportResourceFailure(app.id);
+      }
     }
   }
   const configurable = apps.filter((app) => app.access?.kind === "grants" && credentialAllows(authority, app.id));
@@ -135,8 +173,26 @@ export const usableAppIds = async (
   return allowed;
 };
 
+export class AppAccessUnavailableError extends Error {
+  readonly code = "app_access_unavailable";
+  constructor(readonly app: AccessApp) {
+    super("Application access is temporarily unavailable. Please try again.");
+  }
+}
+
 export const canUseApp = async (
   authority: RequestAuthority | null,
   app: AccessApp,
   options: { db?: SQL; signal?: AbortSignal } = {},
-): Promise<boolean> => (await usableAppIds(authority, [app], options)).has(app.id);
+): Promise<boolean> => {
+  if (app.access?.kind !== "resources") return (await usableAppIds(authority, [app], options)).has(app.id);
+  if (!authority || !credentialAllows(authority, app.id)) return false;
+  const signal = resourceAccessSignal(authority, RESOURCE_ACCESS_ENTRY_TIMEOUT_MS, options.signal);
+  try {
+    return await resourceAppAccess(authority, app, { ...options, signal });
+  } catch {
+    if (options.signal?.aborted) throw options.signal.reason;
+    reportResourceFailure(app.id);
+    throw new AppAccessUnavailableError(app);
+  }
+};
