@@ -731,8 +731,8 @@ suite("mail baseline schema", () => {
         ) AS triggers,
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
-    // Baseline and workflow-effect triggers plus conversation retention and shared-draft history retention.
-    expect(shape).toEqual({ extensions: 3, functions: 10, triggers: 33, workflow_ai_table: true });
+    // Baseline/workflow effects, conversation/shared-draft retention, and deferred count-cache invalidation.
+    expect(shape).toEqual({ extensions: 3, functions: 10, triggers: 34, workflow_ai_table: true });
     const [retention] = await sql<{ definition: string; enabled: string }[]>`
       SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled FROM pg_trigger
       WHERE tgrelid = 'mail.draft_document_revisions'::regclass

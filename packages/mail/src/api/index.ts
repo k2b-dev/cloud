@@ -1,7 +1,17 @@
 import { Readable } from "node:stream";
 import { decodeTableActionIntent, decodeTableFocus } from "@k2b/cloud/browser/shared-text";
 import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
+import {
+  auth,
+  getLocale,
+  jsonResponse,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  requiresAuth,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
@@ -193,6 +203,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
+import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
@@ -956,19 +967,29 @@ const mailOperationsApi = new Hono<MailApiContext>()
     async (c) => respondMailboxes(c, mailboxes.getMailbox(requestContext(c), internalMailboxId(c))),
   )
   .get("/mailboxes/:mailboxId/workspace-route", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    const data = await loadMailboxPageData({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    // Allow the bounded cold count fill to finish before the server's idle timeout.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      const data = await loadMailboxPageData({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    } catch (error) {
+      if (error instanceof CountRefreshBusy)
+        return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
+      throw error;
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
     const mailboxId = internalMailboxId(c);
