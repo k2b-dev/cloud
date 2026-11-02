@@ -1,0 +1,67 @@
+{
+  "name": "Website",
+  "definition": {
+    "panels": [
+      {
+        "id": "views",
+        "title": "Page views",
+        "kind": "number",
+        "sql": "SELECT count() AS value FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to",
+        "columns": ["value"]
+      },
+      {
+        "id": "sessions",
+        "title": "Sessions",
+        "kind": "number",
+        "sql": "SELECT uniqExact(session_id) AS value FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to",
+        "columns": ["value"]
+      },
+      {
+        "id": "contacts",
+        "title": "Contact requests",
+        "kind": "number",
+        "sql": "SELECT count() AS value FROM events WHERE kind = 'contact_form_sent' AND ts >= :from AND ts < :to",
+        "columns": ["value"]
+      },
+      {
+        "id": "views-over-time",
+        "title": "Page views over time",
+        "section": "Traffic",
+        "kind": "line",
+        "width": "full",
+        "sql": "SELECT bucket(ts, :bucket) AS time, count() AS views FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to GROUP BY time ORDER BY time",
+        "columns": ["time", "views"],
+        "x": "time"
+      },
+      {
+        "id": "countries",
+        "title": "Page views by country",
+        "section": "Traffic",
+        "kind": "map",
+        "width": "full",
+        "sql": "SELECT JSONExtractString(dimensions, 'country') AS country, count() AS views FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to GROUP BY country ORDER BY views DESC LIMIT 480",
+        "columns": ["country", "views"],
+        "x": "country"
+      },
+      {
+        "id": "top-pages",
+        "title": "Top pages",
+        "section": "Traffic",
+        "kind": "bar",
+        "width": "half",
+        "sql": "SELECT JSONExtractString(dimensions, 'path') AS path, count() AS views FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to GROUP BY path ORDER BY views DESC LIMIT 10",
+        "columns": ["path", "views"],
+        "x": "path"
+      },
+      {
+        "id": "page-details",
+        "title": "Pages in detail",
+        "section": "Traffic",
+        "kind": "table",
+        "width": "half",
+        "sql": "SELECT JSONExtractString(dimensions, 'path') AS path, countIf(kind = 'page_view') AS views, uniqExactIf(session_id, kind = 'page_view') AS sessions, countIf(kind = 'contact_form_sent') AS contacts FROM events WHERE ts >= :from AND ts < :to GROUP BY path ORDER BY views DESC LIMIT 100",
+        "columns": ["path", "views", "sessions", "contacts"]
+      }
+    ]
+  }
+}

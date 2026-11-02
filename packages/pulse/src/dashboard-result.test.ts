@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DashboardDefinitionSchema, DashboardPanelSchema, dashboardWindow } from "./dashboard-contracts";
+import { DashboardDefinitionSchema, DashboardPanelSchema, DashboardSaveSchema, dashboardWindow } from "./dashboard-contracts";
 import { projectDashboardPanel } from "./dashboard-result";
 import type { SqlRows } from "./store/sql-run";
 
@@ -198,4 +198,10 @@ test("a map panel needs a country column and exactly one value column", () => {
   expect(DashboardPanelSchema.safeParse({ ...base, columns: ["country", "visits"] }).success).toBe(false);
   expect(DashboardPanelSchema.safeParse({ ...base, columns: ["country", "a", "b"], x: "country" }).success).toBe(false);
   expect(DashboardPanelSchema.safeParse({ ...base, columns: ["country", "a"], x: "country" }).success).toBe(true);
+});
+
+test("the documented website dashboard is a valid definition with a country map", async () => {
+  const example = await Bun.file(new URL("../examples/website-dashboard.json", import.meta.url)).json();
+  const { definition } = DashboardSaveSchema.parse(example);
+  expect(definition.panels.map((panel) => panel.kind)).toEqual(["number", "number", "number", "line", "map", "bar", "table"]);
 });

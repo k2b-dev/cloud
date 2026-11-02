@@ -13,6 +13,11 @@ export const WebsiteDeliverySchema = z.strictObject({
         .string()
         .startsWith("/")
         .refine((path) => !/[?#]/.test(path), "Use a path without query or fragment"),
+      // From ipCountry() in @k2b/cloud/server. Discard the IP address afterwards.
+      country: z
+        .string()
+        .regex(/^[A-Z]{2}$/)
+        .optional(),
     }),
   ),
 });
@@ -23,7 +28,9 @@ export const sendWebsiteDelivery = async (
   transport: (url: string, init: RequestInit) => Promise<Response> = fetch,
 ): Promise<Response> => {
   // Never include a query string, form content, email address or IP address.
-  const batch = { events: delivery.events.map(({ path, ...event }) => ({ ...event, dimensions: { path } })) };
+  const batch = {
+    events: delivery.events.map(({ path, country, ...event }) => ({ ...event, dimensions: { path, ...(country ? { country } : {}) } })),
+  };
   const response = await transport(config.endpoint, {
     method: "POST",
     headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json", "idempotency-key": delivery.key },
