@@ -337,6 +337,7 @@ describe("Mail composer with a long message", () => {
           await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
           await page.mouse.wheel(0, -600);
         } else {
+          await settled(page);
           expect(await scroller.evaluate((element) => getComputedStyle(element).overflowY)).toMatch(/^(auto|scroll)$/);
           await scroller.evaluate((element) => element.scrollBy({ top: -600 }));
         }
