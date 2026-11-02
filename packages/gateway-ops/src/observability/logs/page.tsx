@@ -32,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
       })
       .then((result) => ({ result, error: null as string | null }))
       .catch((error) => ({ result: { items: [], total: 0 }, error: error instanceof Error ? error.message : String(error) })),
-    loggingService.source.list().catch(() => []),
+    loggingService.source.list(scopedFilter.sinceHours).catch(() => []),
     loggingService.stats.summary().catch(() => null),
     loggingService.stats.by({ groupBy: "source", limit: 1, ...scopedFilter }).catch(() => []),
     loggingService.stats

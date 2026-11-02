@@ -353,3 +353,20 @@ requires `replaceUnreadable: true` to replace an unreadable saved period and
 otherwise returns HTTP 409 `setting_unreadable`. After this response, the
 dialog refreshes the warning and replacement choice while keeping the entered
 period.
+
+## Query budgets on large installations
+
+Retained log and trace totals are PostgreSQL row estimates, refreshed by
+`ANALYZE`/autovacuum; they can lag behind inserts and deletes. Activity summaries,
+source selectors and default lists cover the last 24 hours. A selected time
+range bounds duration percentiles. Abandoned-span counts use at least a
+24-hour lookback so short activity windows still show stuck runs. Choose a
+longer supported range when investigating an older incident.
+
+Gateway Ops shares a five-second query budget across each read request,
+including pool acquisition. Logs, traces, browser metrics and route-rollup
+reads also have server statement and lock timeouts. A client disconnect cancels
+active PostgreSQL work through a separate control connection, so cancellation
+can proceed even when the application pool is busy. If the control path fails,
+the server statement timeout still stops the query. The overview reports an
+unavailable section when a read fails; retry or select a shorter range.

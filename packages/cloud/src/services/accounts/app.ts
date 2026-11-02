@@ -1766,7 +1766,9 @@ export const accountsAppService = {
       return mapSummary(rows[0] ?? {});
     },
     activity: async (): Promise<LogEntry[]> => {
-      const result = await logging.list({ page: 1, perPage: 15, offset: 0 }, { sources: [...ACTIVITY_SOURCES] });
+      const configured = Number((await getSetting<number | string | null>("logs.retention_days")) ?? 30);
+      const days = Number.isFinite(configured) && configured >= 1 ? Math.trunc(configured) : 30;
+      const result = await logging.list({ page: 1, perPage: 15, offset: 0 }, { sources: [...ACTIVITY_SOURCES], sinceHours: days * 24 });
       return result.entries;
     },
   },

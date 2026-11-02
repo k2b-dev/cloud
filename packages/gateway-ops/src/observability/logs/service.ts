@@ -41,7 +41,7 @@ export const loggingService = {
     get: async (config: { id: string }) => logging.getById(config.id),
   },
   source: {
-    list: async () => logging.getSources(),
+    list: async (sinceHours = 24) => logging.getSources(sinceHours),
   },
   stats: {
     summary: async () => logging.summary(),

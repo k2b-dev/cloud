@@ -154,3 +154,11 @@ database. Use [audit events](/en/docs/platform/audit-events) for durable
 security evidence.
 
 Topic consumer runs are traced only when they retry or dead-letter: successful runs write no span, so high-volume consumers such as gateway telemetry do not multiply span writes.
+
+### Bound operator reads
+
+Trace lists and aggregate reads default to a 24-hour window when no time filter
+is supplied. `window`, `sinceHours` or `sinceSeconds` selects another window.
+Abandoned-span counts use at least a 24-hour lookback, including when the activity window is shorter than the one-hour stuck threshold. `trace.summary().total` estimates
+retained rows from PostgreSQL statistics; source and activity counts describe
+the selected window. Operator reads stop after their five-second query budget.

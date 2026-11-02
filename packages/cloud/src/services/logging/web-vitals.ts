@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sql } from "../../runtime/clients";
+import { readQuery } from "./read";
 
 const ranges = {
   "1h": { hours: 1, bucket: 60 },
@@ -35,7 +35,8 @@ export async function readWebVitals(input: WebVitalsQuery, until = new Date()): 
   const { hours, bucket } = ranges[query.range];
   const since = new Date(until.getTime() - hours * 3600000);
   const perPage = 50;
-  const [result] = await sql<Omit<WebVitalsOverview, "page" | "perPage">[]>`
+  const [result] = await readQuery(
+    (db) => db<Omit<WebVitalsOverview, "page" | "perPage">[]>`
     WITH stored AS MATERIALIZED (
       SELECT id, created_at,
         logging.object_metadata(metadata) AS metadata
@@ -75,7 +76,8 @@ export async function readWebVitals(input: WebVitalsQuery, until = new Date()): 
         FROM route_stats l JOIN route_keys k USING (app, route)
       ) s), '[]'::jsonb) AS routes,
       (SELECT count(*)::int FROM (SELECT DISTINCT app, route FROM route_stats) r) AS "totalRoutes"
-  `;
+  `,
+  );
   if (!result) throw new Error("Web Vitals aggregation returned no result");
   return { ...result, page: query.page, perPage };
 }

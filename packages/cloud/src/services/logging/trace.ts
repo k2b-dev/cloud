@@ -4,6 +4,7 @@ import { getProcessApplicationId } from "../../_internal/process-identity";
 import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
+import { readQuery } from "./read";
 import { isSensitiveMetadataKey, REDACTED, redactLinkTokens, redactMetadata } from "./redaction";
 
 export type TraceAttributeValue = string | number | boolean | null | undefined;
@@ -694,7 +695,7 @@ const normalizeSinceSeconds = (filter: TraceListFilter | undefined): number | nu
   if (Number.isFinite(filter?.sinceSeconds) && filter?.sinceSeconds && filter.sinceSeconds > 0) return Math.trunc(filter.sinceSeconds);
   if (filter?.window) return TRACE_WINDOW_SECONDS[filter.window];
   const sinceHours = normalizeSinceHours(filter?.sinceHours);
-  return sinceHours ? sinceHours * 60 * 60 : null;
+  return (sinceHours ?? 24) * 60 * 60;
 };
 
 const normalizeMinDurationMs = (value: number | undefined): number | null =>
@@ -702,8 +703,8 @@ const normalizeMinDurationMs = (value: number | undefined): number | null =>
 
 const normalizeLimit = (limit: number | undefined): number => Math.min(Math.max(Math.trunc(limit ?? 50), 1), 200);
 
-const traceConditions = (filter: TraceListFilter | undefined): any[] => {
-  const conditions: any[] = [sql`TRUE`];
+const traceConditions = (filter: TraceListFilter | undefined) => {
+  const conditions = [sql`TRUE`];
   const searchPattern = filter?.search ? `%${escapeLikePattern(filter.search)}%` : null;
   const sources = filter?.sources?.map((value) => value.trim()).filter(Boolean);
   const sourceList = sources && sources.length > 0 ? toPgTextArray([...new Set(sources)]) : null;
@@ -738,30 +739,21 @@ const traceConditions = (filter: TraceListFilter | undefined): any[] => {
 const traceWhere = (filter: TraceListFilter | undefined) =>
   traceConditions(filter).reduce((acc, condition) => sql`${acc} AND ${condition}`);
 
-/**
- * Abandoned spans are old by definition, so a windowed count hides exactly the
- * ones worth seeing: with a 24h window, a span orphaned three days ago reports
- * zero. Stuck is therefore counted across all retained spans, with the rest of
- * the filter (source, category, search) still applied.
- */
+// A one-hour stuck threshold needs at least a day of history even when the
+// activity window is shorter. Keep the lookback bounded for abandoned runs.
 const stuckWhere = (filter: TraceListFilter | undefined) =>
-  traceConditions({ ...filter, window: undefined })
-    .concat([sql`s.ended_at IS NULL`, sql`s.started_at < now() - (${TRACE_STUCK_AFTER_MS}::bigint * INTERVAL '1 millisecond')`])
-    .reduce((acc, condition) => sql`${acc} AND ${condition}`);
-
-const countStuck = async (filter: TraceListFilter | undefined): Promise<number> => {
-  const [row] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count FROM logging.trace_spans s WHERE ${stuckWhere(filter)}
-  `;
-  return row?.count ?? 0;
-};
-
-const countStuckBySource = async (filter: TraceListFilter | undefined): Promise<Map<string, number>> => {
-  const rows = await sql<{ source: string; count: number }[]>`
-    SELECT s.source, COUNT(*)::int AS count
-    FROM logging.trace_spans s WHERE ${stuckWhere(filter)}
-    GROUP BY s.source
-  `;
+  sql`${traceWhere({
+    ...filter,
+    window: undefined,
+    sinceHours: undefined,
+    sinceSeconds: Math.max(normalizeSinceSeconds(filter) ?? 86400, 86400),
+  })} AND s.ended_at IS NULL AND s.started_at < now() - (${TRACE_STUCK_AFTER_MS}::bigint * INTERVAL '1 millisecond')`;
+const countStuckBySource = async (filter: TraceListFilter | undefined) => {
+  const rows = await readQuery(
+    (db) => db<{ source: string; count: number }[]>`
+    SELECT s.source, count(*)::int AS count FROM logging.trace_spans s WHERE ${stuckWhere(filter)} GROUP BY s.source
+  `,
+  );
   return new Map(rows.map((row) => [row.source, row.count]));
 };
 
@@ -774,12 +766,15 @@ const list = async (
   const { offset, perPage } = pagination;
   const where = traceWhere(options?.filter);
   const [countRows, dataRows] = await Promise.all([
-    sql<{ count: number }[]>`
+    readQuery(
+      (db) => db<{ count: number }[]>`
       SELECT COUNT(*)::int AS count
       FROM logging.trace_spans s
       WHERE ${where}
     `,
-    sql<DbTraceSpanRow[]>`
+    ),
+    readQuery(
+      (db) => db<DbTraceSpanRow[]>`
       SELECT
         s.*,
         (
@@ -792,13 +787,15 @@ const list = async (
       ORDER BY COALESCE(s.ended_at, s.updated_at, s.started_at) DESC, s.trace_id DESC, s.span_id DESC
       LIMIT ${perPage} OFFSET ${offset}
     `,
+    ),
   ]);
 
   return { spans: dataRows.map(mapSpanRow), total: countRows[0]?.count ?? 0 };
 };
 
 const getSpan = async (params: { traceId: string; spanId: string }): Promise<TraceSpan | null> => {
-  const rows = await sql<DbTraceSpanRow[]>`
+  const rows = await readQuery(
+    (db) => db<DbTraceSpanRow[]>`
     SELECT
       s.*,
       (
@@ -809,13 +806,15 @@ const getSpan = async (params: { traceId: string; spanId: string }): Promise<Tra
     FROM logging.trace_spans s
     WHERE s.trace_id = ${params.traceId} AND s.span_id = ${params.spanId}
     LIMIT 1
-  `;
+  `,
+  );
   return rows[0] ? mapSpanRow(rows[0]) : null;
 };
 
 const stats = async (options?: { filter?: TraceListFilter }): Promise<TraceRunStats> => {
   const where = traceWhere(options?.filter);
-  const [row] = await sql<DbTraceStatsRow[]>`
+  const [row] = await readQuery(
+    (db) => db<DbTraceStatsRow[]>`
     SELECT
       COUNT(*)::int AS runs,
       COUNT(DISTINCT s.source)::int AS sources,
@@ -830,14 +829,16 @@ const stats = async (options?: { filter?: TraceListFilter }): Promise<TraceRunSt
       (percentile_cont(0.99) WITHIN GROUP (ORDER BY s.duration_ms) FILTER (WHERE s.duration_ms IS NOT NULL AND s.duration_ms <= ${TRACE_STUCK_AFTER_MS}))::float AS p99_duration_ms
     FROM logging.trace_spans s
     WHERE ${where}
-  `;
-  return { ...mapStatsRow(row), stuck: await countStuck(options?.filter) };
+  `,
+  );
+  const stuck = await countStuckBySource(options?.filter);
+  return { ...mapStatsRow(row), stuck: [...stuck.values()].reduce((total, count) => total + count, 0) };
 };
 
 const sourceGroups = async (options?: { filter?: TraceListFilter }): Promise<TraceSourceGroup[]> => {
   const where = traceWhere(options?.filter);
-  const stuckBySource = await countStuckBySource(options?.filter);
-  const rows = await sql<DbTraceSourceGroupRow[]>`
+  const rows = await readQuery(
+    (db) => db<DbTraceSourceGroupRow[]>`
     WITH grouped AS (
       SELECT
         s.source,
@@ -878,58 +879,66 @@ const sourceGroups = async (options?: { filter?: TraceListFilter }): Promise<Tra
       p99_duration_ms DESC NULLS LAST,
       runs DESC,
       source ASC
-  `;
-  return rows.map((row) => ({ ...mapSourceGroupRow(row), stuck: stuckBySource.get(row.source) ?? 0 }));
+  `,
+  );
+  const stuck = await countStuckBySource(options?.filter);
+  return rows.map((row) => ({ ...mapSourceGroupRow(row), stuck: stuck.get(row.source) ?? 0 }));
 };
 
 const events = async (params: { traceId: string; spanId?: string; limit?: number }): Promise<TraceEvent[]> => {
   const limit = normalizeLimit(params.limit);
-  const rows = await sql<DbTraceEventRow[]>`
+  const rows = await readQuery(
+    (db) => db<DbTraceEventRow[]>`
     SELECT id, trace_id, span_id, name, severity, attributes, body, occurred_at
     FROM logging.trace_events
     WHERE trace_id = ${params.traceId}
       AND (${params.spanId ?? null}::text IS NULL OR span_id = ${params.spanId ?? null})
     ORDER BY occurred_at ASC, id ASC
     LIMIT ${limit}
-  `;
+  `,
+  );
   return rows.map(mapEventRow);
 };
 
 const sources = async (): Promise<string[]> => {
-  const rows = await sql<{ source: string }[]>`
-    SELECT DISTINCT source FROM logging.trace_spans ORDER BY source
-  `;
+  const rows = await readQuery(
+    (db) => db<{ source: string }[]>`
+    SELECT DISTINCT source FROM logging.trace_spans WHERE started_at >= now() - INTERVAL '24 hours' ORDER BY source
+  `,
+  );
   return rows.map((row) => row.source);
 };
 
 const summary = async (options?: { sinceHours?: number }): Promise<TraceSummary> => {
   const sinceHours = normalizeSinceHours(options?.sinceHours) ?? 24;
-  const [row] = await sql<
-    {
-      total: number;
-      total_window: number;
-      running: number;
-      succeeded_window: number;
-      failed_window: number;
-      sources: number;
-      avg_duration_ms: number | string | null;
-      p95_duration_ms: number | string | null;
-    }[]
-  >`
+  const [row] = await readQuery(
+    (db) => db<
+      {
+        total: number;
+        total_window: number;
+        running: number;
+        succeeded_window: number;
+        failed_window: number;
+        sources: number;
+        avg_duration_ms: number | string | null;
+        p95_duration_ms: number | string | null;
+      }[]
+    >`
     SELECT
-      (SELECT COUNT(*)::int FROM logging.trace_spans) AS total,
+      (SELECT GREATEST(reltuples, 0)::float FROM pg_class WHERE oid='logging.trace_spans'::regclass) AS total,
       (SELECT COUNT(*)::int FROM logging.trace_spans WHERE started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')) AS total_window,
-      (SELECT COUNT(*)::int FROM logging.trace_spans WHERE ended_at IS NULL) AS running,
+      (SELECT COUNT(*)::int FROM logging.trace_spans WHERE ended_at IS NULL AND started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')) AS running,
       (SELECT COUNT(*)::int FROM logging.trace_spans WHERE status = 'ok' AND started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')) AS succeeded_window,
       (SELECT COUNT(*)::int FROM logging.trace_spans WHERE status = 'error' AND started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')) AS failed_window,
-      (SELECT COUNT(*)::int FROM (SELECT DISTINCT source FROM logging.trace_spans) s) AS sources,
+      (SELECT COUNT(*)::int FROM (SELECT DISTINCT source FROM logging.trace_spans WHERE started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')) s) AS sources,
       (SELECT AVG(duration_ms)::float FROM logging.trace_spans WHERE duration_ms IS NOT NULL AND started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')) AS avg_duration_ms,
       (
         SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::float
         FROM logging.trace_spans
         WHERE duration_ms IS NOT NULL AND started_at >= now() - (${sinceHours}::int * INTERVAL '1 hour')
       ) AS p95_duration_ms
-  `;
+  `,
+  );
 
   return {
     total: row?.total ?? 0,

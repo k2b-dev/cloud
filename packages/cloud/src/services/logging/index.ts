@@ -2,10 +2,12 @@ import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
+import { readQuery } from "./read";
 import { redactLinkTokens, redactMetadata } from "./redaction";
 import { observeSyncEvent, TRACE_STUCK_AFTER_MS, trace } from "./trace";
 import { readWebVitals } from "./web-vitals";
 
+export { withObservabilityRead } from "./read";
 export type {
   TraceAttributes,
   TraceAttributeValue,
@@ -188,22 +190,25 @@ const list = async (
   const filterSourcesLiteral = filterSources ? toPgTextArray(filterSources) : null;
   const filterLevel = level && level !== "all" ? level : null;
   const hasSourceList = !!filterSources && filterSources.length > 0;
-  const filterSinceHours = Number.isFinite(sinceHours) && sinceHours && sinceHours > 0 ? Math.trunc(sinceHours) : null;
+  const filterSinceHours = normalizeSinceHours(sinceHours) ?? 24;
 
   let countRows: Array<{ count: number }> = [];
   let dataRows: DbLogRow[] = [];
 
   if (filterSource) {
-    countRows = await sql`
+    countRows = await readQuery(
+      (db) => db`
       SELECT COUNT(*)::int as count
       FROM logging.entries
       WHERE source = ${filterSource}
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
-    `;
+    `,
+    );
 
-    dataRows = await sql`
+    dataRows = await readQuery(
+      (db) => db`
       SELECT id, level, source, message, metadata, created_at
       FROM logging.entries
       WHERE source = ${filterSource}
@@ -212,18 +217,22 @@ const list = async (
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
       ORDER BY created_at DESC, id DESC
       LIMIT ${perPage} OFFSET ${offset}
-    `;
+    `,
+    );
   } else if (hasSourceList) {
-    countRows = await sql`
+    countRows = await readQuery(
+      (db) => db`
       SELECT COUNT(*)::int as count
       FROM logging.entries
       WHERE source = ANY(${filterSourcesLiteral}::text[])
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
-    `;
+    `,
+    );
 
-    dataRows = await sql`
+    dataRows = await readQuery(
+      (db) => db`
       SELECT id, level, source, message, metadata, created_at
       FROM logging.entries
       WHERE source = ANY(${filterSourcesLiteral}::text[])
@@ -232,17 +241,21 @@ const list = async (
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
       ORDER BY created_at DESC, id DESC
       LIMIT ${perPage} OFFSET ${offset}
-    `;
+    `,
+    );
   } else {
-    countRows = await sql`
+    countRows = await readQuery(
+      (db) => db`
       SELECT COUNT(*)::int as count
       FROM logging.entries
       WHERE (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
-    `;
+    `,
+    );
 
-    dataRows = await sql`
+    dataRows = await readQuery(
+      (db) => db`
       SELECT id, level, source, message, metadata, created_at
       FROM logging.entries
       WHERE (${filterLevel}::text IS NULL OR level = ${filterLevel})
@@ -250,7 +263,8 @@ const list = async (
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
       ORDER BY created_at DESC, id DESC
       LIMIT ${perPage} OFFSET ${offset}
-    `;
+    `,
+    );
   }
 
   return {
@@ -260,10 +274,12 @@ const list = async (
 };
 
 /** Get all unique source names (for filter dropdown). */
-const getSources = async (): Promise<string[]> => {
-  const rows = await sql`
-    SELECT DISTINCT source FROM logging.entries ORDER BY source
-  `;
+const getSources = async (sinceHours = 24): Promise<string[]> => {
+  const rows = await readQuery(
+    (db) => db`
+    SELECT DISTINCT source FROM logging.entries WHERE created_at > now() - (${sinceHours}::int * interval '1 hour') ORDER BY source
+  `,
+  );
   return rows.map((row: { source: string }) => row.source);
 };
 
@@ -299,7 +315,8 @@ const timeseries = async (
   const search = options.search?.trim().slice(0, 200);
   const searchPattern = search ? `%${escapeLikePattern(search)}%` : null;
 
-  return sql<LogTimeseriesPoint[]>`
+  return readQuery(
+    (db) => db<LogTimeseriesPoint[]>`
     WITH bounds AS (
       SELECT
         now() AS end_at,
@@ -343,7 +360,8 @@ const timeseries = async (
     LEFT JOIN counts USING (at)
     GROUP BY buckets.at
     ORDER BY buckets.at
-  `;
+  `,
+  );
 };
 
 /** Group log volume by source or level for admin diagnostics. */
@@ -357,7 +375,7 @@ const statsBy = async (
     search?: string;
   },
 ): Promise<LogStatsRow[]> => {
-  const filterSinceHours = normalizeSinceHours(options?.sinceHours);
+  const filterSinceHours = normalizeSinceHours(options?.sinceHours) ?? 24;
   const limit = normalizeStatsLimit(options?.limit);
   const sources = [...new Set((options?.sources ?? []).map((value) => value.trim()).filter(Boolean))].slice(0, 100);
   const hasSources = sources.length > 0;
@@ -367,7 +385,8 @@ const statsBy = async (
   const searchPattern = search ? `%${escapeLikePattern(search)}%` : null;
 
   if (groupBy === "level") {
-    const rows = await sql<{ key: string; count: number }[]>`
+    const rows = await readQuery(
+      (db) => db<{ key: string; count: number }[]>`
       SELECT level as key, COUNT(*)::int as count
       FROM logging.entries
       WHERE (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
@@ -381,11 +400,13 @@ const statsBy = async (
       GROUP BY level
       ORDER BY count DESC, key ASC
       LIMIT ${limit}
-    `;
+    `,
+    );
     return rows;
   }
 
-  const rows = await sql<{ key: string; count: number }[]>`
+  const rows = await readQuery(
+    (db) => db<{ key: string; count: number }[]>`
     SELECT source as key, COUNT(*)::int as count
     FROM logging.entries
     WHERE (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
@@ -399,17 +420,20 @@ const statsBy = async (
     GROUP BY source
     ORDER BY count DESC, key ASC
     LIMIT ${limit}
-  `;
+  `,
+  );
   return rows;
 };
 
 /** Get a single log entry by id. */
 const getById = async (id: string): Promise<LogEntry | null> => {
-  const rows = await sql<DbLogRow[]>`
+  const rows = await readQuery(
+    (db) => db<DbLogRow[]>`
     SELECT id, level, source, message, metadata, created_at
     FROM logging.entries
     WHERE id = ${id}::bigint
-  `;
+  `,
+  );
   return rows[0] ? mapRow(rows[0]) : null;
 };
 
@@ -442,24 +466,26 @@ export type LogSummary = {
  * `LogSummary.lastErrorAt: string | null` contract expects an ISO-ish string.
  */
 const summary = async (): Promise<LogSummary> => {
-  const [row] = await sql<
-    {
-      total: number;
-      total_24h: number;
-      errors_24h: number;
-      warnings_24h: number;
-      sources: number;
-      last_error_at: string | null;
-    }[]
-  >`
+  const [row] = await readQuery(
+    (db) => db<
+      {
+        total: number;
+        total_24h: number;
+        errors_24h: number;
+        warnings_24h: number;
+        sources: number;
+        last_error_at: string | null;
+      }[]
+    >`
     SELECT
-      (SELECT COUNT(*)::int FROM logging.entries)                                                                AS total,
+      (SELECT GREATEST(reltuples, 0)::float FROM pg_class WHERE oid='logging.entries'::regclass)                                                                AS total,
       (SELECT COUNT(*)::int FROM logging.entries WHERE created_at > now() - interval '24 hours')                 AS total_24h,
       (SELECT COUNT(*)::int FROM logging.entries WHERE level = 'error' AND created_at > now() - interval '24 hours') AS errors_24h,
       (SELECT COUNT(*)::int FROM logging.entries WHERE level = 'warn'  AND created_at > now() - interval '24 hours') AS warnings_24h,
-      (SELECT COUNT(*)::int FROM (SELECT DISTINCT source FROM logging.entries) s)                                AS sources,
+      (SELECT COUNT(*)::int FROM (SELECT DISTINCT source FROM logging.entries WHERE created_at > now() - interval '24 hours') s)                                AS sources,
       (SELECT created_at::text FROM logging.entries WHERE level = 'error' ORDER BY created_at DESC LIMIT 1)      AS last_error_at
-  `;
+  `,
+  );
   return {
     total: row?.total ?? 0,
     errors24h: row?.errors_24h ?? 0,
