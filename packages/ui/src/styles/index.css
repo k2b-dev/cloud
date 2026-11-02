@@ -8485,8 +8485,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: default;
 }
 
+/* A fixed height, not a minimum: an empty line and a line with text then measure the same to the subpixel. */
 .k2b-ui .k2b-date-status {
-  min-height: 0.9625rem;
+  height: 0.9625rem;
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-secondary);

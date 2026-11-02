@@ -95,7 +95,7 @@ describe("typed date field", () => {
       await page.keyboard.press("Enter");
       expect(await field(page, "Fällig am").inputValue()).toBe("04.11.2026");
       expect(await commits(page)).toEqual(["2026-11-04"]);
-      expect(await status(page).textContent()).toBe("Mittwoch, in 2 Tagen");
+      expect(await status(page).textContent()).toBe("Mittwoch, übermorgen");
 
       await field(page, "Fällig am").fill("gestern + 34");
       expect(await status(page).textContent()).toBe("→ Sa., 5. Dez. 2026 · gestern + 34 Tage");

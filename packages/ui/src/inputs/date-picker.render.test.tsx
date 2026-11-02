@@ -244,7 +244,8 @@ describe("@k2b/ui complete date picker migration", () => {
       expect(input).toContain('role="combobox"');
       expect(input).toContain('aria-haspopup="dialog"');
       expect(input).toContain('aria-expanded="false"');
-      expect(input).toContain('inputmode="numeric"');
+      // HTML attribute names ignore case; Solid writes the property name.
+      expect(input).toMatch(/inputmode="numeric"/i);
       expect(input).toContain('value="27.07.2026"');
       expect(input).toContain('placeholder="TT.MM.JJJJ"');
       expect(input).toMatch(/aria-describedby="[^"]*-status"/);
