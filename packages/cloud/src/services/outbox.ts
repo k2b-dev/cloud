@@ -1,3 +1,4 @@
+import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/work-wake";
 import { sql } from "../runtime/clients";
 
 import { logger } from "./logging";
@@ -40,6 +41,7 @@ export type PgOutboxConfig<Row extends OutboxRow> = {
   /** Log source. */
   name: string;
   publish: (row: Row) => Promise<unknown>;
+  /** Safety scan for missed hints and due retries. */
   reconcileIntervalMs: number;
   /**
    * Column whose rows are published in `sequence` order. A value waits while
@@ -61,7 +63,7 @@ export type PgOutbox<Row extends OutboxRow> = {
   dispatch(row: Row, publish?: (row: Row) => Promise<unknown>): Promise<void>;
   /** Drain every claimable row; concurrent calls join the active pass. */
   reconcile(): Promise<number>;
-  /** `reconcile()` with failures logged instead of thrown. */
+  /** Call after commit: signal other instances and reconcile locally, logging failures. */
   notify(): Promise<void>;
   start(): void;
   stop(): Promise<void>;
@@ -85,8 +87,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${sql.unsafe(column)} = ${value}`, sql``);
   // Sorted, so the order of the `where` entries cannot give one outbox two locks. Descending keeps the
   // lock that live outboxes (`kind`, `app_id`) always took, so replicas of two releases share it.
-  const where = Object.entries(config.where ?? {}).sort(([left], [right]) => (left < right ? 1 : -1));
-  const claimLock = `${config.table}:${JSON.stringify(Object.fromEntries(where))}`;
+  const claimLock = pgOutboxKey(config.table, config.where);
 
   /**
    * Claims rows in sequence order, several per key, and never a row of a key
@@ -219,24 +220,37 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     return activeReconcile;
   };
 
-  const notify: PgOutbox<Row>["notify"] = async () => {
+  const run = async () => {
     await reconcile().catch((error) => {
       log.warn("Outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
     });
   };
 
+  const notify: PgOutbox<Row>["notify"] = async () => {
+    notifyPgOutbox(config.table, config.where);
+    await run();
+  };
+
   let timer: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: (() => void) | undefined;
 
   const start: PgOutbox<Row>["start"] = () => {
     if (timer) return;
-    timer = setInterval(() => void notify(), config.reconcileIntervalMs);
+    try {
+      unsubscribe = subscribeWorkWake(claimLock, () => void run());
+    } catch (error) {
+      log.warn("Outbox wake subscription failed; safety scan will recover", { error: String(error) });
+    }
+    timer = setInterval(() => void run(), config.reconcileIntervalMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
-    void notify();
+    void run();
   };
 
   const stop: PgOutbox<Row>["stop"] = async () => {
     if (timer) clearInterval(timer);
     timer = null;
+    unsubscribe?.();
+    unsubscribe = undefined;
     await activeReconcile;
   };
 

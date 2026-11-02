@@ -239,6 +239,22 @@ count.
 During a rolling deployment, old and new instances may both receive traffic.
 Keep database changes backward-compatible until the rollout completes.
 
+## Background delivery recovery
+
+Platform live updates and application events wake outbox dispatchers across
+instances after their database transaction commits. Core wakes event delivery
+across its instances after accepting an event. Grids and Mail workflow workers
+also use distributed wake signals. These workers retain a **five-second safety scan** for missed
+signals, due retries, deadlines, and expired claims. Under idle conditions this
+means twelve safety scans per minute per dispatcher, plus startup; workflow
+workers also probe their execution slots before and after recovery.
+
+A missed signal can delay discovery of committed work until the next safety
+scan. Backlogs, claims, and unavailable dependencies can add delay. Postgres
+retains the work, and the existing claim and retry rules still apply. Core's
+event gap and retention checks run once per minute, independently of signal
+volume. No new service or operator setting is required.
+
 ## Roll out replicas
 
 A clean stop of one replica keeps the application routed while another replica

@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { createSync } from "@k2b/sync";
+import { connectTestNats, suiteFor, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
+import { connections } from "../runtime/connections";
 import { createPgOutbox } from "./outbox";
 
 // The contract an application relies on with a table of its own, shaped as in "Migrations and transactions".
@@ -211,6 +214,62 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     expect(byReplica2.filter((delta) => delta <= 2)).toEqual([1, 2]);
     expect(byReplica2.filter((delta) => delta >= 3)).toEqual([3, 4]);
     expect(await pending()).toEqual([]);
+  });
+
+  testFor("nats")("a committed row from another OS process wakes delivery without a safety poll", async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const sync = createSync({
+      connection,
+      namespace: testSyncNamespace("outbox-wake"),
+      application: "outbox-worker",
+      defaults: { replicas: 1 },
+    });
+    bindProcessSync(sync, connection);
+    const delivered = Promise.withResolvers<void>();
+    let count = 0;
+    const outbox = reports(async (row) => {
+      expect(row.delta).toBe(99);
+      count++;
+      delivered.resolve();
+    });
+    let terminate: (() => Promise<void>) | undefined;
+    try {
+      outbox.start();
+      await outbox.reconcile();
+      await connection.flush(); // The subscription is active before the remote writer starts.
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "--no-env-file",
+          `${import.meta.dir}/../../test/integration/outbox-writer.test-fixture.ts`,
+          table,
+          connections().nats.namespace,
+          itemB,
+        ],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      terminate = async () => {
+        if (child.exitCode === null) {
+          child.kill();
+          await child.exited;
+        }
+      };
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+      await delivered.promise;
+      await outbox.stop();
+      expect(count).toBe(1);
+      expect(await pending()).toEqual([]);
+    } finally {
+      await terminate?.();
+      await outbox.stop();
+      await sync.drain();
+      unbindProcessSync();
+      await connection.drain();
+    }
   });
 
   test("notify() logs a failing pass instead of throwing, and stop() waits for the pass in flight", async () => {

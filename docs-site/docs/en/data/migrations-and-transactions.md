@@ -298,7 +298,8 @@ if (reported) void stockReports.notify();
 
 The `UPDATE` comes first. It locks the item, so the reports of one item get
 their `seq` in commit order, and an unknown item reports nothing. `notify()`
-after the commit publishes now. Without it, the row waits for the next pass,
+after the commit starts local delivery and wakes dispatchers in other instances
+through the existing NATS connection. Without it, the row waits for the next pass,
 which runs every `reconcileIntervalMs`.
 
 ### Define the dispatcher
@@ -337,7 +338,7 @@ export const stockReports = createPgOutbox<StockReport>({
 | `publish(row)` | Delivers one row. Resolving deletes the row; throwing schedules a retry. |
 | `orderBy` | Ordering column: rows with the same value are published in `sequence` order |
 | `sequence` | Column that orders the rows |
-| `reconcileIntervalMs` | How often a started dispatcher looks for due rows |
+| `reconcileIntervalMs` | Safety scan interval for missed wake signals, due retries, and expired claims |
 | `where` | Optional fixed column values, such as `{ kind: "erp" }`, so several dispatchers share one table |
 | `claimMs` | How long a claimed batch belongs to one replica; default 30 seconds |
 | `batchSize` | Rows claimed at a time; default 100 |
@@ -357,9 +358,11 @@ export default await app.start({
 ```
 
 `start()` runs one pass at once and then one every `reconcileIntervalMs`.
-`stop()` ends the timer and waits for the pass in flight. `notify()` runs a
-pass and logs a failure as `Outbox reconcile failed`; `reconcile()` runs the
-same pass, returns the number of rows it handled, and throws. A call while a
+`stop()` removes the wake subscription, ends the timer, and waits for the pass
+in flight. Call `notify()` only after the domain transaction commits: it sends
+a best-effort wake signal to instances using the same table and `where` values,
+runs a local pass, and logs a failure as `Outbox reconcile failed`.
+`reconcile()` runs the same pass, returns the number of rows it handled, and throws. A call while a
 pass runs joins it, and the pass continues until no row is due. The
 dispatcher's `claim()` and `dispatch()` are internal and can change without
 notice.

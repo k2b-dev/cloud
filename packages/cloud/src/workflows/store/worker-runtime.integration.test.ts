@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
@@ -39,7 +39,16 @@ suiteFor("nats")("workflow worker wake transport", () => {
       }
     };
     try {
-      await worker.start();
+      const intervals = spyOn(globalThis, "setInterval");
+      let recoveryTick: (() => void) | undefined;
+      try {
+        await worker.start();
+        const handler = intervals.mock.calls.findLast(([, ms]) => ms === 5_000)?.[0];
+        if (typeof handler === "function") recoveryTick = () => handler();
+      } finally {
+        intervals.mockRestore();
+      }
+      expect(recoveryTick).toBeDefined();
       const local = Promise.withResolvers<void>();
       queue.push(local.resolve);
       notifyWorkflowWorker("test");
@@ -60,7 +69,8 @@ suiteFor("nats")("workflow worker wake transport", () => {
       await Bun.sleep(50);
       const recovery = Promise.withResolvers<void>();
       queue.push(recovery.resolve);
-      await wait(recovery.promise); // Deliberately no notification.
+      recoveryTick?.(); // Deliberately no notification: advance the safety scan deterministically.
+      await wait(recovery.promise);
       await worker.stop();
       const restarted = Promise.withResolvers<void>();
       queue.push(restarted.resolve);

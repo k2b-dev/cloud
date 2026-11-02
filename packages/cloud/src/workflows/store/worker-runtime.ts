@@ -73,8 +73,8 @@ export const createWorkflowWorker = (options: {
           for await (const _event of wakeTopic().live({ tenantId: options.appId, signal })) wake();
         },
       });
-      // Keep the existing one-second recovery bound; execution does not wait for it.
-      timer = setInterval(wake, 1_000);
+      // Repair missed hints, due deadlines and expired leases; execution wakes immediately.
+      timer = setInterval(wake, 5_000);
       wake();
     },
     stop: async () => {

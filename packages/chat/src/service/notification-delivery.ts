@@ -246,6 +246,7 @@ export const deliverMessage = async (messageId: string, signal?: AbortSignal): P
       if (system) await recordFailedDecision(system, error);
       throw error;
     });
+  void notificationOutbox.notify();
   if (!queued) await recordCompletedDecision(system);
   return queued;
 };
@@ -263,7 +264,7 @@ export const notificationOutbox = createPgOutbox<{
   name: "chat:notification-outbox",
   orderBy: "ordering_key",
   sequence: "seq",
-  reconcileIntervalMs: 1_000,
+  reconcileIntervalMs: 5_000,
   publish: async (row) => {
     if (row.user_id) {
       const [message] = await sql<
