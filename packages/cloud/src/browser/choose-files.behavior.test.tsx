@@ -630,3 +630,42 @@ domTest("a provider that repeats an ID shows one entry, so one choice stays one 
     view.cleanup();
   }
 });
+
+domTest("files from this device meet the same limits: the chooser says why and stays open, the direct dialog toasts", async () => {
+  const pick = (input: HTMLInputElement, files: File[]) => {
+    Object.defineProperty(input, "files", { configurable: true, value: files });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const two = [new File(["aaaa"], "a.txt"), new File(["bbbb"], "b.txt")];
+  const view = await chooser({ multiple: true, maxFiles: 1 }, () => folderPage([]));
+  try {
+    pick(view.dom.root.querySelector<HTMLInputElement>('input[type="file"][hidden]')!, two);
+    expect(view.closed).toEqual([]);
+    expect(view.status().textContent).toBe("At most 1 file");
+    expect(view.status().dataset.error).toBe("true");
+    pick(view.dom.root.querySelector<HTMLInputElement>('input[type="file"][hidden]')!, two.slice(0, 1));
+    expect(view.closed).toHaveLength(1);
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+
+  const dom = createDomTestHarness();
+  const { toast } = await import("@k2b/ui");
+  const { createFileChoosing } = await import("./choose-files");
+  const { createProviderList } = await import("./provider-list");
+  const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+  try {
+    const providers = createProviderList(async () => []);
+    providers.prefetch();
+    await settle();
+    const choice = createFileChoosing(providers)({ multiple: true, maxTotalBytes: 6 });
+    pick(dom.document.body.querySelector<HTMLInputElement>(':scope > input[type="file"]')!, two);
+    expect(await choice).toEqual([]);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toStartWith("Too large together, up to");
+  } finally {
+    error.mockRestore();
+    dom.cleanup();
+  }
+});

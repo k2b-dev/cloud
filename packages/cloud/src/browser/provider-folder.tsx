@@ -261,7 +261,7 @@ export function FolderToolbar(props: { folder: ProviderFolder; t: () => Messages
         aria-label={props.t().filter}
         placeholder={props.t().filter}
         maxLength={200}
-        disabled={props.disabled || props.folder.status() === "loading" || props.folder.status() === "error"}
+        disabled={props.disabled}
         value={props.folder.filter}
         onValueChange={props.folder.changeFilter}
         clearable

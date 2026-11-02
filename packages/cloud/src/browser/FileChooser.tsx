@@ -11,9 +11,10 @@ import {
   type StatusTone,
   useLocale,
 } from "@k2b/ui";
-import { batch, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { FileProviderContext, FileProviderEntry, FileProviderTag } from "../contracts/file-provider";
+import { deviceFilesProblem } from "./choice-limits";
 import { fileChooserMessages } from "./file-chooser-messages";
 import { FileDialogFrame, type FileDialogSource, FileDialogSources } from "./file-dialog";
 import {
@@ -220,8 +221,19 @@ export function FileChooser(props: {
       .filter(Boolean)
       .join(", ");
 
+  /** Files from this device, picked or dropped, meet the same limits; the status says why they do not. */
+  const [deviceNote, setDeviceNote] = createSignal<string>();
+  const takeDevice = (files: File[]) => {
+    if (files.length === 0) return;
+    const why = deviceFilesProblem(files, props.options, locale());
+    if (why) setDeviceNote(why);
+    else props.close(files);
+  };
+  createEffect(on(chosen, () => setDeviceNote(undefined), { defer: true }));
+
   const openSource = (row: SourceRow) => {
     setGoneNote(undefined);
+    setDeviceNote(undefined);
     const open = location();
     // A second click on the open source, such as the rest of a double-click, keeps its root as it is.
     if (row.provider && open?.provider.appId === row.provider.appId && open.trail.length === 1) return;
@@ -323,7 +335,7 @@ export function FileChooser(props: {
           multiple={multiple}
           disabled={downloading()}
           onDrop={(files) => {
-            if (files.length > 0) props.close(files);
+            takeDevice(files);
           }}
         />
       }
@@ -345,6 +357,7 @@ export function FileChooser(props: {
       status={
         <Switch>
           <Match when={downloading()}>{progress()}</Match>
+          <Match when={deviceNote()}>{deviceNote()}</Match>
           <Match when={goneNote()}>{goneNote()}</Match>
           <Match when={!location()}>{null}</Match>
           <Match when={overLimit()}>{overLimit()}</Match>
@@ -353,7 +366,7 @@ export function FileChooser(props: {
           <Match when={true}>{t().selectHint({ multiple })}</Match>
         </Switch>
       }
-      statusError={Boolean(!downloading() && location() && overLimit()) || (downloading() && failed())}
+      statusError={(!downloading() && Boolean(deviceNote() || (location() && overLimit()))) || (downloading() && failed())}
       actions={
         <>
           {/* Cancel stops a transfer first; Add tries failed files again. Add keeps one width for every count. */}
@@ -380,7 +393,7 @@ export function FileChooser(props: {
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
           event.currentTarget.value = "";
-          if (files.length > 0) props.close(files);
+          takeDevice(files);
         }}
       />
       <Switch>
@@ -434,7 +447,7 @@ export function FileChooser(props: {
               multiple={multiple}
               dropLabel={t().dropToChoose({ multiple })}
               onDrop={(files) => {
-                if (files.length > 0) props.close(files);
+                takeDevice(files);
               }}
             />
           </div>

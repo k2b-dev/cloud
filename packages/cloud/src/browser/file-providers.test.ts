@@ -548,6 +548,11 @@ describe("proving a file's type from its first bytes", () => {
     expect(verifiedMediaType(bytes("alert(1)"), "a.js", "text/javascript")).toBe("application/octet-stream");
     expect(verifiedMediaType(bytes("<?xml"), "feed.xml", "application/rss+xml")).toBe("application/octet-stream");
     expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", "image/*,.svg")).toBe("image/svg+xml");
+    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", ".svg")).toBe("image/svg+xml");
+    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", "image/svg+xml")).toBe("image/svg+xml");
+    // A name that fits an unrelated token never makes an active type accepted.
+    expect(verifiedMediaType(bytes("<html>"), "notes.txt", "text/html", ".txt")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("<html>"), "notes.txt", "text/html", ".html")).toBe("text/html");
     expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", "image/*")).toBeUndefined();
     expect(verifiedMediaType(bytes("<html>"), "page.html", "text/plain", "text/*")).toBeUndefined();
     // Bytes that prove an image under an active claim are that image.

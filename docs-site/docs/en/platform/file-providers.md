@@ -70,8 +70,10 @@ chats and Projects attach files this way.
   **Add** stays disabled and the status says why. A single file above
   `maxTotalBytes` is shown disabled like one above `maxBytes`. Without them,
   only the limit per file applies. The dialog shows the limits you pass on
-  **This device** and in the status. Files from the device are not checked
-  here, so keep your own checks.
+  **This device** and in the status. The same limits apply to files picked or
+  dropped from this device: the chooser stays open and says why, and without
+  providers, where the device's dialog opens directly, it resolves `[]` and a
+  toast says why. `accept` and your own upload checks still apply.
 - **`multiple`** allows several files; it defaults to `false`. **`signal`**
   closes the chooser, or stops waiting for the device's dialog, and resolves
   `[]`.

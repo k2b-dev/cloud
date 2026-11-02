@@ -325,10 +325,9 @@ export const verifiedMediaType = (head: Uint8Array, name: string, hint: string |
     .split(",")
     .map((token) => token.trim().toLowerCase())
     .filter(Boolean);
-  const explicit = (type: string) =>
-    tokens.some(
-      (token) => token === type || (token.startsWith(".") && (name.toLowerCase().endsWith(token) || getMimeType(token.slice(1)) === type)),
-    );
+  // Only the active type itself, or an extension of that type such as `.svg`, names it; a matching file name never does.
+  const xml = (value: string | null) => (value === "text/xml" ? "application/xml" : value);
+  const explicit = (type: string) => tokens.some((token) => xml(token.startsWith(".") ? getMimeType(token.slice(1)) : token) === xml(type));
   let type: string;
   let byBytes = false;
   if (proven && (isProvable(claim) || active)) {

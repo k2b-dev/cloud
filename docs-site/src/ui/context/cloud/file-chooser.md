@@ -38,7 +38,9 @@ import { chooseFiles } from "@k2b/cloud/browser/files";
   attachments a draft can still take and Mail's attachment limit. Above
   them, **Add** stays disabled and the status says why in red. A file above
   `maxTotalBytes` is disabled like one above `maxBytes`. Without them, only
-  the limit per file applies. Device files are not checked here.
+  the limit per file applies. Files picked or dropped from this device meet
+  the same limits: the status says why and the chooser stays open; without
+  providers a toast says why and it resolves `[]`.
 - `context` names what the person works on as resource refs, for example
   the contacts a mail goes to, as `{ refs }` or as an async function that
   runs only when someone opens a provider that accepts it. Only such

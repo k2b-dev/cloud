@@ -1,7 +1,8 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
-import { dialogCore, panelDialogWorkspaceOptions } from "@k2b/ui";
+import { dialogCore, panelDialogWorkspaceOptions, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
+import { deviceFilesProblem } from "./choice-limits";
 import type { FileProviderCaller, FileProviderSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
@@ -25,10 +26,18 @@ export const createFileChoosing = (
       // Only a refusal leaves no request behind; asking again now lets the next choice find a renewed session's apps.
       if (!list.requested()) list.prefetch();
       // The page cannot close a native dialog; an abort resolves `[]` at once and a later pick is dropped.
+      // Without the chooser to say it, a choice above the caller's limits resolves nothing and a toast says why.
+      const fitting = picked.then((files) => {
+        if (signal?.aborted) return [];
+        const why = deviceFilesProblem(files, options, caller().locale);
+        if (!why) return files;
+        toast.error(why);
+        return [];
+      });
       return new Promise((resolve) => {
         const abort = () => resolve([]);
         signal?.addEventListener("abort", abort, { once: true });
-        picked.then(resolve, () => resolve([])).finally(() => signal?.removeEventListener("abort", abort));
+        fitting.then(resolve, () => resolve([])).finally(() => signal?.removeEventListener("abort", abort));
       });
     }
     // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
