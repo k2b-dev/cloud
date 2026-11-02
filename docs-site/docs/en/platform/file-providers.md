@@ -99,13 +99,18 @@ chats and Projects attach files this way.
   read: control characters, `/`, `\`, and bidi controls (U+061C, U+200E,
   U+200F, U+202A to U+202E, U+2066 to U+2069) are removed, so
   `invoice\u202Efdp.exe` stays `invoicefdp.exe`. A name keeps at most 255
-  UTF-8 bytes and its extension. The provider's media type is only a hint:
-  the `File` gets the type its first bytes prove (images, PDF, common audio
-  and video), otherwise `application/octet-stream`. When `accept` names
-  images, PDF, audio, or video, only bytes that prove a matching type pass;
-  tokens bytes cannot prove, such as `.docx` or `text/*`, still take a file
-  by its name or hinted type. Serve stored files with `Content-Disposition:
-  attachment` and `X-Content-Type-Options: nosniff` as for any upload.
+  UTF-8 bytes and its extension. The provider's media type is only a hint.
+  For images, PDF, audio, video, and ZIP or Office files the first bytes
+  decide: a claim they fit stays, another proven type replaces it, and bytes
+  that prove nothing give `application/octet-stream`. Active content (HTML,
+  XML, SVG, scripts), claimed or named, becomes `application/octet-stream`
+  unless `accept` names that type or extension explicitly. Other types, such
+  as `text/plain`, `text/csv`, `text/markdown`, or `application/json`, keep the
+  declared type. When `accept` names images, PDF, audio, or video, only bytes
+  that prove a matching type pass; other tokens, such as `.docx` or `text/*`,
+  take a file by its name or type. Serve stored files with
+  `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` as
+  for any upload.
 - **A provider that is gone:** when a provider's root answers 403 or 404, it
   leaves the sources of this dialog, and the status says it is no longer
   available. A folder deeper inside that answers 403 or 404 shows the

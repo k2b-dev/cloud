@@ -194,59 +194,157 @@ const ascii = (bytes: Uint8Array, from: number, text: string) =>
   [...text].every((char, index) => bytes[from + index] === char.charCodeAt(0));
 const brand = (bytes: Uint8Array, ...brands: string[]) => ascii(bytes, 4, "ftyp") && brands.some((value) => ascii(bytes, 8, value));
 
-/** Types the first bytes can prove, with the extensions an `accept` may name them by. */
-const SIGNATURES: { type: string; extensions: string[]; matches: (bytes: Uint8Array) => boolean }[] = [
+const OFFICE_ZIP = [
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/epub+zip",
+  "application/x-zip-compressed",
+];
+const OFFICE_LEGACY = ["application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint", "application/vnd.ms-outlook"];
+
+/**
+ * Types the first bytes can prove, with the extensions an `accept` may name them by and the declared types the same
+ * bytes also fit, such as a Word document in a ZIP container.
+ */
+const SIGNATURES: { type: string; extensions: string[]; also?: string[]; matches: (bytes: Uint8Array) => boolean }[] = [
   { type: "image/png", extensions: [".png"], matches: (b) => ascii(b, 0, "\x89PNG\r\n\x1a\n") },
-  { type: "image/jpeg", extensions: [".jpg", ".jpeg"], matches: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  {
+    type: "image/jpeg",
+    extensions: [".jpg", ".jpeg"],
+    also: ["image/jpg", "image/pjpeg"],
+    matches: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  },
   { type: "image/gif", extensions: [".gif"], matches: (b) => ascii(b, 0, "GIF87a") || ascii(b, 0, "GIF89a") },
   { type: "image/webp", extensions: [".webp"], matches: (b) => ascii(b, 0, "RIFF") && ascii(b, 8, "WEBP") },
   { type: "image/avif", extensions: [".avif"], matches: (b) => brand(b, "avif", "avis") },
-  { type: "image/heic", extensions: [".heic", ".heif"], matches: (b) => brand(b, "heic", "heix", "heim", "heis", "hevc") },
-  { type: "image/heif", extensions: [".heif"], matches: (b) => brand(b, "mif1", "msf1") },
+  {
+    type: "image/heic",
+    extensions: [".heic", ".heif"],
+    also: ["image/heif", "image/heic-sequence", "image/heif-sequence"],
+    matches: (b) => brand(b, "heic", "heix", "heim", "heis", "hevc"),
+  },
+  { type: "image/heif", extensions: [".heif"], also: ["image/heic", "image/heif-sequence"], matches: (b) => brand(b, "mif1", "msf1") },
   { type: "image/tiff", extensions: [".tif", ".tiff"], matches: (b) => ascii(b, 0, "II*\0") || ascii(b, 0, "MM\0*") },
-  { type: "image/bmp", extensions: [".bmp"], matches: (b) => ascii(b, 0, "BM") },
-  { type: "image/x-icon", extensions: [".ico"], matches: (b) => ascii(b, 0, "\0\0\x01\0") },
+  { type: "image/bmp", extensions: [".bmp"], also: ["image/x-ms-bmp"], matches: (b) => ascii(b, 0, "BM") },
+  { type: "image/x-icon", extensions: [".ico"], also: ["image/vnd.microsoft.icon"], matches: (b) => ascii(b, 0, "\0\0\x01\0") },
   { type: "application/pdf", extensions: [".pdf"], matches: (b) => ascii(b, 0, "%PDF-") },
-  { type: "video/quicktime", extensions: [".mov"], matches: (b) => brand(b, "qt  ") },
-  { type: "audio/mp4", extensions: [".m4a"], matches: (b) => brand(b, "M4A ") },
-  { type: "video/mp4", extensions: [".mp4", ".m4v"], matches: (b) => ascii(b, 4, "ftyp") },
-  { type: "video/webm", extensions: [".webm", ".mkv"], matches: (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3 },
-  { type: "audio/aac", extensions: [".aac"], matches: (b) => b[0] === 0xff && ((b[1] ?? 0) & 0xf6) === 0xf0 },
-  { type: "audio/mpeg", extensions: [".mp3"], matches: (b) => ascii(b, 0, "ID3") || (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0) },
-  { type: "audio/wav", extensions: [".wav"], matches: (b) => ascii(b, 0, "RIFF") && ascii(b, 8, "WAVE") },
-  { type: "audio/ogg", extensions: [".ogg", ".oga", ".opus"], matches: (b) => ascii(b, 0, "OggS") },
-  { type: "audio/flac", extensions: [".flac"], matches: (b) => ascii(b, 0, "fLaC") },
+  { type: "application/zip", extensions: [".zip"], also: OFFICE_ZIP, matches: (b) => ascii(b, 0, "PK\x03\x04") },
+  {
+    type: "application/x-cfb",
+    extensions: [".doc", ".xls", ".ppt", ".msg"],
+    also: OFFICE_LEGACY,
+    matches: (b) => ascii(b, 0, "\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+  },
+  { type: "video/quicktime", extensions: [".mov"], also: ["video/mp4"], matches: (b) => brand(b, "qt  ") },
+  { type: "audio/mp4", extensions: [".m4a"], also: ["audio/x-m4a", "audio/m4a", "video/mp4"], matches: (b) => brand(b, "M4A ") },
+  {
+    type: "video/mp4",
+    extensions: [".mp4", ".m4v"],
+    also: ["video/x-m4v", "video/m4v", "audio/mp4", "audio/x-m4a", "video/quicktime", "video/3gpp", "audio/3gpp"],
+    matches: (b) => ascii(b, 4, "ftyp"),
+  },
+  {
+    type: "video/webm",
+    extensions: [".webm", ".mkv"],
+    also: ["audio/webm", "video/x-matroska", "audio/x-matroska"],
+    matches: (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3,
+  },
+  {
+    type: "audio/aac",
+    extensions: [".aac"],
+    also: ["audio/x-aac", "audio/aacp"],
+    matches: (b) => b[0] === 0xff && ((b[1] ?? 0) & 0xf6) === 0xf0,
+  },
+  {
+    type: "audio/mpeg",
+    extensions: [".mp3"],
+    also: ["audio/mp3"],
+    matches: (b) => ascii(b, 0, "ID3") || (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0),
+  },
+  {
+    type: "audio/wav",
+    extensions: [".wav"],
+    also: ["audio/x-wav", "audio/wave", "audio/vnd.wave"],
+    matches: (b) => ascii(b, 0, "RIFF") && ascii(b, 8, "WAVE"),
+  },
+  {
+    type: "audio/ogg",
+    extensions: [".ogg", ".oga", ".opus"],
+    also: ["video/ogg", "application/ogg", "audio/opus"],
+    matches: (b) => ascii(b, 0, "OggS"),
+  },
+  { type: "audio/flac", extensions: [".flac"], also: ["audio/x-flac"], matches: (b) => ascii(b, 0, "fLaC") },
 ];
 /** How many first bytes `verifiedMediaType` reads. */
 export const MEDIA_TYPE_HEAD_BYTES = 16;
 
-const MEDIA = /^(?:image|audio|video)\/|^application\/pdf$/;
-/**
- * The `accept` tokens only proving bytes may satisfy: images, PDF, audio, and video, by type or by extension. A format
- * without a signature above, such as SVG, never passes them, since its bytes cannot show what it is.
- */
-const needsProof = (token: string) =>
-  MEDIA.test(token) ||
-  (token.startsWith(".") &&
-    (SIGNATURES.some((entry) => entry.extensions.includes(token)) || MEDIA.test(getMimeType(token.slice(1)) ?? "")));
+/** Content a browser may run: markup, XML, and scripts. A provider's claim of it is never trusted. */
+const isActive = (type: string | undefined): type is string =>
+  !!type &&
+  (/^(?:text\/html|application\/xhtml\+xml|text\/xml|application\/xml|text\/xsl|application\/xslt\+xml|image\/svg\+xml)$/.test(type) ||
+    type.endsWith("+xml") ||
+    /(?:java|ecma)script|^text\/jsx?$|^application\/x-shockwave-flash$/.test(type));
+/** Types a target relies on and the first bytes can prove: images, PDF, audio, video, and ZIP or legacy Office files. */
+const isProvable = (type: string | undefined): type is string =>
+  !!type &&
+  !isActive(type) &&
+  (/^(?:image|audio|video)\//.test(type) || SIGNATURES.some((entry) => entry.type === type || entry.also?.includes(type)));
+/** `accept` tokens only proving bytes satisfy: images, PDF, audio, and video, by type or extension, not active ones. */
+const needsProof = (token: string) => {
+  const type = token.startsWith(".") ? (getMimeType(token.slice(1)) ?? "") : token;
+  return !isActive(type) && (/^(?:image|audio|video)\//.test(type) || type === "application/pdf");
+};
+/** A printable media type without parameters, or `undefined`. */
+const declared = (value: string | null | undefined): string | undefined => {
+  const type = value?.split(";", 1)[0]?.trim().toLowerCase();
+  return type && /^[\w.+-]{1,127}\/[\w.+-]{1,127}$/.test(type) ? type : undefined;
+};
 
 /**
- * The media type a read file gets. A provider's type is only a hint: the type is what the first bytes prove, otherwise
- * `application/octet-stream`. When `accept` names images, PDF, audio, or video, by type or extension, only bytes that
- * prove a matching type pass; other tokens, such as `.docx` or `text/*`, still take a file by its name or hinted type,
- * as `application/octet-stream`. `undefined` means the bytes do not fit `accept`.
+ * The media type a read file gets; a provider's type, or the name's, is only a hint:
+ *
+ * - **Provable** (images, PDF, audio, video, ZIP and Office files): the first bytes decide. A claim they fit is kept,
+ *   another proven type replaces it, and bytes that prove nothing give `application/octet-stream`.
+ * - **Active** (HTML, XML, SVG, scripts), by claim or by name: `application/octet-stream`, unless `accept` names that
+ *   type or its extension explicitly.
+ * - **Anything else**, such as `text/plain`, `text/csv`, or `application/json`: the declared type stays.
+ *
+ * With `accept`, the result must fit it: image, PDF, audio, and video tokens only take bytes that prove a matching
+ * type, other tokens take a file by its name or type. `undefined` means it does not fit.
  */
 export const verifiedMediaType = (head: Uint8Array, name: string, hint: string | undefined, accept?: string): string | undefined => {
+  const claim = declared(hint) ?? declared(getMimeType(name));
+  const named = declared(getMimeType(name));
+  const active = isActive(claim) ? claim : isActive(named) ? named : undefined;
   const proven = SIGNATURES.find((entry) => entry.matches(head));
-  if (!accept) return proven?.type ?? OCTET_STREAM;
-  if (proven?.extensions.some((extension) => checkMimeType(new File([], `file${extension}`, { type: proven.type }), accept)))
-    return proven.type;
-  const unprovable = accept
+  const tokens = (accept ?? "")
     .split(",")
     .map((token) => token.trim().toLowerCase())
-    .filter((token) => token && !needsProof(token))
-    .join(",");
-  return unprovable && checkMimeType(new File([], name, { type: hint ?? "" }), unprovable) ? OCTET_STREAM : undefined;
+    .filter(Boolean);
+  const explicit = (type: string) =>
+    tokens.some(
+      (token) => token === type || (token.startsWith(".") && (name.toLowerCase().endsWith(token) || getMimeType(token.slice(1)) === type)),
+    );
+  let type: string;
+  let byBytes = false;
+  if (proven && (isProvable(claim) || active)) {
+    byBytes = true;
+    type = claim && (claim === proven.type || proven.also?.includes(claim)) && !active ? claim : proven.type;
+  } else if (active) type = explicit(active) ? active : OCTET_STREAM;
+  else if (isProvable(claim)) type = OCTET_STREAM;
+  else type = claim ?? OCTET_STREAM;
+  if (tokens.length === 0) return type;
+  // Bytes that prove a type a token asks for take that type, even under another claim.
+  const proves = (token: string) =>
+    !!proven &&
+    (proven.extensions.some((extension) => checkMimeType(new File([], `file${extension}`, { type: proven.type }), token)) ||
+      (proven.also ?? []).some((alias) => checkMimeType(alias, token)));
+  if (tokens.some((token) => needsProof(token) && proves(token))) return byBytes ? type : (proven?.type ?? type);
+  return tokens.some((token) => !needsProof(token) && checkMimeType(new File([], name, { type }), token)) ? type : undefined;
 };
 
 const streamFailure = async (response: Response): Promise<FileProviderError> => {

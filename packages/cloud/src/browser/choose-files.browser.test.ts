@@ -607,12 +607,11 @@ describe("choosing files in a browser", () => {
         release();
         await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
         readGate = undefined;
-        // Plain text proves no type: the provider's text/plain was only a hint.
         expect(await chosen(page)).toEqual([
           [
-            { name: "notes.txt", type: "application/octet-stream", size: 13, text: "meeting notes" },
-            { name: "todo.txt", type: "application/octet-stream", size: 8, text: "buy milk" },
-            { name: "plan.txt", type: "application/octet-stream", size: 6, text: "plan b" },
+            { name: "notes.txt", type: "text/plain", size: 13, text: "meeting notes" },
+            { name: "todo.txt", type: "text/plain", size: 8, text: "buy milk" },
+            { name: "plan.txt", type: "text/plain", size: 6, text: "plan b" },
           ],
         ]);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -646,7 +645,7 @@ describe("choosing files in a browser", () => {
       await row(page, "notes.txt").click();
       await page.getByRole("button", { name: "Add (1)", exact: true }).click();
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
-      expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "application/octet-stream", size: 11, text: "vault notes" }]]);
+      expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "text/plain", size: 11, text: "vault notes" }]]);
     } finally {
       release();
       readGate = undefined;
@@ -829,7 +828,7 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
         await row(page, "notes.txt").click();
         await page.getByRole("button", { name: "Add (1)", exact: true }).click();
         await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
-        expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "application/octet-stream", size: 13, text: "meeting notes" }]]);
+        expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "text/plain", size: 13, text: "meeting notes" }]]);
         // Only the chooser closed; the dialog that asked is back, and its dropzone has focus again.
         await dropzone(page).waitFor();
         expect(await chooserOpen(page)).toBe(false);

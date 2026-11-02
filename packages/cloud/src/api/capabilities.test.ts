@@ -1252,8 +1252,7 @@ test("the browser file chooser browses and reads a provider through Core's route
   expect(page).toEqual({ items: [listed], next: null, writable: false });
   const file = await readProviderFile(source!, listed, { ...caller, maxBytes: 64, accept: "text/*" });
   expect(await file.text()).toBe(bytes);
-  // Plain text proves no type, so the provider's text/plain stays a hint.
-  expect(file.type).toBe("application/octet-stream");
+  expect(file.type).toStartWith("text/plain");
   // The browser only ever holds Core's sealed stream ID; Core opens it and lets the read through to the provider.
   expect(streamIds).toHaveLength(1);
   expect(streamIds[0]).not.toContain("private:report");

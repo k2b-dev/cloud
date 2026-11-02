@@ -521,37 +521,62 @@ describe("cleaning a provider's file names", () => {
 describe("proving a file's type from its first bytes", () => {
   const bytes = (...values: (number | string)[]) =>
     new Uint8Array(values.flatMap((value) => (typeof value === "string" ? [...value].map((char) => char.charCodeAt(0)) : [value])));
+  const pdf = bytes("%PDF-1.7");
+  const png = bytes(0x89, "PNG\r\n", 0x1a, "\n");
+  const zip = bytes("PK", 3, 4);
+  const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-  test("names images, PDF, audio, and video by their signatures, everything else application/octet-stream", () => {
-    expect(verifiedMediaType(bytes(0xff, 0xd8, 0xff, 0xe0), "a.jpg", "image/jpeg")).toBe("image/jpeg");
+  test("provable types: the bytes decide, a claim they fit stays, another proven type replaces it", () => {
+    expect(verifiedMediaType(pdf, "report.pdf", "application/pdf")).toBe("application/pdf");
+    expect(verifiedMediaType(bytes(0xff, 0xd8, 0xff, 0xe0), "a.jpg", "image/jpg")).toBe("image/jpg");
     expect(verifiedMediaType(bytes("GIF89a"), "a.gif", undefined)).toBe("image/gif");
-    expect(verifiedMediaType(bytes("RIFF", 0, 0, 0, 0, "WEBP"), "a.webp", undefined)).toBe("image/webp");
-    expect(verifiedMediaType(bytes("%PDF-1.7"), "a.pdf", "text/html")).toBe("application/pdf");
-    expect(verifiedMediaType(bytes(0, 0, 0, 0x18, "ftypisom"), "a.mp4", undefined)).toBe("video/mp4");
-    expect(verifiedMediaType(bytes(0, 0, 0, 0x18, "ftypavif"), "a.avif", undefined)).toBe("image/avif");
-    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml")).toBe("application/octet-stream");
-    expect(verifiedMediaType(bytes("# Notes"), "notes.md", "text/markdown")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes(0, 0, 0, 0x18, "ftypisom"), "a.mp4", "video/mp4")).toBe("video/mp4");
+    expect(verifiedMediaType(zip, "letter.docx", DOCX)).toBe(DOCX);
+    expect(verifiedMediaType(zip, "letter.docx", undefined)).toBe(DOCX);
+    // A PNG that claims to be a PDF is a PNG, and a PDF target refuses it.
+    expect(verifiedMediaType(png, "invoice.pdf", "application/pdf")).toBe("image/png");
+    expect(verifiedMediaType(png, "invoice.pdf", "application/pdf", "application/pdf")).toBeUndefined();
+    // Bytes that prove nothing never keep a provable claim.
+    expect(verifiedMediaType(bytes("hello"), "a.pdf", "application/pdf")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("<html>"), "letter.docx", DOCX)).toBe("application/octet-stream");
   });
 
-  test("an accept that names images or PDF takes only bytes that prove a matching type", () => {
-    const pdf = bytes("%PDF-1.4");
-    expect(verifiedMediaType(pdf, "report.pdf", "application/pdf", "application/pdf")).toBe("application/pdf");
+  test("active content is never trusted from a claim or a name, unless the target names it explicitly", () => {
+    expect(verifiedMediaType(bytes("<html>"), "page.html", "text/plain")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("<html>"), "page.txt", "text/html")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("alert(1)"), "a.js", "text/javascript")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("<?xml"), "feed.xml", "application/rss+xml")).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", "image/*,.svg")).toBe("image/svg+xml");
+    expect(verifiedMediaType(bytes("<svg xmlns"), "a.svg", "image/svg+xml", "image/*")).toBeUndefined();
+    expect(verifiedMediaType(bytes("<html>"), "page.html", "text/plain", "text/*")).toBeUndefined();
+    // Bytes that prove an image under an active claim are that image.
+    expect(verifiedMediaType(png, "logo.svg", "image/svg+xml", "image/*")).toBe("image/png");
+  });
+
+  test("plain types keep the provider's declared type, as a hint for display", () => {
+    expect(verifiedMediaType(bytes("plain"), "notes.txt", "text/plain")).toBe("text/plain");
+    expect(verifiedMediaType(bytes("a,b"), "table.csv", "text/csv; charset=utf-8")).toBe("text/csv");
+    expect(verifiedMediaType(bytes("# Notes"), "notes.md", "text/markdown")).toBe("text/markdown");
+    expect(verifiedMediaType(bytes("{}"), "data.json", "application/json")).toBe("application/json");
+    expect(verifiedMediaType(bytes("x"), "notes.txt", undefined)).toBe("text/plain");
+    expect(verifiedMediaType(bytes("x"), "blob", undefined)).toBe("application/octet-stream");
+    expect(verifiedMediaType(bytes("plain"), "notes.txt", "text/plain", "text/*")).toBe("text/plain");
+  });
+
+  test("image, PDF, audio, and video tokens take only bytes that prove a matching type", () => {
     expect(verifiedMediaType(pdf, "report.pdf", "application/pdf", ".pdf")).toBe("application/pdf");
     expect(verifiedMediaType(pdf, "report.png", "image/png", "image/*")).toBeUndefined();
     expect(verifiedMediaType(bytes("<html>"), "photo.png", "image/png", "image/png,image/jpeg")).toBeUndefined();
     expect(verifiedMediaType(bytes(0xff, 0xd8, 0xff), "photo.jpeg", "image/jpeg", ".jpeg")).toBe("image/jpeg");
-    // Media extensions need proof too; a format without a signature, such as SVG, never passes them.
-    expect(verifiedMediaType(bytes("<html>"), "photo.svg", "image/svg+xml", ".svg")).toBeUndefined();
     expect(verifiedMediaType(bytes("<html>"), "photo.bmp", "image/bmp", ".bmp")).toBeUndefined();
     expect(verifiedMediaType(bytes("<html>"), "track.aac", "audio/aac", ".aac")).toBeUndefined();
     expect(verifiedMediaType(bytes("BM", 0, 0), "photo.bmp", undefined, ".bmp")).toBe("image/bmp");
-  });
-
-  test("tokens bytes cannot prove still take a file by its name or hint, as application/octet-stream", () => {
-    const docx = bytes("PK", 3, 4);
-    expect(verifiedMediaType(docx, "letter.docx", undefined, "image/*,.docx")).toBe("application/octet-stream");
-    expect(verifiedMediaType(bytes("plain"), "notes.txt", "text/plain", "text/*")).toBe("application/octet-stream");
-    expect(verifiedMediaType(docx, "letter.zip", undefined, "image/*,.docx")).toBeUndefined();
+    // A real image under a plain claim still fits an image target, as the image it is.
+    expect(verifiedMediaType(png, "photo.txt", "text/plain", "image/*")).toBe("image/png");
+    // Other tokens take a file by its name or type.
+    expect(verifiedMediaType(zip, "letter.docx", undefined, "image/*,.docx")).toBe(DOCX);
+    expect(verifiedMediaType(zip, "letter.zip", undefined, "image/*,.docx")).toBeUndefined();
   });
 });
 
@@ -617,7 +642,7 @@ describe("reading a provider file", () => {
     });
     expect(calls).toEqual(["/api/capabilities/v1/queries/drive/file.read", "/api/capabilities/v1/streams/read"]);
     expect(result.name).toBe("notes.txt");
-    // "hello" is no PDF: the provider's type is only a hint.
+    // "hello" is no PDF: a provable type the bytes do not prove is only a hint.
     expect(result.type).toBe("application/octet-stream");
     expect(result.lastModified).toBe(Date.parse("2026-10-01T10:00:00Z"));
     expect(await result.text()).toBe("hello");

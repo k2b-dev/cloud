@@ -52,8 +52,10 @@ import { chooseFiles } from "@k2b/cloud/browser/files";
 
 It resolves the chosen files in the order shown, or `[]` when the user
 cancels. Names from providers are cleaned of control characters, path
-separators, and bidi controls, and a file's type is what its first bytes
-prove, otherwise `application/octet-stream`; see
+separators, and bidi controls. Images, PDF, audio, video, and Office files
+get the type their first bytes prove, active content such as HTML or SVG
+becomes `application/octet-stream` unless `accept` names it, and other types
+keep the provider's; see
 [File providers](/en/docs/platform/file-providers#add-files-from-providers).
 
 ## Presentation
