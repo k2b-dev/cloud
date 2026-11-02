@@ -204,8 +204,14 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
 // excluded, and the mailbox and binding checks still fence pause, credential
 // changes, and revocation.
 // `folderId` names the folder a sync run imports, so a requested sync can tell when it ran.
-export const claimFence = async (resourceId: string, bindingId: string, kind: string, folderId?: string): Promise<FenceClaim> =>
-  sql.begin(async (tx) => {
+export const claimFence = async (
+  resourceId: string,
+  bindingId: string,
+  kind: string,
+  folderId?: string,
+  db: typeof sql = sql,
+): Promise<FenceClaim> =>
+  db.begin(async (tx) => {
     const [resource] = await tx<{ token: string | number; generation: string | number }[]>`
       UPDATE mail.remote_resources resource
       SET current_fence_token = resource.current_fence_token + 1
@@ -1940,6 +1946,7 @@ const isEffectiveDraftsFolder = async (db: typeof sql, folder: Pick<FolderSyncRo
 };
 
 export const commitSyncBatch = async (params: {
+  db?: typeof sql;
   folder: FolderSyncRow;
   folderId: string;
   bindingId: string;
@@ -1961,7 +1968,7 @@ export const commitSyncBatch = async (params: {
   removed: number;
   liveInvalidated: boolean;
 }> => {
-  const result = await sql.begin(async (tx) => {
+  const result = await (params.db ?? sql).begin(async (tx) => {
     const [resource] = await tx<{ id: string }[]>`
       SELECT id
       FROM mail.remote_resources
@@ -2113,6 +2120,9 @@ export const commitSyncBatch = async (params: {
         sync_status = ${params.cursor.backfillComplete ? "current" : "syncing"},
         last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END
       WHERE id = ${params.folderId}::uuid
+        AND (envelope_cursor IS DISTINCT FROM ${params.cursor}::jsonb
+          OR sync_status IS DISTINCT FROM ${params.cursor.backfillComplete ? "current" : "syncing"}
+          OR ${params.reconcileWindow != null})
     `;
     await tx`
       UPDATE mail.binding_folder_refs
@@ -2122,6 +2132,8 @@ export const commitSyncBatch = async (params: {
         highest_modseq = ${params.status.highestModseq}::numeric,
         last_verified_at = now()
       WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${params.folderId}::uuid
+        AND (uid_validity, uid_next, highest_modseq) IS DISTINCT FROM
+          (${params.status.uidValidity}::numeric, ${params.status.uidNext}::numeric, ${params.status.highestModseq}::numeric)
     `;
     const [binding] = await tx<{ connection_id: string }[]>`
       UPDATE mail.provider_bindings
@@ -2136,12 +2148,19 @@ export const commitSyncBatch = async (params: {
     `;
     if (!binding) throw Object.assign(new Error("Sync binding changed before commit"), { code: "STALE_SYNC_BINDING" });
     const [connection] = await tx<{ id: string }[]>`
-      UPDATE mail.provider_connections
-      SET last_error_code = NULL, last_error_message = NULL
-      WHERE id = ${binding.connection_id}::uuid
-        AND status = 'active'
-        AND secret_revision = ${params.secretRevision}
-      RETURNING id
+      WITH eligible AS MATERIALIZED (
+        SELECT id FROM mail.provider_connections
+        WHERE id = ${binding.connection_id}::uuid
+          AND status = 'active' AND secret_revision = ${params.secretRevision}
+        FOR NO KEY UPDATE
+      ), cleared AS (
+        UPDATE mail.provider_connections connection
+        SET last_error_code = NULL, last_error_message = NULL
+        FROM eligible
+        WHERE connection.id = eligible.id
+          AND (connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL)
+      )
+      SELECT id FROM eligible
     `;
     if (!connection) throw Object.assign(new Error("Sync credentials changed before commit"), { code: "STALE_SYNC_BINDING" });
     await tx`
@@ -2150,9 +2169,9 @@ export const commitSyncBatch = async (params: {
       WHERE id = ${params.folder.remote_resource_id}::uuid
     `;
     await tx`
-      UPDATE mail.mailboxes
-      SET
-        health = CASE
+      WITH desired AS MATERIALIZED (
+        SELECT id,
+        CASE
           WHEN sync_enabled = false THEN 'paused'
           WHEN EXISTS (
             SELECT 1
@@ -2161,8 +2180,8 @@ export const commitSyncBatch = async (params: {
             WHERE resource.mailbox_id = ${params.folder.mailbox_id}::uuid AND binding.state = 'degraded'
           ) THEN 'degraded'
           ELSE ${params.cursor.backfillComplete ? "active" : "bootstrapping"}
-        END,
-        health_reason = CASE
+        END AS health,
+        CASE
           WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
           WHEN EXISTS (
             SELECT 1
@@ -2171,8 +2190,15 @@ export const commitSyncBatch = async (params: {
             WHERE resource.mailbox_id = ${params.folder.mailbox_id}::uuid AND binding.state = 'degraded'
           ) THEN 'One or more provider bindings require attention'
           ELSE ${params.cursor.backfillComplete ? null : "Historical synchronization in progress"}
-        END
-      WHERE id = ${params.folder.mailbox_id}::uuid
+        END AS health_reason
+        FROM mail.mailboxes WHERE id = ${params.folder.mailbox_id}::uuid
+        FOR NO KEY UPDATE
+      )
+      UPDATE mail.mailboxes mailbox
+      SET health = desired.health, health_reason = desired.health_reason
+      FROM desired
+      WHERE mailbox.id = desired.id
+        AND (mailbox.health, mailbox.health_reason) IS DISTINCT FROM (desired.health, desired.health_reason)
     `;
     await tx`
       UPDATE mail.sync_runs
