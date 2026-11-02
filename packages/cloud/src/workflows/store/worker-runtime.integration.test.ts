@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
+import { workWakeOrigin } from "../../_internal/work-wake";
 import { createWorkflowWorker, notifyWorkflowWorker } from "./worker-runtime";
 
 suiteFor("nats")("workflow worker wake transport", () => {
@@ -13,10 +14,13 @@ suiteFor("nats")("workflow worker wake transport", () => {
     bindProcessSync(sync);
     const queue: Array<() => void> = [];
     let calls = 0;
+    let recoveries = 0;
     const worker = createWorkflowWorker({
       appId: "test",
       concurrency: 2,
-      recover: async () => {},
+      recover: async () => {
+        recoveries++;
+      },
       run: async () => {
         const action = queue.shift();
         if (!action) return false;
@@ -54,7 +58,7 @@ suiteFor("nats")("workflow worker wake transport", () => {
       notifyWorkflowWorker("test");
       await wait(local.promise);
       // Independent publisher, same public wire contract; provisioning/payload errors fail the test.
-      const topic = remote.topic<null>({
+      const topic = remote.topic<{ origin: string } | null>({
         id: "cloud:workflow-wake",
         owner: "cloud",
         retention: { maxAgeMs: 120_000, maxBytes: 1_048_576 },
@@ -62,9 +66,13 @@ suiteFor("nats")("workflow worker wake transport", () => {
       });
       await topic.publish({ tenantId: "test", data: null });
       await Bun.sleep(50);
+      const beforeEcho = recoveries;
+      await topic.publish({ tenantId: "test", data: { origin: workWakeOrigin } });
+      await Bun.sleep(50);
+      expect(recoveries).toBe(beforeEcho);
       const broadcast = Promise.withResolvers<void>();
       queue.push(broadcast.resolve);
-      await topic.publish({ tenantId: "test", data: null });
+      await topic.publish({ tenantId: "test", data: { origin: "independent-publisher" } });
       await wait(broadcast.promise);
       await Bun.sleep(50);
       const recovery = Promise.withResolvers<void>();

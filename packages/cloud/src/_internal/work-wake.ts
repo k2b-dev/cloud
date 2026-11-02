@@ -4,6 +4,8 @@ import { logger } from "../services/logging";
 import { getProcessNats } from "./process-sync";
 
 const log = logger("work-wake");
+export const workWakeOrigin = crypto.randomUUID();
+const originBytes = new TextEncoder().encode(workWakeOrigin);
 
 /** Non-retained hints on the existing transport; committed Postgres rows own the work. */
 export const workWakeSubject = (namespace: string, key: string): string =>
@@ -12,7 +14,7 @@ export const workWakeSubject = (namespace: string, key: string): string =>
 /** Call only after committing. Missing hints are repaired by the worker's safety scan. */
 export const notifyWork = (key: string): void => {
   try {
-    getProcessNats().publish(workWakeSubject(connections().nats.namespace, key));
+    getProcessNats().publish(workWakeSubject(connections().nats.namespace, key), originBytes);
   } catch (error) {
     log.warn("Work wake notification failed; safety scan will recover", { key, error: String(error) });
   }
@@ -20,9 +22,9 @@ export const notifyWork = (key: string): void => {
 
 export const subscribeWorkWake = (key: string, wake: () => void): (() => void) => {
   const subscription = getProcessNats().subscribe(workWakeSubject(connections().nats.namespace, key), {
-    callback: (error) => {
+    callback: (error, message) => {
       if (error) log.warn("Work wake subscription failed; safety scan will recover", { key, error: String(error) });
-      else wake();
+      else if (message.string() !== workWakeOrigin) wake();
     },
   });
   return () => subscription.unsubscribe();

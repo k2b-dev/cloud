@@ -63,7 +63,7 @@ export type PgOutbox<Row extends OutboxRow> = {
   dispatch(row: Row, publish?: (row: Row) => Promise<unknown>): Promise<void>;
   /** Drain every claimable row; concurrent calls join the active pass. */
   reconcile(): Promise<number>;
-  /** Call after commit: signal other instances and, while started, reconcile locally, logging failures. */
+  /** Call after commit: signal other instances and reconcile locally, logging failures. */
   notify(): Promise<void>;
   start(): void;
   stop(): Promise<void>;
@@ -258,8 +258,9 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   };
 
   const notify: PgOutbox<Row>["notify"] = async () => {
+    const local = run();
     notifyPgOutbox(config.table, config.where);
-    if (running) await run();
+    await local;
   };
 
   const start: PgOutbox<Row>["start"] = () => {

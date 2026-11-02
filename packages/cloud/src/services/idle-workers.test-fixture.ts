@@ -73,6 +73,7 @@ mock.module("../runtime/clients", () => ({ sql }));
 const listeners = new Map<string, Set<() => void>>();
 const pgOutboxKey = (table: string) => `${table}:{}`;
 mock.module("../_internal/work-wake", () => ({
+  workWakeOrigin: "idle-budget",
   pgOutboxKey,
   notifyPgOutbox: () => {},
   notifyWork: (key: string) => {
@@ -142,8 +143,6 @@ assert.equal(
 
 pending = [{ id: "retry-after-restart", attempts: 1 }];
 pendingDue = now + 2_000;
-await outbox.notify();
-assert.equal(polls, stoppedPolls, "notify while stopped only signals other processes");
 outbox.start();
 await settled();
 const beforeDue = polls;
@@ -160,9 +159,8 @@ outbox.start();
 await settled();
 await outbox.stop();
 const afterDue = polls;
-await outbox.notify();
 await advance(60_000);
-assert.equal(polls, afterDue, "stop cancels deadline timers and ignores later local notifications");
+assert.equal(polls, afterDue, "stop cancels deadline timers");
 pending = [];
 pendingDue = undefined;
 

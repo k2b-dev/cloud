@@ -1,11 +1,12 @@
 import { lazySync } from "../../_internal/process-sync";
+import { workWakeOrigin } from "../../_internal/work-wake";
 import { logger } from "../../services/logging";
 import { createRuntimeLifecycle, superviseRuntimeTask } from "../../services/runtime-lifecycle";
 import { createWorkflowWorkerPool } from "./worker-pool";
 
 const log = logger("workflows:worker");
 const wakeTopic = lazySync((sync) =>
-  sync.topic<null>({
+  sync.topic<{ origin: string } | null>({
     id: "cloud:workflow-wake",
     owner: "cloud",
     retention: { maxAgeMs: 120_000, maxBytes: 1_048_576 },
@@ -19,7 +20,7 @@ export const notifyWorkflowWorker = (appId: string): void => {
   for (const wake of localWorkers.get(appId) ?? []) wake();
   // Hints are best effort. Neither broker latency nor failure delays an accepted request.
   void Promise.resolve()
-    .then(() => wakeTopic().publish({ tenantId: appId, data: null }))
+    .then(() => wakeTopic().publish({ tenantId: appId, data: { origin: workWakeOrigin } }))
     .catch((error) => {
       log.warn("Workflow wake notification failed", { appId, error: String(error) });
     });
@@ -70,7 +71,8 @@ export const createWorkflowWorker = (options: {
         signal: controller.signal,
         onError: ({ error }) => report(error),
         run: async (signal) => {
-          for await (const _event of wakeTopic().live({ tenantId: options.appId, signal })) wake();
+          for await (const event of wakeTopic().live({ tenantId: options.appId, signal }))
+            if (event.data?.origin !== workWakeOrigin) wake();
         },
       });
       // Repair missed hints, due deadlines and expired leases; execution wakes immediately.

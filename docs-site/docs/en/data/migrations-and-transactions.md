@@ -362,9 +362,9 @@ Known retry and claim deadlines also schedule a pass when due, independently of
 the safety scan. `stop()` removes the wake subscription, ends all timers, and waits for the pass
 in flight. Call `notify()` only after the domain transaction commits: it sends
 a best-effort wake signal to instances using the same table and `where` values,
-runs a local pass while the dispatcher is started, and logs a failure as `Outbox reconcile failed`.
-Before startup and after shutdown, it only signals other instances; it never
-starts local background work. Drain producers before stopping their outbox.
+runs a local pass, and logs a failure as `Outbox reconcile failed`.
+The originating process ignores its own NATS hint because it has already woken
+locally. Drain producers before stopping their outbox.
 `reconcile()` runs the same pass, returns the number of rows it handled, and throws. A call while a
 pass runs joins it, and the pass continues until no row is due. The
 dispatcher's `claim()` and `dispatch()` are internal and can change without

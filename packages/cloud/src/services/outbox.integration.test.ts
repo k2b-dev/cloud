@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connectTestNats, suiteFor, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/work-wake";
 import { sql } from "../runtime/clients";
 import { connections } from "../runtime/connections";
 import { createPgOutbox } from "./outbox";
@@ -233,10 +234,16 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       delivered.resolve();
     });
     let terminate: (() => Promise<void>) | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let remoteHints = 0;
     try {
       outbox.start();
       await outbox.reconcile();
+      unsubscribe = subscribeWorkWake(pgOutboxKey(table), () => remoteHints++);
       await connection.flush(); // The subscription is active before the remote writer starts.
+      notifyPgOutbox(table);
+      await connection.flush();
+      expect(remoteHints).toBe(0); // Local work already woke in-process; ignore its NATS echo.
       const child = Bun.spawn(
         [
           process.execPath,
@@ -262,9 +269,11 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       await delivered.promise;
       await outbox.stop();
       expect(count).toBe(1);
+      expect(remoteHints).toBe(1);
       expect(await pending()).toEqual([]);
     } finally {
       await terminate?.();
+      unsubscribe?.();
       await outbox.stop();
       await sync.drain();
       unbindProcessSync();
@@ -307,7 +316,7 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     }
   });
 
-  test("notify() respects the lifecycle, and stop() waits for the pass in flight", async () => {
+  test("notify() publishes without start, and stop() waits for the pass in flight", async () => {
     await report(sql, itemB, 8);
     let release = () => {};
     const blocked = new Promise<void>((resolve) => {
@@ -318,7 +327,6 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       await blocked;
       published.push(row.delta);
     });
-    await outbox.notify();
     expect(published).toEqual([]);
     expect(await pending()).toHaveLength(1);
     outbox.start();
@@ -329,10 +337,8 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     expect(await pending()).toEqual([]);
     await report(sql, itemB, 9);
     await outbox.notify();
-    expect(published).toEqual([8]);
-    expect(await pending()).toHaveLength(1);
-    await outbox.reconcile();
     expect(published).toEqual([8, 9]);
+    expect(await pending()).toEqual([]);
 
     const broken = createPgOutbox<StockReport>({
       table: `${schema}.missing`,
@@ -343,8 +349,6 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       publish: async () => {},
     });
     await expect(broken.reconcile()).rejects.toThrow();
-    broken.start();
     await expect(broken.notify()).resolves.toBeUndefined();
-    await broken.stop();
   });
 });
