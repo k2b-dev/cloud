@@ -1712,6 +1712,10 @@ suite("HTTP authorization registry cancellation", () => {
       if (!scope) throw new Error("Machine scope missing");
       let sent = false;
       hold = true;
+      // Warm registry reads use the process-local view. A completed heartbeat
+      // invalidates that view, so this exercises a real delayed refresh rather
+      // than assuming every authorization performs a NATS snapshot.
+      await registry.touch({ key: "apps/grids" });
       pending = requestWorkflowHttp(
         {
           url: "https://api.example.com/hooks",
