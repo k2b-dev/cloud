@@ -174,13 +174,17 @@ The app publishes its Skills with its registration, like
 started instance decides the content. Core installs and updates the Skills in
 the background; it never runs app code. Successful publication is remembered by
 content hash, so unchanged heartbeats do not write the catalog again. Missing
-schemas and failed writes remain retryable.
+schemas and failed writes remain retryable. The publisher of the advertised
+hash checks for its catalog on its own heartbeat; a missing catalog produces
+a warning and is republished without requiring a restart.
 
-Core keeps catalog sources while any replica of the app is registered,
-regardless of publication age. After the app leaves the observed registry,
-Core retains the sources for one day; returning cancels deletion. This removes
+Core keeps the catalog hash advertised in the observed registry, regardless of
+publication age. Other hashes and catalogs of removed apps receive one day of
+grace. An older replica taking over republishes its catalog before advertising
+it. Publication clears pending deletion in the same transaction. This removes
 catalog sources only. Installed Skills, administrator changes, and deletion
 markers remain intact. Unavailable apps are excluded from Skill discovery.
+Follow the [Core-first upgrade order](/en/docs/operations/scaling-and-shutdown#upgrade-help-and-skill-publication).
 
 To rename a Skill, ship it under the new name. The old one becomes unavailable
 and an administrator can delete it.

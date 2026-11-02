@@ -8,6 +8,7 @@ import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-ac
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
+import { appCatalogExists } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
@@ -118,7 +119,7 @@ import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
-import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
+import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry, getApp } from "./registry";
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
@@ -845,10 +846,26 @@ export const defineApp = <
       const heartbeat = createHeartbeat(meta.id, entry, {
         registry: appRegistry(),
         membership,
-        beforeWrite: async () => {
-          if (compiledHelp) await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus));
+        beforeWrite: async (force = false) => {
+          const current = force ? null : await getApp(meta.id);
+          if (compiledHelp)
+            await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus), {
+              force,
+              verify:
+                current?.help?.manifestHash === compiledHelp.corpus.manifestHash
+                  ? () => appCatalogExists("help.corpora", meta.id, compiledHelp.corpus.manifestHash)
+                  : undefined,
+              onMissing: () => log.warn("Published Help catalog is missing; republishing", { appId: meta.id }),
+            });
           if (appSkills && skillsManifestHash)
-            await publishSkills(skillsManifestHash, () => registerAppSkills(meta.id, appSkills, skillsManifestHash));
+            await publishSkills(skillsManifestHash, () => registerAppSkills(meta.id, appSkills, skillsManifestHash), {
+              force,
+              verify:
+                current?.skills?.manifestHash === skillsManifestHash
+                  ? () => appCatalogExists("ai.app_skill_catalogs", meta.id, skillsManifestHash)
+                  : undefined,
+              onMissing: () => log.warn("Published Skill catalog is missing; republishing", { appId: meta.id }),
+            });
         },
         onError: (error) =>
           log.error("Registry heartbeat failed", {

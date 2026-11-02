@@ -3,6 +3,7 @@ import type { Sync } from "@k2b/sync";
 import * as appSkills from "../ai/app-skills";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import { defineHelp } from "../server/help";
+import * as catalogStore from "../services/app-catalog-store";
 import * as helpStore from "../services/help/store";
 import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
@@ -11,6 +12,7 @@ import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import * as processSync from "./process-sync";
+import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
 import * as workload from "./workload-credential";
 
@@ -20,7 +22,7 @@ describe("application startup readiness", () => {
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
       const events: string[] = [];
-      let publishCatalogs: (() => Promise<void>) | undefined;
+      let publishCatalogs: ((force?: boolean) => Promise<void>) | undefined;
       const helpWrite = spyOn(helpStore, "registerHelp").mockResolvedValue(undefined);
       const skillWrite = spyOn(appSkills, "registerAppSkills").mockResolvedValue(true);
 
@@ -43,7 +45,11 @@ describe("application startup readiness", () => {
           release: () => step("setup-lock-release").then(() => true),
         }),
       } as unknown as Sync;
+      const current = spyOn(registry, "getApp").mockResolvedValue(null);
+      const exists = spyOn(catalogStore, "appCatalogExists").mockResolvedValue(true);
       const spies = [
+        current,
+        exists,
         helpWrite,
         skillWrite,
         spyOn(workload, "createAppWorkloadCredential").mockImplementation(() => ({
@@ -155,9 +161,35 @@ describe("application startup readiness", () => {
         } else {
           const server = await started;
           expect(publishCatalogs).toBeDefined();
+          const corpus = helpWrite.mock.calls[0]?.[0];
+          const skillHash = skillWrite.mock.calls[0]?.[2];
+          if (!corpus || !skillHash) throw new Error("Missing published catalogs");
+          current.mockResolvedValue({
+            id: "startup-test",
+            name: "Startup test",
+            icon: "box",
+            description: "Startup regression",
+            baseUrl: "http://startup-test:3000",
+            routes: ["/api/startup-test"],
+            help: { manifestHash: corpus.manifestHash, pageBase: "/help", baseLocale: "en" },
+            skills: { manifestHash: skillHash },
+          });
           for (let round = 0; round < 60; round++) await publishCatalogs!();
           expect(helpWrite).toHaveBeenCalledTimes(1);
           expect(skillWrite).toHaveBeenCalledTimes(1);
+          expect(exists).toHaveBeenCalledTimes(120);
+          exists.mockResolvedValue(false);
+          await publishCatalogs!();
+          expect(helpWrite).toHaveBeenCalledTimes(2);
+          expect(skillWrite).toHaveBeenCalledTimes(2);
+          exists.mockResolvedValue(true);
+          current.mockResolvedValue(null); // Standby with a different or absent registry entry does not republish old hashes.
+          await publishCatalogs!();
+          expect(helpWrite).toHaveBeenCalledTimes(2);
+          expect(skillWrite).toHaveBeenCalledTimes(2);
+          await publishCatalogs!(true); // Membership adoption cancels source retention before advertising.
+          expect(helpWrite).toHaveBeenCalledTimes(3);
+          expect(skillWrite).toHaveBeenCalledTimes(3);
           if (skipSetup) {
             expect(events).not.toContain("setup");
             expect(events).not.toContain("setup-lock-ready");

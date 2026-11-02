@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 import { z } from "zod";
 import { sql } from "../runtime/clients";
+import { clearCatalogRemoval } from "../services/app-catalog-store";
 import { logger } from "../services/logging";
 import { AI_SKILL_CATALOG_MAX_CHARS, aiSkillCatalogChars } from "./skill-catalog";
 import { type AiSkillContent, canonicalHash, contentHash, validateSkillContent } from "./skill-content";
@@ -83,10 +84,14 @@ export const registerAppSkills = async (
       await tx`SET LOCAL statement_timeout = '10s'`.simple();
       const renewed = await tx`UPDATE ai.app_skill_catalogs SET last_seen_at = now()
         WHERE app_id = ${appId} AND manifest_hash = ${manifestHash} RETURNING app_id`;
-      if (renewed.length) return;
+      if (renewed.length) {
+        await clearCatalogRemoval(tx, "ai.app_skill_catalogs", appId, manifestHash);
+        return;
+      }
       await tx`INSERT INTO ai.app_skill_catalogs(app_id, manifest_hash, skills)
         VALUES (${appId}, ${manifestHash}, (${JSON.stringify(skills)}::text)::jsonb)
         ON CONFLICT (app_id, manifest_hash) DO UPDATE SET last_seen_at = now()`;
+      await clearCatalogRemoval(tx, "ai.app_skill_catalogs", appId, manifestHash);
     });
     return true;
   } catch (error) {

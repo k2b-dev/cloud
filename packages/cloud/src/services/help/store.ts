@@ -2,7 +2,7 @@ import type { SQL } from "bun";
 import { listApps } from "../../_internal/registry";
 import { sql } from "../../runtime/clients";
 import type { HelpAccessLevel, HelpKind } from "../../shared/help";
-import { cleanupAppCatalogs } from "../app-catalog-store";
+import { cleanupAppCatalogs, clearCatalogRemoval } from "../app-catalog-store";
 import { ensureSchema, toPgTextArray } from "../postgres";
 import type { HelpCorpus, HelpMetadata } from "./types";
 
@@ -61,11 +61,15 @@ export const registerHelp = async (corpus: HelpCorpus, db: SQL = sql): Promise<v
     await tx`SET LOCAL statement_timeout = '10s'`.simple();
     const renewed = await tx`UPDATE help.corpora SET last_seen_at = clock_timestamp()
       WHERE app_id = ${corpus.appId} AND manifest_hash = ${corpus.manifestHash} RETURNING app_id`;
-    if (renewed.length) return;
+    if (renewed.length) {
+      await clearCatalogRemoval(tx, "help.corpora", corpus.appId, corpus.manifestHash);
+      return;
+    }
     const inserted = await tx`INSERT INTO help.corpora(app_id, manifest_hash, base_locale)
       VALUES (${corpus.appId}, ${corpus.manifestHash}, ${corpus.baseLocale})
       ON CONFLICT (app_id, manifest_hash) DO UPDATE SET last_seen_at = clock_timestamp()
       RETURNING (xmax = 0) AS inserted`;
+    await clearCatalogRemoval(tx, "help.corpora", corpus.appId, corpus.manifestHash);
     if (!inserted[0]?.inserted) return;
     for (const [locale, documents] of [[corpus.baseLocale, corpus.documents] as const, ...Object.entries(corpus.documentsByLocale)]) {
       const config = locale.split("-")[0] === "de" ? "german" : locale.split("-")[0] === "en" ? "english" : "simple";
@@ -86,12 +90,7 @@ export const registerHelp = async (corpus: HelpCorpus, db: SQL = sql): Promise<v
 
 /** Explicit Help cleanup uses the same registry-based retention as Core. */
 export const cleanupHelp = async (db: SQL = sql): Promise<void> => {
-  await cleanupAppCatalogs(
-    (await listApps()).map((app) => app.id),
-    db,
-    undefined,
-    ["help.corpora"],
-  );
+  await cleanupAppCatalogs(await listApps(), db, undefined, ["help.corpora"]);
 };
 
 export type HelpSelection = { app_id: string; app_name: string; manifest_hash: string; locales: string[] };

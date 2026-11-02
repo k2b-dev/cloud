@@ -32,20 +32,30 @@ test("catalog maintenance does no storage work across 60 lease-only rounds and o
       await change!();
     }
     expect(cleanup).toHaveBeenCalledTimes(1);
+    apps = [{ ...apps[0]!, skills: { manifestHash: "new" } }];
+    await change!();
+    expect(cleanup).toHaveBeenCalledTimes(2); // A hash change, with identical app membership, must invalidate retention.
     apps = [];
     const deadline = epoch + 60 * 60_000 + APP_CATALOG_RETENTION_MS;
     cleanup.mockResolvedValue(deadline);
     await change!();
     expect(cleanup).toHaveBeenLastCalledWith([]);
-    expect(cleanup).toHaveBeenCalledTimes(2);
+    expect(cleanup).toHaveBeenCalledTimes(3);
     expect(timer).toHaveBeenLastCalledWith(expect.any(Function), APP_CATALOG_RETENTION_MS);
     const pending = timer.mock.calls.at(-1)?.[0];
     if (typeof pending !== "function") throw new Error("Missing retention wake-up");
-    setSystemTime(new Date(deadline));
-    cleanup.mockResolvedValue(null);
+    setSystemTime(new Date(deadline - 5)); // Timer fires early relative to the wall clock.
     pending();
     await change!();
-    expect(cleanup).toHaveBeenCalledTimes(3);
+    expect(cleanup).toHaveBeenCalledTimes(4);
+    expect(timer).toHaveBeenLastCalledWith(expect.any(Function), 5);
+    const rearmed = timer.mock.calls.at(-1)?.[0];
+    if (typeof rearmed !== "function") throw new Error("Missing re-armed retention wake-up");
+    setSystemTime(new Date(deadline));
+    cleanup.mockResolvedValue(null);
+    rearmed();
+    await change!();
+    expect(cleanup).toHaveBeenCalledTimes(5);
   } finally {
     await stop();
     timer.mockRestore();

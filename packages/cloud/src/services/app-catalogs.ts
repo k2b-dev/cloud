@@ -12,17 +12,21 @@ export const startAppCatalogMaintenance = (tables?: readonly AppCatalogTable[]):
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | undefined;
   let dirty = false;
-  const refresh = (): Promise<void> => {
+  let forced = false;
+  const refresh = (force = false): Promise<void> => {
     dirty = true;
+    forced ||= force;
     if (inFlight) return inFlight;
     inFlight = (async () => {
       while (dirty && !controller.signal.aborted) {
         dirty = false;
-        const ids = (await listApps()).map((app) => app.id).sort();
-        const current = JSON.stringify(ids);
-        if (state === current && (next === null || next > Date.now())) continue;
+        const runForced = forced;
+        forced = false;
+        const apps = await listApps();
+        const current = JSON.stringify(apps.map((app) => [app.id, app.help?.manifestHash, app.skills?.manifestHash]).sort());
+        if (!runForced && state === current && (next === null || next > Date.now())) continue;
         clearTimeout(timer);
-        next = tables ? await cleanupAppCatalogs(ids, undefined, undefined, tables) : await cleanupAppCatalogs(ids);
+        next = tables ? await cleanupAppCatalogs(apps, undefined, undefined, tables) : await cleanupAppCatalogs(apps);
         state = current;
         if (next !== null && !controller.signal.aborted) {
           timer = setTimeout(() => void retry(), Math.max(1, next - Date.now()));
@@ -35,7 +39,7 @@ export const startAppCatalogMaintenance = (tables?: readonly AppCatalogTable[]):
   };
   const retry = async () => {
     try {
-      await refresh();
+      await refresh(true);
     } catch (error) {
       log.error("App catalog cleanup failed; retrying", { error: String(error) });
       if (!controller.signal.aborted) timer = setTimeout(() => void retry(), 60_000);

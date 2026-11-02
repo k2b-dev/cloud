@@ -5,16 +5,31 @@ for (const count of [5, 20]) {
   test(`${count} apps publish each catalog once across an idle hour, then once per changed hash`, async () => {
     setSystemTime(new Date("2030-01-01T00:00:00Z"));
     const writes = { help: 0, skills: 0 };
+    let reads = 0;
+    const options = {
+      verify: async () => {
+        reads++;
+        return true;
+      },
+    };
     const apps = Array.from({ length: count }, () => ({ help: createCatalogPublication(), skills: createCatalogPublication() }));
     const round = async (hash: string) => {
       for (const app of apps) {
-        await app.help(hash, async () => {
-          writes.help++;
-        });
-        await app.skills(hash, async () => {
-          writes.skills++;
-          return true;
-        });
+        await app.help(
+          hash,
+          async () => {
+            writes.help++;
+          },
+          options,
+        );
+        await app.skills(
+          hash,
+          async () => {
+            writes.skills++;
+            return true;
+          },
+          options,
+        );
       }
     };
     try {
@@ -25,6 +40,7 @@ for (const count of [5, 20]) {
         await round("initial");
       }
       expect(writes).toEqual({ help: count, skills: count });
+      expect(reads).toBe(2 * count * 60);
       await apps[0]!.help("changed", async () => {
         writes.help++;
       });
@@ -62,4 +78,30 @@ test("missing schemas and failed writes retry; concurrent preparations publish o
     ),
   );
   expect(writes).toBe(1);
+});
+
+test("a missing advertised source is warned about and repaired exactly once", async () => {
+  const publish = createCatalogPublication();
+  let source = false;
+  let writes = 0;
+  let warnings = 0;
+  const write = async () => {
+    writes++;
+    source = true;
+  };
+  const options = {
+    verify: async () => source,
+    onMissing: () => {
+      warnings++;
+    },
+  };
+  await publish("hash", write, options);
+  source = false;
+  await Promise.all([publish("hash", write, options), publish("hash", write, options)]);
+  expect(writes).toBe(2);
+  expect(warnings).toBe(1);
+  await publish("hash", write, options);
+  expect(writes).toBe(2);
+  await publish("hash", write, { force: true });
+  expect(writes).toBe(3);
 });

@@ -381,15 +381,19 @@ additional declarations.
 
 Cloud writes the collection before advertising the app at startup. Successful
 publication is remembered by content hash; unchanged heartbeats do not write
-the collection again. A failed publication remains retryable through the
+the collection again. The publisher of the advertised hash checks that its
+collection still exists on its own heartbeat. Missing collections produce a
+warning and are republished; failed publications remain retryable through the
 existing heartbeat failure policy.
 
-Core retains all stored versions while the app is present in the observed
-registry, including versions used by older replicas during a rolling update.
-When the app leaves the registry, Core starts a one-day retention period.
-Returning before that deadline cancels deletion. Stored collections from
-unavailable applications are not exposed as current Help. Retention uses
-registry membership, never the age of a publication or its last renewal.
+Core retains the hash advertised in the observed registry. Other hashes and
+collections of removed apps receive one day of grace before deletion. An older
+replica taking over republishes its collection before advertising it. Publishing
+a collection clears its pending deletion in the same transaction. Stored
+collections from unavailable applications are not exposed as current Help.
+Retention uses the registered app and hash, never the age of a publication or
+its last renewal. See [upgrade order](/en/docs/operations/scaling-and-shutdown#upgrade-help-and-skill-publication)
+before upgrading application publishers.
 
 ## Use the automatically derived surfaces
 
@@ -501,7 +505,8 @@ isolated from ordinary chat and app capabilities; a later tool call can retry.
 Every reader selects the hash advertised by the current app registration.
 Missing articles or versions are not served from an older collection. Database
 failures remain errors rather than appearing as successful empty searches.
-Restart the application to republish a collection removed from the database.
+The active publisher restores a missing collection on its next heartbeat and
+logs a warning. Restarting the application also republishes immediately.
 
 ## Search product guidance
 

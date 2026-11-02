@@ -1,6 +1,6 @@
-### Registry owns catalog retention
+### Registry owns catalog retention and publishers repair missing sources
 
-- **What happened:** Removing periodic Help and Skill writes would let the previous six-minute cleanup delete catalogs belonging to healthy apps.
-- **Root cause:** Catalog retention used `last_seen_at` as a second app-liveness clock even though the observed app registry already owns liveness.
-- **Error class:** Removing periodic writes without migrating consumers that depend on their timestamps.
-- **Guard:** `catalog-publication.test.ts` counts startup and changed-hash writes for 5 and 20 apps over 60 frozen-clock heartbeat rounds. `app-catalogs.test.ts` verifies zero extra storage passes for lease renewals. `app-catalog-store.integration.test.ts` protects healthy catalogs with old timestamps, accepts 0.55.0 renewal statements without duplication, cancels deletion on return, and deletes removed catalogs after one day.
+- **What happened:** Removing periodic Help and Skill writes let age-based cleanup delete healthy catalogs. Retaining every version of a running app instead would accumulate obsolete catalogs indefinitely; memoizing successful writes also hid later source loss.
+- **Root cause:** Retention tracked a second liveness clock instead of the advertised app/hash pair, and a successful publication cache was treated as proof that durable sources still existed.
+- **Error class:** Removing renewal writes without migrating retention, takeover, and recovery together.
+- **Guard:** `catalog-publication.test.ts` counts exactly one startup write per catalog for 5 and 20 apps over 60 frozen-clock heartbeat rounds, one per changed hash, and one per missing-source repair. `define-app.startup.test.ts` checks real publisher wiring. `heartbeat.test.ts` requires an older replica to republish before takeover. `app-catalogs.test.ts` verifies zero extra storage passes for lease renewals and re-arms a timer firing 5 ms early. `app-catalog-store.integration.test.ts` protects healthy advertised hashes, expires obsolete hashes and every localized article after one day, accepts 0.55.0 renewals without duplication, clears removal on publication at the day boundary, and repairs sources against current and older Core schemas.
