@@ -3,7 +3,13 @@ import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
-import { type CapabilityExecutionContext, capabilityResultSchema, NormalizedCapabilityCallSchema, type User } from "@k2b/cloud/contracts";
+import {
+  type CapabilityExecutionContext,
+  type CloudRuntime,
+  capabilityResultSchema,
+  NormalizedCapabilityCallSchema,
+  type User,
+} from "@k2b/cloud/contracts";
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
 import { accounts, coreSettings, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
@@ -561,7 +567,7 @@ suiteFor(
     expect(failed.run.state).toBe("failed");
     expect(failed.calls[0]).toMatchObject({ state: "failed", result: { ok: false, error: { code: "not_found" } } });
     // Load the real page model through Core queries and the activation access route.
-    const pageApp = new Hono<AuthContext>();
+    const pageApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
     pageApp.use("*", async (c, next) => {
       c.set("actor", author.authority.actor);
       c.set("user", lea);
@@ -589,11 +595,16 @@ suiteFor(
           }
         : null,
     );
-    const pageFetch = spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-      const request = new Request(url, init);
-      if (new URL(request.url).pathname !== "/api/code/access") throw new Error("Unexpected page transport");
-      return pageApp.fetch(request);
-    });
+    const pageFetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          const request = new Request(url, init);
+          if (new URL(request.url).pathname !== "/api/code/access") throw new Error("Unexpected page transport");
+          return pageApp.fetch(request);
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
     try {
       await coreSettings.set("app.url", issuer);
       const response = await pageApp.request("/page", { headers: { cookie: "session_token=c25-page-lea" } });

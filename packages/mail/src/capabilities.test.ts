@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
 import { capabilityCallFromTool, capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
-import { assertResourceOpenLink, compileCapabilityManifest, typeViewIssues } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityActionCallReviewSchema,
@@ -9,6 +9,7 @@ import {
   type CapabilityInvocationResult,
   capabilityResultSchema,
   cloudResourceHref,
+  typeViewIssues,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { err, fail } from "@k2b/stdlib";
