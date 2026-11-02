@@ -1,5 +1,5 @@
 import type { LinkNavigateEvent, NavigationScrollMode } from "@k2b/ssr/nav";
-import type { Accessor } from "solid-js";
+import { type Accessor, createMemo, getOwner, runWithOwner } from "solid-js";
 import type { IntentTone } from "../semantics";
 import type { AppWorkspaceSidebarSwitcherProps } from "./SidebarSwitcher";
 
@@ -96,13 +96,21 @@ export function findNavigationItem(items: readonly NavigationItem[], id: string)
 
 /** One live source for renderers; no router, registry, fetching or persisted state. */
 export function createNavigation(options: NavigationOptions) {
+  const owner = getOwner();
+  let current: Accessor<readonly NavigationItem[]> | undefined;
+  // One tree per change, however many rows read it, and none for a menu that never opens: rebuilding a mailbox's
+  // 350 folders for each read took eight seconds to open the phone menu.
+  const items: Accessor<readonly NavigationItem[]> = () => {
+    current ??= owner ? (runWithOwner(owner, () => createMemo(options.items)) ?? options.items) : options.items;
+    return current();
+  };
   return {
-    items: options.items,
+    items,
     switcher: options.switcher,
     onNavigate: options.onNavigate,
     onExpandedChange: options.onExpandedChange,
     async activate(id: string) {
-      const item = findNavigationItem(options.items(), id);
+      const item = findNavigationItem(items(), id);
       if (item?.action) await options.onAction?.(item.action);
     },
   };
