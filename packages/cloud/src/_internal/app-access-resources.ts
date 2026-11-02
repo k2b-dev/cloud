@@ -15,10 +15,10 @@ import { getProcessApplicationId } from "./process-identity";
 import { getApp } from "./registry";
 
 export const RESOURCE_ACCESS_PATH = "/api/_internal/app-access/v1";
-// Leave six seconds of the ten-second request idle window for authentication,
-// grants SQL and rendering. Each queued app gets a fresh one-second probe; no retries.
-export const RESOURCE_ACCESS_TIMEOUT_MS = 4_000;
-export const RESOURCE_ACCESS_PROBE_TIMEOUT_MS = 1_000;
+// Leave four seconds of the ten-second request idle window for authentication,
+// grants SQL and rendering. Each queued app gets a fresh three-second probe; no retries.
+export const RESOURCE_ACCESS_TIMEOUT_MS = 6_000;
+export const RESOURCE_ACCESS_PROBE_TIMEOUT_MS = 3_000;
 // Entry and subsequent discovery must together finish before the ten-second idle timeout.
 export const RESOURCE_ACCESS_ENTRY_TIMEOUT_MS = 8_000;
 // Core's relay and resource resolver read the same live registry row in one
@@ -146,7 +146,7 @@ const resolveResourceAccess = async (
     reported = true;
     signal.removeEventListener("abort", report);
     const elapsedMs = Math.round(performance.now() - started);
-    if (elapsedMs < RESOURCE_ACCESS_PROBE_TIMEOUT_MS / 4) return;
+    if (elapsedMs < 250) return;
     nextPhase("done");
     const key = `${hop}:${appId}`;
     const previous = slowProbes.get(key);

@@ -2,7 +2,13 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { bindAppAccessRequest } from "../_internal/app-access-request";
-import { bindResourceAppAccess, resourceAppAccess, startPageResourceAccess } from "../_internal/app-access-resources";
+import {
+  bindResourceAppAccess,
+  RESOURCE_ACCESS_PROBE_TIMEOUT_MS,
+  RESOURCE_ACCESS_TIMEOUT_MS,
+  resourceAppAccess,
+  startPageResourceAccess,
+} from "../_internal/app-access-resources";
 import { createStatusPreservingSsrHandler } from "../_internal/status-preserving-ssr";
 import { appAccess, compileAppAccess, type ResourceAppAccessAdapter } from "../contracts/app-access";
 import type { AppRegistryEntry } from "../contracts/registry";
@@ -88,6 +94,12 @@ test("an app page answers with healthy apps despite a stalled owner, and the nex
   }
 }, 4000);
 
+test("discovery gives each owner three seconds and shares six seconds below the idle timeout", () => {
+  expect(RESOURCE_ACCESS_PROBE_TIMEOUT_MS).toBe(3_000);
+  expect(RESOURCE_ACCESS_TIMEOUT_MS).toBe(6_000);
+  expect(RESOURCE_ACCESS_TIMEOUT_MS).toBeLessThan(REQUEST_IDLE_TIMEOUT_SECONDS * 1000);
+});
+
 test("a full queue has a default shared deadline below the server idle timeout", async () => {
   let active = 0;
   let peak = 0;
@@ -117,14 +129,14 @@ test("a full queue has a default shared deadline below the server idle timeout",
         fixtures.map(({ app }) => app),
       ),
     ).toEqual(new Set());
-    expect(performance.now() - begin).toBeLessThan((REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
+    expect(performance.now() - begin).toBeLessThan(REQUEST_IDLE_TIMEOUT_SECONDS * 1000);
     expect(peak).toBe(4);
     expect(active).toBe(0);
     expect(started).toBeLessThan(fixtures.length);
   } finally {
     for (const fixture of fixtures) fixture.stop();
   }
-}, 6000);
+}, 8000);
 
 test("one wave timing out leaves a fresh per-app budget for queued healthy owners", async () => {
   const signals = new Set<AbortSignal>();
@@ -151,7 +163,7 @@ test("one wave timing out leaves a fresh per-app budget for queued healthy owner
   } finally {
     for (const fixture of fixtures) fixture.stop();
   }
-}, 2500);
+}, 5000);
 
 test("slow probe diagnostics identify the hop and phase, throttle repeated probes and omit authority", async () => {
   setSystemTime(new Date("2026-11-02T10:00:00Z"));

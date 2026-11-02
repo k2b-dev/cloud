@@ -199,18 +199,24 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   return null;
 };
 
-export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null => {
-  if (validateAppRegistryEntry(value) !== null) return null;
+export const parseAppRegistryEntry = (value: unknown): { value: AppRegistryEntry; reason: null } | { value: null; reason: string } => {
+  const reason = validateAppRegistryEntry(value);
+  if (reason !== null) return { value: null, reason };
   const entry = value as AppRegistryEntry;
   return {
-    ...entry,
-    ...(entry.platformPermissions !== undefined
-      ? {
-          platformPermissions: entry.platformPermissions.flatMap((permission) => {
-            const parsed = PlatformPermissionSchema.safeParse(permission);
-            return parsed.success ? [parsed.data] : [];
-          }),
-        }
-      : {}),
+    reason: null,
+    value: {
+      ...entry,
+      ...(entry.platformPermissions !== undefined
+        ? {
+            platformPermissions: entry.platformPermissions.flatMap((permission) => {
+              const parsed = PlatformPermissionSchema.safeParse(permission);
+              return parsed.success ? [parsed.data] : [];
+            }),
+          }
+        : {}),
+    },
   };
 };
+
+export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null => parseAppRegistryEntry(value).value;
