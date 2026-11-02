@@ -50,6 +50,18 @@ describe("one page's provider list", () => {
     expect(list.requested()).toBe(false);
   });
 
+  test("a dialog's signal reaches the load it starts, so closing it stops the catalog read", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const list = createProviderList(async (signal) => {
+      signals.push(signal);
+      return [source("drive")];
+    });
+    const dialog = new AbortController();
+    await list.providers(dialog.signal);
+    await list.refresh(dialog.signal);
+    expect(signals).toEqual([dialog.signal, dialog.signal]);
+  });
+
   test("without a kept list, a refresh is the first load", async () => {
     let loads = 0;
     const list = createProviderList(async () => {

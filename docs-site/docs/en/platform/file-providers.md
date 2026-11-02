@@ -36,16 +36,17 @@ already have:
 ```ts
 import { chooseFiles } from "@k2b/cloud/browser/files";
 
-const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const MAX_DRAFT_BYTES = 100 * 1024 * 1024;
 
 const attach = async () => {
-  const files = await chooseFiles({ multiple: true, maxBytes: MAX_ATTACHMENT_BYTES });
+  const files = await chooseFiles({ multiple: true, maxFiles: 20, maxTotalBytes: MAX_DRAFT_BYTES });
   if (files.length > 0) await uploadAttachments(files);
 };
 ```
 
 It resolves ordinary `File` objects with name, type, size, and modification
-time, or `[]` when the person cancels. Your limits, progress display,
+time, or `[]` when the person cancels. A provider file's name is cleaned and
+its type is what its first bytes prove (see **Reads** below). Your limits, progress display,
 permission checks, and scans keep working on them unchanged. Mail drafts,
 Spaces task media, Grids file fields, Notebooks attachments, and Assistant
 chats and Projects attach files this way.
@@ -56,17 +57,21 @@ chats and Projects attach files this way.
   capability catalog refuses, such as someone on a public page, has no
   providers either. That answer is not kept: the next call asks the catalog
   again, so a session renewed in the meantime finds its providers.
-- **With providers:** it opens one chooser. **This device** comes first, then
-  every provider. Inside a provider, people browse folders page by page,
-  filter by name, and choose files. See the
+- **With providers:** it opens one compact file dialog on **This device**,
+  with every provider beside it. Inside a provider, people browse folders
+  page by page, filter by name, and choose files. See the
   [file chooser](/en/ui/cloud/file-chooser) for the presentation.
-- **`accept`** (`<input accept>` syntax) and **`maxBytes`** limit what can be
-  chosen. Provider files that do not match are shown disabled with the reason.
-  `maxBytes` is the most you take from providers in one choice: each file and
-  all chosen files together stay within it. A single file is also limited by
-  the provider's read limit; Files reads up to 50 MiB. Pass your real budget,
-  for example the attachment limit of a draft. Files from the device are not
-  checked here, so keep your own checks.
+- **`accept`** (`<input accept>` syntax) limits what can be chosen. Provider
+  files that do not match are shown disabled with the reason.
+- **`maxBytes`** is the largest single file you take from a provider. The
+  provider's read limit applies as well; Files reads up to 50 MiB.
+- **`maxFiles`** and **`maxTotalBytes`** bound one choice, for example the
+  attachments a draft can still take and its attachment limit. Above them,
+  **Add** stays disabled and the status says why. A single file above
+  `maxTotalBytes` is shown disabled like one above `maxBytes`. Without them,
+  only the limit per file applies. The dialog shows the limits you pass on
+  **This device** and in the status. Files from the device are not checked
+  here, so keep your own checks.
 - **`multiple`** allows several files; it defaults to `false`. **`signal`**
   closes the chooser, or stops waiting for the device's dialog, and resolves
   `[]`.
@@ -82,13 +87,29 @@ chats and Projects attach files this way.
   receive it; other providers keep listing as before. Refs are hints, never
   access. Pass **`noMatchingFiles`** to title an empty provider root that
   received context, for example "No matching files for these recipients".
-  It defaults to "No matching files" and offers **Choose another source**.
-- **Reads** run through the provider's read stream, at most two at a time,
-  with progress per file. **Cancel** stops them. Each read checks the file's
-  current size and type again before any byte moves, and a body that differs
-  from the announced size fails instead of arriving cut off. The chosen files
-  stay in browser memory until your upload has read them, at most `maxBytes`
-  together. Without `maxBytes`, only the provider's limit per file applies.
+  It defaults to "No matching files"; the other sources stay beside it.
+- **Reads** run through the provider's read stream on the same-origin gateway
+  path, at most three at a time, with progress per file. **Cancel** stops
+  them, and closing the dialog aborts every request and drops what was read.
+  Each read checks the file's current size and type again before any byte
+  moves, and a body that differs from the announced size fails instead of
+  arriving cut off. The chosen files stay in browser memory until your upload
+  has read them, at most `maxTotalBytes` together.
+- **Names and types:** a provider's names are cleaned when listed and when
+  read: control characters, `/`, `\`, and bidi controls (U+061C, U+200E,
+  U+200F, U+202A to U+202E, U+2066 to U+2069) are removed, so
+  `invoice\u202Efdp.exe` stays `invoicefdp.exe`. A name keeps at most 255
+  UTF-8 bytes and its extension. The provider's media type is only a hint:
+  the `File` gets the type its first bytes prove (images, PDF, common audio
+  and video), otherwise `application/octet-stream`. When `accept` names
+  images, PDF, audio, or video, only bytes that prove a matching type pass;
+  tokens bytes cannot prove, such as `.docx` or `text/*`, still take a file
+  by its name or hinted type. Serve stored files with `Content-Disposition:
+  attachment` and `X-Content-Type-Options: nosniff` as for any upload.
+- **A provider that is gone:** when a provider's root answers 403 or 404, it
+  leaves the sources of this dialog, and the status says it is no longer
+  available. A folder deeper inside that answers 403 or 404 shows the
+  reason with **Up**.
 - **Access:** every folder page and every read is an ordinary capability
   call as the signed-in person; the provider authorizes each one, and Cloud
   records it like any other call. Showing a provider is not a grant.
@@ -192,10 +213,10 @@ Mail attachments, one or all of a message and each in the details panel,
 Spaces task media, Notebooks attachments, Grids file fields and record
 versions, and Assistant chat and Project files save this way.
 
-- **Where:** the dialog lists every provider whose `save` passes
-  `fileProviderIssues`. With one, such as Files, it opens straight in that
-  provider; with none, it says calmly that no application can store files and
-  points to the download. When the catalog refused the page earlier, such as
+- **Where:** the dialog uses the chooser's frame and lists every provider
+  whose `save` passes `fileProviderIssues` on the left. It opens in the
+  first, such as Files; with none, it says calmly that no application can
+  store files and points to the download. When the catalog refused the page earlier, such as
   during a session renewal, the dialog asks it again. Inside a provider,
   people browse and filter folders as in the chooser. Files are listed so
   that taken names are visible, but only folders open. **Save** is enabled in a folder whose page reports
@@ -206,6 +227,8 @@ versions, and Assistant chat and Project files save this way.
   Without it, a `content-length` above the limit or a body that grows past it
   stops the read. Files takes up to 50 MiB. At most two files are read and
   saved at once, so the browser holds at most two of them.
+  Path separators, control characters, and bidi controls never reach a
+  saved name.
 - **Names:** path separators and control characters in `name` become `_`.
   Saving never replaces a file. When the name is taken, that file asks for
   another name, prefilled as `Report (2).pdf`; the other files continue.
@@ -461,12 +484,14 @@ IDs to call; invoke them through the ordinary capability client and stream
 transfer.
 
 `chooseFiles()` and `saveFiles()` do this for you. The page reads every
-catalog page once per load, while the browser is idle, and keeps the
-applications whose `list` and `read` pass `fileProviderIssues`; saving also
-needs a `save` that passes. If the list is not known yet when someone
-clicks, the chooser opens at once and providers join below **This device** as
-they arrive. A failed catalog read shows **Try again** instead of an empty
-list.
+catalog page while the browser is idle and keeps the applications whose
+`list` and `read` pass `fileProviderIssues`; saving also needs a `save` that
+passes. Each dialog shows the kept list at once and reads the catalog once
+more behind it, so a new or removed provider shows up without a reload; a
+failed refresh keeps the list. If the list is not known yet when someone
+clicks, the chooser opens at once with two grey loading rows below **This
+device**, and providers take their place as they arrive. A failed catalog
+read shows **Try again** in that place instead of an empty list.
 
 ## Roll out a provider
 

@@ -6,7 +6,9 @@ export type { ChooseFilesOptions } from "./FileChooser";
 export { SAVE_FILES_ICON, type SavedFile, type SaveFileSource, type SaveFilesOptions } from "./save-files";
 
 const pageLocale = () => (typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
-const providers = createProviderList(async () => (await import("./file-providers")).loadFileProviders({ locale: pageLocale() }));
+const providers = createProviderList(async (signal) =>
+  (await import("./file-providers")).loadFileProviders({ locale: pageLocale() }, signal),
+);
 const saving = createFileSaving(providers);
 
 /**

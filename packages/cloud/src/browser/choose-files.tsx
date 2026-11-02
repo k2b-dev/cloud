@@ -34,6 +34,8 @@ export const createFileChoosing = (
     // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
     let open = true;
+    // Closing stops the catalog reads this dialog started; the page's own discovery keeps running.
+    const discovery = new AbortController();
     const settle = (request: Promise<readonly FileProviderSource[]>) =>
       request.then(
         (value) => {
@@ -45,9 +47,9 @@ export const createFileChoosing = (
       );
     const load = () => {
       setProviders({ state: "loading" });
-      void settle(list.providers());
+      void settle(list.providers(discovery.signal));
     };
-    if (known) void settle(list.refresh());
+    if (known) void settle(list.refresh(discovery.signal));
     else load();
     return (async () => {
       let abort = () => {};
@@ -59,7 +61,10 @@ export const createFileChoosing = (
           if (signal?.aborted) abort();
         }),
       ]).finally(() => signal?.removeEventListener("abort", abort));
-      if (!chooser) return [];
+      if (!chooser) {
+        discovery.abort();
+        return [];
+      }
       return dialogCore
         .open<File[]>(
           (close) => <chooser.FileChooser options={options} providers={providers} retryProviders={load} caller={caller} close={close} />,
@@ -75,6 +80,7 @@ export const createFileChoosing = (
         .finally(() => {
           // Answers that arrive after the dialog closed are dropped.
           open = false;
+          discovery.abort();
         });
     })();
   };

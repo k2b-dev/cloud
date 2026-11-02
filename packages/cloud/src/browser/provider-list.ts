@@ -13,12 +13,13 @@ const refused = (error: unknown) => error instanceof FileProviderError && (error
  * `refresh` reads the catalog again behind a kept list, once per dialog: the kept list shows at once, and the answer
  * replaces it when it arrives. A failed refresh keeps the list; a refusal empties it.
  */
-export const createProviderList = (loadProviders: () => Promise<FileProviderSource[]>) => {
+export const createProviderList = (loadProviders: (signal?: AbortSignal) => Promise<FileProviderSource[]>) => {
   let request: Promise<readonly FileProviderSource[]> | undefined;
   let refreshing: Promise<readonly FileProviderSource[]> | undefined;
   const [known, setKnown] = createSignal<readonly FileProviderSource[] | undefined>(undefined);
-  const providers = (): Promise<readonly FileProviderSource[]> => {
-    request ??= loadProviders().then(
+  /** A `signal` stops a load this call starts, such as a dialog's that closed; a load already running continues. */
+  const providers = (signal?: AbortSignal): Promise<readonly FileProviderSource[]> => {
+    request ??= loadProviders(signal).then(
       (list) => {
         setKnown(list);
         return list;
@@ -32,10 +33,10 @@ export const createProviderList = (loadProviders: () => Promise<FileProviderSour
     );
     return request;
   };
-  const refresh = (): Promise<readonly FileProviderSource[]> => {
+  const refresh = (signal?: AbortSignal): Promise<readonly FileProviderSource[]> => {
     const kept = known();
-    if (!request || kept === undefined) return providers();
-    refreshing ??= loadProviders()
+    if (!request || kept === undefined) return providers(signal);
+    refreshing ??= loadProviders(signal)
       .then(
         (list) => {
           setKnown(list);

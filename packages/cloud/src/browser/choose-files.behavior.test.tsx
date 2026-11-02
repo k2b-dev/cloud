@@ -593,3 +593,40 @@ domTest("a provider whose root answers 403 or 404 leaves the sources with a shor
     view.cleanup();
   }
 });
+
+domTest("one budget for the whole transfer: reads that announce more than listed stop at maxTotalBytes", async () => {
+  const view = await chooser({ multiple: true, maxTotalBytes: 150 }, (path, input) => {
+    if (path.endsWith("/folder.list")) return folderPage([entry("a", 1), entry("b", 1), entry("c", 1)]);
+    if (path.endsWith("/file.read"))
+      return Response.json({
+        data: {},
+        stream: { id: input?.id ?? "", direction: "read", mediaType: "text/plain", size: 100, expiresAt: "2099-01-01T00:00:00.000Z" },
+      });
+    return new Response(new Uint8Array(100));
+  });
+  try {
+    view.button("Drive")!.click();
+    await waitForChooser(() => Boolean(view.row("a.txt")));
+    for (const name of ["a.txt", "b.txt", "c.txt"]) view.row(name)!.click();
+    view.add().click();
+    await waitForChooser(() => view.status().textContent === "1 of 3 ready, 2 failed");
+    expect(view.requests.filter((request) => request.path.endsWith("/streams/read"))).toHaveLength(1);
+    expect(view.closed).toEqual([]);
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});
+
+domTest("a provider that repeats an ID shows one entry, so one choice stays one file", async () => {
+  const view = await chooser({}, () => folderPage([entry("a", 1), { ...entry("a", 1), name: "copy.txt" }, entry("b", 1)]));
+  try {
+    view.button("Drive")!.click();
+    await waitForChooser(() => Boolean(view.row("a.txt")));
+    expect(view.row("copy.txt")).toBeUndefined();
+    expect(view.dom.document.querySelectorAll('[role="gridcell"]')).toHaveLength(2);
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});

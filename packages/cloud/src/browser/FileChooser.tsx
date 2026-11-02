@@ -65,8 +65,8 @@ type Download = {
   total: number;
   state: "waiting" | "loading" | "done" | "error";
   file?: File;
-  /** Why a read was refused: the file changed after it was listed and no longer fits. */
-  reason?: EntryProblem;
+  /** Why a read was refused: the file changed after it was listed and no longer fits, alone or with the others. */
+  reason?: EntryProblem | "total";
 };
 
 const DEVICE = "device";
@@ -205,7 +205,8 @@ export function FileChooser(props: {
   const total = () => chosen().reduce((sum, entry) => sum + entry.size, 0);
   /** Why the selection cannot be added, or `undefined` when it fits. */
   const overLimit = () => {
-    if (multiple && maxFiles !== undefined && chosen().length > maxFiles) return t().tooMany({ count: maxFiles });
+    const most = multiple ? maxFiles : 1;
+    if (most !== undefined && chosen().length > most) return t().tooMany({ count: most });
     if (maxTotal !== undefined && total() > maxTotal) return t().tooLargeTogether({ limit: bytes(maxTotal) });
     return undefined;
   };
@@ -243,6 +244,8 @@ export function FileChooser(props: {
     const previous = new Map(downloads.filter((item) => item.state === "done").map((item) => [item.entry.id, item]));
     setDownloads(files.map((entry) => previous.get(entry.id) ?? { entry, loaded: 0, total: entry.size, state: "waiting" }));
     setDownloading(true);
+    // One budget for the whole transfer: each read takes the size it announces, which may be more than was listed.
+    let used = downloads.reduce((sum, item) => sum + (item.file?.size ?? 0), 0);
     queueMicrotask(() => root?.querySelector<HTMLButtonElement>("[data-file-chooser-cancel]")?.focus());
     await eachLimited(
       downloads.map((_, index) => index),
@@ -250,20 +253,30 @@ export function FileChooser(props: {
       async (index) => {
         if (pending.signal.aborted || downloads[index]!.state === "done") return;
         setDownloads(index, { state: "loading", loaded: 0 });
+        let reserved = 0;
+        let overTotal = false;
         try {
           const file = await readProviderFile(open.provider, downloads[index]!.entry, {
             ...props.caller(),
             maxBytes: limit(),
             accept: props.options.accept,
             signal: pending.signal,
+            reserve: (size) => {
+              overTotal = maxTotal !== undefined && used + size > maxTotal;
+              if (overTotal) return false;
+              used += size;
+              reserved = size;
+              return true;
+            },
             onProgress: (loaded, size) => {
               if (!pending.signal.aborted) setDownloads(index, { loaded, total: size });
             },
           });
           if (!pending.signal.aborted) setDownloads(index, { state: "done", file });
         } catch (cause) {
+          used -= reserved;
           const code = cause instanceof FileProviderError ? cause.code : "";
-          const reason = code === "FILE_TOO_LARGE" ? "size" : code === "UNSUPPORTED_MEDIA_TYPE" ? "type" : undefined;
+          const reason = overTotal ? "total" : code === "FILE_TOO_LARGE" ? "size" : code === "UNSUPPORTED_MEDIA_TYPE" ? "type" : undefined;
           if (!pending.signal.aborted) setDownloads(index, { state: "error", reason });
         }
       },
@@ -385,6 +398,9 @@ export function FileChooser(props: {
                         <Match when={item.state === "waiting"}>{t().waiting}</Match>
                         <Match when={item.state === "done"}>{t().ready}</Match>
                         <Match when={item.state === "error" && item.reason === "size"}>{t().tooLarge({ limit: bytes(limit()) })}</Match>
+                        <Match when={item.state === "error" && item.reason === "total" && maxTotal !== undefined}>
+                          {t().tooLargeTogether({ limit: bytes(maxTotal ?? 0) })}
+                        </Match>
                         <Match when={item.state === "error" && item.reason === "type"}>{t().wrongType}</Match>
                         <Match when={item.state === "error"}>{t().readFailed}</Match>
                       </Switch>

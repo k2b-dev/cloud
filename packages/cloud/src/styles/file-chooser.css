@@ -240,7 +240,7 @@
   color: var(--k2b-text-muted);
 }
 
-.cloud-file-chooser__filter {
+.k2b-ui .cloud-file-chooser__filter {
   flex: 0 0 12rem;
 }
 
@@ -598,7 +598,7 @@
     padding: 0 var(--cloud-file-dialog-inset);
   }
 
-  .cloud-file-chooser__filter {
+  .k2b-ui .cloud-file-chooser__filter {
     display: none;
     flex: 1 1 auto;
   }
@@ -608,7 +608,7 @@
     flex: none;
   }
 
-  .cloud-file-chooser__toolbar[data-searching="true"] .cloud-file-chooser__filter {
+  .k2b-ui .cloud-file-chooser__toolbar[data-searching="true"] .cloud-file-chooser__filter {
     display: block;
   }
 

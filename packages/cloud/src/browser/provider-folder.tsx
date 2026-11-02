@@ -93,7 +93,16 @@ export const createProviderFolder = (props: {
         );
         if (pending.signal.aborted) return;
         batch(() => {
-          setItems((previous) => [...previous, ...page.items]);
+          // An ID names one entry: a repeated one, on this page or an earlier one, is left out.
+          setItems((previous) => {
+            const seen = new Set(previous.map((entry) => entry.id));
+            const fresh = page.items.filter((entry) => {
+              if (seen.has(entry.id)) return false;
+              seen.add(entry.id);
+              return true;
+            });
+            return [...previous, ...fresh];
+          });
           setNext(page.next);
           if (!more) setWritable(page.writable);
         });

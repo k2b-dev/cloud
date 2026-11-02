@@ -540,6 +540,11 @@ describe("proving a file's type from its first bytes", () => {
     expect(verifiedMediaType(pdf, "report.png", "image/png", "image/*")).toBeUndefined();
     expect(verifiedMediaType(bytes("<html>"), "photo.png", "image/png", "image/png,image/jpeg")).toBeUndefined();
     expect(verifiedMediaType(bytes(0xff, 0xd8, 0xff), "photo.jpeg", "image/jpeg", ".jpeg")).toBe("image/jpeg");
+    // Media extensions need proof too; a format without a signature, such as SVG, never passes them.
+    expect(verifiedMediaType(bytes("<html>"), "photo.svg", "image/svg+xml", ".svg")).toBeUndefined();
+    expect(verifiedMediaType(bytes("<html>"), "photo.bmp", "image/bmp", ".bmp")).toBeUndefined();
+    expect(verifiedMediaType(bytes("<html>"), "track.aac", "audio/aac", ".aac")).toBeUndefined();
+    expect(verifiedMediaType(bytes("BM", 0, 0), "photo.bmp", undefined, ".bmp")).toBe("image/bmp");
   });
 
   test("tokens bytes cannot prove still take a file by its name or hint, as application/octet-stream", () => {
@@ -685,6 +690,23 @@ describe("reading a provider file", () => {
     const plain = reader(html, html.length, "image/png");
     const kept = await readProviderFile(provider, disguised, { locale: "en", fetch: plain.fetch, maxBytes: 100 });
     expect(kept.type).toBe("application/octet-stream");
+  });
+
+  test("a read whose announced size the shared budget cannot take is refused before any byte moves", async () => {
+    const { calls, fetch } = reader(new Uint8Array(8), 8);
+    const sizes: number[] = [];
+    const read = readProviderFile(provider, file("a", 1), {
+      locale: "en",
+      fetch,
+      maxBytes: 100,
+      reserve: (size) => {
+        sizes.push(size);
+        return false;
+      },
+    });
+    await expect(read).rejects.toMatchObject({ code: "FILE_TOO_LARGE", status: 413 });
+    expect(sizes).toEqual([8]);
+    expect(calls).toHaveLength(1);
   });
 
   test("runs at most the given number of reads at once", async () => {

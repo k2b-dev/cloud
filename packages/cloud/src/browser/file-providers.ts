@@ -1,4 +1,4 @@
-import { checkMimeType } from "@k2b/stdlib/browser";
+import { checkMimeType, getMimeType } from "@k2b/stdlib/browser";
 import { invokeCapabilityWithDataSchema, listCapabilityCatalog } from "../capabilities/client";
 import { readCapabilityResponse } from "../capabilities/response";
 import { transferCapabilityStream } from "../capabilities/streams";
@@ -204,11 +204,14 @@ const SIGNATURES: { type: string; extensions: string[]; matches: (bytes: Uint8Ar
   { type: "image/heic", extensions: [".heic", ".heif"], matches: (b) => brand(b, "heic", "heix", "heim", "heis", "hevc") },
   { type: "image/heif", extensions: [".heif"], matches: (b) => brand(b, "mif1", "msf1") },
   { type: "image/tiff", extensions: [".tif", ".tiff"], matches: (b) => ascii(b, 0, "II*\0") || ascii(b, 0, "MM\0*") },
+  { type: "image/bmp", extensions: [".bmp"], matches: (b) => ascii(b, 0, "BM") },
+  { type: "image/x-icon", extensions: [".ico"], matches: (b) => ascii(b, 0, "\0\0\x01\0") },
   { type: "application/pdf", extensions: [".pdf"], matches: (b) => ascii(b, 0, "%PDF-") },
   { type: "video/quicktime", extensions: [".mov"], matches: (b) => brand(b, "qt  ") },
   { type: "audio/mp4", extensions: [".m4a"], matches: (b) => brand(b, "M4A ") },
   { type: "video/mp4", extensions: [".mp4", ".m4v"], matches: (b) => ascii(b, 4, "ftyp") },
   { type: "video/webm", extensions: [".webm", ".mkv"], matches: (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3 },
+  { type: "audio/aac", extensions: [".aac"], matches: (b) => b[0] === 0xff && ((b[1] ?? 0) & 0xf6) === 0xf0 },
   { type: "audio/mpeg", extensions: [".mp3"], matches: (b) => ascii(b, 0, "ID3") || (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0) },
   { type: "audio/wav", extensions: [".wav"], matches: (b) => ascii(b, 0, "RIFF") && ascii(b, 8, "WAVE") },
   { type: "audio/ogg", extensions: [".ogg", ".oga", ".opus"], matches: (b) => ascii(b, 0, "OggS") },
@@ -217,15 +220,21 @@ const SIGNATURES: { type: string; extensions: string[]; matches: (bytes: Uint8Ar
 /** How many first bytes `verifiedMediaType` reads. */
 export const MEDIA_TYPE_HEAD_BYTES = 16;
 
-/** The `accept` tokens the first bytes can prove: images, PDF, and the audio and video types above. */
-const provable = (token: string) =>
-  /^(?:image|audio|video)\//.test(token) || SIGNATURES.some((entry) => entry.type === token || entry.extensions.includes(token));
+const MEDIA = /^(?:image|audio|video)\/|^application\/pdf$/;
+/**
+ * The `accept` tokens only proving bytes may satisfy: images, PDF, audio, and video, by type or by extension. A format
+ * without a signature above, such as SVG, never passes them, since its bytes cannot show what it is.
+ */
+const needsProof = (token: string) =>
+  MEDIA.test(token) ||
+  (token.startsWith(".") &&
+    (SIGNATURES.some((entry) => entry.extensions.includes(token)) || MEDIA.test(getMimeType(token.slice(1)) ?? "")));
 
 /**
  * The media type a read file gets. A provider's type is only a hint: the type is what the first bytes prove, otherwise
- * `application/octet-stream`. When `accept` names images, PDF, audio, or video, only bytes that prove a matching type
- * pass; tokens bytes cannot prove, such as `.docx` or `text/*`, still take a file by its name or hinted type, as
- * `application/octet-stream`. `undefined` means the bytes do not fit `accept`.
+ * `application/octet-stream`. When `accept` names images, PDF, audio, or video, by type or extension, only bytes that
+ * prove a matching type pass; other tokens, such as `.docx` or `text/*`, still take a file by its name or hinted type,
+ * as `application/octet-stream`. `undefined` means the bytes do not fit `accept`.
  */
 export const verifiedMediaType = (head: Uint8Array, name: string, hint: string | undefined, accept?: string): string | undefined => {
   const proven = SIGNATURES.find((entry) => entry.matches(head));
@@ -235,7 +244,7 @@ export const verifiedMediaType = (head: Uint8Array, name: string, hint: string |
   const unprovable = accept
     .split(",")
     .map((token) => token.trim().toLowerCase())
-    .filter((token) => token && !provable(token))
+    .filter((token) => token && !needsProof(token))
     .join(",");
   return unprovable && checkMimeType(new File([], name, { type: hint ?? "" }), unprovable) ? OCTET_STREAM : undefined;
 };
@@ -261,6 +270,11 @@ export const readProviderFile = async (
     maxBytes: number;
     accept?: string;
     signal?: AbortSignal;
+    /**
+     * Takes the size the read announced from a budget shared with other reads before any byte moves; `false` refuses
+     * the file as too large. A provider may announce more than it listed, so a total limit is kept here, not by the list.
+     */
+    reserve?: (size: number) => boolean;
     onProgress?: (loaded: number, total: number) => void;
   },
 ): Promise<File> => {
@@ -277,6 +291,8 @@ export const readProviderFile = async (
   const problem = entryProblem({ ...entry, size: stream.size, mediaType: stream.mediaType }, caller.accept, caller.maxBytes);
   if (problem === "size") throw new FileProviderError("FILE_TOO_LARGE", "The file is larger than allowed", 413);
   if (problem === "type") throw new FileProviderError("UNSUPPORTED_MEDIA_TYPE", "The file type is not accepted", 415);
+  if (caller.reserve && !caller.reserve(stream.size))
+    throw new FileProviderError("FILE_TOO_LARGE", "The files are larger than allowed together", 413);
   let response: Response;
   try {
     response = await transferCapabilityStream(stream, "read", { ...options(caller), signal: caller.signal });

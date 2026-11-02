@@ -33,6 +33,8 @@ export const createFileSaving = (
     // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
     let open = true;
+    // Closing stops the catalog reads this dialog started; the page's own discovery keeps running.
+    const discovery = new AbortController();
     const settle = (request: Promise<readonly FileProviderSource[]>) =>
       request.then(
         (value) => {
@@ -44,9 +46,9 @@ export const createFileSaving = (
       );
     const load = () => {
       setProviders({ state: "loading" });
-      void settle(list.providers());
+      void settle(list.providers(discovery.signal));
     };
-    if (known) void settle(list.refresh());
+    if (known) void settle(list.refresh(discovery.signal));
     else load();
     const saved: SavedFile[] = [];
     const running = new Set<Promise<void>>();
@@ -59,7 +61,10 @@ export const createFileSaving = (
         if (options.signal?.aborted) abort();
       }),
     ]).finally(() => options.signal?.removeEventListener("abort", abort));
-    if (!saver) return [];
+    if (!saver) {
+      discovery.abort();
+      return [];
+    }
     await dialogCore.open<void>(
       (close) => (
         <saver.FileSaver
@@ -82,6 +87,7 @@ export const createFileSaving = (
       },
     );
     open = false;
+    discovery.abort();
     // Closing stops the transfers; a receipt that was already on its way still counts.
     await Promise.all(running);
     const first = saved[0];
