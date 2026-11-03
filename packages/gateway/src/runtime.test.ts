@@ -72,7 +72,12 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     mock.module("@k2b/cloud/services/settings", () => ({
       get: async (key: string) => (key === "app.url" ? publicUrl : "le"),
     }));
+    let domainChanged: (() => Promise<void>) | undefined;
     mock.module("@k2b/cloud/services", () => ({
+      watchGatewayDomainChanges: ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }) => {
+        domainChanged = onChange;
+        return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      },
       logger: () => ({
         info: () => {},
         warn: (message: string, meta?: Record<string, unknown>) => warnings.push({ message, meta }),
@@ -115,15 +120,15 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       await gatewayRuntime.start();
       expect(callbacks).toHaveLength(1);
       const renewal = callbacks[0]!;
-      expect(renewal.interval).toBeLessThan(30_000);
+      expect(renewal.interval).toBe(30_000);
       stats.totalRequests = 42;
       // No watch notification: periodic reconciliation must still read the new registry.
       registryVersion = 1;
-      for (now = renewal.interval; now <= 35_000; now += renewal.interval) {
+      for (now = renewal.interval; now <= 120_000; now += renewal.interval) {
         renewal.run();
         await Bun.sleep(0);
         expect(snapshot).not.toBeNull();
-        expect(now - snapshot!.updatedAt).toBeLessThan(30_000);
+        expect(now - snapshot!.updatedAt).toBeLessThan(90_000);
       }
       expect(snapshot!.stats.totalRequests).toBe(42);
       expect(listCalls).toBeGreaterThan(1);
@@ -134,6 +139,13 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       expect(getDomainSnapshot().cloudHosts.has("cloud.test")).toBe(true);
       expect(getDomainSnapshot().cloudHosts.has("gateway")).toBe(true);
       expect(getIngressCertResolver()).toBe("le");
+      const beforeHint = domainReads;
+      registryVersion = 4;
+      await domainChanged?.();
+      expect(domainReads).toBe(beforeHint + 1);
+      expect(getDomainSnapshot().domains.has("site-4.test")).toBe(true);
+      registryVersion = 1;
+      await refreshDomains();
       // The registry continues to reconcile while Postgres cannot refresh domains.
       domainFailure = true;
       registryVersion = 2;

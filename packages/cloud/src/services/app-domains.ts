@@ -7,6 +7,7 @@ import { sql } from "../runtime/clients";
 import { publicCloudOrigin } from "../shared/app-url";
 import { type AppDomainStatus, checkAppDomain } from "./app-domain-check";
 import { audit } from "./audit";
+import { notifyGatewayDomainsChanged } from "./gateway";
 import { get } from "./settings";
 
 export type AdminAppDomain = {
@@ -91,7 +92,7 @@ export const createAppDomainService = (dependencies: Dependencies = {}) => {
       const isActive = await active(input.appId);
       const redirectTo = input.redirectTo === undefined ? null : normalizeHost(input.redirectTo);
       if (input.redirectTo !== undefined && !redirectTo) return invalid("APP_DOMAIN_INVALID_HOST", "Invalid redirect host");
-      return database().begin(async (db) => {
+      const result = await database().begin(async (db) => {
         await db`SELECT pg_advisory_xact_lock(hashtextextended('core.app-domains', 0))`;
         const [known] = await db<{ app_id: string }[]>`SELECT app_id FROM platform.application_packages WHERE app_id = ${input.appId}`;
         if (!known) return invalid("APP_DOMAIN_UNKNOWN_APP", "Unknown app ID; the app must have registered its package at least once");
@@ -107,6 +108,8 @@ export const createAppDomainService = (dependencies: Dependencies = {}) => {
         await record(db, { ...input, host }, "add", redirectTo);
         return ok(domain(row, isActive));
       });
+      if (result.ok) notifyGatewayDomainsChanged();
+      return result;
     },
     async set(input: DomainInput & { redirectTo: string | null }): Promise<Result<AdminAppDomain>> {
       const permission = authorized(input);
@@ -116,7 +119,7 @@ export const createAppDomainService = (dependencies: Dependencies = {}) => {
       const redirectTo = input.redirectTo === null ? null : normalizeHost(input.redirectTo);
       if (input.redirectTo !== null && !redirectTo) return invalid("APP_DOMAIN_INVALID_HOST", "Invalid redirect host");
       const isActive = await active(input.appId);
-      return database().begin(async (db) => {
+      const result = await database().begin(async (db) => {
         await db`SELECT pg_advisory_xact_lock(hashtextextended('core.app-domains', 0))`;
         const [existing] = await db<Row[]>`SELECT * FROM settings.app_domains WHERE host = ${host} AND app_id = ${input.appId}`;
         if (!existing) return notFound();
@@ -131,13 +134,15 @@ export const createAppDomainService = (dependencies: Dependencies = {}) => {
         await record(db, { ...input, host }, "set", redirectTo);
         return ok(domain(row, isActive));
       });
+      if (result.ok) notifyGatewayDomainsChanged();
+      return result;
     },
     async remove(input: DomainInput): Promise<Result<{ deleted: true }>> {
       const permission = authorized(input);
       if (!permission.ok) return permission;
       const host = normalizeHost(input.host);
       if (!host) return invalid("APP_DOMAIN_INVALID_HOST", "Invalid domain host");
-      return database().begin(async (db) => {
+      const result = await database().begin(async (db) => {
         await db`SELECT pg_advisory_xact_lock(hashtextextended('core.app-domains', 0))`;
         const refs = await references(db, input.appId, host);
         if (refs.length) return conflict("APP_DOMAIN_REFERENCED", `Domains redirect to ${host}: ${refs.map((row) => row.host).join(", ")}`);
@@ -146,6 +151,8 @@ export const createAppDomainService = (dependencies: Dependencies = {}) => {
         await record(db, { ...input, host }, "remove");
         return ok({ deleted: true as const });
       });
+      if (result.ok) notifyGatewayDomainsChanged();
+      return result;
     },
     async check(input: DomainInput): Promise<Result<{ status: AppDomainStatus | null }>> {
       const permission = authorized(input);

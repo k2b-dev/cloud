@@ -4,7 +4,7 @@ import { logger } from "./logging";
 
 /** Written by the gateway router, read by gateway-ops: one owner, one declaration. */
 const GATEWAY_RESOURCE_OWNER = "cloud";
-const SNAPSHOT_TTL_MS = 30_000;
+const SNAPSHOT_TTL_MS = 90_000;
 const TOPIC_ID = "cloud-gateway-telemetry";
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** Hard loss boundary for the 24h request-telemetry buffer (discard-old). */
@@ -99,6 +99,28 @@ const snapshots = lazySync((sync) =>
     maxValueBytes: 128_000,
   }),
 );
+
+// A lost hint is repaired by the gateway's 30-second durable domain reconciliation.
+const domainChanges = lazySync((sync) =>
+  sync.topic<null>({
+    id: "cloud:gateway-domain-changes",
+    owner: GATEWAY_RESOURCE_OWNER,
+    retention: { maxAgeMs: 120_000, maxBytes: 1_048_576 },
+    maxPayloadBytes: 2000,
+  }),
+);
+
+export const notifyGatewayDomainsChanged = (): void => {
+  void Promise.resolve()
+    .then(() => domainChanges().publish({ tenantId: "default", data: null }))
+    .catch((error) => {
+      log.warn("Gateway domain notification failed; periodic reconciliation will repair it", { error: String(error) });
+    });
+};
+
+export const watchGatewayDomainChanges = async (options: { signal: AbortSignal; onChange(): Promise<void> }): Promise<void> => {
+  for await (const _event of domainChanges().live({ tenantId: "default", signal: options.signal })) await options.onChange();
+};
 
 export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): GatewayRouteSnapshot => ({
   instanceId: input.instanceId,

@@ -242,9 +242,13 @@ The registry has no conditional delete. If NATS applies a stopping replica's
 delete only after its lock lease ended, the delete can remove an entry that a
 new replica has just written. That replica writes it again within 60 seconds.
 
-The gateway rebuilds its route table when registry entries change. It renews
-its own operations snapshot every five seconds, including when the registry is
-idle, so its 30-second presence lease and request counters stay current.
+Gateway route and request-counter snapshots renew every 30 seconds with a
+90-second presence lease. Registry changes refresh routes immediately; committed
+app-domain assignments wake every gateway. A 30-second reconciliation repairs
+missed domain hints. Gateway Ops stores app metadata only when its content
+changes or an app reappears. Live status comes from the registry; on departure,
+it persists the last observed heartbeat once. After a Gateway Ops restart while
+an app is already offline, the saved timestamp is the last durable observation.
 
 Use the orchestrator, not the Cloud registry, to measure replica health and
 count.
