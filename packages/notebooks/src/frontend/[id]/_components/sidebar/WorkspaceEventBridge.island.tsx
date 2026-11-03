@@ -157,7 +157,11 @@ export default function WorkspaceEventBridge(props: Props) {
             typeof value.payload?.noteId === "string" &&
             (code === "ACCESS_DENIED" || code === "ACCESS_REVOKED" || code === "NOTE_NOT_FOUND")
           ) {
-            if (value.payload.noteId === openedNoteId) clearPresence();
+            if (value.payload.noteId === openedNoteId) {
+              // No list will follow for this note, so the panel must not keep waiting for one.
+              presenceStatus = "down";
+              clearPresence();
+            }
             return;
           }
           if (typeof code === "string" && TERMINAL_CODES.has(code)) terminateAndRefresh();
@@ -216,6 +220,13 @@ export default function WorkspaceEventBridge(props: Props) {
       // Live updates stopped for good (see terminateAndRefresh): only a reload can bring them back.
       if (disposed) {
         window.location.reload();
+        return;
+      }
+      // A connected socket asks for the note's people again.
+      if (socket?.readyState === WebSocket.OPEN) {
+        presenceStatus = "connecting";
+        emitPresence();
+        watchOpenedNote();
         return;
       }
       if (socket || !reconnectTimer) return;
