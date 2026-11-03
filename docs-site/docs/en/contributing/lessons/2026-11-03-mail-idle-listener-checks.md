@@ -1,6 +1,6 @@
-### A connected IDLE listener asked for a folder sync every 30 seconds
+### A listened folder was checked three times a minute
 
-- **What happened:** Each connected IMAP IDLE listener requested a sync of its folder every 30 seconds, although nothing had changed. The scheduled sync already checks every folder each minute, so a listened Inbox had three checks a minute instead of one.
-- **Root cause:** The poll fallback for servers without IDLE also ran beside a working IDLE connection, as a second safety net next to the minute scheduler.
+- **What happened:** A connected IMAP IDLE listener requested a sync of its folder every 30 seconds, although nothing had changed, and the scheduled sync checked the same folder each minute. A listened Inbox had three checks a minute.
+- **Root cause:** Two independent safety nets covered the same folder: the listener's timer and the minute scheduler.
 - **Error class:** Duplicate safety timers for the same repair path.
-- **Guard:** `imap-push-runtime.test.ts` ("a connected IDLE listener asks for a folder sync only when it connects or gets a hint") requires one sync request in five quiet minutes; before, there were eleven. Servers without IDLE keep the 30-second poll, a disconnect or reconnect still requests a sync at once, and `mail:sync-due` still checks every folder each minute.
+- **Guard:** `imap-push-runtime.test.ts` ("a connected IDLE listener checks its folder once a minute besides its hints") requires six sync requests in five quiet minutes (eleven before). The scheduler test in `remote-changes.integration.test.ts` requires the minute scheduler to skip a folder whose listener has a heartbeat younger than a minute and to take it back after that. The listener keeps its own check because the scheduler queues at most 500 folders a minute and cannot promise every folder a check each minute. A first draft removed the listener check and relied on the scheduler alone; review caught it.

@@ -725,16 +725,16 @@ describe("IMAP push lease renewal", () => {
       expect(await listener.task).toEqual({ error: null });
     }));
 
-  test("a connected IDLE listener asks for a folder sync only when it connects or gets a hint", () =>
+  test("a connected IDLE listener checks its folder once a minute besides its hints", () =>
     withFakeTimers(async () => {
       const listener = startIdleListener({ leader: new FakeMutex() });
       await listener.listening;
       await settle();
       expect(listener.events.folderSyncs).toBe(1);
 
-      // The scheduled sync covers the folder each minute; quiet minutes ask for nothing more.
+      // The scheduled sync leaves the folder to its listener: one check a minute, not two.
       await advance(5 * 60_000);
-      expect(listener.events.folderSyncs).toBe(1);
+      expect(listener.events.folderSyncs).toBe(6);
       expect(listener.events.closedAt).toEqual([]);
 
       listener.controller.abort(new Error("test shutdown"));
@@ -841,7 +841,7 @@ describe("IMAP push lease renewal", () => {
       const callsBefore = leader.extendCalls;
 
       await advance(80_000);
-      // One renewal per heartbeat interval.
+      // One renewal per heartbeat interval plus the folder check.
       expect(leader.extendCalls).toBeGreaterThanOrEqual(callsBefore + 4);
       expect(listener.events.closedAt).toEqual([]);
 

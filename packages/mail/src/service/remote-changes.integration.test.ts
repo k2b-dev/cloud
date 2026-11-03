@@ -640,5 +640,27 @@ suite("mail sync of changes made in other clients", () => {
       for (const folderId of folderIds) queued.add(folderId);
     }
     expect([...queued].sort()).toEqual([...eligible].sort());
+
+    // A folder a live IMAP push listener watches is its listener's; a stopped one gives it back.
+    const watched = inboxes[0]!;
+    const [binding] = await sql<{ id: string }[]>`
+      SELECT binding.id
+      FROM mail.folders folder
+      JOIN mail.provider_bindings binding ON binding.remote_resource_id = folder.remote_resource_id
+      WHERE folder.id = ${watched}::uuid
+      LIMIT 1
+    `;
+    const heartbeat = async (age: string) =>
+      sql`
+        INSERT INTO mail.imap_push_listener_health (binding_id, generation, state, mode, folder_id, last_heartbeat_at)
+        VALUES (${binding!.id}::uuid, 1, 'listening', 'idle', ${watched}::uuid, now() - ${age}::interval)
+        ON CONFLICT (binding_id) DO UPDATE SET
+          state = 'listening', mode = 'idle', folder_id = EXCLUDED.folder_id, last_heartbeat_at = EXCLUDED.last_heartbeat_at
+      `;
+    await heartbeat("10 seconds");
+    expect(await submitDueFolderSyncs(100_000)).not.toContain(watched);
+    await heartbeat("2 minutes");
+    expect(await submitDueFolderSyncs(100_000)).toContain(watched);
+    await sql`DELETE FROM mail.imap_push_listener_health WHERE binding_id = ${binding!.id}::uuid`;
   });
 });

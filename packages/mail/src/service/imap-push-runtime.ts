@@ -25,6 +25,9 @@ const MAX_RENEWAL_RETRY_DELAY_MS = 5_000;
 const SCAN_INTERVAL_MS = 15_000;
 const HINT_COALESCE_MS = 200;
 const POLL_FALLBACK_MS = 30_000;
+// A connected listener checks its folder this often besides its hints, for changes the server
+// never announced. The scheduled sync leaves such a folder to it (submitDueFolderSyncs).
+const LISTENER_CHECK_MS = 60_000;
 const MAX_PENDING_HINTS = 128;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const STABLE_CONNECTION_MS = 60_000;
@@ -575,6 +578,7 @@ const consumeHints = async (params: {
   let pending: ConnectorChangeHint[] = [];
   let flushTask: Promise<void> | null = null;
   let flushError: unknown = null;
+  let fallbackTask: Promise<void> | null = null;
   let disconnected = false;
 
   const flush = async (): Promise<void> => {
@@ -615,22 +619,47 @@ const consumeHints = async (params: {
       });
   };
 
-  // A connected listener asks for a folder sync only on a hint. Mail the server never announced
-  // reaches the folder with the scheduled sync of every folder each minute (`mail:sync-due`), and
-  // a disconnect or a reconnect requests one at once.
-  for await (const hint of params.listener.hints) {
-    if (params.signal.aborted) break;
-    if (pending.length >= MAX_PENDING_HINTS) {
-      pending = [{ type: "overflow", folderPath: params.plan.folderPath }];
-      disconnected = true;
-      break;
+  const fallbackTimer = setInterval(() => {
+    if (fallbackTask || params.signal.aborted || flushError) return;
+    fallbackTask = applyImapReconciliationHint({
+      plan: params.plan,
+      assertLeaseActive: params.assertLeaseActive,
+      dependencies: params.dependencies,
+    })
+      .then((applied) => {
+        if (applied === "stale") {
+          throw Object.assign(new Error("IMAP push binding changed before fallback reconciliation"), {
+            code: "IMAP_PUSH_PLAN_CHANGED",
+          });
+        }
+      })
+      .catch((error) => {
+        flushError = error;
+        return params.listener.close();
+      })
+      .finally(() => {
+        fallbackTask = null;
+      });
+  }, LISTENER_CHECK_MS);
+
+  try {
+    for await (const hint of params.listener.hints) {
+      if (params.signal.aborted) break;
+      if (pending.length >= MAX_PENDING_HINTS) {
+        pending = [{ type: "overflow", folderPath: params.plan.folderPath }];
+        disconnected = true;
+        break;
+      }
+      pending.push(hint);
+      scheduleFlush();
+      if (hint.type === "overflow" || hint.type === "disconnected") {
+        disconnected = true;
+        break;
+      }
     }
-    pending.push(hint);
-    scheduleFlush();
-    if (hint.type === "overflow" || hint.type === "disconnected") {
-      disconnected = true;
-      break;
-    }
+  } finally {
+    clearInterval(fallbackTimer);
+    if (fallbackTask) await fallbackTask;
   }
   if (flushTask) await flushTask;
   if (pending.length > 0 && !flushError) await flush();
