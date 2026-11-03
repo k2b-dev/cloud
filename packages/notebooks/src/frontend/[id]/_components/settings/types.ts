@@ -9,6 +9,8 @@ export type NotebookSettingsProps = {
   dateConfig: DateContext;
   /** Returns an element inside the app; settings that depend on the app's width follow its `k2b-app-area` host. */
   host: () => Element;
+  /** The tab to open on, such as `access`. Defaults to `general`. */
+  initialTab?: string;
 };
 
 export type NoteSelectOption = {

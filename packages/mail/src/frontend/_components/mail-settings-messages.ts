@@ -321,6 +321,9 @@ export const mailSettingsMessages = i18n.define({
       folderDisplayChanged: ({ name, display, subfolders }: { name: string; display: string; subfolders: number }) =>
         `${name}: ${display}.${subfolders > 0 ? ` Also applies to ${subfolders} subfolder${subfolders === 1 ? "" : "s"}.` : ""}`,
       folderInPath: ({ name, path }: { name: string; path: string }) => `${name}, in ${path}`,
+      serverFolderName: ({ name }: { name: string }) => `Name on the mail server: ${name}`,
+      shownFolderName: ({ name }: { name: string }) =>
+        `Mail shows this standard folder as “${name}”. Renaming changes its name on the mail server.`,
       subfoldersOf: ({ name }: { name: string }) => `Subfolders of ${name}`,
       sharedByProvider: "Shared by provider",
       notSubscribed: "Not subscribed",
@@ -1192,6 +1195,8 @@ export const mailSettingsMessages = i18n.define({
       folderDisplayChanged: ({ name, display, subfolders }) =>
         `${name}: ${display}.${subfolders > 0 ? ` Gilt auch für ${subfolders} Unterordner.` : ""}`,
       folderInPath: ({ name, path }) => `${name}, in ${path}`,
+      serverFolderName: ({ name }) => `Name auf dem Mailserver: ${name}`,
+      shownFolderName: ({ name }) => `Mail zeigt diesen Standardordner als „${name}“. Umbenennen ändert seinen Namen auf dem Mailserver.`,
       subfoldersOf: ({ name }) => `Unterordner von ${name}`,
       sharedByProvider: "Vom Anbieter geteilt",
       notSubscribed: "Nicht abonniert",

@@ -50,6 +50,7 @@ const catalogs = {
   Template: (await import("../inputs/template-messages")).checkTemplateMessages,
   Avatar: (await import("../surfaces/avatar-messages")).checkAvatarMessages,
   DetailPanel: (await import("../layout/detail-panel-messages")).checkDetailPanelMessages,
+  DetailSections: (await import("../layout/detail-sections-messages")).checkDetailSectionMessages,
   Resource: (await import("../surfaces/resource-messages")).checkResourceMessages,
   Pagination: (await import("../content/pagination-messages")).checkPaginationMessages,
   StructuredData: (await import("../content/structured-data-messages")).checkStructuredDataMessages,

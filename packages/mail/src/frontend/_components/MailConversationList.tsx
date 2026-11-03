@@ -16,6 +16,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
@@ -107,6 +108,7 @@ export default function MailConversationList(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const rowMessages = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const spamAction = (item: MailListItem) =>
     spamActionForConversation({ viewFolderId: props.viewFolderId, activeFolderIds: item.activeFolderIds, folders: props.folders });
@@ -338,7 +340,9 @@ export default function MailConversationList(props: {
                 <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
                   {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
                   <p class="min-w-0 flex-[1_1_13rem]">
-                    <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
+                    <strong class="font-semibold text-primary">
+                      {messages().folderOnlyHintTitle({ name: folderName()(hint().folder) })}
+                    </strong>{" "}
                     {messages().folderOnlyHintDetail}
                   </p>
                   <div class="flex shrink-0 items-center gap-1">
@@ -351,7 +355,7 @@ export default function MailConversationList(props: {
                         onNavigate={props.onNavigate}
                         scroll="preserve"
                       >
-                        {messages().openFolder({ name: hint().folder.name })}
+                        {messages().openFolder({ name: folderName()(hint().folder) })}
                       </ButtonLink>
                     </Show>
                     <Tooltip.Anchor content={messages().dismissHint}>

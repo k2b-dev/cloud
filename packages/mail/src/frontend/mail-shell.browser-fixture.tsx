@@ -2,6 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
+import { mailFolderNames } from "../folder-names";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
@@ -143,12 +144,21 @@ export const sidebar: ComponentProps<typeof MailWorkspace>["sidebar"] = {
   hiddenMailboxIds: ["Box005"],
 };
 const focusMailboxCounts = mailboxes.map((box, index) => ({ mailboxId: box.id, unread: index + 2, needsAction: index + 3 }));
+// Standard folders carry an Exchange-like provider's names; the sidebar shows them localized.
+const standardFolderNames: Record<string, string> = {
+  inbox: "INBOX",
+  drafts: "Drafts",
+  sent: "Sent Items",
+  archive: "Archive",
+  trash: "Deleted Items",
+  junk: "Junk Email",
+};
 const folders = [
   ...["inbox", "drafts", "sent", "archive", "trash", "junk"].map((role) =>
     mailTestFolder(`${role[0]!.toUpperCase()}${role.slice(1)}1`, {
       role,
       providerRole: role,
-      name: `${role[0]!.toUpperCase()}${role.slice(1)}`,
+      name: standardFolderNames[role]!,
       unread: role === "sent" || role === "drafts" ? 0 : 3,
     }),
   ),
@@ -381,7 +391,10 @@ export function mailboxData(url: URL): MailboxPageData {
                 recently_active: "Recent activity",
                 kept: "Kept",
               }[activeView]
-            : (folders.find((folder) => folder.id === folderId)?.name ?? "All mail"),
+            : (() => {
+                const folder = folders.find((folder) => folder.id === folderId);
+                return folder ? mailFolderNames(url.searchParams.get("locale") === "de" ? "de" : "en")(folder) : "All mail";
+              })(),
     conversationRowState: null,
     detailMessages: selectedConversationId
       ? selectedConversationId === "Conv02"

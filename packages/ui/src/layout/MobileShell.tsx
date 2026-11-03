@@ -38,6 +38,13 @@ export type MobileShellHeaderProps = {
   actions?: JSX.Element;
 };
 
+/**
+ * On the document element while a shell is the page: `"sidebar"` when it shows its sidebar, otherwise empty. A host
+ * that renders the shell on the server writes it into its `<html>` too, so the first paint already has it.
+ */
+const SHELL_ATTRIBUTE = "data-k2b-mobile-shell";
+/** On the document element while a shell is mounted and a modal dialog is open. */
+const MODAL_ATTRIBUTE = "data-k2b-mobile-shell-modal";
 /** Read by the toast rail, which is portalled outside the shell, so it lives on the body. */
 const FOOTER_HEIGHT = "--k2b-mobile-shell-footer-height";
 /** How much of the scroll area a persistent toast covers; local to the shell. */
@@ -175,6 +182,11 @@ export function observeMobileShell(root: HTMLElement): () => void {
   const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
   if (!main) return () => {};
   const stopLinkTaps = observeLinkTaps(root);
+  // The document says that a shell is the page, for the controls and toasts portalled outside it. An attribute, not
+  // `html:has(.k2b-mobile-shell)`: a `:has()` on the document restyles the whole page on every change inside it.
+  const documentRoot = root.ownerDocument.documentElement;
+  const previousShell = documentRoot.getAttribute(SHELL_ATTRIBUTE);
+  documentRoot.setAttribute(SHELL_ATTRIBUTE, root.querySelector(":scope > .k2b-mobile-shell__sidebar") ? "sidebar" : "");
   // Content with its own scroll areas keeps its own fades; the room a toast takes applies to the whole main area.
   const stopScrollFades = body ? installScrollFades(body) : () => {};
   let frame = 0;
@@ -196,6 +208,8 @@ export function observeMobileShell(root: HTMLElement): () => void {
     const footer = Math.max(0, rootBottom - main.getBoundingClientRect().bottom, owned);
     document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
     root.style.setProperty(TOAST_INSET, `${persistentToastInset(body ?? main)}px`);
+    // A modal dialog takes the bottom edge back for its footer; the toast rules read this, not `html:has(dialog:modal)`.
+    documentRoot.toggleAttribute(MODAL_ATTRIBUTE, document.querySelector("dialog:modal") !== null);
   };
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(measure);
@@ -221,6 +235,9 @@ export function observeMobileShell(root: HTMLElement): () => void {
     mutations.disconnect();
     document.removeEventListener("transitionend", schedule, true);
     document.body.style.removeProperty(FOOTER_HEIGHT);
+    documentRoot.removeAttribute(MODAL_ATTRIBUTE);
+    if (previousShell === null) documentRoot.removeAttribute(SHELL_ATTRIBUTE);
+    else documentRoot.setAttribute(SHELL_ATTRIBUTE, previousShell);
     stopLinkTaps();
     stopScrollFades();
   };
@@ -230,22 +247,28 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
   let root!: HTMLDivElement;
 
   onMount(() => onCleanup(observeMobileShell(root)));
-
   return (
-    <div
-      ref={root}
-      class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
-      data-k2b-content-heads={props.scroll === false ? "" : undefined}
-    >
-      {props.sidebar}
-      {props.header}
-      <main class="k2b-mobile-shell__main">
-        <Show when={props.scroll !== false} fallback={props.children}>
-          <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
-        </Show>
-      </main>
-      {props.footer}
-    </div>
+    <>
+      <div
+        ref={root}
+        class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
+        data-k2b-content-heads={props.scroll === false ? "" : undefined}
+      >
+        {props.sidebar}
+        {props.header}
+        <main class="k2b-mobile-shell__main">
+          <Show when={props.scroll !== false} fallback={props.children}>
+            <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
+          </Show>
+        </main>
+        {props.footer}
+      </div>
+      {/* No pinch zoom on the whole page, portalled dialogs and menus included, also before hydration. iOS ignores
+        `user-scalable=no`; it honours touch-action. It lives here, not behind `html:has(.k2b-mobile-shell) *`, which
+        would restyle the document on every `:has()` change. Zero specificity, so a component's own touch-action,
+        such as a drag handle's `none`, still wins. */}
+      <style innerHTML=":where(html *) { touch-action: pan-x pan-y; }" />
+    </>
   );
 }
 
