@@ -307,8 +307,8 @@ suite("Code version and person routine target mandates", () => {
     });
     if (!created.ok) throw new Error(created.error.message);
     expect(created.data).toMatchObject({ ownerAppId: "runner", policy: null, confirmedAt: null });
-    await expect(sql`UPDATE auth.mandates SET owner_app_id='demo' WHERE id=${created.data.id}::uuid`).rejects.toThrow();
-    await expect(sql`UPDATE auth.mandates SET workload_type='other' WHERE id=${created.data.id}::uuid`).rejects.toThrow();
+    await expect(sql`UPDATE auth.mandates SET owner_app_id='demo' WHERE id=${created.data.id}::uuid`.execute()).rejects.toThrow();
+    await expect(sql`UPDATE auth.mandates SET workload_type='other' WHERE id=${created.data.id}::uuid`.execute()).rejects.toThrow();
     expect((await invoke(created.data, "b")).status).toBe(403);
     const confirmed = await mandates.confirm({
       mandateId: created.data.id,
