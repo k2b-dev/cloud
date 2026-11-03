@@ -95,8 +95,16 @@ export const getMailConversationToolbarSections = (locale: string): readonly Mai
   ];
 };
 
+/** The default before Done replaced Archive; Mail stored it for everyone, so it reads as today's default. */
+const PREVIOUS_DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS = ["reply", "reply_all", "forward", "archive", "spam", "trash"];
+
 export const normalizeMailConversationToolbarActions = (value: unknown): MailConversationToolbarActionId[] => {
   if (!Array.isArray(value)) return [...DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS];
+  if (
+    value.length === PREVIOUS_DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS.length &&
+    value.every((actionId, index) => actionId === PREVIOUS_DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS[index])
+  )
+    return [...DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS];
   const requested = new Set(value.filter((candidate): candidate is string => typeof candidate === "string"));
   return MAIL_CONVERSATION_TOOLBAR_ACTION_IDS.filter((actionId) => requested.has(actionId)).slice(0, MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS);
 };

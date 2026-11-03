@@ -2667,16 +2667,27 @@ function createMailboxController(props: MailboxControllerProps) {
    * during the click, as browsers allow only then, and closes again when the conversation does not open.
    */
   const [respondRequest, setRespondRequest] = createSignal<MailRespondRequest | null>(null);
+  // The latest Reply wins: an earlier one still opening its conversation gives up its window.
+  let respondGeneration = 0;
+  let respondOpening = false;
   const respondToItem = async (item: MailListItem, intent: MailRespondIntent, options: { window: boolean }) => {
     const conversationId = item.conversationId;
     if (!conversationId || !canWrite()) return;
+    const generation = ++respondGeneration;
     const target = options.window ? openMailReplyWindow() : null;
     if (options.window && !target) return void prompts.error(conversationText().allowReplyWindow);
     respondRequest()?.window?.close();
     setRespondRequest(null);
-    if (data.selectedConversationId !== conversationId)
-      await navigateConversation(buildMailSelectionHref(mailRouteUrl(requestPath()), item), item, "pointer");
-    if (disposed || data.selectedConversationId !== conversationId) return void target?.close();
+    // Another Reply still opening its conversation would select it afterwards; this one opens its own again.
+    if (data.selectedConversationId !== conversationId || respondOpening) {
+      respondOpening = true;
+      try {
+        await navigateConversation(buildMailSelectionHref(mailRouteUrl(requestPath()), item), item, "pointer");
+      } finally {
+        if (generation === respondGeneration) respondOpening = false;
+      }
+    }
+    if (disposed || generation !== respondGeneration || data.selectedConversationId !== conversationId) return void target?.close();
     setRespondRequest({ conversationId, intent, window: target });
   };
   const assignSelection = () => {

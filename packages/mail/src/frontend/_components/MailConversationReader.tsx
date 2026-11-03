@@ -1083,6 +1083,12 @@ export default function MailConversationReader(props: {
   createEffect(() => {
     const request = props.respondRequest;
     if (!request) return;
+    // A conversation that could not load answers nothing; its window closes again.
+    if (props.error && request.conversationId === props.selectedConversationId) {
+      props.onRespondRequestHandled();
+      request.window?.close();
+      return;
+    }
     if (request.conversationId !== props.selectedConversationId || !latestMessage()) {
       if (request.conversationId !== props.selectedConversationId) {
         props.onRespondRequestHandled();
@@ -1092,6 +1098,12 @@ export default function MailConversationReader(props: {
     }
     props.onRespondRequestHandled();
     untrack(() => respondToLatest(request.intent, request.window ?? undefined));
+  });
+  onCleanup(() => {
+    const request = props.respondRequest;
+    if (!request) return;
+    props.onRespondRequestHandled();
+    request.window?.close();
   });
 
   createEffect(() => {
