@@ -67,15 +67,16 @@ const dropdownOnly = `.layout-profile-preferences > .layout-profile-preferences_
 .layout-profile-preferences__link, .layout-profile-preferences__panel { display: none; }`;
 const surfaces = {
   profile: {
-    control: '.k2b-dropdown__menu [role="menuitem"]',
-    neighbor: '.k2b-dropdown__menu [role="menuitem"]:nth-child(2)',
+    // The preferences follow the sidebar entry's section.
+    control: '.k2b-dropdown__menu .k2b-dropdown__section:nth-child(2) > [role="menuitem"]',
+    neighbor: '.k2b-dropdown__menu .k2b-dropdown__section:nth-child(2) > [role="menuitem"]:nth-child(2)',
     container: ".k2b-dropdown__menu",
     css: dropdownOnly,
   },
   // The server-rendered panel a fine pointer opens beside the rail, kept open below room for it to grow upward.
   panel: {
-    control: ".layout-profile-preferences__panel .menu-item",
-    neighbor: ".layout-profile-preferences__panel .menu-item:nth-child(2)",
+    control: ".layout-profile-preferences__section:nth-child(2) > .menu-item",
+    neighbor: ".layout-profile-preferences__section:nth-child(2) > .menu-item:nth-child(2)",
     container: ".layout-profile-preferences__panel",
     css: `#app { padding-top: 320px; }
 .layout-profile-preferences__panel { display: flex; opacity: 1; visibility: visible; pointer-events: auto; }
