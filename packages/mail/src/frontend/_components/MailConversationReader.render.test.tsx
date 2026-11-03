@@ -274,7 +274,8 @@ describe("Mail conversation reader", () => {
       ],
     });
 
-    expect(retryHtml).toContain("Trying again · 2/5");
+    expect(retryHtml).toContain("Trying again");
+    expect(retryHtml).not.toContain("Trying again · 2/5");
     expect(retryHtml).toContain('data-variant="warning"');
     expect(partialHtml).toContain("Partially sent");
   });
