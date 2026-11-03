@@ -45,11 +45,7 @@ const changes: Change[] = [
   },
   {
     name: "opening a menu button",
-    run: (page, deep) =>
-      page.evaluate(
-        (deep) => document.querySelector(`${deep} button`)!.setAttribute("aria-expanded", "true"),
-        deep,
-      ),
+    run: (page, deep) => page.evaluate((deep) => document.querySelector(`${deep} button`)!.setAttribute("aria-expanded", "true"), deep),
   },
 ];
 
@@ -64,8 +60,9 @@ const pages: { name: string; path: string; host: string }[] = [
 /** The most elements one style pass visits while `change` happens and the next two frames render. */
 const restyled = async (page: Page, change: Change, deep: string): Promise<number> => {
   const cdp = await page.context().newCDPSession(page);
-  const events: { name: string; ph: string; args?: { elementCount?: number } }[] = [];
-  cdp.on("Tracing.dataCollected", (event: { value: typeof events }) => events.push(...event.value));
+  // Protocol types trace events as string maps; their `args` are objects.
+  const events: Record<string, unknown>[] = [];
+  cdp.on("Tracing.dataCollected", (event) => events.push(...event.value));
   await cdp.send("Tracing.start", { categories: "devtools.timeline,disabled-by-default-devtools.timeline", transferMode: "ReportEvents" });
   await change.run(page, deep);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -73,8 +70,13 @@ const restyled = async (page: Page, change: Change, deep: string): Promise<numbe
   await cdp.send("Tracing.end");
   await complete;
   await cdp.detach();
+  const elements = (event: Record<string, unknown>) => {
+    const args = event.args;
+    const count = typeof args === "object" && args !== null && "elementCount" in args ? args.elementCount : 0;
+    return typeof count === "number" ? count : 0;
+  };
   const passes = events.filter((event) => event.name === "UpdateLayoutTree" && event.ph === "X");
-  return Math.max(0, ...passes.map((event) => event.args?.elementCount ?? 0));
+  return Math.max(0, ...passes.map(elements));
 };
 
 /** Appends rows of plain text and a menu button to the page's content. */
