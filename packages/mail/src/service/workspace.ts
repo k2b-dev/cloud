@@ -14,6 +14,7 @@ import {
 } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, withOpenWork } from "../folder-display-rules";
 import { mailFolderNames } from "../folder-names";
+import { isMailEventsRoute, type MailEventsFilter, mailEventsKinds, readMailEventsFilter } from "../mail-events-route";
 import type { MailDoneTodayCounts, MailViewPreference } from "../mail-view-preference";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
@@ -26,7 +27,13 @@ import {
 import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import * as automationLog from "./automation-log";
-import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
+import type {
+  ConversationCollaboration,
+  ConversationComment,
+  MailActivityEvent,
+  MailActivityPerson,
+  MailAssignableUser,
+} from "./collaboration";
 import * as collaboration from "./collaboration";
 import type { ConversationKeep } from "./conversation-keeps";
 import * as conversationKeeps from "./conversation-keeps";
@@ -82,6 +89,18 @@ export type MailListItem = {
 
 export type MailListMode = "conversations" | "messages";
 
+/** The first page of the mailbox's event feed for the filter in the URL; later pages load from the activity API. */
+export type MailEventsPage = {
+  items: MailActivityEvent[];
+  nextCursor: string | null;
+  filter: MailEventsFilter;
+  /** People the Person chip offers, at most as many as the assignee list loads. */
+  people: MailActivityPerson[];
+};
+
+const MAIL_EVENTS_PAGE_SIZE = 50;
+const MAIL_EVENTS_PEOPLE_LIMIT = 200;
+
 const EMPTY_VIEW_COUNTS: ConversationViewCounts = {
   needs_action: 0,
   mine: 0,
@@ -111,6 +130,7 @@ const workspaceMessages = i18n.define({
           kept: "Kept",
         })[view],
       scheduled: "Outbox",
+      events: "Events",
       search: "Search",
       resultsFor: ({ query }: { query: string }) => `Results for “${query}”`,
       filteredSearch: "Filtered search",
@@ -130,6 +150,7 @@ const workspaceMessages = i18n.define({
           kept: "Aufbewahrt",
         })[view],
       scheduled: "Postausgang",
+      events: "Ereignisse",
       search: "Suche",
       resultsFor: ({ query }) => `Ergebnisse für „${query}“`,
       filteredSearch: "Gefilterte Suche",
@@ -169,6 +190,10 @@ export type MailboxPageData = {
   draftsMode: boolean;
   draftsPage: DraftFolderPage | null;
   draftsError: string | null;
+  /** The Events tab is open: it shows the mailbox's event feed instead of conversations. */
+  eventsMode: boolean;
+  eventsPage: MailEventsPage | null;
+  eventsError: string | null;
   activeView: ConversationView | null;
   savedViewId: string | null;
   savedViews: SavedConversationView[];
@@ -735,6 +760,9 @@ export type MailboxListView = Pick<
   | "draftsMode"
   | "draftsPage"
   | "draftsError"
+  | "eventsMode"
+  | "eventsPage"
+  | "eventsError"
   | "activeView"
   | "savedViewId"
   | "listMode"
@@ -759,6 +787,36 @@ type MailboxListParams = {
   locale?: string | null;
 };
 
+/**
+ * The feed's first page and the people its Person chip offers. Both need the collaboration read permission, so a
+ * person who sees only assigned conversations gets the feed's refusal as its error.
+ */
+const loadEventsPage = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  filter: MailEventsFilter,
+): Promise<Result<MailEventsPage>> => {
+  const [page, people] = await Promise.all([
+    collaboration.listActivity({
+      context,
+      mailboxId,
+      limit: MAIL_EVENTS_PAGE_SIZE,
+      kinds: mailEventsKinds(filter),
+      actorId: filter.actorId,
+      mine: filter.mine,
+    }),
+    collaboration.listAssignableUsers({ context, mailboxId, limit: MAIL_EVENTS_PEOPLE_LIMIT }),
+  ]);
+  if (!page.ok) return page;
+  return ok({
+    ...page.data,
+    filter,
+    people: people.ok
+      ? people.data.map((person) => ({ id: person.id, displayName: person.displayName, avatarHash: person.avatarHash, type: person.type }))
+      : [],
+  });
+};
+
 const buildMailboxListView = async (
   params: MailboxListParams,
   folderResult: Awaited<ReturnType<typeof messages.listFolders>>,
@@ -766,10 +824,12 @@ const buildMailboxListView = async (
 ): Promise<Omit<MailboxListView, "mailbox" | "permission" | "access" | "savedViews">> => {
   const t = workspaceMessages.resolve([params.locale ?? "en"]).t;
   const scheduledMode = params.requestUrl.searchParams.get("scheduled") === "1";
+  // Events is a tab like a view, so it excludes folder, saved view, and search as views do.
+  const eventsMode = !scheduledMode && isMailEventsRoute(params.requestUrl);
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
   const activeView = parsedView.success ? parsedView.data : null;
-  const savedViewId = activeView ? null : optionalUuidSearchParam(params.requestUrl, "savedView");
-  const folderId = activeView || savedViewId ? null : optionalUuidSearchParam(params.requestUrl, "folder");
+  const savedViewId = activeView || eventsMode ? null : optionalUuidSearchParam(params.requestUrl, "savedView");
+  const folderId = activeView || savedViewId || eventsMode ? null : optionalUuidSearchParam(params.requestUrl, "folder");
   const resolvedSearch = params.search;
   const { query, expression: searchExpression, sort: searchSort } = resolvedSearch;
   const listCursor = params.requestUrl.searchParams.get("cursor");
@@ -792,8 +852,8 @@ const buildMailboxListView = async (
   })
     ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
     : [];
-  const [list, scheduledPageResult, draftsPageResult] = await Promise.all([
-    scheduledMode || draftsMode
+  const [list, scheduledPageResult, draftsPageResult, eventsPageResult] = await Promise.all([
+    scheduledMode || draftsMode || eventsMode
       ? Promise.resolve({ items: [], nextCursor: null, error: null })
       : resolvedSearch.error
         ? Promise.resolve({
@@ -824,6 +884,7 @@ const buildMailboxListView = async (
     draftsMode
       ? drafts.listDraftFolder({ context: params.context, mailboxId: params.mailboxId, cursor: listCursor ?? undefined, limit: 50 })
       : Promise.resolve(null),
+    eventsMode ? loadEventsPage(params.context, params.mailboxId, readMailEventsFilter(params.requestUrl)) : Promise.resolve(null),
   ]);
   const hiddenDone =
     "openOnly" in list
@@ -838,6 +899,9 @@ const buildMailboxListView = async (
     draftsMode,
     draftsPage: draftsPageResult?.ok ? draftsPageResult.data : null,
     draftsError: draftsPageResult && !draftsPageResult.ok ? localizeMailError(draftsPageResult.error, params.locale).message : null,
+    eventsMode,
+    eventsPage: eventsPageResult?.ok ? eventsPageResult.data : null,
+    eventsError: eventsPageResult && !eventsPageResult.ok ? localizeMailError(eventsPageResult.error, params.locale).message : null,
     activeView,
     savedViewId,
     listMode,
@@ -851,7 +915,9 @@ const buildMailboxListView = async (
     hiddenDone,
     listTitle: scheduledMode
       ? t.scheduled
-      : resolvedSearch.error
+      : eventsMode
+        ? t.events
+        : resolvedSearch.error
         ? t.search
         : searchExpression
           ? query
@@ -958,6 +1024,7 @@ export const loadMailboxPageData = async (pageParams: {
     item.selectionKind === "message" ? item.id === selectedMessageId : item.conversationId === selectedConversationId,
   );
   const preferredFolderId = selectedListItem?.sourceFolderId ?? folderId;
+  // The Events tab keeps the reader: a click on an event opens its conversation beside the feed.
   const selection =
     scheduledMode || draftsMode
       ? EMPTY_SELECTION_DETAIL

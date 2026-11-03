@@ -15,6 +15,7 @@ import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
+import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
@@ -709,6 +710,16 @@ const providerMessageIndex: BackgroundIndex = {
     WHERE connector_ref ->> 'providerMessageId' IS NOT NULL`,
 };
 
+// The mailbox's event feed reads newest first over its few kinds of actions; without it, a busy mailbox's feed page
+// reads past every read, flag, and move. The action list matches MAIL_ACTIVITY_FEED_ACTIONS in service/activity-feed.ts.
+const activityFeedIndex: BackgroundIndex = {
+  name: "mail.activity_events_mailbox_feed_idx",
+  table: "mail.activity_events",
+  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_events_mailbox_feed_idx
+    ON mail.activity_events USING btree (mailbox_id, id DESC)
+    WHERE (action = ANY (ARRAY[${MAIL_ACTIVITY_FEED_ACTIONS.map((action) => `'${action}'::text`).join(", ")}]))`,
+};
+
 // Work lists show open conversations only; without it, a folder's list reads past every done conversation.
 const openConversationIndex: BackgroundIndex = {
   name: "mail.conversations_mailbox_open_latest_idx",
@@ -786,6 +797,7 @@ export const buildBackfillActivityIndex = (pool: SqlClient = sql) => buildBackgr
 export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
+export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and

@@ -2056,6 +2056,13 @@ export const conversationViewSchema = z.enum([
 ]);
 export type ConversationView = z.infer<typeof conversationViewSchema>;
 
+/**
+ * What the mailbox's event feed lists: assignments, sends and their failures, drafts started or discarded, conversations
+ * marked done or reopened, internal comments, and what automations did. Reading, flagging, and moving stay out.
+ */
+export const mailActivityKindSchema = z.enum(["assignment", "sent", "draft", "status", "comment", "automation"]);
+export type MailActivityKind = z.infer<typeof mailActivityKindSchema>;
+
 export const mergeConversationsInputSchema = z
   .object({
     sourceConversationId: ResourceShortIdSchema,

@@ -76,6 +76,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: null,
   savedViewId: null,
   savedViews: [

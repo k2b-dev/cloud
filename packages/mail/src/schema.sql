@@ -191,6 +191,8 @@ CREATE INDEX activity_events_conversation_idx ON mail.activity_events USING btre
 
 CREATE INDEX activity_events_mailbox_idx ON mail.activity_events USING btree (mailbox_id, created_at DESC, id DESC);
 
+CREATE INDEX activity_events_mailbox_feed_idx ON mail.activity_events USING btree (mailbox_id, id DESC) WHERE (action = ANY (ARRAY['conversation.collaboration_updated'::text, 'conversation.work_state_changed'::text, 'conversation.comment_created'::text, 'draft.created'::text, 'draft.discarded'::text, 'draft.derived'::text, 'message.sent'::text, 'conversation.local_tag_added'::text, 'conversation.local_tag_removed'::text, 'conversation.local_tags_added'::text, 'conversation.local_tags_updated'::text]));
+
 CREATE TRIGGER activity_events_enqueue_live_invalidation AFTER INSERT ON mail.activity_events FOR EACH ROW EXECUTE FUNCTION mail.enqueue_activity_live_invalidation();
 
 -- mail.attachment_extractions ---------------------------------------------
