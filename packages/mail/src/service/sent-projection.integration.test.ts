@@ -1161,7 +1161,7 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, 5xx and 535 fail at once", async () => {
+  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, other 5xx fail at once", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
@@ -1185,10 +1185,11 @@ suite("mail sent message projection", () => {
       expect(await sendRetryNow(outbox.id)).toBeNull();
       expect(provider.submissions()).toBe(5);
 
-      // A permanent rejection and a refused login fail at once, without a second submission.
+      // A permanent rejection fails at once, without a second submission. A refused login (534/535)
+      // waits for a new login instead; see the test after this one.
       for (const [code, responseCode, key] of [
         ["EENVELOPE", 550, "smtp-5xx"],
-        ["EAUTH", 535, "smtp-535"],
+        ["EENVELOPE", 554, "smtp-554"],
       ] as const) {
         const rejected = await newDraft(mailbox, `SMTP ${responseCode}`);
         provider.failNextSubmission(code, false, responseCode);
@@ -2354,6 +2355,103 @@ suite("mail sent message projection", () => {
       `;
       expect(await sendRetryNow(outbox.id)).toBe("sent");
       expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose SMTP login is refused waits for a new login and goes out once the mailbox is signed in again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      for (const [responseCode, key] of [
+        [535, "smtp-login-refused"],
+        [534, "smtp-login-elsewhere"],
+      ] as const) {
+        const draft = await newDraft(mailbox, `SMTP ${responseCode}`);
+        provider.failNextSubmission("EAUTH", false, responseCode);
+        const outbox = await send(mailbox, draft.id, draft.revision, key, "scheduled");
+        // The mailbox shows that it needs a new login, as when IMAP refuses it, and the send waits.
+        expect(await delivery(outbox.id)).toEqual({
+          state: "scheduled",
+          last_error_code: "MAILBOX_AUTH_REQUIRED",
+          command_state: "queued",
+          draft_state: "scheduled",
+        });
+        const [state] = await sql<{ health: string; connection_status: string; binding_state: string }[]>`
+          SELECT mailbox.health, connection.status AS connection_status, binding.state AS binding_state
+          FROM mail.outbox_submissions outbox
+          JOIN mail.mailboxes mailbox ON mailbox.id = outbox.mailbox_id
+          JOIN mail.provider_bindings binding ON binding.id = outbox.selected_binding_id
+          JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+          WHERE outbox.id = ${outbox.id}::uuid
+        `;
+        expect(state).toEqual({ health: "auth_required", connection_status: "degraded", binding_state: "degraded" });
+        // The refused attempt counts, so the next claim's attempt is not the one its effect marker
+        // covers: a worker that stops before SMTP then is recovered as unsent, not as unclear.
+        const [marker] = await sql<{ provider_effect_attempt: number | null; attempt: number }[]>`
+          SELECT command.provider_effect_attempt, command.attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+        expect(marker).toEqual({ provider_effect_attempt: 1, attempt: 1 });
+        // A folder sync queued before finds no binding; the mailbox still asks for the login.
+        await expect(syncFolderBatch(mailbox.folderId(INBOX), async () => undefined)).rejects.toMatchObject({ code: "NO_SYNC_BINDING" });
+        // So does a rediscovery that cannot reach the server.
+        const unreachable = spyOn(imapSmtpConnector, "verify").mockRejectedValue(
+          Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" }),
+        );
+        try {
+          const [binding] = await sql<{ id: string }[]>`
+            SELECT selected_binding_id AS id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+          await rediscoverProviderBinding({ bindingId: binding!.id }).catch(() => undefined);
+        } finally {
+          unreachable.mockRestore();
+        }
+        const [health] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailbox.mailboxId}::uuid`;
+        expect(health?.health).toBe("auth_required");
+        expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+        expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "MAILBOX_AUTH_REQUIRED" });
+
+        // A new password, verified for the account and its sender, lets the send go out once.
+        await sql`
+          UPDATE mail.provider_connections connection
+          SET secret_revision = connection.secret_revision + 1, status = 'active', last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_bindings binding
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND connection.id = binding.connection_id
+        `;
+        await sql`
+          UPDATE mail.provider_bindings binding
+          SET state = 'active', verified_secret_revision = connection.secret_revision, last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_connections connection
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND connection.id = binding.connection_id
+        `;
+        await sql`
+          UPDATE mail.sender_identity_bindings sender_binding
+          SET verified_secret_revision = binding.verified_secret_revision
+          FROM mail.provider_bindings binding
+          WHERE sender_binding.sender_identity_id = ${mailbox.identityId}::uuid AND binding.id = sender_binding.binding_id
+        `;
+        // The rediscovery after the new login makes the provider resource active again.
+        await sql`
+          UPDATE mail.remote_resources resource
+          SET status = 'active', last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_bindings binding
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND resource.id = binding.remote_resource_id
+        `;
+        await sql`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL WHERE id = ${mailbox.mailboxId}::uuid`;
+        const submitted = provider.submissions();
+        expect(await sendRetryNow(outbox.id)).toBe("sent");
+        expect(provider.submissions()).toBe(submitted + 1);
+      }
+
+      // Any other permanent rejection stays final.
+      const rejected = await newDraft(mailbox, "SMTP 550");
+      provider.failNextSubmission("EENVELOPE", false, 550);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "smtp-550", "failed");
+      expect(await delivery(failed.id)).toMatchObject({ state: "failed", draft_state: "draft" });
     } finally {
       provider.restore();
     }
