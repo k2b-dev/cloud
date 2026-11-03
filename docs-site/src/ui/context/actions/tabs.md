@@ -117,10 +117,11 @@ a mailbox with many work and saved views, and pair it with a larger `max`,
 such as the number of views. A fitting strip measures its room and moves the
 views that do not fit under **More**, last ones first, instead of scrolling
 them; the current view and pinned views stay. **More +n** then counts every
-view behind it. The strip fits again when the width of the head's lead
-changes, before paint, also in the server frame and on the narrow head level.
-The lead takes no width from the strip, so a fit never causes another one: the
-strip settles after one pass per change. Outside `AppWorkspace.Head`, a fitting
+view behind it. The strip fits again, before paint, when the width of the
+head's lead or of a shown view changes, for example once web fonts or icons
+load, also in the server frame and on the narrow head level. A fit only shows
+and hides views and never changes those widths, so it never causes another
+one: the strip settles after one pass per change. Outside `AppWorkspace.Head`, a fitting
 strip fits when it renders. The phone's head row keeps its scrolling strip.
 Without `fit`, the levels above apply unchanged.
 

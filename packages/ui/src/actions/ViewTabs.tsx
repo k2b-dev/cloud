@@ -125,22 +125,28 @@ type WatchedViewTabs = HTMLElement & {
     /** Runs one fit in the next frame; calls before it runs share it. */
     schedule: () => void;
     frame: number;
-    /** The head lead's width that the last fit used. */
-    room: number;
+    /** The head lead's width and the widths of the shown entries when the last fit ended. */
+    room: string;
+    /** Fits again once web fonts finish loading: their metrics change every view's width, not the lead's. */
+    fonts: () => void;
   };
 };
 
 /**
  * Also embedded, so it must not close over module state.
  *
- * A fitting strip converges by construction: it watches only the head lead, an inline-size container that takes no
- * width from the strip, and fits again only when that width changes or the strip renders. A fit changes the strip and
- * the lead's height, never the lead's width, so the notification it causes finds the same width and ends there.
+ * A fitting strip converges by construction. It fits again only when the strip renders, web fonts finish loading, or
+ * a notification finds another width of the head lead or of an entry that the last fit left shown. A fit only shows
+ * and hides entries: the lead is an inline-size container that takes no width from the strip, and every entry keeps
+ * its own width (`flex: none`), so the notifications a fit causes find the widths it ended with and stop there.
  */
 function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTabs, edges: (element: HTMLElement) => string | undefined) {
   if (!(list instanceof HTMLElement)) return;
   const fits = list.hasAttribute("data-fit-room");
   const roomOf = () => list.closest<HTMLElement>(".k2b-app-workspace__head-lead");
+  // What a fit depends on: the lead's width and each shown entry's width, which fonts, icons and labels change.
+  const measured = () =>
+    [roomOf()?.clientWidth ?? -1, ...Array.from(list.children, (child) => child.getBoundingClientRect().width)].join(" ");
   // A DOM property survives hydration: one observer and focus listener per reused list.
   let watch = list.__k2bViewTabsWatch;
   if (!watch) {
@@ -166,13 +172,10 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
     const connect = () => {
       if (!watch) return;
       watch.resize.disconnect();
-      if (!fits) {
-        watch.resize.observe(list);
-        for (const child of Array.from(list.children)) watch.resize.observe(child);
-        return;
-      }
+      watch.resize.observe(list);
+      for (const child of Array.from(list.children)) watch.resize.observe(child);
       const room = roomOf();
-      if (room) watch.resize.observe(room);
+      if (fits && room) watch.resize.observe(room);
     };
     // Fitting resizes the strip and possibly the head, which other observers may watch. Inside a ResizeObserver
     // callback that would leave their notifications undelivered, so a fit runs in the next frame, still before it paints.
@@ -183,31 +186,37 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
         watch.frame = 0;
         if (!list.isConnected) return;
         settleNow();
-        watch.room = roomOf()?.clientWidth ?? -1;
+        watch.room = measured();
       });
     };
     watch = {
       resize: new ResizeObserver(() => {
         // A scrolling strip only scrolls and settles at once.
         if (!fits) return settleNow();
-        // Only a new width of the lead can change what fits; its height follows the fit and is ignored.
-        if (watch && (roomOf()?.clientWidth ?? -1) !== watch.room) watch.schedule();
+        // Heights follow the fit, and hidden entries measure 0 by its own doing: only another measure counts.
+        if (watch && measured() !== watch.room) watch.schedule();
       }),
       focus,
       preferCurrent: true,
       connect,
       schedule,
       frame: 0,
-      room: -1,
+      room: "",
+      fonts: () => watch?.schedule(),
     };
     Object.defineProperty(list, "__k2bViewTabsWatch", { value: watch, configurable: true });
     list.addEventListener("focusin", focus);
+    // A first visit can paint before the web fonts load; the server frame and the client then fit the same metrics.
+    if (fits && document.fonts) {
+      document.fonts.addEventListener("loadingdone", watch.fonts);
+      void document.fonts.ready.then(watch.fonts);
+    }
   }
   watch.preferCurrent = true;
   watch.connect();
   settle(list, edges);
   if (fits) {
-    watch.room = roomOf()?.clientWidth ?? -1;
+    watch.room = measured();
     // The head's actions parse after the views. A frame's animation callbacks run before its first layout and
     // paint, so this fit also counts their room in the first frame.
     watch.schedule();
@@ -242,6 +251,7 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
       disposed = true;
       watch?.resize.disconnect();
       if (watch?.frame) cancelAnimationFrame(watch.frame);
+      if (watch) document.fonts?.removeEventListener("loadingdone", watch.fonts);
       if (list && watch) {
         list.removeEventListener("focusin", watch.focus);
         Reflect.deleteProperty(list, "__k2bViewTabsWatch");

@@ -340,6 +340,8 @@ const open = async (
   width = 1440,
   height: number = sizes.find(([w]) => w === width)?.[1] ?? 900,
   motion: "reduce" | "no-preference" = "reduce",
+  /** Runs before the first navigation, for example to delay some responses. */
+  prepare?: (page: Page) => Promise<void>,
 ) => {
   const context = await browser.newContext({
     viewport: { width, height },
@@ -362,6 +364,7 @@ const open = async (
       assets.push(`${response.url()}: HTTP ${response.status()}`);
   });
   try {
+    await prepare?.(page);
     await page.goto(new URL(path, server.url).href);
     await ready(page);
     return page;
@@ -2508,6 +2511,40 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 before = after;
               }
               expect((await fit()).loops).toEqual([]);
+            } finally {
+              await close(page);
+            }
+          });
+
+        // A first visit can paint before the web fonts load (font-display: swap): the fit must then follow the fonts, so
+        // the server frame, measured once they are ready, and the client render show the same tabs.
+        for (const [width, height] of [
+          [1440, 900],
+          [834, 1194],
+        ] as const)
+          test(`S3 head at ${width}: web fonts that load late fit the server frame like the client render`, async () => {
+            const page = await open(`${boxPath}?layout=auto`, width, height, "reduce", async (page) => {
+              await page.route(/\.woff2(\?|$)/, async (route) => {
+                // The text font late, the icon font later: the Events tab's icon then widens after the head settled.
+                await new Promise((done) => setTimeout(done, route.request().url().includes("ibm-plex") ? 300 : 700));
+                await route.continue();
+              });
+            });
+            try {
+              // Visible tab labels and the strip's right edge, before and after the client render.
+              const strip = async (name: "server" | "hydrated") => {
+                const value: { right: number; labels: { text: string }[] } = JSON.parse(
+                  (await page.locator("html").getAttribute(`data-${name}-strip`))!,
+                );
+                return { right: value.right, labels: value.labels.map((label) => label.text) };
+              };
+              const server = await strip("server");
+              const hydrated = await strip("hydrated");
+              expect(hydrated.labels).toEqual(server.labels);
+              expect(Math.abs(hydrated.right - server.right)).toBeLessThanOrEqual(0.5);
+              assertFrame(await recordedFrame(page, "server"), await recordedFrame(page, "hydrated"), "server → hydrated");
+              await settled(page);
+              expect((await headTabs(page)).overflow).toBeLessThanOrEqual(1);
             } finally {
               await close(page);
             }
