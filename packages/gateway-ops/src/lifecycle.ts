@@ -1,4 +1,4 @@
-import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
+import { lazySync, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
 import type { AppLifecycle } from "@k2b/cloud/contracts";
 import { get as getSetting, logger, superviseRuntimeTask, trace } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
@@ -103,7 +103,7 @@ const runOfflineAudit = async (signal: AbortSignal): Promise<void> => {
 };
 
 export const refreshRegisteredApps = async (): Promise<void> => {
-  await upsertRegisteredApps(await listApps());
+  await upsertRegisteredApps(await listAppsDetailed());
 };
 
 // `watchAppRegistry` awaits each change callback, so refreshes never overlap.

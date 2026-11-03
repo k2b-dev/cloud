@@ -54,6 +54,7 @@ export {
   latestGatewayRouteSnapshot,
   listGatewayRouteSnapshots,
   publishGatewayRouteSnapshot,
+  watchGatewayDomainChanges,
   publishRequestTelemetry,
   removeGatewayRouteSnapshot,
 } from "./gateway";
