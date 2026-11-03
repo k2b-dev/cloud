@@ -1,6 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { MailActivityEvent, MailActivityPerson } from "../../service/collaboration";
 import { mailEventsMessages } from "./mail-events-messages";
+import { mailSendFailureReason } from "./mail-message-presentation";
 
 /** The colour family of an event's icon; errors and warnings also colour the detail line. */
 export type MailEventTone = "assign" | "sent" | "draft" | "done" | "comment" | "automation" | "error" | "warning";
@@ -115,7 +116,13 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
     const result = metadata.result;
     // No call to send again here: the conversation shows the delivery and its recovery.
     if (result === "failed")
-      return { icon: "ti ti-alert-triangle", tone: "error", before: t.sendFailedBefore, after: t.sendFailedAfter, detail: t.sendDetails };
+      return {
+        icon: "ti ti-alert-triangle",
+        tone: "error",
+        before: t.sendFailedBefore,
+        after: t.sendFailedAfter,
+        detail: `${mailSendFailureReason(typeof metadata.code === "string" ? metadata.code : null, context.locale)} ${t.sendDetails}`,
+      };
     if (result === "unknown")
       return {
         icon: "ti ti-alert-triangle",

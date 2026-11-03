@@ -1,6 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Avatar, Button, Dropdown, FilterChip, FilterToggle, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, Show, untrack } from "solid-js";
+import { unwrap } from "solid-js/store";
 import { apiClient } from "../../api/client";
 import { type MailActivityKind, mailActivityKindSchema } from "../../contracts";
 import {
@@ -32,17 +33,29 @@ export type MailEventsFeedState = ReturnType<typeof createMailEventsFeed>;
  * mailbox, not with the feed's place on screen, so opening a conversation beside the feed keeps what was loaded.
  */
 export function createMailEventsFeed(input: { mailboxId: string; page: () => MailEventsPage | null; failedMessage: () => string }) {
-  const [pages, setPages] = createSignal<MailEventPages | null>(
-    untrack(input.page) ? { items: untrack(input.page)!.items, nextCursor: untrack(input.page)!.nextCursor } : null,
+  // The workspace store updates its snapshot in place, so the feed follows a copy of the page, read in full: a new
+  // first page or filter then always reaches it, and later store writes cannot change what it shows.
+  const snapshot = createMemo(
+    () => {
+      const page = input.page();
+      // Serializing reads every field through the store, so any change of the page reruns this.
+      return page ? { key: JSON.stringify(page), page: structuredClone(unwrap(page)) } : null;
+    },
+    undefined,
+    { equals: (left, right) => left?.key === right?.key },
   );
+  const copy = (value: ReturnType<typeof snapshot>): MailEventsPage | null => value?.page ?? null;
+  const initial = copy(untrack(snapshot));
+  const [pages, setPages] = createSignal<MailEventPages | null>(initial ? { items: initial.items, nextCursor: initial.nextCursor } : null);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
-  let loadedFilter = untrack(input.page)?.filter ?? EMPTY_MAIL_EVENTS_FILTER;
+  let loadedFilter = initial?.filter ?? EMPTY_MAIL_EVENTS_FILTER;
   let loadGeneration = 0;
   createEffect(
     on(
-      input.page,
-      (page) => {
+      snapshot,
+      (value) => {
+        const page = copy(value);
         loadGeneration += 1;
         setLoadingMore(false);
         setLoadMoreError(null);

@@ -54,7 +54,7 @@ describe("mailbox event presentation", () => {
         metadata: { before: { workStatus: "needs_action" }, after: { workStatus: "done" } },
       }),
       event({ id: "7", action: "draft.created", conversationId: null, conversationSubject: null }),
-      event({ id: "6", action: "message.sent", metadata: { result: "failed", intent: "reply" } }),
+      event({ id: "6", action: "message.sent", metadata: { result: "failed", intent: "reply", code: "ETLS" } }),
       event({ id: "5", action: "message.sent", metadata: { result: "sent", intent: "reply" }, conversationId: "Conv02" }),
       event({
         id: "4",
@@ -81,12 +81,19 @@ describe("mailbox event presentation", () => {
     ]);
     expect(rows[0]?.detail).toBe("Zuständig: Mira Schulz und Du");
     expect(rows.map((row) => row.tone)).toEqual(["assign", "done", "draft", "error", "sent", "automation", "done"]);
-    // The failure points to the conversation without asking to send again.
-    expect(rows[3]?.detail).toBe("Details in der Unterhaltung.");
+    // The failure names its reason and points to the conversation without asking to send again.
+    expect(rows[3]?.detail).toBe("Die Nachricht wurde nicht zugestellt. Details in der Unterhaltung.");
     expect(rows[2]?.subject).toBeNull();
     expect(rows[5]?.automated).toBe(true);
     expect(rows.map((row) => row.day)).toEqual(["Heute", "Heute", "Heute", "Heute", "Heute", "Heute", "Gestern"]);
     expect(rows[6]?.detail).toBe("Eine neue Nachricht ist eingegangen.");
+  });
+
+  test("names why a send failed as the reader does", () => {
+    const [row] = present([
+      event({ id: "1", action: "message.sent", metadata: { result: "failed", code: "SMTP_NO_RECIPIENTS_ACCEPTED" } }),
+    ]);
+    expect(row?.detail).toBe("Der empfangende Server hat die Empfänger abgelehnt. Details in der Unterhaltung.");
   });
 
   test("merges equal events of one person only within one conversation", () => {

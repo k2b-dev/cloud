@@ -37,7 +37,7 @@ import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesList
 import { mailFolderNames } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
-import { readMailEventsFilter } from "../mail-events-route";
+import { isMailEventsRoute, readMailEventsFilter } from "../mail-events-route";
 import type { MailViewPreference } from "../mail-view-preference";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
@@ -746,8 +746,10 @@ function createMailboxController(props: MailboxControllerProps) {
   const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
   const [searchDiscovered, setSearchDiscovered] = createSignal(Boolean(props.initialPreferences.searchDiscovered));
   const [searchHintDismissed, setSearchHintDismissed] = createSignal(Boolean(props.initialPreferences.searchHintDismissed));
-  // Events is marked new until the person first opens it; the cookie is written once, on that first visit.
-  const [eventsDiscovered, setEventsDiscovered] = createSignal(Boolean(props.initialPreferences.eventsDiscovered));
+  // Events is marked new until the person has opened it once. The first visit only stores that, so the mark stays where
+  // it is until the next page load and the tabs never move under the pointer.
+  const eventsDiscovered = Boolean(props.initialPreferences.eventsDiscovered);
+  let eventsVisitStored = eventsDiscovered;
   const searchControls = createMailboxSearch({
     mailboxId,
     get requestUrl() {
@@ -852,8 +854,8 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 
   createEffect(() => {
-    if (!data.eventsMode || untrack(eventsDiscovered)) return;
-    setEventsDiscovered(true);
+    if (!data.eventsMode || eventsVisitStored) return;
+    eventsVisitStored = true;
     persistPreferences({ eventsDiscovered: true });
   });
 
@@ -2753,7 +2755,7 @@ function createMailboxController(props: MailboxControllerProps) {
         recently_active: sidebarText().recentActivity,
         kept: sidebarText().kept,
       },
-      eventsBadge: eventsDiscovered() ? undefined : eventsText().eventsNew,
+      eventsBadge: eventsDiscovered ? undefined : eventsText().eventsNew,
       formatCount: (count) => count.toLocaleString(locale()),
     }),
   );
@@ -2763,8 +2765,19 @@ function createMailboxController(props: MailboxControllerProps) {
     failedMessage: () => eventsText().loadMoreFailed,
   });
   const eventsFilter = createMemo(() => data.eventsPage?.filter ?? readMailEventsFilter(mailRouteUrl(requestPath())));
-  /** Another filter or the tab itself is on its way; opening a conversation beside the feed or a refresh keeps it. */
-  const eventsLoading = () => data.eventsMode && workspaceQuery.loading() && !conversationOpening();
+  /**
+   * Another filter of the feed is on its way: the shown pages belong to another list than the route. Opening a
+   * conversation beside the feed and a live refresh stay in the same list, so they keep the feed in place.
+   */
+  const eventsLoading = () => {
+    const shown = workspaceQuery.pages()[0];
+    return (
+      data.eventsMode &&
+      !!shown &&
+      routeListKey(shown.source) !== routeKey() &&
+      isMailEventsRoute(mailRouteUrl(decodeRouteSource(routeSource()).href))
+    );
+  };
   /** A click on an event opens its conversation beside the feed; the feed keeps its pages. */
   const openEventConversation = async (href: string, conversationId: string, subject: string) => {
     navigationStart(href);

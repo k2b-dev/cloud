@@ -2,6 +2,7 @@ import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
 import { messageForwardTextOf } from "../../forward-text";
 import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 type PlainMessageSegment = {
@@ -294,4 +295,15 @@ export const undoSendSecondsRemaining = (undoUntil: string | null, now: number):
   const deadline = Date.parse(undoUntil);
   if (!Number.isFinite(deadline)) return null;
   return Math.max(0, Math.ceil((deadline - now) / 1000));
+};
+
+/** Why a send failed, from its error code, as the reader and the mailbox's event feed both name it. */
+export const mailSendFailureReason = (code: string | null | undefined, locale = "en"): string => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
+  const value = code ?? "";
+  if (["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(value)) return t.recipientsRejected;
+  if (value.includes("AUTH") || value.includes("CREDENTIAL")) return t.authenticationFailed;
+  if (value.includes("SIZE") || value === "SMTP_DSN_UNSUPPORTED") return t.unsupportedDelivery;
+  if (value.includes("ACCESS") || value.includes("IDENTITY")) return t.sendingAccessChanged;
+  return t.notDelivered;
 };
