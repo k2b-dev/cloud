@@ -271,6 +271,7 @@ export const rule: Rule = {
       "--studio-secondary", // StudioCard.tsx
       "--studio-accent-dark", // StudioCard.tsx
       "--analysis-min-width", // AnalyticsView.tsx: validated layout width
+      "--k2b-choice-min-width", // inputs/choice.ts: the trigger width, or the widest the open popover was
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
       "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
       "--mail-time-samples", // MailConversationList.tsx: the longest localized times that size the columns view's time column

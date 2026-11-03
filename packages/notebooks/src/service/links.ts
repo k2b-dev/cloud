@@ -225,6 +225,57 @@ export const listBacklinks = async (params: {
 };
 
 /**
+ * List the notes `noteId` links to, at most `limit`, filtered by access on the *target* notebook like
+ * `listBacklinks`, so a link never reveals a title its reader cannot open. `bypassAccess: true` lists every target,
+ * for global admins.
+ */
+export const listOutgoingLinks = async (params: {
+  noteId: string;
+  userId: string | null;
+  bypassAccess?: boolean;
+  limit: number;
+}): Promise<Backlink[]> => {
+  if (!params.bypassAccess) {
+    const relations = await listNoteRelations({
+      noteId: params.noteId,
+      userId: params.userId,
+      direction: "outgoing",
+      pagination: { limit: params.limit, offset: 0 },
+    });
+    return relations.map((relation) => ({
+      noteId: relation.noteId,
+      title: relation.title,
+      notebookId: relation.notebookId,
+      notebookName: relation.notebookName,
+      updatedAt: relation.updatedAt,
+    }));
+  }
+  const rows = await sql<BacklinkRow[]>`
+    SELECT DISTINCT
+      target.id AS note_id,
+      target.short_id AS note_short_id,
+      target.title,
+      target.notebook_id,
+      nb.short_id AS notebook_short_id,
+      nb.name AS notebook_name,
+      target.updated_at
+    FROM notebooks.note_links nl
+    JOIN notebooks.notes target ON target.id = nl.target_note_id
+    JOIN notebooks.notebooks nb ON nb.id = target.notebook_id
+    WHERE nl.source_note_id = ${params.noteId}::uuid
+    ORDER BY target.updated_at DESC
+    LIMIT ${params.limit}
+  `;
+  return rows.map((row) => ({
+    noteId: row.note_short_id,
+    title: row.title,
+    notebookId: row.notebook_short_id,
+    notebookName: row.notebook_name,
+    updatedAt: row.updated_at.toISOString(),
+  }));
+};
+
+/**
  * List a bounded page of readable notes connected to one note. Access is
  * checked on the related note's notebook so links never reveal hidden titles.
  */

@@ -76,6 +76,7 @@ window.mountMailboxCode = ({ state, locale, phone }) => {
             ],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
+            focusNoticeOpen: false,
           }}
           code={phone ? { ...code, activation: { allowed: false, reason: "phone" } } : code}
           currentUserEmail="ben.schulz@moebel-beispiel.de"

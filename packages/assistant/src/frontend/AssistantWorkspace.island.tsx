@@ -57,8 +57,8 @@ import {
   ButtonLink,
   Chat,
   type ChatMention,
+  DetailsToggle,
   dialogCore,
-  IconButton,
   LocaleProvider,
   NoticeCard,
   openSpotlightSearch,
@@ -1680,12 +1680,12 @@ export default function AssistantWorkspace(props: Props) {
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
   const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
-    const maxBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
-    if (maxBytes === 0) {
+    const maxTotalBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
+    if (maxTotalBytes === 0) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return Promise.resolve([]);
     }
-    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes });
+    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxTotalBytes });
   };
 
   const composerAttachmentsBlocked = (sessionKey: string) => chat.activeConversationId() === sessionKey && chat.running();
@@ -2947,18 +2947,15 @@ export default function AssistantWorkspace(props: Props) {
                           </Show>
                         </div>
                         <Show when={activeConversation() && !emptyChat()}>
-                          <IconButton
+                          <DetailsToggle
                             ref={contextHost.toggleRef}
                             class="assistant-context-toggle"
                             size="sm"
-                            variant="ghost"
                             label={sidebarCopy().show}
                             aria-expanded="false"
                             aria-controls="assistant-chat-context"
                             onClick={contextHost.open}
-                          >
-                            <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
-                          </IconButton>
+                          />
                           <AssistantChatSidebarPanel
                             id="assistant-chat-context"
                             state={contextState}

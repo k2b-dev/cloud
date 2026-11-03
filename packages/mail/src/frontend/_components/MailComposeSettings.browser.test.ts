@@ -140,12 +140,12 @@ const controls = async (page: Page) => ({
 
 /**
  * Picks a file from this device. When the page already knows that no Cloud app offers files, the dropzone opens the
- * device's dialog at once; while it still asks, the shared chooser opens and offers "This device" first.
+ * device's dialog at once; while it still asks, the shared chooser opens on "This device", whose source opens it.
  */
 const chooseDeviceFile = async (page: Page, file: { name: string; mimeType: string; buffer: Buffer }) => {
   const picker = page.waitForEvent("filechooser");
   await page.locator(".k2b-dropzone").click();
-  const device = page.locator("dialog .k2b-file-grid__name").getByText(/^(This device|Dieses Gerät)$/);
+  const device = page.locator('dialog .cloud-file-dialog__source[aria-current="true"]');
   if ((await Promise.race([picker.then(() => "device"), device.waitFor().then(() => "chooser")])) === "chooser") await device.click();
   await (await picker).setFiles(file);
 };

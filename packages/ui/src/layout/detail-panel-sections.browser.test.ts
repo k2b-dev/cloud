@@ -510,9 +510,9 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.inSection).toEqual({ left: 30, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
 
           // Hosted in a tinted dialog group, the lone section and the discussion are frames like a
-          // group: their field wells are recessed again instead of white on the white frame.
+          // group. Their fields are white with their own edge, as on every surface.
           expect(result.hosted.tint).not.toBe(result.hosted.frame);
-          expect(result.hosted.grouped).not.toBe(result.hosted.frame);
+          expect(result.hosted.grouped).toBe(result.hosted.frame);
           expect(result.hosted.lone).toBe(result.hosted.grouped);
           expect(result.hosted.composer).toBe(result.hosted.grouped);
 

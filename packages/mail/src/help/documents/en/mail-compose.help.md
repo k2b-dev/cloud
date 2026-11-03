@@ -235,7 +235,7 @@ Scheduled delivery and Undo Send require an active mailbox transport. When someo
 
 A message waits and shows **Waiting for sign-in** when it is due and one of these applies:
 
-- the mailbox needs a new sign-in;
+- the mailbox needs a new sign-in, also because its outgoing mail server refused the password;
 - someone replaced its password, and the mailbox or the sending identity is not verified with the new password yet.
 
 Mail tells you once. It sends the message as soon as the account is reconnected, still dated when it goes out. If nobody reconnects the account within six days after the due time, the message shows **Couldn’t send** and returns to Drafts. Mail then tells you again.
@@ -244,7 +244,7 @@ Mail tells you once. It sends the message as soon as the account is reconnected,
 
 Choose the delivery status below an outgoing message. It shows what happened and the safest next step.
 
-If Mail cannot reach the mail server before it hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes. The delivery status shows the next attempt. The same happens when the mailbox is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**. A message whose mailbox needs a new sign-in waits longer, as described above.
+If Mail cannot reach the mail server before it hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes. The delivery status shows the next attempt. The same happens when the mailbox is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**. A message whose mailbox needs a new sign-in waits longer, as described above. If the mail server rejects the message for now, for example because of a sending limit, Mail tries again with growing pauses for up to an hour. If it still fails, the message shows **Couldn’t send** and returns to Drafts.
 
 - **Couldn’t send:** Mail knows that the message was not sent. Choose **Review and resend** to reopen the kept draft before you try again. Errors with recipients, size, or delivery options use a more specific review label.
 - **Partially sent:** The receiving server accepted some recipients but not others. Mail stores the message in the Sent folder like other sent mail. If that does not work immediately, Mail tries again over the next few minutes. Choose **Review remaining recipients** to create an independent draft with only the addresses that the server did not accept.

@@ -141,7 +141,15 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
-export { type CodeBridgeAuthority, type CodeBridgeCall, type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
+export {
+  CODE_BRIDGE_REFUSAL_KINDS,
+  type CodeBridgeAuthority,
+  type CodeBridgeCall,
+  type CodeBridgeHost,
+  CodeBridgeRefusal,
+  type CodeBridgeRefusalKind,
+  codeBridgeLocalRefusalKind,
+} from "../code/bridge-contract";
 export { createAdminAppDomainRoutes } from "./admin-app-domains";
 export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";

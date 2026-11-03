@@ -10,8 +10,10 @@ import {
   CODE_RESULT_STORAGE_BYTES,
   type Code,
   type CodeCall,
+  type CodeCallRefusalKind,
   type CodeOwner,
   CodeOwnerSchema,
+  type CodeRefusedCall,
   type CodeRun,
   type CodeSourceFiles,
   CodeSourceFilesSchema,
@@ -371,6 +373,7 @@ type RunRow = {
   title: string | null;
   state: CodeRun["state"];
   outcome: string | null;
+  first_refused_call_ordinal: number | null;
   input: unknown;
   output: unknown;
   created_at: Date;
@@ -392,6 +395,7 @@ const mapRun = (row: RunRow, viewer: { id: string; roles: readonly string[] }): 
     ...(title.success ? { title: title.data } : {}),
     state: row.state,
     outcome: row.outcome,
+    firstRefusedCallOrdinal: row.first_refused_call_ordinal,
     createdAt: row.created_at.toISOString(),
     startedAt: row.started_at?.toISOString() ?? null,
     endedAt: row.ended_at?.toISOString() ?? null,
@@ -405,7 +409,7 @@ export const listCodeRuns = async (input: { codeId: string; cursor?: string; lim
   const [at, id] = input.cursor?.split("|") ?? [];
   const rows = await sql<
     (RunRow & { cursor_time: string })[]
-  >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
+  >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.first_refused_call_ordinal,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
     (SELECT e->>'title' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v.manifest->'entrypoints')='array' THEN v.manifest->'entrypoints' ELSE '[]'::jsonb END) e WHERE e->>'entrypoint'=r.entrypoint LIMIT 1) AS title,
     COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid) AS rerun_by_name,
     to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
@@ -424,6 +428,7 @@ type CallRow = {
   call: NormalizedCapabilityCall;
   result: CodeCall["result"];
   state: CodeCall["state"];
+  refusal_kind: CodeCallRefusalKind | null;
   started_at: Date;
   ended_at: Date | null;
 };
@@ -432,7 +437,7 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
   const { permission } = await readCode(input.codeId, context);
   const [row] = await sql<
     RunRow[]
-  >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
+  >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.first_refused_call_ordinal,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
     (SELECT e->>'title' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v.manifest->'entrypoints')='array' THEN v.manifest->'entrypoints' ELSE '[]'::jsonb END) e WHERE e->>'entrypoint'=r.entrypoint LIMIT 1) AS title,
     COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid) AS rerun_by_name
     FROM code.runs r LEFT JOIN code.versions v ON v.id=r.version_id LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId} AND r.id = ${input.runId}::uuid`;
@@ -443,6 +448,13 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
     { input: CodeCall["result"]; output: CodeCall["result"] }[]
   >`SELECT input,output FROM code.runs WHERE id = ${input.runId}::uuid`;
   if (!payload) throw new CodeDataError("NOT_FOUND", "Code run not found.");
+  // Fetch only the refused call's coordinates, never its potentially chunked/private input or result.
+  const [firstRefusedCall] =
+    row.first_refused_call_ordinal === null
+      ? []
+      : await sql<CodeRefusedCall[]>`
+    SELECT ordinal,kind,call->>'capability' AS capability,call->'target' AS target FROM code.calls
+    WHERE run_id=${input.runId}::uuid AND ordinal=${row.first_refused_call_ordinal} AND refusal_kind='target_refused'`;
   const calls = await sql<
     CallRow[]
   >`SELECT * FROM code.calls WHERE run_id = ${input.runId}::uuid AND ordinal > ${input.cursor ?? 0} ORDER BY ordinal LIMIT 2`;
@@ -459,6 +471,7 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
   return {
     run: mapRun(row, viewer),
     contents: {
+      firstRefusedCall: firstRefusedCall ?? null,
       input: inputChunked ? null : payload.input,
       output: outputChunked ? null : payload.output,
       inputChunked,
@@ -468,6 +481,7 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
         ordinal: call.ordinal,
         kind: call.kind,
         capability: call.call.capability,
+        refusalKind: call.refusal_kind,
         call: bytes(jsonText(call.call)) > CODE_INLINE_JSON_BYTES ? null : call.call,
         result: bytes(jsonText(call.result)) > CODE_INLINE_JSON_BYTES ? null : call.result,
         callChunked: bytes(jsonText(call.call)) > CODE_INLINE_JSON_BYTES,
@@ -520,7 +534,14 @@ export const appendCodeCall = async (
 };
 /** Store the bounded result of one observation. No replay behavior is attached to this record. */
 export const finishCodeCall = async (
-  input: { runId: string; ordinal: number; state: "succeeded" | "failed"; result: CodeCall["result"]; endedAt: Date },
+  input: {
+    runId: string;
+    ordinal: number;
+    state: "succeeded" | "failed";
+    result: CodeCall["result"];
+    refusalKind?: CodeCallRefusalKind | null;
+    endedAt: Date;
+  },
   db: TransactionSQL,
 ): Promise<void> => {
   // Match settlement's run-before-call lock order, including late authoritative results.
@@ -535,9 +556,16 @@ export const finishCodeCall = async (
   // Postgres json preserves exact text, including numeric exponents and escaped NUL.
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
+  const refusalKind = input.state === "failed" ? (input.refusalKind ?? null) : null;
   const result =
-    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state IN ('running','uncertain')`;
+    await db`UPDATE code.calls SET refusal_kind=${refusalKind},state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state IN ('running','uncertain')`;
   if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
+  // The run lock serializes completions. Keep invocation order even when later calls finish first.
+  // This write and the call's result/classification commit or roll back together, before runner completion.
+  if (refusalKind === "target_refused")
+    await db`UPDATE code.runs
+    SET first_refused_call_ordinal=LEAST(COALESCE(first_refused_call_ordinal,${input.ordinal}),${input.ordinal})
+    WHERE id=${input.runId}::uuid`;
 };
 /** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */
 export const expireCodeRuns = async (options: { now: Date; limit: number; db?: CodeDb }): Promise<number> => {

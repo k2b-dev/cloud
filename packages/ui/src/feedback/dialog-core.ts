@@ -117,7 +117,11 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
   dialog.removeAttribute("aria-label");
   dialog.removeAttribute("aria-labelledby");
   dialog.removeAttribute("aria-describedby");
-  if (entry.ariaDescribedBy) dialog.setAttribute("aria-describedby", entry.ariaDescribedBy);
+  // A toned dialog names its tone in a hidden word that describes the dialog, so its heading keeps the title alone.
+  const tone = entry.container.querySelector<HTMLElement>("[data-dialog-tone-label]");
+  if (tone) tone.id ||= `k2b-dialog-tone-${++nextDialogTitleId}`;
+  const describedBy = [entry.ariaDescribedBy, tone?.id].filter(Boolean).join(" ");
+  if (describedBy) dialog.setAttribute("aria-describedby", describedBy);
   if (entry.ariaLabel) {
     dialog.setAttribute("aria-label", entry.ariaLabel);
     return;

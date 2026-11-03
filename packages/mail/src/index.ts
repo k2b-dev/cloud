@@ -6,6 +6,8 @@ import { mailCapabilities } from "./capabilities";
 import { app } from "./config";
 import { mailHelp } from "./help";
 import {
+  buildActivityFeedIndex,
+  buildBackfillActivityIndex,
   buildCommandTargetIndex,
   buildOpenConversationIndex,
   buildOptionalSearchIndex,
@@ -43,9 +45,11 @@ const result = await app.start({
       // Startup waits for none of these builds. A busy predecessor defers the rest until
       // the next start: concurrent expression builds can wait on each other's snapshots.
       void (async () => {
+        if ((await buildBackfillActivityIndex()) === "busy") return;
         if ((await buildCommandTargetIndex()) === "busy") return;
         if ((await buildProviderMessageIndex()) === "busy") return;
         if ((await buildOpenConversationIndex()) === "busy") return;
+        if ((await buildActivityFeedIndex()) === "busy") return;
         await buildOptionalSearchIndex();
       })();
     },

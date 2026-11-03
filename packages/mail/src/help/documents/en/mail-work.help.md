@@ -113,7 +113,7 @@ Choose **Assign** to change the assignees of the selected conversations. Choose 
 ### Work from Needs action
 
 We recommend **Needs action** as your inbox. Use folders for filing; filing and archiving change no work status.
-To empty the Inbox in other mail clients too, also choose **Archive**. Archive does not mark **Done**.
+To empty the Inbox in other mail clients too, also choose **Archive** in the conversation's **…** menu. Archive does not mark **Done**.
 
 - **Personal mailbox:** Work from **Needs action**. Use automations to mark noise **Done** and file it. Mark finished work **Done**.
   **Waiting for reply** follows a confirmed human reply automatically. Use **Show later** for date-dependent work.
@@ -138,9 +138,9 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 ## Read a complete thread {icon="route"}
 
-The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
+The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. When no list stands beside the reader, **×** at the end of its toolbar and Esc return to the list. The list is where you left it, and the conversation you had open has the focus. On a phone, Back returns to the list and its workspace head.
 
-Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.
+Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content. An open message shows its attachments above its text: the number, the first three files with a preview or their type, and **Show all**. A collapsed message shows the number of its attachments next to its date. Images that the text already shows are not in the list.
 
 An optional conversation summary appears in a highlighted card above the messages. To keep it current with Markdown formatting, use **Edit summary** or **More conversation actions → Create summary**. Summaries are shared Mail context, and an automation can also update them.
 
@@ -200,7 +200,7 @@ Another Cloud app can keep a reference to a conversation or a message. To give i
 
 Mail confirms the copy. Paste the Cloud ID into the other app. It is a link such as `https://cloud.example.com/open/mail.message/~Ab12Cd`, and it opens the mail. The Cloud ID gives no access: the other app shows the mail only to people who can open it in Mail.
 
-A right-click in the conversation opens the same menu as its **…** button. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
+A right-click on a conversation in the list, or in the open conversation, opens the same menu as its **…** button. The menu starts with **Reply** and **Reply in new window**. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
 
 ## Keep conversations that must not be deleted {icon="lock"}
 

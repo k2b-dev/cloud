@@ -47,7 +47,7 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext, { type MailContextParts } from "./MailConversationContext";
-import { canPreviewAttachment, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
+import { canPreviewAttachment, downloadUrl, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
 import { createRelatedConversations, MailRelatedConversationsView } from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { useMailCloudId } from "./mail-cloud-id";
@@ -80,17 +80,6 @@ const cloudAvatarSource = (userId: string | null | undefined, avatarHash: string
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
 type InspectorTab = "headers" | "source";
-
-/** Starts a download of a file the browser cannot preview. */
-const downloadUrl = (href: string, name: string) => {
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = name;
-  link.rel = "noopener";
-  document.body.append(link);
-  link.click();
-  link.remove();
-};
 
 /**
  * The details panel while the conversation's details load: the outline's own rows at their real heights, so nothing

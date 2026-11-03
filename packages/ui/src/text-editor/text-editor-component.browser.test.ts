@@ -416,6 +416,39 @@ for (const [name, options] of Object.entries(profiles))
         await context.close();
       }
     });
+    test.skipIf(name === "phone")("a grip menu closed before the browser announces it leaves every grip usable", async () => {
+      const { context, page, errors, cell, openMenu } = await polish();
+      try {
+        await cell(1, 0).hover();
+        // A busy page can deliver the click and Escape before the menu's toggle event. The browser then sends one
+        // toggle from "closed" to "closed", and the grip must still give up its open mark.
+        const after = await page.evaluate(async () => {
+          const grip = document.querySelector<HTMLElement>('tr[data-r="1"] .k2b-ste-rowMenu')!;
+          grip.click();
+          let menu: HTMLElement | null = null;
+          for (let step = 0; step < 10 && !menu; step++) {
+            await Promise.resolve();
+            menu = document.querySelector<HTMLElement>(".k2b-ste-table-menu:popover-open");
+          }
+          if (!menu) throw new Error("The row menu did not open");
+          const toggled = new Promise((resolve) => menu.addEventListener("toggle", resolve, { once: true }));
+          menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          await toggled;
+          return document.querySelectorAll(".k2b-ste-grip[data-open], [data-marked]").length;
+        });
+        expect(after).toBe(0);
+        expect(await openMenu.count()).toBe(0);
+        await cell(1, 0).hover();
+        expect(await page.locator('.k2b-ste-columnMenu[data-c="0"]').isVisible()).toBe(true);
+        await cell(1, 1).hover();
+        expect(await page.locator('tr[data-r="1"] .k2b-ste-rowMenu').isVisible()).toBe(true);
+        await page.locator('.k2b-ste-columnMenu[data-c="1"]').click();
+        await openMenu.waitFor();
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
     test.skipIf(name === "phone")("a press beside an open menu only closes it: focus, selection and marks stay", async () => {
       const { context, page, errors, cell, openMenu, focused } = await polish();
       try {

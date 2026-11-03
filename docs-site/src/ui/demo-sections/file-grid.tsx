@@ -12,7 +12,7 @@ export function FileGridDemo() {
   const [view, setView] = createSignal("grid");
   const [opened, setOpened] = createSignal("");
   const selection = createCollectionSelection({ ids: () => files.map((file) => file.id), initial: ["notes"] });
-  // A picker: taps toggle, arrows only move focus, and the file that does not fit stays reachable but not selectable.
+  // A picker: taps toggle the check, arrows only move focus, and the file that does not fit stays reachable but not selectable.
   const choice = createCollectionSelection({ ids: () => files.map((file) => file.id), isDisabled: tooLarge, checklist: true });
   return (
     <section class="flex flex-col gap-3" aria-label="Shared list and grid selection">
@@ -68,13 +68,8 @@ export function FileGridDemo() {
             selection={choice}
             label="Choose files"
             layout="list"
-            renderPreview={(file) =>
-              choice.selected().has(file.id) ? (
-                <i class="ti ti-circle-check text-xl" aria-hidden="true" />
-              ) : (
-                <FileTypeIcon name={file.name} folder={file.folder} />
-              )
-            }
+            checks={(file) => !file.folder}
+            renderPreview={(file) => <FileTypeIcon name={file.name} folder={file.folder} />}
             renderLabel={(file) => file.name}
             renderMeta={(file) => file.meta}
             onOpen={(file) => setOpened(file.name)}

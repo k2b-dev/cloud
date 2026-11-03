@@ -74,6 +74,7 @@ import {
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
+  mailActivityKindSchema,
   mailboxComposeLogoSchema,
   mailboxGrantAccessSchema,
   mailboxSchema,
@@ -312,6 +313,23 @@ const collaboratorQuerySchema = z.object({
 });
 const activityQuerySchema = cursorQuerySchema.extend({
   conversationId: ResourceShortIdSchema.optional(),
+  kind: z
+    .string()
+    .max(200)
+    .optional()
+    .transform((value) => (value ? [...new Set(value.split(",").filter(Boolean))] : undefined))
+    .pipe(z.array(mailActivityKindSchema).optional())
+    .describe(
+      "Comma-separated event kinds of the mailbox's event feed: assignment, sent, draft, status (done or reopened), comment, automation. Without it, every recorded action is listed.",
+    ),
+  actor: z.string().uuid().optional().describe("Only events this principal caused"),
+  mine: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true")
+    .describe(
+      "Only events that concern the caller: their own, ones that assign or unassign them, and ones on conversations assigned to them",
+    ),
 });
 const workspaceRouteQuerySchema = z.object({
   href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),
@@ -1777,10 +1795,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
     ),
   )
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
+    const { kind, actor, ...query } = c.req.valid("query");
     const result = await collaboration.listActivity({
       context: requestContext(c),
       mailboxId: internalMailboxId(c),
-      ...(await internalInput(c, c.req.valid("query"))),
+      ...(await internalInput(c, query)),
+      kinds: kind,
+      actorId: actor,
     });
     return respondPublic(c, projectActivityResult(result));
   })

@@ -67,6 +67,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: null,
   savedViewId: null,
   savedViews: [
@@ -94,6 +97,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
@@ -262,6 +266,9 @@ describe("Mail workspace folder switches", () => {
           }
         : null,
       draftsError: null,
+      eventsMode: false,
+      eventsPage: null,
+      eventsError: null,
       activeView,
       savedViewId,
       listMode,
@@ -273,6 +280,7 @@ describe("Mail workspace folder switches", () => {
       nextListCursor: null,
       listError: null,
       hiddenDone: null,
+      assignedGroups: null,
       listTitle: title,
     };
   };

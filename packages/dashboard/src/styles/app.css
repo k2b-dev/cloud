@@ -411,7 +411,7 @@
 .dashboard-board .dashboard-tile__sizes .k2b-segmented-control {
   width: auto;
   max-width: 100%;
-  background: var(--k2b-surface);
+  /* The size choice floats over the widget, so it casts the shadow of a floating layer. */
   box-shadow: var(--k2b-shadow-float);
   pointer-events: auto;
 }
@@ -537,7 +537,6 @@
 
 .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control {
   width: auto;
-  background: var(--k2b-surface);
 }
 
 .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control__option {

@@ -4,7 +4,9 @@ import {
   type CodeBridgeCall,
   type CodeBridgeHost,
   CodeBridgeRefusal,
+  type CodeBridgeRefusalKind,
   type CodeRunnerDispatchDependencies,
+  codeBridgeLocalRefusalKind,
   createCodeRunnerCallRoutes,
 } from "@k2b/cloud/api";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
@@ -167,6 +169,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
         }
       });
       let response: Response;
+      let refusalKind: CodeBridgeRefusalKind = "bridge";
       let issuanceRefusal: CodeBridgeRefusal | undefined;
       try {
         const rate = await (
@@ -187,19 +190,37 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           return mandates.withIssueAuthority(input, use, options);
         };
         response = await execute({
+          onRefusal: (kind) => {
+            refusalKind = kind;
+          },
           mandateId: call.claims.mandateId,
           mandateRevision: call.claims.mandateRevision,
           ownerAppId: "core",
           withMandateIssueAuthority: fencedIssue,
         });
-        if (issuanceRefusal) response = refusalResponse(issuanceRefusal);
+        if (issuanceRefusal) {
+          refusalKind = codeBridgeLocalRefusalKind(issuanceRefusal.code);
+          response = refusalResponse(issuanceRefusal);
+        }
       } catch (error) {
+        refusalKind = error instanceof CodeBridgeRefusal ? codeBridgeLocalRefusalKind(error.code) : "bridge";
         response = refusalResponse(error instanceof CodeBridgeRefusal ? error : new CodeBridgeRefusal("code_bridge_unavailable", 503));
       }
       const result = RunnerCallResponseSchema.parse(await response.clone().json());
+      if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);
       const success = result.ok;
       await sql.begin((tx) =>
-        finishCodeCall({ runId: call.claims.runId, ordinal, state: success ? "succeeded" : "failed", result, endedAt: new Date() }, tx),
+        finishCodeCall(
+          {
+            runId: call.claims.runId,
+            ordinal,
+            state: success ? "succeeded" : "failed",
+            result,
+            refusalKind: success ? null : refusalKind,
+            endedAt: new Date(),
+          },
+          tx,
+        ),
       );
       return response;
     },

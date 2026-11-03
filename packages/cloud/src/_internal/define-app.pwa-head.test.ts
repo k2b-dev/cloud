@@ -91,7 +91,7 @@ describe("document head", () => {
     for (const theme of ["light", "dark"] as const) {
       const html = head(await (await server.request("/pwa/head-probe", { headers: { Cookie: `theme=${theme}` } })).text());
       const canvas = PWA_CANVAS_COLORS[theme];
-      expect(html).toContain(`<html lang="en" class="${theme}" style="background-color:${canvas}">`);
+      expect(html).toContain(`<html lang="en" class="${theme}" data-k2b-mobile-shell="" style="background-color:${canvas}">`);
       expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
       expect(html).toContain(`<meta name="theme-color" content="${canvas}">`);
       expect(html.match(/name="theme-color"/g)).toHaveLength(1);
@@ -128,7 +128,7 @@ describe("document head", () => {
 
   test("Automatic app pages paint both system canvases before stylesheets", async () => {
     const html = head(await (await server.request("/pwa/head-probe")).text());
-    expect(html).toContain('<html lang="en" class="light">');
+    expect(html).toContain('<html lang="en" class="light" data-k2b-mobile-shell="">');
     expect(html.slice(0, html.indexOf("<head>"))).not.toContain("data-theme-fixed");
     for (const theme of ["light", "dark"] as const)
       expect(html).toContain(`<meta name="theme-color" media="(prefers-color-scheme: ${theme})" content="${PWA_CANVAS_COLORS[theme]}">`);
@@ -142,7 +142,7 @@ describe("document head", () => {
     const response = await server.request("/pwa/head-probe/forbidden", { headers: { Cookie: "theme=dark" } });
     expect(response.status).toBe(403);
     const html = head(await response.text());
-    expect(html).toContain(`<html lang="en" class="dark" style="background-color:${PWA_CANVAS_COLORS.dark}">`);
+    expect(html).toContain(`<html lang="en" class="dark" data-k2b-mobile-shell="" style="background-color:${PWA_CANVAS_COLORS.dark}">`);
     expect(html).toContain(`<meta name="theme-color" content="${PWA_CANVAS_COLORS.dark}">`);
     expect(html.match(/<meta name="theme-color"[^>]*>/g)).toEqual([`<meta name="theme-color" content="${PWA_CANVAS_COLORS.dark}">`]);
   });

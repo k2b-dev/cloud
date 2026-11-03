@@ -25,7 +25,12 @@ import type { SidebarListNote, SidebarNote, SidebarTreeSort } from "../../../../
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildGraphUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_SOFT_NAVIGATED_EVENT, SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
+import {
+  NOTE_SOFT_NAVIGATED_EVENT,
+  OPEN_NOTEBOOK_SETTINGS_EVENT,
+  type OpenNotebookSettingsEventDetail,
+  SIDEBAR_FILTER_CHANGED_EVENT,
+} from "../detail/events";
 import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
 import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
@@ -109,8 +114,9 @@ export default function NotebookSidebar(props: Props) {
     return withSidebarFilter(buildGraphUrl(notebook().id, note, props.ctx.presentationMode, back), filter());
   };
   const currentNoteId = () => (props.current === "graph" ? null : selectedNoteId());
-  const openSettings = () =>
+  const openSettings = (initialTab?: string) =>
     openNotebookSettingsDialog({
+      initialTab,
       notebook: notebook(),
       isAdmin: props.ctx.permission === "admin",
       canWrite,
@@ -144,11 +150,15 @@ export default function NotebookSidebar(props: Props) {
       follow(parseSidebarFilter(new URL(href, window.location.href).searchParams));
     };
     const onPopState = () => follow(currentFilter(props.ctx));
+    // The detail panel's "Manage access" opens the settings this sidebar owns.
+    const onOpenSettings = (event: Event) => void openSettings((event as CustomEvent<OpenNotebookSettingsEventDetail>).detail?.tab);
     window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener(OPEN_NOTEBOOK_SETTINGS_EVENT, onOpenSettings);
     onCleanup(() => {
       window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener(OPEN_NOTEBOOK_SETTINGS_EVENT, onOpenSettings);
     });
   });
 

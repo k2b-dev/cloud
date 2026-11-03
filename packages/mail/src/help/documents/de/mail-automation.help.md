@@ -265,6 +265,8 @@ Die **Ausführungslimits** sind harte Obergrenzen für Verschiebungen, Sendungen
 
 Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die automatischen Antworten, Automatisierungen für eingehende E-Mails, eigenen Workflows und die fortsetzbare nachträgliche Verarbeitung des Postfachs. Die Tabelle zeigt Typ der Automatisierung, Status, Dauer, Zeitpunkt und eine kurze Fehler- oder Ergebnismeldung. Die Cloud-Administration behält die Detailansicht über alle Apps unter **Administration → Systembeobachtung → Workflows**.
 
+Erfolgreiche nachträgliche Verarbeitungen bleiben 30 Tage in der Aktivität sichtbar, auch wenn du ihre Regel löschst. Dieselbe Operation erneut anzufragen erzeugt keinen zweiten Eintrag.
+
 Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob ein unklarer externer Effekt eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
 
 Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).

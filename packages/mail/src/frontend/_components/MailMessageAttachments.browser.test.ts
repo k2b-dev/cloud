@@ -106,7 +106,7 @@ const openPreview = async (context: BrowserContextOptions, index: number): Promi
   const page = await (await browser.newContext(context)).newPage();
   await page.goto(server.url.href);
   await page.evaluate((list) => window.mountAttachments(list), attachments);
-  await page.locator(".mail-attachment-preview").nth(index).click();
+  await page.locator(".k2b-file-grid__open").nth(index).click();
   await page.locator(".k2b-dialog[open] .k2b-content-markdown").waitFor();
   return page;
 };
@@ -134,7 +134,7 @@ describe("Mail attachment preview layout", () => {
     try {
       await page.goto(server.url.href);
       await page.evaluate((list) => window.mountAttachments(list), attachments);
-      await page.locator(".mail-attachment-preview").first().click();
+      await page.locator(".k2b-file-grid__open").first().click();
       await page.locator(".k2b-dialog[open] .mail-attachment-dialog__title-pending").waitFor();
       const loading = await page.evaluate(() => ({
         titleTop: document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__heading h2")!.getBoundingClientRect().top,

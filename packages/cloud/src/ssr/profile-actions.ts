@@ -27,20 +27,30 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
     }
   };
 
+  // Sign-out ends the session, so it stands apart in its own section at the end, in the danger tone.
   const items = createMemo<DropdownItem[]>(() => [
-    preferences.appearanceItem,
-    preferences.languageItem(),
     {
-      href: "/me",
-      icon: "ti ti-user-circle",
-      label: preferences.messages().profileSettings,
+      items: [
+        preferences.appearanceItem,
+        preferences.languageItem(),
+        {
+          href: "/me",
+          icon: "ti ti-user-circle",
+          label: preferences.messages().profileSettings,
+        },
+        ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
+      ],
     },
-    ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
     {
-      action: signOut,
-      icon: "ti ti-logout",
-      label: preferences.messages().signOut,
-      disabled: signingOut(),
+      items: [
+        {
+          action: signOut,
+          icon: "ti ti-logout",
+          label: preferences.messages().signOut,
+          variant: "danger",
+          disabled: signingOut(),
+        },
+      ],
     },
   ]);
 

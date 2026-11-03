@@ -282,6 +282,8 @@
 .k2b-ui .k2b-button.chat-info__main {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+  /* The tint is its edge: no grey subtle-button border around it. */
+  border-color: transparent;
 }
 
 .k2b-ui .k2b-button.chat-info__main:not(:disabled, [aria-disabled="true"]):hover {
@@ -864,7 +866,7 @@
   padding-inline-end: 0.25rem;
   color: var(--k2b-action);
 }
-.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) i {
+.chat-conversation__back .k2b-icon-button i:has(~ .chat-conversation__back-count) {
   color: var(--k2b-action);
 }
 
