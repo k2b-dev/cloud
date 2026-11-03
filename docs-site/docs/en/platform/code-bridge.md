@@ -5,7 +5,7 @@ section: Platform services
 order: 966
 description: Authenticate runner requests and check each actual Code call against the current lease, policy, approval and mandate.
 tags: [code, runner, capabilities, mandates]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Code bridge
@@ -114,10 +114,18 @@ create child-invocation exchange leases, so provider nesting cannot bypass
 the per-call bridge checks.
 
 Responses use `RunnerCallResponse`: `{ ok: true, data }` or
-`{ ok: false, error: { code } }`. Malformed sandbox calls return `code_invalid_call` in this envelope. Only
-domain data and stable error codes enter
-the sandbox. Provider error messages, exception text and transport credentials
-do not. Stale generations and lost leases return HTTP 409 so the supervisor
+`{ ok: false, error: { code, status?, origin? } }`. For a failed capability call,
+`error.status` preserves the capability dispatch HTTP status (400–599) in the
+stored call result. This includes failures returned by Cloud before the target
+application runs. The Code page recognizes access refusals by exactly 403 or 404;
+other statuses and older results without a status remain unclassified. It does
+not infer access from error codes or messages. A 404 does not establish that a
+target was deleted.
+
+Malformed sandbox calls return `code_invalid_call` in this envelope. Only
+domain data, stable error codes and a validated refused HTTPS origin enter
+the sandbox. The status stays in the stored call result. Provider error messages,
+exception text and transport credentials do not. Stale generations and lost leases return HTTP 409 so the supervisor
 stops that attempt. Transport/authentication failures use non-2xx responses;
 ordinary capability refusals use the error envelope.
 

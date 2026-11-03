@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
@@ -32,6 +33,7 @@ import { signAppProof } from "../app-proof";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CodeCheckedVersionManifest } from "../contracts";
+import { capabilityResultSchema } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import { getEffectivePermission, hasPermission } from "../server";
@@ -43,6 +45,8 @@ import { resolveInvocationAuthority } from "../services/identity/invocation-acto
 import { verifyInvocationToken } from "../services/identity/invocation-token";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
 import { mandates } from "../services/mandates";
+import { loadCodeRunCalls } from "../ssr/code-page/calls";
+import type { CodePageInvoke } from "../ssr/code-page/data";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
 
@@ -114,6 +118,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let targetAccess: string;
   let fetched = 0;
   let currentEntry = baseEntry;
+  let targetFailure: ReturnType<typeof err.notFound> | ReturnType<typeof err.internal> | null = null;
   let callLimit = 200;
   let rateLimited = false;
   let realRate = false;
@@ -157,6 +162,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           ? await getEffectivePermission({ accessIds: [targetAccess], subject: authority.accessSubject })
           : "none";
         if (!hasPermission(permission, "write")) return Response.json({ code: "FORBIDDEN", message: "No Code access" }, { status: 403 });
+        if (targetFailure)
+          return Response.json({ code: targetFailure.code, message: targetFailure.message }, { status: targetFailure.status });
         return Response.json({ data: { value: body.target.id } });
       },
     } satisfies CapabilityDispatchDependencies,
@@ -197,11 +204,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       headers: { "Content-Type": "application/json", ...(proof ? { Authorization: `Bearer ${proof}` } : {}) },
     });
   }
-  const error = async (options: Parameters<typeof send>[0], code: string, status?: number) => {
+  const error = async (options: Parameters<typeof send>[0], code: string, status?: number, capabilityStatus?: number) => {
     const before = fetched;
     const response = await send(options);
     expect(response.status).toBe(status ?? 200);
-    expect(await response.json()).toEqual({ ok: false, error: { code } });
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: { code, ...(capabilityStatus === undefined ? {} : { status: capabilityStatus }) },
+    });
     expect(fetched).toBe(before);
   };
   beforeAll(async () => {
@@ -332,7 +342,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     >`INSERT INTO auth.access(service_account_id,permission) VALUES(${account!.id}::uuid,'write') RETURNING id`;
     targetAccess = access!.id;
   }
-  beforeEach(() => resetFixture());
+  beforeEach(async () => {
+    targetFailure = null;
+    await resetFixture();
+  });
   afterAll(async () => {
     settingsSpy?.mockRestore();
     registrySpy?.mockRestore();
@@ -447,6 +460,50 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     } finally {
       urlSpy.mockRestore();
       appsSpy.mockRestore();
+    }
+  });
+  test("target refusals survive dispatch, SQL storage and Code page data without provider payload", async () => {
+    // Spaces requireSpaceUuid returns this error (with a localized message); its code is NOT_FOUND.
+    for (const failure of [err.notFound("Space"), err.forbidden("Access denied"), err.internal("Unavailable")]) {
+      targetFailure = failure.code === "FORBIDDEN" ? null : failure;
+      if (failure.code === "FORBIDDEN") await sql`UPDATE auth.access SET permission='read' WHERE id=${targetAccess}::uuid`;
+      else await sql`UPDATE auth.access SET permission='write' WHERE id=${targetAccess}::uuid`;
+      // Queries preserve unrelated target failures instead of Action outcome-unknown conversion.
+      const response = await send({ operation: "example.read" });
+      expect(response.status).toBe(200);
+      const [stored] = await sql<{ result: unknown; ordinal: number; state: string; kind: string; capability: string; call: unknown }[]>`
+        SELECT result,ordinal,state,kind,capability,call FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+      const expected = { ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } };
+      expect(stored?.result).toEqual(expected);
+      expect(stored?.state).toBe("failed");
+      expect(await response.json()).toEqual(expected);
+      const invoke: CodePageInvoke = async (_invocation, schema) => ({
+        ok: true,
+        data: capabilityResultSchema(schema).parse({
+          data: {
+            run: {
+              id: claims.runId,
+              versionId: claims.versionId,
+              trigger: "schedule",
+              entrypoint: "weekly",
+              state: "failed",
+              outcome: "failed",
+              createdAt: now.toISOString(),
+              startedAt: null,
+              endedAt: null,
+            },
+            contents: {
+              input: null,
+              inputChunked: false,
+              content: null,
+              nextCursor: null,
+              calls: [stored],
+            },
+          },
+        }),
+      });
+      const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
+      expect(page?.calls[0]?.accessRefused).toBe(failure.status === 403 || failure.status === 404);
     }
   });
   test("paused Code refuses a current attempt", async () => {
@@ -568,12 +625,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${claims.runId}::uuid`;
     await error({}, "runner_lease_lost", 409);
   });
-  test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden"));
-  test("the same operation at another target is refused", async () => error({ target: { ...item, id: "b" } }, "mandate_forbidden"));
+  test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden", 200, 403));
+  test("the same operation at another target is refused", async () =>
+    error({ target: { ...item, id: "b" } }, "mandate_forbidden", 200, 403));
   test("a revoked current Code target grant is refused at the provider", async () => {
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     const response = await send();
-    expect(await response.json()).toEqual({ ok: false, error: { code: "forbidden" } });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
   });
   test("call limit is durable and current admin tightening applies", async () => {
     callLimit = 1;
