@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // A menu's width now follows its entries, which only a real layout engine
 // measures, so the shipped browser build opens real menus here.
@@ -354,7 +354,7 @@ describe("@k2b/ui menus size to their entries", () => {
         const field = await trigger.boundingBox();
         await trigger.click();
         await page.locator(".k2b-choice-popover:popover-open").waitFor();
-        await settle(page);
+        await settled(page);
         const list = await choiceList(page);
         expect(list.width).toBeGreaterThanOrEqual(field!.width);
         expect(list.left).toBeGreaterThanOrEqual(8);
@@ -376,7 +376,7 @@ describe("@k2b/ui menus size to their entries", () => {
         const field = await trigger.boundingBox();
         await trigger.click();
         await page.locator(".k2b-choice-popover:popover-open").waitFor();
-        await settle(page);
+        await settled(page);
         const list = await choiceList(page);
         // At least 12rem and the trigger, whatever the trigger's width, and inside the viewport.
         expect(list.width).toBeGreaterThanOrEqual(Math.max(192, field!.width));
@@ -387,7 +387,7 @@ describe("@k2b/ui menus size to their entries", () => {
         expect(list.names).toEqual([false, false, false]);
         expect(list.wrapped).toEqual([false, false, false, false, false, false]);
         await page.keyboard.type("Ben");
-        await settle(page);
+        await settled(page);
         const filtered = await choiceList(page);
         expect(filtered.names).toEqual([false]);
         expect(filtered.width).toBe(list.width);

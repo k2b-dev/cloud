@@ -171,12 +171,7 @@ export type ChoicePopoverPlacement = {
  * width it may take, such as the width it already had while open, so filtering
  * the options never makes it narrower.
  */
-export const placeChoicePopover = (
-  trigger: HTMLElement,
-  popover: HTMLElement,
-  placement: ChoicePopoverPlacement = {},
-  floor = 0,
-): void => {
+export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement, placement: ChoicePopoverPlacement = {}, floor = 0): void => {
   const margin = 8;
   const gap = 4;
   const triggerRect = trigger.getBoundingClientRect();
