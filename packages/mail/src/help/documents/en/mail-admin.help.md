@@ -46,7 +46,7 @@ The action buttons show what you can do now. A turned-off action names the reaso
 - **Rebuild search** replaces only the derived search chunks.
 - **Repair thread projection** links orphaned messages and refreshes summaries. It removes copies of Mail's own drafts that an earlier synchronization imported as messages. It keeps manual thread overrides, comments, references, assignments, and conversation state.
 
-When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. Mail offers no blind retry after a provider effect might have started, because a blind retry could run the action twice. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
+When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. For a send, Mail uses the recorded answer of the mail server or looks for the message in the Sent folder, and it never sends the message again. Mail offers no blind retry after a provider effect might have started, because a blind retry could run the action twice. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
 
 Cloud administrators can review the same redacted summary in **Admin → Mail**. It contains counts, states, timestamps, available capabilities, IDs, and error codes. It contains no subjects, addresses, bodies, attachment names, provider endpoints, credentials, or raw provider errors.
 

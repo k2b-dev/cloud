@@ -10,6 +10,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { isKeptMessage } from "./conversation-keep-rules";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { isInboxFolder, isSentFolder } from "./follow-up-scope";
+import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { SEARCH_CHUNK_CHARACTERS, SEARCH_CHUNK_OVERLAP_CHARACTERS } from "./search-chunks";
 
 type SqlClient = typeof sql;
@@ -493,6 +494,26 @@ export const executeOperatorAction = async (params: {
         RETURNING kind
       `;
       if (!command) throw Object.assign(new Error("Target command changed state"), { code: "COMMAND_STATE_CHANGED" });
+      if (command.kind === "send") {
+        // The outbox worker checks an unclear send: a recorded SMTP answer or a copy in Sent settles
+        // it, and it never sends again. The check gets one attempt; one that was exhausted before
+        // would otherwise give up without asking the provider.
+        const [outbox] = await tx<{ id: string }[]>`
+          UPDATE mail.outbox_submissions
+          SET
+            state = 'unknown',
+            attempt = LEAST(attempt, ${OUTBOX_MAX_ATTEMPTS - 1}),
+            sent_copy_pending = false,
+            last_error_code = NULL,
+            last_error_message = NULL,
+            updated_at = now()
+          WHERE command_id = ${params.input.commandId}::uuid
+            AND mailbox_id = ${params.mailboxId}::uuid
+            AND state IN ('unknown', 'needs_attention')
+          RETURNING id
+        `;
+        if (!outbox) throw Object.assign(new Error("Target send changed state"), { code: "COMMAND_STATE_CHANGED" });
+      }
       return { commandId: params.input.commandId, reconciliationQueued: true };
     }
     if (params.input.kind === "retry_command") {

@@ -1158,6 +1158,44 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("an operator's reconcile of an unclear send checks Sent and settles it without sending again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Unclear, then reconciled");
+      // The connection dropped after the server received the message; Sent has no copy yet.
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "operator-reconciles-unclear", "unknown");
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "AMBIGUOUS_SMTP_OUTCOME", command_state: "needs_attention" });
+
+      // The copy shows up later, for example after the server's own delay.
+      await provider.storeSent(`Message-ID: ${outbox.stable_message_id}\r\nSubject: Unclear, then reconciled\r\n\r\nBody\r\n`, false);
+      const [target] = await sql<{ command_id: string }[]>`
+        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      const reconcile = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconcile-of-unclear-${suffix}` },
+        enqueue: false,
+      });
+      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+
+      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "reconciled_accepted",
+        last_error_code: null,
+        command_state: "reconciled",
+        draft_state: "sent",
+      });
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a send whose IMAP server is unreachable before dispatch is retried instead of dropped", async () => {
     const provider = createProvider("imap");
     try {
@@ -2073,7 +2111,7 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an operator's reconcile of a partly accepted send ends the retry of its Sent copy", async () => {
+  test("an operator's reconcile of a partly accepted send checks it once from its recorded SMTP answer", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
@@ -2093,12 +2131,15 @@ suite("mail sent message projection", () => {
       if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
       expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
 
-      // The operator took the send over, so its copy retry ends instead of coming back with every schedule.
-      const searches = provider.searches();
-      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      // The reconcile checks the send: the recorded SMTP answer settles its partial outcome again, its
+      // copy is stored, and nothing is submitted a second time.
+      expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ state: "needs_attention", last_error_code: "SMTP_PARTIAL_ACCEPTANCE" });
       expect(await copyRetry(outbox.id)).toMatchObject({ sent_copy_pending: false });
-      expect(provider.searches()).toBe(searches);
-      expect(provider.appends).toEqual(["Drafts"]);
+      expect(provider.submissions()).toBe(1);
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
     } finally {
       provider.restore();
     }
