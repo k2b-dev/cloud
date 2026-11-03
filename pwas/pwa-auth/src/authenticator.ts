@@ -42,6 +42,8 @@ export function createAuthenticator(vault: import("./vault").Vault) {
   const active = new Map<string, AbortController>();
   const mutations = new Set<AbortController>();
   const backoff = new Map<string, number>();
+  // This tab's last backoff per binding: when its poll failed and the reservation it wrote.
+  const deferred = new Map<string, { at: number; until: number }>();
   const channel = new BroadcastChannel("cloud-login-bindings");
   let disposed = false;
   const reload = async () => {
@@ -102,6 +104,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       setStates((s) => ({ ...s, [binding.id]: state }));
       channel.postMessage({ type: "pending", id: binding.id, ...state });
       backoff.delete(binding.id);
+      deferred.delete(binding.id);
       await storage.defer(pollId, Date.now() + Math.max(appApproval.limits.pollSeconds, result.pollAfterSeconds) * 1000);
     } catch (error) {
       if (!abort.signal.aborted) {
@@ -111,7 +114,9 @@ export function createAuthenticator(vault: import("./vault").Vault) {
           ...s,
           [binding.id]: { requests: [], actions: [], changes: [], moreChanges: 0, moreActions: 0, error: failure(error) },
         }));
-        await storage.defer(pollId, Date.now() + delay * 1000).catch(() => setStorageError(true));
+        const until = Date.now() + delay * 1000;
+        deferred.set(binding.id, { at: Date.now(), until });
+        await storage.defer(pollId, until).catch(() => setStorageError(true));
       } else {
         await storage.defer(pollId, Date.now() + appApproval.limits.pollSeconds * 1000).catch(() => {});
       }
@@ -119,12 +124,21 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       if (active.get(binding.id) === abort) active.delete(binding.id);
     }
   };
-  /** A person's "check again" after a failed poll: drops the backoff and polls now. A refused device stays refused. */
+  /** A person's "check again" after a failed poll: drops this tab's backoff and polls as soon as the poll interval
+   * allows. A refused device stays refused, and another tab's newer reservation stays in place. */
   const recheck = async (binding: Binding) => {
     const error = states()[binding.id]?.error;
     if (!error || error === "forbidden" || !navigator.onLine) return;
-    backoff.delete(binding.id);
-    await storage.defer(`poll:${binding.id}`, 0).catch(() => setStorageError(true));
+    // Storage that failed before stops every poll; a working read resumes them.
+    if (storageError()) await reload();
+    const last = deferred.get(binding.id);
+    if (last) {
+      const earliest = last.at + appApproval.limits.pollSeconds * 1000;
+      if (!(await storage.release(`poll:${binding.id}`, last.until, earliest).catch(() => false))) return;
+      deferred.delete(binding.id);
+      backoff.delete(binding.id);
+      if (Date.now() < earliest) await new Promise((done) => setTimeout(done, earliest - Date.now()));
+    }
     await poll(binding);
   };
   let cleanupAfter = Date.now() + appApproval.limits.loginSeconds * 1000;

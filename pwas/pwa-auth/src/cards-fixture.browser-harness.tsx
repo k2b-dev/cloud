@@ -113,6 +113,11 @@ export const cardScenarios = {
     tp: inbox({ error: "forbidden" }),
   },
   actionFailed: { ex: inbox({ actions: [action] }), tp: inbox({}) },
+  /** Like `mixed`, but another Action took the first one's place. */
+  swapped: {
+    ex: inbox({ actions: [{ ...action, actionId: "other", sentence: "Ordner „Archiv“ freigeben" }], moreActions: 2 }),
+    tp: inbox({}),
+  },
   offline: {},
   loading: {},
   empty: {},

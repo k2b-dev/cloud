@@ -599,6 +599,8 @@ export function Clouds(props: {
           const [logoLoaded, setLogoLoaded] = createSignal(false);
           const [logoFailed, setLogoFailed] = createSignal(false);
           const [rechecking, setRechecking] = createSignal(false);
+          // The request the card showed when a tap or key press on it began.
+          let pressed: string | undefined;
           const host = new URL(binding.issuer).host;
           const state = () => props.auth.states()[binding.id];
           const live = <T extends { expiresAt: string }>(items: T[] | undefined) =>
@@ -815,8 +817,23 @@ export function Clouds(props: {
                   class="auth-cloud__open"
                   aria-label={name()}
                   aria-busy={opening() ? "true" : undefined}
+                  onPointerDown={() => {
+                    pressed = ready()[0]?.key;
+                  }}
+                  onPointerCancel={() => {
+                    pressed = undefined;
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") pressed = ready()[0]?.key;
+                  }}
                   onClick={() => {
-                    if (!opening()) ready()[0]?.open();
+                    const target = pressed;
+                    pressed = undefined;
+                    const first = ready()[0];
+                    // A tap opens only the request the card showed when it began; one that changed meanwhile waits
+                    // for a new tap.
+                    if (opening() || !first || (target !== undefined && target !== first.key)) return;
+                    first.open();
                   }}
                 />
               </Show>

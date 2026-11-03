@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../packages/ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../packages/ui/test/browser";
 import { solid } from "../scripts/build";
 import { iconStyles } from "../scripts/icons";
 import type { CardOptions, CardScenario } from "./cards-fixture.browser-harness";
@@ -53,18 +53,9 @@ async function context(view: BrowserContextOptions, options: { theme?: "light" |
   return value;
 }
 
-const settled = (page: Page) =>
-  page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .filter((animation) => animation.timeline === document.timeline && Number.isFinite(animation.effect?.getTiming().iterations))
-      .every((animation) => animation.playState !== "running"),
-  );
-
 /** Opens the home screen; a sign-in or device change opens its sheet by itself, and Escape closes it as a person would. */
 async function show(page: Page, options: CardOptions, keepSheet = false) {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("https://login.test/");
   await page.addScriptTag({ content: script });
   await page.evaluate((value) => window.showCards(value), options);
@@ -165,6 +156,7 @@ describe("Cloud cards", () => {
       await page.locator(".auth-cloud .auth-status").first().click();
       await page.waitForTimeout(100);
       expect(await page.locator("dialog[open]").count()).toBe(0);
+      await settled(page);
       expect(
         await page
           .locator(".auth-cloud")
@@ -186,6 +178,7 @@ describe("Cloud cards", () => {
       ).toBe("auth-cloud__open");
       await page.locator(".auth-cloud-info").first().focus();
       await page.keyboard.press("Tab");
+      await settled(page);
       expect(await trigger.evaluate((el) => el === document.activeElement)).toBe(true);
       expect(await trigger.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
       // A tap anywhere on the card, here on its status line, opens the sign-in sheet.
@@ -279,7 +272,8 @@ describe("Cloud cards", () => {
         const before = await cards(page);
         await page.evaluate(() => window.recheckAnswer(1200, "idle"));
         await reload.click();
-        await page.waitForTimeout(100);
+        // The turning icon never ends while it checks; settled waits only for finite animations.
+        await settled(page);
         expect(await reload.getAttribute("data-busy")).toBe("");
         expect(await page.locator('.auth-cloud [role="status"].k2b-sr-only').first().textContent()).toBe("Wird geprüft…");
         const turning = await reload.locator("i").evaluate((icon) => getComputedStyle(icon).animationName);
@@ -330,6 +324,28 @@ describe("Cloud cards", () => {
       }
     }, 20_000);
   }
+
+  test("a tap opens only the request the card showed when the tap began", async () => {
+    const value = await context(views.phone);
+    try {
+      const page = await value.newPage();
+      await show(page, { scenario: "mixed", locale: "de" });
+      const card = (await page.locator(".auth-cloud").first().boundingBox())!;
+      await page.mouse.move(card.x + 60, card.y + card.height / 2);
+      await page.mouse.down();
+      // Another Action takes the first one's place between the press and the release.
+      await page.evaluate(() => window.setInbox("swapped"));
+      await page.waitForTimeout(30);
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+      expect(await page.locator("dialog[open]").count()).toBe(0);
+      // The next tap opens what the card now shows.
+      await page.mouse.click(card.x + 60, card.y + card.height / 2);
+      await page.locator("dialog[open] .auth-action-ask").waitFor();
+    } finally {
+      await value.close();
+    }
+  }, 20_000);
 
   test("an Action that cannot load becomes one error line with a reload", async () => {
     const value = await context(views.phone);
