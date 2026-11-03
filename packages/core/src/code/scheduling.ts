@@ -211,7 +211,7 @@ export async function claimCodeRuns(
         continue;
       }
       const [mandate] = await db<{ id: string; revision: number }[]>`SELECT id,revision::int FROM auth.mandates
-        WHERE owner_app_id='core' AND workload_type='code.version' AND workload_id=${code.activeVersionId}
+        WHERE owner_app_id IN ('core','runner') AND workload_type='code.version' AND workload_id=${code.activeVersionId}
         AND state='active' AND confirmed_at IS NOT NULL AND (expires_at IS NULL OR expires_at>clock_timestamp())
         AND ((subject_kind='user' AND subject_user_id=${code.owner.kind === "person" ? code.owner.userId : null}::uuid)
           OR (subject_kind='service_account' AND subject_service_account_id=${code.serviceAccountId}::uuid))

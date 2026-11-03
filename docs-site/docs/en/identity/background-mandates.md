@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Background authority mandates
@@ -231,22 +231,29 @@ stop the routine with `needs_attention` rather than drop the restriction.
 
 ## Code version mandates
 
-`CodeVersionMandateBinding` and `CODE_VERSION_MANDATE_WORKLOAD_TYPE`, exported
-from `@k2b/cloud/services`, bind a mandate to `ownerAppId: "core"`,
-`workloadType: "code.version"`, and `workloadId` equal to the immutable version
-ID. All entry points share that version's mandate. A new version gets its own
-mandate; policy updates advance the revision and invalidate earlier invocations.
+`CodeVersionMandateBinding`, `CODE_VERSION_ENTRY_APP_ID` and
+`CODE_VERSION_MANDATE_WORKLOAD_TYPE`, exported
+from `@k2b/cloud/services`, bind one entry to `ownerAppId: "runner"`,
+`workloadType: "code.version"`, and the immutable version ID in `workloadId`.
+Core creates and confirms it atomically when switching on the version after
+current policy and approval checks. Its `policy` is `null`; the subject is the
+personal owner or the object's or application's service account of kind `code`.
+Personal Code activation requires the owner's browser session. Code entries use
+Core's activation lifecycle rather than the self-service creation or remote
+app-owned lifecycle routes.
 
-Personal Code uses its current person as the subject. Its operation allowlist
-can permit dynamic targets; the target application still checks that person's
-current rights. Routine grants can restrict a person's calls to one target.
+All entry points share that entry. Pending entries cannot issue; the existing
+15-minute confirmation window and 100-pending-per-person limit still apply.
+Only the authenticated runner bridge can issue Code invocations, bound to the
+run, version, subject and current entry revision. Target applications check
+current rights. Code service accounts use only their own resource grants;
+signed-in, public and group grants supply no access.
 
-Resource and application Code use a service account of kind `code`. Only its
-Core version mandate can issue invocations. Actions need explicit operation
-and target pairs, including `target: null` for app-wide Actions. Queries check
-the operation; their provider must return only resources with the Code
-account's own current access. Neither a mandate nor a signed-in, public or group
-grant supplies that access. Unattended `ask` Actions remain blocked.
+Existing `core` Code mandates keep their saved policies and never become
+policy-free through update, resume or same-version reactivation. Explicit
+activation of a new version creates the new entry. Old entries are revoked
+only after their queued and running work drains. Other workloads still require
+a policy; this change does not migrate Assistant routines, Mail or Grids.
 
 Code Actions need an explicit `silent` policy that permits routines. Version
 approval does not override `ask`, `routines: false`, or `unattended: false`.
@@ -349,7 +356,8 @@ The same app-key proof or legacy app-bound credential owns the remote mandate li
 confirm a pending workload, narrow policy, pause, or revoke. It cannot create
 user authority, broaden policy, or resume a paused mandate. Core derives the
 owner from the authenticated credential; an app ID in a request body is never
-trusted as owner authority.
+trusted as owner authority. Code version entries use Core activation instead
+of these remote lifecycle routes.
 
 For remote lifecycle requests, use `sendAppRequest` from
 `@k2b/cloud/services/identity` with the final `Request` and `{ appId }`.

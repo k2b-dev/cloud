@@ -786,6 +786,18 @@ export const migrate = async (): Promise<void> => {
     ON auth.mandates(confirmation_deadline)
     WHERE state IN ('active', 'paused') AND confirmed_at IS NULL
   `.simple();
+  await sql.begin(async (tx) => {
+    // Install once, atomically, even when several Core replicas boot together.
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('auth.mandates.code-entry-policy', 0))`;
+    const [installed] = await tx`SELECT 1 FROM pg_constraint
+      WHERE conrelid='auth.mandates'::regclass AND conname='mandates_code_entry_policy_check'`;
+    if (installed) return;
+    await tx`ALTER TABLE auth.mandates ALTER COLUMN policy DROP NOT NULL`;
+    await tx`ALTER TABLE auth.mandates ADD CONSTRAINT mandates_code_entry_policy_check CHECK (
+      (policy IS NULL AND owner_app_id='runner' AND workload_type='code.version') OR
+      (policy IS NOT NULL AND policy->>'version' IS NOT DISTINCT FROM '1')
+    )`;
+  });
   console.log("  ✓ auth.mandates table");
 
   await sql`

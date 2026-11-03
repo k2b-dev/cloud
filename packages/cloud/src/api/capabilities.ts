@@ -610,6 +610,7 @@ const runCapabilityDispatch = async (
                     capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
                     capabilityPolicy: capabilityActionPolicy(entry.manifest, params.capabilityId),
                     requestId,
+                    codeRun: params.codeRun === true,
                   },
                   async (mandateAuthority) => {
                     deadline.check();

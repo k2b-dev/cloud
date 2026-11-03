@@ -164,6 +164,10 @@ describe("Code with access in a share dialog", () => {
           });
         }
         expect(loaded.overflow).toBeLessThanOrEqual(0);
+        expect(await tab.locator("[data-code-editor-authority]").allTextContents()).toEqual([
+          "Wer den Code bearbeitet, handelt mit diesem Recht.",
+          "Wer den Code bearbeitet, handelt mit diesem Recht.",
+        ]);
         expect(await tab.locator("[data-code-access-row]").first().textContent()).toContain(
           "spaces.task.create · für „lieferungenEintragen“",
         );

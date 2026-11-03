@@ -5,7 +5,7 @@ section: Operations
 order: 1255
 description: Inspect durable activations and cleanup without recreating revoked target access.
 tags: [code, operations, recovery]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Code activation recovery
@@ -38,3 +38,14 @@ Cloud-admin notifications use durable recipient rows and stable notification
 idempotency keys. Retrying delivery does not create a second notice for the same
 activation, target and person. Target access removed by a manager is never
 restored by recovery, reconciliation or cleanup.
+
+New Code version entries use app `runner` and `policy IS NULL`. Core owns their
+activation and drain lifecycle. Update Core and the shared Cloud library in
+capability providers together: provider admission now requires a run-bound,
+active entry for personal Code as well as Code service accounts. Existing
+`core` mandates keep their policies; do not clear those policies during an
+upgrade. Confirm the new model by explicitly activating a new version.
+
+After a policy-free entry exists, older Core versions cannot read that entry.
+Upgrade Core and the invocation providers together; roll back only to a version
+that understands nullable Code policies. Prefer rolling forward.

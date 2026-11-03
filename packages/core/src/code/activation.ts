@@ -14,9 +14,8 @@ import {
 } from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
-import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
-import { mandates, parseMandatePolicy } from "@k2b/cloud/services/mandates";
+import { mandates } from "@k2b/cloud/services/mandates";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
@@ -206,14 +205,19 @@ async function authorizeActivation(
     throw new CodeDataError("FORBIDDEN", "Only the personal owner can activate personal Code.");
   return code;
 }
+const requirePersonalBrowser = (code: Code, context: CodeContext) => {
+  if (code.owner.kind === "person" && context.authority.credentialKind !== "session")
+    throw new CodeDataError("FORBIDDEN", "Personal Code activation requires its owner's browser session.");
+};
 /** Targets asked at once while previewing, and in one preview; a version has at most 200 operations. */
 const PREVIEW_CONCURRENCY = 8;
 const PREVIEW_TARGETS = 50;
 /** Past this, the remaining targets stay unchecked; switching on checks them anyway. */
 const PREVIEW_BUDGET_MS = 10_000;
-const previewAllowed = (context: CodeContext): CodeActivationPreview["allowed"] => {
+const previewAllowed = (context: CodeContext, code: Code): CodeActivationPreview["allowed"] => {
   const { authority } = context;
   if (isAppSessionActor(authority.actor)) return { allowed: false, reason: "phone" };
+  if (code.owner.kind === "person" && authority.credentialKind !== "session") return { allowed: false, reason: "credential" };
   return authority.actor.kind === "user" && ["session", "oauth"].includes(authority.credentialKind)
     ? { allowed: true }
     : { allowed: false, reason: "credential" };
@@ -285,7 +289,7 @@ export async function previewCodeActivation(
   const [numbers] = await sql<{ latest: number; running: number | null }[]>`SELECT
       (SELECT max(number) FROM code.versions WHERE code_id=${code.id})::int AS latest,
       (SELECT number FROM code.versions WHERE id=${code.activeVersionId}::uuid)::int AS running`;
-  const allowed = previewAllowed(context);
+  const allowed = previewAllowed(context, code);
   const manifest = CodeCheckedVersionManifestSchema.safeParse(version.manifest);
   const base = {
     codeId: code.id,
@@ -432,6 +436,7 @@ export async function activateCodeVersion(
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await tx`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
     const code = await authorizedCode(input.codeId, context, tx);
+    requirePersonalBrowser(code, context);
     await requireCodeVersionApproval(code, input.versionId, tx);
     const created = await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,authority,locale,cloud_admin)
       VALUES(${input.activationId}::uuid,${code.id},${input.versionId}::uuid,${person.id}::uuid,${JSON.stringify(authority)}::text::jsonb,
@@ -574,6 +579,7 @@ async function checkpoint(row: ActivationRow, deps: CodeActivationDependencies):
   const context = await deps.restoreAuthority(row);
   if (!context) refuse(null, "authority_revoked", "The activating credential has expired or was revoked. Activate again after signing in.");
   const code = await authorizedCode(row.code_id, context!);
+  requirePersonalBrowser(code, context!);
   await sql.begin(async (tx) => {
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await requireCodeVersionApproval(code, row.version_id, tx);
@@ -807,40 +813,47 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
         if (!saved || saved.cancel_requested) refuse(null, "cancelled", "Activation cancelled.");
         const [priorMandate] = await tx<
           { id: string }[]
-        >`SELECT id FROM auth.mandates WHERE owner_app_id='core' AND workload_type='code.version'
+        >`SELECT id FROM auth.mandates WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
           AND workload_id=${row.version_id} AND state IN ('active','paused') AND confirmed_at IS NOT NULL FOR UPDATE`;
         let mandate = priorMandate ? await mandates.get(priorMandate.id, { db: tx }) : null;
         const subject =
           code.owner.kind === "person"
             ? { type: "user" as const, id: code.owner.userId }
             : { type: "service_account" as const, id: code.serviceAccountId! };
-        const policy = parseMandatePolicy(saved.mandate_policy);
         if (
           mandate &&
           (mandate.state !== "active" ||
             (mandate.expiresAt !== null && Date.parse(mandate.expiresAt) <= Date.now()) ||
             mandate.subject.type !== subject.type ||
-            mandate.subject.id !== subject.id ||
-            approvalArgsDigest(mandate.policy) !== approvalArgsDigest(policy))
+            mandate.subject.id !== subject.id)
         )
           throw new CodeDataError(
             "CONFLICT",
             "The existing version mandate changed or is inactive. Resolve it before activating this version.",
           );
         if (!mandate) {
-          const created = await mandates.create(
+          const created = await mandates.createPending(
             {
               authority: { kind: code.owner.kind === "person" ? "interactive" : "admin", userId: row.activating_person! },
               subject,
-              ownerAppId: "core",
+              ownerAppId: "runner",
               workloadType: "code.version",
               workloadId: row.version_id,
-              policy,
+              policy: null,
             },
             { db: tx },
           );
           if (!created.ok) throw new CodeDataError("CONFLICT", created.error.message);
-          mandate = created.data;
+          const confirmed = await mandates.confirm(
+            {
+              mandateId: created.data.id,
+              expectedRevision: created.data.revision,
+              authority: { kind: "workload", ownerAppId: "runner" },
+            },
+            { db: tx },
+          );
+          if (!confirmed.ok) throw new CodeDataError("CONFLICT", confirmed.error.message);
+          mandate = confirmed.data;
         }
         await tx`DELETE FROM code.version_grants WHERE version_id=${row.version_id}::uuid`;
         for (const item of plan.filter((item) => !item.owner)) {

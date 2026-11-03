@@ -532,10 +532,10 @@ suiteFor(
     const foreignResult = await completed(codeId, foreign.run.runId);
     expect(foreignResult.run.state).toBe("failed");
     expect(NormalizedCapabilityCallSchema.parse(foreignResult.calls[0]?.call).target).toEqual({ type: "spaces.space", id: foreignId });
-    expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "mandate_forbidden" } });
+    expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
 
-    // A new immutable version has update authority only: successful updates cannot depend on task.create.
+    // The new immutable version uses current resource rights; checker operations are review evidence.
     const updateVersion = await code.submit(
       { codeId, entry: "code.ts", files: update, baseVersionId: submitted.submission.version.id },
       author,
@@ -545,10 +545,9 @@ suiteFor(
     const amended = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-update" }, author);
     expect((await completed(codeId, amended.run.runId)).run.state).toBe("succeeded");
     const [mandate] = await sql<
-      { policy: { operations: string[] } }[]
+      { policy: unknown }[]
     >`SELECT policy FROM auth.mandates WHERE workload_id=${updateVersion.submission.version.id} AND state='active'`;
-    expect(mandate!.policy.operations).toContain("capability.action.run:task.update");
-    expect(mandate!.policy.operations).not.toContain("capability.action.run:task.create");
+    expect(mandate!.policy).toBeNull();
     expect(await sql<{ title: string }[]>`SELECT title FROM spaces.items WHERE short_id=${itemId}`).toEqual([
       { title: "Rechnung geprüft" },
     ]);
@@ -726,10 +725,9 @@ try { await http.fetch("https://bank.example/v1/error", { headers: { authorizati
     expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
     await approve(submitted.submission);
     await activate(codeId, submitted.submission.version.id, proof(author));
-    const [mandate] = await sql<{ policy: { operations: string[]; grants: unknown[] } }[]>`
+    const [mandate] = await sql<{ policy: unknown }[]>`
       SELECT policy FROM auth.mandates WHERE workload_id=${submitted.submission.version.id} AND state='active'`;
-    expect(mandate!.policy.operations).toContain("runtime.http");
-    expect(mandate!.policy.grants).toContainEqual({ kind: "http", fixedInput: { origin: "https://bank.example" } });
+    expect(mandate!.policy).toBeNull();
     const requested = await code.run({ codeId, entrypoint: "monday", input: null, idempotencyKey: "c25-http" }, author);
     const result = await completed(codeId, requested.run.runId);
     expect(result.run.state).toBe("succeeded");

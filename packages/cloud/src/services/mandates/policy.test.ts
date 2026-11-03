@@ -350,9 +350,9 @@ describe("operation and target grants", () => {
   };
 
   test("the complete pair is checked for both people and Code, before run and review", () => {
-    for (const codeAccount of [false, true]) {
+    for (const legacyCodeAccount of [false, true]) {
       for (const operation of policy.operations) {
-        expect(mandatePolicyAllows(policy, { ...check, operation, codeAccount })).toBe(true);
+        expect(mandatePolicyAllows(policy, { ...check, operation, legacyCodeAccount })).toBe(true);
         for (const changed of [
           { ...call, target: { ...target, id: "other" } },
           { ...call, target: { ...target, type: "other.folder" } },
@@ -361,7 +361,7 @@ describe("operation and target grants", () => {
           { ...call, refs: { ...refs, extra: target } },
           { ...call, capability: "demo.delete" },
         ])
-          expect(mandatePolicyAllows(policy, { ...check, codeAccount, operation, call: changed })).toBe(false);
+          expect(mandatePolicyAllows(policy, { ...check, legacyCodeAccount, operation, call: changed })).toBe(false);
       }
     }
     expect(
@@ -387,22 +387,25 @@ describe("operation and target grants", () => {
     expect(mandatePolicyAllows({ ...policy, grants: [legacy] }, check)).toBe(false);
     expect(mandatePolicyAllows({ ...policy, grants: undefined }, check)).toBe(false);
     expect(mandatePolicyAllows(policy, { ...check, call: undefined })).toBe(false);
-    expect(mandatePolicyAllows({ ...policy, grants: [legacy] }, { ...check, codeAccount: true, call: undefined })).toBe(false);
+    expect(mandatePolicyAllows({ ...policy, grants: [legacy] }, { ...check, legacyCodeAccount: true, call: undefined })).toBe(false);
     expect(mandatePolicyAllows(policy, { ...check, input: { id: "other" } })).toBe(false);
   });
 
   test("app-wide Code Actions need an explicit null target and never inherit query grants", () => {
     const appCall = { ...call, target: null, refs: {} };
     const appGrant = { ...grant, target: null, refs: {} };
-    expect(mandatePolicyAllows({ ...policy, grants: [appGrant] }, { ...check, codeAccount: true, call: appCall })).toBe(true);
+    expect(mandatePolicyAllows({ ...policy, grants: [appGrant] }, { ...check, legacyCodeAccount: true, call: appCall })).toBe(true);
     expect(
-      mandatePolicyAllows({ ...policy, grants: [{ ...appGrant, target: undefined }] }, { ...check, codeAccount: true, call: appCall }),
+      mandatePolicyAllows(
+        { ...policy, grants: [{ ...appGrant, target: undefined }] },
+        { ...check, legacyCodeAccount: true, call: appCall },
+      ),
     ).toBe(false);
-    expect(mandatePolicyAllows({ ...policy, grants: undefined }, { ...check, codeAccount: true, codeVersion: true, call: appCall })).toBe(
-      false,
-    );
     expect(
-      mandatePolicyAllows({ ...policy, grants: [{ ...appGrant, kind: "query" }] }, { ...check, codeAccount: true, call: appCall }),
+      mandatePolicyAllows({ ...policy, grants: undefined }, { ...check, legacyCodeAccount: true, codeVersion: true, call: appCall }),
+    ).toBe(false);
+    expect(
+      mandatePolicyAllows({ ...policy, grants: [{ ...appGrant, kind: "query" }] }, { ...check, legacyCodeAccount: true, call: appCall }),
     ).toBe(false);
   });
 
@@ -416,7 +419,7 @@ describe("operation and target grants", () => {
     });
     const queryCall = { capability: "demo.read", target, refs: {}, input: {} };
     const queryCheck = { appId: "demo", operation: "capability.query:read", actionApproval: "none" as const, call: queryCall };
-    expect(mandatePolicyAllows(queryPolicy, { ...queryCheck, codeAccount: true })).toBe(true);
+    expect(mandatePolicyAllows(queryPolicy, { ...queryCheck, legacyCodeAccount: true })).toBe(true);
     expect(mandatePolicyAllows(queryPolicy, queryCheck)).toBe(false);
     const bound = { ...queryPolicy, grants: [{ ...queryPolicy.grants![0]!, target }] };
     expect(mandatePolicyAllows(bound, queryCheck)).toBe(true);
@@ -427,7 +430,7 @@ describe("operation and target grants", () => {
 
   test("unattended target grants never authorize ask Actions", () => {
     expect(
-      mandatePolicyAllows(policy, { ...check, codeAccount: true, actionApproval: "approved", capabilityPolicy: { ask: "sends" } }),
+      mandatePolicyAllows(policy, { ...check, legacyCodeAccount: true, actionApproval: "approved", capabilityPolicy: { ask: "sends" } }),
     ).toBe(false);
   });
 
@@ -501,14 +504,14 @@ test("personal Code operation grants retain dynamic targets alongside HTTP grant
     operation: "capability.action.run:move",
     actionApproval: "none" as const,
     codeVersion: true,
-    codeAccount: false,
+    legacyCodeAccount: false,
     capabilityPolicy: { silent: "shared" as const },
     call,
     input: call.input,
   };
   expect(mandatePolicyAllows(policy, input)).toBe(true);
   expect(mandatePolicyAllows(policy, { ...input, codeVersion: false })).toBe(false);
-  expect(mandatePolicyAllows(policy, { ...input, codeAccount: true })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...input, legacyCodeAccount: true })).toBe(false);
   expect(mandatePolicyAllows(policy, { ...input, input: { allowed: false } })).toBe(false);
   for (const restricted of [
     { ...grant, target: { ...target, id: "fixed" } },
