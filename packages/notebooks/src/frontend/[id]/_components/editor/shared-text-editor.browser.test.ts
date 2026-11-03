@@ -278,7 +278,8 @@ describe("Notebook on the shared text editor", () => {
       await page.evaluate(() => window.noteHarness.setOnline(false));
       await cell(page, 2, 1).click();
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).toBe("true");
+      // The menu follows the connection state reactively; wait for it instead of reading once.
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true }).and(page.locator('[aria-disabled="true"]')).waitFor();
       expect(await page.getByRole("menuitem", { name: "Delete row" }).getAttribute("aria-disabled")).toBe("true");
       expect(await page.getByRole("menuitem", { name: /^Insert row below(?:\s*Enter)?$/ }).getAttribute("aria-disabled")).not.toBe("true");
       expect(
@@ -291,7 +292,7 @@ describe("Notebook on the shared text editor", () => {
       // Reconnecting re-enables the menu without another document change.
       await page.evaluate(() => window.noteHarness.setOnline(true));
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).not.toBe("true");
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true }).and(page.locator(':not([aria-disabled="true"])')).waitFor();
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
     } finally {
       await close();
