@@ -16,9 +16,9 @@ import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
 import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
+import MailFocusNotice from "./MailFocusNotice";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailboxHealthPresentation, mailboxOverviewSubtitle } from "./mail-health-presentation";
-import MailFocusNotice from "./MailFocusNotice";
 import { type MailboxPreferences, orderMailboxes } from "./mail-mailbox-preferences";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
 

@@ -9,13 +9,20 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAX_MAILBOX_PREFERENCES } from "../contracts";
+import { loadMailSidebarData } from "../frontend/mail-sidebar-data";
 import type { MailRequestContext } from "./auth";
-import { importBrowserMailboxPreferences, listMailboxPreferences, setMailboxPreference } from "./mailbox-preferences";
+import {
+  dismissFocusNotice,
+  focusNoticeDismissed,
+  importBrowserMailboxPreferences,
+  listMailboxPreferences,
+  setMailboxPreference,
+} from "./mailbox-preferences";
 import { createMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats");
 
-// The overview page renders Solid JSX on the server.
+// Mail's landing page renders Solid JSX on the server.
 const root = mkdtempSync(join(tmpdir(), "mail-preferences-ssr-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -40,16 +47,21 @@ const contextFor = (user: Person): MailRequestContext => ({
   accessSubject: { type: "user", userId: user.id },
 });
 
-const browserCookie = (lists: { pinnedMailboxIds?: string[]; hiddenMailboxIds?: string[] }) =>
+const browserCookie = (lists: { pinnedMailboxIds?: string[]; hiddenMailboxIds?: string[]; lastMailboxId?: string }) =>
   `cloud_mail_workspace=${encodeURIComponent(JSON.stringify({ listMode: "messages", pinnedMailboxIds: [], hiddenMailboxIds: [], ...lists }))}`;
 
-/** The mailbox rows of the overview sidebar, in order, as the first paint renders them. */
-const sidebarRows = (html: string) =>
-  [...html.matchAll(/<[^>]*\bdata-mailbox="([0-9A-Za-z]{6})"[^>]*>/g)].map((match) => ({
-    id: match[1],
-    pinned: match[0].includes('data-pinned="true"'),
-    hidden: match[0].includes('data-hidden="true"'),
-  }));
+/**
+ * The mailbox rows of the sidebar as a mailbox page's first paint renders them: the shown ones with pinned first in pin
+ * order, then the hidden ones, which keep their pin but show none.
+ */
+const sidebarRows = async (person: Person) => {
+  const data = await loadMailSidebarData(contextFor(person));
+  const pinRank = (id: string) => (data.pinnedMailboxIds.includes(id) ? data.pinnedMailboxIds.indexOf(id) : data.pinnedMailboxIds.length);
+  const rows = data.mailboxes
+    .map((mailbox) => ({ id: mailbox.id, hidden: data.hiddenMailboxIds.includes(mailbox.id) }))
+    .sort((left, right) => Number(left.hidden) - Number(right.hidden) || pinRank(left.id) - pinRank(right.id));
+  return rows.map((row) => ({ id: row.id, pinned: !row.hidden && data.pinnedMailboxIds.includes(row.id), hidden: row.hidden }));
+};
 
 suite("mailbox preferences per person", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -81,18 +93,18 @@ suite("mailbox preferences per person", () => {
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${created.data.id}::uuid`;
     return { id: created.data.id, shortId: row!.short_id };
   };
-  const overviewFor = async (person: Person) => {
-    const { default: overviewPage } = await import("../frontend/page");
+  const landingFor = async (person: Person) => {
+    const { default: landingPage } = await import("../frontend/page");
     const context = contextFor(person);
     return new Hono<AuthContext>()
       .use(async (c, next) => {
         c.set("actor", context.actor as never);
         c.set("accessSubject", context.accessSubject as never);
-        // The Cloud page frame needs the app registry; this overview needs no other app.
+        // The Cloud page frame needs the app registry; this page needs no other app.
         c.set("runtime" as never, { apps: [] } as never);
         await next();
       })
-      .get("/", ...overviewPage);
+      .get("/", ...landingPage);
   };
   const clearPreferences = (person: Person) => sql`DELETE FROM mail.personal_mailbox_preferences WHERE user_id = ${person.id}::uuid`;
 
@@ -251,14 +263,16 @@ suite("mailbox preferences per person", () => {
     expect(rows?.count).toBe(0);
   });
 
-  test("the overview moves a browser's lists to the person once and renders them on the first paint", async () => {
-    const router = await overviewFor(ada);
+  test("Mail's landing moves a browser's lists to the person once, before it chooses the mailbox to open", async () => {
+    const router = await landingFor(ada);
     await clearPreferences(ada);
 
     const response = await router.request("/", {
       headers: { cookie: browserCookie({ hiddenMailboxIds: [billing.shortId, sales.shortId] }) },
     });
-    expect(response.status).toBe(200);
+    // Sales is hidden now, so Mail opens Support.
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`/app/mail/${support.shortId}`);
     // Billing belongs to someone else, so only Sales moves; the cookie keeps the other preferences.
     expect(await listMailboxPreferences(contextFor(ada))).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [sales.id] });
     const setCookie = response.headers.get("set-cookie") ?? "";
@@ -268,22 +282,22 @@ suite("mailbox preferences per person", () => {
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
-    expect(sidebarRows(await response.text())).toContainEqual({ id: sales.shortId, pinned: false, hidden: true });
+    expect(await sidebarRows(ada)).toContainEqual({ id: sales.shortId, pinned: false, hidden: true });
 
-    // Without lists in the cookie, the stored preferences alone decide the first paint.
+    // Without lists in the cookie, the stored preferences alone decide.
     const later = await router.request("/", { headers: { cookie: setCookie.split(";")[0]! } });
     expect(later.headers.get("set-cookie")).toBeNull();
-    expect(sidebarRows(await later.text())).toContainEqual({ id: sales.shortId, pinned: false, hidden: true });
+    expect(later.headers.get("location")).toBe(`/app/mail/${support.shortId}`);
     await clearPreferences(ada);
   });
 
   test("two browsers of one person show the same mailbox list once both moved their lists", async () => {
-    const router = await overviewFor(ada);
+    const router = await landingFor(ada);
     await clearPreferences(ada);
     const open = async (cookie: string) => {
       const response = await router.request("/", { headers: { cookie } });
-      expect(response.status).toBe(200);
-      return sidebarRows(await response.text());
+      expect(response.status).toBe(302);
+      return sidebarRows(ada);
     };
 
     // The laptop pinned Sales; the phone pinned Support and hid Sales. Each moves its lists once.
@@ -308,14 +322,55 @@ suite("mailbox preferences per person", () => {
     await clearPreferences(ada);
   });
 
-  test("the overview moves a browser's lists for mailboxes beyond the ones it lists", async () => {
-    const router = await overviewFor(lin);
+  test("Mail's landing moves a browser's lists for mailboxes beyond the ones the sidebar lists", async () => {
+    const router = await landingFor(lin);
     await clearPreferences(lin);
-    // Lin reads 201 mailboxes; the overview lists the 200 most recently updated, without Archive.
+    // Lin reads 201 mailboxes; the sidebar lists the 200 most recently updated, without Archive.
     const response = await router.request("/", { headers: { cookie: browserCookie({ hiddenMailboxIds: [archive.shortId] }) } });
-    expect(response.status).toBe(200);
-    expect(sidebarRows(await response.text()).map((row) => row.id)).not.toContain(archive.shortId);
+    expect(response.status).toBe(302);
+    expect((await sidebarRows(lin)).map((row) => row.id)).not.toContain(archive.shortId);
     expect(await listMailboxPreferences(contextFor(lin))).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [archive.id] });
     await clearPreferences(lin);
+  });
+
+  test("Mail opens the last mailbox while the person can read it, and another one once they cannot", async () => {
+    const router = await landingFor(ada);
+    await clearPreferences(ada);
+    const open = async (lastMailboxId: string) =>
+      (await router.request("/", { headers: { cookie: browserCookie({ lastMailboxId }) } })).headers.get("location");
+    expect(await open(sales.shortId)).toBe(`/app/mail/${sales.shortId}`);
+    expect(await open(support.shortId)).toBe(`/app/mail/${support.shortId}`);
+    // Billing is Grace's: a last mailbox Ada cannot read never opens, and the redirect names only her own.
+    expect([`/app/mail/${support.shortId}`, `/app/mail/${sales.shortId}`]).toContain((await open(billing.shortId))!);
+    await setMailboxPreference(contextFor(ada), support.id, { pinned: true });
+    expect(await open(billing.shortId)).toBe(`/app/mail/${support.shortId}`);
+    await clearPreferences(ada);
+  });
+
+  test("closing the notice that Focus is gone is stored for the person, once", async () => {
+    await sql`DELETE FROM mail.personal_preferences WHERE user_id = ${grace.id}::uuid`;
+    expect(await focusNoticeDismissed(contextFor(grace))).toBe(false);
+    expect((await loadMailSidebarData(contextFor(grace))).focusNoticeOpen).toBe(true);
+    expect(await dismissFocusNotice(contextFor(grace))).toEqual({ ok: true, data: { dismissed: true } });
+    const [first] = await sql<{ at: Date }[]>`
+      SELECT focus_notice_dismissed_at AS at FROM mail.personal_preferences WHERE user_id = ${grace.id}::uuid`;
+    expect(await dismissFocusNotice(contextFor(grace))).toEqual({ ok: true, data: { dismissed: true } });
+    const [again] = await sql<{ at: Date }[]>`
+      SELECT focus_notice_dismissed_at AS at FROM mail.personal_preferences WHERE user_id = ${grace.id}::uuid`;
+    expect(again!.at.getTime()).toBe(first!.at.getTime());
+    // Every device of the person reads the same answer; other people still see the notice.
+    expect((await loadMailSidebarData(contextFor(grace))).focusNoticeOpen).toBe(false);
+    expect(await focusNoticeDismissed(contextFor(lin))).toBe(false);
+  });
+
+  test("a service account sees no notice and cannot store one", async () => {
+    const context = {
+      actor: { kind: "service_account", serviceAccount: { id: crypto.randomUUID(), kind: "standalone" } },
+      accessSubject: { type: "service_account" },
+    } as never as MailRequestContext;
+    expect(await focusNoticeDismissed(context)).toBe(true);
+    const result = await dismissFocusNotice(context);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORBIDDEN");
   });
 });

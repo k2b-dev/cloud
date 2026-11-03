@@ -1163,11 +1163,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.reload();
           await ready(page);
           expect(new URL(page.url()).pathname).toBe("/app/mail/Box003");
-          // The redirect adds no history entry, so Back returns to the page before Mail.
+          // The redirect adds no entry of its own: the blank start, the first visit, and the mailbox Mail opened.
+          expect(await page.evaluate(() => history.length)).toBe(3);
           await page.goBack();
           await ready(page);
           expect(new URL(page.url()).pathname).toBe("/app/mail/Box003");
-          expect(await page.evaluate(() => history.length)).toBe(2);
         } finally {
           await close(page);
         }

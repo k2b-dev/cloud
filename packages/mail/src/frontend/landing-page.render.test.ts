@@ -77,7 +77,8 @@ beforeEach(() => {
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(
     spyOn(publicResources, "publicIds").mockImplementation(
-      async (_table, ids) => new Map(ids.flatMap((id) => (publicIdOf.has(id) ? [[id, publicIdOf.get(id)!] as const] : []))),
+      async (_table, ids) =>
+        new Map(ids.flatMap((id) => (typeof id === "string" && publicIdOf.has(id) ? [[id, publicIdOf.get(id)!] as const] : []))),
     ),
   );
 });
