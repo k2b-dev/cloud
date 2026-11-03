@@ -29,7 +29,13 @@ const accessMembers = [
       ["00000000-0000-4000-8000-000000000003", "Paul Wagner", "read"],
       ["00000000-0000-4000-8000-000000000005", "Tom Krüger", "write"],
     ] as const
-  ).map(([userId, displayName, permission]) => ({ principal: { type: "user", userId }, permission, displayName, avatarHash: null })),
+  ).map(([userId, displayName, permission]) => ({
+    principal: { type: "user", userId },
+    permission,
+    displayName,
+    // One picture and initials for the others, so the access list shows both avatar forms.
+    avatarHash: displayName === "Jana Berger" ? "h1" : null,
+  })),
   { principal: { type: "authenticated" }, permission: "read" },
 ];
 let browser: Browser;
@@ -245,6 +251,43 @@ for (const width of [1440, 390]) {
       expect(edges.rows.filter((row) => Math.abs(row.x - edge) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
       expect(edges.right.length).toBeGreaterThan(8);
       for (const right of edges.right) closeTo(right.x, edges.right[0]!.x, 2);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test(`${width}: every avatar in the panel is round, pictures and initials alike`, async () => {
+    const { page } = await open(width);
+    try {
+      await page.evaluate(() => window.harness.presence(5));
+      for (const name of [/^Zugriff/, /^Eigenschaften/, /^Aktivität/])
+        await page
+          .getByRole("button", { name, expanded: false })
+          .first()
+          .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+      await page.locator(".k2b-detail-access .k2b-detail-panel__row", { hasText: "Lager-Team" }).waitFor();
+      await settle(page);
+      const avatars = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2b-detail-panel .k2b-avatar")]
+          .filter((avatar) => avatar.getClientRects().length > 0)
+          .map((avatar) => {
+            const { width, height } = avatar.getBoundingClientRect();
+            const slot = avatar.parentElement?.className.split(" ")[0] ?? "";
+            return { slot, picture: avatar.tagName === "IMG", width, height, radius: getComputedStyle(avatar).borderTopLeftRadius };
+          }),
+      );
+      // Presence chips and slots, comments, activity rows, access, and properties, with pictures among them.
+      for (const slot of [
+        "k2b-detail-presence__face",
+        "k2b-detail-presence-slot",
+        "k2b-discussion__avatar",
+        "k2b-detail-panel__action-leading",
+        "k2b-detail-properties__leading",
+      ])
+        expect(avatars.some((avatar) => avatar.slot === slot)).toBe(true);
+      expect(avatars.filter((avatar) => avatar.picture).length).toBeGreaterThan(4);
+      expect(avatars.filter((avatar) => Math.abs(avatar.width - avatar.height) > 0.5)).toEqual([]);
+      expect(avatars.filter((avatar) => parseFloat(avatar.radius) < avatar.width / 2 - 0.5)).toEqual([]);
     } finally {
       await page.close();
     }

@@ -3676,7 +3676,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
 }
 
-.k2b-ui :is(.k2b-discussion__avatar, .k2b-detail-panel__action-leading) .k2b-avatar {
+/* Every avatar slot of a detail panel or discussion draws a round 20 px avatar, whatever size the app passed.
+   `[data-size]` keeps the slot ahead of Avatar's own size rules, which load later with the same specificity. */
+.k2b-ui
+  :is(.k2b-discussion__avatar, .k2b-detail-panel__action-leading, .k2b-detail-presence__face, .k2b-detail-properties__leading)
+  .k2b-avatar[data-size] {
   width: 1.25rem;
   height: 1.25rem;
   font-size: 0.5rem;
@@ -4346,12 +4350,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 1.25rem;
 }
 
-.k2b-ui .k2b-detail-presence__face > .k2b-avatar {
-  width: 1.25rem;
-  height: 1.25rem;
-  font-size: 0.5rem;
-}
-
 .k2b-ui .k2b-detail-presence__dot {
   position: absolute;
   right: -0.125rem;
@@ -4471,7 +4469,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: flex-end;
 }
 
-.k2b-ui .k2b-detail-presence-slot > .k2b-avatar {
+.k2b-ui .k2b-detail-presence-slot > .k2b-avatar[data-size] {
   width: 1.125rem;
   height: 1.125rem;
   box-shadow: 0 0 0 2px var(--k2b-surface);
@@ -4525,12 +4523,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-properties__leading {
   display: inline-flex;
   flex: 0 0 auto;
-}
-
-.k2b-ui .k2b-detail-properties__leading .k2b-avatar {
-  width: 1.25rem;
-  height: 1.25rem;
-  font-size: 0.5rem;
 }
 
 .k2b-ui .k2b-detail-properties__value {
