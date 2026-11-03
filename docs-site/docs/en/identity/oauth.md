@@ -10,6 +10,8 @@ updated: 2026-10-19
 
 # OAuth clients and flows
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Use authorization code when an integration acts for a person. Use the device
 authorization grant when that person signs in on a machine without a usable
 browser, such as a server reached over SSH. Use client credentials when a

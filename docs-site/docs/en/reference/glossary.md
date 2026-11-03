@@ -48,11 +48,11 @@ the term.
 | access | Zugriff | What a person, group, or service account can do with a resource. Write “give access”, „Zugriff geben“. | `permission`, `permissions`, `rights`, `privilege`, `privileges`, `grant`, `grants`, `granted`, `granting` | `Berechtigung*`, `Zugriffsrecht*`, `Rechte`, `Rechten` |
 | **View**, **Edit**, **Manage** | **Ansehen**, **Bearbeiten**, **Verwalten** | The shared access levels. Write “**Edit** access”, „Zugriff **Bearbeiten**“. An app with its own level labels quotes those labels. | `read access`, `write access`, `admin access`, `admin rights` | `Lesezugriff`, `Schreibzugriff`, `Adminzugriff`, `Leserecht*`, `Schreibrecht*`, `Adminrecht*`, `Administratorrecht*`, `Verwaltungsrecht*`, `Bearbeitungsrecht*` |
 | administrator | Administration | The role that manages the Cloud installation in the admin area. A person with **Manage** access to one resource is not an administrator. | `admin`, `admins`, `sysadmin` | `Admin`, `Admins`, `Administrator`, `Administratoren`, `Administratorin*` |
-| account | Konto | The sign-in identity of one person. | — | `Account`, `Benutzerkonto*` |
-| service account | Dienstkonto | An account that is not a person. It acts with its own access; a user-bound service account acts with the current access of its person. | `service user`, `technical user`, `bot`, `bots` | `Servicekonto*`, `Service-Account*`, `Dienstaccount*`, `Bot`, `Bots` |
-| agent | Agent | A service account that appears as an agent in pickers, activity, and audit. | — | — |
+| account | Konto | A person, an agent, or a service account. | — | `Account`, `Benutzerkonto*` |
+| service account | Dienstkonto | An account that belongs to an object or an app. It never has an API key of its own. | `service user`, `technical user`, `bot`, `bots` | `Servicekonto*`, `Service-Account*`, `Dienstaccount*`, `Bot`, `Bots` |
+| agent | Agent | An account without a person, created by an administrator. | — | — |
 | sign in, sign out | anmelden, abmelden | Start or end a session. | `log in`, `log out`, `logged in`, `login`, `logon` | `einloggen`, `ausloggen`, `eingeloggt`, `ausgeloggt`, `Login` |
-| API key | API-Schlüssel | A secret that an integration uses instead of a password. | `API token`, `API tokens` | `API-Token*`, `API-Key*` |
+| API key | API Key | A secret that an integration uses instead of a password. | `API token`, `API tokens` | `API-Token*`, `API-Key*`, `API-Schlüssel*` |
 
 ## Sharing and work
 

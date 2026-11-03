@@ -81,7 +81,7 @@ describe("machine API key creation", () => {
     return { ...dom, closed: () => closed };
   };
   const choose = async (doc: Document) => {
-    findButton(doc, "Choose a standalone account or agent").click();
+    findButton(doc, "Choose an agent").click();
     await flush();
     await waitFor(() => doc.body.textContent?.includes("Transcript integration") === true);
     findButton(doc, "Release robot").click();
@@ -145,7 +145,7 @@ describe("machine API key creation", () => {
   test("account lookup failure has a retry without discarding the form", async () => {
     listFails = true;
     const dom = await setup();
-    findButton(dom.document, "Choose a standalone account or agent").click();
+    findButton(dom.document, "Choose an agent").click();
     await waitFor(() => dom.document.body.textContent?.includes("Could not load machine accounts") === true);
     listFails = false;
     findButton(dom.document, "Retry").click();

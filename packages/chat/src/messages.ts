@@ -146,9 +146,9 @@ export const chatMessages = i18n.define({
         "You leave the channel. If it is still discoverable for you, you can read its history and join again. Your messages stay in the channel.",
       removeChannelMemberDescription:
         "Their direct membership ends. If this channel is still discoverable for them, they can read its history and join again. Their messages stay in the channel.",
-      delegatedAccount: "User-bound account",
-      resourceAccount: "Resource account",
-      standaloneAccount: "Service account",
+      delegatedAccount: "Personal",
+      resourceAccount: "Service account",
+      standaloneAccount: "Agent (API key only)",
       agentAccount: "Agent",
 
       findGroup: "Find a directory group",
@@ -157,7 +157,7 @@ export const chatMessages = i18n.define({
 
       discoveryHistory:
         "Everyone in this audience can read the entire history before joining. Existing members and their settings stay unchanged.",
-      authenticatedExplanation: "Includes guests and service accounts.",
+      authenticatedExplanation: "Includes guests, agents and service accounts.",
       removeDisabledAudience: "Remove this audience before saving further changes.",
       discoverySettings: "Discoverability",
       discoverableFor: "Discoverable by",
@@ -645,9 +645,9 @@ export const chatMessages = i18n.define({
         "Du verlässt den Kanal. Solange er für dich auffindbar ist, kannst du seinen Verlauf lesen und wieder beitreten. Deine Nachrichten bleiben im Kanal.",
       removeChannelMemberDescription:
         "Der direkte Mitgliedseintrag endet. Solange der Kanal für dieses Konto auffindbar ist, kann es den Verlauf lesen und wieder beitreten. Seine Nachrichten bleiben im Kanal.",
-      delegatedAccount: "Nutzergebundenes Konto",
-      resourceAccount: "Ressourcenkonto",
-      standaloneAccount: "Dienstkonto",
+      delegatedAccount: "Persönlich",
+      resourceAccount: "Dienstkonto",
+      standaloneAccount: "Agent (nur API Key)",
       agentAccount: "Agent",
 
       findGroup: "Verzeichnisgruppe suchen",
@@ -656,7 +656,7 @@ export const chatMessages = i18n.define({
 
       discoveryHistory:
         "Alle Auffindbaren können schon vor dem Beitritt den ganzen Verlauf lesen. Bestehende Mitglieder und ihre Einstellungen bleiben erhalten.",
-      authenticatedExplanation: "Schließt Gäste und Dienstkonten ein.",
+      authenticatedExplanation: "Schließt Gäste, Agenten und Dienstkonten ein.",
       removeDisabledAudience: "Entferne diese Zielgruppe, bevor du weitere Änderungen speicherst.",
       discoverySettings: "Auffindbarkeit",
       discoverableFor: "Auffindbar für",

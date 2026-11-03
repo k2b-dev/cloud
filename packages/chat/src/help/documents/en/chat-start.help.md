@@ -12,7 +12,7 @@ Chat is for conversations with other people, notes for yourself, and channels yo
 
 :::steps
 1. Choose **New chat**.
-2. Keep **Chat** selected and choose the people or service accounts for the chat.
+2. Keep **Chat** selected and choose the people, agents or service accounts for the chat.
 3. Enter a name if you want one.
 4. Choose **Start chat**.
 :::
@@ -68,7 +68,7 @@ Existing members keep their access when you change the audience.
 5. Choose **New channel**.
 :::
 
-If the operator allows it, you can choose **Everyone with a Cloud account**. This includes guests and service accounts.
+If the operator allows it, you can choose **Everyone with a Cloud account**. This includes guests, agents and service accounts.
 If confirmation is missing, reopen **New chat → Channel** and choose **Try again** to resume the same request.
 
 ## If confirmation is missing {icon="refresh"}

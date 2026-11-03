@@ -44,11 +44,18 @@ for (const locale of ["en", "de"] as const) {
           for (const attribute of ["aria-label", "title"]) expect(element.getAttribute(attribute) ?? "").not.toMatch(uuid);
         const expected =
           locale === "en"
-            ? ["Unknown person", "Deleted group", "Unknown service account", "All users (including guests)", "Public", "Quentin Dorn"]
+            ? [
+                "Unknown person",
+                "Deleted group",
+                "Unknown agent or service account",
+                "All users (including guests)",
+                "Public",
+                "Quentin Dorn",
+              ]
             : [
                 "Unbekannte Person",
                 "Gelöschte Gruppe",
-                "Unbekanntes Dienstkonto",
+                "Unbekannter Agent oder unbekanntes Dienstkonto",
                 "Alle Benutzer einschließlich Gäste",
                 "Öffentlich",
                 "Quentin Dorn",

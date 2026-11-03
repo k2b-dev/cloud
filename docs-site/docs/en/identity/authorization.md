@@ -10,6 +10,8 @@ updated: 2026-11-03
 
 # Resource authorization
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 The service that reads or changes a resource checks its permission.
 
 Every API route, SSR page, background action, and CLI command should reach the

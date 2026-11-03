@@ -44,7 +44,7 @@ Sieht eine Anfrage nach wiederkehrender Arbeit aus, etwa weil du „wieder“ sc
 
 Korrigierst du den Ton eines Entwurfs, etwa einer zu förmlichen Mail, und ist **Personalisierung in Assistenten-Chats verwenden** eingeschaltet, bietet der Assistent an, sich die Korrektur zu merken, und schlägt eine kurze Regel vor, etwa „Mails immer förmlich schreiben“. Ein einfaches Ja reicht dafür nicht: Schick ihm die Regel in eigenen Worten zurück, dann merkt er sie sich für dich. Steht in deiner Korrektur schon „immer“ oder „ab jetzt“, merkt er sie sich direkt. Eingebaute oder geteilte Skills ändert der Assistent nicht für alle, außer du bittest darum.
 
-Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Dienstkonten oder allen angemeldeten Identitäten; öffentlicher Zugriff ist nicht möglich.
+Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Agenten, Dienstkonten oder allen angemeldeten Identitäten; öffentlicher Zugriff ist nicht möglich.
 
 ### Einen Skill passend laden lassen
 

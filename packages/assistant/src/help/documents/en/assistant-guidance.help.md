@@ -44,7 +44,7 @@ When a request looks like it will come back, for example because you say "again"
 
 If you correct the tone of a draft, such as a mail that is too formal, and **Use personalization in Assistant chats** is on, Assistant offers to remember the correction and suggests a short rule, such as "always write mails formally". A plain yes is not enough: send that rule back in your own words, and it remembers it for you. If your correction already says "always" or "from now on", it remembers it right away. Assistant does not change a built-in or shared Skill for everyone unless you ask.
 
-Skills and Projects require sign-in. Share them with users, groups, service accounts, or all signed-in identities; public access is not supported.
+Skills and Projects require sign-in. Share them with users, groups, agents, service accounts, or all signed-in identities; public access is not supported.
 
 ### Create a Skill that loads at the right time
 

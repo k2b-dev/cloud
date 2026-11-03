@@ -26,7 +26,7 @@ Neue und bestehende berechtigte Nutzer werden beim Start, nach Konfigurationsän
 
 ## Maschinenablagen erstellen {icon="server"}
 
-Wähle unter **Einstellungen → Maschinenablagen** einen Agenten oder ein eigenständiges Dienstkonto und dann **Ablage erstellen**. Öffne die neue Ablage und erteile benannten Nutzern, Gruppen oder Maschinen Zugriff auf einen **Relativen Pfad**. Leer bedeutet die gesamte Ablage; ein engerer Pfad umfasst diese Datei oder diesen Ordner und alle Unterordner. Wähle **Lesen**, **Lesen und schreiben** oder **Lesen, schreiben und freigeben**. Eigentum allein gewährt auch dem Eigentümer keinen Zugriff.
+Wähle unter **Einstellungen → Maschinenablagen** einen Agenten und dann **Ablage erstellen**. Öffne die neue Ablage und erteile benannten Nutzern, Gruppen oder Maschinen Zugriff auf einen **Relativen Pfad**. Leer bedeutet die gesamte Ablage; ein engerer Pfad umfasst diese Datei oder diesen Ordner und alle Unterordner. Wähle **Lesen**, **Lesen und schreiben** oder **Lesen, schreiben und freigeben**. Eigentum allein gewährt auch dem Eigentümer keinen Zugriff.
 
 Maschinenablagen verwenden ein eigenes Cloud-Verzeichnis und die bestehende Dienstidentität von Dateien. Sie benötigen keine lokale Linux-Einrichtung und verwenden niemals die Unix-Identität einer Person. Maschinenablagen in FreeIPA sind ohne unabhängig eingerichtete Maschinenidentität nicht verfügbar. Der menschliche Verzeichnislebenszyklus und die automatische Archivierung erfassen Maschinenablagen nicht.
 
@@ -101,7 +101,7 @@ Verzeichnis- und Dateibefehle adressieren ein Verzeichnis als `<ablage>/<users|g
 
 ## Vorlagen verwalten {icon="template"}
 
-Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen, Agenten, eigenständige Dienstkonten oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
+Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen, Agenten oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
 
 Nutzer wählen **Hinzufügen → Vorlage** in einem beschreibbaren Ordner. Das Vorlagenrecht ersetzt niemals das Schreibrecht im Ziel. Das Ersetzen des Vorlageninhalts oder das Löschen einer Vorlage verändert keine bereits daraus erzeugten Dateien. Auch die importierte Originaldatei kann unabhängig geändert oder entfernt werden. Vorlageninhalte und Rechte liegen in PostgreSQL und müssen in Datenbank-Backups enthalten sein.
 

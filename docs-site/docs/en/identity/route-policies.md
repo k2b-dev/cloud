@@ -10,6 +10,8 @@ updated: 2026-09-04
 
 # Route policies
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 A route policy decides which kind of caller may reach a handler.
 
 It does not decide whether that caller may read or change a resource.

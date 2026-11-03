@@ -135,7 +135,7 @@ Use these Liquid variables in your template:
 
 | Variable | Value |
 | --- | --- |
-| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a personal API key uses its person's name, an agent or service account its own name, other automations "Mailbox automation" |
 | `actor.email` | Email address of the person in actor.display_name; empty when there is none |
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |

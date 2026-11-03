@@ -75,9 +75,9 @@ Everyone with access of their own sees this list, also through a group or **Ever
 
 ## Give an integration or agent access {icon="key"}
 
-Add its standalone service account or agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
+Add its agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
 
-To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent or standalone service account can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own notebook.
+To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own notebook.
 
 ## Find the right settings tab {icon="settings"}
 

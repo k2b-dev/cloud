@@ -22,7 +22,7 @@ const catalog = i18n.define({
       attachmentNotFound: "Attachment not found",
       endpointNeedsUser: "This endpoint requires a user-backed actor",
       commentsNeedUser: "Comments require a user-backed actor",
-      reactionsNeedUser: "Reactions require a person or a standalone service account",
+      reactionsNeedUser: "Reactions require a person or an agent",
       emoji: "Emoji",
       reviewAddReaction: ({ title }: { title: string }) => `Add your reaction to ${title}.`,
       reviewRemoveReaction: ({ title }: { title: string }) => `Remove your reaction from ${title}.`,
@@ -304,7 +304,7 @@ const catalog = i18n.define({
       commentDeleted: "Kommentar gelöscht",
       accessUpdated: "Zugriff aktualisiert",
       accessRevoked: "Zugriff entzogen",
-      apiKeyRevoked: "API-Schlüssel widerrufen",
+      apiKeyRevoked: "API Key widerrufen",
 
       type: "Typ",
       space: "Space",

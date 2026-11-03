@@ -32,8 +32,8 @@ Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht einge
 :::
 
 Eine Metrikquelle ruft einen Prometheus-Endpunkt im eingestellten Intervall ab.
-Eine HTTP-Ingest-Quelle nimmt Batches mit einem API-Schlüssel der Quelle an.
-Erstelle benannte Schlüssel unter **API-Schlüssel** in den Quellendetails. Bewahre sie im Geheimnisspeicher deines Datenlieferanten auf.
+Eine HTTP-Ingest-Quelle nimmt Batches mit einem API Key der Quelle an.
+Erstelle benannte Schlüssel unter **API Keys** in den Quellendetails. Bewahre sie im Geheimnisspeicher deines Datenlieferanten auf.
 
 ## Wähle die Metriken für den Abruf
 

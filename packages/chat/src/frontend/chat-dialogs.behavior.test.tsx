@@ -1146,7 +1146,7 @@ describe("chat dialogs and info", () => {
         createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange: () => {} }),
       );
       expect(input("input").placeholder).toBe(
-        locale === "en" ? "Add user, group, or service account…" : "Benutzer, Gruppe oder Dienstkonto hinzufügen…",
+        locale === "en" ? "Add user, group, agent, or service account…" : "Benutzer, Gruppe, Agent oder Dienstkonto hinzufügen…",
       );
       expect(people).not.toHaveBeenCalled();
     });
