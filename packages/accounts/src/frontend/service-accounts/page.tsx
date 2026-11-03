@@ -51,8 +51,8 @@ export default ssr<AuthContext>(async (c) => {
   const rawStatus = (c.req.query("status") ?? "active").trim();
   const status = rawStatus === "revoked" ? "revoked" : "active";
 
-  const [pendingRequestsPage, credentialsPage] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
+  const [pendingRequests, credentialsPage] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     serviceAccountCredentials.listOverview({
       pagination: { page, perPage },
       filter: {
@@ -91,12 +91,7 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.serviceAccounts }]}
     >
-      <AccountsWorkspace
-        active="service-accounts"
-        isAdmin
-        pendingRequests={pendingRequestsPage.total}
-        scrollPreserveKey="accounts-service-accounts"
-      >
+      <AccountsWorkspace active="service-accounts" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-service-accounts">
         <div class="flex flex-col gap-2">
           <div class="flex flex-wrap items-start justify-between gap-3" style="view-transition-name: accounts-service-accounts-title">
             <div class="min-w-0">
