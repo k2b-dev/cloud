@@ -22,6 +22,16 @@ export const resolveMailLargeLayout = (view: MailLargeView, conversationOpen: bo
   return view === "columns" ? { rows: "columns", list: "hidden", reader: true } : { rows: "lines", list: "pane", reader: true };
 };
 
+/**
+ * Where the list stands beside an open conversation. `open`: the list pane shows. `hideable`: the View menu's switch and
+ * `[` may hide or show it, which needs the reader beside the list. `away`: the reader stands without the list, so ×
+ * and Escape lead back to it.
+ */
+export const resolveMailListPresence = (layout: MailLargeLayout, conversationOpen: boolean, collapsed: boolean) => {
+  const open = layout.list === "pane" && (!collapsed || !conversationOpen);
+  return { open, hideable: conversationOpen && layout.list === "pane", away: conversationOpen && !open };
+};
+
 /** `V` switches between the two views a person sees, starting from what is on screen now. */
 export const toggleMailLargeView = (view: MailLargeView, conversationOpen: boolean): MailLargeView =>
   resolveMailLargeLayout(view, conversationOpen).rows === "columns" ? "split" : "columns";

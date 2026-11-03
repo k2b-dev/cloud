@@ -670,6 +670,11 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   let origin: DropdownReturnFocus | undefined;
   const originElement = () => (typeof origin === "function" ? origin() : origin);
   let menuRef: HTMLDivElement | undefined;
+  /**
+   * Whether the popover shows, as `open` and the toggle events left it. A menu closed before its opening toggle event
+   * arrives gets one event from "closed" to "closed"; this still reports that close to the owner.
+   */
+  let shown = false;
   let triggerRing = true;
   let mounted = false;
   /** Where a key on the trigger asked the focus to go; a controlled menu opens later, in its owner's update. */
@@ -728,6 +733,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     // A lazy menu's entries exist before it shows, so it places and focuses them as any other.
     setEntriesShown(true);
     menuRef.showPopover();
+    shown = true;
     // The toggle event arrives a task later; expose the open state before focus moves into the menu.
     setInternalOpen(true);
     attachViewportListeners();
@@ -896,7 +902,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           onKeyDown={handleMenuKeyDown}
           onToggle={(event) => {
             const nextOpen = (event as ToggleEvent).newState === "open";
-            const wasOpen = (event as ToggleEvent).oldState === "open";
+            const wasOpen = shown || (event as ToggleEvent).oldState === "open";
+            shown = nextOpen;
             setInternalOpen(nextOpen);
             if (nextOpen) setEntriesShown(true);
             if (nextOpen) attachViewportListeners();

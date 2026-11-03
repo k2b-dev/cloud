@@ -1,5 +1,9 @@
 import type { CapabilityDispatchDependencies } from "../api/capabilities";
-import type { CapabilityActionPolicy, NormalizedCapabilityCall } from "../contracts/capabilities";
+import { CAPABILITY_FRAMEWORK_ERROR_CODES, type CapabilityActionPolicy, type NormalizedCapabilityCall } from "../contracts/capabilities";
+import type { CodeBridgeRefusalKind } from "../contracts/code-call";
+
+export { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../contracts/code-call";
+
 import type { CodeRunTokenClaims } from "./run-token";
 
 /** Payload-free bridge denial. A stale/expired lease uses HTTP 409 so the supervisor stops that attempt. */
@@ -19,8 +23,40 @@ export type CodeBridgeCall = {
   kind: "query" | "action" | "internet";
   policy?: CapabilityActionPolicy;
 };
+/** Local policy/approval refusals must never be mistaken for a target application's 403. */
+export const codeBridgeLocalRefusalKind = (code: string): CodeBridgeRefusalKind => {
+  if (["code_approval_required", "code_approval_revoked", "code_hash_mismatch"].includes(code)) return "approval";
+  return [
+    "code_access_forbidden",
+    "code_stream_forbidden",
+    "code_disabled",
+    "code_policy_never",
+    "code_sends_not_yet",
+    "code_unattended_forbidden",
+    "code_http_origin_forbidden",
+    "code_http_origin_undeclared",
+    "code_http_path_forbidden",
+    "code_http_secret_forbidden",
+    "code_http_forbidden",
+  ].includes(code)
+    ? "policy"
+    : "bridge";
+};
+/** The provider status is observed before response validation; a bridge/broker 403 is not a target refusal. */
+const frameworkCodes = new Set<string>(Object.values(CAPABILITY_FRAMEWORK_ERROR_CODES).map((code) => code.toLowerCase()));
+export const codeBridgeDispatchRefusalKind = (code: string, targetStatus?: number): CodeBridgeRefusalKind => {
+  if (code === "app_access_denied") return "app_not_allowed";
+  // A provider's review can require confirmation even for a nominally silent Action.
+  const localKind = codeBridgeLocalRefusalKind(code);
+  if (localKind !== "bridge") return localKind;
+  if (code === "mandate_forbidden" || code === "mandate_policy_denied") return "policy";
+  if (frameworkCodes.has(code)) return "bridge";
+  return targetStatus === 403 || targetStatus === 404 ? "target_refused" : "bridge";
+};
 /** Core's admitted version mandate; the target app still resolves current resource rights. */
 export type CodeBridgeAuthority = {
+  /** Internal observation only. Core persists this reason with the call result; never grants authority. */
+  onRefusal?: (kind: CodeBridgeRefusalKind) => void;
   mandateId: string;
   mandateRevision: number;
   ownerAppId: "core";

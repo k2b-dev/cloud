@@ -13,20 +13,17 @@ The email provider stays the source for portable mail state. When you move a mes
 
 ## Choose the right starting point {icon="square-plus"}
 
-- When you open Mail from the app navigation, you see **Focus**. Focus is one work queue across every mailbox that you can view.
-- **For me** shows conversations assigned to you that need action. **Unassigned** shows work that needs action and has no assignee who can still work on it.
-- **Waiting** shows your assigned conversations that wait for a reply. **All active** shows every unfinished conversation that you can view and that is not in **Later**.
-- In Focus, each mailbox button shows how many conversations need action. A dot on the mailbox icon means unread conversations outside Trash and Junk. Point at the button to see both exact counts. Inside a mailbox, the other mailboxes show no counts, and the open mailbox shows the counts of its views and folders.
-- Open a mailbox when you need folders, a search across the mailbox, or settings.
+- When you open Mail from the app navigation, Mail opens a mailbox directly. With one mailbox, Mail opens it. With more than one, Mail opens the mailbox that you used last in this browser, if you can still view it and did not hide it. Otherwise Mail opens your first pinned mailbox, or else the first mailbox in the list.
+- Mail has no **Focus** page now. In each mailbox, **Assigned to me** shows what is assigned to you, and **Needs action**, **Waiting for reply**, and **Unassigned** are tabs too. An old link to Focus opens the same view or conversation in a mailbox. A notice at the top of the sidebar tells you this one time. Choose **Got it** to close it on all your devices.
+- The open mailbox shows the counts of its views and folders. The other mailboxes show no counts.
 - Choose the flag next to a mailbox to pin it to the top of the list. For the open mailbox, the flag and the eye are under **…** on its row.
-- Choose the crossed-out eye to hide a mailbox that you rarely need, such as a no-reply address. The mailbox leaves the list, and its conversations leave Focus and the Focus counts.
+- Choose the crossed-out eye to hide a mailbox that you rarely need, such as a no-reply address. The mailbox leaves the list, and Mail does not open it when you open Mail.
 - Hidden mailboxes wait under **Hidden mailboxes** below the list. Open that section to reach one, and choose the eye to show it again.
 - Your pinned and hidden mailboxes apply on every device where you sign in. They are yours alone. Others with access to a mailbox keep their own.
-- On a tablet or a larger screen, select a Focus row to see its context, summary, workflow fields, and team notes. With enough room they stand next to the queue; otherwise they open over the end of the queue, and **Esc** or **Details** puts them away. On a phone, the row opens the conversation in its mailbox.
 - Choose **New mailbox** to connect another email account.
 - A new mailbox starts private. You have **Manage** access, and nobody else has access until you give it in **… → Settings → Access**.
 
-Focus does not copy or move mail between mailboxes. Each row keeps its source mailbox. When you open a row, Mail checks your current access to the mailbox again.
+To list the open work of all your mailboxes together, use `cld mail focus` on the command line. Each entry keeps its mailbox, and Mail checks your access again when you open it.
 
 ## Connect your first mailbox {icon="square-plus"}
 
@@ -56,10 +53,11 @@ Open **… → Settings → Accounts & identities → Sending identities**. An i
 
 ## Find your way in the mailbox {icon="layout-grid"}
 
-The sidebar contains **Focus** and your mailboxes, with pinned mailboxes first. The open mailbox expands to its places:
+The sidebar contains your mailboxes, with pinned mailboxes first. The open mailbox expands to its places:
 
 - **Inbox**, **Drafts**, **Scheduled**, **Send problems**, and **Sent**.
 - **More** for Archive, Trash, and Junk. It stays open while one of these folders is current.
+- Standard folders show their usual name in your language, for example **Sent** for "Sent Items". A folder with a name of its own keeps that name. The folder settings also show the name on the mail server.
 - Custom provider folders and their nested hierarchy, with unread counts.
 - **Hidden mailboxes**, **New mailbox**, and **Recently deleted mailboxes** remain available below the mailbox list.
 
@@ -71,7 +69,7 @@ The head contains:
 - **… → Choose list view** switches between conversations and individual messages. The menu also contains mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations can choose their list view here; the open mailbox's **…** in the sidebar offers them only pin and hide.
 - **Compose** as the primary action when you can send.
 
-On a phone, open the mailbox title to reach Focus, other mailboxes, and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.
+On a phone, open the mailbox title to reach other mailboxes and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.
 
 **Mailbox details** shows everyone who can view the mailbox the same overview. People with **View** access see it as **About this mailbox**. The overview shows:
 
@@ -93,6 +91,10 @@ Next to a composer, the conversation history contains only messages. Operational
 ## Choose your inbox view {icon="layout-grid"}
 
 Use **View** in a mailbox to choose how its list and reader appear. On large screens, **Automatic** shows columns until you open a conversation, then shows the list beside the reader. You can also keep **Columns** or **List + reader**. On a phone, choose **Compact** or **Detailed**.
+
+While you read beside the list, **View → Hide conversation list** hides it, and the reader uses the full width. The `[` key hides and shows it. Without a reader beside the list, the switch is unavailable. Mail remembers the choice in this browser.
+
+In columns, **Participants** shows who wrote in the conversation: up to three people, then "+N". Point at it to see their names, grouped as **External**, **Team**, and **Automations**. Mail recognizes team members and automations by the replies Mail sent. A reply from another mail program counts by its sender address. If you see only assigned conversations, you see only the people of those conversations. A narrow list and a phone leave the column out.
 
 Mail remembers each choice for you and this mailbox, separately for phones and large screens. A choice on one phone applies on your other phones too. Without a saved choice, Mail uses Automatic on large screens and Compact on phones. Administrators do not set your default.
 

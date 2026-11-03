@@ -49,9 +49,11 @@ When the sidebar is hidden, also together with the app bar, the work area
 takes its column and rounds its start corners with the card, so nothing in the
 workspace paints past the card's corners.
 
-From 768 px the app bar holds Home, the button that hides the sidebar, the
-apps, the app grid, search, help, and the profile avatar. Its controls are
-44 px targets. From 768 to 1023 px the app bar's container carries the app
+From 768 px the app bar holds Home, the apps, the app grid, the panel button
+when more than one panel is offered, search, help, and the profile avatar. Its
+controls are 44 px targets. The panel button, search, and help are blue; the
+panel button's arrow and name say whether a click opens or closes the panel,
+and an open panel keeps its fill. From 768 to 1023 px the app bar's container carries the app
 gradient on a neutral canvas. The selected app has a surface background, and
 there is no separator between shortcuts and apps. Announcements and account
 notices above the app are cards with the same 8 px spacing.
@@ -105,15 +107,16 @@ focus, gestures, and the close-action contract.
 
 ### Hide the app bar and navigation
 
-From 768 px, **Hide sidebar** below Home in the app bar or `Cmd+\` (`Ctrl+\`
-on other systems) hides the app bar. From 1024 px, it also hides the outermost
+From 768 px, **Hide sidebar**, the first entry of the profile menu, or `Cmd+\`
+(`Ctrl+\` on other systems) hides the app bar. From 1024 px, it also hides the outermost
 workspace's sidebar; from 768 to 1023 px that sidebar is an overlay behind the
 workspace head's button anyway. The shortcut is listed under keyboard
-shortcuts in Help. The **Show sidebar** button at the bottom start corner
-of the app area, the same shortcut, or a drag from the left edge on a touch
-screen shows them again. The browser remembers the choice in a cookie, so a
+shortcuts in Help. Only the avatar stays: it floats at the bottom
+start corner of the app area, and its menu starts with **Show sidebar**. That
+entry, the same shortcut, or a drag from the left edge on a touch screen shows
+them again. The browser remembers the choice in a cookie, so a
 reload shows the same page. Phones ignore it. On keyboard layouts without a
-direct backslash key, such as German, use the button.
+direct backslash key, such as German, use the profile menu.
 
 Applications need no code. Keep actions people need available outside the
 sidebar too, through the application's own links.
@@ -454,8 +457,9 @@ The Core sign-in, password, and consent pages use the same class.
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove devices. The menu ends with
-**Sign out**. Applications do not add their own link to any of these.
+leads to `/me/app`, where people pair and remove devices. From 768 px the
+menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. It
+ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.
 Applications must not add a second theme or language control to their own

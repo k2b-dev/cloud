@@ -5,16 +5,34 @@ section: Operations
 order: 1162
 description: Understand idle synchronization writes, freshness and runtime history retention.
 tags: [mail, operations, database]
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # Mail background database work
 
-A successful folder check records a completed sync run even when no messages
-changed. The resource fence, binding's last-use time and resource's last-sync
-time still advance. Health and operator views therefore keep reporting the
-latest successful check, including for quiet mailboxes. IMAP push heartbeats
-and provider lease renewal keep their existing cadence.
+A folder check whose IMAP `STATUS` shows nothing new ends without a commit:
+it claims no resource fence and records no sync run. That needs a server with
+CONDSTORE, a folder whose import finished with no flag walk, reconciliation
+or search under way, a full reconciliation less than six hours old, and
+settled stored state: an active binding and connection without errors and an
+active resource and mailbox health. The resource's last-sync time still moves
+on, at most once a minute, so health and operator views keep reporting a
+recent check for quiet mailboxes. The binding's last-use time follows
+committed batches only.
+
+Completed sync runs in operator counts and `cld mail sync runs` therefore
+show batches that changed something. A failed check still records a failed
+run. The Drafts folder, servers without CONDSTORE, a folder whose stored state
+needs recovery, and every folder a waiting `sync` command asked for still take
+a full batch with a completed run. IMAP push heartbeats and provider lease
+renewal keep their existing cadence.
+
+Each Mail process logs `Mail folder sync activity` every ten minutes in which
+folder syncs ran. It counts sync requests by trigger (`scheduled`, `push`,
+`reconcile`, `command`, `maintenance`, `mailbox`, `continuation`, `busy`,
+`rate_limited`) and batches by outcome (`committed`, `unchanged`, `deferred`,
+`failed`). A coalesced job keeps the input of its first request, so requests
+are counted when they are made.
 
 An unchanged folder cursor, folder sync status, mailbox health or connection
 error state no longer causes a row update. Binding-folder UID state is updated

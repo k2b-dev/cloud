@@ -514,6 +514,47 @@ test("mod+J toggles in the host and closes from a provider input", async () => {
   }
 });
 
+// The rail's panel button takes the blue of search and help; an open panel keeps its fill and moves no rail control.
+test("the rail panel button keeps a blue fill while open and moves no rail control", async () => {
+  const { context, page } = await fixture();
+  try {
+    const button = page.locator(".layout-rail [data-cloud-panel-toggle]");
+    const rail = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".layout-rail :is(.rail-item, .layout-profile-preferences)")].map((element) =>
+          JSON.stringify(element.getBoundingClientRect()),
+        ),
+      );
+    const look = (selector: string) =>
+      page.locator(selector).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { color: style.color, background: style.backgroundColor, expanded: element.getAttribute("aria-expanded") };
+      });
+    await page.mouse.move(700, 450);
+    await settled(page);
+    const before = await rail();
+    const closedLook = await look(".layout-rail [data-cloud-panel-toggle]");
+    expect(closedLook.color).toBe((await look('.layout-rail [aria-label="Open global search"]')).color);
+    expect(closedLook.background).toBe("rgba(0, 0, 0, 0)");
+    await button.click();
+    await ready(page);
+    await page.mouse.move(700, 450);
+    await settled(page);
+    const openLook = await look(".layout-rail [data-cloud-panel-toggle]");
+    expect(openLook.expanded).toBe("true");
+    expect(openLook.background).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await rail()).toEqual(before);
+    await button.click();
+    await closed(page);
+    await page.mouse.move(700, 450);
+    await settled(page);
+    expect((await look(".layout-rail [data-cloud-panel-toggle]")).background).toBe("rgba(0, 0, 0, 0)");
+    expect(await rail()).toEqual(before);
+  } finally {
+    await context.close();
+  }
+});
+
 // 6: The provider decides Escape after its own controls have handled it.
 test("provider Escape returns focus, while preventDefault keeps it open", async () => {
   const { context, page } = await fixture();

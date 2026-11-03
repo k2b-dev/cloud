@@ -130,6 +130,8 @@ const event = (id: string, action: string, minutes: number): MailActivityEvent =
   targetId: "Conv01",
   metadata: {},
   createdAt: ago(minutes),
+  conversationSubject: null,
+  assignees: null,
 });
 const noErrors: MailDetailErrors = {
   collaboration: null,

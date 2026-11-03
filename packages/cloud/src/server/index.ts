@@ -83,6 +83,7 @@ export {
   getEffectiveGroups,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   hasPermission,
   images,
   isServiceError,

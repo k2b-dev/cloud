@@ -17,18 +17,10 @@ export const summarizeCallResult = (result: unknown): string | null => {
   return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 };
 
-/**
- * Whether a failed call was refused for missing access: a 403 or 404 answer, or a refusal code naming forbidden or
- * removed access. Invalid input, an unavailable app or a timeout are other causes.
- */
+/** Only target HTTP 403/404 identify access refusals. Codes without a status remain unclassified. */
 export const isAccessRefusal = (result: unknown): boolean => {
-  const parsed = z
-    .object({ error: z.object({ code: z.string().optional(), status: z.number().optional() }).passthrough() })
-    .passthrough()
-    .safeParse(result);
-  if (!parsed.success) return false;
-  const { code, status } = parsed.data.error;
-  return status === 403 || status === 404 || /forbidden|access|removed|not_found|denied/i.test(code ?? "");
+  const parsed = z.object({ error: z.object({ status: z.number().optional() }) }).safeParse(result);
+  return parsed.success && (parsed.data.error.status === 403 || parsed.data.error.status === 404);
 };
 
 const callRefs = (call: unknown): { type: string; id: string }[] => {

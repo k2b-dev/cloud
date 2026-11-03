@@ -1,4 +1,4 @@
-import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, CODE_BRIDGE_REFUSAL_KINDS } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 /** Stable public identity; never changes when a new version is saved. */
@@ -121,6 +121,8 @@ export const CodeRunSchema = z
     title: z.string().optional(),
     state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
     outcome: z.string().nullable(),
+    /** First target refusal in invocation order; contains no target data and is safe for readers. */
+    firstRefusedCallOrdinal: z.number().int().positive().nullable(),
     createdAt: timestamp,
     startedAt: timestamp.nullable(),
     endedAt: timestamp.nullable(),
@@ -135,12 +137,27 @@ export type CodeRun = z.infer<typeof CodeRunSchema>;
 export const CODE_RESULT_STORAGE_BYTES = CAPABILITY_MAX_RESULT_BYTES;
 /** Inline JSON and text chunks share the capability response budget. Larger values remain complete in Postgres. */
 export const CODE_INLINE_JSON_BYTES = 16_384;
+/** Reason recorded by the bridge, before the provider status is lost in transport. Null for successes and legacy calls. */
+export const CodeCallRefusalKindSchema = z.enum(CODE_BRIDGE_REFUSAL_KINDS);
+export type CodeCallRefusalKind = z.infer<typeof CodeCallRefusalKindSchema>;
+/** Editor-only summary of the first target refusal; never contains provider names or response payloads. */
+export const CodeRefusedCallSchema = z
+  .object({
+    ordinal: z.number().int().positive(),
+    kind: z.enum(["query", "action"]),
+    capability: z.string(),
+    /** From the normalized call and the capability's target declaration, never from its response. */
+    target: CloudResourceRefSchema.nullable(),
+  })
+  .strict();
+export type CodeRefusedCall = z.infer<typeof CodeRefusedCallSchema>;
 /** Ordered observational record, not a replay journal or an idempotency reservation. */
 export const CodeCallSchema = z
   .object({
     ordinal: z.number().int().positive(),
     kind: z.enum(["query", "action"]),
     capability: z.string(),
+    refusalKind: CodeCallRefusalKindSchema.nullable(),
     /** Historical normalized JSON; output validation must not depend on the current invocation schema. */
     call: z.json().nullable(),
     callChunked: z.boolean(),
@@ -266,6 +283,8 @@ export const codeQueryContracts = {
             inputChunked: z.boolean(),
             outputChunked: z.boolean(),
             content: textChunk.nullable(),
+            /** Directly selected by run.firstRefusedCallOrdinal, independent of call pagination. Editors only. */
+            firstRefusedCall: CodeRefusedCallSchema.nullable(),
             calls: z.array(CodeCallSchema).max(1),
             nextCursor: z.number().int().nullable(),
           })

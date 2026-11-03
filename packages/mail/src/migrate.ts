@@ -15,6 +15,7 @@ import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
+import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { migrateIncomingAutomationTargets } from "./service/incoming-automation-targets-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
@@ -285,6 +286,13 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.personal_mailbox_preferences
     ADD COLUMN IF NOT EXISTS large_view text CHECK (large_view IN ('auto', 'columns', 'split')),
     ADD COLUMN IF NOT EXISTS phone_view text CHECK (phone_view IN ('compact', 'detailed'))`.simple();
+  // A person's Mail preferences that belong to no mailbox, such as the one-time sidebar notice.
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.personal_preferences (
+      user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+      focus_notice_dismissed_at timestamp with time zone
+    )
+  `.simple();
   // Body downloads in progress, so the recovery of claims a stopped worker left behind reads only
   // them instead of every message. Building it reads the table once, on the first start after the update.
   // Even when the index exists, CREATE INDEX waits for the table lock that a running BM25 build holds.
@@ -601,6 +609,50 @@ const addSenderVerificationCommands = async (tx: SqlClient): Promise<void> => {
   `.simple();
 };
 
+/** Preserve the visible legacy history before routine trace cleanup can remove it. */
+const migrateBackfillActivity = async (tx: SqlClient): Promise<void> => {
+  // Match the journal writer's lock: import stays idempotent before the
+  // concurrent unique index is ready, without blocking ordinary Mail writes.
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.backfill-activity', 0))`;
+  await tx`
+    INSERT INTO mail.activity_events (
+      mailbox_id, actor_kind, action, outcome, target_type, target_id, metadata, created_at
+    )
+    SELECT DISTINCT ON (automation.mailbox_id, automation.id, span.attributes ->> 'mail.backfill.operation_id')
+      automation.mailbox_id, 'system', 'incoming_automation.backfill.start', 'confirmed',
+      'incoming_automation', automation.id,
+      jsonb_build_object(
+        'operationId', span.attributes ->> 'mail.backfill.operation_id',
+        'workflowId', span.attributes ->> 'mail.workflow.id',
+        'name', automation.name,
+        'backfillStatus', CASE
+          WHEN span.ended_at IS NULL THEN 'running'
+          WHEN span.status = 'error' OR span.summary ->> 'status' = 'failed' THEN 'failed'
+          WHEN span.summary ->> 'status' = 'canceled' THEN 'canceled'
+          ELSE 'completed' END,
+        'dispatched', span.summary -> 'dispatched',
+        'lastError', span.status_message,
+        'updatedAt', coalesce(span.ended_at, span.updated_at)
+      ), span.started_at
+    FROM logging.trace_spans span
+    JOIN mail.incoming_automations automation
+      ON automation.id::text = span.attributes ->> 'mail.incoming_automation.id'
+      AND automation.mailbox_id::text = span.attributes ->> 'mail.mailbox.id'
+    WHERE span.app_id = 'mail' AND span.source = 'mail:incoming-automation-backfill'
+      AND span.started_at >= ${new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000)}
+      AND span.attributes ->> 'mail.backfill.operation_id' IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.activity_events activity
+        WHERE activity.mailbox_id = automation.mailbox_id
+          AND activity.target_id = automation.id
+          AND activity.action = 'incoming_automation.backfill.start'
+          AND activity.metadata ->> 'operationId' = span.attributes ->> 'mail.backfill.operation_id'
+      )
+    ORDER BY automation.mailbox_id, automation.id, span.attributes ->> 'mail.backfill.operation_id', span.updated_at DESC
+    ON CONFLICT DO NOTHING
+  `;
+};
+
 /** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */
 const migrationErrorCode = (error: unknown): string | null => {
   const candidate = error as { code?: unknown; errno?: unknown } | null;
@@ -622,6 +674,7 @@ export const migrate = async (): Promise<void> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateBackfillActivity(tx);
         await migrateAiDailyBudget(tx);
         await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
@@ -644,6 +697,13 @@ const INDEX_BUILD_LEASE_MS = 60_000;
 const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
 
 type BackgroundIndex = { name: string; table: string; ddl: string };
+const backfillActivityIndex: BackgroundIndex = {
+  name: "mail.activity_events_backfill_operation_idx",
+  table: "mail.activity_events",
+  ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS activity_events_backfill_operation_idx
+    ON mail.activity_events (mailbox_id, target_id, (metadata ->> 'operationId'))
+    WHERE action = 'incoming_automation.backfill.start'`,
+};
 const commandTargetIndex: BackgroundIndex = {
   name: "mail.commands_message_target_idx",
   table: "mail.commands",
@@ -657,6 +717,16 @@ const providerMessageIndex: BackgroundIndex = {
   ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS remote_message_refs_provider_message_idx
     ON mail.remote_message_refs (md5(connector_ref ->> 'providerMessageId'), folder_id, message_id)
     WHERE connector_ref ->> 'providerMessageId' IS NOT NULL`,
+};
+
+// The mailbox's event feed reads newest first over its few kinds of actions; without it, a busy mailbox's feed page
+// reads past every read, flag, and move. The action list matches MAIL_ACTIVITY_FEED_ACTIONS in service/activity-feed.ts.
+const activityFeedIndex: BackgroundIndex = {
+  name: "mail.activity_events_mailbox_feed_idx",
+  table: "mail.activity_events",
+  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_events_mailbox_feed_idx
+    ON mail.activity_events USING btree (mailbox_id, id DESC)
+    WHERE (action = ANY (ARRAY[${MAIL_ACTIVITY_FEED_ACTIONS.map((action) => `'${action}'::text`).join(", ")}]))`,
 };
 
 // Work lists show open conversations only; without it, a folder's list reads past every done conversation.
@@ -732,9 +802,11 @@ const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Pr
   }
 };
 
+export const buildBackfillActivityIndex = (pool: SqlClient = sql) => buildBackgroundIndex(backfillActivityIndex, pool);
 export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
+export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and

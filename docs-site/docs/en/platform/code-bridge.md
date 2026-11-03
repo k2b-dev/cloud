@@ -5,7 +5,7 @@ section: Platform services
 order: 966
 description: Authenticate runner requests and check each actual Code call against the current lease, policy, approval and mandate.
 tags: [code, runner, capabilities, mandates]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Code bridge
@@ -114,10 +114,32 @@ create child-invocation exchange leases, so provider nesting cannot bypass
 the per-call bridge checks.
 
 Responses use `RunnerCallResponse`: `{ ok: true, data }` or
-`{ ok: false, error: { code } }`. Malformed sandbox calls return `code_invalid_call` in this envelope. Only
-domain data and stable error codes enter
-the sandbox. Provider error messages, exception text and transport credentials
-do not. Stale generations and lost leases return HTTP 409 so the supervisor
+`{ ok: false, error: { code, status?, origin? } }`. For a failed capability call,
+`error.status` preserves the capability dispatch HTTP status (400–599) in the
+stored call result. This includes failures returned by Cloud before the target
+application runs. Core separately records `refusalKind` on each failed admitted
+call: `target_refused` for a target application's 403 or 404, `policy` for a
+policy or unattended-operation refusal, `approval` for `code_approval_required`,
+`code_approval_revoked` or `code_hash_mismatch`, `app_not_allowed` when app
+access is denied, and `bridge` for other bridge/dispatch failures. Known policy
+and framework error codes take precedence over status, including
+a target-side review that requires confirmation. A broker's 403 or 404 alone
+is never a target refusal. Core observes the provider's status
+before validating or projecting its body; error codes and messages do not
+identify target refusals. A 404 can mean a missing object or missing access.
+
+The call result, classification and run's `firstRefusedCallOrdinal` commit in
+the same transaction. The ordinal is the smallest target-refused call ordinal,
+even when concurrent calls finish out of order; it survives a crash before run
+completion. Target coordinates come from the normalized call validated against
+the capability's target declaration, never from its response. Older calls remain
+unclassified. See [Read runs and calls](/en/docs/platform/code-runs#read-runs-and-calls)
+for the permission-aware read contract.
+
+Malformed sandbox calls return `code_invalid_call` in this envelope. Only
+domain data, stable error codes and a validated refused HTTPS origin enter
+the sandbox. The status stays in the stored call result. Provider error messages,
+exception text and transport credentials do not. Stale generations and lost leases return HTTP 409 so the supervisor
 stops that attempt. Transport/authentication failures use non-2xx responses;
 ordinary capability refusals use the error envelope.
 

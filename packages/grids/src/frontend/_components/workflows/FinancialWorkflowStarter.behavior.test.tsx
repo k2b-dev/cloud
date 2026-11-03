@@ -85,9 +85,10 @@ domTest("financial starter blocks invalid bank data, retains field choices, and 
     fill(0, "main-bank");
     fill(1, "Example");
     fill(2, "invalid-iban");
-    const dateTrigger = dom.root.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]');
-    expect(dateTrigger).not.toBeNull();
-    dateTrigger!.click();
+    // The date field is typed; ↓ opens its calendar, as for a keyboard user.
+    const dateField = dom.root.querySelector<HTMLInputElement>('input[role="combobox"][aria-haspopup="dialog"]');
+    expect(dateField).not.toBeNull();
+    dateField!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     await Bun.sleep(10);
     const day = dom.document.querySelector<HTMLButtonElement>('[data-date-day]:not([data-outside="true"])');
     expect(day).not.toBeNull();

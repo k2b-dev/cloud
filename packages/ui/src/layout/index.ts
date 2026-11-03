@@ -84,11 +84,27 @@ export type {
   DetailPanelGroupProps,
   DetailPanelHeaderProps,
   DetailPanelProps,
+  DetailPanelRowProps,
   DetailPanelSectionProps,
   DetailPanelSummaryProps,
   DetailPanelTone,
 } from "./DetailPanel";
 export { default as DetailPanel } from "./DetailPanel";
+export type {
+  DetailAccessEntry,
+  DetailAccessProps,
+  DetailLinkItem,
+  DetailLinksProps,
+  DetailPresencePerson,
+  DetailPresenceProps,
+  DetailPresenceState,
+  DetailPropertiesProps,
+  DetailProperty,
+  DetailTag,
+  DetailTagsProps,
+} from "./DetailSections";
+export { DetailAccess, DetailLinks, DetailPresence, DetailPresenceSlot, DetailProperties, DetailTags } from "./DetailSections";
+export { DETAILS_ICON, DetailsToggle, type DetailsToggleProps } from "./DetailsToggle";
 export type { DiscussionComposerProps, DiscussionItemProps, DiscussionListProps, DiscussionProps } from "./Discussion";
 export { default as Discussion } from "./Discussion";
 export type {

@@ -134,6 +134,7 @@ export const notebooksService = {
       add: (config: { notebookId: string; accessId: string }) => access.addNotebookAccess(config.notebookId, config.accessId),
       count: (config: { notebookId: string }) => access.countNotebookAccess(config.notebookId),
       getPermission: access.getNotebookPermission,
+      memberPermission: access.getNotebookMemberPermission,
       apiKeys: {
         list: apiKeys.list,
         create: apiKeys.create,
@@ -230,6 +231,9 @@ export const notebooksService = {
     },
     backlinks: {
       list: links.listBacklinks,
+    },
+    outgoingLinks: {
+      list: links.listOutgoingLinks,
     },
     comments: {
       getByShortId: comments.getByShortId,

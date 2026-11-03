@@ -143,7 +143,7 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).toContain("choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey()))");
     expect(workspace).toContain("aiComposerChooseMaxBytes(composerPartCount(sessionKey))");
-    expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes })");
+    expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxTotalBytes })");
   });
 
   test("follows AI live updates on Core's shared live socket and streams the visible turn over SSE", async () => {

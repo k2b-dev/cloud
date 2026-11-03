@@ -192,6 +192,7 @@ const snapshot = (page: Page, id?: string, focused = false) =>
         leftInset: fade === "top" || fade === "both" ? 16 : 0,
         rightInset: fade === "bottom" || fade === "both" ? 16 : 0,
         outline: getComputedStyle(current).outlineStyle,
+        edge: getComputedStyle(current).boxShadow,
         boxes: Array.from(list.querySelectorAll(".k2b-view-tabs__tab"))
           .filter((tab) => tab.getClientRects().length > 0)
           .map((tab) => {
@@ -398,7 +399,9 @@ for (const dir of ["ltr", "rtl"]) {
         await settled(page);
         const focused = await snapshot(page, undefined, true);
         expect(focused.id).toBe(id);
-        expect(focused.outline).not.toBe("none");
+        // Focus turns the tab's own inset edge blue, inside the tab where the strip cannot clip it.
+        expect(focused.edge).toContain("inset");
+        expect(focused.edge).not.toContain("rgba(0, 0, 0, 0)");
         expectVisible(focused);
       }
     } finally {

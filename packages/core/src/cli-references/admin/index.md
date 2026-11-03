@@ -94,7 +94,7 @@ Three states are deliberately distinct:
 - **stuck** — open past the abandonment threshold. Nothing is working on these; a process died mid-run and left the span open. Stuck is counted across all retained spans rather than within the window, because an abandonment is old by definition and a windowed count would hide it.
 - **anomalous** — finished, but took longer than that threshold. These come from sweeps closing orphaned spans long after the fact and are excluded from the duration percentiles so those describe real runs.
 
-`--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Use `jobs runs --source <id>` for run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
+`--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Fast successful runs are counted by minute in Gateway Ops rather than stored individually. Slow successes and recovered retries also enter those counters; do not add counts to trace totals. Use `jobs runs --source <id>` for diagnostic run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
 
 Backfills process existing records. Sync pump runs appear under `--type backfill`;
 their source is the pump ID. Inspect the returned source with `jobs runs` and

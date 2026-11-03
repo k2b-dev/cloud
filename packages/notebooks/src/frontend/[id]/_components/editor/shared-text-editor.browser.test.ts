@@ -278,7 +278,8 @@ describe("Notebook on the shared text editor", () => {
       await page.evaluate(() => window.noteHarness.setOnline(false));
       await cell(page, 2, 1).click();
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).toBe("true");
+      // The menu follows the connection state reactively; wait for it instead of reading once.
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true }).and(page.locator('[aria-disabled="true"]')).waitFor();
       expect(await page.getByRole("menuitem", { name: "Delete row" }).getAttribute("aria-disabled")).toBe("true");
       expect(await page.getByRole("menuitem", { name: /^Insert row below(?:\s*Enter)?$/ }).getAttribute("aria-disabled")).not.toBe("true");
       expect(
@@ -291,7 +292,10 @@ describe("Notebook on the shared text editor", () => {
       // Reconnecting re-enables the menu without another document change.
       await page.evaluate(() => window.noteHarness.setOnline(true));
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).not.toBe("true");
+      await page
+        .getByRole("menuitem", { name: "Insert column right", exact: true })
+        .and(page.locator(':not([aria-disabled="true"])'))
+        .waitFor();
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
     } finally {
       await close();
@@ -578,6 +582,37 @@ describe("Notebook on the shared text editor", () => {
       await page.keyboard.press("Shift+End");
       await toolbarButton(page, "Strikethrough").click();
       await waitForText(page, "~~After the table.~~");
+    } finally {
+      await close();
+    }
+  });
+
+  test("typing changes no element outside the text, also while table actions come and go", async () => {
+    const { page, close } = await open();
+    try {
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-ste-table-menu .k2b-dropdown__item").length > 0);
+      await page.evaluate(() => window.noteHarness.placeCaret("After the table.", "After the table.".length));
+      const changes = await page.evaluateHandle(() => {
+        const found: string[] = [];
+        new MutationObserver((records) => {
+          for (const { target, addedNodes, removedNodes } of records) {
+            if (!(target instanceof Element) || target.closest(".cm-content")) continue;
+            for (const node of [...addedNodes, ...removedNodes])
+              if (node instanceof Element) found.push(`${target.className} > ${node.tagName.toLowerCase()}.${node.className}`);
+          }
+        }).observe(document.body, { childList: true, subtree: true });
+        return found;
+      });
+      // A Notebook re-checks its table actions on every edit, and unsent text makes them unavailable for a moment.
+      // Each element inserted while typing restyles the whole page through the shared `:has()` rules.
+      for (const [index, key] of [..."typing"].entries()) {
+        await page.evaluate((online) => window.noteHarness.setOnline(online), index % 2 === 1);
+        await page.keyboard.type(key);
+      }
+      await page.evaluate(() => window.noteHarness.setOnline(true));
+      await waitForText(page, "After the table.typing");
+      await settled(page);
+      expect(await changes.jsonValue()).toEqual([]);
     } finally {
       await close();
     }

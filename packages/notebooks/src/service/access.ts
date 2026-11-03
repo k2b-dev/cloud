@@ -10,6 +10,7 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
@@ -400,6 +401,21 @@ export const getNotebookPermission = async (params: {
         ? { type: "service_account", serviceAccountId: params.serviceAccountId }
         : null,
   });
+};
+
+/**
+ * The permission a subject holds on a notebook as a member: through its own, group, or authenticated grants, never
+ * through public access. It decides who may see who else has access.
+ */
+export const getNotebookMemberPermission = async (params: {
+  notebookId: string;
+  subject: AccessSubject | null;
+}): Promise<PermissionLevel> => {
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM notebooks.notebook_access
+    WHERE notebook_id = ${params.notebookId}::uuid
+  `;
+  return getMemberPermission({ accessIds: accessRows.map((row) => row.access_id), subject: params.subject });
 };
 
 /**

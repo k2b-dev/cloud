@@ -15,6 +15,7 @@ import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailMessageMessages } from "./mail-message-messages";
 import {
   formatMailMessageDateTime,
+  inlineBodyImages,
   type MessageBodyFormat,
   type MessageColors,
   messageDeliveryAllowsResponses,
@@ -155,6 +156,14 @@ export default function MailMessageCard(props: {
       Boolean(props.message.plainText?.trim()),
     ),
   );
+  // Images the HTML body already shows in place are not listed again; every other attachment is.
+  const listedAttachments = createMemo(() => {
+    const inline =
+      bodyFormat() === "html" && !security().linksDisabled
+        ? new Set(inlineBodyImages(props.message.sanitizedHtml ?? "", props.message.attachments).map((attachment) => attachment.id))
+        : new Set<string>();
+    return props.message.attachments.filter((attachment) => !inline.has(attachment.id));
+  });
   const responseActions = (): DropdownItem[] =>
     props.context.canWrite && props.context.selectedConversationId && !exceptionalDelivery()
       ? [
@@ -317,6 +326,18 @@ export default function MailMessageCard(props: {
               </Show>
             </span>
             <span class="flex h-6 shrink-0 items-center gap-2">
+              {/* Open, the message lists its attachments above its body; collapsed, its header names how many. */}
+              <Show when={!props.expanded && listedAttachments().length > 0}>
+                <span
+                  class="inline-flex items-center gap-0.5 text-xs text-dimmed"
+                  title={messages().attachmentCount({ count: listedAttachments().length })}
+                  data-mail-message-attachment-count
+                >
+                  <i class="ti ti-paperclip" aria-hidden="true" />
+                  <span aria-hidden="true">{listedAttachments().length}</span>
+                  <span class="sr-only">{messages().attachmentCount({ count: listedAttachments().length })}</span>
+                </span>
+              </Show>
               <time class="shrink-0 text-xs text-dimmed" dateTime={props.message.internalDate}>
                 {formatMailMessageDateTime(props.message.internalDate, props.context.dateConfig)}
               </time>
@@ -384,6 +405,14 @@ export default function MailMessageCard(props: {
                 </div>
               </div>
             </Show>
+            <Show when={listedAttachments().length > 0 && !security().linksDisabled}>
+              <MailMessageAttachments
+                mailboxId={props.context.mailboxId}
+                messageId={props.message.id}
+                attachments={listedAttachments()}
+                canShare={props.context.canAdmin}
+              />
+            </Show>
             <div ref={messageBody} class="mail-message-body min-w-0 overflow-x-auto text-sm text-primary">
               <Show
                 when={bodyFormat()}
@@ -432,14 +461,6 @@ export default function MailMessageCard(props: {
                 requestUrl={props.context.requestUrl}
                 canWrite={props.context.canWrite}
                 dateConfig={props.context.dateConfig}
-              />
-            </Show>
-            <Show when={props.message.attachments.length > 0 && !security().linksDisabled}>
-              <MailMessageAttachments
-                mailboxId={props.context.mailboxId}
-                messageId={props.message.id}
-                attachments={props.message.attachments}
-                canShare={props.context.canAdmin}
               />
             </Show>
           </div>

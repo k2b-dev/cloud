@@ -1526,7 +1526,7 @@
   font-size: 0.75rem;
 }
 
-.help-document > p:has(> strong:first-child):has(> code:last-child) code {
+.help-document > p > strong:first-child ~ code:last-child {
   background: transparent;
   padding: 0;
 }

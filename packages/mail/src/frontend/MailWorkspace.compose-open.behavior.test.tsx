@@ -131,6 +131,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: null,
   savedViewId: null,
   savedViews: [
@@ -158,6 +161,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],

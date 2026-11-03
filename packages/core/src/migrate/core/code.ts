@@ -67,6 +67,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS rerun_of UUID REFERENCES code.runs(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS rerun_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_rerun_of ON code.runs(rerun_of) WHERE rerun_of IS NOT NULL`.simple();
+    // Expand only: old runs remain unclassified; never guess from historical error strings.
+    await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS first_refused_call_ordinal INTEGER
+      CHECK (first_refused_call_ordinal > 0)`.simple();
     // json preserves exact result text: no exponent expansion or separator whitespace beyond CAPABILITY_MAX_RESULT_BYTES.
     await tx`CREATE TABLE IF NOT EXISTS code.calls (
       run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE, ordinal INTEGER NOT NULL CHECK (ordinal > 0),
@@ -75,6 +78,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       started_at TIMESTAMPTZ NOT NULL DEFAULT now(), ended_at TIMESTAMPTZ,
       PRIMARY KEY(run_id,ordinal), CHECK ((state = 'running') = (ended_at IS NULL))
     )`.simple();
+    await tx`ALTER TABLE code.calls ADD COLUMN IF NOT EXISTS refusal_kind TEXT`.simple();
+    await tx`ALTER TABLE code.calls DROP CONSTRAINT IF EXISTS calls_refusal_kind_check`.simple();
+    await tx`ALTER TABLE code.calls ADD CONSTRAINT calls_refusal_kind_check
+      CHECK (refusal_kind IN ('target_refused','policy','approval','app_not_allowed','bridge'))`.simple();
     // These are observations, not steps: no replay keys or resume positions.
     await tx`CREATE OR REPLACE FUNCTION code.guard_call() RETURNS TRIGGER AS $$
     DECLARE run code.runs;

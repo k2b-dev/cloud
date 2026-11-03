@@ -2,6 +2,7 @@ import { cliAmbiguityText, formatCliCandidates, localizeCloudCliText } from "@k2
 import type { MutationResult, PermissionLevel, User } from "@k2b/cloud/contracts";
 import {
   AccessEntrySchema,
+  AccessMemberSchema,
   createPagination,
   ErrorResponseSchema,
   GrantAccessSchema,
@@ -11,6 +12,7 @@ import {
   PaginationResponseSchema,
   parsePagination,
   ServiceAccountCredentialSchema,
+  toAccessMember,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
 import { GEO_SNAPSHOT_MAX_BYTES, GEO_SNAPSHOT_MAX_METADATA_BYTES } from "@k2b/cloud/contracts/geo-snapshot";
@@ -3316,6 +3318,38 @@ const app = new Hono<AuthContext>()
 
       const entries = await notebooksService.notebook.access.list({ notebookId });
       return respond(c, ok(entries.items));
+    },
+  )
+
+  // List who has access, read-only
+  .get(
+    "/:id/access/members",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "List who has access",
+      description:
+        "Names and roles of everyone with access to a notebook, read-only. Requires read permission as a member: public access alone does not show who else has access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "read");
+      if (error) return error;
+      const subject = getNotebookAccessSubject(c);
+      // A global admin already holds `admin`; everyone else needs a grant of their own, a group's, or all signed-in users'.
+      if (!(subject.user && hasRole(subject.user, "admin"))) {
+        let member = await notebooksService.notebook.access.memberPermission({ notebookId: notebook!.id, subject: c.get("accessSubject") });
+        if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
+          member = minPermission(member, permissionFromScopes(subject.serviceAccountScopes));
+        }
+        if (!hasPermission(minPermission(member, permission), "read")) return respond(c, fail(err.forbidden(messages(c).accessDenied)));
+      }
+      const entries = await notebooksService.notebook.access.list({ notebookId: notebook!.id });
+      return respond(c, ok(entries.items.map(toAccessMember)));
     },
   )
 

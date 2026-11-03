@@ -27,6 +27,7 @@ export {
   getEffectiveGroups,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   hasPermission,
   listUsersWithAccess,
   lockAccessMutationAuthority,

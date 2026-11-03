@@ -757,7 +757,8 @@ for (const viewport of ["desktop", "phone"] as const)
             const shell = element.closest<HTMLElement>(".k2b-text-input")!;
             const style = getComputedStyle(shell);
             const probe = document.createElement("span");
-            probe.style.boxShadow = `inset 0 0 0 var(--k2b-focus-width) var(${shell.dataset.invalid === "true" ? "--k2b-danger-500" : "--k2b-focus-ring"})`;
+            // Focus turns the field edge blue, also on an invalid field (its message stays).
+            probe.style.boxShadow = "inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-focus)";
             shell.append(probe);
             const expected = getComputedStyle(probe).boxShadow;
             probe.remove();

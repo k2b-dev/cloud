@@ -8,8 +8,10 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
 import { CAPABILITY_DISCOVERY_TIMEOUT_MS, capabilityTimeoutMs } from "../_internal/capability-timeout";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
+import * as runTokens from "../code/run-token";
+import { RUNNER_PATHS, type RunnerCallResponse, RunnerCallResponseSchema } from "../code/runner-protocol";
 import { env } from "../config/env";
-import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
+import { CapabilityCatalogSchema, capabilityResultSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import { stubConnections } from "../runtime/connections.test-fixture";
@@ -17,9 +19,13 @@ import { auth, type RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { type CloudInvocationClaims, signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { loadCodeRunCalls } from "../ssr/code-page/calls";
+import type { CodePageInvoke } from "../ssr/code-page/data";
+import * as appRequests from "./authenticate-app-request";
 import {
   createCapabilityRoutes as buildCapabilityRoutes,
   type CapabilityRouteDependencies,
+  createCodeRunnerCallRoutes,
   loadCapabilityCatalogPage,
   dispatchCapability as performDispatch,
 } from "./capabilities";
@@ -2158,5 +2164,150 @@ test("Command resolution preserves temporary app unavailability", async () => {
     expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
   } finally {
     check.mockRestore();
+  }
+});
+
+test("target HTTP statuses survive runner dispatch and Code page data without payload", async () => {
+  const now = new Date("2026-11-03T12:00:00Z");
+  setSystemTime(now);
+  const claims: runTokens.CodeRunTokenClaims = {
+    ver: 1,
+    token_use: "code_run",
+    iss: "https://cloud.example",
+    aud: "cloud-code-bridge",
+    iat: now.getTime() / 1000,
+    nbf: now.getTime() / 1000,
+    exp: now.getTime() / 1000 + 300,
+    codeId: "c_fixture",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    generation: 1,
+    mandateId: "33333333-3333-4333-8333-333333333333",
+    mandateRevision: 1,
+    entrypoint: "weekly",
+    bundleHash: "a".repeat(64),
+  };
+  const auth = spyOn(appRequests, "authenticateSignedAppRequest").mockResolvedValue({
+    appId: "runner",
+    serviceAccountId: claims.mandateId,
+    credentialId: claims.mandateId,
+    scope: "identity:invoke",
+  });
+  const token = spyOn(runTokens, "verifyCodeRunToken").mockResolvedValue(claims);
+  try {
+    // requireSpaceUuid uses err.notFound("Space"); spaceNotFound is its translation key, not its code.
+    for (const failure of [
+      err.notFound("Space"),
+      err.forbidden("Access denied"),
+      err.internal("Unavailable"),
+      { code: "accessRefused", message: "Zugriff fehlt", status: 404 },
+      { code: "ACCESS_LOOKUP_FAILED", message: "Lookup failed", status: 500 },
+    ]) {
+      for (const capabilityId of failure.status < 500 ? ["get", "rename"] : ["get"]) {
+        const operation = `demo.${capabilityId}`;
+        const input = capabilityId === "get" ? { id: "one" } : { id: "one", name: "New name" };
+        let stored: RunnerCallResponse | undefined;
+        let fetched = false;
+        const route = createCodeRunnerCallRoutes({
+          ownOrigins: async () => [],
+          host: {
+            async withCall(call, execute) {
+              const response = await execute({
+                mandateId: claims.mandateId,
+                mandateRevision: 1,
+                ownerAppId: "core",
+                withMandateIssueAuthority: async (input, use) =>
+                  ok(
+                    await use({
+                      mandateId: claims.mandateId,
+                      mandateRevision: 1,
+                      ownerAppId: "core",
+                      subject: { type: "user", id: claims.versionId },
+                      workloadType: "code.version",
+                      workloadId: claims.versionId,
+                      targetAppId: input.targetAppId,
+                      operation: input.operation,
+                      policy: { version: 1, apps: ["demo"], operations: ["capability.query:get"], actions: "deny" },
+                    }),
+                  ),
+              });
+              // The real Core host validates this exact schema before finishCodeCall stores it.
+              stored = RunnerCallResponseSchema.parse(await response.clone().json());
+              expect(call.call.capability).toBe(operation);
+              return response;
+            },
+          },
+          dispatch: {
+            getCapability: async () => entry(),
+            withActiveSigner,
+            signInvocation: signInvocationToken,
+            fetch: async () => {
+              fetched = true;
+              return Response.json(
+                { code: failure.code, message: failure.message, details: { payload: "private" } },
+                { status: failure.status },
+              );
+            },
+          },
+        });
+        const response = await route.request(RUNNER_PATHS.call, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runId: claims.runId,
+            generation: 1,
+            token: "fixture",
+            operation,
+            input: { call: { capability: operation, target: null, refs: {}, input }, metadata: {} },
+          }),
+        });
+        expect(response.status).toBe(200);
+        expect(fetched).toBe(true);
+        expect(stored).toEqual({ ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } });
+        let pageResult = stored;
+        const invoke: CodePageInvoke = async (_invocation, schema) => ({
+          ok: true,
+          data: capabilityResultSchema(schema).parse({
+            data: {
+              run: {
+                id: claims.runId,
+                versionId: claims.versionId,
+                trigger: "schedule",
+                entrypoint: "weekly",
+                state: "failed",
+                outcome: "failed",
+                createdAt: now.toISOString(),
+                startedAt: null,
+                endedAt: null,
+              },
+              contents: {
+                input: null,
+                inputChunked: false,
+                content: null,
+                nextCursor: null,
+                calls: [
+                  {
+                    ordinal: 1,
+                    kind: capabilityId === "get" ? "query" : "action",
+                    capability: operation,
+                    call: null,
+                    result: pageResult,
+                    state: "failed",
+                  },
+                ],
+              },
+            },
+          }),
+        });
+        const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
+        expect(page?.calls[0]?.accessRefused).toBe(failure.status === 403 || failure.status === 404);
+        pageResult = { ok: false, error: { code: failure.code.toLowerCase() } };
+        expect((await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1))?.calls[0]?.accessRefused).toBe(false);
+      }
+    }
+  } finally {
+    auth.mockRestore();
+    token.mockRestore();
+    setSystemTime();
   }
 });

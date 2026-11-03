@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
-import { toPgUuidArray } from "@k2b/cloud/services";
+import { logger, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { DocumentDefaultsSchema } from "../contracts";
 import { grantAccess } from "./access";
@@ -11,6 +11,9 @@ import { parseJsonbRow } from "./jsonb";
 import { gridsLive, publishMetadataChange } from "./live";
 import { insertWithShortId } from "./short-id";
 import type { Base, CreateBaseInput, UpdateBaseInput } from "./types";
+import { emitWorkflowRuntimeEvent } from "./workflow-runtime-events";
+
+const log = logger("grids:bases");
 
 type DbRow = Record<string, unknown>;
 
@@ -308,6 +311,17 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
   return ok(base);
 };
 
+/** One existing workflow hint refreshes record-event demand across all replicas. */
+const notifyRecordEventWorkflowDemand = async (baseId: string): Promise<void> => {
+  const [workflow] = await sql<Array<{ id: string }>>`
+    SELECT id::text FROM grids.workflow_profile
+    WHERE base_id = ${baseId}::uuid AND deleted_at IS NULL AND enabled = TRUE
+      AND record_event_active_since IS NOT NULL
+    ORDER BY id LIMIT 1
+  `;
+  if (workflow) await emitWorkflowRuntimeEvent(workflow.id);
+};
+
 /**
  * Soft-deletes the base. The row stays in the DB with `deleted_at` set,
  * which makes it invisible to all default queries (list/get) while
@@ -330,6 +344,12 @@ export const remove = async (id: string, actorId: string | null, locale?: string
   });
   if (!removed.ok) return removed;
   gridsLive.wake();
+  await notifyRecordEventWorkflowDemand(id).catch((error) => {
+    log.warn("Workflow demand notification failed; minute reconciliation will recover", {
+      baseId: id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
   await refreshForSourceBase(id, actorId);
   return ok();
 };
@@ -357,6 +377,12 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
   if (!restored.ok) return restored;
   const base = mapRow(restored.data);
   gridsLive.wake();
+  await notifyRecordEventWorkflowDemand(id).catch((error) => {
+    log.warn("Workflow demand notification failed; minute reconciliation will recover", {
+      baseId: id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
   await refreshForSourceBase(id, actorId);
   return ok(base);
 };

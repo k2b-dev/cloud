@@ -34,6 +34,7 @@ export type {
   TraceEvent,
   TraceListFilter,
   TraceRunStats,
+  TraceSuccessMinutes,
   TraceSeverity,
   TraceSpan,
   TraceSpanKind,
@@ -53,6 +54,7 @@ export {
   latestGatewayRouteSnapshot,
   listGatewayRouteSnapshots,
   publishGatewayRouteSnapshot,
+  watchGatewayDomainChanges,
   publishRequestTelemetry,
   removeGatewayRouteSnapshot,
 } from "./gateway";

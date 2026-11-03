@@ -1,7 +1,7 @@
-import type { TraceSpan } from "@k2b/cloud/services";
 import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import type { WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 import { i18n } from "@k2b/stdlib";
+import type { IncomingAutomationBackfillActivity } from "./incoming-automations";
 
 const activityMessages = i18n.define({
   baseLocale: "en",
@@ -9,15 +9,11 @@ const activityMessages = i18n.define({
     en: {
       conflict: "Another change prevented this automation from applying its action.",
       backfill: "Backfill",
-      incomingAutomation: "Incoming automation",
-      incomingAutomationBackfill: "Incoming automation backfill",
       dispatched: ({ count }: { count: number }) => `${count} matching message${count === 1 ? "" : "s"} dispatched`,
     },
     de: {
       conflict: "Eine andere Änderung hat verhindert, dass diese Automatisierung ihre Aktion ausführt.",
       backfill: "Nachträgliche Verarbeitung",
-      incomingAutomation: "Eingehende Automatisierung",
-      incomingAutomationBackfill: "Nachträgliche Verarbeitung einer eingehenden Automatisierung",
       dispatched: ({ count }) => `${count} ${count === 1 ? "passende E-Mail verarbeitet" : "passende E-Mails verarbeitet"}`,
     },
   },
@@ -92,39 +88,24 @@ export const projectMailWorkflowActivity = (params: {
   };
 };
 
-const attributeString = (span: TraceSpan, key: string): string | null => {
-  const value = span.attributes?.[key];
-  return typeof value === "string" ? value : null;
-};
-
-export const mailBackfillWorkflowId = (span: TraceSpan): string | null => attributeString(span, "mail.workflow.id");
-
 export const projectMailBackfillActivity = (params: {
   mailboxId: string;
-  span: TraceSpan;
+  backfill: IncomingAutomationBackfillActivity;
   automationNames: ReadonlyMap<string, string>;
   locale?: string;
 }): MailAutomationActivityItem => {
-  const { mailboxId, span, automationNames } = params;
+  const { mailboxId, backfill, automationNames } = params;
   const t = activityMessages.resolve([params.locale ?? "en"]).t;
-  const automationId = attributeString(span, "mail.incoming_automation.id");
-  const dispatched = span.summary?.dispatched;
-  const summaryStatus = span.summary?.status;
-  const status: MailAutomationActivityStatus = span.endedAt
-    ? span.status === "error" || summaryStatus === "failed"
-      ? "failed"
-      : summaryStatus === "canceled"
-        ? "canceled"
-        : "completed"
-    : "running";
   return {
-    id: `backfill:${span.traceId}:${span.spanId}`,
+    id: `backfill:${backfill.automationId}:${backfill.operationId}`,
     kind: "backfill",
-    name: automationId ? `${t.backfill} · ${automationNames.get(automationId) ?? t.incomingAutomation}` : t.incomingAutomationBackfill,
-    status,
-    occurredAt: span.startedAt,
-    durationMs: span.durationMs,
-    detail: span.statusMessage ?? (typeof dispatched === "number" ? t.dispatched({ count: dispatched }) : null),
+    name: `${t.backfill} · ${automationNames.get(backfill.automationId) ?? backfill.name}`,
+    status: backfill.status,
+    occurredAt: backfill.createdAt,
+    durationMs: ["completed", "failed", "canceled"].includes(backfill.status)
+      ? Math.max(0, Date.parse(backfill.updatedAt) - Date.parse(backfill.createdAt))
+      : null,
+    detail: backfill.lastError ?? t.dispatched({ count: backfill.dispatched }),
     href: `/app/mail/${mailboxId}/automations/incoming`,
   };
 };

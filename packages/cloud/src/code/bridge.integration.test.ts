@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
@@ -20,6 +21,7 @@ import { migrate as migrateVersions } from "../../../core/src/migrate/core/code-
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
+import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
 import {
   type CapabilityDispatchDependencies,
@@ -31,10 +33,12 @@ import type { AppKey } from "../app-key";
 import { signAppProof } from "../app-proof";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { compileCapabilityManifest } from "../capabilities/testing";
-import type { CodeCheckedVersionManifest } from "../contracts";
+import type { CapabilityError, CodeCheckedVersionManifest } from "../contracts";
+import { capabilityResultSchema } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import { getEffectivePermission, hasPermission } from "../server";
+import { AppAccessDeniedError } from "../server/middleware/app-access";
 import * as rateLimits from "../server/ratelimit";
 import { coreSettings } from "../services";
 import { appKeys } from "../services/app-keys";
@@ -43,6 +47,8 @@ import { resolveInvocationAuthority } from "../services/identity/invocation-acto
 import { verifyInvocationToken } from "../services/identity/invocation-token";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
 import { mandates } from "../services/mandates";
+import { loadCodeRunCalls } from "../ssr/code-page/calls";
+import type { CodePageInvoke } from "../ssr/code-page/data";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
 
@@ -93,6 +99,20 @@ const manifest = compileCapabilityManifest("example", {
     asks: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { ask: "app_asks" } },
   },
 });
+const confirmationCompiled = compileCapabilities("example", {
+  protocolVersion: 2,
+  types: { folder: { title: "Folder", description: "Fixture folder." } },
+  actions: {
+    write: {
+      ...actionOp,
+      target: "folder",
+      destructive: false,
+      idempotency: "none",
+      policy: { silent: "shared" },
+      review: () => ({ ok: true as const, data: { ...actionOp.review().data, ask: "involves_people" as const } }),
+    },
+  },
+});
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
   appName: "Example",
@@ -114,6 +134,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let targetAccess: string;
   let fetched = 0;
   let currentEntry = baseEntry;
+  let targetFailure: CapabilityError | null = null;
+  let providerRequestsConfirmation = false;
   let callLimit = 200;
   let rateLimited = false;
   let realRate = false;
@@ -157,6 +179,33 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           ? await getEffectivePermission({ accessIds: [targetAccess], subject: authority.accessSubject })
           : "none";
         if (!hasPermission(permission, "write")) return Response.json({ code: "FORBIDDEN", message: "No Code access" }, { status: 403 });
+        if (providerRequestsConfirmation && authority) {
+          const outcome = await invokeCompiledCapability({
+            compiled: confirmationCompiled,
+            kind: "action",
+            localId: "write",
+            target: item,
+            input: {},
+            expectedSchemaHash: confirmationCompiled.actions.get("write")!.manifest.schemaHash,
+            context: {
+              authority,
+              actor: authority.actor,
+              accessSubject: authority.accessSubject,
+              user: null,
+              locale: "en",
+              requestId: "provider-asks",
+              origin: "app",
+              signal: new AbortController().signal,
+            },
+          });
+          expect(outcome).toMatchObject({ ok: false, error: { code: "CODE_UNATTENDED_FORBIDDEN", status: 403 } });
+          if (!outcome.ok) {
+            const { status, ...failure } = outcome.error;
+            return Response.json(failure, { status });
+          }
+        }
+        if (targetFailure)
+          return Response.json({ code: targetFailure.code, message: targetFailure.message }, { status: targetFailure.status });
         return Response.json({ data: { value: body.target.id } });
       },
     } satisfies CapabilityDispatchDependencies,
@@ -197,13 +246,21 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       headers: { "Content-Type": "application/json", ...(proof ? { Authorization: `Bearer ${proof}` } : {}) },
     });
   }
-  const error = async (options: Parameters<typeof send>[0], code: string, status?: number) => {
+  const error = async (options: Parameters<typeof send>[0], code: string, status?: number, capabilityStatus?: number) => {
     const before = fetched;
     const response = await send(options);
     expect(response.status).toBe(status ?? 200);
-    expect(await response.json()).toEqual({ ok: false, error: { code } });
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: { code, ...(capabilityStatus === undefined ? {} : { status: capabilityStatus }) },
+    });
     expect(fetched).toBe(before);
   };
+  async function expectPolicyRefusal(kind: "policy" | "approval" = "policy") {
+    const [row] = await sql`SELECT c.refusal_kind,r.first_refused_call_ordinal FROM code.calls c JOIN code.runs r ON r.id=c.run_id
+      WHERE c.run_id=${claims.runId}::uuid ORDER BY c.ordinal DESC LIMIT 1`;
+    expect(row).toMatchObject({ refusal_kind: kind, first_refused_call_ordinal: null });
+  }
   beforeAll(async () => {
     setSystemTime(now);
     database = await useFreshDatabase("code_bridge_c4");
@@ -332,7 +389,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     >`INSERT INTO auth.access(service_account_id,permission) VALUES(${account!.id}::uuid,'write') RETURNING id`;
     targetAccess = access!.id;
   }
-  beforeEach(() => resetFixture());
+  beforeEach(async () => {
+    targetFailure = null;
+    providerRequestsConfirmation = false;
+    await resetFixture();
+  });
   afterAll(async () => {
     settingsSpy?.mockRestore();
     registrySpy?.mockRestore();
@@ -424,8 +485,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   test("run token is required even with an enrolled runner signature", async () =>
     error({ token: "not-a-token" }, "code_invalid_token", 403));
-  test("own HTTP origins are refused at bridge ingress", async () =>
-    error({ operation: "http.fetch", input: { url: `${issuer}/api/auth` } }, "code_http_origin_forbidden"));
+  test("own HTTP origins are refused at bridge ingress", async () => {
+    await error({ operation: "http.fetch", input: { url: `${issuer}/api/auth` } }, "code_http_origin_forbidden");
+    await expectPolicyRefusal();
+  });
   test("HTTP calls still check the current lease and are observed", async () => {
     await error({ operation: "http.fetch", input: { url: `${issuer}/api` } }, "code_http_origin_forbidden");
     const rows = await sql`SELECT state FROM code.calls WHERE run_id=${claims.runId}::uuid`;
@@ -449,6 +512,79 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       appsSpy.mockRestore();
     }
   });
+  test("target refusals survive dispatch, SQL storage and Code page data without provider payload", async () => {
+    // Spaces requireSpaceUuid returns this error (with a localized message); its code is NOT_FOUND.
+    for (const failure of [err.notFound("Space"), err.forbidden("Access denied"), err.internal("Unavailable")]) {
+      targetFailure = failure.code === "FORBIDDEN" ? null : failure;
+      if (failure.code === "FORBIDDEN") await sql`UPDATE auth.access SET permission='read' WHERE id=${targetAccess}::uuid`;
+      else await sql`UPDATE auth.access SET permission='write' WHERE id=${targetAccess}::uuid`;
+      // Queries preserve unrelated target failures instead of Action outcome-unknown conversion.
+      const response = await send({ operation: "example.read" });
+      expect(response.status).toBe(200);
+      const [stored] = await sql<{ result: unknown; ordinal: number; state: string; kind: string; capability: string; call: unknown }[]>`
+        SELECT result,ordinal,state,kind,call->>'capability' AS capability,call FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+      const expected = { ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } };
+      expect(stored?.result).toEqual(expected);
+      expect(stored?.state).toBe("failed");
+      const [classification] = await sql`SELECT c.refusal_kind,r.first_refused_call_ordinal FROM code.calls c
+        JOIN code.runs r ON r.id=c.run_id WHERE c.run_id=${claims.runId}::uuid AND c.ordinal=${stored!.ordinal}`;
+      expect(classification?.refusal_kind).toBe(failure.status === 403 || failure.status === 404 ? "target_refused" : "bridge");
+      expect(classification?.first_refused_call_ordinal).toBe(1);
+      expect(await response.json()).toEqual(expected);
+      const invoke: CodePageInvoke = async (_invocation, schema) => ({
+        ok: true,
+        data: capabilityResultSchema(schema).parse({
+          data: {
+            run: {
+              id: claims.runId,
+              versionId: claims.versionId,
+              trigger: "schedule",
+              entrypoint: "weekly",
+              state: "failed",
+              outcome: "failed",
+              createdAt: now.toISOString(),
+              startedAt: null,
+              endedAt: null,
+            },
+            contents: {
+              input: null,
+              inputChunked: false,
+              content: null,
+              nextCursor: null,
+              calls: [stored],
+            },
+          },
+        }),
+      });
+      const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
+      expect(page?.calls[0]?.accessRefused).toBe(failure.status === 403 || failure.status === 404);
+    }
+  });
+  test("A3a a provider review requiring confirmation is policy, despite its HTTP 403", async () => {
+    providerRequestsConfirmation = true;
+    const response = await send();
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_unattended_forbidden", status: 403 } });
+    await expectPolicyRefusal();
+  });
+  test("A3a provider capability drift is a bridge failure, despite its HTTP 404", async () => {
+    targetFailure = { code: "CAPABILITY_NOT_FOUND", message: "Capability not found", status: 404 };
+    expect(await (await send({ operation: "example.read" })).json()).toEqual({
+      ok: false,
+      error: { code: "capability_not_found", status: 404 },
+    });
+    const [row] = await sql`SELECT c.refusal_kind,r.first_refused_call_ordinal FROM code.calls c JOIN code.runs r ON r.id=c.run_id
+      WHERE c.run_id=${claims.runId}::uuid`;
+    expect(row).toMatchObject({ refusal_kind: "bridge", first_refused_call_ordinal: null });
+  });
+  test("A3a app admission is distinct from a target refusal", async () => {
+    beforeIssue = async () => {
+      throw new AppAccessDeniedError({ id: "example" });
+    };
+    await error({ operation: "example.read" }, "app_access_denied", 200, 403);
+    const [row] = await sql`SELECT c.refusal_kind,r.first_refused_call_ordinal FROM code.calls c JOIN code.runs r ON r.id=c.run_id
+      WHERE c.run_id=${claims.runId}::uuid`;
+    expect(row).toMatchObject({ refusal_kind: "app_not_allowed", first_refused_call_ordinal: null });
+  });
   test("paused Code refuses a current attempt", async () => {
     await sql`UPDATE code.codes SET state='paused' WHERE id=${claims.codeId}`;
     await error({}, "code_not_active");
@@ -469,6 +605,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
       SELECT version_id,binding,true,false,${userId}::uuid,'session',-1 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await error({}, "code_approval_revoked");
+    await expectPolicyRefusal("approval");
   });
   test("oversized input gets a stable refusal before invocation", async () => {
     await sql`UPDATE code.runs SET payload_bytes=8 WHERE id=${claims.runId}::uuid`;
@@ -505,10 +642,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("current policy Never overrides the checked manifest immediately", async () => {
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='silent_shared' AND group_id IS NULL`;
     await error({}, "code_policy_never", 200);
+    await expectPolicyRefusal();
   });
   test("a new admin policy requires an actual version approval", async () => {
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='silent_shared' AND group_id IS NULL`;
     await error({}, "code_approval_required", 200);
+    await expectPolicyRefusal("approval");
   });
   test("an existing version approval cannot cover an omitted actual classification", async () => {
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
@@ -516,16 +655,19 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
     await error({ operation: "example.read" }, "code_approval_required", 200);
+    await expectPolicyRefusal("approval");
   });
   test("actual admin policy requires a decision as well as row coverage", async () => {
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read')`;
     await error({ operation: "example.read" }, "code_approval_required");
+    await expectPolicyRefusal("approval");
   });
   test("a changed decision binding is refused without reading executable payloads", async () => {
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
       SELECT version_id,jsonb_set(binding,'{bundleHash}',to_jsonb(${"b".repeat(64)}::text)),true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await error({}, "code_hash_mismatch");
+    await expectPolicyRefusal("approval");
   });
   test("the C11 authority wrapper classifies actual HTTP calls as internet", async () => {
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='internet' AND group_id IS NULL`;
@@ -568,12 +710,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${claims.runId}::uuid`;
     await error({}, "runner_lease_lost", 409);
   });
-  test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden"));
-  test("the same operation at another target is refused", async () => error({ target: { ...item, id: "b" } }, "mandate_forbidden"));
+  test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden", 200, 403));
+  test("the same operation at another target is refused", async () =>
+    error({ target: { ...item, id: "b" } }, "mandate_forbidden", 200, 403));
   test("a revoked current Code target grant is refused at the provider", async () => {
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     const response = await send();
-    expect(await response.json()).toEqual({ ok: false, error: { code: "forbidden" } });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
   });
   test("call limit is durable and current admin tightening applies", async () => {
     callLimit = 1;
@@ -584,12 +727,17 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const entry = structuredClone(baseEntry);
     entry.manifest.queries[0]!.stream = { direction: "read", maxBytes: 1024 };
     await error({ operation: "example.read", entry }, "code_stream_forbidden");
+    await expectPolicyRefusal();
   });
-  test("code:false is refused", async () => error({ operation: "example.person" }, "code_disabled"));
+  test("code:false is refused", async () => {
+    await error({ operation: "example.person" }, "code_disabled");
+    await expectPolicyRefusal();
+  });
   test("code.access.* is refused even when present in a catalog", async () => {
     const entry = structuredClone(baseEntry);
     entry.manifest.actions[0]!.localId = "code.access.set";
     await error({ operation: "example.code.access.set", entry }, "code_access_forbidden");
+    await expectPolicyRefusal();
   });
   test("Valkey admission refusal is visible and recorded", async () => {
     rateLimited = true;
