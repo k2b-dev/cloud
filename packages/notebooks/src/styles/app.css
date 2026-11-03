@@ -2238,15 +2238,17 @@
   font-size: 14px;
   line-height: 1.6;
 }
-.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > * { margin-block: 0; }
-.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h1 {
+/* Its blocks ask their siblings, not the content its children: a `:has()` before a part that names nothing
+   restyles the whole page on every DOM change (#2419). */
+.notebook-book-content:not(.cm-query-block-preview) > :is(:has(~ figure.notebook-map:not([data-map-print])), figure.notebook-map:not([data-map-print]), figure.notebook-map:not([data-map-print]) ~ *) { margin-block: 0; }
+.notebook-book-content:not(.cm-query-block-preview) > h1:is(:has(~ figure.notebook-map:not([data-map-print])), figure.notebook-map:not([data-map-print]) ~ h1) {
   margin-block: 6px 2px;
   font-size: 28px;
   font-weight: 700;
   line-height: 1.45;
   letter-spacing: -.01em;
 }
-.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h2 {
+.notebook-book-content:not(.cm-query-block-preview) > h2:is(:has(~ figure.notebook-map:not([data-map-print])), figure.notebook-map:not([data-map-print]) ~ h2) {
   margin-top: 14px;
   font-size: 19px;
   font-weight: 700;

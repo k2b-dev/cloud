@@ -22,9 +22,7 @@ import type { Finding, Rule } from "./rule";
 /** Files this rule does not read: a standalone stylesheet for plain pages, and rules active only while printing. */
 const EXEMPT_FILES = new Set(["packages/ui/src/base/base.css", "packages/ui/src/styles/print.css"]);
 /** Known debt, each with an issue: `file:selector start`. */
-const KNOWN = new Set([
-  "packages/notebooks/src/styles/app.css:.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map",
-]);
+const KNOWN = new Set<string>([]);
 /** Known debt of the anchor and repeated-part shapes, each with an issue: `file:selector start` after nesting. */
 const KNOWN_PAGE_WIDE = new Set([
   // #2493: the address editor's workspace layout.
