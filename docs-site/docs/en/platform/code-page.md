@@ -29,8 +29,12 @@ The page is titled **Code**; screen readers hear whose Code it is.
   Code on again. A name the viewer may not see in the directory reads as
   "Someone"; without the removal's audit event only the removal itself shows.
   The automation that needs it shows **Access missing**; the others keep
-  running. Only the whole Code can be paused. A deleted target, all access
-  removed, and paused Code each show what fails and how to recover. Internet
+  running. Only the whole Code can be paused. A target the page cannot reach,
+  all access removed, and paused Code each show what fails and how to recover.
+  A target's reader answers "not found" both when the target does not exist
+  and when the viewer may not read it, so the page never calls it deleted: it
+  shows the target's type and ID without a name ("Space Sp4kd2 cannot be
+  reached") and says that whoever manages the target can say why. Internet
   origins come from the full `manifest.internet` list reviewed with each version,
   including calls without a secret. Running and waiting versions list their own
   origins; new ones are marked. Historical versions show their reviewed list too.

@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Context } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { currentLibrary } from "../../../test/future-capability-manifest";
 import { capabilityResultSchema } from "../../contracts/capabilities";
 import { isAccessRefusal, loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
@@ -17,7 +18,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
-const { attributeMissingAccess, permissionRef, targetKey, visiblePersonIds } = await import("./load");
+const { attributeMissingAccess, loadTarget, permissionRef, targetKey, visiblePersonIds } = await import("./load");
 const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
 const { LocaleProvider } = await import("@k2b/ui");
@@ -139,7 +140,7 @@ describe("Code page states", () => {
     expect(page).not.toContain("Version 5 einschalten");
   });
 
-  test("removed access and a deleted target say what fails and how to recover", () => {
+  test("removed access and an unreachable target say what fails and how to recover", () => {
     const removed = text("removed");
     expect(removed).toContain("Zugriff auf Space Logistik wurde entfernt.");
     expect(removed).toContain(
@@ -163,10 +164,18 @@ describe("Code page states", () => {
     expect(html("removed").match(/k2b-status-badge__label">Zugriff fehlt</g)).toHaveLength(1);
     expect(removed).not.toContain("Pausiert");
     expect(removed).toContain("Pausieren lässt sich nur der ganze Code.");
-    const deleted = text("deleted");
-    expect(deleted).toContain("Space Logistik wurde gelöscht.");
-    expect(deleted).toContain("Ziel gelöscht");
-    expect(deleted).not.toContain("Wieder einschalten");
+    // A reader's "not found" may also mean the person may not read it: neither "deleted" nor its name.
+    const missing = text("target-missing");
+    expect(missing).toContain("Space sp_2lg8 ist nicht erreichbar.");
+    expect(missing).toContain("Aufrufe an Space sp_2lg8 scheitern. Wer das Ziel verwaltet, kann sagen, warum.");
+    expect(missing).toContain("Ziel nicht erreichbar");
+    expect(missing).not.toContain("Logistik");
+    expect(missing).not.toContain("gelöscht");
+    expect(missing).not.toContain("Wieder einschalten");
+    expect(html("target-missing")).not.toContain("/app/spaces/sp_2lg8");
+    const english = text("target-missing", "en");
+    expect(english).toContain("Space sp_2lg8 cannot be reached.");
+    expect(english).not.toContain("deleted");
   });
 
   test("paused Code offers resume", () => {
@@ -310,6 +319,27 @@ describe("Code page states", () => {
 });
 
 describe("Code page helpers", () => {
+  test("a target whose reader answers 404 is only missing: no name, no link, never deleted", async () => {
+    const library = {
+      appId: "library",
+      appName: "Library",
+      appIcon: "ti ti-books",
+      appDescription: "Books",
+      manifest: currentLibrary.manifest,
+    };
+    const catalog = async () => ({ ok: true as const, data: library });
+    // Apps answer 404 also when the person may not read the resource; the page cannot tell the two apart.
+    const notFound: CodePageInvoke = async () => ({ ok: false, error: { code: "NOT_FOUND", message: "Book not found", status: 404 } });
+    const target = await loadTarget({ type: "library.book", id: "b1" }, { codeId: "c1" }, notFound, catalog);
+    expect(target).toMatchObject({ title: null, typeTitle: "Book", href: null, missing: true });
+    expect(target).not.toHaveProperty("deleted");
+    const refused: CodePageInvoke = async () => ({ ok: false, error: { code: "FORBIDDEN", message: "Access denied", status: 403 } });
+    expect(await loadTarget({ type: "library.book", id: "b1" }, { codeId: "c1" }, refused, catalog)).toMatchObject({
+      title: null,
+      missing: false,
+    });
+  });
+
   test("the page's own attention follows Core's rule: failed run, missing access or pending approval", () => {
     expect(codePageNeedsAttention(codePageFixture("overview").state)).toBe(false);
     expect(codePageNeedsAttention(codePageFixture("removed").state)).toBe(true);

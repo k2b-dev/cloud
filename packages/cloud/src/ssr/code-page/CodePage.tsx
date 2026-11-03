@@ -156,6 +156,8 @@ function usePageText(data: () => CodePageData) {
   const targetName = (target: CodePageTarget): string => {
     if (target.own) return data().owner.title;
     if (target.ref.type === "app") return target.title ?? target.ref.id;
+    // Its reader did not answer for this person: type and ID only, never a name.
+    if (target.missing) return [target.typeTitle, target.ref.id].filter(Boolean).join(" ");
     if (target.title) return [target.typeTitle, target.title].filter(Boolean).join(" ");
     return target.ref.id;
   };
@@ -163,6 +165,7 @@ function usePageText(data: () => CodePageData) {
     const current = t();
     if (target.own) return current.atOwn({ name: data().owner.title });
     if (target.ref.type === "app") return current.atApp({ name: target.title ?? target.ref.id });
+    if (target.missing) return current.atTarget({ name: targetName(target) });
     if (target.title) return `${current.atTarget({ name: targetName(target) })} (${target.ref.id})`;
     return current.unknownTarget({ id: target.ref.id });
   };
@@ -651,25 +654,25 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             {(row) => (
               <NoticeCard
                 tone="warning"
-                icon={row.target.deleted ? "ti ti-trash" : "ti ti-alert-triangle"}
+                icon={row.target.missing ? "ti ti-help-circle" : "ti ti-alert-triangle"}
                 title={
-                  row.target.deleted
-                    ? t().targetDeletedTitle({ name: props.text.targetName(row.target) })
+                  row.target.missing
+                    ? t().targetMissingTitle({ name: props.text.targetName(row.target) })
                     : t().accessRemovedTitle({ name: props.text.targetName(row.target) })
                 }
                 detail={[
-                  ...(!row.target.deleted && row.removedAt
+                  ...(!row.target.missing && row.removedAt
                     ? [t().removedSentence({ name: row.removedBy?.name ?? null, ...props.text.moment(row.removedAt) })]
                     : []),
-                  row.target.deleted
-                    ? t().targetDeletedDescription({ name: props.text.targetName(row.target) })
+                  row.target.missing
+                    ? t().targetMissingDescription({ name: props.text.targetName(row.target) })
                     : t().accessRemovedDescription({ name: props.text.targetName(row.target) }),
                   ...affectedText(row.target.key),
                 ].join(" ")}
               >
                 <Show when={editor() && props.state.active}>
                   <div class="cloud-code__note-actions">
-                    <Show when={!row.target.deleted}>
+                    <Show when={!row.target.missing}>
                       <Button type="button" size="sm" variant="secondary" onClick={() => props.onActivate("again")}>
                         <i class="ti ti-power" aria-hidden="true" />
                         {t().switchOnAgain}
@@ -912,9 +915,9 @@ function AccessRow(props: { row: CodePageAccessRow; state: CodePageReady; text: 
     if (row.state === "removed")
       return (
         <span class="cloud-code__bad">
-          <i class={row.target.deleted ? "ti ti-trash" : "ti ti-circle-x"} aria-hidden="true" />{" "}
-          {row.target.deleted
-            ? t().targetDeleted
+          <i class={row.target.missing ? "ti ti-help-circle" : "ti ti-circle-x"} aria-hidden="true" />{" "}
+          {row.target.missing
+            ? t().targetMissing
             : row.removedAt
               ? t().removedRow({ name: row.removedBy?.name ?? null, ...props.text.moment(row.removedAt) })
               : t().removed}
@@ -943,7 +946,7 @@ function AccessRow(props: { row: CodePageAccessRow; state: CodePageReady; text: 
     <li
       class="cloud-code__row cloud-code__row--access"
       data-state={props.row.state}
-      data-deleted={props.row.target.deleted ? "" : undefined}
+      data-missing={props.row.target.missing ? "" : undefined}
     >
       <span class="cloud-code__kind" aria-hidden="true">
         <i class={props.row.target.icon ?? (props.row.target.own ? "ti ti-home" : "ti ti-target-arrow")} />
@@ -1129,7 +1132,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
           typeTitle: null,
           icon: null,
           own: false,
-          deleted: false,
+          missing: false,
           href: null,
         });
   };
@@ -1564,7 +1567,7 @@ function ActivationDialog(props: {
     // Core's current reader check must agree with what the page's own reader named.
     if (current.failure.readable === false) return false;
     const target = targetByRef(current.failure.target);
-    return Boolean(target && (target.own || (target.title !== null && !target.deleted)));
+    return Boolean(target && (target.own || (target.title !== null && !target.missing)));
   };
   const managersText = () => {
     const current = view();

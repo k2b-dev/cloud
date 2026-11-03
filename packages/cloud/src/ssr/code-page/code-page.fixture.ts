@@ -26,7 +26,7 @@ const own: CodePageTarget = {
   typeTitle: "Mailbox",
   icon: "ti ti-inbox",
   own: true,
-  deleted: false,
+  missing: false,
   href: "/app/mail/Mb4kd2",
 };
 const space: CodePageTarget = {
@@ -36,7 +36,7 @@ const space: CodePageTarget = {
   typeTitle: "Space",
   icon: "ti ti-layout-kanban",
   own: false,
-  deleted: false,
+  missing: false,
   href: "/app/spaces/sp_2lg8",
 };
 const version = (number: number, status: CodePageVersion["status"], active = false): CodePageVersion => ({
@@ -77,7 +77,7 @@ const runs = [
 ];
 const access = (
   state: CodePageAccessRow["state"],
-  deleted = false,
+  missing = false,
   removal: Pick<CodePageAccessRow, "removedBy" | "removedAt"> = { removedBy: null, removedAt: null },
 ): CodePageAccessRow[] => [
   {
@@ -93,7 +93,8 @@ const access = (
     removedAt: null,
   },
   {
-    target: { ...space, deleted },
+    // A reader that does not answer leaves neither name nor link.
+    target: missing ? { ...space, title: null, href: null, missing } : space,
     operations: ["spaces.task.create"],
     state,
     newOperations: [],
@@ -162,7 +163,7 @@ export const codePageFixture = (
     | "removed"
     | "removed-unnamed"
     | "removed-unknown"
-    | "deleted"
+    | "target-missing"
     | "paused"
     | "runs"
     | "run-failed"
@@ -280,7 +281,7 @@ export const codePageFixture = (
           ],
         }),
       };
-    case "deleted":
+    case "target-missing":
       return { ...base, tab: "overview", state: ready({ access: access("removed", true) }) };
     case "paused":
       return { ...base, tab: "overview", state: ready({ code: { ...ready().code, state: "paused" } }) };
