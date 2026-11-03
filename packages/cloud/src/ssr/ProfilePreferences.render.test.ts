@@ -91,6 +91,17 @@ describe("ProfilePreferences SSR", () => {
     expect(html).toContain('<button type="button" class="layout-profile-preferences__link"');
     expect(html).not.toContain('<a href="/me" class="layout-profile-preferences__link"');
     expect(html.indexOf("Abmelden")).toBeGreaterThan(html.indexOf("Profileinstellungen"));
+    // The sidebar entries come first, with the shortcut; sign-out ends the menu in the danger tone, in its own section.
+    const sections = panel.split('class="layout-profile-preferences__section"').slice(1);
+    expect(sections).toHaveLength(3);
+    expect(sections[0]).toContain('data-cloud-shell-focus-toggle="hide"');
+    expect(sections[0]).toContain(">Seitenleiste ausblenden</span>");
+    expect(sections[0]).toContain('data-cloud-shell-focus-toggle="show"');
+    expect(sections[0]).toContain(">Seitenleiste einblenden</span>");
+    expect(sections[0]).toContain('class="k2b-kbd"');
+    expect(sections[1]).toContain(">Dunkel</span>");
+    expect(sections[2]).toContain('data-danger="true"');
+    expect(sections[2]).toContain(">Abmelden</span>");
     expect(html).toContain('data-position="right-start"');
     expect(html).not.toContain(user.mail ?? "");
     expect(html).not.toContain("undefined");
