@@ -14,6 +14,7 @@ import {
   rateLimit,
   requiresAuth,
   respond,
+  userFromActor,
   v,
 } from "@k2b/cloud/server";
 import { coreSettings, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
@@ -3129,7 +3130,7 @@ const app = new Hono<AuthContext>()
       const entries = await spacesService.access.list({
         spaceId: spaceId!,
         canManageTarget: true,
-        cloudAdmin: c.get("user").roles.includes("admin"),
+        cloudAdmin: userFromActor(c.get("actor"))?.roles.includes("admin"),
         locale: getLocale(c),
       });
       return respond(c, ok(entries.items));

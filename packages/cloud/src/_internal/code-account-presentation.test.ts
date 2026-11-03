@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { codeMessages } from "../server/services/code-account-display";
 import { compileCapabilities, resolveCapabilityManifestPresentation } from "./capabilities";
 
 test("owner types supply complete translated account labels without guessing grammar", () => {
@@ -33,4 +34,10 @@ test("owner types supply complete translated account labels without guessing gra
   expect(resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "fr").types[0]?.codeAccount?.name).toBe(
     "Code of an item",
   );
+});
+
+test("Code account messages resolve one request locale and contain every translation", () => {
+  expect(codeMessages.check()).toEqual([]);
+  expect(codeMessages.resolve(["de-AT"]).t.accountName({ title: "Werkstatt" })).toBe("Code von Werkstatt");
+  expect(codeMessages.resolve(["fr"]).t.accountName({ title: "Workshop" })).toBe("Code of Workshop");
 });

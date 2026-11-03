@@ -532,9 +532,11 @@ suite("reversible mailbox lifecycle", () => {
     expect((await updateMailbox({ context: ownerContext, mailboxId, name: " ".repeat(3) })).ok).toBe(false);
     expect((await updateMailbox({ context: ownerContext, mailboxId, name: "x".repeat(161) })).ok).toBe(false);
 
+    // Code binds to the public owner ID, while this service renames by the internal UUID.
+    const [publicMailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id=${mailboxId}::uuid`;
     // The owner app refreshes the snapshot in the same rename transaction, without moving grants.
     const [codeAccount] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,title)
-      VALUES(${`code:mail.mailbox:${mailboxId}`},'code','Old snapshot') RETURNING id`;
+      VALUES(${`code:mail.mailbox:${publicMailbox!.short_id}`},'code','Old snapshot') RETURNING id`;
     let renamed: Awaited<ReturnType<typeof updateMailbox>>;
     try {
       renamed = await updateMailbox({ context: ownerContext, mailboxId, name: `  Sales North ${suffix}  ` });

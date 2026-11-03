@@ -152,9 +152,6 @@ export const GroupMemberSchema = z.object({
   id: z.string(),
   displayName: z.string().nullable(),
   serviceAccountKind: ServiceAccountKindSchema.optional(),
-  serviceAccountHandle: z.string().optional(),
-  serviceAccountDescription: z.string().optional(),
-  serviceAccountHref: z.string().optional(),
 });
 export type GroupMember = z.infer<typeof GroupMemberSchema>;
 
@@ -224,8 +221,6 @@ export const ServiceAccountStatusSchema = z.enum(["active", "disabled"]);
 export type ServiceAccountStatus = z.infer<typeof ServiceAccountStatusSchema>;
 
 export const ServiceAccountSchema = z.object({
-  handle: z.string().optional(),
-  description: z.string().optional(),
   id: z.uuid(),
   name: z.string(),
   kind: ServiceAccountKindSchema,

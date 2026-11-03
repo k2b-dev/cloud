@@ -49,7 +49,7 @@ const code = (id: string, account: string, grantId: string | undefined, permissi
   principal: { type: "service_account", serviceAccountId: account },
   permission,
   createdAt: "2026-10-28T09:00:00.000Z",
-  // What the target's share list resolves: the raw account name, never shown.
+  // The target resolves this name only after its local permission check.
   displayName: account === ids.info ? "Code von info@moebel-beispiel.de" : "Code von Einkauf",
   serviceAccountKind: "code",
   ...(grantId ? { grantId } : {}),
@@ -205,7 +205,7 @@ describe("Code with access in the shared rights editor", () => {
       const button = view.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!;
       expect(button.getAttribute("aria-label")).toBe("Zugriff von „Code von info@moebel-beispiel.de“ entfernen");
       button.click();
-      await waitFor(() => view.calls.length === 2, "the removal request");
+      await waitFor(() => view.calls.length === 1, "the removal request");
       expect(view.confirmations).toEqual([
         {
           content:
@@ -240,7 +240,7 @@ describe("Code with access in the shared rights editor", () => {
       view.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
       await waitFor(() => view.confirmations.length === 1, "the confirmation");
       await Bun.sleep(20);
-      expect(view.calls).toHaveLength(1);
+      expect(view.calls).toHaveLength(0);
       expect(view.codeRows()).toHaveLength(2);
     } finally {
       view.cleanup();
@@ -334,8 +334,8 @@ describe("Code with access in the shared rights editor", () => {
     try {
       await waitFor(() => canvas.codeRows()[0]?.querySelector("button")?.disabled === false, "an enabled removal");
       canvas.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
-      await waitFor(() => canvas.calls.length === 2, "the removal request");
-      expect(canvas.calls[1]!.body).toEqual({ appId: "spaces", grantId: ids.grantInfo });
+      await waitFor(() => canvas.calls.length === 1, "the removal request");
+      expect(canvas.calls[0]!.body).toEqual({ appId: "spaces", grantId: ids.grantInfo });
     } finally {
       canvas.cleanup();
     }
@@ -348,7 +348,7 @@ describe("Code with access in the shared rights editor", () => {
     }
   });
 
-  test("a long share list loads its owners in requests within the route's bound", async () => {
+  test("a long share list uses the names supplied by its target without name requests", async () => {
     const many = Array.from({ length: 501 }, (_, index) =>
       code(`access-${index}`, `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, undefined, "read"),
     );
@@ -361,7 +361,7 @@ describe("Code with access in the shared rights editor", () => {
     });
     try {
       await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
-      expect(view.calls.map((call) => (call.body as { ids: string[] }).ids.length)).toEqual([500, 1]);
+      expect(view.calls).toEqual([]);
       expect(view.codeRows()).toHaveLength(501);
     } finally {
       view.cleanup();
@@ -519,7 +519,7 @@ describe("Code with access in the shared rights editor", () => {
       await waitFor(() => view.section()?.getAttribute("aria-busy") === null && view.codeRows().length === 2, "the loaded section");
       expect(view.codeRows()[0]!.textContent).toContain("Bearbeiten");
       // The owners were already known; only the details were asked again.
-      expect(view.calls).toHaveLength(1);
+      expect(view.calls).toHaveLength(0);
       expect(view.detailCalls).toHaveLength(2);
     } finally {
       view.cleanup();

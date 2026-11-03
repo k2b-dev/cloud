@@ -455,7 +455,7 @@ const compileOperationPresentation = (
           throw new Error(`${label}.searchTags.${tag} must be an object`);
         }
         const copy = presentation as Record<string, unknown>;
-        const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "codeAccount");
+        const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
         if (strict && extraField) throw new Error(`${label}.searchTags.${tag} contains unsupported field "${extraField}"`);
         if (copy.title !== undefined) {
           if (typeof copy.title !== "string") throw new Error(`${label}.searchTags.${tag}.title must be text`);
@@ -574,7 +574,7 @@ export const compileCapabilityPresentation = (
     const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, _definition, label) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
-      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
+      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "codeAccount");
       if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);

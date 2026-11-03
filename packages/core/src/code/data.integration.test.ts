@@ -349,9 +349,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
       ctx(ids.admin, true),
     );
     expect(resource.serviceAccountHandle).toMatch(/^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/);
-    expect((await sql`SELECT handle FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]!.handle).toBe(
-      resource.serviceAccountHandle,
-    );
+    expect((await sql`SELECT handle,title FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]).toEqual({
+      handle: resource.serviceAccountHandle,
+      title: "Mailbox today",
+    });
     ownerState.set(ids.stranger, { title: "Renamed mailbox", admin: true });
     expect((await readCode(resource.id, ctx(ids.stranger))).permission).toBe("editor");
     expect((await sql`SELECT title FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]!.title).toBe(

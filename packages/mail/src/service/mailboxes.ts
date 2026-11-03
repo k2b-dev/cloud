@@ -437,7 +437,7 @@ export const updateMailbox = async (params: {
             }),
           );
         }
-        const [row] = await tx<DbMailbox[]>`
+        const [row] = await tx<(DbMailbox & { short_id: string })[]>`
           UPDATE mail.mailboxes
           SET
             name = COALESCE(${name ?? null}, name),
@@ -460,11 +460,11 @@ export const updateMailbox = async (params: {
               ELSE health_reason
             END
           WHERE id = ${params.mailboxId}::uuid
-          RETURNING id, name, description, health, health_reason, sync_enabled, search_backend,
+          RETURNING id, short_id, name, description, health, health_reason, sync_enabled, search_backend,
             automatic_reply_management_permission, compose_safety, deleted_at, created_at, updated_at
         `;
         if (!row) throw new Error("Mailbox update returned no row");
-        if (name !== undefined) await codeOwnerTitleChanged(tx, { type: "mail.mailbox", id: params.mailboxId }, row.name);
+        if (name !== undefined) await codeOwnerTitleChanged(tx, { type: "mail.mailbox", id: row.short_id }, row.name);
         await audit.record(
           {
             action: "mail.mailbox.update",

@@ -349,7 +349,12 @@ const principalFlags = (options: {
   user: flag.string({ description: "User id, uid, email, or exact display name" }),
   group: flag.string({ description: "Group id or exact name" }),
   ...(options.includeServiceAccountFlag
-    ? { serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name" }) }
+    ? {
+        serviceAccount: flag.string({
+          name: "service-account",
+          description: "Service account ID, exact agent name, or Code handle in this target",
+        }),
+      }
     : {}),
   ...(options.includeAuthenticatedFlag ? { authenticated: flag.boolean({ description: "Signed-in users, including guests" }) } : {}),
   ...(options.includePublicFlag ? { public: flag.boolean({ description: "Anyone with the link, including anonymous users" }) } : {}),

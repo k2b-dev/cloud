@@ -427,7 +427,7 @@ export const list = async (
   const perPage = params.perPage ?? 100;
   const offset = (page - 1) * perPage;
   const codeHandle =
-    params.visibility.type === "directory" &&
+    params.visibility.type !== "directory_shares" &&
     params.codeAccountHandle === params.search?.trim() &&
     /^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/.test(params.codeAccountHandle ?? "")
       ? params.codeAccountHandle!
@@ -452,6 +452,7 @@ export const list = async (
           )`
         : sql`(
           (kind = 'user' AND id = ${params.visibility.userId}::uuid)
+          OR (kind = 'service_account' AND service_account_kind = 'code' AND code_handle = ${codeHandle})
           OR (
             kind = 'group'
             AND id IN (${recursiveGroupIdsSubquery(params.visibility.userId)})

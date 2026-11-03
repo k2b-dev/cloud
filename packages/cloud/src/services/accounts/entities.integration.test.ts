@@ -423,6 +423,14 @@ suite("Code handle directory filtering", () => {
           description: "Dienstkonto einer App · deaktiviert",
         },
       });
+      const guest = await list({
+        visibility: { type: "self_and_effective_groups", userId: account!.id },
+        search: handle,
+        codeAccountHandle: handle,
+      });
+      expect(guest.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(true);
+      const noAdmission = await list({ visibility: { type: "self_and_effective_groups", userId: account!.id }, search: handle });
+      expect(noAdmission.items).toEqual([]);
       await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
       expect((await list({ visibility: { type: "directory" }, search: handle, codeAccountHandle: handle })).items).toEqual([]);
     } finally {

@@ -431,7 +431,13 @@ export const grantSpaceAccess = async (params: {
   });
   if (!result.ok) return result;
   spacesLive.wake();
-  const created = (await listSpaceAccess(spaceId)).find((entry) => entry.id === result.data);
+  const created = (
+    await listSpaceAccess(spaceId, sql, {
+      canManageTarget: Boolean(params.caller && params.caller.authority !== "administration"),
+      cloudAdmin: params.caller ? userFromActor(params.caller.actor)?.roles.includes("admin") : false,
+      locale: params.caller?.locale,
+    })
+  ).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
 
