@@ -50,7 +50,7 @@ const {
 const { chooseLandingMailbox, readMailLandingLink } = await import("./mail-landing");
 const { readMailWorkspacePreferences } = await import("./_components/mail-workspace-preferences");
 /** The fixture server keeps the person's click on "Got it" in this cookie, as Mail keeps it for the person. */
-const NOTICE_CLOSED_COOKIE = "mail_fixture_focus_notice=closed";
+const NOTICE_COOKIE = "mail_fixture_focus_notice";
 const ui = resolve(import.meta.dir, "../../../ui/dist");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 const boxPath = "/app/mail/Box001";
@@ -127,7 +127,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
       // without putting an artificial preference into its navigation URL.
       workspaceCookieHeader: url.searchParams.has("persist-details") ? cookieHeader : undefined,
-      focusNoticeOpen: url.searchParams.get("notice") === "1" && !cookieHeader?.includes(NOTICE_CLOSED_COOKIE),
+      focusNoticeOpen: url.searchParams.get("notice") === "1" && !cookieHeader?.includes(`${NOTICE_COOKIE}=closed`),
     }),
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
@@ -243,7 +243,7 @@ beforeAll(async () => {
         return Response.redirect(new URL(`/app/mail/${mailboxId}${link.view ? `?view=${link.view}` : ""}`, server.url).href, 302);
       }
       if (url.pathname === "/api/mail/mailboxes/preferences/focus-notice" && request.method === "PUT") {
-        return Response.json({ dismissed: true }, { headers: { "set-cookie": `${NOTICE_CLOSED_COOKIE}; Path=/` } });
+        return Response.json({ dismissed: true }, { headers: { "set-cookie": `${NOTICE_COOKIE}=closed; Path=/` } });
       }
       if (url.pathname.endsWith("/actions") && request.method === "POST") return Response.json({ commands: [] });
       if (url.pathname.endsWith("/preference") && request.method === "PATCH") return Response.json(await request.json());
