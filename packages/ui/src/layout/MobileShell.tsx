@@ -38,6 +38,11 @@ export type MobileShellHeaderProps = {
   actions?: JSX.Element;
 };
 
+/**
+ * On the document element while a shell is the page: `"sidebar"` when it shows its sidebar, otherwise empty. A host
+ * that renders the shell on the server writes it into its `<html>` too, so the first paint already has it.
+ */
+const SHELL_ATTRIBUTE = "data-k2b-mobile-shell";
 /** Read by the toast rail, which is portalled outside the shell, so it lives on the body. */
 const FOOTER_HEIGHT = "--k2b-mobile-shell-footer-height";
 /** How much of the scroll area a persistent toast covers; local to the shell. */
@@ -175,6 +180,11 @@ export function observeMobileShell(root: HTMLElement): () => void {
   const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
   if (!main) return () => {};
   const stopLinkTaps = observeLinkTaps(root);
+  // The document says that a shell is the page, for the controls and toasts portalled outside it. An attribute, not
+  // `html:has(.k2b-mobile-shell)`: a `:has()` on the document restyles the whole page on every change inside it.
+  const documentRoot = root.ownerDocument.documentElement;
+  const previousShell = documentRoot.getAttribute(SHELL_ATTRIBUTE);
+  documentRoot.setAttribute(SHELL_ATTRIBUTE, root.querySelector(":scope > .k2b-mobile-shell__sidebar") ? "sidebar" : "");
   // Content with its own scroll areas keeps its own fades; the room a toast takes applies to the whole main area.
   const stopScrollFades = body ? installScrollFades(body) : () => {};
   let frame = 0;
@@ -221,6 +231,8 @@ export function observeMobileShell(root: HTMLElement): () => void {
     mutations.disconnect();
     document.removeEventListener("transitionend", schedule, true);
     document.body.style.removeProperty(FOOTER_HEIGHT);
+    if (previousShell === null) documentRoot.removeAttribute(SHELL_ATTRIBUTE);
+    else documentRoot.setAttribute(SHELL_ATTRIBUTE, previousShell);
     stopLinkTaps();
     stopScrollFades();
   };

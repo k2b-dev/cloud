@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cssSelectors, hasBeforeUnnamedSubject } from "./css-has-scope";
+import { cssSelectors, hasBeforeUnnamedSubject, pageWideHas } from "./css-has-scope";
 
 test("refuses :has() before a last part that names nothing", () => {
   for (const selector of [
@@ -31,4 +31,43 @@ test("accepts a named last part and :has() on the subject itself", () => {
 test("reads every style rule's selector with its line and skips at-rules and comments", () => {
   const css = "/* .a:has(.b) * { } */\n@media (min-width: 1px) {\n  .a:has(.b) * {\n    color: red;\n  }\n}\n";
   expect(cssSelectors(css)).toEqual([{ selector: ".a:has(.b) *", line: 3 }]);
+});
+
+test("resolves nested rules against their parent", () => {
+  const css = ".a:has(.b), .c {\n  color: red;\n  @media (min-width: 1px) {\n    & .d { color: blue; }\n    .e { color: green; }\n  }\n}\n";
+  expect(cssSelectors(css).map((entry) => entry.selector)).toEqual([
+    ".a:has(.b), .c",
+    ":is(.a:has(.b)) .d, :is(.c) .d",
+    ".a:has(.b) .e, .c .e",
+  ]);
+});
+
+test("refuses :has() that restyles the page on every DOM change", () => {
+  for (const [selector, reason] of [
+    ["html:has(.k2b-mobile-shell) .k2b-field__label", "anchor"],
+    [":root:has(script[data-nav]) .layout-header-title", "anchor"],
+    [".k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head", "anchor"],
+    [".k2b-ui:not(:has(.k2b-page-title)) .k2b-app-workspace__head > .k2b-app-workspace__head-views", "anchor"],
+    [".k2b-app-workspace:has(> .k2b-app-workspace__sidebar [aria-current]) > .k2b-app-workspace__head", "anchor"],
+    [":is(.layout-content-main:has(.k2b-app-workspace)) .k2b-app-workspace", "anchor"],
+    [".k2b-button:has(> .k2b-button__busy) > .k2b-button__label", "repeated"],
+    [".a:has(+ .b:focus-visible) > :is(.k2b-button, .k2b-dropdown)", "repeated"],
+    [".a:has(.b) i", "repeated"],
+  ] as const) {
+    expect([selector, pageWideHas(selector)]).toEqual([selector, reason]);
+  }
+});
+
+test("accepts :has() on the styled element, a direct child of a page anchor, and a small local anchor", () => {
+  for (const selector of [
+    "html:has(> body > .cloud-app-canvas[data-layout-full-page])",
+    ".layout-content-main:not(:has(.k2b-app-workspace))",
+    "html[data-k2b-mobile-shell] .k2b-button",
+    ".k2b-app-workspace:has(> .k2b-app-workspace__sidebar:not([hidden])) > .k2b-app-workspace__head",
+    ".k2b-app-workspace__head:has(~ .k2b-app-workspace__content .k2b-app-workspace__main h1) > .k2b-app-workspace__head-lead",
+    ".k2b-button > .k2b-button__label:has(+ .k2b-button__busy)",
+    ".k2b-tab-bar:has(a[data-k2b-pending]) a[aria-current='page']",
+  ]) {
+    expect([selector, pageWideHas(selector)]).toEqual([selector, undefined]);
+  }
 });

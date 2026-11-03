@@ -73,20 +73,31 @@ export const setPageTrail = (trail: PageTrailState): void => {
 };
 
 const PageTrailContext = createContext<() => PageTrailState | undefined>();
+const OwnTitleContext = createContext<() => void>();
 
 /**
  * Gives a host's page trail to everything below it. During server rendering
  * the context carries it; the provider also publishes it into the document,
  * where browser-rendered parts such as islands read it. Below a provider that
  * renders in the browser, its `trail` prop is the source: update the prop.
+ *
+ * `onOwnTitle` runs on the server for each `PageTitle` below that is not a
+ * fallback. The host then sets `data-k2b-own-title` on an element around the
+ * page, inside the `k2b-ui` root, so the chrome's fallback titles step back.
  */
-export function PageTrailProvider(props: { trail: PageTrailState | undefined; children: JSX.Element }): JSX.Element {
+export function PageTrailProvider(props: {
+  trail: PageTrailState | undefined;
+  onOwnTitle?: () => void;
+  children: JSX.Element;
+}): JSX.Element {
   return (
     <PageTrailContext.Provider value={() => props.trail}>
-      <Show when={props.trail}>
-        {(trail) => <script type="application/json" data-k2b-page-trail="" innerHTML={serializeTrail(trail())} />}
-      </Show>
-      {props.children}
+      <OwnTitleContext.Provider value={() => props.onOwnTitle?.()}>
+        <Show when={props.trail}>
+          {(trail) => <script type="application/json" data-k2b-page-trail="" innerHTML={serializeTrail(trail())} />}
+        </Show>
+        {props.children}
+      </OwnTitleContext.Provider>
     </PageTrailContext.Provider>
   );
 }
@@ -114,6 +125,7 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
   const messages = useWorkspaceMessages();
   // A title rendered on the server from the host's trail follows the host's later trails (see `followPageTrail`).
   const host = isServer ? useContext(PageTrailContext) : undefined;
+  if (isServer && !props.fallback) useContext(OwnTitleContext)?.();
   const menuId = `k2b-page-title-menu-${createUniqueId()}`;
   const ancestors = () => props.trail.ancestors;
   const parent = () => ancestors().at(-1);

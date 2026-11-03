@@ -2130,7 +2130,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-.k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label {
+/* The label asks its next sibling, not the button its children: `:has()` before
+   a later part puts that part into a set Chromium restyles on every page change. */
+.k2b-ui .k2b-button > .k2b-button__label:has(+ .k2b-button__busy) {
   opacity: 0;
 }
 
@@ -3200,14 +3202,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* With a kind line, it takes the first row beside the compact actions, and
    the title and subtitle move one row down. */
-.k2b-ui .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind) > .k2b-detail-panel__heading > h2 {
+.k2b-ui .k2b-detail-panel__header-main > .k2b-detail-panel__heading > .k2b-detail-panel__kind ~ h2 {
   grid-row: 2;
 }
 
 .k2b-ui
-  .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind)
+  .k2b-detail-panel__header-main
   > .k2b-detail-panel__heading
-  > .k2b-detail-panel__supporting {
+  > .k2b-detail-panel__kind
+  ~ .k2b-detail-panel__supporting {
   grid-row: 3;
 }
 
@@ -5473,7 +5476,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
     ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
-      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2 of :not([popover]))
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
+        > :nth-child(2 of .k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper)
     )
     > .k2b-app-workspace__sidebar-item-main {
     --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
@@ -5551,8 +5555,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible),
     .k2b-ui
       .k2b-app-workspace__sidebar-item
-      > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
-      > :is(.k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper):nth-last-child(1 of :not([popover])) {
+      > .k2b-app-workspace__sidebar-item-actions[data-preview-focus]
+      > :is(.k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper):not(:has(~ :is(.k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper))) {
       opacity: 0;
       pointer-events: none;
     }
@@ -12181,7 +12185,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     line-height: 1.25rem;
   }
 
-  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) > strong {
+  .k2b-ui .k2b-chat-activity__copy > strong:not(:has(~ small)) {
     overflow: visible;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -12201,7 +12205,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     line-height: 1.25rem;
   }
 
-  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) > strong {
+  .k2b-ui .k2b-chat-activity__copy > strong:not(:has(~ small)) {
     overflow: visible;
     overflow-wrap: anywhere;
     white-space: normal;
