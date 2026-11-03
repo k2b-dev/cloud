@@ -237,7 +237,18 @@ export async function acceptanceRunners(input: {
         const invocation = z
           .object({ call: NormalizedCapabilityCallSchema, metadata: z.object({ idempotencyKey: z.string().optional() }) })
           .parse(request.input);
-        request = { ...request, input: z.json().parse({ ...invocation, call: { ...invocation.call, target: foreign } }) };
+        request = {
+          ...request,
+          input: z.json().parse({
+            ...invocation,
+            call: { ...invocation.call, target: foreign },
+            // Reach the provider's current-rights check rather than conflicting with the original successful call.
+            metadata: {
+              ...invocation.metadata,
+              ...(invocation.metadata.idempotencyKey ? { idempotencyKey: `foreign:${request.runId}` } : {}),
+            },
+          }),
+        };
       }
       const body = JSON.stringify(request);
       const proof = await signAppProof(input.runnerKey, { method: "POST", path: RUNNER_PATHS.call, body: new TextEncoder().encode(body) });

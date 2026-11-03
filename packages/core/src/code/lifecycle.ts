@@ -49,7 +49,7 @@ async function lockDeletedCode(db: SQL, codeId: string, principal: string | null
   // Core owns both the workload and its mandate lifecycle. One statement fences every version immediately.
   const revoked = await db`UPDATE auth.mandates m SET state='revoked',revision=revision+1,updated_at=now(),revoked_at=now(),
     revoked_by_user_id=NULL,revoked_by_app_id='core',revoke_reason='Code owner deleted'
-    WHERE m.owner_app_id='core' AND m.workload_type='code.version' AND m.state<>'revoked'
+    WHERE m.owner_app_id IN ('core','runner') AND m.workload_type='code.version' AND m.state<>'revoked'
       AND EXISTS(SELECT 1 FROM code.versions v WHERE v.code_id=${codeId} AND v.id::text=m.workload_id)`;
   if (principal) await db`UPDATE auth.service_accounts SET status='disabled' WHERE id=${principal}::uuid AND kind='code'`;
   await db`UPDATE code.runs SET state='cancelled',outcome='owner_deleted',generation=generation+1,

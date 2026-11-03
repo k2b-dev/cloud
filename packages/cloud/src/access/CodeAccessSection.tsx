@@ -345,6 +345,9 @@ export default function CodeAccessSection(props: {
                     </Button>
                   </Show>
                 </div>
+                <p data-code-editor-authority="" class={`text-[13px] text-dimmed ${props.expanded ? "pl-11 sm:pl-13" : "pl-10"}`}>
+                  {t().codeEditorAuthority}
+                </p>
                 <Show when={props.canEdit && failures[entry.id]}>
                   {(message) => (
                     <div role="alert" class={`text-[13px] text-danger ${props.expanded ? "pl-11 sm:pl-13" : "pl-10"}`}>

@@ -13,7 +13,6 @@ import {
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
 import { accounts, coreSettings, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
-import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
 import { createSync, type Sync, type Worker } from "@k2b/sync";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
@@ -24,7 +23,6 @@ import {
   AcceptanceProviderSchema,
   acceptanceProvider,
   loadCodePage,
-  targetKey,
 } from "../../../../scripts/fixtures/code-acceptance-provider";
 import {
   codeAccessProofs,
@@ -34,7 +32,6 @@ import {
 } from "../../../../scripts/fixtures/code-platform";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
-import { createCodeActivationRoutes } from "../api/code-activation";
 import { aiCapabilities } from "../capabilities";
 import { acceptanceChecker, acceptanceDispatch, acceptanceRunners } from "./acceptance.test-fixture";
 import { type CodeContext, codeAccountDisplayName } from "./access";
@@ -535,10 +532,10 @@ suiteFor(
     const foreignResult = await completed(codeId, foreign.run.runId);
     expect(foreignResult.run.state).toBe("failed");
     expect(NormalizedCapabilityCallSchema.parse(foreignResult.calls[0]?.call).target).toEqual({ type: "spaces.space", id: foreignId });
-    expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "mandate_forbidden" } });
+    expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
 
-    // A new immutable version has update authority only: successful updates cannot depend on task.create.
+    // The new immutable version uses current resource rights; checker operations are review evidence.
     const updateVersion = await code.submit(
       { codeId, entry: "code.ts", files: update, baseVersionId: submitted.submission.version.id },
       author,
@@ -548,10 +545,9 @@ suiteFor(
     const amended = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-update" }, author);
     expect((await completed(codeId, amended.run.runId)).run.state).toBe("succeeded");
     const [mandate] = await sql<
-      { policy: { operations: string[] } }[]
+      { policy: unknown }[]
     >`SELECT policy FROM auth.mandates WHERE workload_id=${updateVersion.submission.version.id} AND state='active'`;
-    expect(mandate!.policy.operations).toContain("capability.action.run:task.update");
-    expect(mandate!.policy.operations).not.toContain("capability.action.run:task.create");
+    expect(mandate!.policy).toBeNull();
     expect(await sql<{ title: string }[]>`SELECT title FROM spaces.items WHERE short_id=${itemId}`).toEqual([
       { title: "Rechnung geprüft" },
     ]);
@@ -566,7 +562,7 @@ suiteFor(
     const failed = await completed(codeId, revoked.run.runId);
     expect(failed.run.state).toBe("failed");
     expect(failed.calls[0]).toMatchObject({ state: "failed", result: { ok: false, error: { code: "not_found" } } });
-    // Load the real page model through Core queries and the activation access route.
+    // Load the real page model through Core queries only: the page asks no other app and reads no target rights.
     const pageApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
     pageApp.use("*", async (c, next) => {
       c.set("actor", author.authority.actor);
@@ -576,7 +572,6 @@ suiteFor(
       c.set("runtime", { apps: [] });
       await next();
     });
-    pageApp.route("/api/code", createCodeActivationRoutes());
     pageApp.get("/page", async (c) =>
       c.json(
         await loadCodePage(c, {
@@ -598,9 +593,7 @@ suiteFor(
     const pageFetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-          const request = new Request(url, init);
-          if (new URL(request.url).pathname !== "/api/code/access") throw new Error("Unexpected page transport");
-          return pageApp.fetch(request);
+          throw new Error(`The Code page fetched ${new Request(url, init).url}`);
         },
         { preconnect: globalThis.fetch.preconnect },
       ),
@@ -614,31 +607,29 @@ suiteFor(
           state: z.object({
             kind: z.literal("ready"),
             code: z.object({ id: z.string() }),
-            access: z.array(z.object({ target: z.object({ ref: z.object({ type: z.string(), id: z.string() }) }), state: z.string() })),
-            automations: z.array(
-              z.object({
-                entrypoint: z.string(),
-                missingTargets: z.array(z.string()),
-                missingProven: z.boolean(),
-                lastRun: z.object({ id: z.string(), state: z.string() }).nullable(),
+            refusal: z.object({
+              kind: z.string(),
+              runId: z.string(),
+              call: z.object({
+                capability: z.string(),
+                target: z.object({
+                  ref: z.object({ type: z.string(), id: z.string() }),
+                  title: z.string().nullable(),
+                  href: z.string().nullable(),
+                }),
               }),
-            ),
+            }),
           }),
         })
         .parse(pageValue);
       expect(page.state.code.id).toBe(codeId);
-      expect(page.state.access).toContainEqual(
-        expect.objectContaining({ target: expect.objectContaining({ ref: space }), state: "removed" }),
-      );
-      expect(page.state.automations).toContainEqual(
-        expect.objectContaining({
-          entrypoint: "monday",
-          missingTargets: [targetKey(space)],
-          missingProven: true,
-          lastRun: expect.objectContaining({ id: revoked.run.runId, state: "failed" }),
-        }),
-      );
-      expect(codePageMessages.resolve(["de"]).t.removed).toBe("Zugriff entfernt");
+      // The space refused the call with 404: the page states that as a fact, by type and ID, never by name.
+      expect(page.state.refusal).toMatchObject({
+        kind: "target_refused",
+        runId: revoked.run.runId,
+        call: { capability: expect.stringContaining("task."), target: { ref: space, title: null } },
+      });
+      expect(pageFetch).not.toHaveBeenCalled();
     } finally {
       pageFetch.mockRestore();
       pageSession.mockRestore();
@@ -734,10 +725,9 @@ try { await http.fetch("https://bank.example/v1/error", { headers: { authorizati
     expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
     await approve(submitted.submission);
     await activate(codeId, submitted.submission.version.id, proof(author));
-    const [mandate] = await sql<{ policy: { operations: string[]; grants: unknown[] } }[]>`
+    const [mandate] = await sql<{ policy: unknown }[]>`
       SELECT policy FROM auth.mandates WHERE workload_id=${submitted.submission.version.id} AND state='active'`;
-    expect(mandate!.policy.operations).toContain("runtime.http");
-    expect(mandate!.policy.grants).toContainEqual({ kind: "http", fixedInput: { origin: "https://bank.example" } });
+    expect(mandate!.policy).toBeNull();
     const requested = await code.run({ codeId, entrypoint: "monday", input: null, idempotencyKey: "c25-http" }, author);
     const result = await completed(codeId, requested.run.runId);
     expect(result.run.state).toBe("succeeded");

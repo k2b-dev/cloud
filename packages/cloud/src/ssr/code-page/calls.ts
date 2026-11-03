@@ -17,12 +17,6 @@ export const summarizeCallResult = (result: unknown): string | null => {
   return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 };
 
-/** Only target HTTP 403/404 identify access refusals. Codes without a status remain unclassified. */
-export const isAccessRefusal = (result: unknown): boolean => {
-  const parsed = z.object({ error: z.object({ status: z.number().optional() }) }).safeParse(result);
-  return parsed.success && (parsed.data.error.status === 403 || parsed.data.error.status === 404);
-};
-
 const callRefs = (call: unknown): { type: string; id: string }[] => {
   const parsed = z.object({ refs: z.record(z.string(), z.object({ type: z.string(), id: z.string() })) }).safeParse(call);
   return parsed.success ? Object.values(parsed.data.refs) : [];
@@ -47,6 +41,8 @@ export const loadCodeRunCalls = async (
   input: unknown;
   inputTooLarge: boolean;
   readable: boolean;
+  /** The run's first target refusal with its target, for editors; null otherwise. */
+  firstRefusedCall: NonNullable<z.infer<typeof RunReadSchema>["contents"]>["firstRefusedCall"] | null;
 } | null> => {
   const pages = await Promise.all(
     Array.from({ length: size }, (_, index) => invoke(coreQuery("code.run.read", { codeId, runId, cursor: after + index }), RunReadSchema)),
@@ -55,7 +51,7 @@ export const loadCodeRunCalls = async (
   if (!first?.ok) return null;
   const contents = first.data.data.contents;
   const run = first.data.data.run;
-  if (!contents) return { run, calls: [], next: null, input: null, inputTooLarge: false, readable: false };
+  if (!contents) return { run, calls: [], next: null, input: null, inputTooLarge: false, readable: false, firstRefusedCall: null };
   const calls: CodePageCall[] = [];
   let next: number | null = null;
   for (const page of pages) {
@@ -68,13 +64,22 @@ export const loadCodeRunCalls = async (
       capability: call.capability,
       target: callTarget(call.call),
       refs: callRefs(call.call),
-      accessRefused: call.state === "failed" && isAccessRefusal(call.result),
+      // Only the bridge's classification counts; the page never guesses from a result.
+      refusal: call.state === "failed" ? (call.refusalKind ?? null) : null,
       state: call.state,
       summary: summarizeCallResult(call.result),
     });
     next = page.data.data.contents.nextCursor;
   }
-  return { run, calls, next, input: contents.inputChunked ? null : contents.input, inputTooLarge: contents.inputChunked, readable: true };
+  return {
+    run,
+    calls,
+    next,
+    input: contents.inputChunked ? null : contents.input,
+    inputTooLarge: contents.inputChunked,
+    readable: true,
+    firstRefusedCall: contents.firstRefusedCall ?? null,
+  };
 };
 
 /** A failed run's classification needs its first action; at most this many batches are read to find it. */

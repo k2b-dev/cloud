@@ -38,6 +38,7 @@ import CodeListFilters from "./CodeListFilters.island";
 import CodePauseAction from "./CodePauseAction.island";
 import CodePolicyEditor from "./CodePolicyEditor.island";
 import CodePolicyPicker from "./CodePolicyPicker.island";
+import CodeRefusal from "./CodeRefusal.island";
 import CodeVersionSource from "./CodeVersionSource.island";
 import type { CodeAdminMessages } from "./messages";
 
@@ -560,8 +561,25 @@ export function CodeAreaView(props: Props) {
       codeAreaHref({ sec: "code", id: code.id, status: query.status, app: query.app, q: query.q, after: query.after, ...extra });
     const newest = detail.versions[0]?.version.id;
     const source = data.source;
+    // Code of an app runs as its service account; this detail is its Code page (concept 14 W13).
+    const account = code.owner.kind === "app" ? t.accountName({ app: props.appNames[code.owner.appId] ?? code.owner.appId }) : null;
+    const lastRun = detail.refusal ? detail.runs.find((run) => run.id === detail.refusal!.refusal.runId) : undefined;
     return (
       <div class="grid content-start gap-6 px-2 pt-1 pb-6">
+        <Show when={account}>{(name) => <p class="text-sm text-(--k2b-text-secondary)">{t.runsAsAccount({ name: name() })}</p>}</Show>
+        <Show when={account ? detail.refusal : null}>
+          {(shown) => (
+            <section class="grid gap-2" aria-labelledby="code-detail-last-run">
+              <h3 id="code-detail-last-run" class="flex flex-wrap items-baseline gap-x-2 text-base font-semibold">
+                {t.lastRunTitle}
+                <Show when={lastRun}>
+                  {(run) => <span class="text-sm font-normal text-(--k2b-text-muted)">{when(run().createdAt)}</span>}
+                </Show>
+              </h3>
+              <CodeRefusal refusal={shown().refusal} account={account!} handle={null} editor={shown().editor} cloudAdmin={true} />
+            </section>
+          )}
+        </Show>
         <Show when={source !== null}>
           <section class="grid gap-2" aria-labelledby="code-detail-source">
             <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">

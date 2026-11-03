@@ -39,6 +39,17 @@ idempotency keys. Retrying delivery does not create a second notice for the same
 activation, target and person. Target access removed by a manager is never
 restored by recovery, reconciliation or cleanup.
 
+New Code version entries use app `runner` and `policy IS NULL`. Core owns their
+activation and drain lifecycle. Update Core and the shared Cloud library in
+capability providers together: provider admission now requires a run-bound,
+active entry for personal Code as well as Code service accounts. Existing
+`core` mandates keep their policies; do not clear those policies during an
+upgrade. Confirm the new model by explicitly activating a new version.
+
+After a policy-free entry exists, older Core versions cannot read that entry.
+Upgrade Core and the invocation providers together; roll back only to a version
+that understands nullable Code policies. Prefer rolling forward.
+
 ## Ordinary target grants during the access-model transition
 
 Target managers can now add a Code service account through the target's ordinary

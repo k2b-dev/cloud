@@ -27,7 +27,8 @@ notification per activation and target. Activation adds no personal resource
 shares for that administrator. Personal Code can be activated only by its owner
 and runs with that person's current rights.
 
-Browser sessions and personal OAuth credentials can activate. Phone sessions,
+Personal Code requires its owner's browser session. Object and app Code also
+accept personal OAuth credentials. Phone sessions,
 service accounts, API keys, Code runs and forwarded invocations cannot create
 this authority. A CI credential can submit code but cannot activate it.
 
@@ -180,18 +181,21 @@ marking it released, including a write whose response was lost.
 
 ## Version mandates and old runs
 
-Core stores one `code.version` mandate per immutable version under owner app
-`core`. Its subject is the personal owner or the resource's Code account.
-Resource Actions receive `CapabilityGrant` pairs with exact targets and reference
-maps; Queries receive operation grants. The checker supplies flat
-operation/target sets, without primary/ref roles. Where several literals match a
-declared target Type, activation permits their type-matching combinations; every
-such target still needs its own grant. The mandate budget bounds combinations. Personal Code uses operation authority,
-with its current resource rights checked at execution. The existing mandate
-policy budgets apply; versions exceeding them fail before any target effects.
-An existing mandate is reused only while active, unexpired and unchanged.
-Activation reports a conflict if someone separately pauses or changes it; resolve
-that mandate before activating the same version again.
+Core creates one `code.version` entry for the immutable version under app
+`runner`. The subject is the personal owner or the object's or application's
+Code service account. Its `policy` is `null`: current target rights decide
+resource access, and the Cloud-admin policy decides which actual calls require
+version approval. The checker manifest remains review evidence.
+
+Core creates the entry pending and confirms it in the same transaction that
+switches the active version. Pending means `confirmedAt: null`, using the
+existing confirmation window; it cannot issue a token. Pausing or revoking the
+entry stops further issuance. An existing entry is reused only while active,
+unexpired and bound to the same subject; activation never resumes it.
+
+Older `core`-owned mandates keep their saved policies, including exact target,
+operation, reference and input restrictions. Reactivating the same version does
+not remove them. Explicitly activate a new version to confirm the new model.
 
 Switching `activeVersionId` and storing the version mandate happen in one
 transaction. New admissions use the active version. Existing queued or running

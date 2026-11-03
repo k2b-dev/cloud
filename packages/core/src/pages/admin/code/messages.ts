@@ -315,6 +315,9 @@ export const codeAdminMessages = i18n.define({
         })[s] ?? s,
       openApproval: "Open in Approvals",
       runs: "Recent runs",
+      runsAsAccount: ({ name }: { name: string }) => `Runs as service account “${name}”`,
+      accountName: ({ app }: { app: string }) => `Code of ${app}`,
+      lastRunTitle: "Last run",
       noRuns: "No run yet.",
       runState: ({ s }: { s: string }) =>
         ({
@@ -644,6 +647,9 @@ export const codeAdminMessages = i18n.define({
         })[s] ?? s,
       openApproval: "In „Freigaben“ öffnen",
       runs: "Letzte Läufe",
+      runsAsAccount: ({ name }: { name: string }) => `Läuft als Dienstkonto „${name}“`,
+      accountName: ({ app }: { app: string }) => `Code von ${app}`,
+      lastRunTitle: "Letzter Lauf",
       noRuns: "Noch kein Lauf.",
       runState: ({ s }: { s: string }) =>
         ({

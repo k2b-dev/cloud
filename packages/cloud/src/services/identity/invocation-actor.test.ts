@@ -41,3 +41,45 @@ describe("resolveInvocationAuthority", () => {
     });
   }
 });
+
+describe("Code version entry admission", () => {
+  const codeClaims = (principal: "user" | "service_account"): CloudInvocationClaims => ({
+    ...claims(principal),
+    credential_kind: "mandate",
+    mandate_id: "33333333-3333-4333-8333-333333333333",
+    mandate_revision: 1,
+    workload_type: "code.version",
+    workload_id: "approved-version",
+    workload_run: "run-1",
+  });
+  for (const principal of ["user", "service_account"] as const) {
+    test(`${principal}: missing, pending, paused, revoked or expired entry cannot admit the invocation`, async () => {
+      // SQL owns the current-state predicate; an entry that does not satisfy it returns no row.
+      let queries = 0;
+      const query = (() => {
+        queries++;
+        return Promise.resolve([]);
+      }) as unknown as typeof sql;
+      expect(await resolveInvocationAuthority(codeClaims(principal), query, [])).toBeNull();
+      expect(queries).toBe(1);
+    });
+    test(`${principal}: keys, scopes, missing version and missing run cannot replace the entry chain`, async () => {
+      for (const changed of [
+        { credential_kind: "api_key" as const },
+        { scopes: ["write"] },
+        { workload_id: undefined },
+        { workload_run: undefined },
+        { mandate_id: undefined },
+        { mandate_revision: undefined },
+      ]) {
+        let queries = 0;
+        const query = (() => {
+          queries++;
+          return Promise.resolve([]);
+        }) as unknown as typeof sql;
+        expect(await resolveInvocationAuthority({ ...codeClaims(principal), ...changed }, query, [])).toBeNull();
+        expect(queries).toBe(0);
+      }
+    });
+  }
+});

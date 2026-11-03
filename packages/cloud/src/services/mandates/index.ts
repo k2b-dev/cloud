@@ -10,15 +10,24 @@ import { audit } from "../audit";
 import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
 import { logger } from "../logging";
 import { parsePgJsonValue } from "../postgres";
-import { isMandatePolicyNarrowing, type MandatePolicyV1, MandatePolicyV1Schema, mandatePolicyAllows, parseMandatePolicy } from "./policy";
+import {
+  isCodeVersionWorkload,
+  isMandatePolicyNarrowing,
+  type MandatePolicyV1,
+  MandatePolicyV1Schema,
+  mandatePolicyAllows,
+  parseMandatePolicy,
+} from "./policy";
 
 export {
   type CapabilityGrant,
   CapabilityGrantSchema,
   CapabilityGrantsSchema,
+  CODE_VERSION_ENTRY_APP_ID,
   CODE_VERSION_MANDATE_WORKLOAD_TYPE,
   type CodeVersionMandateBinding,
   capabilityGrantAllows,
+  isCodeVersionWorkload,
   isMandatePolicyNarrowing,
   MANDATE_POLICY_MAX_IDENTIFIERS,
   MANDATE_POLICY_VERSION,
@@ -43,7 +52,8 @@ export type Mandate = {
   ownerAppId: string;
   workloadType: string;
   workloadId: string;
-  policy: MandatePolicyV1;
+  /** Null only for a new runner/code.version entry; legacy policies remain binding. */
+  policy: MandatePolicyV1 | null;
   state: MandateState;
   revision: number;
   expiresAt: string | null;
@@ -112,7 +122,7 @@ export type MandateIssueAuthority = {
   workloadId: string;
   targetAppId: string;
   operation: string;
-  policy: MandatePolicyV1;
+  policy: MandatePolicyV1 | null;
 };
 
 type MandateIssueError = Extract<Result<never>, { ok: false }>["error"];
@@ -174,7 +184,10 @@ const mapMandate = (row: MandateRow): Mandate => ({
   ownerAppId: row.owner_app_id,
   workloadType: row.workload_type,
   workloadId: row.workload_id,
-  policy: parseMandatePolicy(parsePgJsonValue(row.policy)),
+  policy:
+    row.policy === null && row.owner_app_id === "runner" && row.workload_type === "code.version"
+      ? null
+      : parseMandatePolicy(parsePgJsonValue(row.policy)),
   state: row.state,
   revision: Number(row.revision),
   expiresAt: nullableIso(row.expires_at),
@@ -260,7 +273,8 @@ const canActForSubject = (authority: MandateInteractiveAuthority | MandateAdminA
 const parsePolicyForWorkload = (
   policy: unknown,
   workload: { subject: MandateSubject; ownerAppId: string; workloadType: string },
-): Result<MandatePolicyV1> => {
+): Result<MandatePolicyV1 | null> => {
+  if (policy === null && workload.ownerAppId === "runner" && workload.workloadType === "code.version") return ok(null);
   const parsed = MandatePolicyV1Schema.safeParse(policy);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mandate policy"));
   const hasWildcard = parsed.data.apps === "*" || parsed.data.operations === "*";
@@ -376,8 +390,7 @@ const createMandateInDb = async (
   if (!(await validSubject(input.subject, db))) return fail(err.forbidden("Mandate subject is not active"));
   if (input.subject.type === "service_account") {
     const [account] = await db<{ kind: string }[]>`SELECT kind FROM auth.service_accounts WHERE id = ${input.subject.id}::uuid`;
-    if (account?.kind === "code" && (input.ownerAppId !== "core" || input.workloadType !== "code.version"))
-      return fail(err.forbidden("Code requires a Core version mandate"));
+    if (account?.kind === "code" && !isCodeVersionWorkload(input)) return fail(err.forbidden("Code requires a Core version mandate"));
   }
   const ownerConfirmation = input.confirmation === "owner";
   if (ownerConfirmation) {
@@ -556,7 +569,15 @@ const updateMandatePolicyInDb = async (
       workloadType: current.workloadType,
     });
     if (!policy.ok) return policy;
-    if (input.authority.kind === "workload" && !isMandatePolicyNarrowing(current.policy, policy.data)) {
+    // Removing an old policy requires a new activation, never a policy update or resume.
+    if (current.policy !== null && policy.data === null)
+      return fail(err.forbidden("Activate a new Code version to confirm a policy-free entry"));
+    if (
+      input.authority.kind === "workload" &&
+      current.policy !== null &&
+      policy.data !== null &&
+      !isMandatePolicyNarrowing(current.policy, policy.data)
+    ) {
       return fail(err.forbidden("Workloads may only narrow mandate policy"));
     }
     if (JSON.stringify(current.policy) === JSON.stringify(policy.data)) return ok(current);
@@ -596,7 +617,14 @@ const setMandateState = async (
     if (state === "active" && !(await validSubject(current.subject, db))) return ok(null);
     if (
       state === "active" &&
-      !(await subjectAppAccess(current.subject, [current.ownerAppId, ...(current.policy.apps === "*" ? [] : current.policy.apps)], db))
+      !(await subjectAppAccess(
+        current.subject,
+        [
+          current.ownerAppId === "runner" && current.workloadType === "code.version" ? "core" : current.ownerAppId,
+          ...(current.policy === null || current.policy.apps === "*" ? [] : current.policy.apps),
+        ],
+        db,
+      ))
     ) {
       return fail(err.forbidden("App access was denied. Ask someone who manages access before resuming this mandate."));
     }
@@ -684,6 +712,8 @@ export const validateMandateIssueAuthority = async (
     capabilityApproval?: "none" | "rememberable" | "always";
     expectedRevision?: number;
     requestId?: string;
+    /** Set only inside the authenticated Code runner bridge after run/version admission. */
+    codeRun?: boolean;
   },
   options: { db?: SQL; groupsAdmin?: readonly string[] } = {},
 ): Promise<Result<MandateIssueAuthority>> => {
@@ -729,21 +759,24 @@ export const validateMandateIssueAuthority = async (
   if (input.expectedRevision !== undefined && Number(row.revision) !== input.expectedRevision) {
     return denyMandateIssue(err.conflict("Mandate revision changed"));
   }
-  let policy: MandatePolicyV1;
+  const codeVersion = isCodeVersionWorkload({ ownerAppId: row.owner_app_id, workloadType: row.workload_type });
+  if (codeVersion && !input.codeRun) return denyMandateIssue(err.forbidden("Code version invocations require the runner bridge"));
+  let policy: MandatePolicyV1 | null;
   try {
-    policy = parseMandatePolicy(parsePgJsonValue(row.policy));
+    policy = row.policy === null && row.owner_app_id === "runner" && codeVersion ? null : parseMandatePolicy(parsePgJsonValue(row.policy));
   } catch {
     return denyMandateIssue(err.forbidden("Mandate policy is invalid"));
   }
   if (
+    policy !== null &&
     !mandatePolicyAllows(policy, {
       appId: target.data,
       operation: operation.data,
       actionApproval: input.actionApproval ?? "none",
       input: input.input,
       call: input.call,
-      codeAccount: row.service_account_kind === "code",
-      codeVersion: row.owner_app_id === "core" && row.workload_type === "code.version",
+      legacyCodeAccount: row.service_account_kind === "code",
+      codeVersion,
       capabilityApproval: input.capabilityApproval,
       capabilityPolicy: input.capabilityPolicy,
     })
@@ -751,9 +784,9 @@ export const validateMandateIssueAuthority = async (
     return denyMandateIssue(err.forbidden(MANDATE_POLICY_DENIED_MESSAGE));
   }
   const mandate = mapMandate(row);
-  if (row.service_account_kind === "code" && (mandate.ownerAppId !== "core" || mandate.workloadType !== "code.version"))
+  if (row.service_account_kind === "code" && !isCodeVersionWorkload(mandate))
     return denyMandateIssue(err.forbidden("Code requires a Core version mandate"));
-  if (!(await subjectAppAccess(mandate.subject, [mandate.ownerAppId, target.data], db, options.groupsAdmin))) {
+  if (!(await subjectAppAccess(mandate.subject, [codeVersion ? "core" : mandate.ownerAppId, target.data], db, options.groupsAdmin))) {
     return denyMandateIssue(err.forbidden("App access was denied. Ask someone who manages access before running this mandate."));
   }
   return ok({
