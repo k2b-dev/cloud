@@ -334,7 +334,12 @@ export default function Layout(props: LayoutProps) {
                 </ShellContentStateContext.Provider>
               );
               return (
-                <main class="min-h-0 min-w-0 flex-1" data-cloud-app-area="" data-k2b-own-title={focusContent.ownTitle ? "" : undefined}>
+                <main
+                  class="min-h-0 min-w-0 flex-1"
+                  data-cloud-app-area=""
+                  data-k2b-title-host=""
+                  data-k2b-own-title={focusContent.ownTitle ? "" : undefined}
+                >
                   {page}
                 </main>
               );
@@ -428,6 +433,7 @@ export default function Layout(props: LayoutProps) {
                 class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"
                 data-cloud-app-area=""
                 data-nav-root={swap ? "" : undefined}
+                data-k2b-title-host=""
                 data-k2b-own-title={content.ownTitle ? "" : undefined}
                 data-workspace-navigation={content.workspaceNavigation ? "" : undefined}
               >

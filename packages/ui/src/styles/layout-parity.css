@@ -2490,8 +2490,9 @@ html {
 
 /* A page without its own `h1` keeps the head's heading for assistive
    technology, whether or not the visible title shows. The head asks the
-   content after it, not the workspace its whole subtree: a `:has()` on a large
-   ancestor restyles it entirely on every change inside. */
+   content after it (a head comes before Content), not the workspace its whole
+   subtree: a `:has()` on a large ancestor restyles it entirely on every change
+   inside. */
 .k2b-ui
   .k2b-app-workspace
   > .k2b-app-workspace__head[data-row]:not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
@@ -4369,13 +4370,13 @@ html[data-k2b-mobile-shell] .k2b-ui,
   }
 
   /* Toasts belong to the page beside the sidebar: centred at its bottom edge. */
-  html[data-k2b-mobile-shell="sidebar"]:not(:has(> body > [data-k2b-ui-portal] > dialog:modal)) .k2b-ui [data-k2b-toast-container] {
+  html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-left: 15rem;
     --k2b-toast-rail-width: auto;
     align-items: center;
   }
 
-  html[data-k2b-mobile-shell="sidebar"]:not(:has(> body > [data-k2b-ui-portal] > dialog:modal))
+  html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal])
     .k2b-ui
     [data-k2b-toast-container]
     > .k2b-toast-slot {

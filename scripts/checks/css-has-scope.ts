@@ -128,7 +128,26 @@ export const hasBeforeUnnamedSubject = (selector: string): boolean =>
     return parts.some((part) => matchesArguments(part).some(hasBeforeUnnamedSubject));
   });
 
-/** The arguments of each `:has()` in a compound, and the compound without them. */
+/** The compound that holds the character before `end`, also inside `:is()` or another `:has()`. */
+const compoundBefore = (text: string, end: number): string => {
+  let depth = 0;
+  let start = end;
+  while (start > 0) {
+    const char = text[start - 1]!;
+    if (char === ")" || char === "]") depth++;
+    else if (char === "(" || char === "[") {
+      if (depth > 0) depth--;
+      // `:not(:has())` and `:is(:has())` ask about the element of the compound around them.
+      else if (start === end && /:(?:not|is|where)$/.test(text.slice(0, start - 1)))
+        start -= text.slice(0, start - 1).match(/:(?:not|is|where)$/)![0].length;
+      else break;
+    } else if (depth === 0 && /[\s,>+~]/.test(char)) break;
+    start--;
+  }
+  return text.slice(start, end);
+};
+
+/** Each `:has()` in a compound: the compound it sits on, and its arguments. */
 const hasArguments = (compound: string): { anchor: string; arguments: string[] }[] => {
   const found: { anchor: string; arguments: string[] }[] = [];
   for (const match of compound.matchAll(/:has\(/g)) {
@@ -140,7 +159,7 @@ const hasArguments = (compound: string): { anchor: string; arguments: string[] }
       if (compound[index] === ")") depth--;
       index++;
     }
-    found.push({ anchor: compound.slice(0, match.index), arguments: splitTopLevel(compound.slice(start, index - 1), ",") });
+    found.push({ anchor: compoundBefore(compound, match.index), arguments: splitTopLevel(compound.slice(start, index - 1), ",") });
   }
   return found;
 };
@@ -182,10 +201,15 @@ const subjectCompounds = (subject: string): string[] => {
 /** Why a selector restyles the whole page on every DOM change, if it does. */
 export const pageWideHas = (selector: string): "anchor" | "repeated" | undefined => {
   const found = nonSubjectHas(selector);
-  if (found.some((has) => PAGE_ANCHOR.test(has.anchor.replace(/^:is\(|^:where\(/, "")) && has.arguments.some(reachesAnyDepth)))
+  // An anchor written as `:is(.layout-shell-content)` (nesting writes it so) names what its arguments name.
+  const anchors = (anchor: string): string[] => [anchor, ...subjectCompounds(anchor).filter((compound) => compound !== anchor)];
+  if (found.some((has) => anchors(has.anchor).some((name) => PAGE_ANCHOR.test(name)) && has.arguments.some(reachesAnyDepth)))
     return "anchor";
-  const repeated = (compound: string) =>
-    REPEATED_CLASS.test(compound) || (REPEATED_TAG.test(compound) && !/[.#[]/.test(withoutFunctions(compound)));
+  // What `:not()` excludes is not matched; `:is()` arguments count through `subjectCompounds`.
+  const repeated = (compound: string) => {
+    const own = withoutFunctions(compound);
+    return REPEATED_CLASS.test(own) || (REPEATED_TAG.test(own) && !/[.#[]/.test(own));
+  };
   if (found.some((has) => subjectCompounds(has.subject).some(repeated))) return "repeated";
   return undefined;
 };
@@ -211,9 +235,9 @@ export const cssSelectors = (source: string): { selector: string; line: number }
       continue;
     }
     const own = splitTopLevel(selector, ",").map((part) => part.trim());
-    const resolved = parent
-      ? own.flatMap((part) => parent.map((outer) => (part.includes("&") ? part.replaceAll("&", `:is(${outer})`) : `${outer} ${part}`)))
-      : own;
+    // `&` stands for any of the parent's selectors, as `:is()` of all of them.
+    const outer = parent && `:is(${parent.join(", ")})`;
+    const resolved = outer ? own.map((part) => (part.includes("&") ? part.replaceAll("&", outer) : `${outer} ${part}`)) : own;
     parents.push(resolved);
     const offset = prelude.length - prelude.trimStart().length;
     found.push({ selector: resolved.join(", "), line: clean.slice(0, start - prelude.length - 1 + offset).split("\n").length });

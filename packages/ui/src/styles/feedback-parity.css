@@ -844,7 +844,7 @@
    footer, such as a tab bar, so toasts sit right above it at every size, newest
    at the bottom. A modal dialog takes the edge back for its own footer; then
    the rules above apply. */
-html[data-k2b-mobile-shell]:not(:has(> body > [data-k2b-ui-portal] > dialog:modal)) .k2b-ui [data-k2b-toast-container] {
+html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b-toast-container] {
   --k2b-toast-rail-top: auto;
   --k2b-toast-rail-bottom: max(var(--k2b-mobile-shell-footer-height, 0px), env(safe-area-inset-bottom, 0px));
   --k2b-toast-rail-direction: column;

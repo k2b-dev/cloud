@@ -35,11 +35,12 @@ test("reads every style rule's selector with its line and skips at-rules and com
 
 test("resolves nested rules against their parent", () => {
   const css = ".a:has(.b), .c {\n  color: red;\n  @media (min-width: 1px) {\n    & .d { color: blue; }\n    .e { color: green; }\n  }\n}\n";
-  expect(cssSelectors(css).map((entry) => entry.selector)).toEqual([
-    ".a:has(.b), .c",
-    ":is(.a:has(.b)) .d, :is(.c) .d",
-    ".a:has(.b) .e, .c .e",
-  ]);
+  expect(cssSelectors(css).map((entry) => entry.selector)).toEqual([".a:has(.b), .c", ":is(.a:has(.b), .c) .d", ":is(.a:has(.b), .c) .e"]);
+  // Each `&` may match any parent selector.
+  const pair = cssSelectors(".local:has(.x), .k2b-button {\n  & + & { color: red; }\n}\n").at(-1)!.selector;
+  expect(pageWideHas(pair)).toBe("repeated");
+  const wrapped = cssSelectors(".layout-shell-content {\n  &:has(.x) {\n    & .rare { color: red; }\n  }\n}\n").at(-1)!.selector;
+  expect(pageWideHas(wrapped)).toBe("anchor");
 });
 
 test("refuses :has() that restyles the page on every DOM change", () => {
@@ -67,6 +68,7 @@ test("accepts :has() on the styled element, a direct child of a page anchor, and
     ".k2b-app-workspace__head:has(~ .k2b-app-workspace__content .k2b-app-workspace__main h1) > .k2b-app-workspace__head-lead",
     ".k2b-button > .k2b-button__label:has(+ .k2b-button__busy)",
     ".k2b-tab-bar:has(a[data-k2b-pending]) a[aria-current='page']",
+    ".local:has(.x) .rare:not(.k2b-button)",
   ]) {
     expect([selector, pageWideHas(selector)]).toEqual([selector, undefined]);
   }
