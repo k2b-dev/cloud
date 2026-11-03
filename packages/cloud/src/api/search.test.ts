@@ -237,8 +237,8 @@ describe("global capability search", () => {
       expect(response.status).toBe(200);
       // One shared search deadline replaces discovery/entry defaults. The
       // independent short discovery probe must still inherit its cancellation.
-      // Discovery and the issuance batch each probe once, as before; neither adds its own long budget.
-      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, RESOURCE_ACCESS_PROBE_TIMEOUT_MS, RESOURCE_ACCESS_PROBE_TIMEOUT_MS]);
+      // Discovery probes once; issuance asks the owner again per resource target, as before, within the same deadline.
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, RESOURCE_ACCESS_PROBE_TIMEOUT_MS]);
       expect(accessSignals).toHaveLength(2);
       expect(providerSignal?.aborted).toBe(false);
       expect(accessSignals.every((signal) => !signal.aborted)).toBe(true);

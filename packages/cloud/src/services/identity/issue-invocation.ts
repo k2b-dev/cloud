@@ -3,7 +3,7 @@ import { getApp, listApps } from "../../_internal/registry";
 import type { AppMeta } from "../../contracts/app";
 import { AppAccessDeniedError } from "../../server/middleware/app-access";
 import type { RequestAuthority } from "../../server/middleware/auth";
-import { canUseApp, usableAppIds } from "../app-access";
+import { canUseApp, credentialAllows, usableAppIds } from "../app-access";
 import { recordAppAccessDenied } from "../app-access-metrics";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "./constants";
 import { resolveInvocationAuthority } from "./invocation-actor";
@@ -77,19 +77,28 @@ export const prepareFanoutIssuance = async (
     dependencies.db,
     dependencies.groupsAdmin,
   );
+  dependencies.signal?.throwIfAborted();
   const ids = new Set(params.entries.map((entry) => entry.appId));
   const apps = ids.size ? (await (dependencies.registry ?? listApps)()).filter((app) => ids.has(app.id)) : [];
+  dependencies.signal?.throwIfAborted();
   // The reloaded authority decides, as for a single issuance: a phone's session, for example, has no admin role here.
+  // Resource rules still ask their owner per target, with their own unavailable error, until pages stop probing.
+  const batched = apps.filter((app) => app.access?.kind !== "resources");
   const usable =
-    authority && apps.length ? await usableAppIds(authority, apps, { db: dependencies.db, signal: dependencies.signal }) : null;
+    authority && batched.length ? await usableAppIds(authority, batched, { db: dependencies.db, signal: dependencies.signal }) : null;
   return async (target: Omit<Parameters<typeof signInvocationToken>[0], "authority" | "callingAppId">) => {
     dependencies.signal?.throwIfAborted();
     if (target.parent && (!authority || !matchesInvocationSubject(target.parent, authority)))
       throw new AppAccessDeniedError({ id: target.targetAppId });
-    if (!usable?.has(target.targetAppId)) {
-      if (apps.some((app) => app.id === target.targetAppId)) recordAppAccessDenied(target.targetAppId);
+    const app = apps.find((candidate) => candidate.id === target.targetAppId);
+    if (app?.access?.kind === "resources")
+      await requireRegisteredAppAccess(authority, app.id, { db: dependencies.db, signal: dependencies.signal, getApp: async () => app });
+    // The ceiling is checked again at signing: a key can expire while the batch runs.
+    else if (!authority || !app || !usable?.has(app.id) || !credentialAllows(authority, app.id)) {
+      if (app) recordAppAccessDenied(app.id);
       throw new AppAccessDeniedError({ id: target.targetAppId });
     }
+    dependencies.signal?.throwIfAborted();
     return (dependencies.sign ?? signInvocationToken)({ ...target, authority: params.authority, callingAppId: params.callingAppId });
   };
 };

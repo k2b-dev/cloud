@@ -1,4 +1,4 @@
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { bindResourceAppAccess } from "../../_internal/app-access-resources";
 import { person } from "../../_internal/define-app.test-fixture";
 import { appAccess } from "../../contracts/app-access";
@@ -177,6 +177,110 @@ describe("checked invocation issuer", () => {
           });
     await expect(issued).rejects.toMatchObject({ code: "app_access_denied" });
     expect(sign).not.toHaveBeenCalled();
+  });
+
+  test("fanout rechecks the credential ceiling at signing, so a key that expires during the batch signs nothing", async () => {
+    const now = new Date("2026-11-03T12:00:00.000Z");
+    setSystemTime(now);
+    const agent: RequestAuthority = {
+      actor: {
+        kind: "service_account",
+        serviceAccount: {
+          id: "55555555-5555-4555-8555-555555555555",
+          name: "Agent",
+          kind: "agent",
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          createdBy: null,
+        },
+        delegatedUser: null,
+        scopes: ["read"],
+        credentialExpiresAt: new Date(now.getTime() + 1_000).toISOString(),
+      },
+      accessSubject: { type: "service_account", serviceAccountId: "55555555-5555-4555-8555-555555555555" },
+      credentialKind: "api_key",
+      scopes: ["read"],
+    };
+    const sign = mock(async () => {
+      throw new Error("reached signer");
+    });
+    const denied = spyOn(appAccessMetrics, "recordAppAccessDenied").mockImplementation(() => {});
+    try {
+      const { authority, callingAppId, ...target } = params;
+      const issue = await prepareFanoutIssuance(
+        { authority, callingAppId, entries: [{ appId: "demo" }] },
+        { resolve: async () => agent, sign, registry: demoRegistry },
+      );
+      await expect(issue(target)).rejects.toThrow("reached signer");
+      setSystemTime(new Date(now.getTime() + 2_000));
+      await expect(issue(target)).rejects.toMatchObject({ code: "app_access_denied" });
+      expect(sign).toHaveBeenCalledTimes(1);
+      expect(denied).toHaveBeenCalledWith("demo");
+    } finally {
+      denied.mockRestore();
+      setSystemTime();
+    }
+  });
+
+  test("fanout keeps a resource owner's outage unavailable, not denied, and records no denial", async () => {
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    const denied = spyOn(appAccessMetrics, "recordAppAccessDenied").mockImplementation(() => {});
+    const declaration = appAccess.resources({
+      adapters: {
+        workspace: {
+          hasAnyRight: async () => {
+            throw new Error("database unavailable");
+          },
+        },
+      },
+    });
+    const stop = bindResourceAppAccess("demo", declaration);
+    const sign = mock(async () => {
+      throw new Error("must never sign");
+    });
+    try {
+      const { authority, callingAppId, ...target } = params;
+      const issue = await prepareFanoutIssuance(
+        { authority, callingAppId, entries: [{ appId: "demo" }] },
+        {
+          resolve: async () => current(),
+          sign,
+          registry: async () => [{ id: "demo", access: { kind: "resources", adapters: ["workspace"] } }],
+        },
+      );
+      await expect(issue(target)).rejects.toMatchObject({ code: "app_access_unavailable" });
+      expect(denied).not.toHaveBeenCalled();
+      expect(sign).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      denied.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  test("fanout stops before reading the registry when the request ends during resolution", async () => {
+    const deadline = new AbortController();
+    const reason = new DOMException("search cancelled", "AbortError");
+    const registry = mock(demoRegistry);
+    const { authority, callingAppId } = params;
+    await expect(
+      prepareFanoutIssuance(
+        { authority, callingAppId, entries: [{ appId: "demo" }] },
+        {
+          signal: deadline.signal,
+          registry,
+          resolve: async () => {
+            deadline.abort(reason);
+            return current();
+          },
+        },
+      ),
+    ).rejects.toBe(reason);
+    expect(registry).not.toHaveBeenCalled();
   });
 
   test.each(["during the probe", "after the allow"])("preserves cancellation %s without a denial metric or signing", async (phase) => {
