@@ -533,6 +533,8 @@ export const accountsMessages = i18n.define({
       replaceKeyRevokeOld: "Revoke old key",
       replaceKeyLater: "Later",
       replaceKeyFailed: "The new API key could not be created.",
+      replaceKeyUncertain: "The answer was lost, so the new API key may exist. Close this dialog and check the list before trying again.",
+      replaceKeyCreated: "New API key created. Copy it now.",
       legacyLimitedKeyHint:
         "Created before keys acted as their account. It keeps its limit; to replace it, create a new key and revoke this one.",
       noGroupMemberships: "This user is not a member of a group.",
@@ -1452,6 +1454,9 @@ export const accountsMessages = i18n.define({
       replaceKeyRevokeOld: "Alten widerrufen",
       replaceKeyLater: "Später",
       replaceKeyFailed: "Der neue API Key konnte nicht erstellt werden.",
+      replaceKeyUncertain:
+        "Die Antwort ging verloren, der neue API Key kann also schon existieren. Schließe den Dialog und prüfe die Liste, bevor du es erneut versuchst.",
+      replaceKeyCreated: "Neuer API Key erstellt. Kopiere ihn jetzt.",
       legacyLimitedKeyHint:
         "Erstellt, bevor Schlüssel wie ihr Konto handelten. Er behält seine Grenze; zum Ersetzen erstelle einen neuen Schlüssel und widerrufe diesen.",
       noGroupMemberships: "Dieser Benutzer ist kein Mitglied einer Gruppe.",

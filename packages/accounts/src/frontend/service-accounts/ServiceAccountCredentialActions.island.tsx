@@ -27,46 +27,70 @@ const revokeCredential = async (credentialId: string, fallback: string) => {
  * Replacing creates the new key first and shows it once; the old key is revoked only on an explicit click. Closing
  * earlier keeps both keys, so a program that still uses the old one never stops by surprise.
  */
-function ReplaceKeyDialog(props: { name: string; serviceAccountId: string; credentialId: string; close: (changed: boolean) => void }) {
+function ReplaceKeyDialog(props: {
+  name: string;
+  serviceAccountId: string;
+  credentialId: string;
+  close: (changed: boolean) => void;
+  setDismissHandler: (handler: () => void) => void;
+}) {
   const t = useAccountsMessages();
   const [token, setToken] = createSignal<string | null>(null);
+  // A lost answer may follow a created key: never offer a second creation, and let the list show what exists.
+  const [uncertain, setUncertain] = createSignal(false);
+  let copyHost: HTMLDivElement | undefined;
   const create = mutations.create<string, void>({
     mutation: async () => {
-      const response = await coreClient.admin.identity["service-accounts"][":id"]["api-keys"].$post({
-        param: { id: props.serviceAccountId },
-        json: { name: props.name, access: "full", expiresAt: null },
-      });
+      const response = await coreClient.admin.identity["service-accounts"][":id"]["api-keys"]
+        .$post({ param: { id: props.serviceAccountId }, json: { name: props.name, access: "full", expiresAt: null } })
+        .catch(() => {
+          setUncertain(true);
+          throw new Error(t().replaceKeyUncertain);
+        });
       const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
+      if (!response.ok && response.status < 500) {
         const error = z.object({ message: z.string() }).safeParse(body);
         throw new Error(error.success ? error.data.message : t().replaceKeyFailed);
       }
-      return z.object({ token: z.string() }).parse(body).token;
+      const parsed = z.object({ token: z.string() }).safeParse(body);
+      if (!response.ok || !parsed.success) {
+        setUncertain(true);
+        throw new Error(t().replaceKeyUncertain);
+      }
+      return parsed.data.token;
     },
-    onSuccess: setToken,
+    onSuccess: (value) => {
+      setToken(value);
+      // The Create button leaves; focus moves to the copy action, and the status line announces the new key.
+      queueMicrotask(() => copyHost?.querySelector<HTMLButtonElement>("button")?.focus());
+    },
   });
+  const busy = () => create.loading() || revoke.loading();
+  const closeDialog = () => {
+    if (!busy()) props.close(token() !== null || uncertain());
+  };
+  props.setDismissHandler(closeDialog);
   const revoke = mutations.create<void, void>({
     mutation: () => revokeCredential(props.credentialId, t().revokeApiKeyFailed),
     onSuccess: () => props.close(true),
   });
   return (
     <PanelDialog>
-      <PanelDialog.Header
-        title={t().replaceKeyTitle({ name: props.name })}
-        close={() => props.close(token() !== null)}
-        closeDisabled={create.loading() || revoke.loading()}
-      />
+      <PanelDialog.Header title={t().replaceKeyTitle({ name: props.name })} close={closeDialog} closeDisabled={busy()} />
       <PanelDialog.Body>
         <div class="flex flex-col gap-4">
           <p class="text-sm text-secondary">{t().replaceKeyIntro}</p>
           <Show when={token()}>
             {(value) => (
               <>
+                <p class="sr-only" role="status">
+                  {t().replaceKeyCreated}
+                </p>
                 <NoticeCard tone="warning">{t().machineKeyOneTime}</NoticeCard>
                 <code class="break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 text-xs text-primary">
                   {value()}
                 </code>
-                <div>
+                <div ref={copyHost}>
                   <CopyButton text={value()} label={t().copyMachineKey} />
                 </div>
               </>
@@ -87,10 +111,10 @@ function ReplaceKeyDialog(props: { name: string; serviceAccountId: string; crede
             when={token()}
             fallback={
               <>
-                <Button variant="secondary" disabled={create.loading()} onClick={() => props.close(false)}>
+                <Button variant="secondary" disabled={create.loading()} onClick={closeDialog}>
                   {t().cancel}
                 </Button>
-                <Button loading={create.loading()} onClick={() => void create.mutate()}>
+                <Button loading={create.loading()} disabled={uncertain()} onClick={() => void create.mutate()}>
                   {t().replaceKeyCreate}
                 </Button>
               </>
@@ -131,7 +155,15 @@ export default function ServiceAccountCredentialActions(props: Props) {
 
   const replace = async (serviceAccountId: string) => {
     const changed = await dialogCore.open<boolean>(
-      (close) => <ReplaceKeyDialog name={props.name} serviceAccountId={serviceAccountId} credentialId={props.credentialId} close={close} />,
+      (close, context) => (
+        <ReplaceKeyDialog
+          name={props.name}
+          serviceAccountId={serviceAccountId}
+          credentialId={props.credentialId}
+          close={close}
+          setDismissHandler={context.setDismissHandler}
+        />
+      ),
       { ariaLabel: messages().replaceKeyTitle({ name: props.name }) },
     );
     if (changed) await showChanges();

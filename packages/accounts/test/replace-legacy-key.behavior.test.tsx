@@ -5,6 +5,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
 const created: unknown[] = [];
+let lostAnswer = false;
 const revoked: string[] = [];
 if (!isServer) {
   mock.module("@k2b/cloud/clients/core", () => ({
@@ -16,6 +17,7 @@ if (!isServer) {
               "api-keys": {
                 $post: async (payload: unknown) => {
                   created.push(payload);
+                  if (lostAnswer) throw new Error("Connection lost");
                   return Response.json({ token: "fictional-new-key", credential: { id: "new" } }, { status: 201 });
                 },
               },
@@ -61,6 +63,7 @@ describe("replacing an agent's legacy, limited API key", () => {
     cleanup();
     created.length = 0;
     revoked.length = 0;
+    lostAnswer = false;
   });
 
   const setup = async (replace?: { serviceAccountId: string }) => {
@@ -105,5 +108,28 @@ describe("replacing an agent's legacy, limited API key", () => {
     button(dom.document, "Later")!.click();
     await waitFor(() => swapped.mock.calls.length === 1, "the list to show the new key");
     expect(revoked).toEqual([]);
+  });
+
+  test("the new key takes focus, and a lost answer never offers a second key", async () => {
+    const { dom, swapped } = await setup({ serviceAccountId: "agent-id" });
+    button(dom.document, "Replace")!.click();
+    await waitFor(() => !!button(dom.document, "Create new API key"), "the replace dialog");
+    lostAnswer = true;
+    button(dom.document, "Create new API key")!.click();
+    await waitFor(() => dom.document.body.textContent?.includes("may exist") === true, "the uncertain notice");
+    expect(button(dom.document, "Create new API key")!.disabled).toBe(true);
+    button(dom.document, "Cancel")!.click();
+    // The key may exist, so the list is shown again.
+    await waitFor(() => swapped.mock.calls.length === 1, "the list to show what exists");
+    expect(created).toHaveLength(1);
+  });
+
+  test("after creation focus moves to Copy and the new key is announced", async () => {
+    const { dom } = await setup({ serviceAccountId: "agent-id" });
+    button(dom.document, "Replace")!.click();
+    await waitFor(() => !!button(dom.document, "Create new API key"), "the replace dialog");
+    button(dom.document, "Create new API key")!.click();
+    await waitFor(() => dom.document.activeElement?.textContent?.includes("Copy API key") === true, "focus on Copy");
+    expect(dom.document.querySelector('[role="status"]')?.textContent).toContain("New API key created");
   });
 });

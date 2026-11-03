@@ -120,7 +120,9 @@ export default ssr<AuthContext>(async (c) => {
             <DirectoryShares />
           </div>
 
-          {credentialsPage.items.some((entry) => entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry)) && (
+          {credentialsPage.items.some(
+            (entry) => entry.owner.type === "standalone" && entry.serviceAccount.status === "active" && isLegacyLimitedApiKey(entry),
+          ) && (
             <p class="text-xs text-dimmed">
               <span class="font-medium text-secondary">{t.legacyLimitedKey}:</span> {t.legacyLimitedKeyHint}
             </p>
