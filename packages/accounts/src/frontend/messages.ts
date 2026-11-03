@@ -523,6 +523,9 @@ export const accountsMessages = i18n.define({
       neverTracked: "Never or not tracked",
       noActiveApiKeys: "This user has no active API keys.",
       modelsOnlyKey: "AI models only",
+      legacyLimitedKey: "Legacy, limited",
+      legacyLimitedKeyHint:
+        "Created before keys acted as their account. It keeps its limit; to replace it, create a new key and revoke this one.",
       noGroupMemberships: "This user is not a member of a group.",
       manages: "Manages",
       sshKeyCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 SSH key", other: `${count} SSH keys` }),
@@ -1442,6 +1445,9 @@ export const accountsMessages = i18n.define({
       neverTracked: "Nie oder nicht erfasst",
       noActiveApiKeys: "Dieser Benutzer hat keine aktiven API-Schlüssel.",
       modelsOnlyKey: "Nur KI-Modelle",
+      legacyLimitedKey: "Alt, begrenzt",
+      legacyLimitedKeyHint:
+        "Erstellt, bevor Schlüssel wie ihr Konto handelten. Er behält seine Grenze; zum Ersetzen erstelle einen neuen Schlüssel und widerrufe diesen.",
       noGroupMemberships: "Dieser Benutzer ist kein Mitglied einer Gruppe.",
       manages: "Verwaltet",
       sshKeyCount: ({ count }) => i18n.plural(count, "de", { one: "1 SSH-Schlüssel", other: `${count} SSH-Schlüssel` }),

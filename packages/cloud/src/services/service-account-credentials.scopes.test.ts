@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { AI_INFERENCE_SCOPE, CreateUserApiKeySchema, isModelsOnlyApiKey } from "../contracts/shared";
+import { AI_INFERENCE_SCOPE, CreateUserApiKeySchema, isLegacyLimitedApiKey, isModelsOnlyApiKey } from "../contracts/shared";
 import { createApiToken, createResourceApiToken, createStandaloneApiToken } from "./service-account-credentials";
 import { buildProjectedUser } from "./session/user";
 
@@ -35,4 +35,12 @@ test("machine models purpose refuses ordinary scopes before database work", asyn
   });
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.error.code).toBe("BAD_INPUT");
+});
+
+test("P15: only keys that leave out part of read, write and admin show as legacy, limited", () => {
+  expect(isLegacyLimitedApiKey({ scopes: ["read", "write", "admin"] })).toBe(false);
+  expect(isLegacyLimitedApiKey({ scopes: ["admin", "read", "write", "files:read"] })).toBe(false);
+  expect(isLegacyLimitedApiKey({ scopes: [AI_INFERENCE_SCOPE] })).toBe(false);
+  expect(isLegacyLimitedApiKey({ scopes: ["read"] })).toBe(true);
+  expect(isLegacyLimitedApiKey({ scopes: [] })).toBe(true);
 });

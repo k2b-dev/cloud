@@ -9,8 +9,8 @@ export { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE };
 
 export const app = defineApp({
   id: MAIL_APP_ID,
-  // APIs admit roleless service accounts; navigation keeps its narrower audience.
-  access: appAccess.signedIn({
+  // Resource-bound and roleless service accounts remain eligible.
+  access: appAccess.noGuests({
     publicRoutes: ["/share/mail/attachments/:token", "/api/mail/openapi.json"],
   }),
   cli: { mail: { module: "src/cli.ts", references: "src/cli-references" } },
