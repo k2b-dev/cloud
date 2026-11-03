@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { MAIL_SENT_ACTIVITY_ACTION, mailSentActivityResult } from "./activity-feed";
-import { rediscoverProviderBinding } from "./bindings";
+import { recordRefusedProviderLogin, rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized, commandsStillAuthorized } from "./command-authorization";
 import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
@@ -3012,6 +3012,11 @@ const scheduleOutboxRetry = async (params: {
    * Sent copy. The command's attempt still counts: it fences the worker against its effect marker.
    */
   smtpTransient?: { since: string; retries: number };
+  /**
+   * The attempt already marked its provider effect, as one whose SMTP login was refused: it counts,
+   * so the next claim gets a new attempt number that the marker does not cover.
+   */
+  effectMarked?: boolean;
 }): Promise<boolean> => {
   const waitForLogin = params.waitForLogin === true;
   const transient = params.smtpTransient;
@@ -3020,8 +3025,8 @@ const scheduleOutboxRetry = async (params: {
     : transient
       ? Math.min(15 * 60, 30 * 2 ** transient.retries)
       : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
-  const refund = waitForLogin ? 1 : 0;
-  const outboxRefund = waitForLogin || transient ? 1 : 0;
+  const refund = waitForLogin && params.effectMarked !== true ? 1 : 0;
+  const outboxRefund = (waitForLogin && params.effectMarked !== true) || transient ? 1 : 0;
   const metadata = transient ? { [SMTP_TRANSIENT_SINCE]: transient.since, [SMTP_TRANSIENT_RETRIES]: transient.retries + 1 } : {};
   const updated = await sql.begin(async (tx) => {
     if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return false;
@@ -3315,13 +3320,16 @@ const SMTP_TRANSIENT_WINDOW_MS = 60 * 60_000;
 const SMTP_TRANSIENT_MAX_RETRIES = 12;
 
 const LOGIN_WAIT_CODES = new Set(["BINDING_UNAVAILABLE", "CREDENTIAL_REVISION_CHANGED"]);
+// The SMTP server refused the mailbox's login, or wants it done another way (534).
+const SMTP_LOGIN_REFUSED_CODES = new Set([534, 535]);
 
-/**
- * Nothing reached SMTP: a send whose mailbox needs a new login waits for it, a temporary failure
- * sends again later, any other one returns the draft.
- */
-const settlePreDispatchFailure = async (outbox: DbOutboxExecution, command: DbCommandExecution, error: unknown): Promise<void> => {
-  const loginWait = LOGIN_WAIT_CODES.has(normalizeCode(error, "")) ? await mailboxLoginWait(outbox.id) : null;
+/** A send whose mailbox needs a new login waits for it, or returns to the drafts after waiting too long. */
+const waitForMailboxLogin = async (
+  outbox: DbOutboxExecution,
+  command: DbCommandExecution,
+  options: { effectMarked?: boolean } = {},
+): Promise<boolean> => {
+  const loginWait = await mailboxLoginWait(outbox.id);
   if (loginWait === "waiting") {
     const waiting = await scheduleOutboxRetry({
       outbox,
@@ -3332,11 +3340,25 @@ const settlePreDispatchFailure = async (outbox: DbOutboxExecution, command: DbCo
       code: OUTBOX_MAILBOX_AUTH_REQUIRED,
       fallbackMessage: "The mailbox needs a new login",
       waitForLogin: true,
+      effectMarked: options.effectMarked,
     });
     if (waiting) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "waiting" });
-  } else if (loginWait === "expired") {
+    return true;
+  }
+  if (loginWait === "expired") {
     await returnSendAfterLoginWait(outbox, command);
-  } else if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Nothing reached SMTP: a send whose mailbox needs a new login waits for it, a temporary failure
+ * sends again later, any other one returns the draft.
+ */
+const settlePreDispatchFailure = async (outbox: DbOutboxExecution, command: DbCommandExecution, error: unknown): Promise<void> => {
+  if (LOGIN_WAIT_CODES.has(normalizeCode(error, "")) && (await waitForMailboxLogin(outbox, command))) return;
+  if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
     await scheduleOutboxRetry({
       outbox,
       command,
@@ -3588,6 +3610,13 @@ const persistSmtpFailure = async (params: {
 }): Promise<void> => {
   const { outbox, command, prepared, error } = params;
   const responseCode = Number((error as { responseCode?: unknown } | null)?.responseCode);
+  // The SMTP server refused the mailbox's login before it took anything: the mailbox needs a new
+  // login, and the send waits for it as one whose login IMAP refused. A sender's own SMTP server
+  // has its own password, which a mailbox login does not renew, so its refusal stays final.
+  if (SMTP_LOGIN_REFUSED_CODES.has(responseCode) && outbox.selected_identity_transport_revision === null) {
+    await recordRefusedProviderLogin({ bindingId: outbox.selected_binding_id, secretRevision: command.selected_secret_revision, error });
+    if (await waitForMailboxLogin(outbox, command, { effectMarked: true })) return;
+  }
   if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode < 500) {
     // Servers reject temporarily for rate limits and quotas that can last a while, so these
     // retries back off over about an hour, counted from the first one, before the send fails.
