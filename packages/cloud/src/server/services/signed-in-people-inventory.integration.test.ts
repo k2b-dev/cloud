@@ -14,12 +14,12 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
       sql.begin(async (db) => {
         const prefix = `people-inventory-${crypto.randomUUID()}`;
         const accounts = await db<{ id: string; kind: string }[]>`INSERT INTO auth.service_accounts(name, kind, status)
-        VALUES (${prefix}, 'agent', 'active'), (${prefix}, 'standalone', 'active'), (${prefix}, 'agent', 'disabled') RETURNING id, kind`;
+        VALUES (${`${prefix}-agent`}, 'agent', 'active'), (${`${prefix}-standalone`}, 'standalone', 'active'), (${`${prefix}-disabled`}, 'agent', 'disabled') RETURNING id, kind`;
         const [agent, standalone, disabled] = accounts;
         if (!agent || !standalone || !disabled) throw new Error("Missing machine fixtures");
         const [bound] = await db<{ id: string }[]>`INSERT INTO auth.service_accounts
         (name, kind, status, app_id, resource_type, resource_id)
-        VALUES (${prefix}, 'resource_bound', 'active', 'core', 'fixture', ${prefix}) RETURNING id`;
+        VALUES (${`${prefix}-bound`}, 'resource_bound', 'active', 'core', 'fixture', ${prefix}) RETURNING id`;
         if (!bound) throw new Error("Missing resource-bound fixture");
         const groups = await db<{ id: string }[]>`INSERT INTO auth.groups(cn, name, provider)
         VALUES (${`${prefix}-parent`}, 'Parent', 'local'), (${`${prefix}-child`}, 'Child', 'local') RETURNING id`;
