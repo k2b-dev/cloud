@@ -10,7 +10,13 @@ import { mailOverviewMessages } from "./mail-overview-messages";
  * `/app/mail` when it opens no mailbox: the person has none yet, or Mail could not read them. Every other visit
  * goes straight to a mailbox on the server.
  */
-function MailLandingView(props: MailboxCreationContext & { error: string | null }) {
+function MailLandingView(
+  props: MailboxCreationContext & {
+    error: string | null;
+    /** The requested path and query, so Retry asks for the same view or link again. */
+    retryHref: string;
+  },
+) {
   const locale = useLocale();
   const messages = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
   const createMailbox = createMailboxCreation(props, messages);
@@ -60,7 +66,7 @@ function MailLandingView(props: MailboxCreationContext & { error: string | null 
                 description={error()}
                 class="min-h-56"
                 action={
-                  <ButtonLink variant="secondary" size="sm" href="/app/mail">
+                  <ButtonLink variant="secondary" size="sm" href={props.retryHref}>
                     <i class="ti ti-refresh" aria-hidden="true" /> {messages().retry}
                   </ButtonLink>
                 }

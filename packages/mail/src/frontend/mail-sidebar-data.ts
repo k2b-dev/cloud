@@ -1,10 +1,10 @@
 import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { MailRequestContext } from "../service";
-import { mailboxes, mailboxPreferences, publicResources } from "../service";
+import { mailboxAccess, mailboxes, mailboxPreferences, publicResources } from "../service";
 import type { MailSidebarMailbox } from "./_components/MailSidebar";
 import { chooseLandingMailbox } from "./mail-landing";
-import { projectSsrMailboxList } from "./ssr-public-boundary";
+import { projectSsrMailboxList, resolveSsrMailboxId } from "./ssr-public-boundary";
 
 const log = logger("mail:landing");
 
@@ -56,18 +56,31 @@ export const loadMailSidebarData = async (context: MailRequestContext): Promise<
   };
 };
 
+/** Whether the person can still read a mailbox the sidebar's bounded list leaves out. */
+const canReadMailbox = async (context: MailRequestContext, publicId: string) => {
+  const mailboxId = await resolveSsrMailboxId(publicId);
+  return mailboxId ? (await mailboxAccess.requireMailboxAccess(context, mailboxId, "read")).ok : false;
+};
+
 /**
  * Reads the mailboxes the sidebar lists and the person's pins and hidden mailboxes, and chooses one as a public ID,
- * or null without any. Unlike the sidebar's read, a failure stays a failure, so Mail never shows "no mailbox" for it.
+ * or null without any. Pins hold only readable mailboxes, and the last one is checked on its own, so both count also
+ * beyond the listed 200. Unlike the sidebar's read, a failure stays a failure, so Mail never shows "no mailbox" for it.
  */
 export const loadMailLanding = async (context: MailRequestContext, lastMailboxId: string | null): Promise<Result<string | null>> => {
   try {
     const [listed, preferences] = await Promise.all([mailboxes.listMailboxes(context, 200), loadSidebarPreferences(context)]);
     if (!listed.ok) return listed;
-    const readable = await projectSsrMailboxList(listed.data.filter((mailbox) => mailbox.permission !== "none"));
+    const listedIds = (await projectSsrMailboxList(listed.data.filter((mailbox) => mailbox.permission !== "none"))).map(
+      (mailbox) => mailbox.id,
+    );
+    const lastReadable =
+      lastMailboxId !== null &&
+      !preferences.publicHiddenMailboxIds.includes(lastMailboxId) &&
+      (listedIds.includes(lastMailboxId) || (await canReadMailbox(context, lastMailboxId)));
     return ok(
       chooseLandingMailbox({
-        mailboxIds: readable.map((mailbox) => mailbox.id),
+        mailboxIds: [...new Set([...listedIds, ...preferences.publicPinnedMailboxIds, ...(lastReadable ? [lastMailboxId] : [])])],
         pinnedMailboxIds: preferences.publicPinnedMailboxIds,
         hiddenMailboxIds: preferences.publicHiddenMailboxIds,
         lastMailboxId,

@@ -347,6 +347,18 @@ suite("mailbox preferences per person", () => {
     await clearPreferences(ada);
   });
 
+  test("Mail opens a last mailbox beyond the 200 the sidebar lists while the person can read it", async () => {
+    const router = await landingFor(lin);
+    await clearPreferences(lin);
+    // Archive was updated longest ago, so the sidebar's 200 leave it out.
+    expect((await sidebarRows(lin)).map((row) => row.id)).not.toContain(archive.shortId);
+    const response = await router.request("/", { headers: { cookie: browserCookie({ lastMailboxId: archive.shortId }) } });
+    expect(response.headers.get("location")).toBe(`/app/mail/${archive.shortId}`);
+    // Ada cannot read Lin's Archive, so it never opens for her.
+    const other = await (await landingFor(ada)).request("/", { headers: { cookie: browserCookie({ lastMailboxId: archive.shortId }) } });
+    expect(other.headers.get("location")).not.toBe(`/app/mail/${archive.shortId}`);
+  });
+
   test("closing the notice that Focus is gone is stored for the person, once", async () => {
     await sql`DELETE FROM mail.personal_preferences WHERE user_id = ${grace.id}::uuid`;
     expect(await focusNoticeDismissed(contextFor(grace))).toBe(false);

@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../tests/fixtures/select-html";
 import { mailboxes, mailboxPreferences } from "../service";
+import * as access from "../service/access";
 import * as publicResources from "../service/public-resources";
 
 const root = mkdtempSync(join(tmpdir(), "mail-landing-tests-"));
@@ -75,6 +76,13 @@ beforeEach(() => {
   spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
+  // A mailbox outside the list is readable only where a test says so.
+  spies.push(
+    spyOn(publicResources, "resolveActiveMailboxId").mockImplementation(async (shortId) =>
+      boxes.some(([, id]) => id === shortId) ? internalIdOf(shortId) : null,
+    ),
+    spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))),
+  );
   spies.push(
     spyOn(publicResources, "publicIds").mockImplementation(
       async (_table, ids) =>
@@ -97,7 +105,7 @@ const arrange = (input: { mailboxes?: string[]; denied?: string[]; pinned?: stri
   return list;
 };
 
-const request = (query = "", lastMailboxId: string | null = null, locale = "en") => {
+const request = (query = "", lastMailboxId: string | null = null, locale = "en", cookieLists: { pinnedMailboxIds?: string[] } = {}) => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -111,7 +119,8 @@ const request = (query = "", lastMailboxId: string | null = null, locale = "en")
     await next();
   });
   app.get("/app/mail", ...handler);
-  const cookie = lastMailboxId ? `cloud_mail_workspace=${encodeURIComponent(JSON.stringify({ lastMailboxId }))}` : "";
+  const stored = { ...(lastMailboxId ? { lastMailboxId } : {}), ...cookieLists };
+  const cookie = Object.keys(stored).length > 0 ? `cloud_mail_workspace=${encodeURIComponent(JSON.stringify(stored))}` : "";
   return app.request(`https://cloud.example.test/app/mail${query}`, {
     headers: { cookie, "accept-language": locale },
   });
@@ -135,6 +144,32 @@ test("with several mailboxes, Mail opens the last one this browser used", async 
 test("a last mailbox that is hidden, no longer readable, or gone falls back to the first pinned one", async () => {
   arrange({ mailboxes: ["Box001", "Box002", "Box003"], denied: ["Box004"], pinned: ["Box002"], hidden: ["Box003"] });
   for (const last of ["Box003", "Box004", "Box009"]) expect(location(await request("", last))).toBe("/app/mail/Box002");
+});
+
+test("a last or pinned mailbox beyond the listed ones still opens while the person can read it", async () => {
+  arrange({ mailboxes: ["Box001", "Box002"] });
+  const readable = spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ permission: "read", scope: "mailbox" }));
+  spies.push(readable);
+  expect(location(await request("", "Box004"))).toBe("/app/mail/Box004");
+  expect(readable).toHaveBeenCalledWith(expect.anything(), internalIdOf("Box004"), "read");
+  readable.mockResolvedValue(fail(err.forbidden("Access denied")));
+  expect(location(await request("", "Box004"))).toBe("/app/mail/Box001");
+  // Pins hold only mailboxes the person can read, also beyond the list.
+  spies.push(
+    spyOn(mailboxPreferences, "listMailboxPreferences").mockResolvedValue({
+      pinnedMailboxIds: [internalIdOf("Box003")],
+      hiddenMailboxIds: [],
+    }),
+  );
+  expect(location(await request())).toBe("/app/mail/Box003");
+});
+
+test("a failed move of a browser's old mailbox lists keeps the cookie and still opens a mailbox", async () => {
+  arrange({ mailboxes: ["Box001", "Box002"] });
+  spies.push(spyOn(mailboxPreferences, "importBrowserMailboxPreferences").mockRejectedValue(new Error("connection reset")));
+  const response = await request("", "Box002", "en", { pinnedMailboxIds: ["Box001"] });
+  expect(location(response)).toBe("/app/mail/Box002");
+  expect(response.headers.get("set-cookie")).toBeNull();
 });
 
 test("without a last or pinned mailbox, Mail opens the first listed one that is shown", async () => {
@@ -180,14 +215,15 @@ test("a failed read shows the error with a way to retry, never the empty state",
       hiddenMailboxIds: [],
     });
     try {
-      const response = await request("", "Box001");
+      const response = await request("?view=waiting", "Box001");
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toContain("Mail could not open your mailboxes");
       expect(html).not.toContain("No mailbox yet");
       expect(html).not.toContain("connection reset");
       expect(await selectHtml(html, ".mail-landing-workspace .mail-sidebar")).toHaveLength(0);
-      expect((await selectHtml(html, 'a[href="/app/mail"]')).some((link) => link.text.includes("Retry"))).toBe(true);
+      // Retry asks for the same view again.
+      expect((await selectHtml(html, 'a[href="/app/mail?view=waiting"]')).some((link) => link.text.includes("Retry"))).toBe(true);
     } finally {
       list.mockRestore();
       preferences.mockRestore();
