@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { redis, sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { createActorCommand, createMaintenanceCommand } from "./commands";
 import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
@@ -640,5 +640,15 @@ suite("mail sync of changes made in other clients", () => {
       for (const folderId of folderIds) queued.add(folderId);
     }
     expect([...queued].sort()).toEqual([...eligible].sort());
+
+    // A folder whose sync was requested within the last 75 seconds, as an IMAP push listener does
+    // every minute, needs no scheduled sync; once the requests stop, the scheduler takes it back.
+    const watched = inboxes[0]!;
+    await redis.send("SET", [`mail:sync-recent:${watched}`, "1", "PX", "75000"]);
+    expect(await submitDueFolderSyncs(100_000)).not.toContain(watched);
+    // A run at its limit takes folders in turn and skips none.
+    expect(await submitDueFolderSyncs(inboxes.length)).toContain(watched);
+    await redis.send("DEL", [`mail:sync-recent:${watched}`]);
+    expect(await submitDueFolderSyncs(100_000)).toContain(watched);
   });
 });
