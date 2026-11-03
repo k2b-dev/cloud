@@ -56,6 +56,7 @@ const authenticator = (input: {
     act: noop,
     decide: noop,
     decideChange: input.decideChange,
+    recheck: noop,
     revoke: noop,
     syncPush: noop,
     forget: noop,
@@ -83,8 +84,9 @@ test("a pairing request names the new device, waits before it can decide, and en
   const dispose = render(() => createComponent(Clouds, { auth, preferences }), dom.root);
   try {
     await Bun.sleep(30);
-    // The card lists the request too, so it can be reopened after the sheet was dismissed.
-    expect(dom.root.textContent).toContain("Pair a device · Jonas' iPad");
+    // The card names the request too, and the whole card reopens it after the sheet was dismissed.
+    expect(dom.root.querySelector('.auth-status[data-tone="pending"] b')?.textContent).toBe("Pair a device");
+    expect(dom.root.querySelector(".auth-cloud__open")?.getAttribute("aria-label")).toContain("Pair a device, Jonas' iPad, ");
     const dialog = sheet()!;
     expect(dialog).not.toBeNull();
     expect(dialog.textContent).toContain("wants to pair a new device");
@@ -212,7 +214,7 @@ test("Not now on this device's removal closes the sheet without a decision and k
     await Bun.sleep(400);
     expect(sheet()).toBeNull();
     expect(decisions).toEqual([]);
-    expect(dom.root.textContent).toContain("Remove a device · Phone");
+    expect(dom.root.querySelector(".auth-cloud__open")?.getAttribute("aria-label")).toContain("Remove a device, Phone, ");
   } finally {
     closeDialogs();
     await Bun.sleep(20);
