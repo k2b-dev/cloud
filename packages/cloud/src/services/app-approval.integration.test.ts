@@ -9,6 +9,7 @@ import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
 import * as registry from "../_internal/registry";
+import { watchAiConversation } from "../ai/conversation-watchers";
 import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
 import { createAppApprovalRoutes } from "../api/app-approval";
@@ -2686,7 +2687,7 @@ suite("isolated app approval protocol", () => {
       expect(inbox.actions.length + inbox.moreActions).toBe(5);
     });
 
-    test("Action push claims devices atomically, requires inbox support, and skips Cloud page requests", async () => {
+    test("Action push claims devices atomically, requires inbox support, and wakes once per request", async () => {
       const owner = await account();
       const phone = await enroll(owner),
         samePhone = await enroll(owner),
@@ -2713,8 +2714,8 @@ suite("isolated app approval protocol", () => {
       await service.wakeForAction(second.id);
       expect(pushes).toHaveLength(start + 1);
       await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE user_id=${owner.id}::uuid`;
-      const page = await askAction(owner, { signedInSession: true });
-      await service.wakeForAction(page.id);
+      // Woken once, a request does not wake the devices again after the window.
+      await service.wakeForAction(waiting.id);
       expect(pushes).toHaveLength(start + 1);
       await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${second.id}::uuid`;
       await service.wakeForAction(second.id);
@@ -2725,13 +2726,13 @@ suite("isolated app approval protocol", () => {
       expect(pushes).toHaveLength(start + 1);
       pushStatus = 400;
       try {
-        await service.wakeForAction(waiting.id);
+        await service.wakeForAction((await askAction(owner)).id);
         expect(pushes).toHaveLength(start + 2);
         const [deviceRow] = await sql<{ push_token: string }[]>`SELECT push_token FROM auth.app_devices WHERE id=${phone.id}::uuid`;
         expect(deviceRow?.push_token).toBe(token);
         await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE user_id=${owner.id}::uuid`;
         pushStatus = 410;
-        await service.wakeForAction(waiting.id);
+        await service.wakeForAction((await askAction(owner)).id);
         const rows = await sql<
           { push_token: string | null }[]
         >`SELECT push_token FROM auth.app_devices WHERE id IN (${phone.id}::uuid,${samePhone.id}::uuid)`;
@@ -2739,6 +2740,58 @@ suite("isolated app approval protocol", () => {
       } finally {
         pushStatus = 202;
       }
+    });
+
+    test("a chat tab holds the Action push until the last tab closes, which wakes once across replicas", async () => {
+      const owner = await account();
+      const phone = await enroll(owner);
+      const token = "T".repeat(43);
+      await service.deviceCommand(await proof(phone, { operation: "push", token }), deviceActions);
+      await service.deviceCommand(await proof(phone, { operation: "inbox" }), deviceActions);
+      const waiting = await askAction(owner, { signedInSession: true });
+      const start = pushes.length;
+      let unwatched = 0;
+      // Each closed tab runs on its own replica: both may find no other watcher and wake.
+      const closed = async () => {
+        unwatched += 1;
+        await service.wakeForAction(waiting.id);
+      };
+      const tabs = await Promise.all([1, 2, 3].map(() => watchAiConversation(waiting.conversationId, closed)));
+      await service.wakeForAction(waiting.id);
+      expect(pushes).toHaveLength(start);
+      await tabs[0]!.release();
+      expect(unwatched).toBe(0);
+      expect(pushes).toHaveLength(start);
+      await Promise.all([tabs[1]!.release(), tabs[2]!.release()]);
+      expect(unwatched).toBeGreaterThan(0);
+      expect(pushes.slice(start).map((push) => push.body)).toEqual([
+        { token, cloudOrigin: cfg.issuer, requestRef: waiting.id, kind: "action" },
+      ]);
+      const [marked] = await sql<{ push_woken_at: Date | null }[]>`
+        SELECT push_woken_at FROM ai.pending_actions WHERE approval_id=${waiting.id}::uuid`;
+      expect(marked?.push_woken_at).toBeInstanceOf(Date);
+
+      // Reopening and closing the chat later does not wake the device again.
+      await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE id=${phone.id}::uuid`;
+      const reopened = await watchAiConversation(waiting.conversationId, closed);
+      await reopened.release();
+      expect(pushes).toHaveLength(start + 1);
+
+      // The open tab and Cloud Login decide the same request once.
+      const view = AppActionViewSchema.parse(await (await devicePost(phone, { operation: "action", actionId: waiting.id })).json());
+      const decided = await devicePost(phone, { operation: "act", actionId: waiting.id, digest: view.digest, decision: "approve" });
+      expect(await decided.json()).toEqual({ state: "approved" });
+      expect(await approvals.decide(waiting.id, { approved: false }, { userId: owner.id, via: "web_session" })).toMatchObject({
+        ok: false,
+      });
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "approved", decidedVia: "cloud_login" });
+      expect(await aiConversations.getPendingTurnAction(waiting)).toMatchObject({ status: "resolved", resolvedEvent: { approved: true } });
+
+      // A request asked while no tab watches wakes the device at once, and only once.
+      await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE id=${phone.id}::uuid`;
+      const unseen = await askAction(owner, { signedInSession: true });
+      await Promise.all([service.wakeForAction(unseen.id), service.wakeForAction(unseen.id)]);
+      expect(pushes.slice(start + 1).map((push) => push.body.requestRef)).toEqual([unseen.id]);
     });
   });
 });

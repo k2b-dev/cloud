@@ -1,6 +1,7 @@
 import { type BoundNotificationMap, lazySync, listApps, notification, sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
+  aiApprovalUnwatched,
   CHAT_TASK_REASON_CODES,
   type ChatTaskReasonCode,
   chatTaskLocale,
@@ -378,8 +379,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
         WHERE r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
           AND (${input.approvalId ?? null}::uuid IS NULL OR r.approver_user_id=(
             SELECT approver_user_id FROM approvals.requests WHERE id=${input.approvalId ?? null}::uuid))
-          AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id
-            WHERE p.approval_id=r.id AND p.status='pending' AND t.run_config->>'signedInSession' IS NULL)
+          AND EXISTS (SELECT 1 FROM ai.pending_actions p WHERE p.approval_id=r.id AND p.status='pending')
       ), ranked AS (
         SELECT *,row_number() OVER (PARTITION BY approver_user_id ORDER BY created_at DESC,id DESC) AS position,
           count(*) OVER (PARTITION BY approver_user_id)::int AS count FROM eligible
@@ -400,6 +400,8 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     let failed = 0;
     for (const candidate of candidates) {
       try {
+        // A tab that streams the chat shows the newest request; closing the last one asks again.
+        if (!(await aiApprovalUnwatched(candidate.id))) continue;
         let recipientLocale = locale;
         let question: string | undefined;
         let reason: string | undefined;

@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
+import { aiApprovalUnwatched } from "../ai/conversation-watchers";
 import { env } from "../config/env";
 import { type AccountCategory, accountCategory } from "../contracts/account-categories";
 import {
@@ -465,21 +466,32 @@ export const createAppApprovalService = (
       try {
         const cfg = await config(false);
         if (!cfg.enabled || !cfg.appOrigin) return;
+        // A tab that streams the chat shows the approval; closing the last one asks again.
+        if (!(await aiApprovalUnwatched(approvalId))) return;
+        // One statement wakes the devices and marks the approval, committed before any push. The device
+        // window keeps concurrent replicas apart; the mark keeps a later closed tab from waking them again.
+        // An approval that woke no device stays unmarked, so it can wake them once the window allows.
         const rows = await db()<{ push_token: string; user_id: string }[]>`
-          UPDATE auth.app_devices d SET action_wake_at=now(), action_wake_ref=${approvalId}::uuid
-          WHERE d.id IN (
-            SELECT device.id FROM auth.app_devices device JOIN approvals.requests r ON r.approver_user_id=device.user_id
-            JOIN auth.users u ON u.id=r.approver_user_id
-            WHERE r.id=${approvalId}::uuid AND r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
-              AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id
-                WHERE p.approval_id=r.id AND p.status='pending' AND t.run_config->>'signedInSession' IS NULL)
-              AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL
-              AND device.actions_at IS NOT NULL
-            LIMIT ${limits.devicesPerAccount}
-          ) AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${WAKE_SECONDS} * interval '1 second'
-            OR NOT EXISTS (SELECT 1 FROM approvals.requests w
-              WHERE w.id=d.action_wake_ref AND w.status='pending' AND w.expires_at > now()))
-          RETURNING d.push_token,d.user_id`;
+          WITH woken AS (
+            UPDATE auth.app_devices d SET action_wake_at=now(), action_wake_ref=${approvalId}::uuid
+            WHERE d.id IN (
+              SELECT device.id FROM auth.app_devices device JOIN approvals.requests r ON r.approver_user_id=device.user_id
+              JOIN auth.users u ON u.id=r.approver_user_id
+              WHERE r.id=${approvalId}::uuid AND r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
+                AND EXISTS (SELECT 1 FROM ai.pending_actions p
+                  WHERE p.approval_id=r.id AND p.status='pending' AND p.push_woken_at IS NULL)
+                AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL
+                AND device.actions_at IS NOT NULL
+              LIMIT ${limits.devicesPerAccount}
+            ) AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${WAKE_SECONDS} * interval '1 second'
+              OR NOT EXISTS (SELECT 1 FROM approvals.requests w
+                WHERE w.id=d.action_wake_ref AND w.status='pending' AND w.expires_at > now()))
+            RETURNING d.push_token,d.user_id
+          ), marked AS (
+            UPDATE ai.pending_actions SET push_woken_at=now()
+            WHERE approval_id=${approvalId}::uuid AND push_woken_at IS NULL AND EXISTS (SELECT 1 FROM woken)
+          )
+          SELECT push_token,user_id FROM woken`;
         const tokens = new Map(rows.map((row) => [row.push_token, row.user_id]));
         await Promise.all(
           Array.from(tokens, async ([token, userId]) => {
