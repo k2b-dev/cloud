@@ -119,6 +119,14 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       if (active.get(binding.id) === abort) active.delete(binding.id);
     }
   };
+  /** A person's "check again" after a failed poll: drops the backoff and polls now. A refused device stays refused. */
+  const recheck = async (binding: Binding) => {
+    const error = states()[binding.id]?.error;
+    if (!error || error === "forbidden" || !navigator.onLine) return;
+    backoff.delete(binding.id);
+    await storage.defer(`poll:${binding.id}`, 0).catch(() => setStorageError(true));
+    await poll(binding);
+  };
   let cleanupAfter = Date.now() + appApproval.limits.loginSeconds * 1000;
   const tick = () => {
     if (disposed) return;
@@ -396,6 +404,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     action,
     act,
     decideChange,
+    recheck,
     revoke,
     syncPush,
     rename: async (binding: Binding, label: string) => {

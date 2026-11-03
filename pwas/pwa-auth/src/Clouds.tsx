@@ -12,9 +12,9 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Match, onCleanup, Show, Switch } from "solid-js";
 import { ActionSheet } from "./ActionSheet";
-import type { ActionView, Authenticator, DeviceChange, Login } from "./authenticator";
+import type { ActionView, Authenticator, DeviceChange, Failure, Login } from "./authenticator";
 import { ChangeSheet } from "./ChangeSheet";
 import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
@@ -44,6 +44,25 @@ const SYSTEMS = {
 } as const satisfies Record<LoginContext["os"], string | undefined>;
 // A browser sign-in's row shows its icon and keeps the label for screen readers.
 type Row = { label: string; icon?: string; values: string[]; time?: string };
+type Messages = ReturnType<typeof authMessages.resolve>["t"];
+/** The browser that asks, as the sheet and the card name it. */
+function browserOf(context: LoginContext, t: Messages) {
+  const browser = BROWSERS[context.browser];
+  const name = browser.name ?? t.contextUnknownBrowser;
+  const os = context.os === "mac-or-ipad" ? t.contextMacOrIpad : SYSTEMS[context.os];
+  return { icon: browser.icon, device: os ? t.contextBrowser({ browser: name, os }) : name };
+}
+/** One request waiting on a card: what it is, from where, and how to open its sheet. */
+type Waiting = {
+  key: string;
+  at: string;
+  title: string;
+  from?: string;
+  login?: boolean;
+  warn?: boolean;
+  actionId?: string;
+  open: () => void;
+};
 
 function Decision(props: {
   auth: Authenticator;
@@ -137,12 +156,8 @@ function Decision(props: {
         { label: t().terminalScopes, values: login.scopes.map((scope) => scopeLabel(scope, t())) },
       ];
     if (!context) return [];
-    const browser = BROWSERS[context.browser];
-    const name = browser.name ?? t().contextUnknownBrowser;
-    const os = context.os === "mac-or-ipad" ? t().contextMacOrIpad : SYSTEMS[context.os];
-    const rows: Row[] = [
-      { label: t().contextLabelBrowser, icon: browser.icon, values: [os ? t().contextBrowser({ browser: name, os }) : name] },
-    ];
+    const browser = browserOf(context, t());
+    const rows: Row[] = [{ label: t().contextLabelBrowser, icon: browser.icon, values: [browser.device] }];
     // Without a location database the Cloud knows neither place nor network, and both lines stay away.
     if (context.country !== null || context.city !== null || context.network !== null) {
       const place = [context.city, context.country && country(context.country)].filter(Boolean).join(", ");
@@ -195,6 +210,10 @@ function Decision(props: {
   createEffect(() => {
     if (ending()) queueMicrotask(() => done?.focus());
   });
+  const where = () => {
+    const host = new URL(props.binding.issuer).host;
+    return props.total > 1 ? `${host} · ${props.position} / ${props.total}` : host;
+  };
   const groups = () => props.request.comparison.match(/.{1,3}/g) ?? [props.request.comparison];
   const offline = () => !props.auth.online();
   const off = () => !!busy() || error() || denied() || expired() || offline();
@@ -243,17 +262,10 @@ function Decision(props: {
   );
   return (
     <BottomSheet onDismiss={props.dismiss}>
-      <Show
-        when={terminal()}
-        fallback={
-          <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
-        }
-      >
+      {/* The head always names the Cloud's address, so a request is never approved for the wrong Cloud. */}
+      <Show when={terminal()} fallback={<PanelDialog.Header title={t().loginTitle({ cloud: props.binding.label })} subtitle={where()} />}>
         {(login) => (
-          <PanelDialog.Header
-            title={t().terminalTitle({ client: login().client.name })}
-            subtitle={props.total > 1 ? `${props.binding.label} · ${props.position} / ${props.total}` : props.binding.label}
-          />
+          <PanelDialog.Header title={t().terminalTitle({ client: login().client.name })} subtitle={`${props.binding.label} · ${where()}`} />
         )}
       </Show>
       <PanelDialog.Body>
@@ -564,18 +576,144 @@ export function Clouds(props: {
     const nextChange = changeQueue.find((item) => !seen.has(item.key));
     if (nextChange) void openChange(nextChange.binding, nextChange.change);
   });
+  // The short words of a card's one line; the long explanation is in its accessible name and in Details.
+  const problems = {
+    unavailable: { icon: "ti ti-cloud-off", text: () => t().statusUnavailable, long: () => t().unavailable },
+    // Polling stops for a refused device, so it offers no reload.
+    forbidden: { icon: "ti ti-lock", text: () => t().statusForbidden, long: () => t().forbidden },
+    stale: { icon: "ti ti-alert-circle", text: () => t().statusStale, long: () => t().stale },
+    storage: { icon: "ti ti-alert-circle", text: () => t().statusStorage, long: () => t().storage },
+    uncertain: { icon: "ti ti-alert-circle", text: () => t().statusStale, long: () => t().uncertain },
+  } satisfies Record<Failure, { icon: string; text: () => string; long: () => string }>;
+  // On the app's clock, so the line follows the tick and tests stay deterministic.
+  const ago = (at: string) => {
+    const minutes = Math.floor((props.auth.now() - Date.parse(at)) / 60_000);
+    if (minutes < 1) return t().justNow;
+    const format = new Intl.RelativeTimeFormat(locale(), { style: "short" });
+    return minutes < 60 ? format.format(-minutes, "minute") : format.format(-Math.floor(minutes / 60), "hour");
+  };
   return (
     <div class="auth-clouds">
       <For each={props.auth.bindings()}>
         {(binding) => {
           const [logoLoaded, setLogoLoaded] = createSignal(false);
           const [logoFailed, setLogoFailed] = createSignal(false);
+          const [rechecking, setRechecking] = createSignal(false);
+          const host = new URL(binding.issuer).host;
           const state = () => props.auth.states()[binding.id];
-          const requests = () => (state()?.requests ?? []).filter((r) => Date.parse(r.expiresAt) > props.auth.now());
-          const actions = () => (state()?.actions ?? []).filter((action) => Date.parse(action.expiresAt) > props.auth.now());
-          const deviceChanges = () => (state()?.changes ?? []).filter((change) => Date.parse(change.expiresAt) > props.auth.now());
+          const live = <T extends { expiresAt: string }>(items: T[] | undefined) =>
+            (items ?? []).filter((item) => Date.parse(item.expiresAt) > props.auth.now());
+          // Everything waiting on this Cloud, oldest first; a tap on the card opens the oldest.
+          const waiting = createMemo((): Waiting[] =>
+            [
+              ...live(state()?.requests).map((request) => {
+                const context = request.terminal ? undefined : request.context;
+                return {
+                  key: `${binding.id}:${request.requestId}`,
+                  at: request.createdAt,
+                  title: request.terminal
+                    ? t().terminalTitle({ client: request.terminal.client.name })
+                    : context?.level === "warn"
+                      ? t().loginUnusual
+                      : t().loginRequest,
+                  from: context ? browserOf(context, t()).device : undefined,
+                  login: true,
+                  warn: context?.level === "warn",
+                  open: () => void open(binding, request),
+                };
+              }),
+              ...live(state()?.changes).map((change) => ({
+                key: `${binding.id}:${change.changeId}`,
+                at: change.createdAt,
+                title: change.kind === "pair" ? t().changePairRow : t().changeRevokeRow,
+                from: change.device.name || t().changeUnnamed,
+                open: () => void openChange(binding, change),
+              })),
+              ...live(state()?.actions).map((action) => ({
+                key: `${binding.id}:${action.actionId}`,
+                at: action.createdAt,
+                title: t().actionRequest,
+                from: action.sentence,
+                actionId: action.actionId,
+                open: () => void openAction([binding], action.actionId),
+              })),
+            ].sort((a, b) => a.at.localeCompare(b.at) || a.key.localeCompare(b.key)),
+          );
+          // An Action that could not load waits behind the others; alone, it becomes the card's error line.
+          const ready = () => waiting().filter((item) => item.key !== failedAction());
+          const failed = () => waiting().find((item) => item.key === failedAction());
+          const more = () => state()?.moreActions ?? 0;
+          const line = createMemo(() => {
+            if (!props.auth.online()) return "offline";
+            const current = state();
+            if (!current) return "checking";
+            if (current.error) return "error";
+            if (ready().length) return "pending";
+            if (failed()) return "failed";
+            return more() ? "more" : "idle";
+          });
+          const pending = () => line() === "pending";
+          const summary = () => {
+            const items = ready();
+            if (items.length === 1) return items[0]!.title;
+            return items.every((item) => item.login) ? t().loginRequests({ count: items.length }) : t().requests({ count: items.length });
+          };
+          const when = () => {
+            const first = ready()[0];
+            if (!first) return "";
+            return ready().length > 1 ? t().oldest({ time: ago(first.at) }) : ago(first.at);
+          };
+          // What a screen reader hears for the card: the Cloud, its address, what waits, from where and when.
+          const name = () => {
+            const first = ready()[0];
+            if (!first) return "";
+            return `${binding.label}, ${host}. ${summary()}${first.from ? `, ${first.from}` : ""}, ${when()}`;
+          };
+          const opening = () => !!loadingAction()?.startsWith(`${binding.id}:`);
+          const problem = () => {
+            const error = state()?.error;
+            if (line() === "error" && error) return problems[error].long();
+            if (line() === "failed") return t().actionLoadFailed;
+            return undefined;
+          };
+          const recheck = () => {
+            if (rechecking()) return;
+            setRechecking(true);
+            // The icon turns at least once, so a quick answer still shows that something happened.
+            const shown = new Promise((done) => setTimeout(done, 600));
+            const item = failed();
+            // A failed Action loads again and opens its sheet; the icon turns while it loads.
+            if (line() === "failed" && item?.actionId) {
+              void openAction([binding], item.actionId);
+              void shown.then(() => setRechecking(false));
+              return;
+            }
+            void Promise.all([props.auth.recheck(binding).catch(() => {}), shown]).then(() => setRechecking(false));
+          };
+          const Reload = () => (
+            <>
+              <IconButton
+                class="auth-status__reload"
+                label={t().recheck}
+                variant="ghost"
+                tooltip={false}
+                data-busy={rechecking() || (line() === "failed" && opening()) ? "" : undefined}
+                onClick={recheck}
+              >
+                <i class="ti ti-refresh" aria-hidden="true" />
+              </IconButton>
+              <span class="k2b-sr-only" role="status">
+                {rechecking() ? t().rechecking : ""}
+              </span>
+            </>
+          );
           return (
-            <Paper as="section" class="auth-cloud">
+            <Paper
+              as="section"
+              class="auth-cloud"
+              interactive={pending()}
+              data-pending={pending() ? (ready().some((item) => item.warn) ? "warn" : "") : undefined}
+            >
               <header>
                 <span class="auth-cloud-logo" aria-hidden="true">
                   <Show when={!logoLoaded()}>
@@ -599,109 +737,88 @@ export function Clouds(props: {
                 </span>
                 <div class="auth-cloud-heading">
                   <h2>{binding.label}</h2>
-                  <p class="auth-issuer">{new URL(binding.issuer).host}</p>
+                  <p class="auth-issuer">{host}</p>
                 </div>
                 <IconButton
                   class="auth-cloud-info"
                   label={t().cloudDetails({ cloud: binding.label })}
                   variant="ghost"
                   tooltip={false}
-                  onClick={() => void openDetails(props.auth, binding, props.preferences)}
+                  onClick={() => void openDetails(props.auth, binding, props.preferences, problem())}
                 >
                   <i class="ti ti-info-circle" aria-hidden="true" />
                 </IconButton>
               </header>
-              <Show when={state()?.error}>{(error) => <p role="status">{t()[error()]}</p>}</Show>
-              <Show
-                when={
-                  state() &&
-                  !state()?.error &&
-                  requests().length === 0 &&
-                  deviceChanges().length === 0 &&
-                  actions().length === 0 &&
-                  !state()?.moreActions
-                }
-              >
-                <p class="auth-quiet">{t().noRequests}</p>
+              {/* One line in one place for every state, so nothing below it moves when the state changes. */}
+              <Switch>
+                <Match when={line() === "offline"}>
+                  <p class="auth-status auth-quiet">{t().waitingForConnection}</p>
+                </Match>
+                <Match when={line() === "checking"}>
+                  <p class="auth-status auth-quiet">{t().checking}</p>
+                </Match>
+                <Match when={line() === "error" && state()?.error}>
+                  {(error) => (
+                    <p class="auth-status" data-tone="error" role="status">
+                      <i class={problems[error()].icon} aria-hidden="true" />
+                      <span class="auth-status__text">
+                        {problems[error()].text()}
+                        <span class="k2b-sr-only">. {problems[error()].long()}</span>
+                      </span>
+                      <Show when={error() !== "forbidden"}>
+                        <Reload />
+                      </Show>
+                    </p>
+                  )}
+                </Match>
+                <Match when={line() === "failed"}>
+                  <p class="auth-status" data-tone="error">
+                    <i class="ti ti-alert-circle" aria-hidden="true" />
+                    <span class="auth-status__text" role="alert">
+                      {t().statusActionFailed}
+                      <span class="k2b-sr-only">. {t().actionLoadFailed}</span>
+                    </span>
+                    <Reload />
+                  </p>
+                </Match>
+                <Match when={line() === "pending"}>
+                  <p class="auth-status" data-tone="pending">
+                    <span class="auth-status__dot" aria-hidden="true" />
+                    <span class="auth-status__text">
+                      <b>{summary()}</b>
+                      <span class="auth-status__sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <time dateTime={ready()[0]?.at}>{when()}</time>
+                    </span>
+                    <i
+                      class={opening() ? "ti ti-loader-2 k2b-spin auth-status__chev" : "ti ti-chevron-right auth-status__chev"}
+                      aria-hidden="true"
+                    />
+                  </p>
+                </Match>
+                <Match when={line() === "more"}>
+                  <p class="auth-status auth-quiet">{t().moreActions({ count: more() })}</p>
+                </Match>
+                <Match when={line() === "idle"}>
+                  <p class="auth-status auth-quiet">{t().noRequests}</p>
+                </Match>
+              </Switch>
+              <Show when={more() > 0 && (line() === "pending" || line() === "failed")}>
+                <p class="auth-status auth-status--more auth-quiet">{t().moreActions({ count: more() })}</p>
               </Show>
-              <Show when={!state()}>
-                <p class="auth-quiet">{t().checking}</p>
-              </Show>
-              <For each={requests()}>
-                {(request) => (
-                  <RequestRow
-                    auth={props.auth}
-                    binding={binding}
-                    request={request}
-                    open={() => {
-                      void open(binding, request);
-                    }}
-                  />
-                )}
-              </For>
-              <For each={deviceChanges()}>
-                {(change) => (
-                  <div class="auth-action-row">
-                    <div class="auth-action-row__copy">
-                      <p class="auth-action-row__title">
-                        <strong>{change.kind === "pair" ? t().changePairRow : t().changeRevokeRow}</strong> ·{" "}
-                        {change.device.name || t().changeUnnamed}
-                      </p>
-                      <p class="auth-action-row__origin">
-                        <time dateTime={change.createdAt}>{dates.formatDateTimeRelative(change.createdAt, { locale: locale() })}</time>
-                      </p>
-                    </div>
-                    <Button variant="secondary" onClick={() => void openChange(binding, change)}>
-                      {t().actionReview}
-                    </Button>
-                  </div>
-                )}
-              </For>
-              <For each={actions()}>
-                {(action) => {
-                  const key = `${binding.id}:${action.actionId}`;
-                  return (
-                    <div class="auth-action-row">
-                      <div class="auth-action-row__copy">
-                        <p class="auth-action-row__title">
-                          <strong>{action.app.name}</strong> · {action.sentence}
-                        </p>
-                        {/* A load failure takes the origin line's place, so the row keeps its height. */}
-                        <Show
-                          when={failedAction() !== key}
-                          fallback={
-                            <p class="auth-action-row__origin auth-action-row__origin--failed" role="alert">
-                              <span>{t().actionLoadFailed}</span>
-                            </p>
-                          }
-                        >
-                          <p class="auth-action-row__origin">
-                            {/* A long chat title gives way; the time always stays visible. */}
-                            <Show when={action.requester.title}>
-                              {(title) => (
-                                <>
-                                  <span>{t().actionChatTitle({ title: title() })}</span>
-                                  <span aria-hidden="true"> · </span>
-                                </>
-                              )}
-                            </Show>
-                            <time dateTime={action.createdAt}>{dates.formatDateTimeRelative(action.createdAt, { locale: locale() })}</time>
-                          </p>
-                        </Show>
-                      </div>
-                      <Button
-                        variant="secondary"
-                        loading={loadingAction() === key}
-                        onClick={() => void openAction([binding], action.actionId)}
-                      >
-                        {t().actionReview}
-                      </Button>
-                    </div>
-                  );
-                }}
-              </For>
-              <Show when={(state()?.moreActions ?? 0) > 0}>
-                <p class="auth-quiet">{t().moreActions({ count: state()?.moreActions ?? 0 })}</p>
+              {/* Only while something waits, the whole card opens the oldest request. It lies over the card's
+                  content; the info button stays above it with its own target. */}
+              <Show when={pending()}>
+                <button
+                  type="button"
+                  class="auth-cloud__open"
+                  aria-label={name()}
+                  aria-busy={opening() ? "true" : undefined}
+                  onClick={() => {
+                    if (!opening()) ready()[0]?.open();
+                  }}
+                />
               </Show>
             </Paper>
           );
@@ -817,20 +934,5 @@ function ManageAccounts(props: { auth: Authenticator; preferences: Preferences; 
         </div>
       </PanelDialog.Footer>
     </PanelDialog>
-  );
-}
-
-function RequestRow(props: { auth: Authenticator; binding: Binding; request: Login; open: () => void }) {
-  const locale = useLocale();
-  const t = createMemo(() => authMessages.resolve([locale()]).t);
-  return (
-    <div class="auth-request auth-request-row">
-      <span>{props.request.terminal ? t().terminalTitle({ client: props.request.terminal.client.name }) : t().loginRequest}</span>
-      <div class="auth-request-actions">
-        <Button variant="secondary" onClick={props.open}>
-          {t().signIn}
-        </Button>
-      </div>
-    </div>
   );
 }
