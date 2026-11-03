@@ -192,6 +192,7 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
     hasAttachments: index % 4 === 0,
+    attachmentCount: index % 4 === 0 ? index / 4 + 1 : 0,
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],

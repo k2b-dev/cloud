@@ -51,6 +51,7 @@ export type MessageSearchHit = {
   activeFolderIds: string[];
   flagged: boolean;
   hasAttachments: boolean;
+  attachmentCount: number;
   snippet: string | null;
   attachmentMatch: {
     attachmentId: string;
@@ -102,7 +103,7 @@ type DbSearchHit = {
   flags: string[] | null;
   active_folder_ids: unknown[] | string;
   flagged: boolean;
-  has_attachments: boolean;
+  attachment_count: number;
   snippet: string | null;
   attachment_match_id: string | null;
   attachment_match_message_id: string | null;
@@ -807,7 +808,8 @@ const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => (
   flags: row.flags ?? [],
   activeFolderIds: parseStringRows(row.active_folder_ids),
   flagged: row.flagged,
-  hasAttachments: row.has_attachments,
+  hasAttachments: row.attachment_count > 0,
+  attachmentCount: row.attachment_count,
   snippet: row.snippet,
   attachmentMatch:
     row.attachment_match_id && row.attachment_match_message_id && row.attachment_match_snippet
@@ -1289,7 +1291,7 @@ const runSearch = async (params: {
         COALESCE(from_rows.addresses, '[]'::jsonb) AS from_addresses,
         COALESCE(to_rows.addresses, '[]'::jsonb) AS to_addresses,
         COALESCE(placement.flags, ARRAY[]::text[]) AS flags,
-        EXISTS (SELECT 1 FROM mail.attachments attachment WHERE attachment.message_id = page.id) AS has_attachments
+        (SELECT COUNT(*)::int FROM mail.attachments attachment WHERE attachment.message_id = page.id) AS attachment_count
       FROM page_candidates page
       JOIN mail.message_contents message ON message.id = page.id
       LEFT JOIN LATERAL (
@@ -1362,14 +1364,14 @@ const runSearch = async (params: {
           )
         END AS flagged,
         CASE
-          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN deduplicated.has_attachments
-          ELSE EXISTS (
-            SELECT 1
+          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN deduplicated.attachment_count
+          ELSE (
+            SELECT COUNT(*)::int
             FROM mail.conversation_messages attachment_cm
             JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
             WHERE attachment_cm.conversation_id = deduplicated.conversation_id
           )
-        END AS has_attachments,
+        END AS attachment_count,
         COALESCE(
           ${snippet},
           NULLIF(

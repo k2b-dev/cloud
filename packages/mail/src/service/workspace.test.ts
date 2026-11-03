@@ -23,6 +23,7 @@ const hit: MessageSearchHit = {
   activeFolderIds: [],
   flagged: false,
   hasAttachments: false,
+  attachmentCount: 0,
   snippet: "Planning",
   attachmentMatch: null,
   unread: true,

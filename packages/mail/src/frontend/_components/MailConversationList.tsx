@@ -25,6 +25,7 @@ import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
+import type { MailRespondIntent } from "./mail-conversation-menu";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
@@ -85,6 +86,12 @@ export default function MailConversationList(props: {
   onItemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   onManageTags: (item: MailListItem) => void | Promise<void>;
   onMergeItem?: (item: MailListItem) => void | Promise<void>;
+  onRespondItem: (item: MailListItem, intent: MailRespondIntent, options: { window: boolean }) => void;
+  /** Absent where nobody can be assigned, as in a personal mailbox. */
+  onAssignItemToMe?: (item: MailListItem) => void;
+  onSetItemCompletion: (item: MailListItem, completion: "done" | "open") => void;
+  currentUserId: string | null;
+  assigneeNames: (userIds: readonly string[]) => string[];
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   /** A new search intent can supersede a pending mailbox switch before its debounce fires. */
   onNavigationStart?: () => void;
@@ -509,6 +516,7 @@ export default function MailConversationList(props: {
                           canWrite: props.canWrite,
                           spamAction: spamAction(item),
                           dateConfig: props.dateConfig,
+                          currentUserId: props.currentUserId,
                         }}
                         actions={{
                           navigate: props.onNavigateItem,
@@ -516,6 +524,10 @@ export default function MailConversationList(props: {
                           itemAction: props.onItemAction,
                           manageTags: props.onManageTags,
                           merge: props.onMergeItem,
+                          respond: props.onRespondItem,
+                          assignToMe: props.onAssignItemToMe,
+                          assigneeNames: props.assigneeNames,
+                          setCompletion: props.onSetItemCompletion,
                         }}
                         quickLook={{
                           id: quickLook.id,

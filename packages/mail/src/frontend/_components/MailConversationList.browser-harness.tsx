@@ -303,6 +303,10 @@ window.mountMailList = (options) => {
                   onBulkAction={noop}
                   onItemAction={noop}
                   onManageTags={noop}
+                  onRespondItem={noop}
+                  onSetItemCompletion={noop}
+                  currentUserId={null}
+                  assigneeNames={() => []}
                   onMergeItem={noop}
                   onOpenHref={openHref}
                   onLoadMore={() => false}
@@ -361,6 +365,12 @@ window.mountMailList = (options) => {
                     onUndoAutomation={noop}
                     onAssignConversation={noop}
                     onAssignConversationToMe={noop}
+                    assignment={null}
+                    workStatus={null}
+                    completionPending={false}
+                    onSetCompletion={noop}
+                    respondRequest={null}
+                    onRespondRequestHandled={noop}
                     onSplitMessage={noop}
                     onKeep={noop}
                     onStopKeeping={noop}

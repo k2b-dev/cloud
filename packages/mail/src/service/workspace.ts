@@ -69,6 +69,7 @@ export type MailListItem = {
   activeFolderIds: string[];
   flagged: boolean;
   hasAttachments: boolean;
+  attachmentCount: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -291,6 +292,7 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   activeFolderIds: conversation.activeFolderIds,
   flagged: conversation.flagged,
   hasAttachments: conversation.hasAttachments,
+  attachmentCount: conversation.attachmentCount,
   messageCount: conversation.messageCount,
   workStatus: conversation.workStatus,
   assigneeUserIds: conversation.assigneeUserIds,
@@ -335,6 +337,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     activeFolderIds: item.activeFolderIds,
     flagged: item.flagged,
     hasAttachments: item.hasAttachments,
+    attachmentCount: item.attachmentCount,
     messageCount: item.messageCount,
     workStatus: item.workStatus,
     assigneeUserIds: item.assigneeUserIds,
