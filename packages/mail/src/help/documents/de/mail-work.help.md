@@ -113,7 +113,7 @@ Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu än
 ### Von Handlungsbedarf aus arbeiten
 
 Wir empfehlen **Handlungsbedarf** als deinen Posteingang. Nutze Ordner zur Ablage; Ablegen und Archivieren ändern keinen Arbeitsstatus.
-Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren**. Archivieren setzt nicht **Erledigt**.
+Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren** im Menü **…** der Unterhaltung. Archivieren setzt nicht **Erledigt**.
 
 - **Persönliches Postfach:** Arbeite aus **Handlungsbedarf**. Automatisierungen markieren Unwichtiges als **Erledigt** und legen es ab. Markiere abgeschlossene Arbeit als **Erledigt**.
   **Wartet auf Antwort** folgt automatisch auf eine bestätigte menschliche Antwort. Nutze **Später anzeigen** für Arbeit, die von einem Datum abhängt.
@@ -200,7 +200,7 @@ Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachric
 
 Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
 
-Ein Rechtsklick in die Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
+Ein Rechtsklick auf eine Unterhaltung in der Liste oder in die offene Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Das Menü beginnt mit **Antworten** und **In neuem Fenster antworten**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
 
 ## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
 
