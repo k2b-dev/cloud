@@ -620,7 +620,17 @@ describe("Code page loader", () => {
     endedAt: null,
   };
   /** Core as the page reads it; every other app answers with an error, so any call to one would show. */
-  const core = (permission: "editor" | "reader") => (capabilityId: string, input: { content?: unknown }) => {
+  /** A policy refusal before the target refusal, as Core lists calls one per read. */
+  const policyCall = {
+    ordinal: 1,
+    kind: "action",
+    capability: "spaces.comment.create",
+    refusalKind: "policy",
+    call: null,
+    result: { ok: false, error: { code: "code_policy_never" } },
+    state: "failed",
+  };
+  const core = (permission: "editor" | "reader") => (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
     if (capabilityId === "code.list")
       return {
         items: [{ id: "c_3mfa", title: "Code", state: "active", activeVersionId: V4, pauseReason: null, permission }],
@@ -648,7 +658,7 @@ describe("Code page loader", () => {
                 input: null,
                 inputChunked: false,
                 content: null,
-                calls: [],
+                calls: (input.cursor ?? 0) === 0 ? [policyCall] : [],
                 nextCursor: null,
                 firstRefusedCall: { ordinal: 2, kind: "action", capability: "spaces.task.create", target: space },
               }
@@ -678,14 +688,14 @@ describe("Code page loader", () => {
       },
     },
   };
-  const load = async (permission: "editor" | "reader") => {
+  const load = async (permission: "editor" | "reader", query = "") => {
     const appCalls: string[] = [];
     const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
       if (invocation.appId !== "core") {
         appCalls.push(`${invocation.appId}.${invocation.capabilityId}`);
         return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Another app was asked", status: 503 } };
       }
-      const data = core(permission)(invocation.capabilityId, invocation.input as { content?: unknown });
+      const data = core(permission)(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
       return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
@@ -700,7 +710,7 @@ describe("Code page loader", () => {
         { preconnect: globalThis.fetch.preconnect },
       ),
     );
-    const request = new Request("https://cloud.test/app/mail/Mb4kd2/code");
+    const request = new Request(`https://cloud.test/app/mail/Mb4kd2/code${query}`);
     const variables: Record<string, unknown> = {
       actor: { kind: "user", sessionKind: "web" },
       credentialKind: "session",
@@ -753,11 +763,22 @@ describe("Code page loader", () => {
     expect(JSON.stringify(data)).not.toContain('"missing"');
   });
 
+  test("the run's detail names the same recorded target refusal as the overview, even after an earlier policy refusal", async () => {
+    const { data, appCalls } = await load("editor", `?tab=runs&run=${RUN}`);
+    expect(appCalls).toEqual([]);
+    if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
+    expect(data.state.run?.refusal).toMatchObject({
+      kind: "target_refused",
+      call: { capability: "spaces.task.create", target: { ref: space } },
+    });
+  });
+
   test("a reader's page data carries no target ID of the refused call", async () => {
     const { data, appCalls } = await load("reader");
     expect(appCalls).toEqual([]);
     if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
     expect(data.state.refusal).toEqual({ kind: "target_refused", runId: RUN, versionId: V4, call: null });
+    // Targets from the reviewed manifest stay: readers may read the version's source, which names them anyway.
     const serialized = JSON.stringify({ ...data.state, targets: null, diff: null, waitingTargets: null });
     expect(serialized).not.toContain("k7qm2x9a");
     expect(serialized).not.toContain("spaces.task.create");

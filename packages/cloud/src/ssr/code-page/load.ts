@@ -332,13 +332,12 @@ const loadReady = async (
     loaded: { ordinal: number; capability: string; target: { type: string; id: string } | null; refusal: string | null }[] | null,
   ) => {
     if (run.state !== "failed") return null;
-    const candidates = [
-      ...(recorded ? [{ ...recorded, kind: "target_refused" as const }] : []),
-      ...(loaded ?? []).flatMap((call) =>
-        call.refusal === "policy" || call.refusal === "approval" ? [{ ...call, kind: call.refusal as "policy" | "approval" }] : [],
-      ),
-    ].sort((a, b) => a.ordinal - b.ordinal);
-    const first = candidates[0];
+    // The target refusal Core recorded wins, so the overview and the run's detail always name the same call.
+    const first =
+      (recorded ? { ...recorded, kind: "target_refused" as const } : undefined) ??
+      (loaded ?? [])
+        .flatMap((call) => (call.refusal === "policy" || call.refusal === "approval" ? [{ ...call, kind: call.refusal }] : []))
+        .sort((a, b) => a.ordinal - b.ordinal)[0];
     if (first && isShownRefusal(first.kind)) return { run, kind: first.kind, call: first };
     // Readers see no calls, only that a target refused one.
     return loaded === null && run.firstRefusedCallOrdinal ? { run, kind: "target_refused" as const, call: null } : null;

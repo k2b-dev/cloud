@@ -241,9 +241,12 @@ a.cloud-code__row[aria-current="true"] {
 .cloud-code__refusal .cloud-code__note-actions {
   margin-top: 0;
 }
-/* IDs and the handle stay whole and read as identifiers, like operations. */
+/* IDs read as identifiers and may be long, so they wrap; the short fixed-length handle stays whole. */
 .cloud-code__refusal code {
   font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+.cloud-code__refusal .cloud-code__quiet code {
   white-space: nowrap;
 }
 /* "Last run" keeps its words together; the run's time and title wrap below on a phone. */
