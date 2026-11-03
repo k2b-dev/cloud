@@ -335,13 +335,18 @@ const sizes = [
   [834, 1194],
   [390, 844],
 ] as const;
-const open = async (path: string, width = 1440, height: number = sizes.find(([w]) => w === width)?.[1] ?? 900) => {
+const open = async (
+  path: string,
+  width = 1440,
+  height: number = sizes.find(([w]) => w === width)?.[1] ?? 900,
+  motion: "reduce" | "no-preference" = "reduce",
+) => {
   const context = await browser.newContext({
     viewport: { width, height },
     isMobile: width === 390,
     hasTouch: width === 390,
     timezoneId: "UTC",
-    reducedMotion: "reduce",
+    reducedMotion: motion,
   });
   await context.addInitScript(pinPageClock, Date.parse(MAIL_SHELL_NOW));
   const page = await context.newPage();
@@ -573,7 +578,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
-          test(`compact reader ${theme} ${width}: fixed subject, count and list toggle`, async () => {
+          test(`compact reader ${theme} ${width}: fixed subject, count and the way back to the list`, async () => {
             const page = await open(`${boxPath}?conversation=Conv02&long-subject=1&theme=${theme}`, width, 900);
             try {
               const toolbar = page.locator("[data-mail-reader-toolbar]");
@@ -613,11 +618,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 await page.screenshot({ path: join(screenshots, browserName, `compact-reader-${theme}-${width}.png`) });
               }
               if (width >= 768) {
-                await toolbar.getByRole("button", { name: "Hide conversation list", exact: true }).click();
-                await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).waitFor({ state: "visible" });
+                // Beside the list the reader has no list control of its own; with the list hidden it ends with ×.
+                expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
+                await page.locator("[data-mail-view-menu]").click();
+                await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
+                const close = toolbar.getByRole("link", { name: "Close conversation", exact: true });
+                await close.waitFor({ state: "visible" });
                 expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
-                await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).click();
+                await close.click();
                 await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+                expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
               }
             } finally {
               await close(page);
@@ -1663,6 +1673,144 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+      // S2: hiding the list is a View menu switch with [; × and Escape lead back to the unchanged list.
+      test("views: the View menu hides the list beside the reader, and [ shows it again", async () => {
+        const page = await open(`${boxPath}?conversation=Conv02`, 1440, 900);
+        try {
+          const list = page.locator("[data-mail-conversation-list]");
+          const toolbar = page.locator("[data-mail-reader-toolbar]");
+          const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
+          await list.waitFor({ state: "visible" });
+          await page.locator("[data-mail-view-menu]").click();
+          expect(await toggle.getAttribute("aria-checked")).toBe("false");
+          expect(await toggle.isDisabled()).toBe(false);
+          expect(await toggle.textContent()).toContain("The reader uses the full width.");
+          expect(await toggle.locator(".k2b-kbd").isVisible()).toBe(true);
+          await toggle.click();
+          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+          expect(await list.isVisible()).toBe(false);
+          // The menu shows the switch on, and [ brings the list back without closing the conversation.
+          await page.locator("[data-mail-view-menu]").click();
+          expect(await toggle.getAttribute("aria-checked")).toBe("true");
+          await page.keyboard.press("Escape");
+          await page.locator("[data-mail-reader-heading]").focus();
+          await page.keyboard.press("[");
+          await list.waitFor({ state: "visible" });
+          expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
+          expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv02");
+          await page.keyboard.press("[");
+          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+          expect(await list.isVisible()).toBe(false);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("views: without a reader beside the list, the switch is off and names the reason", async () => {
+        for (const path of [boxPath, `${boxPath}?layout=auto&list=hidden`, `${boxPath}?layout=columns&conversation=Conv02`]) {
+          const page = await open(path, 1440, 900);
+          try {
+            await page.locator("[data-mail-view-menu]").click();
+            const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
+            await toggle.waitFor({ state: "visible" });
+            expect(await toggle.isDisabled(), path).toBe(true);
+            expect(await toggle.getAttribute("aria-checked"), path).toBe("false");
+            expect(await toggle.textContent()).toContain("Only while reading beside the list.");
+            await page.keyboard.press("Escape");
+            await page.keyboard.press("[");
+            await settled(page);
+            expect(await page.locator("[data-mail-reader-close]").isVisible()).toBe(path.includes("conversation="));
+          } finally {
+            await close(page);
+          }
+        }
+      });
+
+      for (const [layout, leave, motion] of [
+        ["columns", "close", "reduce"],
+        ["columns", "Escape", "reduce"],
+        ["hidden", "close", "reduce"],
+        ["hidden", "Escape", "reduce"],
+        // With motion, a view transition must not commit the list's first position over the restored one.
+        ["hidden", "close", "no-preference"],
+        ["columns", "Escape", "no-preference"],
+      ] as const)
+        test(`views: ${leave === "close" ? "×" : "Escape"} returns from a reader without the list (${layout}, ${motion} motion) to the same list`, async () => {
+          const page = await open(
+            layout === "columns" ? `${boxPath}?layout=columns` : `${boxPath}?layout=auto&list=hidden`,
+            1440,
+            560,
+            motion,
+          );
+          try {
+            const scroller = page.locator('[data-scroll-preserve="mail-list-Box001"]');
+            const row = page.locator('[data-conversation-id="Conv09"] .mail-list-row').first();
+            await row.waitFor({ state: "visible" });
+            await scroller.evaluate((element) => {
+              element.scrollTop = 160;
+            });
+            await settled(page);
+            const scrolled = await scroller.evaluate((element) => element.scrollTop);
+            expect(scrolled).toBeGreaterThan(0);
+            await row.click();
+            await page.waitForURL(/conversation=Conv09/);
+            const toolbar = page.locator("[data-mail-reader-toolbar]");
+            await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+            expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
+            if (leave === "close") await toolbar.locator("[data-mail-reader-close]").click();
+            else await pressEscapeForWorkspace(page);
+            await page.waitForURL((url) => !url.searchParams.has("conversation"));
+            await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+            await settled(page);
+            // The same list, at the same place, with the row that was open in focus.
+            expect(Math.abs((await scroller.evaluate((element) => element.scrollTop)) - scrolled)).toBeLessThanOrEqual(1);
+            expect(
+              await page.evaluate(() => document.activeElement?.closest("[data-conversation-id]")?.getAttribute("data-conversation-id")),
+            ).toBe("Conv09");
+            // Escape in a list without a reader changes nothing.
+            await pressEscapeForWorkspace(page);
+            await settled(page);
+            expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
+          } finally {
+            await close(page);
+          }
+        });
+
+      if (screenshots)
+        test("optional View menu review screenshots", async () => {
+          const directory = join(resolve(screenshots), "view-menu");
+          mkdirSync(directory, { recursive: true });
+          for (const [width, height] of [
+            [1440, 900],
+            [1024, 768],
+            [390, 844],
+          ] as const) {
+            const page = await open(`${boxPath}?layout=auto&conversation=Conv02&theme=light`, width, height);
+            try {
+              await settled(page);
+              await page.screenshot({ path: join(directory, `${width}-reader.png`) });
+              if (width === 390) continue;
+              await page.locator("[data-mail-view-menu]").click();
+              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
+              await page.waitForTimeout(150);
+              await page.screenshot({ path: join(directory, `${width}-view-menu.png`) });
+              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
+              await page.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+              await page.mouse.move(0, 0);
+              await page.waitForTimeout(150);
+              await page.screenshot({ path: join(directory, `${width}-list-hidden.png`) });
+              await pressEscapeForWorkspace(page);
+              await page.waitForURL((url) => !url.searchParams.has("conversation"));
+              await page.locator("[data-mail-view-menu]").click();
+              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
+              await page.waitForTimeout(150);
+              await page.screenshot({ path: join(directory, `${width}-view-menu-unavailable.png`) });
+            } finally {
+              await close(page);
+            }
+          }
+        });
+
       test("views: the day's done line above the list", async () => {
         const page = await open(`${boxPath}?layout=auto&done=19,14`, 1440, 900);
         try {

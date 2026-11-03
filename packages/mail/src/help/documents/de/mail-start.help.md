@@ -91,6 +91,8 @@ Neben einem Editor enthält der Unterhaltungsverlauf nur Nachrichten. Betrieblic
 
 Wähle im Postfach unter **Darstellung**, wie Liste und Leser erscheinen. Auf großen Bildschirmen zeigt **Automatisch** zunächst Spalten. Sobald du einen Vorgang öffnest, stehen Liste und Leser nebeneinander. Du kannst auch **Immer Spalten** oder **Immer Liste + Leser** wählen. Auf dem Handy gibt es **Kompakt** und **Ausführlich**.
 
+Während du neben der Liste liest, blendet **Darstellung → Unterhaltungsliste ausblenden** die Liste aus, und der Leser nutzt die volle Breite. Die Taste `[` blendet sie aus und wieder ein. Ohne Leser neben der Liste ist der Schalter gesperrt. Mail merkt sich die Wahl in diesem Browser.
+
 In den Spalten zeigt **Beteiligt**, wer in der Unterhaltung geschrieben hat: bis zu drei Personen, dann „+N“. Zeige darauf, um die Namen zu sehen, getrennt nach **Extern**, **Team** und **Automationen**. Team und Automationen erkennt Mail an Antworten, die Mail gesendet hat. Eine Antwort aus einem anderen Mailprogramm zählt mit ihrer Absenderadresse. Wer nur zugewiesene Unterhaltungen sieht, sieht nur die Personen dieser Unterhaltungen. In einer schmalen Liste und auf dem Handy fehlt die Spalte.
 
 Mail merkt sich die Wahl für dich und dieses Postfach, getrennt nach Handys und großen Bildschirmen. Deine Handywahl gilt auch auf deinen anderen Handys. Ohne gespeicherte Wahl verwendet Mail Automatisch und auf Handys Kompakt. Die Administration legt keine Vorgabe für dich fest.

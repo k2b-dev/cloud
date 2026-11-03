@@ -6,6 +6,7 @@ import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import {
   captureScroll,
   documentNavigate,
+  type EnhancedNavigateOptions,
   type LinkNavigateEvent,
   listenPopState,
   navigate,
@@ -18,8 +19,10 @@ import {
   AppWorkspace,
   type AppWorkspaceWidthShare,
   announce,
+  appWorkspaceDetailElementId,
   Dropdown,
   IconButton,
+  Kbd,
   openSpotlightSearch,
   Placeholder,
   prompts,
@@ -127,7 +130,7 @@ import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderP
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
 import { openMailUserDraftStorage } from "./_components/mail-user-draft-storage";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
-import { type MailLargeView, resolveMailLargeLayout, toggleMailLargeView } from "./_components/mail-view-mode";
+import { type MailLargeView, resolveMailLargeLayout, resolveMailListPresence, toggleMailLargeView } from "./_components/mail-view-mode";
 import { mailboxCurrentTab, mailboxViewTabs } from "./_components/mail-view-tabs";
 import {
   decideMailAutoReadIntent,
@@ -809,15 +812,28 @@ function createMailboxController(props: MailboxControllerProps) {
     } else if (result === "failed") toast.error(t().openViewFailed);
   };
 
-  const closeConversation = async (nav: LinkNavigateEvent) => {
-    navigationStart(nav.href);
-    const previousConversationId = data.selectedConversationId;
-    const result = inCurrentList(nav.href) ? closeConversationInList(nav.href) : await replaceWorkspaceRoute(nav.href);
+  // A list that leaves the screen for the reader leaves its place here, for the way back with × or Escape.
+  let listPlace: { scope: string; scroll: ScrollSnapshot } | null = null;
+  const rememberListPlace = () => {
+    if (listAway()) return;
+    listPlace = { scope: mailListScope(requestPath()), scroll: captureScroll(`[data-scroll-preserve="mail-list-${mailboxId}"]`) };
+  };
+  /** Returns to the list at `href`; the row that was open takes the focus, and the list is where the person left it. */
+  const closeConversationAt = async (href: string, push: (options: EnhancedNavigateOptions) => void) => {
+    navigationStart(href);
+    const previousRow =
+      data.listMode === "messages" && data.selectedMessageId ? `message:${data.selectedMessageId}` : data.selectedConversationId;
+    const place = listAway() && listPlace?.scope === mailListScope(href) ? listPlace : null;
+    listPlace = null;
+    const result = inCurrentList(href) ? closeConversationInList(href) : await replaceWorkspaceRoute(href);
     if (result === "applied") {
-      nav.push(undefined, { scroll: "preserve" });
-      if (previousConversationId) focusConversation(previousConversationId, "row");
+      // A deferred view transition would commit the list's first position over the restored one.
+      push(place ? { scroll: "preserve", viewTransition: false } : { scroll: "preserve" });
+      if (place) restoreScroll(place.scroll, { window: false });
+      if (previousRow) focusConversation(previousRow, "row", !place);
     } else if (result === "failed") toast.error(t().closeConversationFailed);
   };
+  const closeConversation = (nav: LinkNavigateEvent) => closeConversationAt(nav.href, (options) => nav.push(undefined, options));
 
   const transitionWorkspaceHref = async (href: string, replace = false): Promise<MailWorkspaceRefreshResult> => {
     navigationStart(href);
@@ -864,6 +880,7 @@ function createMailboxController(props: MailboxControllerProps) {
   });
 
   const setCollapsed = (collapsed: boolean) => {
+    if (collapsed) rememberListPlace();
     setListCollapsed(collapsed);
     persistPreferences({ listCollapsed: collapsed });
   };
@@ -1276,7 +1293,10 @@ function createMailboxController(props: MailboxControllerProps) {
   const largeLayout = createMemo(() => resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection()));
   /** Columns over the full main area: the list pane closes and the list takes the reader's place. */
   const columnsWide = () => !data.scheduledMode && !data.draftsMode && largeLayout().list === "full";
-  const listOpen = () => largeLayout().list === "pane" && (!listCollapsed() || !hasSelection());
+  const listPresence = createMemo(() => resolveMailListPresence(largeLayout(), hasSelection(), listCollapsed()));
+  const listOpen = () => listPresence().open;
+  const listAway = () => listPresence().away;
+  const listHideable = () => listPresence().hideable;
   // Who is responsible only matters where more than one person can be assigned.
   const sharedMailbox = () => data.assignableUsers.length > 1;
   const assigneeNames = (userIds: readonly string[]) =>
@@ -1286,6 +1306,7 @@ function createMailboxController(props: MailboxControllerProps) {
     const before = viewPreference();
     if (before.large === large) return;
     const mailboxId = data.mailbox.id;
+    rememberListPlace();
     setViewPreference({ ...before, large });
     try {
       const response = await apiClient.mailboxes[":mailboxId"].view.$patch({ param: { mailboxId }, json: { large } });
@@ -1372,7 +1393,8 @@ function createMailboxController(props: MailboxControllerProps) {
     }
   };
 
-  const focusConversation = (rowKey: string | null, target: "reader" | "row") => {
+  /** `reveal` scrolls the row into view; a list that returns to its remembered place keeps it. */
+  const focusConversation = (rowKey: string | null, target: "reader" | "row", reveal = true) => {
     if (disposed) return;
     const selector = rowKey?.startsWith("message:")
       ? `[data-message-id="${CSS.escape(rowKey.slice("message:".length))}"] .mail-list-row`
@@ -1382,7 +1404,7 @@ function createMailboxController(props: MailboxControllerProps) {
         ? document.querySelector<HTMLElement>("[data-mail-reader-heading]")
         : document.querySelector<HTMLElement>(rowKey ? selector : "[data-mail-list-heading]");
     element?.focus({ preventScroll: true });
-    if (target === "row") element?.scrollIntoView({ block: "nearest" });
+    if (target === "row" && reveal) element?.scrollIntoView({ block: "nearest" });
   };
 
   /**
@@ -1516,6 +1538,7 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 
   const navigateConversation = async (href: string, item: MailListItem, activation: "keyboard" | "pointer") => {
+    rememberListPlace();
     navigationStart(href);
     const result = item.conversationId ? await applyConversationRoute(href, item, activation) : await replaceWorkspaceRoute(href);
     if (result === "applied") {
@@ -1616,22 +1639,52 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 
   onMount(() => {
+    const ownsKeys = (target: EventTarget | null) =>
+      target instanceof Element &&
+      target.closest(
+        '[role="dialog"],[role="menu"],[role="listbox"],input,textarea,select,[contenteditable]:not([contenteditable="false"])',
+      );
     // V switches between columns and list with reader (F2); typing, menus and dialogs keep the key.
     const switchView = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "v" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       if (event.defaultPrevented || event.repeat || event.isComposing || data.scheduledMode || data.draftsMode || data.eventsMode) return;
-      if (
-        event.target instanceof Element &&
-        event.target.closest(
-          '[role="dialog"],[role="menu"],[role="listbox"],input,textarea,select,[contenteditable]:not([contenteditable="false"])',
-        )
-      )
-        return;
+      if (ownsKeys(event.target)) return;
       event.preventDefault();
       void changeLargeView(toggleMailLargeView(viewPreference().large, hasSelection()));
     };
+    // [ hides or shows the list beside the reader. Layouts that type [ with Alt or AltGr keep it; Cmd+[ stays Back.
+    const toggleList = (event: KeyboardEvent) => {
+      if (event.key !== "[" || event.metaKey || (event.ctrlKey && !event.altKey)) return;
+      if (event.defaultPrevented || event.repeat || event.isComposing || !listHideable() || ownsKeys(event.target)) return;
+      // The key works where its View menu is: not on phones and not in Events, which have none.
+      if (data.eventsMode || !document.querySelector(".mail-workspace [data-mail-view-menu]")?.getClientRects().length) return;
+      event.preventDefault();
+      setCollapsed(!listCollapsed());
+    };
+    // Escape returns from a reader without the list beside it. An open menu, dialog, hint, or Details column takes it first.
+    const leaveReader = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || selectionMode() || !listAway()) return;
+      if (ownsKeys(event.target) || document.querySelector("dialog[open], [aria-modal='true']")) return;
+      try {
+        // A shown hint takes Escape first, like every open popup; the "moved" hint does not hold it.
+        if (document.querySelector(":popover-open:not(.k2b-moved-hint)")) return;
+      } catch {
+        // Older engines have no popover selector; the other guards still apply.
+      }
+      const details = document.getElementById(appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID));
+      if (details && !details.hidden && details.getClientRects().length > 0) return;
+      event.preventDefault();
+      const href = buildMailListHref(mailRouteUrl(requestPath()));
+      void closeConversationAt(href, (options) => navigate(href, options));
+    };
     document.addEventListener("keydown", switchView);
-    onCleanup(() => document.removeEventListener("keydown", switchView));
+    document.addEventListener("keydown", toggleList);
+    document.addEventListener("keydown", leaveReader);
+    onCleanup(() => {
+      document.removeEventListener("keydown", switchView);
+      document.removeEventListener("keydown", toggleList);
+      document.removeEventListener("keydown", leaveReader);
+    });
   });
   onMount(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -2969,7 +3022,9 @@ function createMailboxController(props: MailboxControllerProps) {
     exitHeadSelection,
     folderOnlyHint,
     hasSelection,
+    listAway,
     listCollapsed,
+    listHideable,
     listNamedBy,
     listOpen,
     listText,
@@ -3298,6 +3353,23 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                       {
                         items: [
                           {
+                            choice: "checkbox" as const,
+                            // Without a reader beside the list nothing is hidden, also while the choice waits for the next one.
+                            checked: () => controller().listHideable() && controller().listCollapsed(),
+                            icon: "ti ti-layout-sidebar-left-collapse",
+                            label: controller().t().viewHideList,
+                            description: controller().listHideable()
+                              ? controller().t().viewHideListText
+                              : controller().t().viewHideListUnavailable,
+                            disabled: !controller().listHideable(),
+                            trailing: <Kbd keys="[" />,
+                            action: () => controller().setCollapsed(!controller().listCollapsed()),
+                          },
+                        ],
+                      },
+                      {
+                        items: [
+                          {
                             label: controller().t().viewNote({ mailbox: controller().data.mailbox.name }),
                             disabled: true,
                             action: () => {},
@@ -3478,10 +3550,9 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     readingFormat={controller().userPreferences().readingFormat}
                     theme={controller().theme()}
                     calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                    listCollapsed={controller().listCollapsed()}
+                    listAway={controller().listAway()}
                     detailsOpen={controller().detailsOpen()}
                     toolbarActions={controller().toolbarActions()}
-                    onToggleList={() => controller().setCollapsed(!controller().listCollapsed())}
                     onToggleDetails={() => controller().canShowDetails() && controller().setDetailsVisible(!controller().detailsOpen())}
                     onToolbarActionsChange={controller().updateToolbarActions}
                     actionPending={controller().structureMutationLoading()}

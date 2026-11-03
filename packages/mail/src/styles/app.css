@@ -1161,7 +1161,7 @@
 
   /* Controls do not print. The message header is a button too, but it carries
      the sender, recipients and date, so it stays on paper. */
-  body.mail-printing-conversation [data-mail-print-root] :where([data-mail-phone-actions], .mail-reader-controls, .mail-reader-back, .mail-reader-show-list) {
+  body.mail-printing-conversation [data-mail-print-root] :where([data-mail-phone-actions], .mail-reader-controls, .mail-reader-back, .mail-reader-close) {
     display: none !important;
   }
 
@@ -1391,10 +1391,11 @@
 }
 
 /* The way back to the list is the reader's first button while the list and
-   the reader take turns (below 64 rem of app width); beside the list the
-   reader shows no back button, and a hidden list comes back from its own
-   button. Unlayered, because the shared button style is unlayered too. */
-.k2b-ui .mail-reader-toolbar .mail-reader-show-list {
+   the reader take turns (below 64 rem of app width). Wider, the reader shows
+   no back button beside the list; a reader without the list beside it ends
+   its toolbar with × instead. Unlayered, because the shared button style is
+   unlayered too. */
+.k2b-ui .mail-reader-toolbar .mail-reader-close {
   display: none;
 }
 
@@ -1479,7 +1480,7 @@
     display: none;
   }
 
-  .k2b-ui .mail-reader-toolbar .mail-reader-show-list {
+  .k2b-ui .mail-reader-toolbar .mail-reader-close {
     display: inline-flex;
   }
 }

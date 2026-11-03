@@ -138,7 +138,7 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
-Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
+Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Steht keine Liste neben dem Leser, führen **×** am Ende seiner Werkzeugleiste und Esc zurück zur Liste. Die Liste steht dann wieder an derselben Stelle, und die zuletzt geöffnete Unterhaltung hat den Fokus. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
 
 Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst. Eine offene Nachricht zeigt ihre Anhänge über dem Text: die Anzahl, die ersten drei Dateien mit Vorschau oder Dateityp und **Alle anzeigen**. Eine zugeklappte Nachricht zeigt die Anzahl ihrer Anhänge neben dem Datum. Bilder, die der Text schon zeigt, stehen nicht in der Liste.
 
