@@ -5,7 +5,7 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Scaling runners
@@ -361,8 +361,10 @@ milliseconds. `RunnerHeartbeatRequest` carries the lease proof;
 `RunnerBundleRequestSchema`, `RunnerCompleteRequestSchema`, and
 `RunnerCallRequestSchema` validate the same exported request types in Core.
 `RunnerCallResponse` uses `{ ok: true, data }` or
-`{ ok: false, error: { code } }`. Only a bounded stable code crosses a domain
-refusal; the sandbox receives it as `Error.message`, with no exception details.
+`{ ok: false, error: { code, status?, origin? } }`. The optional `status` preserves
+the capability dispatch HTTP status in the stored call result. The sandbox
+receives the bounded stable code and optional validated refused HTTPS origin
+as `Error.message`, with no exception details or status.
 Non-2xx call responses are transport failures. HTTP 409 on a lease route, or
 the domain code `runner_lease_lost`, immediately fences local execution.
 `RunnerCallRequest` attaches the supervisor-held proof to the sandbox's

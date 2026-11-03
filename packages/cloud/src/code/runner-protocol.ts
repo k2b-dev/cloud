@@ -116,7 +116,12 @@ export const RunnerCallRequestSchema = RunnerLeaseProofSchema.extend({ operation
 export type RunnerCallRequest = z.infer<typeof RunnerCallRequestSchema>;
 /** Stable codes plus a validated refused HTTPS origin; raw exception messages never enter the sandbox. */
 export const RunnerCallErrorSchema = z
-  .object({ code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/), origin: CodeInternetOriginSchema.optional() })
+  .object({
+    code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
+    /** Capability dispatch HTTP failure status; absent for local refusals and older stored calls. */
+    status: z.number().int().min(400).max(599).optional(),
+    origin: CodeInternetOriginSchema.optional(),
+  })
   .strict();
 /** Domain refusals use this envelope even when HTTP succeeds; non-2xx responses indicate transport failure. */
 export const RunnerCallResponseSchema = z.discriminatedUnion("ok", [
