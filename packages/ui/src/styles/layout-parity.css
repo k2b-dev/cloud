@@ -2408,13 +2408,17 @@ html {
 }
 
 /* A page that renders its own `PageTitle` needs no title from the chrome. The
-   host marks the page with `data-k2b-own-title` (see `PageTrailProvider`); the
-   doubled attribute keeps the weight of the former document-wide `:has()`. */
-.k2b-ui [data-k2b-own-title][data-k2b-own-title] .k2b-app-workspace__head {
+   host marks the page, or the `k2b-ui` root, with `data-k2b-own-title` (see
+   `PageTrailProvider`); the doubled attribute keeps the weight of the former
+   document-wide `:has()`. */
+:is(.k2b-ui[data-k2b-own-title][data-k2b-own-title], .k2b-ui [data-k2b-own-title][data-k2b-own-title]) .k2b-app-workspace__head {
   display: none;
 }
 
-.k2b-ui [data-k2b-own-title][data-k2b-own-title] .k2b-app-workspace__head > .k2b-app-workspace__head-lead > .k2b-page-title {
+:is(.k2b-ui[data-k2b-own-title][data-k2b-own-title], .k2b-ui [data-k2b-own-title][data-k2b-own-title])
+  .k2b-app-workspace__head
+  > .k2b-app-workspace__head-lead
+  > .k2b-page-title {
   display: none;
 }
 

@@ -140,7 +140,8 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
   // one still collapses its path.
   onMount(() => {
     // A title that the page shows after loading, such as one a client-side step brings, marks its host as well.
-    const titleHost = props.fallback ? null : root?.closest<HTMLElement>(`[${OWN_TITLE_HOST}]`);
+    // Without a host that marks its page, the `k2b-ui` root stands for it.
+    const titleHost = props.fallback ? null : (root?.closest<HTMLElement>(`[${OWN_TITLE_HOST}]`) ?? root?.closest<HTMLElement>(".k2b-ui"));
     if (titleHost) {
       syncOwnTitle(titleHost);
       onCleanup(() => queueMicrotask(() => syncOwnTitle(titleHost)));
