@@ -123,7 +123,16 @@ export function AccessDialog(
     resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, access());
   const manageLabel = (principal: Principal) => levels(principal).find((level) => level.level === "admin")?.label ?? access().manage;
   const levelLabel = (principal: Principal, level: DraftLevel | null) =>
-    level ? (levels(principal).find((option) => option.key === levelKey(level.permission, level.scope))?.label ?? level.permission) : "";
+    !level
+      ? ""
+      : level.permission === "none"
+        ? access().noAccess
+        : (levels(principal).find((option) => option.key === levelKey(level.permission, level.scope))?.label ?? level.permission);
+  /** The level a new row starts with: the first the resource offers, with its scope. */
+  const firstLevel = (principal: Principal): DraftLevel => {
+    const option = levels(principal)[0];
+    return option ? { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) } : { permission: "read" };
+  };
   const nameOf = (row: DraftRow) =>
     row.principal.type === "authenticated"
       ? t().signedInLabel
@@ -213,35 +222,52 @@ export function AccessDialog(
 
   // ── Save ──────────────────────────────────────────────────────────────
   const confirmRemovals = async (pending: readonly DraftChange[]): Promise<boolean> => {
-    const losing = pending.filter((change) => change.kind === "remove" && !generalPrincipal(change.row.principal));
+    // Turning off signed-in or public access takes access away as well.
+    const losing = pending.filter((change) => change.kind === "remove");
     if (losing.length === 0) return true;
     const names = new Intl.ListFormat(locale(), { type: "conjunction" }).format(losing.map((change) => nameOf(change.row)));
     const others = pending.length - losing.length;
     return (
       (await prompts.confirm(
-        `${t().confirmLoses({ names, name: props.resourceName })} ${others > 0 ? t().confirmOthers({ count: others }) : t().confirmAlone}`,
+        `${t().confirmLoses({ names, name: props.resourceName, count: losing.length })} ${others > 0 ? t().confirmOthers({ count: others }) : t().confirmAlone}`,
         { title: t().confirmTitle, variant: "danger", confirmText: t().confirmRemove, cancelText: t().confirmBack },
       )) === true
     );
   };
   const save = async () => {
-    const pending = saveOrder(changes());
-    if (pending.length === 0 || saving() || !canEdit()) return;
-    if (!(await confirmRemovals(pending)) || disposed) return;
+    if (changes().length === 0 || saving() || !canEdit()) return;
+    // The save owns the draft from the first click: a second click or an edit while confirming changes nothing.
     setSaving(true);
     setFailed(false);
     try {
+      const pending = saveOrder(changes());
+      if (!(await confirmRemovals(pending)) || disposed) return;
       for (const change of pending) {
-        if (disposed) return;
         const level = change.kind === "add" ? change.level : change.kind === "change" ? change.to : undefined;
+        const permission = level?.permission;
+        // The dialog never offers a denial, so a pending grant or change always names a grantable level.
+        if (permission === "none") throw new Error("A denial is never granted from the dialog");
         if (change.kind === "add") {
-          const saved = await props.grantAccess(change.row.principal, level!.permission, change.row.display, level!.scope);
-          setDraft((current) => applied(current, change, { ...saved, displayName: saved.displayName ?? change.row.display.displayName }));
+          if (!permission) continue;
+          const saved = await props.grantAccess(change.row.principal, permission, change.row.display, level?.scope);
+          if (disposed) return;
+          const display = change.row.display;
+          setDraft((current) =>
+            applied(current, change, {
+              ...saved,
+              displayName: saved.displayName ?? display.displayName,
+              avatarHash: saved.avatarHash !== undefined ? saved.avatarHash : display.avatarHash,
+              serviceAccountKind: saved.serviceAccountKind ?? display.serviceAccountKind,
+            }),
+          );
         } else if (change.kind === "change") {
-          await props.updateAccess(change.row.entry!.id, level!.permission, level!.scope);
+          if (!permission) continue;
+          await props.updateAccess(change.row.entry!.id, permission, level?.scope);
+          if (disposed) return;
           setDraft((current) => applied(current, change));
         } else {
           await props.revokeAccess(change.row.entry!.id);
+          if (disposed) return;
           setDraft((current) => applied(current, change));
         }
       }
@@ -345,7 +371,17 @@ export function AccessDialog(
               {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
               <span class="ml-auto flex shrink-0 items-center justify-end gap-1">
                 <span class="flex w-36 justify-end sm:w-40">
-                  <Button variant="text" disabled={saving()} onClick={() => edit((current) => restoreRow(current, row()))}>
+                  <Button
+                    variant="text"
+                    data-access-undo=""
+                    disabled={saving()}
+                    onClick={(event) => {
+                      const item = event.currentTarget.closest("li");
+                      edit((current) => restoreRow(current, row()));
+                      // The row stays; focus goes back to its remove button, which takes Undo's place.
+                      queueMicrotask(() => item?.querySelector<HTMLButtonElement>("button[data-access-remove]")?.focus());
+                    }}
+                  >
                     {t().undo}
                   </Button>
                 </span>
@@ -355,12 +391,32 @@ export function AccessDialog(
           }
         >
           <span class="ml-auto flex shrink-0 items-center gap-1">
-            <span class="w-36 sm:w-40">{levelSelect(row())}</span>
+            <span class="w-36 sm:w-40">
+              {/* A stored denial is shown, never offered: it can only be removed. */}
+              <Show
+                when={row().next?.permission !== "none"}
+                fallback={<span class="text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>}
+              >
+                {levelSelect(row())}
+              </Show>
+            </span>
             <IconButton
               label={protectedRow() ? t().lastManagerRemove({ level: manageLabel(row().principal) }) : t().remove({ name: nameOf(row()) })}
               variant="ghost"
               disabled={saving() || protectedRow()}
-              onClick={() => edit((current) => removeRow(current, row()))}
+              data-access-remove=""
+              onClick={(event) => {
+                const item = event.currentTarget.closest("li");
+                const added = !row().entry;
+                edit((current) => removeRow(current, row()));
+                // A stored row stays with Undo in its place; an added row leaves, and focus returns to the search.
+                queueMicrotask(() =>
+                  (added
+                    ? document.querySelector<HTMLInputElement>("dialog[open] input[role=combobox]")
+                    : item?.querySelector<HTMLButtonElement>("button[data-access-undo]")
+                  )?.focus(),
+                );
+              }}
             >
               <i class="ti ti-x" aria-hidden="true" />
             </IconButton>
@@ -378,13 +434,7 @@ export function AccessDialog(
     const toggle = (value: boolean) =>
       edit((current) => {
         const existing = draftRows(current).find((candidate) => candidate.principal.type === rowProps.type);
-        if (value)
-          return addPrincipal(
-            current,
-            principal,
-            { displayName: "" },
-            existing?.previous ?? { permission: levels(principal)[0]?.level ?? "read" },
-          );
+        if (value) return addPrincipal(current, principal, { displayName: "" }, existing?.previous ?? firstLevel(principal));
         return existing ? removeRow(current, existing) : current;
       });
     const description = () => {
@@ -452,9 +502,7 @@ export function AccessDialog(
     }
   };
   const addFound = (account: FoundServiceAccount) => {
-    edit((current) =>
-      addPrincipal(current, account.principal, account.display, { permission: levels(account.principal)[0]?.level ?? "read" }),
-    );
+    edit((current) => addPrincipal(current, account.principal, account.display, firstLevel(account.principal)));
     setFound(null);
     setHandle("");
     setHandleOpen(false);
@@ -482,9 +530,7 @@ export function AccessDialog(
               serviceAccountStatus="active"
               placeholder={t().search}
               disabled={saving()}
-              onSelect={(principal, display) =>
-                edit((current) => addPrincipal(current, principal, display, { permission: levels(principal)[0]?.level ?? "read" }))
-              }
+              onSelect={(principal, display) => edit((current) => addPrincipal(current, principal, display, firstLevel(principal)))}
             />
           </Show>
 
@@ -497,7 +543,10 @@ export function AccessDialog(
           >
             <Show when={peopleRows().length > 0} fallback={<p class="text-[13px] text-dimmed">{t().onlyYou}</p>}>
               <ul class="flex flex-col">
-                <For each={peopleRows()}>{(row) => <AccessRow row={row} />}</For>
+                {/* Rows are keyed by principal, so a staged change keeps the row, its controls and the focus. */}
+                <For each={peopleRows().map((row) => row.key)}>
+                  {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+                </For>
               </ul>
             </Show>
           </PanelDialog.Section>
@@ -557,7 +606,9 @@ export function AccessDialog(
                 </span>
               </Show>
               <ul class="flex flex-col">
-                <For each={objectAccountRows()}>{(row) => <AccessRow row={row} />}</For>
+                <For each={objectAccountRows().map((row) => row.key)}>
+                  {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+                </For>
                 <Show when={handleOpen()}>
                   <li class="flex flex-col gap-2 pb-2 sm:pl-11">
                     <form
@@ -572,6 +623,8 @@ export function AccessDialog(
                         placeholder={t().serviceAccountHandlePlaceholder}
                         value={handle}
                         onValueChange={(value) => {
+                          // A changed identifier ends the lookup for the old one, so its answer never appears.
+                          lookupAbort?.abort();
                           setHandle(value);
                           setLookup("idle");
                           setFound(null);

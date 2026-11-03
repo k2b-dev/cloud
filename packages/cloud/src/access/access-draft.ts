@@ -2,8 +2,11 @@ import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from
 import { isManagerEntry } from "./managers";
 import { principalKey } from "./principal-key";
 
-/** A level as the dialog offers it: the permission and, for a grant on part of the resource, its scope. */
-export type DraftLevel = { permission: Exclude<PermissionLevel, "none">; scope?: string };
+/**
+ * A level as the dialog offers it: the permission and, for a grant on part of the resource, its scope. A stored
+ * denial keeps `none`, so the rules that let a denial shadow other rows see it; the dialog never offers it.
+ */
+export type DraftLevel = { permission: PermissionLevel; scope?: string };
 
 /** Display facts the server returns with an entry, kept for a principal that is only in the draft. */
 export type DraftDisplay = { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
@@ -39,8 +42,7 @@ export type AccessDraft = {
 };
 
 const sameLevel = (a: DraftLevel | null, b: DraftLevel | null) => a?.permission === b?.permission && a?.scope === b?.scope;
-const levelOf = (entry: AccessEntry): DraftLevel =>
-  entry.permission === "none" ? { permission: "read" } : { permission: entry.permission, ...(entry.scope ? { scope: entry.scope } : {}) };
+const levelOf = (entry: AccessEntry): DraftLevel => ({ permission: entry.permission, ...(entry.scope ? { scope: entry.scope } : {}) });
 
 export const emptyDraft = (base: readonly AccessEntry[]): AccessDraft => ({ base, levels: new Map(), removed: new Set(), added: [] });
 
@@ -164,8 +166,14 @@ export const applied = (draft: AccessDraft, change: DraftChange, saved?: AccessE
   return { base, levels, removed, added: draft.added };
 };
 
-/** Saving order: new grants first, then level changes, removals last, so the resource never passes through no manager. */
+const strength: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
+
+/**
+ * Saving order: new grants first, then raised levels, then lowered levels, removals last, so a handover of Manage
+ * raises the new manager before the old one steps down and the resource never passes through no manager.
+ */
 export const saveOrder = (changes: readonly DraftChange[]): DraftChange[] => {
-  const rank = { add: 0, change: 1, remove: 2 } as const;
-  return [...changes].sort((a, b) => rank[a.kind] - rank[b.kind]);
+  const rank = (change: DraftChange) =>
+    change.kind === "add" ? 0 : change.kind === "remove" ? 3 : strength[change.to.permission] > strength[change.from.permission] ? 1 : 2;
+  return [...changes].sort((a, b) => rank(a) - rank(b));
 };

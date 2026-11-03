@@ -35,7 +35,14 @@ describe("AccessDialog", () => {
     return;
   }
 
-  const setup = async (overrides: { updateAccess?: () => Promise<void> } = {}) => {
+  const setup = async (
+    overrides: {
+      updateAccess?: () => Promise<void>;
+      entries?: AccessEntry[];
+      allowedLevels?: import("./PermissionEditor").AllowedLevel[];
+      findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<import("./AccessDialog").FoundServiceAccount | null>;
+    } = {},
+  ) => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     delegateEvents(["click", "input"], dom.document);
@@ -48,10 +55,12 @@ describe("AccessDialog", () => {
       () => (
         <AccessDialog
           resourceName="Einkauf 2027"
-          initialEntries={[mia, lea, bot]}
+          initialEntries={overrides.entries ?? [mia, lea, bot]}
+          allowedLevels={overrides.allowedLevels}
+          findServiceAccount={overrides.findServiceAccount}
           viewerUserId={mia.principal.type === "user" ? mia.principal.userId : undefined}
-          grantAccess={async (principal, permission) => {
-            calls.push(`grant ${principal.type} ${permission}`);
+          grantAccess={async (principal, permission, _display, scope) => {
+            calls.push(`grant ${principal.type} ${permission}${scope ? ` ${scope}` : ""}`);
             return { id: "00000000-0000-4000-8000-000000000009", principal, permission, createdAt: "now" };
           }}
           updateAccess={
@@ -191,6 +200,95 @@ describe("AccessDialog", () => {
       await waitFor(() => ui.close.mock.calls.length === 1, "the dialog to close");
       expect(ui.close.mock.calls[0]).toEqual([false]);
       expect(ui.calls).toEqual([]);
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("a new grant keeps the scope of the level it starts with", async () => {
+    const ui = await setup({ allowedLevels: [{ level: "read", scope: "assigned", label: "Assigned" }, "admin"] });
+    try {
+      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.click();
+      await waitFor(() => ui.dom.root.textContent?.includes("1 change") === true, "one change");
+      ui.button("Save").click();
+      await waitFor(() => ui.close.mock.calls.length === 1, "the dialog to close");
+      expect(ui.calls).toEqual(["grant authenticated read assigned"]);
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("two quick clicks on Save save once", async () => {
+    const ui = await setup();
+    try {
+      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.click();
+      await waitFor(() => ui.dom.root.textContent?.includes("1 change") === true, "one change");
+      ui.button("Save").click();
+      ui.button("Save").click();
+      await waitFor(() => ui.close.mock.calls.length >= 1, "the dialog to close");
+      await Bun.sleep(30);
+      expect(ui.calls).toEqual(["grant authenticated read"]);
+      expect(ui.close).toHaveBeenCalledTimes(1);
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("turning off signed-in access asks like any removal", async () => {
+    const signedIn: AccessEntry = {
+      id: "00000000-0000-4000-8000-000000000008",
+      principal: { type: "authenticated" },
+      permission: "read",
+      createdAt: "2026-11-03T00:00:00.000Z",
+    };
+    const ui = await setup({ entries: [mia, signedIn] });
+    try {
+      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.click();
+      await waitFor(() => ui.dom.root.textContent?.includes("1 change") === true, "one change");
+      ui.button("Save").click();
+      await waitFor(() => ui.close.mock.calls.length === 1, "the dialog to close");
+      expect(ui.confirm).toHaveBeenCalledTimes(1);
+      expect(String(ui.confirm.mock.calls[0]![0])).toContain("All signed-in people will lose access to Einkauf 2027.");
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("removing a row keeps it and moves focus to Undo; Undo returns focus to its remove button", async () => {
+    const ui = await setup();
+    try {
+      const remove = ui.row("Lea Schmitt").querySelector<HTMLButtonElement>('button[aria-label="Remove Lea Schmitt"]')!;
+      remove.focus();
+      remove.click();
+      await waitFor(() => ui.dom.document.activeElement?.textContent?.trim() === "Undo", "focus on Undo");
+      ui.button("Undo").click();
+      await waitFor(
+        () => ui.dom.document.activeElement?.getAttribute("aria-label") === "Remove Lea Schmitt",
+        "focus back on the remove button",
+      );
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("a changed identifier drops the answer for the old one", async () => {
+    const pending = Promise.withResolvers<import("./AccessDialog").FoundServiceAccount | null>();
+    const ui = await setup({ findServiceAccount: () => pending.promise });
+    try {
+      ui.button("Add service account").click();
+      await waitFor(() => !!ui.dom.root.querySelector('input[aria-label="Identifier of the service account"]'), "the identifier field");
+      const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]')!;
+      input.value = "code-aaaaaaaaaa";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      ui.button("Find").click();
+      input.value = "code-bbbbbbbbbb";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      pending.resolve({
+        principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000001" },
+        display: { displayName: "Code of the old mailbox", serviceAccountKind: "resource_bound" },
+      });
+      await Bun.sleep(30);
+      expect(ui.dom.root.textContent).not.toContain("Code of the old mailbox");
     } finally {
       ui.cleanup();
     }

@@ -84,3 +84,23 @@ test("saving adds first and removes last; each saved change leaves only the open
   expect(draftChanges(draft)).toEqual([]);
   expect(draft.base.map((stored) => stored.id)).toEqual([mia.id, saved.id]);
 });
+
+test("a handover of Manage raises the new manager before the old one steps down", () => {
+  let draft = emptyDraft([mia, lea]);
+  draft = setLevel(draft, draftRows(draft)[0]!, { permission: "read" });
+  draft = setLevel(draft, draftRows(draft)[1]!, { permission: "admin" });
+  expect(saveOrder(draftChanges(draft)).map((change) => change.row.display.displayName)).toEqual(["Lea", "Mia"]);
+});
+
+test("a stored denial stays a denial, so rules that let it shadow a grant still count managers right", () => {
+  const miaDenied: AccessEntry = { ...mia, id: "44444444-4444-4444-8444-444444444444", permission: "none" };
+  const bob = entry("55555555-5555-4555-8555-555555555555", "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "admin", "Bob");
+  const draft = emptyDraft([mia, miaDenied, bob]);
+  expect(draftRows(draft)[1]!.next).toEqual({ permission: "none" });
+  // Like Grids: a principal's denial hides that principal's grants.
+  const unshadowed = (entries: readonly AccessEntry[]) => {
+    const denied = new Set(entries.filter((stored) => stored.permission === "none").map((stored) => JSON.stringify(stored.principal)));
+    return entries.filter((stored) => !denied.has(JSON.stringify(stored.principal)));
+  };
+  expect([...lastManagerKeys(draft, unshadowed)]).toEqual(["u:dddddddd-dddd-4ddd-8ddd-dddddddddddd"]);
+});

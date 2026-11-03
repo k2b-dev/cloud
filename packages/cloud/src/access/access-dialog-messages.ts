@@ -46,7 +46,7 @@ export const accessDialogMessages = i18n.define({
       lastManagerOption: ({ level }: { level: string }) => `Not now: at least one entry must keep ${level}.`,
       lastManagerRemove: ({ level }: { level: string }) => `Give someone else ${level} first.`,
       confirmTitle: "Remove access?",
-      confirmLoses: ({ names, name }: { names: string; name: string }) => `${names} will lose access to ${name}.`,
+      confirmLoses: ({ names, name }: { names: string; name: string; count: number }) => `${names} will lose access to ${name}.`,
       confirmOthers: ({ count }: { count: number }) =>
         i18n.plural(count, "en", {
           one: "Your other change applies too. With “Back”, everything stays in the editor as it was.",
@@ -120,7 +120,11 @@ export const accessDialogMessages = i18n.define({
       lastManagerOption: ({ level }) => `Geht gerade nicht: Mindestens ein Eintrag muss ${level} behalten.`,
       lastManagerRemove: ({ level }) => `Gib erst jemand anderem „${level}“.`,
       confirmTitle: "Zugriff entziehen?",
-      confirmLoses: ({ names, name }) => `${names} verliert den Zugriff auf ${name}.`,
+      confirmLoses: ({ names, name, count }) =>
+        i18n.plural(count, "de", {
+          one: `${names} verliert den Zugriff auf ${name}.`,
+          other: `${names} verlieren den Zugriff auf ${name}.`,
+        }),
       confirmOthers: ({ count }) =>
         i18n.plural(count, "de", {
           one: "Deine andere Änderung gilt mit. Mit „Zurück“ bleibt alles im Editor, wie es war.",
