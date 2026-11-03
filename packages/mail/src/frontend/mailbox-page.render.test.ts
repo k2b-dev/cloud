@@ -12,7 +12,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../tests/fixtures/select-html";
 import { resolveMailSearchRoute } from "../search-state";
-import { focus, mailboxes, mailboxPreferences } from "../service";
+import { mailboxes, mailboxPreferences } from "../service";
 import * as access from "../service/access";
 import * as integrations from "../service/app-integrations";
 import * as publicResources from "../service/public-resources";
@@ -26,7 +26,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./[mailboxId]/page");
-const { default: focusHandler } = await import("./page");
+const { default: landingHandler } = await import("./page");
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -60,6 +60,7 @@ beforeEach(() => {
       mailboxes: [],
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
+      focusNoticeOpen: false,
     }),
   );
   spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));
@@ -67,7 +68,7 @@ beforeEach(() => {
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
 });
 
-const request = (query = "", focusPage = false, env?: { timeout(request: Request, seconds: number): void }) => {
+const request = (query = "", landingPage = false, env?: { timeout(request: Request, seconds: number): void }) => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -89,9 +90,9 @@ const request = (query = "", focusPage = false, env?: { timeout(request: Request
     });
     await next();
   });
-  app.get("/app/mail", ...focusHandler);
+  app.get("/app/mail", ...landingHandler);
   app.get("/app/mail/:mailboxId", ...handler);
-  return app.request(`https://cloud.example.test/app/mail${focusPage ? "" : `/${mailboxShortId}`}${query}`, {}, env);
+  return app.request(`https://cloud.example.test/app/mail${landingPage ? "" : `/${mailboxShortId}`}${query}`, {}, env);
 };
 
 test("missing or deleted active mailbox renders shared HTML 404 before loading workspace data", async () => {
@@ -224,7 +225,7 @@ test.each([
   );
 });
 
-test("mailbox scope uses the public ID and Focus has no mailbox scope (#1471)", async () => {
+test("mailbox scope uses the public ID and Mail's page without a mailbox has no mailbox scope (#1471)", async () => {
   const snapshot: MailboxPageData = {
     viewPreference: { large: "auto", phone: "compact" },
     doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
@@ -327,23 +328,11 @@ test("mailbox scope uses the public ID and Focus has no mailbox scope (#1471)", 
   spies.push(
     spyOn(mailboxes, "listMailboxes").mockResolvedValue({ ok: true, data: [] }),
     spyOn(mailboxPreferences, "listMailboxPreferences").mockResolvedValue({ pinnedMailboxIds: [], hiddenMailboxIds: [] }),
-    spyOn(focus, "listFocusOverview").mockResolvedValue({
-      ok: true,
-      data: {
-        pages: {
-          mine: { items: [], nextCursor: null },
-          unassigned: { items: [], nextCursor: null },
-          waiting: { items: [], nextCursor: null },
-          all: { items: [], nextCursor: null },
-        },
-        counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 },
-        mailboxCounts: [],
-      },
-    }),
   );
-  const focusResponse = await request("", true);
-  expect(focusResponse.status).toBe(200);
-  const focusHtml = await focusResponse.text();
-  const focusShell = JSON.parse(focusHtml.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
-  expect(focusShell.panel.context?.scope).toBeUndefined();
+  // Without a mailbox, Mail's own page shows the setup and reports no mailbox scope.
+  const landingResponse = await request("", true);
+  expect(landingResponse.status).toBe(200);
+  const landingHtml = await landingResponse.text();
+  const landingShell = JSON.parse(landingHtml.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
+  expect(landingShell.panel.context?.scope).toBeUndefined();
 });

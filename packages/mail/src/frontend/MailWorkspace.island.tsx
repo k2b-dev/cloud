@@ -197,6 +197,8 @@ type MailWorkspaceProps = {
     mailboxes: MailSidebarMailbox[];
     pinnedMailboxIds: string[];
     hiddenMailboxIds: string[];
+    /** The one-time notice that Focus is gone; the page leaves it out once the person closed it. */
+    focusNoticeOpen?: boolean;
   };
 };
 
@@ -3655,6 +3657,7 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
                   mailboxes={props.sidebar.mailboxes}
                   preferences={mailboxPreferences}
                   counts={[]}
+                  focusNoticeOpen={props.sidebar.focusNoticeOpen}
                   open={controls()?.open() ?? null}
                   onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
                   onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}

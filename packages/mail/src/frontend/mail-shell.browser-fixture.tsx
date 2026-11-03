@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
+import type { ConversationView } from "../contracts";
 import { mailFolderNames } from "../folder-names";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MessageDetail } from "../service/messages";
@@ -12,7 +12,6 @@ import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtur
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
-import MailOverview from "./MailOverview.island";
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
@@ -96,7 +95,6 @@ const summaryFixture = (kind: string | null) => {
       return summaryState({ summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 });
   }
 };
-export const focusCounts = { mine: 12, unassigned: 7, waiting: 4, all: 23 };
 export const viewCounts = {
   needs_action: 12,
   mine: 5,
@@ -113,10 +111,6 @@ export const fixturePermission = (url: URL): Permission => {
   const value = url.searchParams.get("permission");
   return value === "read" || value === "admin" || value === "assigned-only" ? value : "write";
 };
-export const focusView = (url: URL): MailFocusView => {
-  const view = url.searchParams.get("view");
-  return view === "waiting" || view === "unassigned" || view === "all" ? view : "mine";
-};
 const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   id,
   name,
@@ -131,19 +125,18 @@ const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   createdAt: MAIL_SHELL_NOW,
   updatedAt: MAIL_SHELL_NOW,
 });
-export const mailboxes: ComponentProps<typeof MailOverview>["mailboxes"] = [
+export const mailboxes = [
   ["Box001", "Example support"],
   ["Box002", "Example dispatch"],
   ["Box003", "Example correspondence with an exceptionally long mailbox name that must fade"],
   ["Box004", "Example projects"],
   ["Box005", "Example hidden"],
-].map(([id, name]) => ({ ...mailbox(id!, name!), permission: "write", receivingAddress: `${id?.toLowerCase()}@example.test` }));
+].map(([id, name]) => ({ ...mailbox(id!, name!), receivingAddress: `${id?.toLowerCase()}@example.test` as string | null }));
 export const sidebar: ComponentProps<typeof MailWorkspace>["sidebar"] = {
   mailboxes,
   pinnedMailboxIds: ["Box002", "Box001"],
   hiddenMailboxIds: ["Box005"],
 };
-const focusMailboxCounts = mailboxes.map((box, index) => ({ mailboxId: box.id, unread: index + 2, needsAction: index + 3 }));
 // Standard folders carry an Exchange-like provider's names; the sidebar shows them localized.
 const standardFolderNames: Record<string, string> = {
   inbox: "INBOX",
@@ -213,19 +206,6 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     localTags: index === 0 ? localTags.slice(0, 1) : [],
   }),
 );
-export const focusPage = (view: MailFocusView): MailFocusPage => ({
-  items: listRows.slice(0, Math.min(focusCounts[view], 12)).map((row) => ({
-    ...row,
-    mailboxId: "Box001",
-    mailboxName: "Example support",
-    workStatus: row.workStatus ?? "needs_action",
-    hasAttachments: Boolean(row.attachmentCount),
-  })),
-  nextCursor: null,
-  counts: focusCounts,
-  mailboxCounts: focusMailboxCounts,
-});
-
 /** Conv02 is a long conversation: six messages, oldest first as the service sends them, so the reader folds the older ones. */
 const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, (_, index) => {
   const at = new Date(Date.parse(MAIL_SHELL_NOW) - (5 - index) * 86_400_000).toISOString();
@@ -543,58 +523,38 @@ export default function MailShellFixture(props: {
   locale?: "en" | "de";
   theme: "light" | "dark";
   workspaceCookieHeader?: string | null;
+  /** `?notice=1` until the fixture server stored the person's click on "Got it". */
+  focusNoticeOpen?: boolean;
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
   const data = mailboxData(url);
-  const overview = {
-    pages: { mine: focusPage("mine"), unassigned: focusPage("unassigned"), waiting: focusPage("waiting"), all: focusPage("all") },
-    counts: focusCounts,
-    mailboxCounts: focusMailboxCounts,
-  };
   return (
     <LocaleProvider locale={locale}>
-      {url.pathname === "/app/mail" ? (
-        <MailOverview
-          mailboxes={mailboxes}
-          initialFocus={overview}
-          initialFocusError={null}
-          initialView={focusView(url)}
-          initialSelection={null}
-          initialDetail={null}
-          initialPinnedMailboxIds={sidebar.pinnedMailboxIds}
-          initialHiddenMailboxIds={sidebar.hiddenMailboxIds}
-          currentUserEmail="reader@example.test"
-          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-          cloudUrl="https://cloud.example"
-          dateConfig={{ locale, timeZone: "UTC" }}
-        />
-      ) : (
-        <MailWorkspace
-          data={data}
-          requestPath={props.source}
-          currentUserId="user-1"
-          currentUserEmail="reader@example.test"
-          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-          cloudUrl="https://cloud.example"
-          dateConfig={{ locale, timeZone: "UTC" }}
-          initialPreferences={{
-            ...readMailWorkspacePreferences(""),
-            detailsOpen: url.searchParams.has("persist-details")
-              ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
-              : url.searchParams.get("details") === "1",
-            listCollapsed: url.searchParams.get("list") === "hidden",
-            // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
-            ...(url.searchParams.has("toolbar")
-              ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
-              : {}),
-          }}
-          initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
-          initialTheme={props.theme}
-          calendarIntegrationAvailable={false}
-          sidebar={sidebar}
-        />
-      )}
+      <MailWorkspace
+        data={data}
+        requestPath={props.source}
+        currentUserId="user-1"
+        currentUserEmail="reader@example.test"
+        contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+        cloudUrl="https://cloud.example"
+        dateConfig={{ locale, timeZone: "UTC" }}
+        initialPreferences={{
+          ...readMailWorkspacePreferences(""),
+          detailsOpen: url.searchParams.has("persist-details")
+            ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
+            : url.searchParams.get("details") === "1",
+          listCollapsed: url.searchParams.get("list") === "hidden",
+          // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
+          ...(url.searchParams.has("toolbar")
+            ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
+            : {}),
+        }}
+        initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
+        initialTheme={props.theme}
+        calendarIntegrationAvailable={false}
+        sidebar={{ ...sidebar, focusNoticeOpen: props.focusNoticeOpen ?? false }}
+      />
     </LocaleProvider>
   );
 }

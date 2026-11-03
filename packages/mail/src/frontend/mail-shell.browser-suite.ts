@@ -42,13 +42,15 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const {
   default: Fixture,
   MAIL_SHELL_NOW,
-  focusCounts,
   viewCounts,
-  focusView,
-  focusPage,
   mailboxData,
   mailboxList,
+  sidebar: sidebarData,
 } = await import("./mail-shell.browser-fixture");
+const { chooseLandingMailbox, readMailLandingLink } = await import("./mail-landing");
+const { readMailWorkspacePreferences } = await import("./_components/mail-workspace-preferences");
+/** The fixture server keeps the person's click on "Got it" in this cookie, as Mail keeps it for the person. */
+const NOTICE_COOKIE = "mail_fixture_focus_notice";
 const ui = resolve(import.meta.dir, "../../../ui/dist");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 const boxPath = "/app/mail/Box001";
@@ -66,7 +68,6 @@ const measurements = [
   ".k2b-view-tabs__item",
   ".k2b-filter-chip",
   ".mail-sidebar-mailbox",
-  ".mail-focus-row",
   ".mail-list-entry",
   ".mail-draft-row",
   ".mail-draft-row__subject",
@@ -126,6 +127,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
       // without putting an artificial preference into its navigation URL.
       workspaceCookieHeader: url.searchParams.has("persist-details") ? cookieHeader : undefined,
+      focusNoticeOpen: url.searchParams.get("notice") === "1" && !cookieHeader?.includes(`${NOTICE_COOKIE}=closed`),
     }),
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
@@ -228,7 +230,21 @@ beforeAll(async () => {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
         return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target));
       }
-      if (url.pathname === "/api/mail/overview/conversations") return Response.json(focusPage(focusView(url)));
+      // Mail's landing as its page decides it: an old Focus link first, then the mailbox to open.
+      if (url.pathname === "/app/mail") {
+        const link = readMailLandingLink((name) => url.searchParams.get(name) ?? undefined);
+        if ("href" in link) return Response.redirect(new URL(link.href, server.url).href, 302);
+        const mailboxId = chooseLandingMailbox({
+          mailboxIds: sidebarData.mailboxes.map((mailbox) => mailbox.id),
+          pinnedMailboxIds: sidebarData.pinnedMailboxIds,
+          hiddenMailboxIds: sidebarData.hiddenMailboxIds,
+          lastMailboxId: readMailWorkspacePreferences(request.headers.get("cookie")).lastMailboxId,
+        });
+        return Response.redirect(new URL(`/app/mail/${mailboxId}${link.view ? `?view=${link.view}` : ""}`, server.url).href, 302);
+      }
+      if (url.pathname === "/api/mail/mailboxes/preferences/focus-notice" && request.method === "PUT") {
+        return Response.json({ dismissed: true }, { headers: { "set-cookie": `${NOTICE_COOKIE}=closed; Path=/` } });
+      }
       if (url.pathname.endsWith("/actions") && request.method === "POST") return Response.json({ commands: [] });
       if (url.pathname.endsWith("/preference") && request.method === "PATCH") return Response.json(await request.json());
       if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
@@ -1068,9 +1084,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               if (phone) {
                 expect(await current.locator("..").getAttribute("data-context")).toBe("true");
                 expect(await other.locator("..").getAttribute("data-context")).toBe("false");
-                const focus = navigation.locator('a[href="/app/mail"]');
-                expect(await focus.locator("..").getAttribute("data-context")).toBeNull();
-                expect((await appearance(focus.locator(label))).color).toBe(currentInk.color);
+                // Focus is gone: the sheet starts with the mailboxes.
+                expect(await navigation.locator('a[href="/app/mail"]').count()).toBe(0);
               }
               if (screenshots) {
                 mkdirSync(resolve(screenshots), { recursive: true });
@@ -1110,41 +1125,88 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("mailboxes", () => {
-      test("Focus and mailbox share the ordered navigation; switching mailbox takes one link", async () => {
-        let label: string | null = null;
-        let rows: string[] = [];
-        for (const path of ["/app/mail", boxPath]) {
-          const page = await open(path);
+      test("the mailbox sidebar lists the mailboxes without Focus; switching mailbox takes one link", async () => {
+        const page = await open(boxPath);
+        try {
+          expect(await page.locator(".mail-sidebar").getAttribute("aria-label")).toBe("Mailboxes");
+          const ids = await sidebar(page)
+            .locator('.mail-sidebar-mailbox:not([data-hidden="true"])')
+            .evaluateAll((elements) => elements.map((e) => e.getAttribute("data-mailbox")!));
+          expect(ids).toEqual(["Box002", "Box001", "Box003", "Box004"]);
+          expect(await sidebar(page).locator('a[href="/app/mail"]').count()).toBe(0);
+          expect(await sidebar(page).locator(`a[href="${boxPath}"][aria-current="page"]`).count()).toBe(1);
+          const groups = sidebar(page).getByRole("group", { name: /^Folders of / });
+          expect(await groups.count()).toBe(1);
+          expect(await groups.getAttribute("aria-label")).toBe("Folders of Example support");
+          expect(await page.locator(".k2b-app-workspace__sidebar-switcher").count()).toBe(0);
+          expect(await page.getByRole("button", { name: "Switch mailbox" }).count()).toBe(0);
+          const other = sidebar(page).locator('[data-mailbox="Box002"] a').first();
+          expect(await other.getAttribute("href")).toBe("/app/mail/Box002");
+          expect(await other.evaluate((e) => e.tagName)).toBe("A");
+          const countSlot = other.locator(".mail-sidebar-needs-action");
+          expect(await countSlot.count()).toBe(1);
+          expect(await countSlot.textContent()).toBe("");
+          expect(await other.locator(".mail-sidebar-unread-dot").count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("Mail opens the last mailbox; Back leaves Mail and reload stays in the mailbox", async () => {
+        const page = await open("/app/mail/Box003");
+        try {
+          // Opening a mailbox records it; Mail then opens it again instead of a page of its own.
+          await page.goto(new URL("/app/mail", server.url).href);
+          await ready(page);
+          expect(new URL(page.url()).pathname).toBe("/app/mail/Box003");
+          expect(await sidebar(page).locator('[data-mailbox="Box003"]').getAttribute("data-open")).toBe("true");
+          await page.reload();
+          await ready(page);
+          expect(new URL(page.url()).pathname).toBe("/app/mail/Box003");
+          // The redirect adds no entry of its own: the blank start, the first visit, and the mailbox Mail opened.
+          expect(await page.evaluate(() => history.length)).toBe(3);
+          await page.goBack();
+          await ready(page);
+          expect(new URL(page.url()).pathname).toBe("/app/mail/Box003");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("an old Focus link opens its conversation or view in the mailbox", async () => {
+        for (const [source, target] of [
+          ["/app/mail?mailbox=Box002&conversation=Conv01", "/app/mail/Box002?conversation=Conv01"],
+          // Without a last mailbox, the first pinned one opens.
+          ["/app/mail?view=waiting", "/app/mail/Box002?view=waiting"],
+        ] as const) {
+          const page = await open(source);
           try {
-            // Focus stacks its sidebar as chips below 64 rem and is a nav landmark; a mailbox's sidebar is the same rows.
-            const currentLabel = await page.locator(".mail-sidebar").getAttribute("aria-label");
-            expect(currentLabel).toBe("Mailboxes");
-            const ids = await sidebar(page)
-              .locator('.mail-sidebar-mailbox:not([data-hidden="true"])')
-              .evaluateAll((elements) => elements.map((e) => e.getAttribute("data-mailbox")!));
-            expect(ids).toEqual(["Box002", "Box001", "Box003", "Box004"]);
-            if (label) {
-              expect(currentLabel).toBe(label);
-              expect(ids).toEqual(rows);
-            }
-            label = currentLabel;
-            rows = ids;
-            expect(await sidebar(page).locator(`a[href="${path}"][aria-current="page"]`).count()).toBe(1);
-            const groups = sidebar(page).getByRole("group", { name: /^Folders of / });
-            expect(await groups.count()).toBe(path === boxPath ? 1 : 0);
-            if (path === boxPath) expect(await groups.getAttribute("aria-label")).toBe("Folders of Example support");
-            expect(await page.locator(".k2b-app-workspace__sidebar-switcher").count()).toBe(0);
-            expect(await page.getByRole("button", { name: "Switch mailbox" }).count()).toBe(0);
-            const other = sidebar(page).locator('[data-mailbox="Box002"] a').first();
-            expect(await other.getAttribute("href")).toBe("/app/mail/Box002");
-            expect(await other.evaluate((e) => e.tagName)).toBe("A");
-            const countSlot = other.locator(".mail-sidebar-needs-action");
-            expect(await countSlot.count()).toBe(1);
-            expect(await countSlot.textContent()).toBe(path === boxPath ? "" : "4");
-            expect(await other.locator(".mail-sidebar-unread-dot").count()).toBe(path === boxPath ? 0 : 1);
+            expect(`${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe(target);
           } finally {
             await close(page);
           }
+        }
+      });
+
+      test("the notice that Focus is gone stays closed after a reload", async () => {
+        const page = await open(`${boxPath}?notice=1`);
+        try {
+          const notice = sidebar(page).getByRole("status").filter({ hasText: "Focus is gone" });
+          await notice.waitFor({ state: "visible" });
+          const before = await page.locator(".mail-sidebar-mailbox").first().boundingBox();
+          const saved = page.waitForRequest(
+            (request) => request.method() === "PUT" && new URL(request.url()).pathname === "/api/mail/mailboxes/preferences/focus-notice",
+          );
+          await notice.getByRole("button", { name: "Got it" }).click();
+          await saved;
+          await notice.waitFor({ state: "detached" });
+          // The mailboxes move up by the notice's height, once, on the person's own click.
+          expect((await page.locator(".mail-sidebar-mailbox").first().boundingBox())!.y).toBeLessThan(before!.y);
+          await page.reload();
+          await ready(page);
+          expect(await sidebar(page).getByText("Focus is gone").count()).toBe(0);
+        } finally {
+          await close(page);
         }
       });
 
@@ -1367,18 +1429,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      for (const path of ["/app/mail", boxPath]) {
+      for (const path of [boxPath]) {
         test(`${path}: default first tab, exact fixture counts, no Paper`, async () => {
           const page = await open(path);
           try {
             const first = tabs(page).locator("a").first();
             expect(await first.getAttribute("href")).toBe(path);
             expect(await first.getAttribute("aria-current")).toBe("page");
-            expect(await first.textContent()).toBe(path === boxPath ? "All" : `For me${focusCounts.mine}`);
-            const entries =
-              path === boxPath ? Object.entries(viewCounts).filter(([id]) => id !== "send_problems") : Object.entries(focusCounts);
+            expect(await first.textContent()).toBe("All");
+            const entries = Object.entries(viewCounts).filter(([id]) => id !== "send_problems");
             for (const [id, count] of entries) {
-              const href = path === "/app/mail" && id === "mine" ? path : `${path}?view=${id}`;
+              const href = `${path}?view=${id}`;
               let link = tabs(page).locator(`a[href="${href}"]`);
               if (!(await link.count())) {
                 await tabs(page).getByRole("button", { name: /More/ }).click();
@@ -1532,26 +1593,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
-
-      test("Focus waiting URL survives in-place navigation and history", async () => {
-        const page = await open("/app/mail?view=waiting");
-        try {
-          expect(await currentHref(page)).toBe("/app/mail?view=waiting");
-          await clickTab(page, "/app/mail?view=unassigned");
-          await page.goBack();
-          await ready(page);
-          expect(new URL(page.url()).search).toBe("?view=waiting");
-          expect(await currentHref(page)).toBe("/app/mail?view=waiting");
-          await page.goForward();
-          await ready(page);
-          expect(await currentHref(page)).toBe("/app/mail?view=unassigned");
-          await page.reload();
-          await ready(page);
-          expect(await currentHref(page)).toBe("/app/mail?view=unassigned");
-        } finally {
-          await close(page);
-        }
-      });
     });
 
     section("layout", () => {
@@ -1755,7 +1796,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      for (const path of ["/app/mail", boxPath]) {
+      for (const path of [boxPath]) {
         test(`${path}: sidebar resizes with pointer and ArrowLeft/ArrowRight/Home`, async () => {
           const page = await open(path);
           try {
@@ -1812,35 +1853,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 ? await page.locator(".k2b-app-workspace__head-filters").boundingBox()
                 : null;
             if (filters) expect(views.y + views.height).toBeLessThanOrEqual(filters.y + 0.5);
-            const rows = await page.locator(".mail-focus-row,.mail-list-entry").first().boundingBox();
+            const rows = await page.locator(".mail-list-entry").first().boundingBox();
             expect(views.y + views.height).toBeLessThanOrEqual(rows!.y);
-            if (path === "/app/mail") {
-              expect(await page.locator('.mail-sidebar[data-mobile="stacked"]').count()).toBe(1);
-              const chip = await page.locator('.mail-sidebar [data-mailbox="Box002"] a:visible').first().boundingBox();
-              expect(chip).not.toBeNull();
-              // P5 keeps object navigation before the card; view tabs are the
-              // card's first row, not the whole workspace's first row.
-              const head = (await page.locator(".k2b-app-workspace__head").boundingBox())!;
-              expect(chip!.y + chip!.height).toBeLessThanOrEqual(head.y);
-              const names = ["mail-sidebar", "k2b-app-workspace__head", "k2b-app-workspace__head-views"];
-              const regions = (frame: Frame) => frame.filter(({ part }) => names.some((name) => part.split(" ").includes(name)));
-              const server = regions(await recordedFrame(page, "server"));
-              const hydrated = regions(await recordedFrame(page, "hydrated"));
-              const current = regions(await geometry(page));
-              for (const frame of [server, hydrated, current]) {
-                // querySelectorAll records DOM/reading order as well as geometry.
-                expect(frame.map(({ part }) => names.find((name) => part.split(" ").includes(name)))).toEqual(names);
-                const [objects, cardHead, viewRow] = frame;
-                expect(objects!.height).toBeGreaterThan(0);
-                expect(cardHead!.height).toBeGreaterThan(0);
-                expect(viewRow!.height).toBeGreaterThan(0);
-                expect(objects!.y + objects!.height).toBeLessThanOrEqual(cardHead!.y);
-                expect(viewRow!.y).toBeGreaterThanOrEqual(cardHead!.y);
-                expect(viewRow!.y + viewRow!.height).toBeLessThanOrEqual(cardHead!.y + cardHead!.height);
-              }
-              assertFrame(server, hydrated, "Overview object row hydration");
-              assertFrame(server, current, "Overview object row settled");
-            }
             const firstRowY = await page.locator(".k2b-app-workspace__head").evaluate((head) => {
               const style = getComputedStyle(head);
               return head.getBoundingClientRect().y + Number.parseFloat(style.paddingTop) + Number.parseFloat(style.borderTopWidth);
@@ -1876,7 +1890,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       }
 
       for (const locale of ["en", "de"] as const)
-        for (const path of ["/app/mail", "/app/mail?view=all", boxPath, `${boxPath}?view=snoozed`])
+        for (const path of [boxPath, `${boxPath}?view=snoozed`])
           test(`390 ${locale} ${path}: tabs keep full labels, and the current tab is in the strip before and after hydration`, async () => {
             const page = await open(`${path}${path.includes("?") ? "&" : "?"}locale=${locale}`, 390);
             try {
@@ -1987,7 +2001,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      for (const path of ["/app/mail", boxPath])
+      for (const path of [boxPath])
         test(`${path}: a mailbox row's count keeps the same inset from the group's right edge as its icon from the left`, async () => {
           const page = await open(path);
           try {
@@ -2021,16 +2035,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       // Each URL opens in its own page (testing.md: an in-place goto can stall in WebKit, #1367); reload is the subject.
       for (const theme of ["light", "dark"] as const)
         for (const [width, height] of sizes)
-          for (const path of ["/app/mail", boxPath])
+          for (const path of [boxPath])
             test(`${theme} ${width}x${height} ${path}: server = hydrated = settled = reload within 0.5px`, async () => {
               const differences: string[] = [];
               const page = await open(`${path}?theme=${theme}`, width, height);
               try {
                 const serverFrame = await recordedFrame(page, "server");
                 expect(serverFrame.some((part) => part.part.includes("head"))).toBe(true);
-                expect(
-                  serverFrame.filter((part) => part.part.includes("mail-focus-row") || part.part.includes("mail-list-entry")).length,
-                ).toBeGreaterThan(0);
+                expect(serverFrame.filter((part) => part.part.includes("mail-list-entry")).length).toBeGreaterThan(0);
                 const compare = async (label: string, expected: Frame, actual: Frame) => {
                   try {
                     assertFrame(expected, actual, `${path} ${label}`);
@@ -2053,13 +2065,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             });
 
       test("German locale uses the same hydrated sidebar and head", async () => {
-        for (const path of ["/app/mail", boxPath]) {
+        for (const path of [boxPath]) {
           const page = await open(`${path}?locale=de`);
           try {
             expect(await page.locator("html").getAttribute("lang")).toBe("de");
-            expect(await tabs(page).locator('a[aria-current="page"]').textContent()).toBe(
-              path === boxPath ? "Alle" : `Für mich${focusCounts.mine}`,
-            );
+            expect(await tabs(page).locator('a[aria-current="page"]').textContent()).toBe("Alle");
             expect(await page.locator(".mail-sidebar").getAttribute("aria-label")).toBe("Postfächer");
           } finally {
             await close(page);
@@ -2199,31 +2209,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(frame.pane).toBeNull();
               expect(frame.detail).toBe(detail);
               if (detail === "column") expect(frame.reader!.width).toBeGreaterThanOrEqual(440);
-            } finally {
-              await close(page);
-            }
-          });
-
-        for (const [width, height, path] of [
-          [1194, 834, widePath({ path: "/app/mail" })],
-          [834, 1194, "/app/mail"],
-        ] as const)
-          test(`Fokus at ${width}: a conversation opens the 480 px drawer, Escape parks it and focus returns`, async () => {
-            const page = await open(path, width, height);
-            try {
-              const aside = page.locator(".mail-focus-workspace .k2b-app-workspace__detail");
-              await page.locator(".mail-focus-row").first().click();
-              await page.waitForFunction(
-                () =>
-                  document.querySelector<HTMLElement>(".mail-focus-workspace .k2b-app-workspace__detail")?.dataset.workspaceDetailDrawer ===
-                  "open",
-              );
-              await settled(page);
-              expect(Math.abs((await aside.boundingBox())!.width - 480)).toBeLessThanOrEqual(0.5);
-              await page.keyboard.press("Escape");
-              await settled(page);
-              expect(await aside.evaluate((element) => getComputedStyle(element).display)).toBe("none");
-              expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-app-workspace__detail-toggle"))).toBe(true);
             } finally {
               await close(page);
             }
@@ -3268,8 +3253,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           for (const [width, height] of sizes) {
             if (theme === "dark" && width !== 1440 && width !== 390) continue;
             for (const [name, state, path] of [
-              ["focus", "tabs", "/app/mail"],
               ["mailbox", "tabs", boxPath],
+              ["mailbox", "focus-notice", `${boxPath}?notice=1`],
               ...(theme === "light"
                 ? [
                     ["mailbox", "folder", `${boxPath}?folder=Filed1`],
