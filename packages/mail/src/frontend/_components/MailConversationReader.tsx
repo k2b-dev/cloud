@@ -10,6 +10,7 @@ import {
   Button,
   CheckboxCard,
   ContextMenu,
+  DetailsToggle,
   Dropdown,
   type DropdownAction,
   type DropdownItem,
@@ -1547,7 +1548,7 @@ export default function MailConversationReader(props: {
               </Dropdown.Root>
               <Tooltip.Anchor class="mail-reader-details-access" content={t().conversationDetails}>
                 {/* Phone readers hide the list head. Keep their Details access here; wider layouts use the shared head control. */}
-                <IconButton
+                <DetailsToggle
                   type="button"
                   class="mail-reader-details"
                   label={t().toggleDetails}
@@ -1555,9 +1556,7 @@ export default function MailConversationReader(props: {
                   aria-controls={appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID)}
                   data-mail-details-trigger
                   onClick={props.onToggleDetails}
-                >
-                  <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
-                </IconButton>
+                />
               </Tooltip.Anchor>
             </div>
           </div>
