@@ -1170,3 +1170,42 @@
 .file-tree > li > div[data-state="drop-target"] {
   background: color-mix(in srgb, var(--color-blue-500) 8%, var(--ui-surface)) !important;
 }
+
+/* A page swap that takes longer than 200 ms shows a thin bar at the top; faster ones show nothing,
+   and the old content stays until the new page arrives. */
+.cloud-app-canvas[data-nav-pending]::before {
+  content: "";
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  height: 2px;
+  background: var(--k2b-action-solid);
+  transform-origin: left;
+  pointer-events: none;
+  animation: cloud-nav-pending 8s cubic-bezier(0.1, 0.7, 0.2, 1) 200ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-app-canvas[data-nav-pending]::before {
+    animation: cloud-nav-pending-still 1ms linear 200ms both;
+  }
+}
+
+@keyframes cloud-nav-pending {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.9);
+  }
+}
+
+@keyframes cloud-nav-pending-still {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

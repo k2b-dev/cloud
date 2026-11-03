@@ -1,6 +1,5 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import { formatNumber } from "@k2b/cloud/shared";
-import { navigateTo } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -17,6 +16,7 @@ import {
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import AccountAvatar from "@/frontend/AccountAvatar";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type SelectedUser = {
@@ -66,6 +66,7 @@ const readError = async (res: Pick<Response, "json">, fallback: string) => {
 };
 
 function BatchDialog(props: { close: () => void }) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const locale = useLocale();
   let active = true;
@@ -190,7 +191,7 @@ function BatchDialog(props: { close: () => void }) {
       if (!res.ok) throw new Error(await readError(res, messages().createNotificationFailed));
       const batch = await res.json();
       props.close();
-      navigateTo(`/app/accounts/notifications/${batch.id}`);
+      openPage(`/app/accounts/notifications/${batch.id}`);
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
     } finally {
