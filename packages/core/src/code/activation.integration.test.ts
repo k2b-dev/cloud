@@ -419,7 +419,7 @@ databaseSuite()("durable Code activation", () => {
     await expect(
       activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, oauth),
     ).rejects.toMatchObject({ code: "FORBIDDEN", message: "Personal Code activation requires its owner's browser session." });
-    expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, oauth)).allowed).toEqual({
+    expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, oauth, deps)).allowed).toEqual({
       allowed: false,
       reason: "credential",
     });

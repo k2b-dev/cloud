@@ -1,6 +1,6 @@
 ### Fixture errors can hide the boundary an integration test exercises
 
-- **What happened:** Policy-free Code entries exposed a JSON constraint failure in the single-connection identity suite and an idempotency conflict in the foreign-target acceptance case.
-- **Root cause:** The SQL fixture encoded a policy as a JSON string. The foreign-target fixture changed a successful call's target while retaining its idempotency key, so the digest conflict intercepted the provider's access check.
+- **What happened:** Policy-free Code entries exposed JSON constraint failures in the single-connection identity and app-access suites, a Core-only catalog error in activation preview, and an idempotency conflict in the foreign-target acceptance case.
+- **Root cause:** The SQL fixtures encoded policies as JSON strings. One activation preview omitted the catalog dependencies used throughout its suite and fell through to the process-owned production registry. The foreign-target fixture changed a successful call's target while retaining its idempotency key, so the digest conflict intercepted the provider's access check.
 - **Error class:** Invalid or overlapping fixture inputs intercept the behavior under test.
-- **Guard:** `identity-issuance-pool.integration.test.ts` inserts a policy object through a text-to-JSONB cast. C25 acceptance gives the foreign-target call its own stable key and still requires `not_found`, no foreign writes, and one write for repeated authorized calls.
+- **Guard:** `identity-issuance-pool.integration.test.ts` and `app-access-issuance-pool.integration.test.ts` insert policy objects through text-to-JSONB casts. The personal activation test uses the suite dependencies and still asserts OAuth refusal, cancellation recovery, and no issued mandate. C25 acceptance gives the foreign-target call its own stable key and still requires `not_found`, no foreign writes, and one write for repeated authorized calls.
