@@ -524,6 +524,15 @@ export const accountsMessages = i18n.define({
       noActiveApiKeys: "This user has no active API keys.",
       modelsOnlyKey: "AI models only",
       legacyLimitedKey: "Legacy, limited",
+      replaceKey: "Replace",
+      replaceKeyLabel: ({ name }: { name: string }) => `Replace ${name}`,
+      replaceKeyTitle: ({ name }: { name: string }) => `Replace ${name}`,
+      replaceKeyIntro:
+        "A new API key acts exactly as its agent. Copy it into the program that uses the old key, then revoke the old one. Until then both keys work.",
+      replaceKeyCreate: "Create new API key",
+      replaceKeyRevokeOld: "Revoke old key",
+      replaceKeyLater: "Later",
+      replaceKeyFailed: "The new API key could not be created.",
       legacyLimitedKeyHint:
         "Created before keys acted as their account. It keeps its limit; to replace it, create a new key and revoke this one.",
       noGroupMemberships: "This user is not a member of a group.",
@@ -1434,6 +1443,15 @@ export const accountsMessages = i18n.define({
       noActiveApiKeys: "Dieser Benutzer hat keine aktiven API-Schlüssel.",
       modelsOnlyKey: "Nur KI-Modelle",
       legacyLimitedKey: "Alt, begrenzt",
+      replaceKey: "Ersetzen",
+      replaceKeyLabel: ({ name }) => `${name} ersetzen`,
+      replaceKeyTitle: ({ name }) => `${name} ersetzen`,
+      replaceKeyIntro:
+        "Ein neuer API Key handelt genau wie sein Agent. Trage ihn in das Programm ein, das den alten nutzt, und widerrufe dann den alten. Bis dahin gelten beide.",
+      replaceKeyCreate: "Neuen API Key erstellen",
+      replaceKeyRevokeOld: "Alten widerrufen",
+      replaceKeyLater: "Später",
+      replaceKeyFailed: "Der neue API Key konnte nicht erstellt werden.",
       legacyLimitedKeyHint:
         "Erstellt, bevor Schlüssel wie ihr Konto handelten. Er behält seine Grenze; zum Ersetzen erstelle einen neuen Schlüssel und widerrufe diesen.",
       noGroupMemberships: "Dieser Benutzer ist kein Mitglied einer Gruppe.",

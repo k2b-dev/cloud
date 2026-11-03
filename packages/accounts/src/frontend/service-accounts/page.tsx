@@ -215,7 +215,16 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(entry.createdAt, { locale })}</span>;
                   if (col.id === "actions")
                     return (
-                      <ServiceAccountCredentialActions credentialId={entry.id} name={entry.name} disabled={entry.status !== "active"} />
+                      <ServiceAccountCredentialActions
+                        credentialId={entry.id}
+                        name={entry.name}
+                        disabled={entry.status !== "active"}
+                        replace={
+                          entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry)
+                            ? { serviceAccountId: entry.owner.serviceAccountId }
+                            : undefined
+                        }
+                      />
                     );
                   return "";
                 }}
