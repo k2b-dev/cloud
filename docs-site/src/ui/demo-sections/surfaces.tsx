@@ -6,6 +6,7 @@ import {
   Button,
   Calendar,
   type CalendarEvent,
+  ChangeList,
   Checkbox,
   DataPanel,
   DataTable,
@@ -820,6 +821,63 @@ const ProgressDemo = () => (
   </DemoCard>
 );
 
+const ChangeListDemo = () => (
+  <DemoCard
+    id="change-list"
+    chip={[{ kind: "component", name: "ChangeList", from: "@k2b/ui" }]}
+    description="Pending changes under an editor that saves them together: who gains, what changes, who loses."
+    code={`<ChangeList
+  label="What changes"
+  items={[
+    { tone: "add", content: <><b>Tom Becker</b> gets Edit</> },
+    { tone: "change", content: <><b>Lea Schmitt</b>: View → Edit</> },
+    { tone: "remove", content: <><b>Lagerbot</b> loses access</> },
+    { tone: "warning", icon: "ti ti-world", content: <><b>Public with link</b>: on</>, detail: "Anyone with the link sees this." },
+  ]}
+/>`}
+  >
+    <ChangeList
+      label="What changes"
+      items={[
+        {
+          tone: "add",
+          content: (
+            <>
+              <b>Tom Becker</b> gets Edit
+            </>
+          ),
+        },
+        {
+          tone: "change",
+          content: (
+            <>
+              <b>Lea Schmitt</b>: View → Edit
+            </>
+          ),
+        },
+        {
+          tone: "remove",
+          content: (
+            <>
+              <b>Lagerbot</b> loses access
+            </>
+          ),
+        },
+        {
+          tone: "warning",
+          icon: "ti ti-world",
+          content: (
+            <>
+              <b>Public with link</b>: on
+            </>
+          ),
+          detail: "Anyone with the link sees this.",
+        },
+      ]}
+    />
+  </DemoCard>
+);
+
 const StatsDemo = () => (
   <DemoCard
     id="stats"
@@ -1283,6 +1341,11 @@ const demos: DemoSection = {
   progress: () => (
     <DemoGrid columns="one">
       <ProgressDemo />
+    </DemoGrid>
+  ),
+  "change-list": () => (
+    <DemoGrid columns="one">
+      <ChangeListDemo />
     </DemoGrid>
   ),
   stats: () => (

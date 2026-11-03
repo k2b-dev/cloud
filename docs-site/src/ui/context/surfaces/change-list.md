@@ -37,6 +37,10 @@ type ChangeListProps = { items: readonly ChangeListItem[]; label: string; class?
 The list carries `label` as its name. Tones are never the only signal: each line
 says what happens in words.
 
+## Runtime
+
+`ChangeList` renders on the server and needs no browser code; it updates with its `items`.
+
 ## Example
 
 ```tsx
