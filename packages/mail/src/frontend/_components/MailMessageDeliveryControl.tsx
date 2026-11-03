@@ -27,6 +27,7 @@ const deliveryExplanation = (delivery: MessageDelivery, locale: string): string 
     return t.unknownExplanation;
   }
   if (waitsForSignIn(delivery)) return t.waitingForSignInExplanation;
+  if (delivery.state === "scheduled" && delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION") return t.transientRejectionExplanation;
   if (delivery.state === "scheduled" && delivery.lastErrorCode) {
     return t.retryExplanation({ attempt: delivery.attempt, total: delivery.maxAttempts });
   }

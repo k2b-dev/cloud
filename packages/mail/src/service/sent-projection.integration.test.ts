@@ -1161,10 +1161,19 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, 5xx and 535 fail at once", async () => {
+  test("an SMTP rejection never sends twice and always ends visible: 4xx retries for about an hour, 5xx and 535 fail at once", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
+      const counters = async (outboxId: string) => {
+        const [row] = await sql<{ outbox_attempt: number; command_attempt: number; retries: number | null; delay_seconds: number }[]>`
+          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt,
+            (command.transport_metadata ->> 'smtpTransientRetries')::int AS retries,
+            round(EXTRACT(EPOCH FROM (outbox.scheduled_at - now())))::int AS delay_seconds
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outboxId}::uuid`;
+        return row!;
+      };
       // A temporary rejection at the end of DATA: the server took the bytes but accepted nothing.
       const draft = await newDraft(mailbox, "SMTP temporarily rejected");
       provider.failNextSubmission("EMESSAGE", true, 451);
@@ -1175,15 +1184,38 @@ suite("mail sent message projection", () => {
         command_state: "queued",
         draft_state: "scheduled",
       });
-      for (let attempt = 2; attempt <= 5; attempt += 1) {
+      expect(await counters(outbox.id)).toMatchObject({ outbox_attempt: 0, command_attempt: 1, retries: 1, delay_seconds: 30 });
+      // More rejections than the general attempt budget keep the send waiting with a growing pause.
+      // They give the outbox attempt back, so later steps keep their budget; the command's attempt
+      // still counts, so no claim reuses the attempt its effect marker covers.
+      for (let rejection = 2; rejection <= 7; rejection += 1) {
         provider.failNextSubmission("EMESSAGE", true, 451);
-        await sendRetryNow(outbox.id);
+        expect(await sendRetryNow(outbox.id)).toBe("scheduled");
       }
-      // Each attempt submitted once; the last one ends the budget with the message back in drafts.
-      expect(provider.submissions()).toBe(5);
+      expect(await counters(outbox.id)).toMatchObject({ outbox_attempt: 0, command_attempt: 7, retries: 7, delay_seconds: 900 });
+      expect(provider.submissions()).toBe(7);
+
+      // A rejection after the hour returns the message to the drafts.
+      await sql`
+        UPDATE mail.commands command
+        SET transport_metadata = transport_metadata || jsonb_build_object('smtpTransientSince', (now() - interval '61 minutes')::text)
+        FROM mail.outbox_submissions outbox
+        WHERE outbox.id = ${outbox.id}::uuid AND command.id = outbox.command_id`;
+      provider.failNextSubmission("EMESSAGE", true, 451);
+      await sendRetryNow(outbox.id);
+      expect(provider.submissions()).toBe(8);
       expect(await delivery(outbox.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
       expect(await sendRetryNow(outbox.id)).toBeNull();
-      expect(provider.submissions()).toBe(5);
+      expect(provider.submissions()).toBe(8);
+
+      // A send that gets through after a rejection goes out once and keeps the full budget for its copy.
+      const later = await newDraft(mailbox, "SMTP rejected once");
+      provider.failNextSubmission("EMESSAGE", true, 421);
+      const retried = await send(mailbox, later.id, later.revision, "smtp-4xx-once", "scheduled");
+      expect(await sendRetryNow(retried.id)).toBe("sent");
+      expect(provider.submissions()).toBe(10);
+      expect(provider.messagesWithId("Sent", retried.stable_message_id)).toHaveLength(1);
+      expect(await counters(retried.id)).toMatchObject({ outbox_attempt: 1, command_attempt: 2 });
 
       // A permanent rejection and a refused login fail at once, without a second submission.
       for (const [code, responseCode, key] of [
@@ -1196,7 +1228,7 @@ suite("mail sent message projection", () => {
         expect(await delivery(failed.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
         expect(await sendRetryNow(failed.id)).toBeNull();
       }
-      expect(provider.submissions()).toBe(5);
+      expect(provider.submissions()).toBe(10);
       expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(0);
     } finally {
       provider.restore();
