@@ -101,22 +101,28 @@ export const createAppPwaRouter = (service: AppPwaService) => {
     if (!received || !pairingSecret.matches(received, pairingSecret.hash(staffCsrf(current.token)))) return pwaFail("CSRF_REQUIRED", 403);
     return current.signIn;
   };
-  router.post(`${guestBase}/bootstrap`, async (c) => {
-    parse(empty, await body(c));
-    const boot = await service.bootstrap(appPwaCookie(c.req.header("Cookie") ?? null, service.cookieName), c.req.raw.signal);
-    setCookie(c, service.cookieName, boot.credential, {
+  // Session cookie unless the browser is a registered shared device. The durable browser
+  // expiry is authoritative either way and is never renewed by bootstrap.
+  const browserCookie = (c: Context, value: string, persistUntil: string | null) =>
+    setCookie(c, service.cookieName, value, {
       secure: true,
       httpOnly: true,
       sameSite: "Strict",
       path: service.path,
-      // Session cookie: the durable browser expiry is authoritative and is never renewed by bootstrap.
+      ...(persistUntil ? { expires: new Date(persistUntil) } : {}),
     });
+  router.post(`${guestBase}/bootstrap`, async (c) => {
+    parse(empty, await body(c));
+    const boot = await service.bootstrap(appPwaCookie(c.req.header("Cookie") ?? null, service.cookieName), c.req.raw.signal);
+    browserCookie(c, boot.credential, boot.persistUntil);
     return c.json({ csrf: boot.csrf });
   });
   router.post(`${guestBase}/device/claim`, async (c) => {
     const key = credential(c);
     const input = parse(AppPwaClaim, await body(c));
-    return c.json(await service.claimDevice(key, input.qr, c.req.raw.signal));
+    const claimed = await service.claimDevice(key, input.qr, c.req.raw.signal);
+    if (claimed.registration) browserCookie(c, key, claimed.registration.expiresAt);
+    return c.json(claimed);
   });
   router.post(`${guestBase}/visit/claim`, async (c) => {
     const key = credential(c);
@@ -175,7 +181,7 @@ export const createAppPwaRouter = (service: AppPwaService) => {
   });
   router.post(`${staffBase}/devices/issue`, async (c) => {
     const signIn = await staff(c);
-    const input = parse(z.strictObject({ requestId: AppPwaId, name: z.string() }), await body(c));
+    const input = parse(z.strictObject({ requestId: AppPwaId, name: z.string(), register: z.boolean().optional() }), await body(c));
     return c.json(await service.issueDevice(signIn, input, c.req.raw.signal));
   });
   router.post(`${staffBase}/devices/list`, async (c) => {
@@ -195,8 +201,30 @@ export const createAppPwaRouter = (service: AppPwaService) => {
   });
   router.post(`${staffBase}/visits/issue`, async (c) => {
     const signIn = await staff(c);
-    const input = parse(z.strictObject({ requestId: AppPwaId, deviceId: AppPwaId, subject: z.unknown() }), await body(c));
+    const input = parse(
+      z.strictObject({ requestId: AppPwaId, deviceId: AppPwaId, subject: z.unknown(), push: z.boolean().optional() }),
+      await body(c),
+    );
     return c.json(await service.issueVisit(signIn, input, c.req.raw.signal));
+  });
+  const registrationIdInput = z.strictObject({ registrationId: AppPwaId });
+  router.post(`${staffBase}/registrations/list`, async (c) => {
+    const signIn = await staff(c);
+    const input = parse(z.strictObject({ after: AppPwaId.optional() }), await body(c));
+    return c.json(await service.listRegistrations(signIn, input.after, c.req.raw.signal));
+  });
+  router.post(`${staffBase}/registrations/take-over`, async (c) => {
+    const signIn = await staff(c);
+    const input = parse(
+      registrationIdInput.extend({ expectedDeviceId: AppPwaId.nullable(), presenceCode: z.string().max(16) }),
+      await body(c),
+    );
+    return c.json(await service.takeOverDevice(signIn, input, c.req.raw.signal));
+  });
+  router.post(`${staffBase}/registrations/revoke`, async (c) => {
+    const signIn = await staff(c);
+    const input = parse(registrationIdInput, await body(c));
+    return c.json(await service.revokeRegistration(signIn, input.registrationId, c.req.raw.signal));
   });
   router.post(`${staffBase}/visits/revoke`, async (c) => {
     const signIn = await staff(c);

@@ -381,7 +381,7 @@ suite("App-PWA durable service", () => {
     const f = await paired();
     const second = createAppPwaService(base);
     await second.setup();
-    expect((await second.status(f.boot.credential)).device.id).toBe(f.device.id);
+    expect((await second.status(f.boot.credential)).device?.id).toBe(f.device.id);
     expect(await second.bootstrap(f.boot.credential)).toEqual(f.boot);
   });
   test("concurrent device claims have one winner and same-browser lost-response recovery", async () => {

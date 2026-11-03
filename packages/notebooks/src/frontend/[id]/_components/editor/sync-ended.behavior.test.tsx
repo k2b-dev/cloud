@@ -88,6 +88,7 @@ const detail = (id: string) => ({
   taskProgress: { total: 0, done: 0 },
   attachments: [],
   backlinks: [],
+  relations: { outgoing: [], tags: [] },
   namedBlocks: [],
 });
 /** The saved text the route state answers for each note; tests set it to model a save by someone else. */

@@ -258,7 +258,8 @@ describe("Mailbox settings composition", () => {
       "Archive, Not subscribed, Everywhere",
       "[Gmail], Folder group · 2 folders, Everywhere",
       "Important, in [Gmail], Everywhere",
-      "Sent Mail, Everywhere",
+      // A standard folder shows its localized name and keeps the server's name beside it.
+      "Sent, Name on the mail server: Sent Mail, Everywhere",
     ]);
     // Groups read as headers: their folders start unindented, and the header counts them.
     expect(html).toContain('data-group="" data-effective="everywhere"');

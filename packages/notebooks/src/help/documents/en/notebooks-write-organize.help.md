@@ -10,6 +10,12 @@ Write notes as readable Markdown. Then use links, tags, attachments, and the sid
 
 **Collaboration**
 
+## See who is here {icon="users"}
+
+**Here now** is at the top of the note details. It shows who has the note open. A pen shows who writes, an eye who reads. The line below says who writes in which section. Choose a person who writes to jump to their place. **Copy link** copies the note's address, so you can ask someone to join.
+
+Under **Contents**, the people who write under a heading stand next to it. Without a connection, **Here now** shows the last state with its time.
+
 ## Discuss a page {icon="message-circle"}
 
 Use **Comments** in the note details for questions, feedback, and decisions. Comments belong next to the page but do not change its Markdown.

@@ -949,7 +949,6 @@
   min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
-  margin-inline-start: -1.875rem;
 }
 
 .k2b-ui .notebook-activity-skeleton > span {
@@ -987,7 +986,6 @@
   min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
-  margin-inline-start: -1.875rem;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
 }
