@@ -234,7 +234,7 @@ Geplante Zustellung und Senden rückgängig machen brauchen einen aktiven Postfa
 
 Eine fällige Nachricht wartet und zeigt **Wartet auf Anmeldung**, wenn eines davon zutrifft:
 
-- das Postfach braucht eine neue Anmeldung;
+- das Postfach braucht eine neue Anmeldung, auch weil sein Postausgangsserver das Passwort abgelehnt hat;
 - jemand hat sein Passwort ersetzt, und das Postfach oder die Absenderidentität ist noch nicht mit dem neuen Passwort bestätigt.
 
 Mail benachrichtigt dich einmal. Es sendet die Nachricht, sobald das Konto wieder verbunden ist, datiert auf den Versandzeitpunkt. Verbindet niemand das Konto innerhalb von sechs Tagen nach dem Fälligkeitszeitpunkt, zeigt die Nachricht **Senden fehlgeschlagen** und kehrt zu den Entwürfen zurück. Mail benachrichtigt dich dann erneut.
