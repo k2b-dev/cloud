@@ -1608,12 +1608,15 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
                 expect(await page.locator("[data-workspace-primary]").isVisible()).toBe(true);
               };
-              const serverHead = (JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!) as Frame).find(
-                (part) => part.part === "k2b-app-workspace__head",
-              );
+              const recordedHead = async (name: "server" | "hydrated") =>
+                (JSON.parse((await page.locator("html").getAttribute(`data-${name}-geometry`))!) as Frame).find(
+                  (part) => part.part === "k2b-app-workspace__head",
+                );
+              const serverHead = await recordedHead("server");
               if (!selected) {
-                // The server's first frame already has the head, so it never appears late.
+                // The server's first frame and the first hydrated one already have the head, so it never appears late.
                 expect(serverHead?.height).toBeGreaterThan(0);
+                expect((await recordedHead("hydrated"))?.height).toBe(serverHead?.height);
                 await headShown();
                 return;
               }
