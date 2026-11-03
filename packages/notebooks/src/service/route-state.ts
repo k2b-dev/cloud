@@ -6,7 +6,7 @@ import { requestedPresentationMode, withPresentationMode } from "../lib/presenta
 import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from "../lib/sidebar-filter";
 import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
-import { type Backlink, listNoteRelations } from "./links";
+import type { Backlink } from "./links";
 import type { Note } from "./notes";
 import { extractTags } from "./tags";
 
@@ -121,11 +121,11 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
       userId: params.userId,
       bypassAccess: params.bypassAccess,
     }),
-    listNoteRelations({
+    notebooksService.note.outgoingLinks.list({
       noteId: note.id,
       userId: params.userId,
-      direction: "outgoing",
-      pagination: { limit: OUTGOING_LINKS_LIMIT, offset: 0 },
+      bypassAccess: params.bypassAccess,
+      limit: OUTGOING_LINKS_LIMIT,
     }),
     notebooksService.activity.noteAuthors({ noteId: note.id }),
   ]);
@@ -139,13 +139,7 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
     namedBlocks,
     backlinks,
     relations: {
-      outgoing: outgoing.map((link) => ({
-        noteId: link.noteId,
-        title: link.title,
-        notebookId: link.notebookId,
-        notebookName: link.notebookName,
-        updatedAt: link.updatedAt,
-      })),
+      outgoing,
       tags: extractTags(note.contentMd),
     },
     panelAttachments: referencedAttachments.map((attachment) => ({

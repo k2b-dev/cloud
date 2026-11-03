@@ -232,6 +232,9 @@ export const notebooksService = {
     backlinks: {
       list: links.listBacklinks,
     },
+    outgoingLinks: {
+      list: links.listOutgoingLinks,
+    },
     comments: {
       getByShortId: comments.getByShortId,
       listPage: comments.listPage,
