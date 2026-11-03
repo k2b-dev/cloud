@@ -182,7 +182,7 @@ const portableSections = [
       page(
         "detail-panel",
         "DetailPanel",
-        "ti ti-layout-sidebar-right",
+        "ti ti-info-circle",
         "Quiet contextual inspectors with compact identity, flat sections, and one scroll owner.",
       ),
       page(

@@ -192,7 +192,10 @@ any island:
 
 Both stay one constant label ("Navigation", "Details"); the shared controller
 runs them and keeps their `aria-expanded` current, so the button needs no click
-handler of its own. Keep the head where a page has no such toolbar: removing it
+handler of its own. Render the Details button with `DetailsToggle`: every app
+shows Details with the same info circle (`DETAILS_ICON`), a different shape
+from the side panel's rectangle with an arrow, and the button shows the
+selection fill while its panel is open, without a border or shadow. Keep the head where a page has no such toolbar: removing it
 must not remove a way to the navigation or the details at any width.
 
 ## Compose the regions
