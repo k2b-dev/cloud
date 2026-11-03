@@ -675,12 +675,20 @@ const updateMailboxBindingHealth = async (
     return;
   }
   const authFailure = failure ? isProviderAuthenticationFailure(failure, failure.code) : false;
+  // A failure that is no refused login, such as an unreachable server, does not show that the
+  // login works again: a mailbox that needs one keeps saying so, and its sends keep waiting.
+  const keepsLoginRequest = failure !== undefined && !authFailure;
   await sql`
     UPDATE mail.mailboxes
     SET
-      health = CASE WHEN sync_enabled = false THEN 'paused' ELSE ${authFailure ? "auth_required" : "connection_required"} END,
+      health = CASE
+        WHEN sync_enabled = false THEN 'paused'
+        WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health
+        ELSE ${authFailure ? "auth_required" : "connection_required"}
+      END,
       health_reason = CASE
         WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
+        WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health_reason
         ELSE ${failure?.message ?? "No active provider binding is available"}
       END
     WHERE id = ${mailboxId}::uuid AND deleted_at IS NULL

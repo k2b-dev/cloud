@@ -2396,6 +2396,17 @@ suite("mail sent message projection", () => {
         expect(marker).toEqual({ provider_effect_attempt: 1, attempt: 1 });
         // A folder sync queued before finds no binding; the mailbox still asks for the login.
         await expect(syncFolderBatch(mailbox.folderId(INBOX), async () => undefined)).rejects.toMatchObject({ code: "NO_SYNC_BINDING" });
+        // So does a rediscovery that cannot reach the server.
+        const unreachable = spyOn(imapSmtpConnector, "verify").mockRejectedValue(
+          Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" }),
+        );
+        try {
+          const [binding] = await sql<{ id: string }[]>`
+            SELECT selected_binding_id AS id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+          await rediscoverProviderBinding({ bindingId: binding!.id }).catch(() => undefined);
+        } finally {
+          unreachable.mockRestore();
+        }
         const [health] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailbox.mailboxId}::uuid`;
         expect(health?.health).toBe("auth_required");
         expect(await sendRetryNow(outbox.id)).toBe("scheduled");
