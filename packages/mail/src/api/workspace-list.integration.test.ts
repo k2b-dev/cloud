@@ -74,6 +74,8 @@ const listFields = [
   "nextListCursor",
   "listError",
   "hiddenDone",
+  // Assigned to me's group headings belong to its list, as the done line does.
+  "assignedGroups",
   "listTitle",
 ] as const;
 const listPart = (data: MailboxListView) =>

@@ -144,10 +144,10 @@ export default function MailConversationReader(props: {
   /** `null` while the browser has not yet resolved Automatic for this island. */
   theme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
-  listCollapsed: boolean;
+  /** No list stands beside the reader on a large screen, so the reader offers × and Escape back to the list. */
+  listAway: boolean;
   detailsOpen: boolean;
   toolbarActions: readonly MailConversationToolbarActionId[];
-  onToggleList: () => void;
   onToggleDetails: () => void;
   onToolbarActionsChange: (actions: MailConversationToolbarActionId[]) => void;
   actionPending: boolean;
@@ -1414,19 +1414,6 @@ export default function MailConversationReader(props: {
             >
               <i class="ti ti-arrow-left" aria-hidden="true" />
             </IconButtonLink>
-            <Tooltip.Anchor content={props.listCollapsed ? t().showList : t().hideList}>
-              <IconButton
-                type="button"
-                class="mail-reader-show-list"
-                label={props.listCollapsed ? t().showList : t().hideList}
-                onClick={props.onToggleList}
-              >
-                <i
-                  class={props.listCollapsed ? "ti ti-layout-sidebar-left-expand" : "ti ti-layout-sidebar-left-collapse"}
-                  aria-hidden="true"
-                />
-              </IconButton>
-            </Tooltip.Anchor>
             <header class="mail-reader-subject">
               <div class="mail-reader-title-line">
                 <h1 class="mail-reader-title" data-mail-reader-heading tabIndex={-1} title={props.subject || t().noSubject}>
@@ -1556,6 +1543,20 @@ export default function MailConversationReader(props: {
                   onClick={props.onToggleDetails}
                 />
               </Tooltip.Anchor>
+              <Show when={props.listAway}>
+                <IconButtonLink
+                  href={closeHref()}
+                  class="mail-reader-close"
+                  label={t().closeConversation}
+                  tooltip={t().closeConversationHint}
+                  navigation="enhanced"
+                  onNavigate={props.onClose}
+                  scroll="preserve"
+                  data-mail-reader-close
+                >
+                  <i class="ti ti-x" aria-hidden="true" />
+                </IconButtonLink>
+              </Show>
             </div>
           </div>
 

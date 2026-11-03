@@ -7,6 +7,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { Mailbox } from "../../contracts";
 import { resolveMailSearchRoute } from "../../search-state";
+import { mailTestRow } from "./mail-list-test-fixtures";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-list-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -117,5 +118,44 @@ describe("Mail conversation list", () => {
     expect(html).toContain("Could not load conversations");
     expect(html).toContain("The search could not run. Try again, and change the search conditions if it keeps failing.");
     expect(html).toContain("Retry");
+  });
+});
+
+describe("Mail Assigned to me groups", () => {
+  const mine = { requestUrl: "/app/mail/Box001?view=mine", title: "Assigned to me", assignedGroups: { needsAction: 12, waiting: 3 } };
+  const done = { count: null, more: false, href: "/app/mail/Box001?search=done" };
+
+  test("nothing open assigned: names it calmly and still offers the done conversations", () => {
+    const html = renderList({ ...mine, hiddenDone: done });
+    expect(html).toContain("Nothing open is assigned to you");
+    expect(html).toContain("New assignments appear here and in your notifications.");
+    expect(html).toContain("ti-mood-smile");
+    expect(html).toContain("Done conversations that were assigned to you");
+    expect(html).toContain("Show done");
+    expect(html).not.toContain("data-mail-assigned-group");
+  });
+
+  test("heads each group once with the view's count, not the page's, and leaves out day headings", () => {
+    const items = [
+      mailTestRow("Conv01", { workStatus: "needs_action" }),
+      mailTestRow("Conv02", { workStatus: "needs_action" }),
+      mailTestRow("Conv03", { workStatus: "waiting" }),
+    ];
+    const html = renderList({ ...mine, items, hiddenDone: done });
+    expect(html.match(/data-mail-assigned-group="needsAction"/g)?.length).toBe(1);
+    expect(html.match(/data-mail-assigned-group="waiting"/g)?.length).toBe(1);
+    expect(html).toContain("Your turn · 12");
+    expect(html).toContain("Waiting for reply · 3");
+    expect(html.indexOf("Your turn")).toBeLessThan(html.indexOf('data-conversation-id="Conv01"'));
+    expect(html.indexOf('data-conversation-id="Conv02"')).toBeLessThan(html.indexOf("Waiting for reply"));
+    expect(html.indexOf("Waiting for reply")).toBeLessThan(html.indexOf('data-conversation-id="Conv03"'));
+    expect(html).not.toContain("data-mail-day-group");
+  });
+
+  test("a waiting group that has not loaded yet gets no heading; other views keep day headings", () => {
+    const html = renderList({ ...mine, items: [mailTestRow("Conv01", { workStatus: "needs_action" })], nextCursor: "next" });
+    expect(html).toContain("Your turn · 12");
+    expect(html).not.toContain("Waiting for reply");
+    expect(renderList({ items: [mailTestRow("Conv01")] })).toContain("data-mail-day-group");
   });
 });

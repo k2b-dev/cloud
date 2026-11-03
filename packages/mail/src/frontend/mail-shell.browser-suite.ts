@@ -335,13 +335,18 @@ const sizes = [
   [834, 1194],
   [390, 844],
 ] as const;
-const open = async (path: string, width = 1440, height: number = sizes.find(([w]) => w === width)?.[1] ?? 900) => {
+const open = async (
+  path: string,
+  width = 1440,
+  height: number = sizes.find(([w]) => w === width)?.[1] ?? 900,
+  motion: "reduce" | "no-preference" = "reduce",
+) => {
   const context = await browser.newContext({
     viewport: { width, height },
     isMobile: width === 390,
     hasTouch: width === 390,
     timezoneId: "UTC",
-    reducedMotion: "reduce",
+    reducedMotion: motion,
   });
   await context.addInitScript(pinPageClock, Date.parse(MAIL_SHELL_NOW));
   const page = await context.newPage();
@@ -573,7 +578,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
-          test(`compact reader ${theme} ${width}: fixed subject, count and list toggle`, async () => {
+          test(`compact reader ${theme} ${width}: fixed subject, count and the way back to the list`, async () => {
             const page = await open(`${boxPath}?conversation=Conv02&long-subject=1&theme=${theme}`, width, 900);
             try {
               const toolbar = page.locator("[data-mail-reader-toolbar]");
@@ -613,11 +618,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 await page.screenshot({ path: join(screenshots, browserName, `compact-reader-${theme}-${width}.png`) });
               }
               if (width >= 768) {
-                await toolbar.getByRole("button", { name: "Hide conversation list", exact: true }).click();
-                await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).waitFor({ state: "visible" });
+                // Beside the list the reader has no list control of its own; with the list hidden it ends with ×.
+                expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
+                await page.locator("[data-mail-view-menu]").click();
+                await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
+                const close = toolbar.getByRole("link", { name: "Close conversation", exact: true });
+                await close.waitFor({ state: "visible" });
                 expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
-                await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).click();
+                await close.click();
                 await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+                expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
               }
             } finally {
               await close(page);
@@ -1663,6 +1673,144 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+      // S2: hiding the list is a View menu switch with [; × and Escape lead back to the unchanged list.
+      test("views: the View menu hides the list beside the reader, and [ shows it again", async () => {
+        const page = await open(`${boxPath}?conversation=Conv02`, 1440, 900);
+        try {
+          const list = page.locator("[data-mail-conversation-list]");
+          const toolbar = page.locator("[data-mail-reader-toolbar]");
+          const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
+          await list.waitFor({ state: "visible" });
+          await page.locator("[data-mail-view-menu]").click();
+          expect(await toggle.getAttribute("aria-checked")).toBe("false");
+          expect(await toggle.isDisabled()).toBe(false);
+          expect(await toggle.textContent()).toContain("The reader uses the full width.");
+          expect(await toggle.locator(".k2b-kbd").isVisible()).toBe(true);
+          await toggle.click();
+          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+          expect(await list.isVisible()).toBe(false);
+          // The menu shows the switch on, and [ brings the list back without closing the conversation.
+          await page.locator("[data-mail-view-menu]").click();
+          expect(await toggle.getAttribute("aria-checked")).toBe("true");
+          await page.keyboard.press("Escape");
+          await page.locator("[data-mail-reader-heading]").focus();
+          await page.keyboard.press("[");
+          await list.waitFor({ state: "visible" });
+          expect(await toolbar.locator("[data-mail-reader-close]").count()).toBe(0);
+          expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv02");
+          await page.keyboard.press("[");
+          await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+          expect(await list.isVisible()).toBe(false);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("views: without a reader beside the list, the switch is off and names the reason", async () => {
+        for (const path of [boxPath, `${boxPath}?layout=auto&list=hidden`, `${boxPath}?layout=columns&conversation=Conv02`]) {
+          const page = await open(path, 1440, 900);
+          try {
+            await page.locator("[data-mail-view-menu]").click();
+            const toggle = page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ });
+            await toggle.waitFor({ state: "visible" });
+            expect(await toggle.isDisabled(), path).toBe(true);
+            expect(await toggle.getAttribute("aria-checked"), path).toBe("false");
+            expect(await toggle.textContent()).toContain("Only while reading beside the list.");
+            await page.keyboard.press("Escape");
+            await page.keyboard.press("[");
+            await settled(page);
+            expect(await page.locator("[data-mail-reader-close]").isVisible()).toBe(path.includes("conversation="));
+          } finally {
+            await close(page);
+          }
+        }
+      });
+
+      for (const [layout, leave, motion] of [
+        ["columns", "close", "reduce"],
+        ["columns", "Escape", "reduce"],
+        ["hidden", "close", "reduce"],
+        ["hidden", "Escape", "reduce"],
+        // With motion, a view transition must not commit the list's first position over the restored one.
+        ["hidden", "close", "no-preference"],
+        ["columns", "Escape", "no-preference"],
+      ] as const)
+        test(`views: ${leave === "close" ? "×" : "Escape"} returns from a reader without the list (${layout}, ${motion} motion) to the same list`, async () => {
+          const page = await open(
+            layout === "columns" ? `${boxPath}?layout=columns` : `${boxPath}?layout=auto&list=hidden`,
+            1440,
+            560,
+            motion,
+          );
+          try {
+            const scroller = page.locator('[data-scroll-preserve="mail-list-Box001"]');
+            const row = page.locator('[data-conversation-id="Conv09"] .mail-list-row').first();
+            await row.waitFor({ state: "visible" });
+            await scroller.evaluate((element) => {
+              element.scrollTop = 160;
+            });
+            await settled(page);
+            const scrolled = await scroller.evaluate((element) => element.scrollTop);
+            expect(scrolled).toBeGreaterThan(0);
+            await row.click();
+            await page.waitForURL(/conversation=Conv09/);
+            const toolbar = page.locator("[data-mail-reader-toolbar]");
+            await toolbar.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+            expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
+            if (leave === "close") await toolbar.locator("[data-mail-reader-close]").click();
+            else await pressEscapeForWorkspace(page);
+            await page.waitForURL((url) => !url.searchParams.has("conversation"));
+            await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+            await settled(page);
+            // The same list, at the same place, with the row that was open in focus.
+            expect(Math.abs((await scroller.evaluate((element) => element.scrollTop)) - scrolled)).toBeLessThanOrEqual(1);
+            expect(
+              await page.evaluate(() => document.activeElement?.closest("[data-conversation-id]")?.getAttribute("data-conversation-id")),
+            ).toBe("Conv09");
+            // Escape in a list without a reader changes nothing.
+            await pressEscapeForWorkspace(page);
+            await settled(page);
+            expect(new URL(page.url()).searchParams.has("conversation")).toBe(false);
+          } finally {
+            await close(page);
+          }
+        });
+
+      if (screenshots)
+        test("optional View menu review screenshots", async () => {
+          const directory = join(resolve(screenshots), "view-menu");
+          mkdirSync(directory, { recursive: true });
+          for (const [width, height] of [
+            [1440, 900],
+            [1024, 768],
+            [390, 844],
+          ] as const) {
+            const page = await open(`${boxPath}?layout=auto&conversation=Conv02&theme=light`, width, height);
+            try {
+              await settled(page);
+              await page.screenshot({ path: join(directory, `${width}-reader.png`) });
+              if (width === 390) continue;
+              await page.locator("[data-mail-view-menu]").click();
+              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
+              await page.waitForTimeout(150);
+              await page.screenshot({ path: join(directory, `${width}-view-menu.png`) });
+              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).click();
+              await page.locator("[data-mail-reader-close]").waitFor({ state: "visible" });
+              await page.mouse.move(0, 0);
+              await page.waitForTimeout(150);
+              await page.screenshot({ path: join(directory, `${width}-list-hidden.png`) });
+              await pressEscapeForWorkspace(page);
+              await page.waitForURL((url) => !url.searchParams.has("conversation"));
+              await page.locator("[data-mail-view-menu]").click();
+              await page.getByRole("menuitemcheckbox", { name: /Hide conversation list/ }).waitFor({ state: "visible" });
+              await page.waitForTimeout(150);
+              await page.screenshot({ path: join(directory, `${width}-view-menu-unavailable.png`) });
+            } finally {
+              await close(page);
+            }
+          }
+        });
+
       test("views: the day's done line above the list", async () => {
         const page = await open(`${boxPath}?layout=auto&done=19,14`, 1440, 900);
         try {
@@ -3177,6 +3325,60 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+        for (const [locale, turn, waiting, doneText] of [
+          ["en", "Your turn · 3", "Waiting for reply · 2", "Done conversations that were assigned to you"],
+          ["de", "Du bist dran · 3", "Wartet auf Antwort · 2", "Erledigtes, das dir zugewiesen war"],
+        ] as const)
+          for (const width of [1440, 390] as const)
+            test(`assigned to me groups whose turn it is above what waits (${locale}, ${width})`, async () => {
+              const page = await open(`${boxPath}?view=mine&team=1&locale=${locale}`, width);
+              try {
+                const list = page.locator(".mail-workspace [role='list']").first();
+                const entries = await list
+                  .locator(":scope > [role='listitem']")
+                  .evaluateAll((items) =>
+                    items.map((item) => item.getAttribute("data-mail-assigned-group") ?? item.getAttribute("data-conversation-id")),
+                  );
+                expect(entries).toEqual(["needsAction", "Conv01", "Conv02", "Conv03", "waiting", "Conv04", "Conv05"]);
+                expect(await list.locator("[data-mail-assigned-group='needsAction'] h3").textContent()).toBe(turn);
+                expect(await list.locator("[data-mail-assigned-group='waiting'] h3").textContent()).toBe(waiting);
+                expect(await page.locator(".mail-workspace [data-mail-day-group]").count()).toBe(0);
+                const footer = page.locator(".mail-workspace [data-mail-hidden-done]");
+                expect(await footer.textContent()).toContain(doneText);
+                const href = new URL((await footer.locator("[data-mail-show-done]").getAttribute("href"))!, "https://cloud.example");
+                expect(JSON.parse(href.searchParams.get("search")!).expression).toEqual({
+                  type: "and",
+                  expressions: [{ type: "assigned_to_me" }, { type: "work_status", value: "done" }],
+                });
+                // Headings keep the height of day headings, so the rows do not move after hydration.
+                const heights = await list
+                  .locator("[data-mail-assigned-group]")
+                  .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+                for (const height of heights) expect(height).toBe(32);
+                if (screenshots && locale === "de") {
+                  mkdirSync(join(screenshots, browserName), { recursive: true });
+                  await page.screenshot({ path: join(screenshots, browserName, `assigned-groups-light-${width}.png`) });
+                }
+              } finally {
+                await close(page);
+              }
+            });
+
+        test("assigned to me with nothing open says so and still leads to the done conversations", async () => {
+          const page = await open(`${boxPath}?view=mine&inbox=empty&locale=de`);
+          try {
+            await page.getByText("Dir ist nichts Offenes zugewiesen").waitFor();
+            await page.getByText("Neue Zuweisungen erscheinen hier und in deinen Mitteilungen.").waitFor();
+            expect(await page.locator(".mail-workspace [data-mail-show-done]").count()).toBe(1);
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, "assigned-groups-empty-light-1440.png") });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
         for (const [locale, one, two] of [
           ["en", "1 attachment", "2 attachments"],
           ["de", "1 Anhang", "2 Anhänge"],
@@ -3189,6 +3391,54 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await mark("Conv05").getAttribute("aria-label")).toBe(two);
               await mark("Conv05").hover();
               await page.getByRole("tooltip").filter({ hasText: two }).waitFor();
+            } finally {
+              await close(page);
+            }
+          });
+
+        for (const [locale, summary] of [
+          [
+            "en",
+            "17 participants · External: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel and 7 more",
+          ],
+          [
+            "de",
+            "17 Beteiligte · Extern: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel und 7 weitere",
+          ],
+        ] as const)
+          test(`the wide list shows who wrote, three faces and +n, and names them in a tooltip (${locale})`, async () => {
+            const page = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`);
+            try {
+              const stack = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] [data-mail-participants]`);
+              expect(await stack("Conv05").getAttribute("aria-label")).toBe(summary);
+              expect(await stack("Conv05").locator(".k2b-avatar").count()).toBe(3);
+              expect(await stack("Conv05").locator(".k2b-avatar-stack__more").textContent()).toBe("+14");
+              // A row where only its sender wrote shows that sender alone.
+              expect(await stack("Conv01").locator(".k2b-avatar").count()).toBe(1);
+              expect(await stack("Conv01").locator(".k2b-avatar-stack__more").count()).toBe(0);
+              // Every stack starts at the same place and has the same width, so no row moves its columns.
+              const boxes = await page.locator(".mail-workspace .mail-row-participants-cell").evaluateAll((cells) =>
+                cells.map((cell) => {
+                  const { left, width } = cell.getBoundingClientRect();
+                  return { left, width };
+                }),
+              );
+              expect(boxes.length).toBe(12);
+              for (const box of boxes) expect(box).toEqual(boxes[0]!);
+              await stack("Conv05").hover();
+              await page.getByRole("tooltip").filter({ hasText: summary }).waitFor();
+              if (screenshots && locale === "de") {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, "participants-light-1440.png") });
+                // Phones keep their two-line rows; who wrote waits in the reader.
+                const phone = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`, 390);
+                try {
+                  expect(await phone.locator(".mail-workspace .mail-row-participants-cell:visible").count()).toBe(0);
+                  await phone.screenshot({ path: join(screenshots, browserName, "participants-light-390.png") });
+                } finally {
+                  await close(phone);
+                }
+              }
             } finally {
               await close(page);
             }

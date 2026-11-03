@@ -1,6 +1,7 @@
 import {
   AppWorkspace,
   Avatar,
+  AvatarFaces,
   AvatarStack,
   Button,
   Calendar,
@@ -1257,6 +1258,20 @@ const demos: DemoSection = {
             { id: "me", name: "You", self: true },
           ]}
         />
+      </DemoCard>
+      <DemoCard
+        id="avatar-faces"
+        chip={[{ kind: "component", name: "AvatarFaces", from: "@k2b/ui" }]}
+        description="The same faces inside a row that is already a link; a gray face stands outside the team."
+        code={`<AvatarFaces size="md" total={17} people={[{ name: "Sabine Jahn", tone: "neutral" }, { name: "Lea Brandt" }, { name: "Tom Keller" }]} />`}
+      >
+        <span role="img" aria-label="17 participants: Sabine Jahn, Lea Brandt, Tom Keller and 14 more">
+          <AvatarFaces
+            size="md"
+            total={17}
+            people={[{ name: "Sabine Jahn", tone: "neutral" }, { name: "Lea Brandt" }, { name: "Tom Keller" }]}
+          />
+        </span>
       </DemoCard>
     </DemoGrid>
   ),

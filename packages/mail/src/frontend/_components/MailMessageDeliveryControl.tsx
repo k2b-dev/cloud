@@ -27,6 +27,7 @@ const deliveryExplanation = (delivery: MessageDelivery, locale: string): string 
     return t.unknownExplanation;
   }
   if (waitsForSignIn(delivery)) return t.waitingForSignInExplanation;
+  if (delivery.state === "scheduled" && delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION") return t.transientRejectionExplanation;
   if (delivery.state === "scheduled" && delivery.lastErrorCode) {
     return t.retryExplanation({ attempt: delivery.attempt, total: delivery.maxAttempts });
   }
@@ -81,7 +82,9 @@ export default function MailMessageDeliveryControl(props: {
         : props.delivery.state === "scheduled" && props.delivery.lastErrorCode
           ? waitsForSignIn(props.delivery)
             ? t().waitingForSignIn
-            : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
+            : props.delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION"
+              ? t().tryingAgain
+              : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
           : props.delivery.state === "scheduled"
             ? t().scheduled
             : props.delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"

@@ -37,6 +37,8 @@ import type {
 import * as collaboration from "./collaboration";
 import type { ConversationKeep } from "./conversation-keeps";
 import * as conversationKeeps from "./conversation-keeps";
+import type { MailConversationParticipant, MailConversationParticipants } from "./conversation-participants";
+import * as conversationParticipants from "./conversation-participants";
 import * as conversationReferences from "./conversation-reference";
 import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
@@ -78,6 +80,13 @@ export type MailListItem = {
   flagged: boolean;
   /** Left out when the conversation has none, so most rows of a page cost nothing for it. */
   attachmentCount?: number;
+  /**
+   * Who wrote in the conversation, first to write first, at most `MAIL_ROW_PARTICIPANT_LIMIT`. Left out when only the
+   * sender the row already names wrote, as in most conversations, and in a message list.
+   */
+  participants?: MailConversationParticipant[];
+  /** How many people wrote, only when more wrote than `participants` names. */
+  participantCount?: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -212,6 +221,8 @@ export type MailboxPageData = {
   listError: MailListError | null;
   /** The done conversations the list leaves out, named at its end; null while more pages follow or when it leaves none out. */
   hiddenDone: MailHiddenDone | null;
+  /** Assigned to me's two groups, counted for the whole view; null in every other list and when they could not be counted. */
+  assignedGroups: MailAssignedGroups | null;
   listTitle: string;
   detailMessages: MailWorkspaceMessage[];
   conversationRowState: ConversationRowState | null;
@@ -344,6 +355,9 @@ type MailListPage = {
 /** The done conversations a work list leaves out, named at its end. `count` is null when it could not be counted. */
 export type MailHiddenDone = { count: number | null; more: boolean };
 
+/** Assigned to me lists whose turn it is, then the conversations waiting for a reply; each heading names its count. */
+export type MailAssignedGroups = { needsAction: number; waiting: number };
+
 export const searchHitToListItem = (item: search.MessageSearchHit, listMode: MailListMode): MailListItem => {
   const selectionKind = listMode === "messages" || !item.conversationId ? "message" : "conversation";
   return {
@@ -373,27 +387,45 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
   };
 };
 
-const attachLocalTags = async (
+/** Only the sender the row already names wrote, so the row costs nothing for its participants. */
+const namesOnlyItsSender = (item: MailListItem, participants: MailConversationParticipants): boolean =>
+  participants.count === 1 && !participants.people[0]?.kind && participants.people[0]?.name === item.participantLabels[0];
+
+/** The page's local tags and participants, read for the chosen rows only. */
+const attachRowDetails = async (
   context: MailRequestContext,
   mailboxId: string,
   items: MailListItem[],
   nextCursor: string | null,
   rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
-  const result = await localTags.listConversationLocalTags({
-    context,
-    mailboxId,
-    conversationIds: items.flatMap((item) => (item.conversationId ? [item.conversationId] : [])),
-  });
-  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
+  const conversationIds = items.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
+  const [tags, participants] = await Promise.all([
+    localTags.listConversationLocalTags({ context, mailboxId, conversationIds }),
+    conversationParticipants.listConversationParticipants({
+      context,
+      mailboxId,
+      conversationIds: items.flatMap((item) => (item.selectionKind === "conversation" && item.conversationId ? [item.conversationId] : [])),
+    }),
+  ]);
+  if (!tags.ok || !participants.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
     error: null,
     nextCursor,
     ...rule,
-    items: items.map((item) => ({
-      ...item,
-      localTags: item.conversationId ? (result.data.get(item.conversationId) ?? []) : [],
-    })),
+    items: items.map((item) => {
+      const written = item.selectionKind === "conversation" && item.conversationId ? participants.data.get(item.conversationId) : undefined;
+      return {
+        ...item,
+        localTags: item.conversationId ? (tags.data.get(item.conversationId) ?? []) : [],
+        ...(written && !namesOnlyItsSender(item, written)
+          ? {
+              participants: written.people,
+              ...(written.count > written.people.length ? { participantCount: written.count } : {}),
+            }
+          : {}),
+      };
+    }),
   };
 };
 
@@ -625,7 +657,7 @@ const loadListItems = async (params: {
       return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed", ...rule };
     }
     const items = result.data.items.map((item) => searchHitToListItem(item, params.listMode));
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, rule);
+    return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, rule);
   }
 
   if (params.savedView) {
@@ -639,7 +671,10 @@ const loadListItems = async (params: {
     const expression = params.savedView.filter.expression;
     if (!result.ok) return { items: [], nextCursor: null, error: "search_failed", openOnly: false, expression };
     const items = result.data.items.map(conversationToListItem);
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, { openOnly: result.data.openOnly, expression });
+    return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, {
+      openOnly: result.data.openOnly,
+      expression,
+    });
   }
 
   const result = await messages.listConversations({
@@ -653,10 +688,26 @@ const loadListItems = async (params: {
   });
   if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", openOnly: false, expression: null };
   const items = result.data.items.map(conversationToListItem);
-  return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, {
+  return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, {
     openOnly: result.data.openOnly,
     expression: null,
   });
+};
+
+/** Assigned to me's group counts from the cached view counts, never from the page: later pages keep the same headings. */
+const loadAssignedGroups = async (params: { context: MailRequestContext; mailboxId: string }): Promise<MailAssignedGroups | null> => {
+  try {
+    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
+    if (!counts.ok) return null;
+    const waiting = Math.min(counts.data.mineWaiting, counts.data.views.mine);
+    return { needsAction: counts.data.views.mine - waiting, waiting };
+  } catch (error) {
+    log.warn("Failed to count the groups of a Mail Assigned to me list", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 };
 
 /**
@@ -775,6 +826,7 @@ export type MailboxListView = Pick<
   | "nextListCursor"
   | "listError"
   | "hiddenDone"
+  | "assignedGroups"
   | "listTitle"
 > & { scheduledCount?: number };
 
@@ -887,10 +939,13 @@ const buildMailboxListView = async (
       : Promise.resolve(null),
     eventsMode ? loadEventsPage(params.context, params.mailboxId, readMailEventsFilter(params.requestUrl)) : Promise.resolve(null),
   ]);
-  const hiddenDone =
-    "openOnly" in list
-      ? await loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds })
-      : null;
+  // The same listing the service sorts by group: the Assigned to me tab without a search or another list mode.
+  const grouped =
+    activeView === "mine" && !searchExpression && !resolvedSearch.error && listMode === "conversations" && !scheduledMode && !eventsMode;
+  const [hiddenDone, assignedGroups] = await Promise.all([
+    "openOnly" in list ? loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds }) : null,
+    grouped && !list.error ? loadAssignedGroups({ context: params.context, mailboxId: params.mailboxId }) : null,
+  ]);
   return {
     scheduledMode,
     ...(scheduledPageResult?.ok ? { scheduledCount: scheduledPageResult.data.total } : {}),
@@ -914,6 +969,7 @@ const buildMailboxListView = async (
     nextListCursor: list.nextCursor,
     listError: list.error,
     hiddenDone,
+    assignedGroups,
     listTitle: scheduledMode
       ? t.scheduled
       : eventsMode
