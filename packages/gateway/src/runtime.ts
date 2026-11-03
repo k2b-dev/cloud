@@ -193,7 +193,15 @@ export const gatewayRuntime = {
     domainWatcherTask ??= superviseRuntimeTask({
       name: "Gateway domain watcher",
       signal: watcherAbort!.signal,
-      run: (signal) => watchGatewayDomainChanges({ signal, onChange: refreshDomains }),
+      run: (signal) =>
+        watchGatewayDomainChanges({
+          signal,
+          onChange: async () => {
+            // A hint during a read can describe a commit newer than that read's snapshot.
+            await domainTask;
+            await refreshDomains();
+          },
+        }),
       onError: ({ error }) => log.error("Domain watcher failed; restarting", { error: String(error) }),
     });
     snapshotTimer ??= setInterval(() => {

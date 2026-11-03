@@ -20,6 +20,7 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     let builtVersion = -1;
     let domainReads = 0;
     let domainFailure = false;
+    let domainReadHold: Promise<void> | undefined;
     let collidingHosts: string[] = [];
     const warnings: Array<{ message: string; meta?: Record<string, unknown> }> = [];
     let publicUrl = "https://cloud.test";
@@ -61,7 +62,9 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       readAppDomains: async () => {
         domainReads++;
         if (domainFailure) throw new Error("database unavailable");
-        return [`site-${registryVersion}.test`, ...collidingHosts].map((host) => ({
+        const hosts = [`site-${registryVersion}.test`, ...collidingHosts];
+        await domainReadHold;
+        return hosts.map((host) => ({
           host,
           appId: "site",
           redirectTo: null,
@@ -144,6 +147,15 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       await domainChanged?.();
       expect(domainReads).toBe(beforeHint + 1);
       expect(getDomainSnapshot().domains.has("site-4.test")).toBe(true);
+      const pendingDomainRead = Promise.withResolvers<void>();
+      domainReadHold = pendingDomainRead.promise;
+      const olderRead = refreshDomains();
+      registryVersion = 5;
+      const hintDuringRead = domainChanged?.();
+      domainReadHold = undefined;
+      pendingDomainRead.resolve();
+      await Promise.all([olderRead, hintDuringRead]);
+      expect(getDomainSnapshot().domains.has("site-5.test")).toBe(true);
       registryVersion = 1;
       await refreshDomains();
       // The registry continues to reconcile while Postgres cannot refresh domains.
