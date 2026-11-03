@@ -1161,6 +1161,48 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, 5xx and 535 fail at once", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      // A temporary rejection at the end of DATA: the server took the bytes but accepted nothing.
+      const draft = await newDraft(mailbox, "SMTP temporarily rejected");
+      provider.failNextSubmission("EMESSAGE", true, 451);
+      const outbox = await send(mailbox, draft.id, draft.revision, "smtp-4xx", "scheduled");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "SMTP_TRANSIENT_REJECTION",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      for (let attempt = 2; attempt <= 5; attempt += 1) {
+        provider.failNextSubmission("EMESSAGE", true, 451);
+        await sendRetryNow(outbox.id);
+      }
+      // Each attempt submitted once; the last one ends the budget with the message back in drafts.
+      expect(provider.submissions()).toBe(5);
+      expect(await delivery(outbox.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
+      expect(await sendRetryNow(outbox.id)).toBeNull();
+      expect(provider.submissions()).toBe(5);
+
+      // A permanent rejection and a refused login fail at once, without a second submission.
+      for (const [code, responseCode, key] of [
+        ["EENVELOPE", 550, "smtp-5xx"],
+        ["EAUTH", 535, "smtp-535"],
+      ] as const) {
+        const rejected = await newDraft(mailbox, `SMTP ${responseCode}`);
+        provider.failNextSubmission(code, false, responseCode);
+        const failed = await send(mailbox, rejected.id, rejected.revision, key, "failed");
+        expect(await delivery(failed.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
+        expect(await sendRetryNow(failed.id)).toBeNull();
+      }
+      expect(provider.submissions()).toBe(5);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a send whose IMAP server is unreachable before dispatch is retried instead of dropped", async () => {
     const provider = createProvider("imap");
     try {
