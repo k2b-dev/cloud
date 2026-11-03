@@ -469,6 +469,42 @@ export const getEffectivePermission = async (
   return rows[0]?.permission ?? "none";
 };
 
+/**
+ * The permission a subject holds as a member: through its own, group, or authenticated grants, never through public
+ * access. Anyone with the link reads a public resource, so public access alone never shows who else has access.
+ * Pass the result to decide who may read a resource's `AccessMember` list.
+ */
+export const getMemberPermission = async (
+  params: { accessIds: string[]; subject: AccessSubject | null },
+  db: AccessDb = sql,
+): Promise<PermissionLevel> => {
+  if (params.accessIds.length === 0 || !params.subject) return "none";
+  const tiers = buildAccessPrincipalTierConditions({
+    subject: params.subject,
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const rows = await db<{ permission: PermissionLevel }[]>`
+    SELECT a.permission
+    FROM auth.access a
+    WHERE a.id = ANY(${toPgUuidArray(params.accessIds)}::uuid[])
+      AND (${tiers.serviceAccount} OR ${tiers.user} OR ${tiers.group} OR ${tiers.authenticated})
+    ORDER BY
+      CASE permission
+        WHEN 'admin' THEN 4
+        WHEN 'write' THEN 3
+        WHEN 'read' THEN 2
+        WHEN 'none' THEN 1
+      END DESC
+    LIMIT 1
+  `;
+  return rows[0]?.permission ?? "none";
+};
+
 /** A Postgres UUID[] literal that keeps `null` entries in place. */
 const uuidArrayWithNulls = (values: readonly (string | null)[]): string => `{${values.map((value) => value ?? "NULL").join(",")}}`;
 

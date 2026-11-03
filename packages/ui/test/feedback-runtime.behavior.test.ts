@@ -561,6 +561,8 @@ describe("@k2b/ui feedback runtime", () => {
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
 
+    // The prompt's date field was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const formResult = prompts.form({
       fields: {
         releaseDate: { type: "datetime", dateOnly: true, default: "2026-08-03" },
@@ -568,16 +570,24 @@ describe("@k2b/ui feedback runtime", () => {
     });
     await settle();
 
-    dom.document.querySelector<HTMLButtonElement>(".k2b-date-trigger")?.click();
-    await settle();
+    const input = dom.document.querySelector<HTMLInputElement>(".k2b-date-field input")!;
+    const openCalendar = async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await settle();
+    };
+    await openCalendar();
     const nextDay = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("[data-date-day]")).find(
       (day) => day.dataset.dateDay !== "2026-08-03" && day.dataset.outside !== "true",
     );
     expect(nextDay).toBeDefined();
+    const key = nextDay!.dataset.dateDay!;
     nextDay?.click();
     await settle();
 
-    expect(nextDay?.getAttribute("aria-selected")).toBe("true");
+    // The picked day reaches the prompt's value and comes back as the field's selection.
+    expect(input.value).toBe(`${key.slice(5, 7)}/${key.slice(8)}/${key.slice(0, 4)}`);
+    await openCalendar();
+    expect(dom.document.querySelector(`[data-date-day="${key}"]`)?.getAttribute("aria-selected")).toBe("true");
 
     dialogCore.close();
     expect(await formResult).toBeNull();

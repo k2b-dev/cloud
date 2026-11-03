@@ -571,7 +571,8 @@ export const defineApp = <
         ? installableHead(pageInstallable, resolved)
         : pwa
           ? {
-              html: canvas ? ` style="background-color:${canvas}"` : "",
+              // PwaLayout renders a MobileShell: the document says so from the first paint (see `observeMobileShell`).
+              html: ` data-k2b-mobile-shell=""${canvas ? ` style="background-color:${canvas}"` : ""}`,
               viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
               app: `${
                 canvas
@@ -1208,7 +1209,7 @@ export const defineApp = <
       // Core creates it in its own setup, so it starts publishing after that.
       if (meta.id !== "core") await startOutbox();
 
-      cleanup.push(await startLinksRuntime());
+      cleanup.push(await startLinksRuntime(meta.id));
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);

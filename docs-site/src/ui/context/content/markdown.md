@@ -110,7 +110,7 @@ Prose stays flat on the surrounding surface. Links follow
 without a frame; quotes are marked by a rule at their start edge. Inside a
 tinted group such as a dialog section, code fills follow
 `--k2b-field-surface`, so they stay visible. Any other tinted host sets
-`--k2b-field-surface` to its base surface, as it does for field wells.
+`--k2b-field-surface` to its base surface, as dialog groups do.
 Long words and URLs wrap instead of widening the page.
 
 ### Links and references

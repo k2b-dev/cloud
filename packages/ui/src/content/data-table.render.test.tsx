@@ -17,9 +17,8 @@ const columns = (count: number) =>
 const table = (count: number, loading = false, loadingRows?: number, rows: { id: string }[] = []) =>
   createComponent(DataTable<{ id: string }>, { columns: columns(count), rows, loading, loadingRows });
 
-test("only tables wider than eight columns carry data-wide in SSR", () => {
-  for (const count of [6, 8]) expect(renderToString(() => table(count))).not.toContain("data-wide");
-  expect(renderToString(() => table(9))).toContain('data-wide="true"');
+test("every table draws the same lines, so none carries a width switch in SSR", () => {
+  for (const count of [6, 9]) expect(renderToString(() => table(count))).not.toContain("data-wide");
 });
 
 test("loading renders bounded row-height placeholders with column alignment and a loading caption", () => {

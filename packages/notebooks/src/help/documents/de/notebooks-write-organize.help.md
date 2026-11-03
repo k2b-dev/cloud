@@ -10,6 +10,12 @@ Schreibe Notizen als lesbares Markdown. Nutze dann Links, Tags, Anhänge und die
 
 **Zusammenarbeit**
 
+## Sehen, wer gerade hier ist {icon="users"}
+
+Oben in den Notizdetails steht **Gerade hier**. Dort siehst du, wer die Notiz gerade offen hat. Ein Stift zeigt, wer schreibt, ein Auge, wer liest. Die Zeile darunter sagt, wer in welchem Abschnitt schreibt. Wähle eine schreibende Person, um zu ihrer Stelle zu springen. **Link kopieren** kopiert die Adresse der Notiz, damit du jemanden dazuholen kannst.
+
+Unter **Inhalt** stehen neben jeder Überschrift die Personen, die dort gerade schreiben. Ohne Verbindung zeigt **Gerade hier** den letzten Stand mit Uhrzeit.
+
 ## Eine Seite diskutieren {icon="message-circle"}
 
 Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidungen. Kommentare gehören neben die Seite, ändern aber nicht ihr Markdown.

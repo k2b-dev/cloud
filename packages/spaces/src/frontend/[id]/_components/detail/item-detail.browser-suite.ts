@@ -10,7 +10,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -414,6 +414,8 @@ const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__secti
 const planningRow = (page: Page, term: string) =>
   page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
+  // A saved change reloads the panel and a closing menu still moves; the label is measured where it rests.
+  await settled(page);
   const label = (await planningRow(page, term).locator("dt").boundingBox())!;
   await page.mouse.click(label.x + 4, label.y + label.height / 2);
 };
@@ -1020,8 +1022,8 @@ describe("Spaces item detail in a browser", () => {
         const picked = page.waitForEvent("filechooser");
         await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
         // The page learns while idle that no app offers files, and then the click opens the device's dialog. A click
-        // before that opens the source chooser, whose first source, This device, opens the same dialog.
-        const thisDevice = page.locator('dialog[open] [role="gridcell"]').first();
+        // before that opens the chooser on This device, whose source opens the same dialog.
+        const thisDevice = page.locator('dialog[open] .cloud-file-dialog__source[aria-current="true"]');
         const chooserOpened = thisDevice.waitFor().then(
           () => true,
           () => false,

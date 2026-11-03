@@ -266,6 +266,8 @@ Effect budgets are hard upper limits for moves, sends, keyword changes, collabor
 
 With **Manage** access, you use **Automations → Activity** for the automatic replies, incoming automations, custom workflows, and resumable backfills of the mailbox. The table shows the automation type, state, duration, time, and a short failure or result message. Cloud administrators keep the detail view across all apps under **Admin → Observability → Workflows**.
 
+Successful backfills remain in Activity for 30 days, including after you delete their rule. Repeating the same operation does not add a second entry.
+
 Choose **Cancel** when no further effects may start. Cancelling does not reverse mail moves, sends, or collaboration changes that already completed. A run that needs attention waits until a Cloud administrator records whether an uncertain external effect completed. Turning off a Mail workflow stops new trigger matches. It does not change completed history.
 
 For the complete YAML vocabulary and checked examples, see [Mail workflow YAML reference](/app/mail/help/mail-workflows).

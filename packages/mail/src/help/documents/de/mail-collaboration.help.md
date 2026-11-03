@@ -15,14 +15,34 @@ Der Lesebereich ordnet aussagekräftige Änderungen an Zusammenarbeit und Workfl
 - **Zugewiesen an** zeigt die Personen, Agenten oder eigenständigen Dienstkonten, die für die Unterhaltung zuständig sind. Eine Unterhaltung kann bis zu 20 Zuständige haben. Füge sie in den **Unterhaltungsdetails** hinzu oder entferne sie dort. Weist dir jemand anderes eine Unterhaltung zu, bekommst du eine Cloud-Benachrichtigung, die sie öffnet.
 - Um eine Person oder ein Konto mehreren Unterhaltungen zuzuweisen, wähle die Unterhaltungen in der Liste aus und wähle **Zuweisen**. Wähle dann die Person oder das Konto. Die anderen zugewiesenen Personen bleiben zugewiesen. Personen bekommen eine einzige Benachrichtigung für die ganze Auswahl; Agenten und Dienstkonten erhalten keine Benutzerbenachrichtigung.
 - Dasselbe Menü bietet **Mir zuweisen**, **Mich entfernen** und **Alle Zuweisungen entfernen**. Weist du dir selbst zu oder entfernst du jemanden, sendet Mail keine Benachrichtigung.
-- **Mir zugewiesen** zeigt jede Unterhaltung, der du zugewiesen bist. **Nicht zugewiesen** zeigt die Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann.
+- In einem geteilten Postfach bieten das Menü **…** einer Unterhaltung und ihr Rechtsklick-Menü **Mir zuweisen** direkt unter den Antworten. Es fügt dich hinzu; alle, die schon zugewiesen sind, bleiben zugewiesen.
+- **Mir zugewiesen** zeigt jede offene Unterhaltung, der du zugewiesen bist, in zwei Gruppen. Oben steht **Du bist dran**: die Unterhaltungen mit Handlungsbedarf. Darunter steht **Wartet auf Antwort**. Jede Überschrift zählt die ganze Gruppe, und die Reihenfolge bleibt gleich, wenn weitere Seiten laden. Am Ende öffnet **Erledigt anzeigen** die erledigten Unterhaltungen, die dir zugewiesen sind. **Nicht zugewiesen** zeigt die Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann.
 - Mail setzt den nächsten Schritt. **Handlungsbedarf** bedeutet, dass das Team prüfen oder handeln muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei jemand anderem liegt.
-- **Als erledigt markieren** ist der einzige Status der Nachverfolgung, den du von Hand setzt. Wähle ihn, wenn nichts mehr zu tun ist. Entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der letzten bestätigten Nachricht ab.
+- **Als erledigt markieren** ist der einzige Status der Nachverfolgung, den du von Hand setzt. Wähle ihn, wenn nichts mehr zu tun ist: mit dem Häkchen in der Aktionsleiste der Unterhaltung oder im Menü **…** der Unterhaltung. Wähle **Wieder öffnen**, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der letzten bestätigten Nachricht ab.
 - **Später anzeigen** nimmt die Unterhaltung eine Zeit lang aus der aktiven Arbeit und behält ihren nächsten Schritt. Nutze es, wenn die nächste Prüfung von einem Zeitpunkt abhängt, nicht von einer anderen Person. Die Unterhaltung bleibt bis zum gewählten Zeitpunkt unter **Später**. Eine neue eingehende E-Mail zeigt sie sofort wieder.
 
 Neue eingehende E-Mails setzen jede Unterhaltung auf **Handlungsbedarf**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, und eine neue Nachricht, die du schreibst, beginnt dort. Automatische Antworten, Weiterleitungen, Wiederholungen, fehlgeschlagene Sendungen und unklare Zustellungsergebnisse setzen keinen neuen nächsten Schritt.
 
 Verstehe **Erledigt** als Status des Teams, nicht als Archivierung der E-Mail. Markierst du eine Unterhaltung als erledigt oder öffnest du sie wieder, entfernt das sie auch aus **Später**.
+
+## Sehen, was im Postfach passiert ist {icon="history"}
+
+Der Tab **Ereignisse** im Kopfbereich zeigt, was das Team und Automatisierungen im ganzen Postfach getan haben. Die neuesten Ereignisse stehen oben, nach Tagen gruppiert:
+
+- Zuweisungen und entfernte Zuständige,
+- gesendete Antworten und Nachrichten, auch Sendungen, die fehlgeschlagen sind, nur einen Teil der Empfänger erreicht haben oder deren Ergebnis unklar ist,
+- begonnene und verworfene Entwürfe, ohne ihren Inhalt,
+- als erledigt markierte und wieder geöffnete Unterhaltungen,
+- interne Kommentare, ohne ihren Text,
+- was Automatisierungen getan haben, zum Beispiel Tags hinzufügen.
+
+Lesen, Markieren und Verschieben erscheinen dort nicht.
+
+Wähle ein Ereignis, um seine Unterhaltung neben der Liste zu öffnen. **Art**, **Person** und **Betrifft mich** grenzen die Liste ein. **Betrifft mich** zeigt deine eigenen Ereignisse, Zuweisungen, die dich hinzufügen oder entfernen, und Ereignisse in Unterhaltungen, die dir zugewiesen sind. Der Filter steht in der Adresse. Nach dem Neuladen oder über einen geteilten Link siehst du deshalb dieselben Ereignisse. **Ältere Ereignisse laden** lädt die nächsten 50.
+
+Ein Sendefehler nennt seinen Grund. Was du als Nächstes tun kannst, zeigt die Nachricht in der Unterhaltung.
+
+Alle, die das ganze Postfach ansehen können, sehen den Tab. Personen mit Zugriff nur auf zugewiesene Unterhaltungen sehen ihn nicht; ihnen zeigen die **Unterhaltungsdetails** die Aktivität ihrer Unterhaltungen.
 
 ## Interne Kommentare hinzufügen {icon="point"}
 

@@ -39,7 +39,7 @@ export type AiComposerFileResult = {
 export const aiComposerFileAccept = FILE_INPUT_ACCEPT;
 
 /**
- * The `maxBytes` for `chooseFiles` while a composer holds `attached` attachments. Files from Cloud apps are read into
+ * The `maxTotalBytes` for `chooseFiles` while a composer holds `attached` attachments. Files from Cloud apps are read into
  * the browser before `readAiComposerFiles` checks them, so together they stay within what the draft can still take:
  * each free slot at most the largest file the composer attaches. 0 when every slot is taken.
  */

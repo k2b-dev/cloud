@@ -112,6 +112,13 @@ original order, with counts as quiet trailing text. It never repeats the
 current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
+A `pinned` view takes no slot and never moves under **More**: it stays after
+**More** at every width, also while it is current. Use it for one view of
+another kind than the ones that overflow, such as an activity feed beside
+work views. A `badge` adds a short quiet label after the label and count,
+such as "New" until a person first opens the view. Neither changes the tab's
+height.
+
 Every view is a document link, in the strip and under **More**, so reload,
 back, and forward show the view that the URL names.
 
@@ -130,15 +137,18 @@ ring stays fully visible. Labels keep the shared
 [fade utility](/en/ui/layout/navigation#label-overflow), which stays inactive
 while a label fits.
 
-Both tab controls have a soft appearance: no tray, baseline, selection ring,
-or underline. The selected tab or view takes the selection fill; see
-[Colors and selection](/en/ui/surfaces/color). Font weight never changes
-with selection or hover, so neighbouring controls keep their positions.
-Keyboard focus retains its visible focus ring.
+Both tab controls have no tray, baseline, or underline. A tab has no edge
+until selected; the selected tab or view takes the selected edge, fill, and
+ink of the app, like a segment (see
+[Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)).
+Keyboard focus turns the same 2 px edge blue. Font weight and box never change
+with selection, hover, or focus, so neighbouring controls keep their positions.
+A pill tab draws the edge around its label and close button together.
 
 ```ts
 type ViewTab = {
   id: string; label: string; href: string; icon?: string; count?: number | string;
+  badge?: string; pinned?: boolean;
 };
 type ViewTabsProps = {
   label: string; items: readonly ViewTab[]; current: string | undefined; max?: number;

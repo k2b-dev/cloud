@@ -838,9 +838,13 @@ describe("profile menu in the rail", () => {
             avatarLeft: avatar.left,
             avatarRight: avatar.right,
             railRight: Math.round(document.querySelector(".layout-rail")!.getBoundingClientRect().right),
-            appearanceLabel: panel.querySelector(".menu-item")?.getAttribute("aria-label"),
+            appearanceLabel: panel.querySelector(".menu-item[aria-label]")?.getAttribute("aria-label"),
             radios: panel.querySelectorAll('[role="radio"]').length,
-            items: [...panel.querySelectorAll(".menu-item")].map((item) => item.textContent?.trim()),
+            items: [...panel.querySelectorAll(".menu-item")]
+              .filter((item) => item.checkVisibility())
+              .map((item) => item.querySelector(":scope > span")?.textContent?.trim()),
+            shortcut: panel.querySelector(".menu-item")?.querySelector(".k2b-kbd")?.checkVisibility(),
+            signOutColor: getComputedStyle([...panel.querySelectorAll(".menu-item")].at(-1)!).color,
           };
         });
         expect(menu.visible).toBe("visible");
@@ -854,9 +858,12 @@ describe("profile menu in the rail", () => {
         expect(menu.top).toBeLessThan(menu.avatarTop);
         expect(menu.items).toEqual(
           language === "de"
-            ? ["Hell", "English", "Profileinstellungen", "App", "Abmelden"]
-            : ["Light", "Deutsch", "Profile settings", "App", "Sign out"],
+            ? ["Seitenleiste ausblenden", "Hell", "English", "Profileinstellungen", "App", "Abmelden"]
+            : ["Hide sidebar", "Light", "Deutsch", "Profile settings", "App", "Sign out"],
         );
+        expect(menu.shortcut).toBe(true);
+        // Sign-out takes the danger tone (#b91c1c).
+        expect(menu.signOutColor).toBe("rgb(185, 28, 28)");
         expect(menu.radios).toBe(0);
         expect(menu.appearanceLabel).toBe(
           language === "de" ? "Darstellung: Hell. Wechselt zu Dunkel." : "Appearance: Light. Switches to Dark.",
@@ -880,13 +887,13 @@ describe("profile menu in the rail", () => {
         expect(await page.locator(".layout-profile-preferences [data-position]").getAttribute("data-position")).toBe("right-start");
         // Beside the rail, the avatar's menu cannot open below the window's bottom edge, so it grows upward.
         const avatar = await trigger.evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);
-        const menu = dropdownPosition(avatar, { width: 224, height: 220 }, "right-start", { width: device.width, height: device.height });
+        const menu = dropdownPosition(avatar, { width: 272, height: 260 }, "right-start", { width: device.width, height: device.height });
         expect(avatar.width).toBe(44);
         expect(avatar.height).toBe(44);
         expect(avatar.left).toBeGreaterThanOrEqual(0);
         expect(avatar.right).toBeLessThanOrEqual(tablet(device) ? 68 : 56);
         expect(menu.left).toBeGreaterThanOrEqual(avatar.right);
-        expect(menu.top + 220).toBeLessThanOrEqual(device.height - 8);
+        expect(menu.top + 260).toBeLessThanOrEqual(device.height - 8);
         expect(menu.top).toBeLessThan(avatar.top);
       } finally {
         await context.close();

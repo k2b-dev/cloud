@@ -216,7 +216,10 @@ registry. A stopped app can receive a domain; a typo fails with
 `APP_DOMAIN_UNKNOWN_APP`. `active` means the app currently has a live registry
 entry with `public: true`. Assignments survive app downtime. A new domain is
 checked in the background, so DNS and TLS do not delay the creation response.
-Gateway routing refreshes within five seconds.
+Committed domain changes send a hint that refreshes gateway routing immediately.
+If the hint is lost, the next reconciliation applies the change within 30 seconds.
+During a mixed-version rollout with an older Core that does not publish hints,
+every domain change waits for reconciliation, up to 30 seconds.
 
 Hosts normalize to lowercase ASCII/IDNA without a trailing dot. Do not supply
 a scheme, path, port, IP address or wildcard. The Cloud host cannot be

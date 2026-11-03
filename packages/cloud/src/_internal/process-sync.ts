@@ -161,7 +161,7 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
   } catch (error) {
     if (current === sync) unbindProcessSync();
     if (processNats === connection) processNats = undefined;
-    await flushSyncTraceEvents();
+    await flushSyncTraceEvents({ stopping: true });
     await connection.close();
     throw error;
   }
@@ -207,7 +207,7 @@ export const startProcessSync = async ({ application }: { application: string })
             await active.drain();
           } finally {
             try {
-              await flushSyncTraceEvents();
+              await flushSyncTraceEvents({ stopping: true });
             } finally {
               if (current === active) unbindProcessSync();
               if (processNats === connection) processNats = undefined;

@@ -17,6 +17,7 @@ const nonCredentials = new Map([
   ["pwa_last_address", "Last address label shown by the mobile app."],
   ["cloud_mail_workspace", "Mail layout and pinned mailbox preferences."],
   ["app-access-fixture", "Identifies in-memory state in the browser UI fixture."],
+  ["mail_fixture_focus_notice", "Mail's browser fixture marks its notice as closed; the fixture server only."],
 ]);
 const sources = new Map<string, ts.SourceFile>();
 const sourceAt = (path: string): ts.SourceFile => {

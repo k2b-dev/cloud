@@ -8,18 +8,16 @@ import { readApiError } from "./api-response";
 import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessageBodyHeight } from "./mail-message-document";
 import { mailMessageMessages } from "./mail-message-messages";
 import {
+  inlineBodyImages,
   type MessageBodyFormat,
   type MessageColors,
   markCidImageSources,
   normalizeContentId,
-  referencedContentIds,
   referencedRemoteImageIds,
   splitPlainMessageSegments,
   splitPlainTextLinks,
 } from "./mail-message-presentation";
 
-const MAX_INLINE_IMAGE_COUNT = 32;
-const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_REMOTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const REMOTE_IMAGE_WORKERS = 2;
 const REMOTE_IMAGE_REQUEST_GAP_MS = 350;
@@ -253,18 +251,7 @@ export default function MailMessageBody(props: {
   };
 
   const loadCidImages = async (signal: AbortSignal) => {
-    const referenced = new Set(referencedContentIds(props.html ?? ""));
-    let selectedBytes = 0;
-    const selected = props.attachments
-      .filter((attachment) => {
-        if (!attachment.contentId || !attachment.contentType.toLowerCase().startsWith("image/")) return false;
-        if (!referenced.has(normalizeContentId(attachment.contentId))) return false;
-        if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) return false;
-        if (selectedBytes + attachment.sizeBytes > MAX_INLINE_IMAGE_BYTES) return false;
-        selectedBytes += attachment.sizeBytes;
-        return true;
-      })
-      .slice(0, MAX_INLINE_IMAGE_COUNT);
+    const selected = inlineBodyImages(props.html ?? "", props.attachments);
     for (const attachment of selected) {
       const response = await fetch(
         `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}?inline=true`,

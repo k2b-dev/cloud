@@ -1006,6 +1006,8 @@ describe("@k2b/ui choice and date browser behavior", () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { DatePicker } = await import("../src/inputs/DatePicker");
+    // DatePicker was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const activeListeners = { resize: 0, scroll: 0 };
     const target = dom.window as unknown as {
       addEventListener: (...args: unknown[]) => unknown;
@@ -1023,14 +1025,15 @@ describe("@k2b/ui choice and date browser behavior", () => {
     };
 
     const dispose = render(() => createComponent(DatePicker, { label: "Release date", value: "2026-07-27" }), dom.root);
-    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+    const input = dom.root.querySelector<HTMLInputElement>(".k2b-date-field input")!;
     const surface = dom.root.querySelector<HTMLElement>(".k2b-date-popover")!;
     expect(activeListeners).toEqual({ resize: 0, scroll: 0 });
 
-    trigger.click();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(input.getAttribute("aria-expanded")).toBe("true");
     expect(activeListeners).toEqual({ resize: 1, scroll: 1 });
     popover.setOpen(surface, false);
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
     expect(activeListeners).toEqual({ resize: 0, scroll: 0 });
 
     dispose();
@@ -1116,6 +1119,8 @@ describe("@k2b/ui choice and date browser behavior", () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { DateRangePicker } = await import("../src/inputs/DatePicker");
+    // DatePicker was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const commits: Array<{ start: string | null; end: string | null }> = [];
     const dispose = render(
       () =>
@@ -1127,13 +1132,13 @@ describe("@k2b/ui choice and date browser behavior", () => {
         }),
       dom.root,
     );
-    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+    const start = dom.root.querySelector<HTMLInputElement>(".k2b-date-field input")!;
     const day = (key: string) => dom.root.querySelector<HTMLButtonElement>(`[data-date-day="${key}"]`)!;
     const apply = () => dom.root.querySelector<HTMLButtonElement>(".k2b-date-apply")!;
     const selected = () =>
       Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[data-date-day][aria-selected="true"]')).map((cell) => cell.dataset.dateDay);
     const pick = async (...keys: string[]) => {
-      trigger.click();
+      start.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
       await Bun.sleep(0);
       for (const key of keys) {
         day(key).click();
@@ -1166,6 +1171,12 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(selected()).toEqual(["2026-10-20"]);
     apply().click();
     expect(commits.at(-1)).toEqual({ start: "2026-10-20", end: "2026-10-20" });
+
+    // ...and the click after it extends that new range instead of starting yet another one.
+    await pick("2026-10-12", "2026-10-14", "2026-10-20", "2026-10-22");
+    expect(selected()).toEqual(["2026-10-20", "2026-10-22"]);
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-20", end: "2026-10-22" });
 
     dispose();
     popover.restore();
@@ -1208,10 +1219,102 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("an empty field with distant limits opens on its first allowed month, and clearing never opens the calendar", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { DatePicker, DateRangePicker } = await import("../src/inputs/DatePicker");
+    delegateEvents(["keydown", "click", "focusout", "pointerdown"], dom.document);
+    const dispose = render(
+      () => [
+        createComponent(DatePicker, {
+          label: "Later",
+          value: null,
+          min: "2099-03-01",
+          max: "2099-03-31",
+          dateConfig: { locale: "en", timeZone: "UTC" },
+        }),
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-10-05", end: "2026-10-06" },
+          clearable: true,
+          dateConfig: { locale: "en", timeZone: "UTC" },
+        }),
+      ],
+      dom.root,
+    );
+    const [later, start] = Array.from(dom.root.querySelectorAll<HTMLInputElement>(".k2b-date-field input"));
+    later!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await Bun.sleep(0);
+    expect(dom.root.querySelector(".k2b-date-calendar__title")?.textContent).toContain("2099");
+    expect((dom.document.activeElement as HTMLElement | null)?.dataset.dateDay).toBe("2099-03-01");
+    later!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    const clear = dom.root.querySelectorAll<HTMLButtonElement>(".k2b-date-field__clear")[0]!;
+    clear.dispatchEvent(new dom.window.PointerEvent("pointerdown", { bubbles: true, button: 0 }) as unknown as Event);
+    clear.click();
+    await Bun.sleep(5);
+    expect(start!.getAttribute("aria-expanded")).toBe("false");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("an untouched typed date field never reports a change", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { DatePicker, DateRangePicker } = await import("../src/inputs/DatePicker");
+    delegateEvents(["keydown", "click", "focusout", "pointerdown", "input"], dom.document);
+    const reports: unknown[] = [];
+    const [value, setValue] = createSignal<string | null>("2026-10-05");
+    const dispose = render(
+      () => [
+        createComponent(DatePicker, {
+          label: "Due",
+          get value() {
+            return value();
+          },
+          dateConfig: { locale: "en", timeZone: "America/New_York" },
+          onValueChange: (next) => reports.push(next),
+          onValueCommit: (next) => reports.push(next),
+        }),
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-10-05", end: "2026-10-06" },
+          dateConfig: { locale: "en", timeZone: "America/New_York" },
+          onValueChange: (next) => reports.push(next),
+          onValueCommit: (next) => reports.push(next),
+        }),
+      ],
+      dom.root,
+    );
+    const inputs = Array.from(dom.root.querySelectorAll<HTMLInputElement>(".k2b-date-field input"));
+    for (const input of inputs) {
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await Bun.sleep(0);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+      input.blur();
+    }
+    // A value set from outside replaces the text without echoing it back.
+    setValue("2026-10-09");
+    await Bun.sleep(0);
+    expect(inputs[0]!.value).toBe("10/09/2026");
+    expect(reports).toEqual([]);
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("keeps focus on the next day across a month boundary", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { DatePicker } = await import("../src/inputs/DatePicker");
+    // DatePicker was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const dispose = render(
       () =>
         createComponent(DatePicker, {
@@ -1222,7 +1325,9 @@ describe("@k2b/ui choice and date browser behavior", () => {
       dom.root,
     );
 
-    dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")?.click();
+    dom.root
+      .querySelector<HTMLInputElement>(".k2b-date-field input")
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     await Bun.sleep(0);
 
     const july31 = dom.root.querySelector<HTMLButtonElement>('[data-date-day="2026-07-31"]');

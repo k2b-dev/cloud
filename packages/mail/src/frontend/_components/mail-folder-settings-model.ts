@@ -21,13 +21,17 @@ export type MailFolderSettingsRow<T extends SettingsFolder> = {
 const countDescendants = (node: MailFolderTreeNode<SettingsFolder>): number =>
   node.children.reduce((count, child) => count + 1 + countDescendants(child), 0);
 
-/** The rows of the folder settings tree in provider order, without the subfolders of collapsed folders. */
+/**
+ * The rows of the folder settings tree in provider order, without the subfolders of collapsed folders. `name` gives
+ * the shown name, such as a localized standard folder name, for paths and for telling same-named folders apart.
+ */
 export const mailFolderSettingsRows = <T extends SettingsFolder>(
   folders: readonly T[],
   collapsedIds: ReadonlySet<string>,
+  name: (folder: T) => string = (folder) => folder.name,
 ): MailFolderSettingsRow<T>[] => {
   const nameCounts = new Map<string, number>();
-  for (const folder of folders) nameCounts.set(folder.name, (nameCounts.get(folder.name) ?? 0) + 1);
+  for (const folder of folders) nameCounts.set(name(folder), (nameCounts.get(name(folder)) ?? 0) + 1);
   const rows: MailFolderSettingsRow<T>[] = [];
   const visit = (nodes: readonly MailFolderTreeNode<T>[], depth: number, ancestors: readonly string[], parentRowId: string | null) => {
     for (const node of nodes) {
@@ -39,10 +43,10 @@ export const mailFolderSettingsRows = <T extends SettingsFolder>(
         depth,
         hasChildren: node.children.length > 0,
         descendantCount: countDescendants(node),
-        path: ancestors.length > 0 && (nameCounts.get(node.folder.name) ?? 0) > 1 ? ancestors.join(" / ") : null,
+        path: ancestors.length > 0 && (nameCounts.get(name(node.folder)) ?? 0) > 1 ? ancestors.join(" / ") : null,
       });
       if (!collapsedIds.has(node.folder.id))
-        visit(node.children, group ? depth : depth + 1, [...ancestors, node.folder.name], node.folder.id);
+        visit(node.children, group ? depth : depth + 1, [...ancestors, name(node.folder)], node.folder.id);
     }
   };
   visit(buildMailFolderTree(folders), 0, [], null);

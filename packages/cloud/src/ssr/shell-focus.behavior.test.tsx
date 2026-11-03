@@ -21,8 +21,9 @@ const mount = async (apple = false, wide = true, hidden = false) => {
   Object.defineProperty(media, "matches", { get: () => matches });
   const matchMedia = spyOn(dom.window, "matchMedia").mockImplementation(() => media);
   dom.root.innerHTML = `<div class="cloud-app-canvas" data-layout-authenticated="true" ${hidden ? 'data-shell-focus="true"' : ""}>
+    <div class="layout-profile-preferences"><button data-cloud-shell-focus-return="">Profile</button>
     <button data-cloud-shell-focus-toggle="hide"><i></i>Hide sidebar</button>
-    <div class="cloud-shell-show"><button data-cloud-shell-focus-toggle="show">Show sidebar</button></div>
+    <button data-cloud-shell-focus-toggle="show">Show sidebar</button></div>
     <textarea></textarea><div class="cm-content" contenteditable="true" tabindex="0"></div>
     <div data-cloud-shell-reveal></div></div><div id="runtime"></div>`;
   const canvas = dom.root.querySelector<HTMLElement>(".cloud-app-canvas")!;
@@ -30,8 +31,9 @@ const mount = async (apple = false, wide = true, hidden = false) => {
   const show = dom.root.querySelector<HTMLButtonElement>('[data-cloud-shell-focus-toggle="show"]')!;
   const textarea = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
   const editor = dom.root.querySelector<HTMLElement>(".cm-content")!;
-  // happy-dom has no layout. These editors remain rendered in the real shell.
-  const rects = [textarea, editor].map((element) =>
+  const avatar = dom.root.querySelector<HTMLButtonElement>("[data-cloud-shell-focus-return]")!;
+  // happy-dom has no layout. These editors and the avatar remain rendered in the real shell.
+  const rects = [textarea, editor, avatar].map((element) =>
     spyOn(element, "getClientRects").mockReturnValue(Object.assign([new dom.window.DOMRect(0, 0, 100, 20)], { item: () => null })),
   );
   const { contextCommandsWithShortcuts } = await import("../browser/command-shortcuts");
@@ -43,6 +45,7 @@ const mount = async (apple = false, wide = true, hidden = false) => {
   return {
     ...dom,
     canvas,
+    avatar,
     hide,
     show,
     textarea,
@@ -129,25 +132,35 @@ else {
       page.dispose();
     }
   });
-  test("delegated buttons move focus to the other button and publish the state", async () => {
+  test("delegated menu entries return focus to the avatar after a key, release focus after a pointer, and publish the state", async () => {
     const page = await mount();
     const states: boolean[] = [];
     const listener = (event: Event) => states.push((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
+    const click = (target: Element, detail: number) =>
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail }));
     window.addEventListener(page.SHELL_FOCUS_CHANGE_EVENT, listener);
     try {
+      // Enter or Space on the entry: the avatar keeps focus, so its menu stays open with the way back.
       page.hide.focus();
-      page.hide.querySelector<HTMLElement>("i")!.click();
-      expect(document.activeElement).toBe(page.show);
+      click(page.hide.querySelector("i")!, 0);
+      expect(document.activeElement).toBe(page.avatar);
       expect(page.canvas.dataset.shellFocus).toBe("true");
-      page.show.click();
-      expect(document.activeElement).toBe(page.hide);
-      expect(states).toEqual([true, false]);
+      page.show.focus();
+      click(page.show, 0);
+      expect(document.activeElement).toBe(page.avatar);
+      // After a pointer, focus no longer holds the hover menu open; it closes when the pointer leaves.
+      page.hide.focus();
+      click(page.hide, 1);
+      expect(document.activeElement).toBe(document.body);
+      expect(page.canvas.dataset.shellFocus).toBe("true");
+      click(page.show, 1);
+      expect(states).toEqual([true, false, true, false]);
       expect(page.command()?.title).toBe("Hide sidebar");
       // A sidebar link or an element removed by another state listener cannot retain focus.
       page.editor.focus();
       const rects = spyOn(page.editor, "getClientRects").mockReturnValue(Object.assign([], { item: () => null }));
       page.setShellFocus(true);
-      expect(document.activeElement).toBe(page.show);
+      expect(document.activeElement).toBe(page.avatar);
       rects.mockRestore();
     } finally {
       window.removeEventListener(page.SHELL_FOCUS_CHANGE_EVENT, listener);

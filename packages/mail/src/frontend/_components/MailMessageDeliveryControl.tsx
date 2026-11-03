@@ -9,7 +9,7 @@ import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { messageDeliveryControlLabel, undoSendSecondsRemaining } from "./mail-message-presentation";
+import { mailSendFailureReason, messageDeliveryControlLabel, undoSendSecondsRemaining } from "./mail-message-presentation";
 import { buildMailListHref } from "./mail-navigation";
 
 type MessageDelivery = NonNullable<MessageDetail["delivery"]>;
@@ -34,17 +34,7 @@ const deliveryExplanation = (delivery: MessageDelivery, locale: string): string 
     return t.sentCopyExplanation;
   }
   if (["failed", "reconciled_unsent"].includes(delivery.state)) {
-    const code = delivery.lastErrorCode ?? "";
-    const reason = ["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(code)
-      ? t.recipientsRejected
-      : code.includes("AUTH") || code.includes("CREDENTIAL")
-        ? t.authenticationFailed
-        : code.includes("SIZE") || code === "SMTP_DSN_UNSUPPORTED"
-          ? t.unsupportedDelivery
-          : code.includes("ACCESS") || code.includes("IDENTITY")
-            ? t.sendingAccessChanged
-            : t.notDelivered;
-    return `${reason} ${t.remainsDraft}`;
+    return `${mailSendFailureReason(delivery.lastErrorCode, locale)} ${t.remainsDraft}`;
   }
   return t.deliveryNeedsAttention;
 };

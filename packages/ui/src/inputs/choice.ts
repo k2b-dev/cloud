@@ -157,23 +157,32 @@ const popoverIsOpen = (popover: HTMLElement | undefined): boolean => {
 
 export type ChoicePopoverPlacement = {
   /**
-   * `trigger` (default) gives the popover the trigger's width; `own` keeps the
-   * width its stylesheet sets, such as a RichSelect with a preview.
+   * `trigger` (default) makes the popover at least as wide as the trigger and
+   * as wide as its longest name, so names stay on one line; `own` keeps
+   * the width its stylesheet sets, such as a RichSelect with a preview.
    */
   width?: "trigger" | "own";
   /** The side tried first. The popover flips when the other side has more room. */
   side?: "below" | "above";
 };
 
-export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement, placement: ChoicePopoverPlacement = {}): void => {
+/**
+ * Places the popover under (or above) its trigger. `floor` is the narrowest
+ * width it may take, such as the width it already had while open, so filtering
+ * the options never makes it narrower.
+ */
+export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement, placement: ChoicePopoverPlacement = {}, floor = 0): void => {
   const margin = 8;
   const gap = 4;
   const triggerRect = trigger.getBoundingClientRect();
-  // Cloud sizes its dropdowns to the trigger exactly (`dialog.style.width =
-  // rect.width`). Keep that so a narrow toolbar select does not open a wide
-  // panel that no longer lines up with the control it belongs to.
-  const triggerWidth = Math.min(triggerRect.width, window.innerWidth - margin * 2);
-  if (placement.width !== "own") popover.style.width = `${triggerWidth}px`;
+  // The popover starts at the trigger's left edge and is never narrower than
+  // the trigger. Its stylesheet lets it grow to its longest name, as a menu
+  // does, so a name stays on one line beside a narrow trigger.
+  if (placement.width !== "own") {
+    popover.dataset.width = "fit";
+    const minWidth = Math.min(Math.max(triggerRect.width, floor), window.innerWidth - margin * 2);
+    popover.style.setProperty("--k2b-choice-min-width", `${minWidth}px`);
+  }
 
   // A stylesheet minimum, such as a popover with filter chips, can make it
   // wider than the trigger, so the clamp below uses the rendered width.
@@ -210,16 +219,21 @@ export function createChoicePopover(
   const [trigger, setTrigger] = createSignal<HTMLElement>();
   const [popover, setPopover] = createSignal<HTMLElement>();
   let triggerRing = true;
+  // The widest the open popover has been: typing a filter never narrows it.
+  let widest = 0;
 
   const place = () => {
     const triggerElement = trigger();
     const popoverElement = popover();
-    if (triggerElement && popoverElement && open()) placeChoicePopover(triggerElement, popoverElement, placement());
+    if (!triggerElement || !popoverElement || !open()) return;
+    placeChoicePopover(triggerElement, popoverElement, placement(), widest);
+    widest = popoverElement.getBoundingClientRect().width;
   };
 
   const show = () => {
     const popoverElement = popover();
     if (disabled() || !popoverElement || popoverIsOpen(popoverElement)) return;
+    widest = 0;
     triggerRing = ringOnReturn(trigger());
     popoverElement.showPopover();
     setOpen(true);

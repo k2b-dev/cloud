@@ -440,7 +440,7 @@ export default function MailComposer(props: {
     const recipients = [...current.to, ...current.cc, ...current.bcc].map((recipient) => ({ ...recipient }));
     const files = await chooseFiles({
       multiple: true,
-      maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+      maxTotalBytes: MAX_DRAFT_ATTACHMENT_BYTES,
       context: async (signal) => {
         try {
           const module = await importOnDemand(() => import("./mail-attachment-context"));

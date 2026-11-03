@@ -3,6 +3,43 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.63.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.62.0...cloud-v0.63.0) (2026-11-02)
+
+
+### Features
+
+* **apps:** app overrides follow the edge rule ([#2470](https://github.com/k2b-dev/cloud/issues/2470)) ([eff9571](https://github.com/k2b-dev/cloud/commit/eff95712b7b242d6570e6904ba5b687dc970df66))
+* **cloud:** admin bar groups setup and operations and leads to People ([#2453](https://github.com/k2b-dev/cloud/issues/2453)) ([a1f2ea3](https://github.com/k2b-dev/cloud/commit/a1f2ea3e99b2b8c9ef39368c0900dabfd55952d8))
+* **cloud:** retain background traces only for problems ([#2468](https://github.com/k2b-dev/cloud/issues/2468)) ([653500b](https://github.com/k2b-dev/cloud/commit/653500bba31a366058ec34ac5ec1620856796cce))
+* **core:** admin settings put name, field and source in one row ([#2452](https://github.com/k2b-dev/cloud/issues/2452)) ([4dc2462](https://github.com/k2b-dev/cloud/commit/4dc246227e42f0e7ea97bb9db23715545afbd58a))
+* **core:** apps open beside a searchable list ([#2461](https://github.com/k2b-dev/cloud/issues/2461)) ([bae395e](https://github.com/k2b-dev/cloud/commit/bae395ea2c0c91e56f3b0248989cf3e46bd0d1cd))
+* **mail:** lists show open conversations only ([#2456](https://github.com/k2b-dev/cloud/issues/2456)) ([30c2349](https://github.com/k2b-dev/cloud/commit/30c2349eaa5c45ca7eadc123409c27e0eb8a1e7e))
+* **ui:** a list's status dot keeps one place ([#2457](https://github.com/k2b-dev/cloud/issues/2457)) ([e52ac10](https://github.com/k2b-dev/cloud/commit/e52ac105c9d063b359ce6a0e6f8f17f2830b863b))
+* **ui:** buttons, filters and clickable cards follow the edge rule ([#2459](https://github.com/k2b-dev/cloud/issues/2459)) ([ebf8e93](https://github.com/k2b-dev/cloud/commit/ebf8e935b1bb2069256e5e4d4d4a6333026ba1d6))
+* **ui:** choice cards share the 2 px edge in every state ([#2473](https://github.com/k2b-dev/cloud/issues/2473)) ([1979ed0](https://github.com/k2b-dev/cloud/commit/1979ed081f1f6462170ebb598440a91bc4bb3403))
+* **ui:** choice list options can show an icon and be disabled one by one ([#2478](https://github.com/k2b-dev/cloud/issues/2478)) ([8810d1b](https://github.com/k2b-dev/cloud/commit/8810d1b1aa2e3c735834017473802cbcd3ed0966))
+* **ui:** dialogs can carry a success, warning or danger tone ([#2480](https://github.com/k2b-dev/cloud/issues/2480)) ([97d7903](https://github.com/k2b-dev/cloud/commit/97d790320923af01e18f470e36a4fb6d4de2b329))
+* **ui:** fields share one 2 px edge in every state ([#2458](https://github.com/k2b-dev/cloud/issues/2458)) ([534685c](https://github.com/k2b-dev/cloud/commit/534685cd33d221bc1dbae36890655283c8d1f78f))
+* **ui:** segments, tabs and view tabs follow the edge rule ([#2462](https://github.com/k2b-dev/cloud/issues/2462)) ([4feac8b](https://github.com/k2b-dev/cloud/commit/4feac8b834c208a0ec08a94483443567ef1c5240))
+* **ui:** settings rows give every value a fixed place ([#2451](https://github.com/k2b-dev/cloud/issues/2451)) ([18c65b8](https://github.com/k2b-dev/cloud/commit/18c65b87f1973c7450556f2159c88c644d1dbcc0))
+* **ui:** tables show a grey head, row and column lines, and a selected row as a fill ([#2469](https://github.com/k2b-dev/cloud/issues/2469)) ([1f93886](https://github.com/k2b-dev/cloud/commit/1f93886348abb971c33ebcc3790f929face038a1))
+* **ui:** type a date into the date picker and see which day it means ([#2463](https://github.com/k2b-dev/cloud/issues/2463)) ([60cd5cf](https://github.com/k2b-dev/cloud/commit/60cd5cfdfc7b3db41f4d6feb82ce34400895fd80))
+
+
+### Bug Fixes
+
+* **assistant:** a new chat no longer reports a draft conflict, and real conflicts show one localized notice ([#2450](https://github.com/k2b-dev/cloud/issues/2450)) ([f4a968f](https://github.com/k2b-dev/cloud/commit/f4a968f7ff8ae7b81ded36b9cab3f27421f908e4))
+* **mail:** reusing a message as new opens the composer instead of an invalid-uuid error ([#2454](https://github.com/k2b-dev/cloud/issues/2454)) ([b2aa6ef](https://github.com/k2b-dev/cloud/commit/b2aa6efc6f82750ced7a3c998e6f4cf003ffb89e))
+* **mail:** the composer scrolls long messages again ([#2455](https://github.com/k2b-dev/cloud/issues/2455)) ([85aa816](https://github.com/k2b-dev/cloud/commit/85aa8167860d22dabbcb14b45a1233844cbdd1cb))
+* **ui:** a tab strip keeps its selected tab in view without scrolling the page ([#2465](https://github.com/k2b-dev/cloud/issues/2465)) ([32d93b8](https://github.com/k2b-dev/cloud/commit/32d93b8edd28bcc5f63486d2807b3228f94c385e))
+* **ui:** file grid items that select or open show the pointer ([#2447](https://github.com/k2b-dev/cloud/issues/2447)) ([ac645e6](https://github.com/k2b-dev/cloud/commit/ac645e68e563d4adce615e62550058eacfe4409e))
+
+
+### Performance Improvements
+
+* **cloud:** read registry and capabilities from observed views ([#2467](https://github.com/k2b-dev/cloud/issues/2467)) ([0515f6e](https://github.com/k2b-dev/cloud/commit/0515f6ea6b5d1363692c605a6097d69c704cae45))
+* **cloud:** wake background delivery across instances ([#2466](https://github.com/k2b-dev/cloud/issues/2466)) ([f9798f3](https://github.com/k2b-dev/cloud/commit/f9798f3e8b502e24fe75286f5e2d93ab5a97294c))
+
 ## [0.62.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.61.0...cloud-v0.62.0) (2026-11-02)
 
 

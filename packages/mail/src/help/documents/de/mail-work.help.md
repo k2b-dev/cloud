@@ -113,7 +113,7 @@ Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu än
 ### Von Handlungsbedarf aus arbeiten
 
 Wir empfehlen **Handlungsbedarf** als deinen Posteingang. Nutze Ordner zur Ablage; Ablegen und Archivieren ändern keinen Arbeitsstatus.
-Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren**. Archivieren setzt nicht **Erledigt**.
+Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren** im Menü **…** der Unterhaltung. Archivieren setzt nicht **Erledigt**.
 
 - **Persönliches Postfach:** Arbeite aus **Handlungsbedarf**. Automatisierungen markieren Unwichtiges als **Erledigt** und legen es ab. Markiere abgeschlossene Arbeit als **Erledigt**.
   **Wartet auf Antwort** folgt automatisch auf eine bestätigte menschliche Antwort. Nutze **Später anzeigen** für Arbeit, die von einem Datum abhängt.
@@ -138,9 +138,9 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
-Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
+Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Steht keine Liste neben dem Leser, führen **×** am Ende seiner Werkzeugleiste und Esc zurück zur Liste. Die Liste steht dann wieder an derselben Stelle, und die zuletzt geöffnete Unterhaltung hat den Fokus. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
 
-Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst.
+Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst. Eine offene Nachricht zeigt ihre Anhänge über dem Text: die Anzahl, die ersten drei Dateien mit Vorschau oder Dateityp und **Alle anzeigen**. Eine zugeklappte Nachricht zeigt die Anzahl ihrer Anhänge neben dem Datum. Bilder, die der Text schon zeigt, stehen nicht in der Liste.
 
 Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung in einer hervorgehobenen Karte erscheinen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen → Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 
@@ -200,7 +200,7 @@ Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachric
 
 Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
 
-Ein Rechtsklick in die Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
+Ein Rechtsklick auf eine Unterhaltung in der Liste oder in die offene Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Das Menü beginnt mit **Antworten** und **In neuem Fenster antworten**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
 
 ## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
 

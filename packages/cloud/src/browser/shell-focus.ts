@@ -22,7 +22,10 @@ export const setShellFocus = (hidden: boolean): void => {
       !focused.isConnected ||
       focused.getClientRects().length === 0)
   ) {
-    element.querySelector<HTMLElement>(`[data-cloud-shell-focus-toggle="${hidden ? "show" : "hide"}"]`)?.focus({ preventScroll: true });
+    // The avatar stays in both states; its menu holds the way back.
+    [...element.querySelectorAll<HTMLElement>("[data-cloud-shell-focus-return]")]
+      .find((avatar) => avatar.getClientRects().length > 0)
+      ?.focus({ preventScroll: true });
   }
 };
 
@@ -33,7 +36,10 @@ export const attachShellFocusControls = (): (() => void) => {
   const click = (event: MouseEvent) => {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest<HTMLElement>("[data-cloud-shell-focus-toggle]");
-    if (button) setShellFocus(button.dataset.cloudShellFocusToggle === "hide");
+    if (!button) return;
+    setShellFocus(button.dataset.cloudShellFocusToggle === "hide");
+    // A pointer leaves the menu where it was, so it closes; a keyboard keeps it open on the avatar.
+    if (event.detail > 0 && document.activeElement instanceof HTMLElement) document.activeElement.blur();
   };
   let drag: { pointerId: number; x: number; y: number } | undefined;
   const start = (event: PointerEvent) => {

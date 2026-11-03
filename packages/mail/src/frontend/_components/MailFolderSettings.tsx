@@ -21,6 +21,7 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, FolderDisplay, MailCommand } from "../../contracts";
 import { isStricterDisplay } from "../../folder-display-rules";
+import { mailFolderNames } from "../../folder-names";
 import { buildMailFolderTree, mailFolderPaths } from "../../folder-tree";
 import type { MailAdminFolderView } from "../../service/folders";
 import { readApiError } from "./api-response";
@@ -40,6 +41,12 @@ const terminalCommandStates = new Set(["confirmed", "reconciled", "failed", "can
 const folderEditorDialogOptions = {
   ...panelDialogOptions,
   cancelBehavior: "ignore" as const,
+};
+
+/** The server's path after a localized one, so a picker shows and searches both. */
+const serverPathNote = (paths: Map<string, string>, serverPaths: Map<string, string>, folderId: string): string => {
+  const serverPath = serverPaths.get(folderId);
+  return serverPath && serverPath !== paths.get(folderId) ? ` · ${serverPath}` : "";
 };
 
 const filterFolderOptions = (options: FolderSelectOption[], query: string, signal: AbortSignal): FolderSelectOption[] => {
@@ -125,7 +132,14 @@ function FolderEditor(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const create = () => props.folder === null;
+  // A rename starts from the server's name; a standard folder says which name Mail shows instead.
+  const shownName = () => {
+    const folder = props.folder;
+    const shown = folder ? folderName()(folder) : null;
+    return shown !== null && shown !== folder?.name ? shown : null;
+  };
   const [name, setName] = createSignal(props.folder?.name ?? "");
   const [parentFolderId, setParentFolderId] = createSignal(props.parentFolderId);
   const [showInSidebar, setShowInSidebar] = createSignal(true);
@@ -137,7 +151,8 @@ function FolderEditor(props: {
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
   const parentOptions = createMemo<FolderSelectOption[]>(() => {
-    const paths = mailFolderPaths(props.folders);
+    const paths = mailFolderPaths(props.folders, folderName());
+    const serverPaths = mailFolderPaths(props.folders);
     return [
       {
         id: TOP_LEVEL_FOLDER_ID,
@@ -152,7 +167,7 @@ function FolderEditor(props: {
           label: paths.get(folder.id) ?? folder.name,
           description: `${folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder}${
             folder.display === "hidden" ? ` · ${messages().hiddenInSidebar}` : ""
-          }`,
+          }${serverPathNote(paths, serverPaths, folder.id)}`,
           icon: folder.namespaceKinds.includes("shared") ? "ti ti-users" : "ti ti-folder",
         })),
     ];
@@ -216,7 +231,13 @@ function FolderEditor(props: {
       />
       <PanelDialog.Body>
         <div class="flex flex-col gap-2">
-          <TextInput label={messages().name} value={name} onValueChange={setName} required />
+          <TextInput
+            label={messages().name}
+            description={shownName() ? messages().shownFolderName({ name: shownName()! }) : undefined}
+            value={name}
+            onValueChange={setName}
+            required
+          />
           <Show when={create()}>
             <Select
               label={messages().location}
@@ -302,6 +323,7 @@ export default function MailFolderSettings(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const folderRoles = createMemo<Array<{ id: ConfigurableFolderRole; label: string; icon: string }>>(() => [
     { id: "sent", label: messages().sent, icon: "ti ti-send" },
     { id: "drafts", label: messages().drafts, icon: "ti ti-file-pencil" },
@@ -311,7 +333,7 @@ export default function MailFolderSettings(props: {
   ]);
   const [pendingFolderId, setPendingFolderId] = createSignal<string | null>(null);
   const [collapsedIds, setCollapsedIds] = createSignal<ReadonlySet<string>>(new Set());
-  const rows = createMemo(() => mailFolderSettingsRows(props.folders, collapsedIds()));
+  const rows = createMemo(() => mailFolderSettingsRows(props.folders, collapsedIds(), folderName()));
   // Rows are keyed by folder ID, so a reload or a display change keeps each row, its open menu, and its focus.
   const rowIds = createMemo(() => rows().map((row) => row.folder.id));
   const rowById = createMemo(() => new Map(rows().map((row) => [row.folder.id, row])));
@@ -326,13 +348,18 @@ export default function MailFolderSettings(props: {
       return next;
     });
   const roleFolderOptions = createMemo<FolderSelectOption[]>(() => {
-    const paths = mailFolderPaths(props.folders);
+    const paths = mailFolderPaths(props.folders, folderName());
+    const serverPaths = mailFolderPaths(props.folders);
     return props.folders
       .filter((folder) => folder.selectable && folder.discoveryState === "active")
       .map((folder) => ({
         id: folder.id,
         label: paths.get(folder.id) ?? folder.name,
-        description: folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder,
+        description: `${folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder}${serverPathNote(
+          paths,
+          serverPaths,
+          folder.id,
+        )}`,
         icon: "ti ti-folder",
       }));
   });
@@ -380,7 +407,7 @@ export default function MailFolderSettings(props: {
     },
     onSuccess: ({ folder, display, chosen, subfolders }) => {
       props.onFolderVisibilityChange(folder.id, display);
-      announce(messages().folderDisplayChanged({ name: folder.name, display: displayLabel(chosen), subfolders }));
+      announce(messages().folderDisplayChanged({ name: folderName()(folder), display: displayLabel(chosen), subfolders }));
       // Reload, so the sidebar and the workspace counts follow the new display.
       void refresh();
     },
@@ -408,7 +435,7 @@ export default function MailFolderSettings(props: {
         }
         if (action === "dismiss") {
           const confirmed = await prompts.confirm(messages().removeUnavailableFolderDescription, {
-            title: messages().removeFolderFromMail({ name: folder.name }),
+            title: messages().removeFolderFromMail({ name: folderName()(folder) }),
             confirmText: messages().removeFromMail,
             variant: "danger",
           });
@@ -423,7 +450,7 @@ export default function MailFolderSettings(props: {
           return { changed: true, action };
         }
         const confirmed = await prompts.confirm(messages().deleteProviderFolderDescription, {
-          title: messages().deleteNamedFolder({ name: folder.name }),
+          title: messages().deleteNamedFolder({ name: folderName()(folder) }),
           confirmText: messages().deleteFolder,
           variant: "danger",
         });
@@ -486,7 +513,10 @@ export default function MailFolderSettings(props: {
     const row = () => rowById().get(folderId)!;
     const folder = () => row().folder;
     const state = () => displayStates().get(folderId)!;
-    const nameOf = (id: string | null | undefined) => (id ? (folderById().get(id)?.name ?? "") : "");
+    const nameOf = (id: string | null | undefined) => {
+      const source = id ? folderById().get(id) : undefined;
+      return source ? folderName()(source) : "";
+    };
     const shared = () => folder().namespaceKinds.some((kind) => kind === "shared" || kind === "other_users");
     const canChooseDisplay = () => folder().discoveryState === "active" && (folder().selectable || folder().subscribed !== false);
     const status = (): FolderState => {
@@ -607,11 +637,15 @@ export default function MailFolderSettings(props: {
     ];
     const pending = () => pendingFolderId() === folderId;
     const expanded = () => !collapsedIds().has(folderId);
-    const name = () => (row().path ? messages().folderInPath({ name: folder().name, path: row().path! }) : folder().name);
+    const shownName = () => folderName()(folder());
+    // A standard folder with a localized name keeps the server's name beside it.
+    const serverName = () => (shownName() === folder().name ? null : folder().name);
+    const name = () => (row().path ? messages().folderInPath({ name: shownName(), path: row().path! }) : shownName());
     // The label replaces the row's text for assistive technology, so it carries every note the row shows.
     const label = () =>
       [
         name(),
+        ...(serverName() ? [messages().serverFolderName({ name: serverName()! })] : []),
         ...(shared() ? [messages().sharedByProvider] : []),
         ...(row().group ? [messages().folderGroup({ count: row().descendantCount })] : []),
         ...(folder().subscribed === false ? [messages().notSubscribed] : []),
@@ -634,7 +668,7 @@ export default function MailFolderSettings(props: {
               type="button"
               class="mail-folder-tree__toggle"
               aria-expanded={expanded()}
-              aria-label={messages().subfoldersOf({ name: folder().name })}
+              aria-label={messages().subfoldersOf({ name: shownName() })}
               onClick={() => toggleCollapsed(folderId)}
             >
               <i class={`ti ${expanded() ? "ti-chevron-down" : "ti-chevron-right"}`} aria-hidden="true" />
@@ -645,7 +679,7 @@ export default function MailFolderSettings(props: {
             menuClass="mail-folder-menu"
             width="21rem"
             position="bottom-left"
-            label={messages().folderMenu({ name: folder().name })}
+            label={messages().folderMenu({ name: shownName() })}
             items={menu()}
             disabled={menu().length === 0}
           >
@@ -654,7 +688,14 @@ export default function MailFolderSettings(props: {
                 <i class={`${folderIcon(folder())} mail-folder-tree__icon`} aria-hidden="true" />
               </Show>
               <span class="mail-folder-tree__copy">
-                <span class="mail-folder-tree__name">{folder().name}</span>
+                <span class="mail-folder-tree__name">{shownName()}</span>
+                <Show when={serverName()}>
+                  {(server) => (
+                    <span class="mail-folder-tree__note" title={messages().serverFolderName({ name: server() })}>
+                      {server()}
+                    </span>
+                  )}
+                </Show>
                 <Show when={shared()}>
                   <i class="ti ti-users mail-folder-tree__shared" title={messages().sharedByProvider} aria-hidden="true" />
                 </Show>
@@ -675,7 +716,7 @@ export default function MailFolderSettings(props: {
           </Dropdown.Root>
         </div>
         <Show when={row().hasChildren && expanded()}>
-          <ul class="mail-folder-tree__children" aria-label={messages().subfoldersOf({ name: folder().name })}>
+          <ul class="mail-folder-tree__children" aria-label={messages().subfoldersOf({ name: shownName() })}>
             {folderList(folderId)}
           </ul>
         </Show>
@@ -727,7 +768,10 @@ export default function MailFolderSettings(props: {
                   description={messages().folderRoleDescription({ role: role.label })}
                   icon={role.icon}
                   value={() => current()?.id ?? null}
-                  selectedLabel={() => current()?.name}
+                  selectedLabel={() => {
+                    const folder = current();
+                    return folder ? folderName()(folder) : undefined;
+                  }}
                   fetchData={fetchRoleFolderOptions}
                   fetchDebounceMs={0}
                   placeholder={messages().searchRoleFolders({ role: role.label })}

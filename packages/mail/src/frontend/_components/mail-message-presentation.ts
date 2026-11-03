@@ -2,6 +2,7 @@ import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
 import { messageForwardTextOf } from "../../forward-text";
 import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 type PlainMessageSegment = {
@@ -49,6 +50,31 @@ export const referencedContentIds = (html: string): string[] => {
     if (normalized) ids.add(normalized);
   }
   return [...ids];
+};
+
+const MAX_INLINE_IMAGE_COUNT = 32;
+const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * The attachments an HTML body shows in place: images its `cid:` sources name, within the count and byte budget the
+ * message frame loads. The attachment list leaves exactly these out, so an image never appears twice.
+ */
+export const inlineBodyImages = <T extends { contentId: string | null; contentType: string; sizeBytes: number }>(
+  html: string,
+  attachments: readonly T[],
+): T[] => {
+  const referenced = new Set(referencedContentIds(html));
+  let selectedBytes = 0;
+  return attachments
+    .filter((attachment) => {
+      if (!attachment.contentId || !attachment.contentType.toLowerCase().startsWith("image/")) return false;
+      if (!referenced.has(normalizeContentId(attachment.contentId))) return false;
+      if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) return false;
+      if (selectedBytes + attachment.sizeBytes > MAX_INLINE_IMAGE_BYTES) return false;
+      selectedBytes += attachment.sizeBytes;
+      return true;
+    })
+    .slice(0, MAX_INLINE_IMAGE_COUNT);
 };
 
 /**
@@ -269,4 +295,15 @@ export const undoSendSecondsRemaining = (undoUntil: string | null, now: number):
   const deadline = Date.parse(undoUntil);
   if (!Number.isFinite(deadline)) return null;
   return Math.max(0, Math.ceil((deadline - now) / 1000));
+};
+
+/** Why a send failed, from its error code, as the reader and the mailbox's event feed both name it. */
+export const mailSendFailureReason = (code: string | null | undefined, locale = "en"): string => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
+  const value = code ?? "";
+  if (["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(value)) return t.recipientsRejected;
+  if (value.includes("AUTH") || value.includes("CREDENTIAL")) return t.authenticationFailed;
+  if (value.includes("SIZE") || value === "SMTP_DSN_UNSUPPORTED") return t.unsupportedDelivery;
+  if (value.includes("ACCESS") || value.includes("IDENTITY")) return t.sendingAccessChanged;
+  return t.notDelivered;
 };

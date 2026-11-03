@@ -14,7 +14,7 @@ import type { CloudRuntime } from "../contracts/app";
 import { pwaBuilds } from "../contracts/pwa-builds";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
-import { listApps, listCapabilities, watchAppRegistry } from "./registry";
+import { listApps, listCapabilities, watchRuntimeRegistry } from "./registry";
 import { buildRuntimeFromRegistry } from "./runtime-context";
 
 const log = logger("runtime-watcher");
@@ -46,13 +46,30 @@ export const ensureRuntimeWatcher = (): Promise<void> => {
   // returning before `current` is populated would race getCurrentRuntime().
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    await refresh();
     abort = new AbortController();
     const controller = abort;
+    let initialized = false;
+    let ready!: () => void;
+    let fail!: (error: unknown) => void;
+    const firstRefresh = new Promise<void>((resolve, reject) => {
+      ready = resolve;
+      fail = reject;
+    });
     watcherTask = superviseRuntimeTask({
       name: "Runtime registry watcher",
       signal: controller.signal,
-      run: (signal) => watchAppRegistry({ signal, onChange: refresh }),
+      run: (signal) =>
+        watchRuntimeRegistry({
+          signal,
+          onChange: async () => {
+            await refresh();
+            initialized = true;
+            ready();
+          },
+        }).catch((error: unknown) => {
+          if (!initialized) fail(error);
+          throw error;
+        }),
       onError: ({ error, failureCount, retryInMs }) =>
         log.error("Registry watcher failed; restarting", {
           error: error instanceof Error ? error.message : String(error),
@@ -60,6 +77,17 @@ export const ensureRuntimeWatcher = (): Promise<void> => {
           retryInMs,
         }),
     });
+    const cancelled = () => fail(new Error("Runtime registry initialization aborted"));
+    controller.signal.addEventListener("abort", cancelled, { once: true });
+    try {
+      await firstRefresh;
+    } catch (error) {
+      controller.abort();
+      await watcherTask;
+      throw error;
+    } finally {
+      controller.signal.removeEventListener("abort", cancelled);
+    }
   })();
   return initPromise;
 };
