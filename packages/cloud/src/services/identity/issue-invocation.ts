@@ -1,9 +1,9 @@
 import type { SQL } from "bun";
-import { getApp } from "../../_internal/registry";
+import { getApp, listApps } from "../../_internal/registry";
 import type { AppMeta } from "../../contracts/app";
 import { AppAccessDeniedError } from "../../server/middleware/app-access";
 import type { RequestAuthority } from "../../server/middleware/auth";
-import { canUseApp } from "../app-access";
+import { canUseApp, usableAppIds } from "../app-access";
 import { recordAppAccessDenied } from "../app-access-metrics";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "./constants";
 import { resolveInvocationAuthority } from "./invocation-actor";
@@ -51,7 +51,50 @@ export const requireRegisteredAppAccess = async (
   }
 };
 
-/** The production broker seam for capability, widget, search, stream, and inter-app issuance. */
+/**
+ * Prepares issuance for many targets of one request: the principal is reloaded once and app access is decided for
+ * all targets in one batch with that reloaded authority, so the cost does not grow with the number of targets.
+ * Run it under the caller's signer guard; only targets that discovery already admitted can be signed.
+ */
+export const prepareFanoutIssuance = async (
+  params: Pick<Parameters<typeof signInvocationToken>[0], "authority" | "callingAppId"> & {
+    /** The discovery-admitted entries of this request. */
+    entries: readonly { appId: string }[];
+  },
+  dependencies: {
+    db?: SQL;
+    signal?: AbortSignal;
+    groupsAdmin?: readonly string[];
+    registry?: () => Promise<readonly Pick<AppMeta, "id" | "access">[]>;
+    resolve?: typeof resolveIssuanceAuthority;
+    sign?: typeof signInvocationToken;
+  } = {},
+) => {
+  dependencies.signal?.throwIfAborted();
+  const authority = await (dependencies.resolve ?? resolveIssuanceAuthority)(
+    params.authority,
+    params.callingAppId,
+    dependencies.db,
+    dependencies.groupsAdmin,
+  );
+  const ids = new Set(params.entries.map((entry) => entry.appId));
+  const apps = ids.size ? (await (dependencies.registry ?? listApps)()).filter((app) => ids.has(app.id)) : [];
+  // The reloaded authority decides, as for a single issuance: a phone's session, for example, has no admin role here.
+  const usable =
+    authority && apps.length ? await usableAppIds(authority, apps, { db: dependencies.db, signal: dependencies.signal }) : null;
+  return async (target: Omit<Parameters<typeof signInvocationToken>[0], "authority" | "callingAppId">) => {
+    dependencies.signal?.throwIfAborted();
+    if (target.parent && (!authority || !matchesInvocationSubject(target.parent, authority)))
+      throw new AppAccessDeniedError({ id: target.targetAppId });
+    if (!usable?.has(target.targetAppId)) {
+      if (apps.some((app) => app.id === target.targetAppId)) recordAppAccessDenied(target.targetAppId);
+      throw new AppAccessDeniedError({ id: target.targetAppId });
+    }
+    return (dependencies.sign ?? signInvocationToken)({ ...target, authority: params.authority, callingAppId: params.callingAppId });
+  };
+};
+
+/** The production broker seam for single-target capability, widget, stream, and inter-app issuance. */
 export const issueInvocationToken = async (
   params: Parameters<typeof signInvocationToken>[0],
   dependencies: RegisteredAppAccessOptions & {
