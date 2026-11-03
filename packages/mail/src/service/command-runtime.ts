@@ -35,7 +35,7 @@ import {
 } from "./maintenance-runtime";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { isOperatorMaintenanceKind } from "./operator-actions";
-import { OUTBOX_MAILBOX_AUTH_REQUIRED, OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
+import { OPERATOR_RECONCILE_FROM_ATTEMPT, OUTBOX_MAILBOX_AUTH_REQUIRED, OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import {
   hasSyncedSentCopy,
   recordOutboundSentAt,
@@ -3786,8 +3786,10 @@ const reconcileUnknownOutbox = async (
   timings: OutboxAttemptTimings,
 ): Promise<void> => {
   // Only a check whose worker stopped during the last attempt gets another one; it settles
-  // without the provider, so a worker that keeps stopping cannot keep the send checking.
-  const exhausted = outbox.attempt > OUTBOX_MAX_ATTEMPTS;
+  // without the provider, so a worker that keeps stopping cannot keep the send checking. An
+  // operator's reconciliation adds one provider check after the attempt it started at.
+  const reconcileFrom = Number(parseJsonRecord(command.transport_metadata)[OPERATOR_RECONCILE_FROM_ATTEMPT]);
+  const exhausted = outbox.attempt > Math.max(OUTBOX_MAX_ATTEMPTS, Number.isInteger(reconcileFrom) ? reconcileFrom + 1 : 0);
   // SMTP already answered, and its worker stopped before it settled the send: the outcome is known.
   const accepted = recordedSmtpOutcome(outbox);
   if (accepted) {
