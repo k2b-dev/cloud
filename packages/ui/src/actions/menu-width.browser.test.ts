@@ -211,6 +211,8 @@ const choiceList = (page: Page) =>
       right: box.right,
       cut: labels.filter((label) => label.scrollWidth > label.clientWidth).map((label) => label.textContent),
       wrapped: labels.map(wraps),
+      // The list is as wide as the viewport allows: 0.5rem free on each side.
+      full: box.width >= innerWidth - 16 - 0.5,
       names: Array.from(popover.querySelectorAll<HTMLElement>(".k2b-choice-option strong"), wraps),
     };
   });
@@ -360,9 +362,9 @@ describe("@k2b/ui menus size to their entries", () => {
         expect(list.left).toBeGreaterThanOrEqual(8);
         expect(list.right).toBeLessThanOrEqual(options.viewport.width - 8);
         expect(list.cut).toEqual([]);
-        // The name stays on one line and the description wraps at 16rem; the long word fits on a desktop and
-        // wraps only where the viewport ends.
-        expect(list.wrapped).toEqual([false, true, options.viewport.width < 1000]);
+        // The name stays on one line and the description wraps at 16rem. The long word wraps exactly when the list
+        // has reached the viewport's edge; whether it gets there depends on the engine's font.
+        expect(list.wrapped).toEqual([false, true, list.full]);
       } finally {
         await page.close();
       }
