@@ -541,17 +541,25 @@ export const listConversations = async (params: {
       cursor: pageCursor,
       limit: limit + 1,
     });
-  // Each group reads its own status newest first, so both keep the plain sort column and stop at the page; a page
-  // that ended among the waiting ones continues there.
+  // Each group reads its own status newest first, so both keep the plain sort column and stop at the page. The waiting
+  // ones are read only when those that need action do not fill the page (a one-time filter: otherwise the plan never
+  // runs them), and a page that ended among the waiting ones continues there.
+  const pageSize = () => sql.unsafe(String(Math.trunc(limit + 1)));
   const candidates = !grouped
     ? candidatesFor(params.status ?? null, cursor.data ?? null)
     : cursor.data?.group === "waiting"
       ? candidatesFor("waiting", cursor.data)
       : sql`
+          WITH needs_page AS MATERIALIZED (${candidatesFor("needs_action", cursor.data ?? null)})
           SELECT c.*
-          FROM ((${candidatesFor("needs_action", cursor.data ?? null)}) UNION ALL (${candidatesFor("waiting", null)})) c
+          FROM (
+            SELECT * FROM needs_page
+            UNION ALL
+            SELECT * FROM (${candidatesFor("waiting", null)}) waiting_page
+            WHERE (SELECT count(*) FROM needs_page) < ${pageSize()}
+          ) c
           ORDER BY c.work_status = 'waiting', ${conversationSortColumn(view)} DESC, c.id DESC
-          LIMIT ${sql.unsafe(String(Math.trunc(limit + 1)))}
+          LIMIT ${pageSize()}
         `;
   const rows = await sql<(DbConversation & { cursor_at: string })[]>`
     WITH candidates AS MATERIALIZED (${candidates})
