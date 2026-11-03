@@ -396,7 +396,8 @@ export default function MailConversationList(props: {
           ref={(element) => {
             listScrollElement = element;
           }}
-          class="flex-1 pb-2"
+          // The columns' heading and rows share this measured width (`mail-columns`).
+          class="mail-columns-area flex-1 pb-2"
           inset
           scrollPreserveKey={`mail-list-${props.mailboxId}`}
         >
@@ -497,6 +498,7 @@ export default function MailConversationList(props: {
                     <span class="mail-columns-head-cells">
                       <span>{messages().columnFrom}</span>
                       <span>{messages().columnSubject}</span>
+                      <span class="mail-columns-head-participants">{messages().columnParticipants}</span>
                       <Show when={columns().shared}>
                         <span>{messages().columnAssignees}</span>
                         <span>{messages().columnStatus}</span>

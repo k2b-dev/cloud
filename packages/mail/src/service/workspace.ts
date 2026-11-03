@@ -37,6 +37,8 @@ import type {
 import * as collaboration from "./collaboration";
 import type { ConversationKeep } from "./conversation-keeps";
 import * as conversationKeeps from "./conversation-keeps";
+import type { MailConversationParticipant, MailConversationParticipants } from "./conversation-participants";
+import * as conversationParticipants from "./conversation-participants";
 import * as conversationReferences from "./conversation-reference";
 import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
@@ -78,6 +80,13 @@ export type MailListItem = {
   flagged: boolean;
   /** Left out when the conversation has none, so most rows of a page cost nothing for it. */
   attachmentCount?: number;
+  /**
+   * Who wrote in the conversation, first to write first, at most `MAIL_ROW_PARTICIPANT_LIMIT`. Left out when only the
+   * sender the row already names wrote, as in most conversations, and in a message list.
+   */
+  participants?: MailConversationParticipant[];
+  /** How many people wrote, only when more wrote than `participants` names. */
+  participantCount?: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -378,27 +387,45 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
   };
 };
 
-const attachLocalTags = async (
+/** Only the sender the row already names wrote, so the row costs nothing for its participants. */
+const namesOnlyItsSender = (item: MailListItem, participants: MailConversationParticipants): boolean =>
+  participants.count === 1 && !participants.people[0]?.kind && participants.people[0]?.name === item.participantLabels[0];
+
+/** The page's local tags and participants, read for the chosen rows only. */
+const attachRowDetails = async (
   context: MailRequestContext,
   mailboxId: string,
   items: MailListItem[],
   nextCursor: string | null,
   rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
-  const result = await localTags.listConversationLocalTags({
-    context,
-    mailboxId,
-    conversationIds: items.flatMap((item) => (item.conversationId ? [item.conversationId] : [])),
-  });
-  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
+  const conversationIds = items.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
+  const [tags, participants] = await Promise.all([
+    localTags.listConversationLocalTags({ context, mailboxId, conversationIds }),
+    conversationParticipants.listConversationParticipants({
+      context,
+      mailboxId,
+      conversationIds: items.flatMap((item) => (item.selectionKind === "conversation" && item.conversationId ? [item.conversationId] : [])),
+    }),
+  ]);
+  if (!tags.ok || !participants.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
     error: null,
     nextCursor,
     ...rule,
-    items: items.map((item) => ({
-      ...item,
-      localTags: item.conversationId ? (result.data.get(item.conversationId) ?? []) : [],
-    })),
+    items: items.map((item) => {
+      const written = item.selectionKind === "conversation" && item.conversationId ? participants.data.get(item.conversationId) : undefined;
+      return {
+        ...item,
+        localTags: item.conversationId ? (tags.data.get(item.conversationId) ?? []) : [],
+        ...(written && !namesOnlyItsSender(item, written)
+          ? {
+              participants: written.people,
+              ...(written.count > written.people.length ? { participantCount: written.count } : {}),
+            }
+          : {}),
+      };
+    }),
   };
 };
 
@@ -630,7 +657,7 @@ const loadListItems = async (params: {
       return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed", ...rule };
     }
     const items = result.data.items.map((item) => searchHitToListItem(item, params.listMode));
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, rule);
+    return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, rule);
   }
 
   if (params.savedView) {
@@ -644,7 +671,10 @@ const loadListItems = async (params: {
     const expression = params.savedView.filter.expression;
     if (!result.ok) return { items: [], nextCursor: null, error: "search_failed", openOnly: false, expression };
     const items = result.data.items.map(conversationToListItem);
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, { openOnly: result.data.openOnly, expression });
+    return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, {
+      openOnly: result.data.openOnly,
+      expression,
+    });
   }
 
   const result = await messages.listConversations({
@@ -658,7 +688,7 @@ const loadListItems = async (params: {
   });
   if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", openOnly: false, expression: null };
   const items = result.data.items.map(conversationToListItem);
-  return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor, {
+  return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, {
     openOnly: result.data.openOnly,
     expression: null,
   });

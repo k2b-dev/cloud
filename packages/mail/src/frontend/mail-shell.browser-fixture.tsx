@@ -7,7 +7,7 @@ import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
-import type { MailboxListView, MailboxPageData } from "../service/workspace";
+import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
@@ -192,6 +192,13 @@ const teamUsers = [
   { id: "user-1", uid: "robin", displayName: "Robin Example" },
   { id: "user-2", uid: "nora", displayName: "Nora Example" },
 ].map((user) => ({ ...user, avatarHash: null, scope: "mailbox" as const, permission: "write" as const, description: "" }));
+/** Who wrote in a few rows: Conv02 the sender and the team, Conv03 three people, Conv05 seventeen (ten named). */
+const crowd = ["Lea Brandt", "Tom Keller", "Anna Roth", "Ben Fischer", "Clara Hoff", "David Lang", "Eva Pohl", "Finn Braun", "Greta Vogel"];
+const listParticipants: Record<number, Pick<MailListItem, "participants" | "participantCount">> = {
+  1: { participants: [{ name: "Sender 2" }, { name: "Robin Example", kind: "user" }] },
+  2: { participants: [{ name: "Sender 3" }, { name: "Nora Example", kind: "user" }, { name: "Invoices", kind: "workflow" }] },
+  4: { participants: [{ name: "Sender 5" }, ...crowd.map((name) => ({ name, kind: "user" as const }))], participantCount: 17 },
+};
 export const listRows = Array.from({ length: 12 }, (_, index) =>
   mailTestRow(`Conv${String(index + 1).padStart(2, "0")}`, {
     subject: `Example request ${index + 1}`,
@@ -202,6 +209,7 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
     ...(index % 4 === 0 ? { attachmentCount: index / 4 + 1 } : {}),
+    ...listParticipants[index],
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],
