@@ -9,6 +9,7 @@ import type {
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 import { MAX_COMMAND_OUTCOME_IDS, MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
+import { MAIL_ACTIVITY_KINDS, type MailActivityKind } from "./mail-activity-kinds";
 import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
@@ -2056,12 +2057,8 @@ export const conversationViewSchema = z.enum([
 ]);
 export type ConversationView = z.infer<typeof conversationViewSchema>;
 
-/**
- * What the mailbox's event feed lists: assignments, sends and their failures, drafts started or discarded, conversations
- * marked done or reopened, internal comments, and what automations did. Reading, flagging, and moving stay out.
- */
-export const mailActivityKindSchema = z.enum(["assignment", "sent", "draft", "status", "comment", "automation"]);
-export type MailActivityKind = z.infer<typeof mailActivityKindSchema>;
+export const mailActivityKindSchema = z.enum(MAIL_ACTIVITY_KINDS);
+export type { MailActivityKind };
 
 export const mergeConversationsInputSchema = z
   .object({

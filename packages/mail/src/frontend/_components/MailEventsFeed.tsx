@@ -3,7 +3,7 @@ import { Avatar, Button, Dropdown, FilterChip, FilterToggle, Placeholder, Scroll
 import { createEffect, createMemo, createSignal, For, on, Show, untrack } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { apiClient } from "../../api/client";
-import { type MailActivityKind, mailActivityKindSchema } from "../../contracts";
+import { isMailActivityKind, MAIL_ACTIVITY_KINDS, type MailActivityKind } from "../../mail-activity-kinds";
 import {
   EMPTY_MAIL_EVENTS_FILTER,
   type MailEventsFilter,
@@ -204,9 +204,12 @@ export function MailEventsFeed(props: {
           label={props.filter.kind ? t().kindValue({ kind: kindLabel(props.filter.kind) }) : t().kind}
           icon="ti ti-filter"
           isActive={props.filter.kind !== null}
-          options={[{ options: mailActivityKindSchema.options.map((kind) => ({ value: kind, label: kindLabel(kind) })) }]}
+          options={[{ options: MAIL_ACTIVITY_KINDS.map((kind) => ({ value: kind, label: kindLabel(kind) })) }]}
           value={props.filter.kind ? [props.filter.kind] : []}
-          onValueChange={(value) => setFilter({ kind: mailActivityKindSchema.safeParse(value.at(-1)).data ?? null })}
+          onValueChange={(value) => {
+            const kind = value.at(-1);
+            setFilter({ kind: isMailActivityKind(kind) ? kind : null });
+          }}
         />
         <Dropdown.Root
           position="bottom-left"

@@ -1,4 +1,4 @@
-import { type MailActivityKind, mailActivityKindSchema } from "./contracts";
+import { isMailActivityKind, MAIL_ACTIVITY_KINDS, type MailActivityKind } from "./mail-activity-kinds";
 
 /** The mailbox head's Events tab: `?view=events`. It is no conversation view; the feed replaces the list. */
 export const MAIL_EVENTS_VIEW = "events";
@@ -13,10 +13,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export const isMailEventsRoute = (url: URL): boolean => url.searchParams.get("view") === MAIL_EVENTS_VIEW;
 
 export const readMailEventsFilter = (url: URL): MailEventsFilter => {
-  const kind = mailActivityKindSchema.safeParse(url.searchParams.get("eventKind") ?? undefined);
+  const kind = url.searchParams.get("eventKind");
   const actorId = url.searchParams.get("eventActor");
   return {
-    kind: kind.success ? kind.data : null,
+    kind: isMailActivityKind(kind) ? kind : null,
     actorId: actorId && UUID.test(actorId) ? actorId : null,
     mine: url.searchParams.get("eventMine") === "1",
   };
@@ -36,7 +36,7 @@ export const mailEventsHref = (mailboxId: string, filter: MailEventsFilter, conv
 
 /** The kinds a filter shows: every feed kind unless one is chosen. */
 export const mailEventsKinds = (filter: MailEventsFilter): readonly MailActivityKind[] =>
-  filter.kind ? [filter.kind] : mailActivityKindSchema.options;
+  filter.kind ? [filter.kind] : MAIL_ACTIVITY_KINDS;
 
 /** The activity API's feed query for a filter. */
 export const mailEventsQuery = (filter: MailEventsFilter): { kind: string; actor?: string; mine?: "true" } => ({

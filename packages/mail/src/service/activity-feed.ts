@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import type { MailActivityKind } from "../contracts";
+import type { MailActivityKind } from "../mail-activity-kinds";
 
 /** A send settled: sent, partly sent, unclear, failed, or sent without its Sent copy. It names its conversation. */
 export const MAIL_SENT_ACTIVITY_ACTION = "message.sent";

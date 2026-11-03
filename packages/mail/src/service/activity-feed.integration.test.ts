@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import type { MailActivityKind } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import type { MailActivityKind } from "../mail-activity-kinds";
 import { resolveMailSearchRoute } from "../search-state";
 import { grantMailboxAccess } from "./access";
 import { MAIL_SENT_ACTIVITY_ACTION } from "./activity-feed";
