@@ -325,6 +325,31 @@ export const providerLeaseWaitedFor = async (
     .catch(() => false);
 };
 
+// KEYS: places, presence. Reports whether present work other than a folder sync is in line.
+const otherWorkWaitsScript = `
+  local time = redis.call("TIME")
+  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  for _, waiter in ipairs(redis.call("ZRANGE", KEYS[1], 0, -1)) do
+    if string.sub(waiter, 1, 12) ~= "sync-folder:" then
+      local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
+      if presentUntil and tonumber(presentUntil) >= now then return 1 end
+    end
+  end
+  return 0
+`;
+
+/**
+ * Whether work other than a folder sync, such as a send, a command or a body download, waits for
+ * the resource's lease. A Valkey error answers yes, so a caller only skips what is optional.
+ */
+export const providerLeaseWaitedForByOtherWork = async (resource: string): Promise<boolean> => {
+  const [places, present] = leaseLineKeys(resource);
+  return redis
+    .send("EVAL", [otherWorkWaitsScript, "2", places, present])
+    .then((reply) => Number(reply) === 1)
+    .catch(() => true);
+};
+
 /**
  * Releases a lease from `acquireProviderLease`. A job that continues passes `next` to line up
  * before letting go, so a job that asks between its turns does not take the lease just because
