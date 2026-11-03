@@ -1,5 +1,6 @@
 import { principalLabel } from "../access/principal-label";
 import type { AccessEntry, EntityListItem, PermissionLevel, Principal } from "../contracts";
+import type { CloudResourceRef } from "../contracts/capabilities";
 import { arg, command, confirmFlag, flag, paginationFlags } from "./commands";
 import type { CloudCliContext, CloudCliTableColumn } from "./index";
 
@@ -19,6 +20,8 @@ type EntitiesResponse = {
 export type AccessResource = {
   id: string;
   label: string;
+  /** Exact resource reference for principal search; the server verifies Manage at this target. */
+  target?: CloudResourceRef;
 };
 
 export type AccessCommandResourceResolver<TResource extends AccessResource> = (ctx: CloudCliContext, args: string[]) => Promise<TResource>;
@@ -138,7 +141,7 @@ const exactEntityMatches = (items: EntityListItem[], kind: (typeof PRINCIPAL_KIN
     }
     if (kind === "group" && item.kind === "group") return item.group.id === ref || item.group.name === ref;
     if (kind === "service_account" && item.kind === "service_account") {
-      return item.serviceAccount.id === ref || item.serviceAccount.name === ref;
+      return item.serviceAccount.id === ref || item.serviceAccount.handle === ref || item.serviceAccount.name === ref;
     }
     return false;
   });
@@ -150,6 +153,7 @@ export const listAccessPrincipalEntities = async (
     kinds?: readonly (typeof PRINCIPAL_KINDS)[number][];
     page?: number;
     perPage?: number;
+    target?: CloudResourceRef;
   },
 ): Promise<EntitiesResponse> =>
   ctx.readJson<EntitiesResponse>(
@@ -158,12 +162,19 @@ export const listAccessPrincipalEntities = async (
         page: options.page ?? 1,
         per_page: options.perPage ?? 20,
         search: options.search,
+        target_type: options.target?.type,
+        target_id: options.target?.id,
         kinds: (options.kinds ?? PRINCIPAL_KINDS).join(","),
       })}`,
     ),
   );
 
-const resolveEntityPrincipal = async (ctx: CloudCliContext, kind: PrincipalKind, ref: string): Promise<Principal> => {
+const resolveEntityPrincipal = async (
+  ctx: CloudCliContext,
+  kind: PrincipalKind,
+  ref: string,
+  target?: CloudResourceRef,
+): Promise<Principal> => {
   if (isUuid(ref)) {
     if (kind === "user") return { type: "user", userId: ref };
     if (kind === "group") return { type: "group", groupId: ref };
@@ -177,6 +188,7 @@ const resolveEntityPrincipal = async (ctx: CloudCliContext, kind: PrincipalKind,
   for (;;) {
     const payload = await listAccessPrincipalEntities(ctx, {
       search: ref,
+      target,
       kinds: [kind],
       page,
       perPage: 100,
@@ -209,7 +221,7 @@ const resolveEntityPrincipal = async (ctx: CloudCliContext, kind: PrincipalKind,
 export const resolveAccessPrincipal = async (
   ctx: CloudCliContext,
   flags: PrincipalFlags,
-  options: { allowPublic?: boolean; allowAuthenticated?: boolean; allowServiceAccounts?: boolean } = {},
+  options: { allowPublic?: boolean; allowAuthenticated?: boolean; allowServiceAccounts?: boolean; target?: CloudResourceRef } = {},
 ): Promise<Principal> => {
   const count = principalFlagCount(flags);
   if (count !== 1) {
@@ -233,7 +245,7 @@ export const resolveAccessPrincipal = async (
   if (flags.public) return { type: "public" };
   if (flags.user) return resolveEntityPrincipal(ctx, "user", flags.user);
   if (flags.group) return resolveEntityPrincipal(ctx, "group", flags.group);
-  return resolveEntityPrincipal(ctx, "service_account", flags.serviceAccount!);
+  return resolveEntityPrincipal(ctx, "service_account", flags.serviceAccount!, options.target);
 };
 
 const entryTypeLabel = (entry: AccessEntry): string => {
@@ -414,7 +426,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       const permission = flags.permission as AccessPermission;
       assertAllowedPermission(permission, allowed);
       const scope = scopeOf(flags);
-      const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, adapter);
+      const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, { ...adapter, target: resource.target });
       const entry = await adapter.grant(ctx, resource, principal, permission, scope);
       if (!printStructured(ctx, { resource, entry }))
         ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry, ctx.options.locale)}.`);
@@ -447,7 +459,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
         return;
       }
 
-      const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, adapter);
+      const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, { ...adapter, target: resource.target });
       const entries = await adapter.list(ctx, resource);
       const existing = entries.find((entry) => principalKey(entry.principal) === principalKey(principal));
       if (existing) {
@@ -484,7 +496,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       let label = accessId;
 
       if (!accessId) {
-        const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, adapter);
+        const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, { ...adapter, target: resource.target });
         const entries = await adapter.list(ctx, resource);
         const entry = entries.find((candidate) => principalKey(candidate.principal) === principalKey(principal));
         if (!entry) throw new Error("No direct grant for that principal.");

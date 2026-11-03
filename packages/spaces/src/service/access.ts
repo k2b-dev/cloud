@@ -4,6 +4,8 @@ import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   buildAccessPrincipalCondition,
+  type CodeAccountDisplayContext,
+  codeAccountPresenter,
   createAccess,
   deleteAccess,
   ensureManagerRemains,
@@ -47,6 +49,9 @@ type DbSpaceAccess = {
   user_avatar_hash: string | null;
   group_name: string | null;
   service_account_name: string | null;
+  service_account_title: string | null;
+  service_account_handle: string | null;
+  service_account_status: string | null;
 };
 
 export const SPACES_APP_ID = "spaces";
@@ -137,7 +142,7 @@ export const mayReadAcrossSpaces = async (subject: AccessSubject, boundSpaceId: 
 /**
  * List all access entries for a space with resolved display names.
  */
-export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<AccessEntry[]> => {
+export const listSpaceAccess = async (spaceId: string, db: SQL = sql, display: CodeAccountDisplayContext = {}): Promise<AccessEntry[]> => {
   const rows = await db<DbSpaceAccess[]>`
     SELECT
       a.id as access_id,
@@ -152,7 +157,8 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
       u.uid AS user_uid,
       u.avatar_hash AS user_avatar_hash,
       g.name AS group_name,
-      account.name AS service_account_name
+      account.name AS service_account_name,
+      account.title AS service_account_title, account.handle AS service_account_handle, account.status AS service_account_status
     FROM spaces.space_access sa
     JOIN auth.access a ON sa.access_id = a.id
     LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
@@ -193,7 +199,23 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
     ...(row.user_id ? { avatarHash: row.user_avatar_hash } : {}),
   }));
 
-  return entries;
+  const presentCode = codeAccountPresenter(display);
+  return Promise.all(
+    entries.map(async (entry, index) => {
+      const row = rows[index]!;
+      return row.service_account_kind === "code"
+        ? {
+            ...entry,
+            ...(await presentCode({
+              name: row.service_account_name ?? "",
+              title: row.service_account_title,
+              status: row.service_account_status ?? "active",
+            })),
+            ...(row.service_account_handle ? { serviceAccountHandle: row.service_account_handle } : {}),
+          }
+        : entry;
+    }),
+  );
 };
 
 /**

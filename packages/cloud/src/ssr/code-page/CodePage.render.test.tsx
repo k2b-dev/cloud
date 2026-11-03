@@ -1,13 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import type { Context } from "hono";
+import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { currentLibrary } from "../../../test/future-capability-manifest";
+import * as capabilityProvider from "../../capabilities/server";
 import { capabilityResultSchema } from "../../contracts/capabilities";
+import * as coreLocation from "../../services/identity/core-origin";
 import { isAccessRefusal, loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
@@ -18,7 +20,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
-const { attributeMissingAccess, loadTarget, permissionRef, targetKey, visiblePersonIds } = await import("./load");
+const { attributeMissingAccess, loadCodePage, loadTarget, permissionRef, targetKey, visiblePersonIds } = await import("./load");
 const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
 const { LocaleProvider } = await import("@k2b/ui");
@@ -577,4 +579,69 @@ test("run lists and details use the run's title with identifier fallback", () =>
   ).replaceAll(/<!--[^>]*-->/g, "");
   expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
   expect(rendered).toContain("anfragenSortieren");
+});
+
+test("the handle is present before the first run and in the server's first render", () => {
+  const data = codePageFixture("overview", "de");
+  if (data.state.kind !== "ready") throw new Error("Expected draft Code fixture");
+  data.state.runs = { items: [], nextCursor: null };
+  const markup = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data });
+      },
+    }),
+  );
+  expect(markup).toContain("code-7k2q9m4xwt");
+  expect(markup).toContain("Kennung kopieren");
+});
+
+test("the real Code page loader retains the handle before the first run", async () => {
+  const unavailable = { ok: false as const, error: { code: "UNAVAILABLE", message: "Not needed", status: 503 as const } };
+  const catalog = spyOn(capabilityProvider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: null });
+  const origin = spyOn(coreLocation, "coreOrigin").mockResolvedValue("http://core.test");
+  const network = spyOn(globalThis, "fetch").mockRejectedValue(new Error("No app calls in fixture"));
+  const invoke = spyOn(capabilityProvider, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+    if (invocation.capabilityId !== "code.list") return unavailable;
+    return {
+      ok: true,
+      data: capabilityResultSchema(schema).parse({
+        data: {
+          items: [
+            {
+              id: "c_fixture",
+              title: "Code",
+              serviceAccountHandle: "code-7k2q9m4xwt",
+              state: "draft",
+              activeVersionId: null,
+              pauseReason: null,
+              permission: "editor",
+            },
+          ],
+          nextCursor: null,
+        },
+      }),
+    };
+  });
+  try {
+    const routes = new Hono().get("/code", async (c) =>
+      c.json(
+        await loadCodePage(c, {
+          owner: { ref: { type: "demo.item", id: "fixture" }, title: "Fixture" },
+          href: "/code",
+          canManageOwner: true,
+        }),
+      ),
+    );
+    const response = await routes.request("http://example.test/code");
+    const page = await response.json();
+    expect(page.state.kind).toBe("ready");
+    expect(page.state.code.serviceAccountHandle).toBe("code-7k2q9m4xwt");
+  } finally {
+    invoke.mockRestore();
+    catalog.mockRestore();
+    origin.mockRestore();
+    network.mockRestore();
+  }
 });

@@ -111,7 +111,14 @@ const waitingTargets: CodePageActivationRow[] = [
 
 const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   kind: "ready",
-  code: { id: "c_3mfa", title: "Code von info@", state: "active", activeVersionId: v4.id, pauseReason: null },
+  code: {
+    id: "c_3mfa",
+    serviceAccountHandle: "code-7k2q9m4xwt",
+    title: "Code von info@",
+    state: "active",
+    activeVersionId: v4.id,
+    pauseReason: null,
+  },
   permission: "editor",
   versions: [v5, v4, version(3, "approved")],
   versionsFailed: false,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AccessEntry, Principal } from "../contracts";
-import { createAccessCommands } from "./access";
+import { createAccessCommands, resolveAccessPrincipal } from "./access";
 import { type CloudCliContext, type CloudCliFlags, type CloudCliOutputMode, defineCliCommands } from "./index";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -314,4 +314,39 @@ test("human access lists localize missing principals without changing structured
   const json = createContext(["access", "list"], {}, () => Response.json({}), "json");
   await mod.run(json.ctx);
   expect(JSON.parse(json.lines[0]!).entries[0].principal.userId).toBe(userId);
+});
+
+test("a Code handle is resolved only in the supplied target and becomes a UUID principal", async () => {
+  const calls: string[] = [];
+  const ctx = {
+    fetch: async (path: string) => {
+      calls.push(path);
+      return Response.json({
+        items: [
+          {
+            kind: "service_account",
+            serviceAccount: {
+              id: "22222222-2222-4222-8222-222222222222",
+              name: "Code von Werkstatt",
+              kind: "code",
+              handle: "code-7k2q9m4xwt",
+              status: "active",
+            },
+          },
+        ],
+        pagination: { hasNext: false },
+      });
+    },
+    readJson: async (response: Response) => response.json(),
+  } as unknown as CloudCliContext;
+  const principal = await resolveAccessPrincipal(
+    ctx,
+    { serviceAccount: "code-7k2q9m4xwt" },
+    { target: { type: "spaces.space", id: "space-1" } },
+  );
+  expect(principal).toEqual({ type: "service_account", serviceAccountId: "22222222-2222-4222-8222-222222222222" });
+  const query = new URL(calls[0]!, "https://fixture.test").searchParams;
+  expect(query.get("search")).toBe("code-7k2q9m4xwt");
+  expect(query.get("target_type")).toBe("spaces.space");
+  expect(query.get("target_id")).toBe("space-1");
 });

@@ -82,6 +82,8 @@ export const CodeSchema = z
     owner: CodeOwnerSchema,
     title: z.string(),
     serviceAccountId: z.uuid().nullable(),
+    /** Copyable account handle, also before the first run; null for personal Code. */
+    serviceAccountHandle: z.string().nullable(),
     state: z.enum(["draft", "active", "paused", "deleting"]),
     activeVersionId: z.uuid().nullable(),
     pauseReason: z.string().nullable(),

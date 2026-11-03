@@ -5,7 +5,7 @@ import { audit, logger } from "@k2b/cloud/services";
 import { listPending, presentPendingApproval } from "@k2b/cloud/services/approvals";
 import { diffArrays } from "diff";
 import { z } from "zod";
-import { type CodeContext, CodeDataError, readCodeOwner } from "./access";
+import { type CodeContext, CodeDataError } from "./access";
 import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
@@ -441,7 +441,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
   const comparedOperations = (comparisonEvidence?.trial?.calls ?? []).map((call) => ({ operation: call.operation, target: null }));
   const [authorName, ownerName, decidedByName] = await Promise.all([
     userName(row.created_by),
-    owner.kind === "person" ? userName(owner.userId) : placeName(owner, context),
+    owner.kind === "person" ? userName(owner.userId) : Promise.resolve(null),
     userName(row.decided_by),
   ]);
   return {
@@ -522,31 +522,9 @@ const mapListRow = (row: CodeListRow): CodeAdminCode => ({
   pauseReason: row.pause_reason,
   lastRun: row.last_run_at && row.last_run_state ? { at: iso(row.last_run_at), state: row.last_run_state } : null,
 });
-/**
- * A place is named by its type's public reader, under the admin's own authority. A place the admin may not read, or
- * whose app does not answer, stays null and the page shows its ID.
- */
-const placeName = (owner: CodeOwner, context: CodeContext): Promise<string | null> =>
-  owner.kind === "resource"
-    ? readCodeOwner(owner, context).then(
-        (read) => read?.title ?? null,
-        () => null,
-      )
-    : Promise.resolve(null);
-
-/** Names the places of one page; each place is read once. */
-const withPlaceNames = async (items: CodeAdminCode[], context: CodeContext): Promise<CodeAdminCode[]> => {
-  const names = new Map<string, Promise<string | null>>();
-  return Promise.all(
-    items.map(async (item) => {
-      if (item.owner.kind !== "resource") return item;
-      const key = `${item.owner.ref.type}:${item.owner.ref.id}`;
-      const name = names.get(key) ?? placeName(item.owner, context);
-      names.set(key, name);
-      return { ...item, ownerName: await name };
-    }),
-  );
-};
+/** A Cloud-admin role grants no target context for a resource owner's title. */
+const withPlaceNames = async (items: CodeAdminCode[], _context: CodeContext): Promise<CodeAdminCode[]> =>
+  items.map((item) => (item.owner.kind === "resource" ? { ...item, ownerName: null } : item));
 
 const codeListBase =
   () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,

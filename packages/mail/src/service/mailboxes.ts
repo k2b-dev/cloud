@@ -1,4 +1,4 @@
-import { codeOwnerDeleted, sql } from "@k2b/cloud";
+import { codeOwnerDeleted, codeOwnerTitleChanged, sql } from "@k2b/cloud";
 import { createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
@@ -464,6 +464,7 @@ export const updateMailbox = async (params: {
             automatic_reply_management_permission, compose_safety, deleted_at, created_at, updated_at
         `;
         if (!row) throw new Error("Mailbox update returned no row");
+        if (name !== undefined) await codeOwnerTitleChanged(tx, { type: "mail.mailbox", id: params.mailboxId }, row.name);
         await audit.record(
           {
             action: "mail.mailbox.update",

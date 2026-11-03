@@ -37,6 +37,7 @@ const code: Code = {
   title: "Test",
   owner: { kind: "resource", ref: { type: "example.item", id: "owner" } },
   serviceAccountId: "11111111-1111-4111-8111-111111111111",
+  serviceAccountHandle: "code-7k2q9m4xwt",
   state: "draft",
   activeVersionId: null,
   pauseReason: null,

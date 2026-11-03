@@ -20,6 +20,7 @@ import {
   CodeVersionManifestSchema,
   type codeQueryContracts,
 } from "./contracts";
+import { createCodeServiceAccount } from "./service-account";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 
 /** C8/C13 pass their transaction for domain-row operations; admission settings use the registered settings API. */
@@ -33,6 +34,7 @@ export type CodeRow = {
   owner_app_id: string | null;
   title: string;
   service_account_id: string | null;
+  service_account_handle?: string | null;
   state: Code["state"];
   active_version_id: string | null;
   pause_reason?: string | null;
@@ -52,6 +54,7 @@ export const mapCode = (row: CodeRow): Code => ({
   ),
   title: row.title,
   serviceAccountId: row.service_account_id,
+  serviceAccountHandle: row.service_account_handle ?? null,
   state: row.state,
   activeVersionId: row.active_version_id,
   pauseReason: row.pause_reason ?? null,
@@ -62,7 +65,8 @@ export const mapCode = (row: CodeRow): Code => ({
 });
 /** Internal row lookup; public callers must use readCode, which authorizes before returning data. */
 export const findCode = async (codeId: string, db: CodeDb = sql): Promise<Code | null> => {
-  const [row] = await db<CodeRow[]>`SELECT * FROM code.codes WHERE id = ${codeId}`;
+  const [row] = await db<CodeRow[]>`SELECT c.*, sa.handle AS service_account_handle FROM code.codes c
+    LEFT JOIN auth.service_accounts sa ON sa.id=c.service_account_id WHERE c.id = ${codeId}`;
   return row ? mapCode(row) : null;
 };
 export const readCode = async (codeId: string, context: CodeContext) => {
@@ -93,7 +97,8 @@ export const listCodes = async (
   const type = owner?.kind === "resource" ? owner.ref.type : null;
   const id = owner?.kind === "resource" ? owner.ref.id : null;
   const appId = owner?.kind === "app" ? owner.appId : null;
-  const rows = await sql<CodeRow[]>`SELECT * FROM code.codes c WHERE
+  const rows = await sql<CodeRow[]>`SELECT c.*, sa.handle AS service_account_handle FROM code.codes c
+    LEFT JOIN auth.service_accounts sa ON sa.id=c.service_account_id WHERE
     (${kind}::text IS NULL OR owner_kind = ${kind}) AND (${userId}::uuid IS NULL OR owner_user_id = ${userId}::uuid)
     AND (${type}::text IS NULL OR owner_type = ${type}) AND (${id}::text IS NULL OR owner_id = ${id})
     AND (${appId}::text IS NULL OR owner_app_id = ${appId})
@@ -101,7 +106,7 @@ export const listCodes = async (
       OR EXISTS (SELECT 1 FROM code.shares j JOIN auth.access a ON a.id = j.access_id WHERE j.code_id = c.id AND (${ownOrShared}))
       OR ${owner?.kind === "resource" || owner?.kind === "app"})
     AND (${input.cursor ?? null}::text IS NULL OR c.id > ${input.cursor ?? null})
-    ORDER BY id LIMIT ${input.limit + 1}`;
+    ORDER BY c.id LIMIT ${input.limit + 1}`;
   const items = [];
   for (const row of rows.slice(0, input.limit)) {
     const code = mapCode(row);
@@ -177,12 +182,14 @@ export const codeBundleHash = (bundle: string): string => sha256(bundle);
 export const createCode = async (input: { owner: CodeOwner; title: string }, context: CodeContext): Promise<Code> => {
   const user = codePerson(context, true);
   const owner = CodeOwnerSchema.parse(input.owner);
+  let ownerTitle: string | null = null;
   if (owner.kind === "person") {
     if (owner.userId !== user.id) throw new CodeDataError("FORBIDDEN", "Personal Code must be created by its owner.");
   } else {
     const presentation = await readCodeOwner(owner, context);
     if (!presentation) throw new CodeDataError("NOT_FOUND", "Code owner not found.");
     if (!presentation.admin) throw new CodeDataError("FORBIDDEN", "Owner administration required.");
+    ownerTitle = presentation.title;
   }
   const title = input.title.trim();
   jsonText(title, true);
@@ -190,13 +197,12 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
   try {
     return await sql.begin(async (tx) => {
       let accountId: string | null = null;
+      let accountHandle: string | null = null;
       if (owner.kind !== "person") {
         const name = owner.kind === "app" ? `code:app:${owner.appId}` : `code:${owner.ref.type}:${owner.ref.id}`;
-        const [account] = await tx<
-          { id: string }[]
-        >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES(${name},'code',${user.id}::uuid) RETURNING id`;
-        if (!account) throw new Error("Code account insert returned no row");
+        const account = await createCodeServiceAccount(tx, { name, title: ownerTitle!, createdBy: user.id });
         accountId = account.id;
+        accountHandle = account.handle;
       }
       const id = `c_${randomBytes(6).toString("hex")}`;
       const [row] = await tx<
@@ -204,7 +210,7 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
       >`INSERT INTO code.codes(id,owner_kind,owner_user_id,owner_type,owner_id,owner_app_id,title,service_account_id,created_by)
         VALUES(${id},${owner.kind},${owner.kind === "person" ? owner.userId : null}::uuid,${owner.kind === "resource" ? owner.ref.type : null},${owner.kind === "resource" ? owner.ref.id : null},${owner.kind === "app" ? owner.appId : null},${title},${accountId}::uuid,${user.id}::uuid) RETURNING *`;
       if (!row) throw new Error("Code insert returned no row");
-      return mapCode(row);
+      return mapCode({ ...row, service_account_handle: accountHandle });
     });
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505")

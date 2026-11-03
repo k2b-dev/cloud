@@ -38,6 +38,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         mailbox: {
           title: "Postfach",
+          codeAccount: { name: "Code eines Postfachs", description: "Dienstkonto eines Postfachs" },
           description: "Ein Postfach, auf das der Akteur zugreifen kann.",
         },
         "mailing-list": {

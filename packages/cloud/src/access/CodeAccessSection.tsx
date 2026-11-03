@@ -5,8 +5,6 @@ import { z } from "zod";
 import { navigationApps } from "../browser/navigation-apps";
 import {
   CODE_ACCESS_ACCOUNTS_MAX,
-  type CodeAccessAccount,
-  CodeAccessAccountsDataSchema,
   CodeAccessRemoveDataSchema,
   type CodeGrantDetail,
   CodeGrantDetailSchema,
@@ -20,7 +18,6 @@ export const isCodeAccessEntry = (entry: AccessEntry): entry is AccessEntry & { 
 
 class RemoveFailure extends Error {}
 const accountId = (entry: AccessEntry) => (entry.principal.type === "service_account" ? entry.principal.serviceAccountId : "");
-const isHexColor = (value: string | null) => value !== null && /^#[0-9a-f]{6}$/i.test(value);
 
 /**
  * "Code with access" in the shared rights editor: every Code account with an explicit grant at this
@@ -39,8 +36,8 @@ export default function CodeAccessSection(props: {
 }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  // Owner presentation is read once per account and kept while the section lives; a new account loads on its own.
-  const [accounts, setAccounts] = createStore<Record<string, CodeAccessAccount>>({});
+  // Owner presentation comes from the authorized target list. Never ask Core for arbitrary account names.
+
   const [loadError, setLoadError] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [removing, setRemoving] = createSignal<string | null>(null);
@@ -84,7 +81,7 @@ export default function CodeAccessSection(props: {
   // code.access.list returns to this person, so a non-manager gets nothing and keeps the level line.
   const [details, setDetails] = createStore<Record<string, CodeGrantDetail | null>>({});
   const wantsDetails = () => props.canEdit && targetAppId() !== undefined;
-  const missing = createMemo(() => [...new Set(props.entries.map(accountId))].filter((id) => id && !accounts[id]).sort());
+
   const missingDetails = createMemo(() =>
     wantsDetails()
       ? props.entries.flatMap((entry) =>
@@ -108,7 +105,7 @@ export default function CodeAccessSection(props: {
     }
     return found;
   };
-  const load = async (ids: string[], grants: { grantId: string; principal: string }[]) => {
+  const load = async (grants: { grantId: string; principal: string }[]) => {
     controller?.abort();
     const current = new AbortController();
     controller = current;
@@ -116,27 +113,6 @@ export default function CodeAccessSection(props: {
     setLoadError(false);
     const session = editingSession;
     try {
-      const found = new Map<string, CodeAccessAccount>();
-      // Within the route's public bound per request; a long share list takes several.
-      for (let start = 0; start < ids.length; start += CODE_ACCESS_ACCOUNTS_MAX) {
-        const response = await fetch("/api/resources/code-access/accounts", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ids: ids.slice(start, start + CODE_ACCESS_ACCOUNTS_MAX) }),
-          signal: current.signal,
-        });
-        if (!response.ok) throw new Error(response.statusText);
-        for (const item of CodeAccessAccountsDataSchema.parse(await response.json()).items) found.set(item.id, item);
-      }
-      if (disposed || current.signal.aborted) return;
-      // One write per answer, and everything requested settles, so nothing is requested twice, also after a retry.
-      if (ids.length)
-        setAccounts(
-          Object.fromEntries(
-            ids.map((id) => [id, found.get(id) ?? { id, ownerTitle: null, appId: null, icon: null, accent: null }] as const),
-          ),
-        );
       const appId = targetAppId();
       if (!grants.length || !appId) return;
       const grantDetails = await loadDetails(grants, appId, current.signal);
@@ -150,27 +126,23 @@ export default function CodeAccessSection(props: {
     }
   };
   createEffect(() => {
-    const ids = missing();
     const grants = missingDetails();
     // One load at a time; whatever is still missing when it ends starts the next one.
-    if (mounted() && !loading() && (ids.length || grants.length) && !loadError()) void load(ids, grants);
+    if (mounted() && !loading() && grants.length && !loadError()) void load(grants);
   });
-  const ready = () => missing().length === 0 && missingDetails().length === 0;
+  const ready = () => missingDetails().length === 0;
   const date = (iso: string) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date(iso));
   const detailOf = (entry: AccessEntry) => (entry.grantId ? details[entry.grantId] : undefined) ?? undefined;
   // Heading and hint line up with the rows' content, which the expanded layout insets from the small breakpoint on.
   const inset = () => (props.expanded ? "sm:px-2" : "");
 
-  const nameOf = (entry: AccessEntry) => {
-    const title = accounts[accountId(entry)]?.ownerTitle;
-    return title ? t().codeOf({ title }) : t().codeHiddenOwner;
-  };
+  const nameOf = (entry: AccessEntry) =>
+    entry.displayName && !entry.displayName.startsWith("code:") ? entry.displayName : t().codeHiddenOwner;
 
   const remove = async (entry: AccessEntry) => {
     const appId = targetAppId();
     if (!canRemove(entry) || !appId || removing() !== null) return;
     const name = nameOf(entry);
-    const owner = accounts[accountId(entry)]?.ownerTitle;
     const detail = detailOf(entry);
     const automations = (detail?.automations ?? []).map((id) =>
       detail?.automationTitles?.[id] ? `${detail.automationTitles[id]} (${id})` : id,
@@ -178,9 +150,7 @@ export default function CodeAccessSection(props: {
     const confirmed = await prompts.confirm(
       <>
         <p>{automations.length ? t().codeRemoveBodyFor({ names: automations }) : t().codeRemoveBody}</p>
-        <p class="mt-2">
-          {owner ? t().codeRemoveRestore({ owner, level: props.manageLabel }) : t().codeRemoveRestoreHidden({ level: props.manageLabel })}
-        </p>
+        <p class="mt-2">{t().codeRemoveRestoreHidden({ level: props.manageLabel })}</p>
       </>,
       { title: t().codeRemoveTitle({ name }), confirmText: t().removeAccess, variant: "danger" },
     );
@@ -212,23 +182,14 @@ export default function CodeAccessSection(props: {
     }
   };
 
-  const tile = (entry: AccessEntry) => {
-    const account = () => accounts[accountId(entry)];
-    const accent = () => account()?.accent ?? null;
-    return (
-      <span
-        aria-hidden="true"
-        class={`inline-flex shrink-0 items-center justify-center rounded-lg ${props.expanded ? "size-8 text-lg" : "size-7 text-base"} ${
-          isHexColor(accent())
-            ? "bg-[color-mix(in_srgb,var(--code-owner-accent)_12%,var(--k2b-surface))] text-[var(--code-owner-accent)]"
-            : "bg-[var(--ui-surface-muted)] text-secondary"
-        }`}
-        style={isHexColor(accent()) ? { "--code-owner-accent": accent()! } : undefined}
-      >
-        <i class={account()?.icon ?? "ti ti-code"} />
-      </span>
-    );
-  };
+  const tile = (_entry: AccessEntry) => (
+    <span
+      aria-hidden="true"
+      class={`inline-flex shrink-0 items-center justify-center rounded-lg bg-[var(--ui-surface-muted)] text-secondary ${props.expanded ? "size-8 text-lg" : "size-7 text-base"}`}
+    >
+      <i class="ti ti-code" />
+    </span>
+  );
 
   return (
     <Show when={props.entries.length > 0}>
@@ -291,7 +252,11 @@ export default function CodeAccessSection(props: {
                   >
                     {tile(entry)}
                     <span class="min-w-0 flex-1">
-                      <span class={`block truncate font-medium ${props.expanded ? "text-[15px]" : "text-sm"}`}>{nameOf(entry)}</span>
+                      <span class={`block break-words font-medium ${props.expanded ? "text-[15px]" : "text-sm"}`}>
+                        <Show when={entry.serviceAccountHref} fallback={nameOf(entry)}>
+                          {(href) => <a href={href()}>{nameOf(entry)}</a>}
+                        </Show>
+                      </span>
                       <Show
                         when={wantsDetails() && detailOf(entry)}
                         fallback={

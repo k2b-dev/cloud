@@ -499,6 +499,7 @@ const requestContext = (c: Context<MailApiContext>): MailRequestContext => ({
   actor: c.get("actor"),
   accessSubject: c.get("accessSubject"),
   requestId: c.req.header("x-request-id") ?? null,
+  locale: getLocale(c),
 });
 
 const integrationRequest = (c: Context<MailApiContext>) => ({

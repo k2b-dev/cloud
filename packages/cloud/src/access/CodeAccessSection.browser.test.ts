@@ -9,12 +9,6 @@ import { launchBrowser, settled } from "../../../ui/test/browser";
 // Layout stability of the "Code with access" section needs the real layout engine. Set
 // CODE_ACCESS_SCREENSHOTS to a directory to also keep light screenshots of each state.
 const screenshots = process.env.CODE_ACCESS_SCREENSHOTS;
-const accounts = {
-  items: [
-    { id: "22222222-2222-4222-8222-222222222222", ownerTitle: "info@", appId: "mail", icon: "ti ti-mail", accent: "#0f766e" },
-    { id: "33333333-3333-4333-8333-333333333333", ownerTitle: "Einkauf", appId: "grids", icon: "ti ti-layout-grid", accent: "#008f4c" },
-  ],
-};
 
 let browser: Browser;
 let css: string;
@@ -95,9 +89,8 @@ const open = async (width: number, handlers: Handlers, query = "") => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/tabler.woff2") return route.fulfill({ path: icons.font });
     if (path === "/tabler.css") return route.fulfill({ contentType: "text/css; charset=utf-8", body: icons.css });
-    if (path === "/api/resources/code-access/accounts") return handlers.accounts(route);
     if (path === "/api/resources/code-access/remove") return handlers.remove ? handlers.remove(route) : route.abort();
-    if (path === "/api/code/access/target") return handlers.details ? handlers.details(route) : route.fulfill({ json: details });
+    if (path === "/api/code/access/target") return handlers.details ? handlers.details(route) : handlers.accounts(route);
     if (path.startsWith("/api/")) return route.fulfill({ status: 404, body: "" });
     return route.fulfill({
       contentType: "text/html; charset=utf-8",
@@ -150,7 +143,7 @@ describe("Code with access in a share dialog", () => {
         const loading = await snapshot(tab);
         await shot(tab, `${width}-loading`);
         expect(loading.rows).toHaveLength(2);
-        await load.pending[0]!.fulfill({ json: accounts });
+        await load.pending[0]!.fulfill({ json: details });
         await tab.waitForFunction(() => document.querySelector("section")?.getAttribute("aria-busy") === null);
         const loaded = await snapshot(tab);
         await shot(tab, `${width}-entries`);
@@ -194,7 +187,7 @@ describe("Code with access in a share dialog", () => {
       const tab = await open(width, {
         accounts: (route) => {
           attempt += 1;
-          return attempt === 1 ? route.fulfill({ status: 503, body: "" }) : route.fulfill({ json: accounts });
+          return attempt === 1 ? route.fulfill({ status: 503, body: "" }) : route.fulfill({ json: details });
         },
       });
       try {
@@ -217,7 +210,7 @@ describe("Code with access in a share dialog", () => {
 
   for (const width of [390, 1440]) {
     test(`${width}px compact: the settings-panel editor holds Code rows within its width`, async () => {
-      const tab = await open(width, { accounts: (route) => route.fulfill({ json: accounts }) }, "?compact=1");
+      const tab = await open(width, { accounts: (route) => route.fulfill({ json: details }) }, "?compact=1");
       try {
         await tab.getByText("Code von Einkauf").waitFor();
         const layout = await snapshot(tab);
@@ -231,14 +224,14 @@ describe("Code with access in a share dialog", () => {
   }
 
   test("1440px: without Code the dialog has no section, and read-only viewers see Code without removal", async () => {
-    const none = await open(1440, { accounts: (route) => route.fulfill({ json: accounts }) }, "?code=none");
+    const none = await open(1440, { accounts: (route) => route.fulfill({ json: details }) }, "?code=none");
     try {
       expect(await none.locator("section").count()).toBe(0);
       await shot(none, "1440-empty");
     } finally {
       await none.close();
     }
-    const readOnly = await open(1440, { accounts: (route) => route.fulfill({ json: accounts }) }, "?readonly=1");
+    const readOnly = await open(1440, { accounts: (route) => route.fulfill({ json: details }) }, "?readonly=1");
     try {
       await readOnly.getByText("Code von info@").waitFor();
       expect(await readOnly.locator("section button").count()).toBe(0);

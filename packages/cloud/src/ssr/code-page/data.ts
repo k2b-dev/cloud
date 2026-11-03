@@ -12,6 +12,8 @@ import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 const CodeSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** A2: the credentialless account handle; A3b uses this in the refusal notice. */
+  serviceAccountHandle: z.string().nullable().optional(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
   activeVersionId: z.string().nullable(),
   pauseReason: z.string().nullable(),

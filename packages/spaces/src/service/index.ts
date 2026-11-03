@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import type { AccessEntry, Space, SpaceColumn, SpaceComment, SpaceItem, SpaceItemLink, SpaceTag } from "@/contracts";
@@ -251,13 +252,21 @@ export const spacesService = {
   access: {
     list: async (config: {
       spaceId: string;
+      /** Server-side presentation decision after the local resource permission check. */
+      canManageTarget?: boolean;
+      cloudAdmin?: boolean;
+      locale?: string;
       pagination?: PageParams;
       filter?: {
         query?: string;
         principalType?: AccessEntry["principal"]["type"];
       };
     }): Promise<Paginated<AccessEntry>> => {
-      const items = await access.listSpaceAccess(config.spaceId);
+      const items = await access.listSpaceAccess(config.spaceId, sql, {
+        canManageTarget: config.canManageTarget,
+        cloudAdmin: config.cloudAdmin,
+        locale: config.locale,
+      });
       const query = config.filter?.query?.trim().toLowerCase();
       const principalType = config.filter?.principalType;
 

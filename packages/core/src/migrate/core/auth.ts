@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { migrateAppBootstrap } from "./app-bootstrap";
 import { migrateAppKeys } from "./app-keys";
 import { migrateAppMigration } from "./app-migration";
+import { migrateCodeAccountHandles } from "./code-account-handles";
 import { enrollDevelopmentAppKeys } from "./development-app-keys";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
@@ -593,6 +594,7 @@ export const migrate = async (): Promise<void> => {
       )
     )
   `.simple();
+  await migrateCodeAccountHandles();
   await sql`
     CREATE TABLE IF NOT EXISTS auth.directory_shares (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

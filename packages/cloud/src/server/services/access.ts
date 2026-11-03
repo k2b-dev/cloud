@@ -7,6 +7,7 @@ import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } fr
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
 import type { RequestAuthority } from "../middleware/auth";
+import { type CodeAccountDisplayContext, codeAccountPresenter } from "./code-account-display";
 
 export type AccessDb = typeof sql;
 
@@ -73,6 +74,9 @@ export type AccessEntry = {
   displayName?: string;
   avatarHash?: string | null;
   serviceAccountKind?: ServiceAccountKind;
+  serviceAccountHandle?: string;
+  serviceAccountDescription?: string;
+  serviceAccountHref?: string;
 };
 
 export type AccessUserSource =
@@ -706,13 +710,30 @@ export const listUsersWithAccess = async (params: {
  * Missing principals and audiences have no displayName; render with principalLabel.
  * Includes serviceAccountKind for existing service-account principals.
  */
-export const resolveDisplayNames = async <T extends { principal: Principal }>(
-  entries: T[],
-): Promise<
-  (Omit<T, "displayName" | "avatarHash" | "serviceAccountKind"> & {
+export const resolveDisplayNames = async <
+  T extends {
+    principal: Principal;
     displayName?: string;
     avatarHash?: string | null;
     serviceAccountKind?: ServiceAccountKind;
+    serviceAccountHandle?: string;
+    serviceAccountDescription?: string;
+    serviceAccountHref?: string;
+  },
+>(
+  entries: T[],
+  context: CodeAccountDisplayContext = {},
+): Promise<
+  (Omit<
+    T,
+    "displayName" | "avatarHash" | "serviceAccountKind" | "serviceAccountHandle" | "serviceAccountDescription" | "serviceAccountHref"
+  > & {
+    displayName?: string;
+    avatarHash?: string | null;
+    serviceAccountKind?: ServiceAccountKind;
+    serviceAccountHandle?: string;
+    serviceAccountDescription?: string;
+    serviceAccountHref?: string;
   })[]
 > => {
   const userIds = entries.filter((e) => e.principal.type === "user").map((e) => (e.principal as { type: "user"; userId: string }).userId);
@@ -750,10 +771,15 @@ export const resolveDisplayNames = async <T extends { principal: Principal }>(
     }
   }
 
-  const serviceAccountsById = new Map<string, { id: string; name: string; kind: ServiceAccountKind }>();
+  const serviceAccountsById = new Map<
+    string,
+    { id: string; name: string; kind: ServiceAccountKind; title: string | null; handle: string | null; status: string }
+  >();
   if (serviceAccountIds.length > 0) {
-    const serviceAccounts = await sql<{ id: string; name: string; kind: ServiceAccountKind }[]>`
-      SELECT id, name, kind
+    const serviceAccounts = await sql<
+      { id: string; name: string; kind: ServiceAccountKind; title: string | null; handle: string | null; status: string }[]
+    >`
+      SELECT id, name, kind, title, handle, status
       FROM auth.service_accounts
       WHERE id = ANY(${toPgUuidArray(serviceAccountIds)}::uuid[])
     `;
@@ -762,31 +788,52 @@ export const resolveDisplayNames = async <T extends { principal: Principal }>(
     }
   }
 
-  return entries.map((entry) => {
-    let displayName: string | undefined;
-    let avatarHash: string | null | undefined;
-    let serviceAccountKind: ServiceAccountKind | undefined;
-    switch (entry.principal.type) {
-      case "user": {
-        const user = userNames.get(entry.principal.userId);
-        displayName = user?.displayName;
-        avatarHash = user?.avatarHash ?? null;
-        break;
+  const presentCode = codeAccountPresenter(context);
+  return Promise.all(
+    entries.map(async (entry) => {
+      const {
+        displayName: _name,
+        avatarHash: _avatar,
+        serviceAccountKind: _kind,
+        serviceAccountHandle: _handle,
+        serviceAccountHref: _href,
+        serviceAccountDescription: _description,
+        ...rest
+      } = entry;
+      let displayName: string | undefined;
+      let avatarHash: string | null | undefined;
+      let serviceAccountKind: ServiceAccountKind | undefined;
+      switch (entry.principal.type) {
+        case "user": {
+          const user = userNames.get(entry.principal.userId);
+          displayName = user?.displayName;
+          avatarHash = user?.avatarHash ?? null;
+          break;
+        }
+        case "group":
+          displayName = groupNames.get(entry.principal.groupId);
+          break;
+        case "service_account": {
+          const serviceAccount = serviceAccountsById.get(entry.principal.serviceAccountId);
+          if (serviceAccount?.kind === "code") {
+            // Never preserve caller-supplied owner metadata across a change of viewer authority.
+            return {
+              ...rest,
+              ...(await presentCode(serviceAccount)),
+              serviceAccountKind: serviceAccount.kind,
+              ...(serviceAccount.handle ? { serviceAccountHandle: serviceAccount.handle } : {}),
+            };
+          }
+          displayName = serviceAccount?.name;
+          serviceAccountKind = serviceAccount?.kind;
+          break;
+        }
+        case "authenticated":
+          break;
+        case "public":
+          break;
       }
-      case "group":
-        displayName = groupNames.get(entry.principal.groupId);
-        break;
-      case "service_account": {
-        const serviceAccount = serviceAccountsById.get(entry.principal.serviceAccountId);
-        displayName = serviceAccount?.name;
-        serviceAccountKind = serviceAccount?.kind;
-        break;
-      }
-      case "authenticated":
-        break;
-      case "public":
-        break;
-    }
-    return { ...entry, displayName, avatarHash, serviceAccountKind };
-  });
+      return { ...rest, displayName, avatarHash, serviceAccountKind };
+    }),
+  );
 };

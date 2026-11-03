@@ -257,11 +257,18 @@ databaseSuite()("Core Code data and Query authorization", () => {
       { owner: { kind: "resource", ref: { type: "example.mailbox", id: "live-admin" } }, title: "Resource" },
       ctx(ids.admin, true),
     );
+    expect(resource.serviceAccountHandle).toMatch(/^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/);
+    expect((await sql`SELECT handle FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]!.handle).toBe(
+      resource.serviceAccountHandle,
+    );
     ownerState.set(ids.stranger, { title: "Renamed mailbox", admin: true });
     expect((await readCode(resource.id, ctx(ids.stranger))).permission).toBe("editor");
-    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "de" })).toBe("Code von Renamed mailbox");
+    expect((await sql`SELECT title FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]!.title).toBe(
+      "Renamed mailbox",
+    );
+    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "de" })).not.toContain("Renamed mailbox");
     ownerState.set(ids.stranger, { title: "Renamed again", admin: false });
-    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "DE-at" })).toBe("Code von Renamed again");
+    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "DE-at" })).not.toContain("Renamed again");
     await expect(readCode(resource.id, ctx(ids.stranger))).rejects.toThrow("Code not found");
     ownerState.delete(ids.stranger);
     expect(await sql<{ name: string }[]>`SELECT name FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`).toEqual([

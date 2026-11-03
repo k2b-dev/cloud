@@ -532,7 +532,17 @@ suite("reversible mailbox lifecycle", () => {
     expect((await updateMailbox({ context: ownerContext, mailboxId, name: " ".repeat(3) })).ok).toBe(false);
     expect((await updateMailbox({ context: ownerContext, mailboxId, name: "x".repeat(161) })).ok).toBe(false);
 
-    const renamed = await updateMailbox({ context: ownerContext, mailboxId, name: `  Sales North ${suffix}  ` });
+    // The owner app refreshes the snapshot in the same rename transaction, without moving grants.
+    const [codeAccount] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,title)
+      VALUES(${`code:mail.mailbox:${mailboxId}`},'code','Old snapshot') RETURNING id`;
+    let renamed: Awaited<ReturnType<typeof updateMailbox>>;
+    try {
+      renamed = await updateMailbox({ context: ownerContext, mailboxId, name: `  Sales North ${suffix}  ` });
+      const [snapshot] = await sql`SELECT title FROM auth.service_accounts WHERE id=${codeAccount!.id}::uuid`;
+      expect(snapshot!.title).toBe(`Sales North ${suffix}`);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${codeAccount!.id}::uuid`;
+    }
     expect(renamed.ok).toBe(true);
     if (!renamed.ok) return;
     expect(renamed.data).toMatchObject({ id: mailboxId, name: `Sales North ${suffix}`, health: created.data.health });

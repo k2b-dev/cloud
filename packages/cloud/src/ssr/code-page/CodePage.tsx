@@ -20,6 +20,7 @@ import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
+import { CodeAccountHandle } from "./CodeAccountHandle";
 import { CodeSecretsTab } from "./CodeSecrets";
 import { loadCodeRunCalls } from "./calls";
 import {
@@ -578,6 +579,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
   const running = () => props.state.active?.number ?? null;
   return (
     <div class="cloud-code__body">
+      <Show when={props.state.code.serviceAccountHandle}>{(handle) => <CodeAccountHandle handle={handle()} />}</Show>
       <Show when={props.data.activatedNotice !== null && props.data.activatedNotice === props.state.active?.number}>
         <NoticeCard
           tone="success"

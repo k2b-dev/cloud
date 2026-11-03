@@ -50,7 +50,7 @@ const code = (id: string, account: string, grantId: string | undefined, permissi
   permission,
   createdAt: "2026-10-28T09:00:00.000Z",
   // What the target's share list resolves: the raw account name, never shown.
-  displayName: `code:fixture:${account}`,
+  displayName: account === ids.info ? "Code von info@moebel-beispiel.de" : "Code von Einkauf",
   serviceAccountKind: "code",
   ...(grantId ? { grantId } : {}),
 });
@@ -172,7 +172,7 @@ describe("Code with access in the shared rights editor", () => {
         expect(view.shareRows()).toHaveLength(1);
         expect(view.shareRows()[0]!.textContent).toContain("Ben Schulz");
         expect(view.dom.root.textContent).not.toContain("code:fixture");
-        expect(view.calls).toEqual([{ url: "/api/resources/code-access/accounts", body: { ids: [ids.base, ids.info].sort() } }]);
+        expect(view.calls).toEqual([]);
         const heading = view.section()!.querySelector("h3")!;
         expect(heading.textContent).toBe("Code mit Zugriff2");
         expect(view.section()!.getAttribute("aria-labelledby")).toBe(heading.id);
@@ -180,8 +180,8 @@ describe("Code with access in the shared rights editor", () => {
           "Code von info@moebel-beispiel.deBearbeitenEntfernen",
           "Code von EinkaufAnsehenEntfernen",
         ]);
-        expect(view.codeRows()[0]!.querySelector("i.ti-mail")).not.toBeNull();
-        expect(view.codeRows()[1]!.querySelector("i.ti-layout-grid")).not.toBeNull();
+        expect(view.codeRows()[0]!.querySelector("i.ti-code")).not.toBeNull();
+        expect(view.codeRows()[1]!.querySelector("i.ti-code")).not.toBeNull();
         expect(view.section()!.textContent).toContain("Code bekommt Zugriff nur beim Einschalten, nie hier.");
       } finally {
         view.cleanup();
@@ -210,7 +210,7 @@ describe("Code with access in the shared rights editor", () => {
         {
           content:
             "Der Code kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was er schon angelegt hat, bleibt." +
-            "Wieder einschalten kann, wer info@moebel-beispiel.de verwaltet und hier „Verwalten“ hat.",
+            "Wieder einschalten kann, wer den Besitzer des Codes verwaltet und hier „Verwalten“ hat.",
           options: {
             title: "Zugriff von „Code von info@moebel-beispiel.de“ entfernen?",
             confirmText: "Zugriff entfernen",
@@ -218,7 +218,7 @@ describe("Code with access in the shared rights editor", () => {
           },
         },
       ]);
-      expect(view.calls[1]).toEqual({ url: "/api/resources/code-access/remove", body: { appId: "spaces", grantId: ids.grantInfo } });
+      expect(view.calls[0]).toEqual({ url: "/api/resources/code-access/remove", body: { appId: "spaces", grantId: ids.grantInfo } });
       // Pending: this row says so, the other Code row waits, people rows and their own removal stay untouched.
       expect(view.codeRows()[0]!.getAttribute("aria-busy")).toBe("true");
       expect(view.codeRows()[1]!.querySelector("button")!.disabled).toBe(true);
@@ -278,45 +278,18 @@ describe("Code with access in the shared rights editor", () => {
     });
   }
 
-  test("loading holds a row per entry, a failure keeps people correct and retries", async () => {
-    let attempt = 0;
-    let release: (() => void) | undefined;
+  test("read-only rows use the server's type label without an account-name lookup", async () => {
     const view = await setup({
       respond: () => {
-        attempt += 1;
-        if (attempt === 1) return new Response("down", { status: 503 });
-        return new Promise<Response>((resolve) => {
-          release = () => resolve(accountsResponse());
-        });
+        throw new Error("No name lookup");
       },
+      canEdit: false,
+      initialEntries: [person, { ...entries[1]!, displayName: "Code eines Postfachs" }],
     });
     try {
-      await waitFor(() => view.section()?.querySelector("[role=alert]") !== null, "the load failure");
-      expect(view.section()!.textContent).toContain("Code mit Zugriff konnte nicht geladen werden. Die Personen oben stimmen.");
-      expect(view.shareRows()).toHaveLength(1);
-      view.section()!.querySelector<HTMLButtonElement>("[role=alert] button")!.click();
-      await waitFor(() => release !== undefined, "the retry");
-      expect(view.section()!.getAttribute("aria-busy")).toBe("true");
-      expect(view.codeRows()).toHaveLength(2);
-      expect(view.section()!.querySelectorAll(".k2b-skeleton").length).toBeGreaterThan(0);
-      expect(view.codeRows()[0]!.querySelector("button")!.disabled).toBe(true);
-      release!();
-      await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
-      expect(view.codeRows()[0]!.textContent).toContain("Code von info@moebel-beispiel.de");
-    } finally {
-      view.cleanup();
-    }
-  });
-
-  test("an owner the person cannot read keeps the row without naming it", async () => {
-    const view = await setup({
-      respond: () => Response.json({ items: [{ id: ids.info, ownerTitle: null, appId: null, icon: null, accent: null }] }),
-      initialEntries: [person, entries[1]!],
-    });
-    try {
-      await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
-      expect(view.codeRows()[0]!.textContent).toBe("Code, dessen Besitzer du nicht sehen kannstBearbeitenEntfernen");
-      expect(view.codeRows()[0]!.querySelector("i.ti-code")).not.toBeNull();
+      expect(view.codeRows()[0]!.textContent).toBe("Code eines PostfachsBearbeiten");
+      expect(view.calls).toEqual([]);
+      expect(view.detailCalls).toEqual([]);
     } finally {
       view.cleanup();
     }

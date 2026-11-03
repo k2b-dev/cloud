@@ -687,8 +687,9 @@ The application includes Code entries in the normal share list with
 `serviceAccountKind: "code"` and `grantId`, as the
 [Code access contract](/en/docs/platform/capabilities#code-access-at-the-target)
 requires. Its ordinary update and revoke endpoints refuse Code entries. The
-editor reads owner titles from Core at `POST /api/resources/code-access/accounts`,
-reads grant details from
+editor receives authorized Code names with the target application's access list
+(see [Code account handles](/en/docs/identity/code-service-account-handles)),
+reads legacy grant details from
 [`POST /api/code/access/target`](/en/docs/platform/code-activation), and removes
 through `POST /api/resources/code-access/remove`. It sends the
 current application's ID with each removal. Both routes accept only

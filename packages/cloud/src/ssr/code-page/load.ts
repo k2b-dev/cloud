@@ -590,7 +590,14 @@ const loadReady = async (
   const secrets = tab === "secrets" && code.permission === "editor" ? await loadSecrets() : null;
   return {
     kind: "ready",
-    code: { id: code.id, title: code.title, state: code.state, activeVersionId: code.activeVersionId, pauseReason: code.pauseReason },
+    code: {
+      id: code.id,
+      title: code.title,
+      serviceAccountHandle: code.serviceAccountHandle ?? null,
+      state: code.state,
+      activeVersionId: code.activeVersionId,
+      pauseReason: code.pauseReason,
+    },
     permission: code.permission,
     versions,
     versionsFailed: !versionsResult.ok,

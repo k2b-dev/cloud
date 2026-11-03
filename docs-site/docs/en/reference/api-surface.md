@@ -717,3 +717,11 @@ Core activation services and status schemas are documented in
 [Code activation](/en/docs/platform/code-activation). These Core-owned services
 are consumed by the Code CLI, lifecycle, runner and resource UI slices; they are
 not application imports from the public platform package.
+
+## Code account handles
+
+`codeOwnerTitleChanged` from `@k2b/cloud` updates a declared owner's title in its
+rename transaction. `resolveDisplayNames` and `CodeAccountDisplayContext` from
+`@k2b/cloud/server` present names inside locally authorized target lists.
+`codeAccountPresenter` supports adapters that already join account metadata in
+one query. See [Code account handles](/en/docs/identity/code-service-account-handles).
