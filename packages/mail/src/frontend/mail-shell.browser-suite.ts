@@ -3177,23 +3177,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        for (const [locale, one, two] of [
-          ["en", "1 attachment", "2 attachments"],
-          ["de", "1 Anhang", "2 Anhänge"],
-        ] as const)
-          test(`the paperclip names how many attachments a row has (${locale})`, async () => {
-            const page = await open(`${boxPath}?locale=${locale}`);
-            try {
-              const mark = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] .mail-row-mark:has(.ti-paperclip)`);
-              expect(await mark("Conv01").getAttribute("aria-label")).toBe(one);
-              expect(await mark("Conv05").getAttribute("aria-label")).toBe(two);
-              await mark("Conv05").hover();
-              await page.getByRole("tooltip").filter({ hasText: two }).waitFor();
-            } finally {
-              await close(page);
-            }
-          });
-
         for (const [locale, turn, waiting, doneText] of [
           ["en", "Your turn · 3", "Waiting for reply · 2", "Done conversations that were assigned to you"],
           ["de", "Du bist dran · 3", "Wartet auf Antwort · 2", "Erledigtes, das dir zugewiesen war"],
@@ -3247,6 +3230,23 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+
+        for (const [locale, one, two] of [
+          ["en", "1 attachment", "2 attachments"],
+          ["de", "1 Anhang", "2 Anhänge"],
+        ] as const)
+          test(`the paperclip names how many attachments a row has (${locale})`, async () => {
+            const page = await open(`${boxPath}?locale=${locale}`);
+            try {
+              const mark = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] .mail-row-mark:has(.ti-paperclip)`);
+              expect(await mark("Conv01").getAttribute("aria-label")).toBe(one);
+              expect(await mark("Conv05").getAttribute("aria-label")).toBe(two);
+              await mark("Conv05").hover();
+              await page.getByRole("tooltip").filter({ hasText: two }).waitFor();
+            } finally {
+              await close(page);
+            }
+          });
 
         test("Copy Cloud ID writes the permalink and the structured reference from every menu and the details", async () => {
           const { parseCloudResourceClipboard, parseCloudResourceUrl } = await import("@k2b/cloud/contracts");
