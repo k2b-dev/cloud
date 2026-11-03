@@ -379,6 +379,7 @@ export const mailConversationUiMessages = i18n.define({
       scheduledMessage: "Scheduled message",
       deliveryDelayed: "Delivery delayed",
       retryControl: ({ attempt, total }: { attempt: number; total: number }) => `Trying again · ${attempt}/${total}`,
+      tryingAgain: "Trying again",
       waitingForSignIn: "Waiting for sign-in",
       waitingForSignInExplanation:
         "The mailbox needs to be signed in again. Mail sends the message as soon as the account is reconnected. If that takes more than six days after the message was due, Mail returns it to Drafts.",
@@ -809,6 +810,7 @@ export const mailConversationUiMessages = i18n.define({
       scheduledMessage: "Geplante Nachricht",
       deliveryDelayed: "Zustellung verzögert",
       retryControl: ({ attempt, total }) => `Erneuter Versuch · ${attempt}/${total}`,
+      tryingAgain: "Wird erneut versucht",
       waitingForSignIn: "Wartet auf Anmeldung",
       waitingForSignInExplanation:
         "Für das Postfach ist eine erneute Anmeldung erforderlich. Mail sendet die Nachricht, sobald das Konto wieder verbunden ist. Dauert das mehr als sechs Tage nach dem geplanten Zeitpunkt, legt Mail sie wieder in die Entwürfe.",

@@ -82,7 +82,9 @@ export default function MailMessageDeliveryControl(props: {
         : props.delivery.state === "scheduled" && props.delivery.lastErrorCode
           ? waitsForSignIn(props.delivery)
             ? t().waitingForSignIn
-            : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
+            : props.delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION"
+              ? t().tryingAgain
+              : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
           : props.delivery.state === "scheduled"
             ? t().scheduled
             : props.delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"
