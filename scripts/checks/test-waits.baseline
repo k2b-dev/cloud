@@ -36,8 +36,6 @@ packages/grids/src/frontend/_components/toolbar/FilterPanel.behavior.test.tsx | 
 packages/grids/src/frontend/_components/workspace/GridsNavigation.behavior.test.tsx | 1
 packages/grids/src/frontend/custom-app/RecordsTable.actions.behavior.test.tsx | 1
 packages/mail/src/cli.test.ts | 1
-packages/mail/src/frontend/MailOverview.browser.test.ts | 1
-packages/mail/src/frontend/MailOverview.restore.behavior.test.tsx | 1
 packages/mail/src/frontend/MailWorkspace.list-actions.behavior.test.tsx | 5
 packages/mail/src/frontend/_components/MailAutomaticReplySettings.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailCalendarInvitation.behavior.test.tsx | 2

@@ -60,6 +60,7 @@ import {
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DetailPanelOutlineDemo } from "./detail-outline";
+import { DetailSectionsDemo } from "./detail-sections";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
 import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
@@ -2389,6 +2390,7 @@ const items = [
   "detail-panel": () => (
     <DemoGrid columns="one">
       <DetailPanelOutlineDemo />
+      <DetailSectionsDemo />
       <DetailPanelActionDemo />
       <DetailPanelDemo />
     </DemoGrid>

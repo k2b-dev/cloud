@@ -23,6 +23,17 @@ export const TASKS_UPDATE_EVENT = "notebooks.tasks.updated";
 export const NOTEBOOK_DETAIL_ID = "notebook-detail";
 /** Workspace socket → panel: participants of the opened note, including readers. */
 export const PRESENCE_EVENT = "notebooks.presence.changed";
+/**
+ * Workspace socket → panel: whether the people here are known. `connecting` until the first list arrives, `live`
+ * while it follows, `down` after a connection failed and is waiting to retry.
+ */
+export const PRESENCE_STATUS_EVENT = "notebooks.presence.status";
+export type PresenceStatusEventDetail = { status: "connecting" | "live" | "down" };
+/** Panel → workspace socket: reconnect now instead of waiting for the next retry. */
+export const PRESENCE_RETRY_EVENT = "notebooks.presence.retry";
+/** Panel → sidebar: open the notebook settings on one tab, such as `access`. */
+export const OPEN_NOTEBOOK_SETTINGS_EVENT = "notebooks.settings.open";
+export type OpenNotebookSettingsEventDetail = { tab: string };
 
 /**
  * Dispatched by the panel's "Copy content" / "Download as .md" actions when

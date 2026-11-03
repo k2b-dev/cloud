@@ -204,6 +204,14 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     presentationMode: isGraphMode ? graphFrom : requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
+  const showDetailPanel = !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode;
+  // Everyone with access of their own, a group's, or all signed-in people's may see who else has access; public
+  // access alone may not. `GET /:id/access/members` decides the same way.
+  const accessVisible =
+    showDetailPanel &&
+    (hasRole(user, "admin") ||
+      (await notebooksService.notebook.access.memberPermission({ notebookId, subject: c.get("accessSubject") })) !== "none");
+
   const appUrl = await get<string>("app.url");
   const requestUrl = new URL(c.req.url);
 
@@ -237,9 +245,11 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     appUrl,
     currentHref: `${requestUrl.pathname}${requestUrl.search}`,
     detailPanelOpen,
-    showDetailPanel: !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode,
+    showDetailPanel,
+    accessVisible,
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
+    relations: selected.routeState?.relations ?? { outgoing: [], tags: [] },
     initialCommentsPage,
     initialAnnotations,
     // Without the count Book just leaves out its comments entry; the note itself still opens.

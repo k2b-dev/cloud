@@ -5,7 +5,7 @@ section: Conventions
 order: 1284
 description: Look up visual UI, interaction, and accessibility rules with their canonical owners and checks.
 tags: [conventions, ui, interaction, accessibility, audit]
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Frontend conventions
@@ -48,6 +48,7 @@ patterns with `rg -n` in the application's `src` directory.
 | UI-24 | Use DataTable's lines: grey head with a stronger line, a line under every row, lighter column lines, no zebra; a selected row is a fill without coloured lines; numbers right-aligned with tabular figures. | Values read across and down; selection never moves a row. | Check: use DataTable; no custom row borders or selection fills. `data-table-lines.browser.test.ts` pins the presentation. | [Tables](/en/ui/content/tables#presentation) |
 | UI-25 | Load with row-height placeholders; distinguish empty, no results, and no access. Every load error uses `Placeholder` with `state="error"` and `onRetry`. | People see the right next step and keep their selection during recovery. | Manual: search for `state="error"` without `onRetry` or a recovery `action`. | [States](/en/ui/surfaces/empty-states) |
 | UI-26 | Pass a component such as `InlineGuidance` or `IconButton` one computed `class`, and use `classList` only on native elements. | A component that spreads its props sets its own `class` after a spread `classList`, so the toggled classes are missing from the first render. | `bun scripts/check.ts component-class-list` | [Semantic styling](/en/docs/frontend/styling-and-accessibility#style-app-owned-content-semantically) |
+| UI-27 | Build an object's detail panel from `DetailPanel` and its shared sections in the order of use, with every section's content on its title's text edge, closed secondary sections under "More about …", and the access list only for people with access of their own. | People find presence, comments, links, and access in the same place in every app, and nothing moves when the data changes. | Manual: open the panel at both widths, measure that each section body starts on its title edge, change the followed data and compare positions; call the access list as a public-link reader and expect 403. | [Detail panels](/en/docs/frontend/detail-panels) |
 
 ## Interaction and feedback (IX)
 

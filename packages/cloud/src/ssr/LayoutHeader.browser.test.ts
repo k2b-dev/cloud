@@ -127,7 +127,7 @@ test("toasts at the top of a phone start below the header instead of covering it
       // The rail reads the offset through @k2b/ui's narrow-viewport rule, like the probe below.
       await page.setContent(
         `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-          `<body class="k2b-ui"><div class="cloud-app-canvas"><div class="layout-shell-content">${header(authenticated)}</div></div>` +
+          `<body class="k2b-ui"><div class="cloud-app-canvas" data-layout-header><div class="layout-shell-content">${header(authenticated)}</div></div>` +
           `<div id="probe" style="position:fixed;top:var(--k2b-toast-offset-top,0px)"></div></body></html>`,
       );
       const edges = await page.evaluate(() => [

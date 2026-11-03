@@ -80,6 +80,8 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   track(spyOn(notebooksService.notebook, "getByShortId")).mockResolvedValue(currentNotebook);
   track(spyOn(notebooksService.notebook, "get")).mockResolvedValue(currentNotebook);
   track(spyOn(notebooksService.notebook.permission, "get")).mockResolvedValue(permission);
+  track(spyOn(notebooksService.notebook.access, "memberPermission")).mockResolvedValue(permission);
+  track(spyOn(notebooksService.note.outgoingLinks, "list")).mockResolvedValue([]);
   track(spyOn(notebookStore, "canAccess")).mockResolvedValue(permission !== "none");
   track(spyOn(notebooksService.workspaceEvents, "latestCursor")).mockResolvedValue("1-0");
   for (const spy of mockNoteTree([{ ...currentNote, children: [] }])) track(spy);
@@ -133,6 +135,13 @@ async function load(mode?: string, path?: string) {
 }
 
 describe("notebook page presentation authorization", () => {
+  test("the panel shows who has access only to people with access of their own", async () => {
+    fixtures("write");
+    expect((await load("write")).accessVisible).toBe(true);
+    // Write through a public grant alone: the page opens, the access list stays hidden.
+    track(spyOn(notebooksService.notebook.access, "memberPermission")).mockResolvedValue("none");
+    expect((await load("write")).accessVisible).toBe(false);
+  });
   test("the initial context reads the personal full-width cookie", async () => {
     fixtures("write");
     for (const preferences of [{}, { fullWidth: true }]) {

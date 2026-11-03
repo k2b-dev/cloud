@@ -111,6 +111,7 @@ const SELECTION_MARK_SELECTOR =
 const IGNORED_SELECTION_MARK_SELECTOR = "[data-calendar-day-key]";
 const clamp = (value: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, value)));
 const eventElement = (event: Event) => (event.target instanceof Element ? event.target : null);
+const PREVIEW_FOCUS_SELECTOR = ".k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])";
 const resizeHandle = (event: Event) => eventElement(event)?.closest<HTMLElement>(HANDLE_SELECTOR) ?? null;
 const resizeKind = (handle: HTMLElement): AppWorkspaceResizeKind | null => {
   const value = handle.dataset.appWorkspaceResize;
@@ -2030,7 +2031,17 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
    * arriving at a handle was announced whatever `aria-valuenow`/`valuemax` the
    * last drag left behind.
    */
+  // A keyboard-focused action preview covers the row's last action, so the actions before it say so. CSS cannot ask
+  // this through `:has()` from the actions' buttons without restyling every button of the page on each DOM change.
+  const syncPreviewFocus = (event: FocusEvent) => {
+    const trigger = eventElement(event)?.closest<HTMLElement>(PREVIEW_FOCUS_SELECTOR);
+    const actions = trigger?.previousElementSibling;
+    if (!trigger || !actions?.matches(".k2b-app-workspace__sidebar-item-actions")) return;
+    if (event.type === "focusin" && trigger.matches(":focus-visible")) actions.setAttribute("data-preview-focus", "");
+    else actions.removeAttribute("data-preview-focus");
+  };
   const onFocusIn = (event: FocusEvent) => {
+    syncPreviewFocus(event);
     const handle = resizeHandle(event);
     const kind = handle ? resizeKind(handle) : null;
     const root = handle ? workspaceRoot(handle) : null;
@@ -2241,6 +2252,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   phone?.addEventListener("change", syncPhonePages);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
+  eventRoot.addEventListener("focusout", syncPreviewFocus as EventListener);
   window.addEventListener("resize", onResize);
   syncPhonePages();
   syncObservedRoots();
@@ -2327,6 +2339,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     phone?.removeEventListener("change", syncHostState);
     eventRoot.removeEventListener("keydown", onKeyDown as EventListener);
     eventRoot.removeEventListener("focusin", onFocusIn as EventListener);
+    eventRoot.removeEventListener("focusout", syncPreviewFocus as EventListener);
     window.removeEventListener("resize", onResize);
   };
 };
