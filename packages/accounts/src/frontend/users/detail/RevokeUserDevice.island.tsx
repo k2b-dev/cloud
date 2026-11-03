@@ -1,7 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../../messages";
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
 };
 
 export default function RevokeUserDevice(props: Props) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const revokeMutation = mutations.create<void, void>({
     mutation: async () => {

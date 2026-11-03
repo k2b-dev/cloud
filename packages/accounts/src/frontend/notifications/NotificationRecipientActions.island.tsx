@@ -1,7 +1,7 @@
 import { Button, CodeDisplay, dialogCore, PanelDialog, panelDialogOptions, prompts } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { type AccountsMessages, useAccountsMessages } from "../messages";
 
 type Props = {
@@ -45,6 +45,7 @@ const showError = (error: string | null, messages: AccountsMessages) => {
 };
 
 export default function NotificationRecipientActions(props: Props) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const [retrying, setRetrying] = createSignal(false);
 

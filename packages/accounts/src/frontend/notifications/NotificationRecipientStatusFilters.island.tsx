@@ -1,5 +1,5 @@
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
-import { openPage } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type Props = {
@@ -15,6 +15,7 @@ const buildUrl = (batchId: string, status: string) => {
 };
 
 export default function NotificationRecipientStatusFilters(props: Props) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const options = (): FilterChipSection[] => [
     {

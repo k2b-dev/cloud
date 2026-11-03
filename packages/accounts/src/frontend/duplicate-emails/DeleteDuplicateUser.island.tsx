@@ -1,5 +1,5 @@
 import { Button } from "@k2b/ui";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 import { createDeleteUserAction } from "../users/delete-user";
 
@@ -7,6 +7,7 @@ type Props = Parameters<typeof createDeleteUserAction>[0] & { disabled?: boolean
 
 // Only the serializable target crosses the island boundary; refresh is local.
 export default function DeleteDuplicateUser(props: Omit<Props, "onDeleted">) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const action = createDeleteUserAction({
     user: props.user,

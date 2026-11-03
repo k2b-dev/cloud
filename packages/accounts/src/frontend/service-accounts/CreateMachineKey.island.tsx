@@ -1,9 +1,9 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, CopyButton, DateTimePicker, NoticeCard, prompts, Select, TextInput } from "@k2b/ui";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { z } from "zod";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 /** What "Full access" names on the wire; the server never fills in scopes. */
@@ -163,11 +163,8 @@ export function CreateMachineKeyDialog(props: {
 }
 
 export default function CreateMachineKey(props: { modelsAvailable: boolean }) {
+  const { showChanges } = usePageSwap();
   const t = useAccountsMessages();
-  let disposed = false;
-  onCleanup(() => {
-    disposed = true;
-  });
   const open = async () => {
     let changed = false;
     await prompts.dialog<void>(
@@ -187,8 +184,8 @@ export default function CreateMachineKey(props: { modelsAvailable: boolean }) {
         size: "medium",
       },
     );
-    // Only a created key changes the list; a dialog that a page change closed has nothing left to show.
-    if (changed && !disposed) await showChanges();
+    // Only a created key changes the list; after a page change closed the dialog, showChanges does nothing.
+    if (changed) await showChanges();
   };
   return (
     <Button size="sm" onClick={() => void open()}>

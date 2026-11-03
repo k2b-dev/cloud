@@ -214,6 +214,8 @@ const abort = (state: SwapState): void => {
   state.stopRestore();
   state.active?.abort();
   state.active = undefined;
+  // An aborted swap may still wait for a module that cannot be cancelled; the page is no longer changing.
+  state.document.querySelector("[data-nav-shell]")?.removeAttribute("data-nav-pending");
 };
 const shellContext = (doc: Document) => {
   const shells = doc.querySelectorAll<HTMLElement>("[data-nav-shell]");

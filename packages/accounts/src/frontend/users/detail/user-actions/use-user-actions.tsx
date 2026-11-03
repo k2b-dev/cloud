@@ -5,7 +5,7 @@ import { Button, DatePicker, NoticeCard, prompts, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
-import { openPage, showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../../action-notice";
 import { useAccountsMessages } from "../../../messages";
 import { createDeleteUserAction } from "../../delete-user";
@@ -59,6 +59,7 @@ const confirmProviderSwitch = (config: {
   );
 
 export function createUserActions(props: UserActionsProps) {
+  const { openPage, showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const notice = (action: AccountActionNoticeInput["action"], extra: Partial<AccountActionNoticeInput> = {}) =>
     showAccountActionNotice(

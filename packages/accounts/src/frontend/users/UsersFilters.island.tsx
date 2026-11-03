@@ -1,5 +1,5 @@
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
-import { openPage } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { buildUsersUrl, type UsersListState } from "../lib/url-state";
 import { useAccountsMessages } from "../messages";
 
@@ -8,6 +8,7 @@ type UsersFiltersProps = {
 };
 
 export default function UsersFilters(props: UsersFiltersProps) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const providerOptions = (): FilterChipSection[] => [
     {

@@ -1,7 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../../messages";
 
 type Props = {
@@ -12,6 +12,7 @@ type Props = {
 
 /** Removes another person's phone from the mobile app; its app sessions end at once. */
 export default function RemoveAppDevice(props: Props) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const removeMutation = mutations.create<void, void>({
     mutation: async () => {

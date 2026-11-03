@@ -1,13 +1,14 @@
 import { CloudAvatar, openProfilePictureDialog } from "@k2b/cloud/account/ui";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { AvatarStateSchema, SaveServiceAccountAvatarSchema } from "@k2b/cloud/contracts/profile";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type Props = { id: string; name: string; avatarHash: string | null };
 
 /** The agent's picture at the top of its page; a click opens "Change profile picture" with photo and robot. */
 export default function AgentPictureTrigger(props: Props) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const route = () => apiClient.admin.identity["service-accounts"][":id"].avatar;
   const read = async (response: { ok: boolean; json: () => Promise<unknown> }) => {

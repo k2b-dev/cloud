@@ -2,7 +2,7 @@ import { formatNumber } from "@k2b/cloud/shared";
 import { Button, Checkbox, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { openPage, showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type SelectionPayload = {
@@ -86,6 +86,7 @@ function FinalizeDialog(props: {
 }
 
 export default function NotificationBatchActions(props: Props) {
+  const { openPage, showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const [loadingAction, setLoadingAction] = createSignal<"finalize" | "delete" | "retry" | null>(null);
   const isLoading = () => loadingAction() !== null;

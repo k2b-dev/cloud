@@ -4,7 +4,7 @@ import { qr } from "@k2b/stdlib/qr";
 import { Button, ButtonLink, dialogCore, PanelDialog, PinInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { accountsMessages } from "../../messages";
 
 const api = apiClient.auth.pwa.v1;
@@ -30,6 +30,7 @@ const checked = async <T extends Pick<Response, "ok" | "json">>(response: T) => 
 };
 
 export default function PairCloudApp(props: Props) {
+  const { showChanges } = usePageSwap();
   const locale = useLocale();
   const t = () => accountsMessages.resolve([locale()]).t;
   const storageKey = `cloud.admin-pwa-pairing:${props.userId}`;

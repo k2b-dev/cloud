@@ -1,5 +1,5 @@
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
-import { openPage } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { buildGroupsUrl, type GroupsListState } from "../lib/url-state";
 import { useAccountsMessages } from "../messages";
 
@@ -12,6 +12,7 @@ const SCOPE_VALUES = new Set<GroupsListState["scope"]>(["managed", "member", "al
 const PROVIDER_VALUES = new Set<Exclude<GroupsListState["provider"], never>>(["", "ipa", "local"]);
 
 export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const options = (): FilterChipSection[] => [
     {

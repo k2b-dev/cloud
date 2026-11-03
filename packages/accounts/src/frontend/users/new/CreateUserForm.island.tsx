@@ -19,7 +19,7 @@ import {
 import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type CreateUserResponse, CreateUserResponseSchema, ErrorResponseSchema } from "@/contracts";
-import { openPage, showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { type accountsMessages, useAccountsMessages } from "../../messages";
 
 type PrefillData = {
@@ -405,6 +405,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
 };
 
 export default function CreateUserForm(props: Props) {
+  const { openPage, showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const locale = useLocale();
   let opened = false;

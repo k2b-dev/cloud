@@ -18,6 +18,7 @@ let brokenId: string;
 let slowId: string;
 /** A second slow entry: an evaluated module stays cached, so each test that waits on loading needs its own. */
 let laterId: string;
+let waitingId: string;
 let historyId: string;
 let scrollId: string;
 let previousLoadingSettings: { disableCSSFileLoading: boolean; handleDisabledFileLoadingAsSuccess: boolean };
@@ -115,6 +116,9 @@ beforeAll(async () => {
   const later = join(root, "Later.island.tsx");
   writeFileSync(later, readFileSync(slow, "utf8"));
   laterId = islandIdFromFile(later, root);
+  const waiting = join(root, "Waiting.island.tsx");
+  writeFileSync(waiting, readFileSync(slow, "utf8"));
+  waitingId = islandIdFromFile(waiting, root);
   const history = join(root, "History.island.tsx");
   writeFileSync(
     history,
@@ -274,6 +278,29 @@ test("the shell carries data-nav-pending while any swap is pending, and loses it
   spyOn(globalThis, "fetch").mockResolvedValue(response(html(), { status: 403 }));
   await swapPage("/app/C");
   expect(shell.hasAttribute("data-nav-pending")).toBe(false);
+});
+
+test("an uninstall clears data-nav-pending while a module import still waits", async () => {
+  install();
+  const shell = document.querySelector("[data-nav-shell]")!;
+  const loading = Promise.withResolvers<void>();
+  const listener = () => loading.resolve();
+  window.addEventListener("nav-module-loading", listener, { once: true });
+  try {
+    spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", waitingId))));
+    const pending = swapPage("/app/waiting");
+    await loading.promise;
+    expect(shell.hasAttribute("data-nav-pending")).toBe(true);
+    uninstall();
+    uninstall = () => {};
+    expect(shell.hasAttribute("data-nav-pending")).toBe(false);
+    window.dispatchEvent(new Event("nav-module-release"));
+    await pending;
+    expect(shell.hasAttribute("data-nav-pending")).toBe(false);
+  } finally {
+    window.removeEventListener("nav-module-loading", listener);
+    window.dispatchEvent(new Event("nav-module-release"));
+  }
 });
 
 const failures = [

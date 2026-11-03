@@ -1,5 +1,5 @@
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
-import { openPage } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type ReminderFiltersProps = {
@@ -19,6 +19,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; pag
 };
 
 export default function ReminderFilters(props: ReminderFiltersProps) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const statusOptions = (): FilterChipSection[] => [
     {

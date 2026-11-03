@@ -15,7 +15,7 @@ import {
 import { createSignal, createUniqueId, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BaseGroup, BaseGroupSchema, ErrorResponseSchema } from "@/contracts";
-import { showChanges } from "@/frontend/lib/page-swap";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../action-notice";
 import { useAccountsMessages } from "../messages";
 
@@ -178,6 +178,7 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled
 }
 
 export default function NewGroup(props: { freeIpaEnabled?: boolean; linuxEnabled: boolean }) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const [opening, setOpening] = createSignal(false);
   const showResult = async (result: CreateGroupResult) => {
