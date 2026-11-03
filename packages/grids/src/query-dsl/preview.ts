@@ -458,7 +458,7 @@ const labelPrincipalPreviewValues = async (
           principals.map(
             (principal) =>
               labels[principal.id] ??
-              (principal.type === "user" ? "Private user" : principal.type === "group" ? "Private group" : "Private service account"),
+              (principal.type === "user" ? "Private user" : principal.type === "group" ? "Private group" : "Private agent or service account"),
           ),
         ];
       }),
