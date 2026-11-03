@@ -2796,6 +2796,8 @@ suite("isolated app approval protocol", () => {
       // A replica that waited for another replica's device lock re-reads the device and finds it woken for this
       // request, even when the other wake's start lies outside the 30-second window.
       const raced = await askAction(owner);
+      // The device is free under the wake's snapshot, so it waits for the lock instead of skipping the device.
+      await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE id=${phone.id}::uuid`;
       let wake: Promise<void> | undefined;
       let blocked = false;
       await sql.begin(async (tx) => {
