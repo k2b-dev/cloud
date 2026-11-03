@@ -449,6 +449,30 @@ suite("mail sync recovery", () => {
     const [folder] = await sql<{ envelope_cursor: unknown; sync_status: string }[]>`
       SELECT envelope_cursor, sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
     expect(folder).toEqual({ envelope_cursor: {}, sync_status: "rebuilding" });
+
+    // A quiet check that fails after the folder's binding changed claims no fence and leaves the
+    // failure state to the batch that owns the folder now.
+    const quiet = await createSyncedMailbox("quiet-failure");
+    const warmQuiet = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(quiet.folderId, async () => undefined);
+      await syncFolderBatch(quiet.folderId, async () => undefined);
+    } finally {
+      warmQuiet.mockRestore();
+    }
+    const failing = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      await sql`UPDATE mail.provider_bindings SET state = 'pending' WHERE id = ${quiet.bindingId}::uuid`;
+      throw connectTimeout();
+    });
+    try {
+      await expect(syncFolderBatch(quiet.folderId, async () => undefined)).rejects.toMatchObject({ code: "CONNECT_TIMEOUT" });
+    } finally {
+      failing.mockRestore();
+    }
+    expect(await transportState(quiet)).toMatchObject({ resource_status: "active", health: "active", binding_state: "pending" });
+    const [binding] = await sql<{ last_error_code: string | null }[]>`
+      SELECT last_error_code FROM mail.provider_bindings WHERE id = ${quiet.bindingId}::uuid`;
+    expect(binding?.last_error_code).toBeNull();
   });
 
   test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {

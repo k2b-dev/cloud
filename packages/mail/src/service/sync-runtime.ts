@@ -2586,6 +2586,9 @@ export const syncFolderBatch = async (
   } catch (error) {
     await recordProviderFailure(folder.remote_resource_id, error);
     const code = normalizeSyncErrorCode(error);
+    // A failure while the quiet check reads STATUS records state only under the fence it claims
+    // now; without one, another batch may own the folder.
+    let fenced = failedRun.claimFence === null;
     if (
       failedRun.claimFence &&
       code !== "SYNC_LEASE_LOST" &&
@@ -2598,10 +2601,12 @@ export const syncFolderBatch = async (
       if (fence) {
         activeFence = fence;
         runId = fence.runId;
+        fenced = true;
       }
     }
     if (runId) await finishFailedRun(runId, code);
     if (
+      fenced &&
       code !== "MAIL_RATE_LIMITED" &&
       code !== "SYNC_LEASE_LOST" &&
       code !== "SYNC_JOB_LEASE_LOST" &&
