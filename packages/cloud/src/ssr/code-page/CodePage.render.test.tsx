@@ -517,6 +517,11 @@ describe("Code page helpers", () => {
     expect(isAccessRefusal({ ok: false, error: { code: "NOT_FOUND", status: 404 } })).toBe(true);
     expect(isAccessRefusal({ ok: false, error: { code: "BAD_INPUT", message: "Invalid title", status: 400 } })).toBe(false);
     expect(isAccessRefusal({ ok: false, error: { code: "APP_UNAVAILABLE", status: 503 } })).toBe(false);
+    expect(isAccessRefusal({ error: { code: "accessRefused", status: 404 } })).toBe(true);
+    expect(isAccessRefusal({ error: { code: "accessRefused", status: 403 } })).toBe(true);
+    expect(isAccessRefusal({ error: { code: "ACCESS_LOOKUP_FAILED", status: 500 } })).toBe(false);
+    for (const code of ["FORBIDDEN", "NOT_FOUND", "accessRefused", "spacenotfound"])
+      expect(isAccessRefusal({ error: { code } })).toBe(false);
     expect(isAccessRefusal(null)).toBe(false);
   });
 

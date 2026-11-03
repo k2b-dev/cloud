@@ -1424,8 +1424,11 @@ export type CodeRunnerDispatchDependencies = {
   ownOrigins: () => Promise<readonly string[]>;
 };
 
-const codeBridgeError = (code: string, status = 200) =>
-  Response.json({ ok: false, error: { code } }, { status, headers: { "Cache-Control": "no-store" } });
+const codeBridgeError = (code: string, status = 200, capabilityStatus?: number) =>
+  Response.json(
+    { ok: false, error: { code, ...(capabilityStatus === undefined ? {} : { status: capabilityStatus }) } },
+    { status, headers: { "Cache-Control": "no-store" } },
+  );
 const CodeSdkInvocationSchema = z
   .object({
     call: NormalizedCapabilityCallSchema,
@@ -1545,7 +1548,11 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
         const payload = z.object({ data: z.json() }).safeParse(result.ok ? result.data : null);
         if (response.ok && payload.success) return Response.json({ ok: true, data: payload.data.data });
         const failure = z.object({ code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/) }).safeParse(result.ok ? result.data : null);
-        return codeBridgeError(failure.success ? failure.data.code.toLowerCase() : "code_call_failed");
+        return codeBridgeError(
+          failure.success ? failure.data.code.toLowerCase() : "code_call_failed",
+          200,
+          response.status >= 400 && response.status <= 599 ? response.status : undefined,
+        );
       });
     } catch (error) {
       if (error instanceof CodeBridgeRefusal) return codeBridgeError(error.code, error.status);
