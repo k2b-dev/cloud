@@ -311,6 +311,11 @@ html:has(.k2b-mobile-shell) body {
   background-color: var(--k2b-surface-canvas);
 }
 
+/* The search bar's clear action appears once the field holds text. */
+.cloud-search:has(input:placeholder-shown) .cloud-search-clear {
+  visibility: hidden;
+}
+
 .dark {
   color-scheme: dark;
   --color-selection-bg: rgb(59 130 246 / 0.5);
