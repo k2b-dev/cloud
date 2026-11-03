@@ -261,6 +261,17 @@ for (const [width, height, touch, inset] of [
         expect(await page.locator(show).isVisible()).toBe(true);
         expect(await page.locator(hide).isVisible()).toBe(false);
         await page.mouse.move(width / 2, height / 2);
+        await settled(page);
+        expect(await page.locator(show).isVisible()).toBe(false);
+        // The floating avatar keeps a visible focus ring beside its shadow.
+        await page.locator(".layout-rail .layout-profile-preferences__link").focus();
+        await page.keyboard.press("Shift+Tab");
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect(
+          await page.locator(".layout-rail .layout-profile-preferences__link").evaluate((avatar) => getComputedStyle(avatar).boxShadow),
+        ).toContain("inset");
+        await page.locator(".layout-rail .layout-profile-preferences__link").blur();
       }
       await page.keyboard.press((await apple(page)) ? "Meta+Backslash" : "Control+Backslash");
       await page.waitForFunction(() => !document.querySelector(".cloud-app-canvas")?.hasAttribute("data-shell-focus"));

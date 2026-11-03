@@ -132,7 +132,7 @@ else {
       page.dispose();
     }
   });
-  test("delegated menu entries return focus to the avatar after a key, close the menu after a pointer, and publish the state", async () => {
+  test("delegated menu entries return focus to the avatar after a key, release focus after a pointer, and publish the state", async () => {
     const page = await mount();
     const states: boolean[] = [];
     const listener = (event: Event) => states.push((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
@@ -148,7 +148,7 @@ else {
       page.show.focus();
       click(page.show, 0);
       expect(document.activeElement).toBe(page.avatar);
-      // A pointer leaves the menu where it was; nothing keeps it open.
+      // After a pointer, focus no longer holds the hover menu open; it closes when the pointer leaves.
       page.hide.focus();
       click(page.hide, 1);
       expect(document.activeElement).toBe(document.body);

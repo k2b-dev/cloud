@@ -778,6 +778,10 @@ solid-island {
     background: var(--ui-surface);
     box-shadow: var(--ui-shadow-float);
   }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail
+    :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger):focus-visible {
+    box-shadow: var(--ui-focus), var(--ui-shadow-float);
+  }
 }
 
 @media (min-width: 768px) and (pointer: coarse) {
