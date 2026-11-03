@@ -117,14 +117,14 @@ describe("machine API key creation", () => {
     findButton(dom.document, "Done").click();
     expect(dom.closed()).toBe(1);
   });
-  test("full access names its scopes explicitly", async () => {
+  test("full access leaves scopes to issuance", async () => {
     const dom = await setup(false);
     await choose(dom.document);
     submit(dom.document);
     await flush();
     expect(posts[0]!.payload).toEqual({
       param: { id: "agent-id" },
-      json: { name: "Model cleanup", access: "full", scopes: ["read", "write", "admin"], expiresAt: null },
+      json: { name: "Model cleanup", access: "full", expiresAt: null },
     });
   });
   test("uncertain outcome cannot duplicate the credential", async () => {

@@ -122,3 +122,14 @@ Revocation takes effect on the next request; there is no cache across
 requests. Open live connections retain the one-minute revalidation bound.
 Verify grant, last-right removal, group removal, guest and service-account
 entry, and matching search and CLI visibility before adopting the rule.
+
+## New machine credentials
+
+New standalone and agent API keys created with `access: "full"` and omitted
+`scopes` act as their account. Issuance stores `read`, `write`, and `admin`;
+resource grants still limit every operation. Explicit scopes remain accepted
+but are deprecated for new keys. Existing keys are unchanged, including empty
+scope lists. Replace a limited key by issuing a new one and revoking the old
+one. New OAuth clients created with `cld admin agents create` include `admin`;
+existing clients are unchanged. No data migration is required. See
+[Standalone service accounts and agents](/en/docs/identity/service-accounts#use-an-agent-from-the-cli).

@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 import { type RobotAvatar, randomRobotAvatar } from "../../contracts/avatar";
+import { AI_INFERENCE_SCOPE } from "../../contracts/shared";
 import { applyAvatarParts, avatarRows, type CliAvatarState, readAvatarPhoto } from "../avatar";
 import { arg, cliText, command, confirmFlag, flag, printStructured } from "../index";
 import { apiGet, apiJson, queryString } from "./shared";
@@ -14,8 +15,8 @@ const accountsRoot = "/api/admin/identity/service-accounts";
 const clientsRoot = "/api/oauth/admin/clients";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The scopes a `cld login` device session receives; an agent may do what a signed-in person's `cld` may do. */
-export const AGENT_CLIENT_SCOPES = ["openid", "profile", "email", "offline_access", "read", "write"] as const;
+/** Credential caps for newly created clients; account grants still decide access. */
+export const AGENT_CLIENT_SCOPES = ["openid", "profile", "email", "offline_access", "read", "write", "admin"] as const;
 
 const account = z.object({
   id: z.string(),
@@ -31,6 +32,25 @@ const client = z.object({ id: z.string(), clientId: z.string(), name: z.string()
 const clientPage = z.object({ clients: z.array(client) });
 const createdClient = client.extend({ clientSecret: z.string().min(1) });
 const rotatedSecret = z.object({ clientSecret: z.string().min(1) });
+
+const credential = z.object({
+  id: z.string(),
+  serviceAccountId: z.string(),
+  name: z.string(),
+  status: z.string(),
+  tokenPrefix: z.string(),
+  scopes: z.array(z.string()),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable(),
+  lastUsedAt: z.string().nullable(),
+});
+const credentialPage = z.object({
+  items: z.array(credential),
+  page: z.number(),
+  perPage: z.number(),
+  total: z.number(),
+  hasNext: z.boolean(),
+});
 
 type Ctx = Parameters<Parameters<typeof command>[1]["run"]>[0]["ctx"];
 
@@ -63,6 +83,17 @@ const resolveAgent = async (ctx: Ctx, reference: string): Promise<Account> => {
   if (matches.length === 0) throw new Error(`No agent named "${reference}". Run \`cld admin agents ls\`.`);
   throw new Error(`Several agents match "${reference}": ${matches.map((item) => `${item.name} (${item.id})`).join(", ")}.`);
 };
+
+const keysPath = (agentId: string) => `${accountsRoot}/${encodeURIComponent(agentId)}/api-keys`;
+const listKeys = async (ctx: Ctx, agentId: string, page: number, perPage: number) =>
+  credentialPage.parse(await apiGet(ctx, `${keysPath(agentId)}${queryString({ page, perPage })}`));
+
+const keyAccess = (scopes: string[]) =>
+  scopes.includes(AI_INFERENCE_SCOPE)
+    ? "models"
+    : ["read", "write", "admin"].every((scope) => scopes.includes(scope))
+      ? "full"
+      : "legacy, limited";
 
 const avatarPath = (id: string) => `${accountsRoot}/${encodeURIComponent(id)}/avatar`;
 
@@ -222,6 +253,67 @@ export const agentCommands = [
       if (!printStructured(ctx, summary)) {
         ctx.print(`Rotated the client secret of agent "${agent.name}"; profile "${profileName}" holds the new secret.`);
       }
+    },
+  }),
+  command("agents keys create", {
+    summary: "Create an agent API key; returns its token once (store stdout securely)",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }) },
+    flags: {
+      name: flag.string({ required: true }),
+      expires: flag.string({ description: "Optional future ISO 8601 expiry" }),
+      models: flag.boolean({ description: "Limit this key to AI models" }),
+    },
+    async run({ ctx, args, flags }) {
+      const agent = await resolveAgent(ctx, args.agent);
+      const result = z.object({ credential, token: z.string().min(1) }).parse(
+        await apiJson(ctx, "POST", keysPath(agent.id), {
+          name: flags.name,
+          access: flags.models ? "models" : "full",
+          ...(flags.expires ? { expiresAt: flags.expires } : {}),
+        }),
+      );
+      if (!printStructured(ctx, result)) ctx.print(result.token);
+    },
+  }),
+  command("agents keys list", {
+    summary: "List an agent's API key metadata and retained limits",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }) },
+    flags: {
+      page: flag.int({ min: 1, default: 1 }),
+      perPage: flag.int({ min: 1, max: 100, default: 100 }),
+    },
+    async run({ ctx, args, flags }) {
+      const agent = await resolveAgent(ctx, args.agent);
+      const page = await listKeys(ctx, agent.id, flags.page ?? 1, flags.perPage ?? 100);
+      const result = { ...page, items: page.items.map((key) => ({ ...key, access: keyAccess(key.scopes) })) };
+      if (!printStructured(ctx, result))
+        ctx.table(result.items, [
+          { key: "name", label: "Name" },
+          { key: "id", label: "ID" },
+          { key: "tokenPrefix", label: "Prefix" },
+          { key: "status", label: "Status" },
+          { key: "createdAt", label: "Created" },
+          { key: "expiresAt", label: "Expires" },
+          { key: "lastUsedAt", label: "Last used" },
+          {
+            key: "access",
+            label: cliText(ctx, { en: "Access", de: "Zugriff" }),
+            value: (row) => (row.access === "legacy, limited" ? cliText(ctx, { en: "legacy, limited", de: "Alt, begrenzt" }) : row.access),
+          },
+        ]);
+    },
+  }),
+  command("agents keys revoke", {
+    summary: "Revoke one API key belonging to an agent",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }), keyId: arg.required({ valueLabel: "key-id" }) },
+    flags: { yes: confirmFlag("Revoke this agent API key") },
+    async run({ ctx, args, flags }) {
+      requireYes(ctx, flags.yes, "Revoking an agent API key requires --yes.", "Agent-API-Schlüssel widerrufen erfordert --yes.");
+      const keyId = z.uuid().parse(args.keyId);
+      const agent = await resolveAgent(ctx, args.agent);
+      // The route revokes only a key of this agent; another account's key answers 404.
+      const result = await apiJson(ctx, "DELETE", `${keysPath(agent.id)}/${encodeURIComponent(keyId)}`);
+      if (!printStructured(ctx, result)) ctx.print(cliText(ctx, { en: "API key revoked.", de: "API-Schlüssel widerrufen." }));
     },
   }),
   command("agents avatar show", {
