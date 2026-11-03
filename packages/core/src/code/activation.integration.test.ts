@@ -412,18 +412,32 @@ databaseSuite()("durable Code activation", () => {
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${id},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
     const code = (await findCode(id))!,
       submitted = await version(code);
-    for (const credentialKind of ["oauth", "api_key"] as const) {
-      const invalid = context();
-      invalid.authority.credentialKind = credentialKind;
-      await expect(
-        activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, invalid),
-      ).rejects.toThrow();
-    }
+    const oauth = context();
+    oauth.authority.credentialKind = "oauth";
+    oauth.authority.scopes = ["write"];
+    oauth.authority.credentialProof = { kind: "oauth", payload: {} };
+    await expect(
+      activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, oauth),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", message: "Personal Code activation requires its owner's browser session." });
+    expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, oauth)).allowed).toEqual({
+      allowed: false,
+      reason: "credential",
+    });
+    const queued = await start(code, submitted.version.id);
+    expect((await cancelCodeActivation({ codeId: code.id, activationId: queued.id }, oauth)).state).toBe("rolling_back");
+    const key = context();
+    key.authority.credentialKind = "api_key";
+    key.authority.scopes = ["write"];
     const phone = context();
     if (phone.authority.actor.kind === "user") phone.authority.actor.sessionKind = "app";
-    await expect(
-      activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, phone),
-    ).rejects.toThrow();
+    for (const invalid of [key, phone]) {
+      await expect(
+        activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, invalid),
+      ).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: "Only a browser session or a personal OAuth credential can activate Code; phone sessions cannot activate.",
+      });
+    }
     expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
   });
   test("same permissions reuse grants and require only owner authority", async () => {

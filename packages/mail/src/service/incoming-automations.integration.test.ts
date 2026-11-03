@@ -1032,7 +1032,7 @@ suite("incoming automations", () => {
     expect(
       (await sql`SELECT id FROM workflows.activation WHERE workflow_id = ${attention.workflowId}::uuid AND enabled`).length,
     ).toBeGreaterThan(0);
-    expect((await mandates.get(binding!.mandate_id))?.policy.grants?.[0]).toMatchObject({
+    expect((await mandates.get(binding!.mandate_id))?.policy?.grants?.[0]).toMatchObject({
       target: { type: "spaces.space", id: "Space1" },
       fixedInput: { itemId: "Item01" },
     });
@@ -1101,7 +1101,7 @@ suite("incoming automations", () => {
         { mandate_id: string }[]
       >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${attention.id}::uuid`;
       expect(replacement!.mandate_id).not.toBe(old!.mandate_id);
-      expect((await mandates.get(replacement!.mandate_id))?.policy.grants?.[0]).toMatchObject({
+      expect((await mandates.get(replacement!.mandate_id))?.policy?.grants?.[0]).toMatchObject({
         target: { type: "spaces.space", id: "Space1" },
         fixedInput: { itemId: "Item01" },
       });

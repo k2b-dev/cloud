@@ -52,6 +52,7 @@ export type Mandate = {
   ownerAppId: string;
   workloadType: string;
   workloadId: string;
+  /** Null only for a new runner/code.version entry; legacy policies remain binding. */
   policy: MandatePolicyV1 | null;
   state: MandateState;
   revision: number;

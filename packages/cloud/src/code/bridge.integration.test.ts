@@ -644,6 +644,21 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`UPDATE auth.mandates SET state='paused' WHERE id=${claims.mandateId}::uuid`;
     await error({}, "code_mandate_mismatch");
   });
+  test("an all-admin policy requires version approval and coverage for each actual call", async () => {
+    await resetFixture({ entry: true });
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE group_id IS NULL`;
+    await error({ operation: "example.read" }, "code_approval_required");
+    await error({}, "code_approval_required");
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
+    expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
+    await error({ operation: "example.read" }, "code_approval_required");
+    await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read'),(${claims.versionId}::uuid,'ask_app_asks')`;
+    expect(await (await send({ operation: "example.read" })).json()).toEqual({ ok: true, data: { value: "a" } });
+    await error({ operation: "example.asks" }, "code_unattended_forbidden");
+  });
+
   test("new entries still obey actual-call admin policy, current grants and unattended refusals", async () => {
     await resetFixture({ entry: true });
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;

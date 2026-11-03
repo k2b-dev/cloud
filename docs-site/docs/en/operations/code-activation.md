@@ -45,3 +45,7 @@ capability providers together: provider admission now requires a run-bound,
 active entry for personal Code as well as Code service accounts. Existing
 `core` mandates keep their policies; do not clear those policies during an
 upgrade. Confirm the new model by explicitly activating a new version.
+
+After a policy-free entry exists, older Core versions cannot read that entry.
+Upgrade Core and the invocation providers together; roll back only to a version
+that understands nullable Code policies. Prefer rolling forward.

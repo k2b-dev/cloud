@@ -36,6 +36,7 @@ suite("Code version and person routine target mandates", () => {
   let fetched = 0;
   let ran = 0;
   let lastClaims: CloudInvocationClaims | undefined;
+  let lastProviderRequest: Request | undefined;
   let requestNumber = 0;
   const accessByTarget = new Map<string, string[]>();
   const issuer = "https://cloud.example.test";
@@ -135,7 +136,7 @@ suite("Code version and person routine target mandates", () => {
       });
     },
   );
-  const invoke = (mandate: { id: string; revision: number }, targetId: string) =>
+  const invoke = (mandate: Pick<Mandate, "id" | "revision"> & Partial<Pick<Mandate, "ownerAppId" | "workloadType">>, targetId: string) =>
     dispatchCapability({
       request: new Request("http://core.test/capability", { headers: { "x-request-id": `code-c2-${++requestNumber}` } }),
       kind: "actions",
@@ -143,14 +144,14 @@ suite("Code version and person routine target mandates", () => {
       capabilityId: "write",
       origin: "app",
       // Trusted Core admission; the runner bridge transport is covered by C4.
-      codeRun: "workloadType" in mandate && mandate.workloadType === "code.version" ? true : undefined,
+      codeRun: mandate.workloadType === "code.version" ? true : undefined,
       workloadRun: "fixture-code-run",
       input: { title: "Example" },
       target: { type: "demo.folder", id: targetId },
       mandate: {
         mandateId: mandate.id,
         mandateRevision: mandate.revision,
-        ownerAppId: "ownerAppId" in mandate ? String(mandate.ownerAppId) : "core",
+        ownerAppId: mandate.ownerAppId ?? "core",
       },
       dependencies: {
         getCapability: async () => entry,
@@ -163,7 +164,9 @@ suite("Code version and person routine target mandates", () => {
         },
         fetch: async (url, init) => {
           fetched += 1;
-          return provider.fetch(new Request(url, init));
+          const request = new Request(url, init);
+          lastProviderRequest = request.clone();
+          return provider.fetch(request);
         },
       },
     });
@@ -304,6 +307,8 @@ suite("Code version and person routine target mandates", () => {
     });
     if (!created.ok) throw new Error(created.error.message);
     expect(created.data).toMatchObject({ ownerAppId: "runner", policy: null, confirmedAt: null });
+    await expect(sql`UPDATE auth.mandates SET owner_app_id='demo' WHERE id=${created.data.id}::uuid`).rejects.toThrow();
+    await expect(sql`UPDATE auth.mandates SET workload_type='other' WHERE id=${created.data.id}::uuid`).rejects.toThrow();
     expect((await invoke(created.data, "b")).status).toBe(403);
     const confirmed = await mandates.confirm({
       mandateId: created.data.id,
@@ -348,6 +353,66 @@ suite("Code version and person routine target mandates", () => {
     });
     expect(paused.ok).toBe(true);
     expect((await invoke(confirmed.data, "b")).status).toBe(403);
+  });
+
+  test("providers revalidate already-issued Code tokens for both people and service accounts", async () => {
+    appLookup.mockImplementation(async (id) => ({
+      id,
+      name: id,
+      icon: "ti ti-folder",
+      description: "Fixture",
+      baseUrl: `http://${id}.test`,
+      routes: [],
+      access: { kind: "signedIn" },
+    }));
+    const [personAccess] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'write') RETURNING id`;
+    accessByTarget.set("saved-token", [writeAccessId, personAccess!.id]);
+    for (const subject of [
+      { type: "user", id: userId },
+      { type: "service_account", id: codeId },
+    ] as const) {
+      const created = await mandates.createPending({
+        authority: { kind: "admin", userId },
+        subject,
+        ownerAppId: "runner",
+        workloadType: "code.version",
+        workloadId: `saved-token-${subject.type}`,
+        policy: null,
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const confirmed = await mandates.confirm({
+        mandateId: created.data.id,
+        expectedRevision: created.data.revision,
+        authority: { kind: "workload", ownerAppId: "runner" },
+      });
+      if (!confirmed.ok) throw new Error(confirmed.error.message);
+      expect((await invoke(confirmed.data, "saved-token")).status).toBe(200);
+      if (!lastProviderRequest) throw new Error("No provider request issued");
+      const saved = lastProviderRequest.clone();
+      expect((await provider.fetch(saved.clone())).status).toBe(200);
+      const changes = [
+        { state: "paused", confirmed: true, expired: false, revision: confirmed.data.revision },
+        { state: "revoked", confirmed: true, expired: false, revision: confirmed.data.revision },
+        { state: "active", confirmed: false, expired: false, revision: confirmed.data.revision },
+        { state: "active", confirmed: true, expired: true, revision: confirmed.data.revision },
+        { state: "active", confirmed: true, expired: false, revision: confirmed.data.revision + 1 },
+      ];
+      for (const change of changes) {
+        await sql`UPDATE auth.mandates SET state=${change.state},revision=${change.revision},created_at=now()-interval '1 hour',
+          revoked_at=CASE WHEN ${change.state} = 'revoked' THEN now() ELSE NULL END,
+          revoke_reason=CASE WHEN ${change.state} = 'revoked' THEN 'Fixture revocation' ELSE NULL END,
+          confirmed_at=CASE WHEN ${change.confirmed} THEN now() ELSE NULL END,
+          confirmation_deadline=CASE WHEN ${change.confirmed} THEN NULL ELSE now()+interval '15 minutes' END,
+          expires_at=CASE WHEN ${change.expired} THEN now()-interval '1 second' ELSE NULL END WHERE id=${confirmed.data.id}::uuid`;
+        const before = ran;
+        const response = await provider.fetch(saved.clone());
+        expect(response.status).toBe(401);
+        expect(await response.json()).toMatchObject({ code: "UNAUTHORIZED" });
+        expect(ran).toBe(before);
+      }
+    }
   });
 
   test("an unconfirmed policy-free entry expires through the existing reconciler", async () => {

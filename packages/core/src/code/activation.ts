@@ -201,20 +201,23 @@ async function authorizeActivation(
       : !(person.roles.includes("admin") && canRepairAppAccess(context.authority))
   )
     await requireCodePermission(code, context, true, db);
-  if (code.owner.kind === "person" && context.authority.credentialKind !== "session")
-    throw new CodeDataError("FORBIDDEN", "Personal Code activation requires its owner's browser session.");
   if (code.owner.kind === "person" && code.owner.userId !== person.id)
     throw new CodeDataError("FORBIDDEN", "Only the personal owner can activate personal Code.");
   return code;
 }
+const requirePersonalBrowser = (code: Code, context: CodeContext) => {
+  if (code.owner.kind === "person" && context.authority.credentialKind !== "session")
+    throw new CodeDataError("FORBIDDEN", "Personal Code activation requires its owner's browser session.");
+};
 /** Targets asked at once while previewing, and in one preview; a version has at most 200 operations. */
 const PREVIEW_CONCURRENCY = 8;
 const PREVIEW_TARGETS = 50;
 /** Past this, the remaining targets stay unchecked; switching on checks them anyway. */
 const PREVIEW_BUDGET_MS = 10_000;
-const previewAllowed = (context: CodeContext): CodeActivationPreview["allowed"] => {
+const previewAllowed = (context: CodeContext, code: Code): CodeActivationPreview["allowed"] => {
   const { authority } = context;
   if (isAppSessionActor(authority.actor)) return { allowed: false, reason: "phone" };
+  if (code.owner.kind === "person" && authority.credentialKind !== "session") return { allowed: false, reason: "credential" };
   return authority.actor.kind === "user" && ["session", "oauth"].includes(authority.credentialKind)
     ? { allowed: true }
     : { allowed: false, reason: "credential" };
@@ -286,7 +289,7 @@ export async function previewCodeActivation(
   const [numbers] = await sql<{ latest: number; running: number | null }[]>`SELECT
       (SELECT max(number) FROM code.versions WHERE code_id=${code.id})::int AS latest,
       (SELECT number FROM code.versions WHERE id=${code.activeVersionId}::uuid)::int AS running`;
-  const allowed = previewAllowed(context);
+  const allowed = previewAllowed(context, code);
   const manifest = CodeCheckedVersionManifestSchema.safeParse(version.manifest);
   const base = {
     codeId: code.id,
@@ -433,6 +436,7 @@ export async function activateCodeVersion(
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await tx`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
     const code = await authorizedCode(input.codeId, context, tx);
+    requirePersonalBrowser(code, context);
     await requireCodeVersionApproval(code, input.versionId, tx);
     const created = await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,authority,locale,cloud_admin)
       VALUES(${input.activationId}::uuid,${code.id},${input.versionId}::uuid,${person.id}::uuid,${JSON.stringify(authority)}::text::jsonb,
@@ -575,6 +579,7 @@ async function checkpoint(row: ActivationRow, deps: CodeActivationDependencies):
   const context = await deps.restoreAuthority(row);
   if (!context) refuse(null, "authority_revoked", "The activating credential has expired or was revoked. Activate again after signing in.");
   const code = await authorizedCode(row.code_id, context!);
+  requirePersonalBrowser(code, context!);
   await sql.begin(async (tx) => {
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await requireCodeVersionApproval(code, row.version_id, tx);

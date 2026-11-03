@@ -238,7 +238,9 @@ from `@k2b/cloud/services`, bind one entry to `ownerAppId: "runner"`,
 Core creates and confirms it atomically when switching on the version after
 current policy and approval checks. Its `policy` is `null`; the subject is the
 personal owner or the object's or application's service account of kind `code`.
-Personal Code activation requires the owner's browser session.
+Personal Code activation requires the owner's browser session. Code entries use
+Core's activation lifecycle rather than the self-service creation or remote
+app-owned lifecycle routes.
 
 All entry points share that entry. Pending entries cannot issue; the existing
 15-minute confirmation window and 100-pending-per-person limit still apply.
@@ -354,7 +356,8 @@ The same app-key proof or legacy app-bound credential owns the remote mandate li
 confirm a pending workload, narrow policy, pause, or revoke. It cannot create
 user authority, broaden policy, or resume a paused mandate. Core derives the
 owner from the authenticated credential; an app ID in a request body is never
-trusted as owner authority.
+trusted as owner authority. Code version entries use Core activation instead
+of these remote lifecycle routes.
 
 For remote lifecycle requests, use `sendAppRequest` from
 `@k2b/cloud/services/identity` with the final `Request` and `{ appId }`.
