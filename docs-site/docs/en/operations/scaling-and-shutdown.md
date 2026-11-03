@@ -257,10 +257,17 @@ Keep database changes backward-compatible until the rollout completes.
 Platform live updates and application events wake outbox dispatchers across
 instances after their database transaction commits. Core wakes event delivery
 across its instances after accepting an event. Grids and Mail workflow workers
-also use distributed wake signals. These workers retain a **five-second safety scan** for missed
-signals, due retries, deadlines, and expired claims. Under idle conditions this
-means twelve safety scans per minute per dispatcher, plus startup; workflow
-workers also probe their execution slots before and after recovery.
+also use distributed wake signals. Outbox dispatchers and Core event delivery
+retain a **five-second safety scan** for missed signals. Workflow workers use a
+**30-second safety scan** for missed signals, due retries, deadlines and expired
+claims. Under idle conditions this means twelve scans per minute per outbox
+and two per workflow worker, plus startup. Workflow workers probe their execution
+slots before and after recovery. With C free execution slots, this costs at
+most 4 × C slot probes per idle minute. Grids probes both execution and dry-run
+queues, so its claim-query budget is 8 × C; Mail probes execution only.
+Local and distributed workflow hints still wake workers immediately. A lost
+hint, a due retry or deadline, or an expired claim may wait up to 30 seconds
+for the next workflow recovery scan, before backlog and execution time.
 This counts safety scans, not all database queries. Core also reconciles
 declarations and wakes delivery on registry updates, including each app
 instance's minute heartbeat. Near idle, those heartbeats add roughly one wake
