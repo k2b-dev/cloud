@@ -75,6 +75,7 @@ import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./publi
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { connections } from "../runtime/connections";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -729,7 +730,10 @@ export const defineApp = <
 
     // One NATS connection and one Sync instance per process. Ready before
     // anything registers, so a discoverable app can always serve sync work.
+    const dependencyStart = performance.now();
     const processSync = await startProcessSync({ application: meta.id });
+    // Recovery waits share one allowance; application setup retains its lifecycle.
+    const settingsStartupBudget = Math.max(0, Math.floor(DEPENDENCY_STARTUP_BUDGET_MS - (performance.now() - dependencyStart)));
     const cleanup: Array<() => void | Promise<void>> = [() => processSync.stop()];
     let cleanupPromise: Promise<void> | undefined;
     const stopStartedResources = (): Promise<void> =>
@@ -1221,7 +1225,7 @@ export const defineApp = <
 
       stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
 
-      await loadSettingsCache();
+      await loadSettingsCache(AbortSignal.timeout(settingsStartupBudget));
 
       // The instance can obtain its credential before workers run; routes remain undiscoverable.
       await membership.register();

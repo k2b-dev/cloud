@@ -19,6 +19,36 @@ For the services and optional integrations needed by each app, start with
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
 
+## Upgrade settings and short-lived links
+
+Update every application, including independently deployed third-party apps,
+to a build using the fixed `@k2b/cloud` package before completing this upgrade.
+Older application processes can still write plaintext settings into Valkey.
+Stop those processes before starting updated applications: the first startup
+for the new cache format removes existing `settings:*` entries and records a
+shared completion marker. Later starts skip that scan. Cleanup must succeed
+before continuing; losing the marker safely repeats it.
+Updated processes cache secret-kind settings only in encrypted form. Do not
+leave older application images running or available for automatic restart.
+Every application makes a settings startup attempt, then retries temporary Valkey
+failures using the remainder of its five-minute NATS and settings recovery
+allowance. If Valkey still fails after that allowance, startup stops. The gateway
+keeps HTTP closed while retrying temporary database or Valkey failures within
+its existing five-minute settings startup budget.
+
+Pending email sign-in links, administrator-issued account sign-in links,
+password-reset links and proxy return links issued before the upgrade become
+invalid. Request a fresh link after the rollout. Existing browser sessions and
+stored settings are unchanged. Rolling back restores the old cache and link
+behavior; links issued by this release do not work on the older release.
+
+If untrusted parties could access Valkey, rotate the secret settings whose
+values were stored there. The cleanup removes live cache entries; it does not
+remove plaintext from existing Valkey persistence files, replicas that have
+not applied the deletions, or backups. Handle those copies under the
+installation's incident-response and backup policy before considering the
+upgrade complete.
+
 ## Platform connection startup
 
 The platform now initializes its native SQL and Valkey clients before loading
