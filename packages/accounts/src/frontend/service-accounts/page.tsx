@@ -115,7 +115,9 @@ export default ssr<AuthContext>(async (c) => {
             <DirectoryShares />
           </div>
 
-          {credentialsPage.items.some((entry) => entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry)) && (
+          {credentialsPage.items.some(
+            (entry) => entry.owner.type === "standalone" && entry.serviceAccount.status === "active" && isLegacyLimitedApiKey(entry),
+          ) && (
             <p class="text-xs text-dimmed">
               <span class="font-medium text-secondary">{t.legacyLimitedKey}:</span> {t.legacyLimitedKeyHint}
             </p>
@@ -210,7 +212,16 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(entry.createdAt, { locale })}</span>;
                   if (col.id === "actions")
                     return (
-                      <ServiceAccountCredentialActions credentialId={entry.id} name={entry.name} disabled={entry.status !== "active"} />
+                      <ServiceAccountCredentialActions
+                        credentialId={entry.id}
+                        name={entry.name}
+                        disabled={entry.status !== "active"}
+                        replace={
+                          entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry)
+                            ? { serviceAccountId: entry.owner.serviceAccountId }
+                            : undefined
+                        }
+                      />
                     );
                   return "";
                 }}
