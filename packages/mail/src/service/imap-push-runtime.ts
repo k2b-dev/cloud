@@ -1010,7 +1010,7 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   updateHealth,
   loadRuntime: loadProviderConnectionRuntimeSnapshot,
   listen: imapSmtpConnector.listenForChanges!,
-  enqueueFolder: enqueueFolderSync,
+  enqueueFolder: (folderId) => enqueueFolderSync(folderId, { trigger: "push" }),
   enqueueReconciliation: enqueueFolderReconciliation,
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,
