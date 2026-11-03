@@ -139,7 +139,12 @@ describe("mail message presentation", () => {
       rejectedRecipients: [],
     };
 
-    expect(messageDeliveryPresentation(delivery)).toMatchObject({ label: "Trying again · 2/5", tone: "warning" });
+    // A temporary SMTP rejection retries within its own window, so it shows no attempt count.
+    expect(messageDeliveryPresentation(delivery)).toMatchObject({ label: "Trying again", tone: "warning" });
+    expect(messageDeliveryPresentation({ ...delivery, lastErrorCode: "OUTBOX_PREDISPATCH_RETRY" })).toMatchObject({
+      label: "Trying again · 2/5",
+      tone: "warning",
+    });
     // Waiting for the mailbox's next login is no retry and counts no attempt.
     const waiting = { ...delivery, lastErrorCode: "MAILBOX_AUTH_REQUIRED" };
     expect(messageDeliveryPresentation(waiting)).toMatchObject({ label: "Waiting for sign-in", tone: "warning" });

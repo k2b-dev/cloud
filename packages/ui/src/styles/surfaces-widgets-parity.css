@@ -1237,6 +1237,21 @@
   margin-inline-start: -0.3125rem;
 }
 
+/* `AvatarFaces size="md"`: larger faces that overlap less, so initials stay readable beside row text. */
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar[data-size] {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.5625rem;
+}
+
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar + .k2b-avatar {
+  margin-inline-start: -0.1875rem;
+}
+
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar > i {
+  font-size: 0.875rem;
+}
+
 .k2b-ui .k2b-avatar-stack__more {
   font-size: 0.6875rem;
   font-weight: 600;

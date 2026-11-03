@@ -360,6 +360,7 @@ function createMailboxController(props: MailboxControllerProps) {
       shown: data.listItems,
       removals: removals(),
       scope: mailListScope(requestPath()),
+      assignedGroups: data.assignedGroups,
     }),
   );
   /** The folders whose messages the shown list leaves out, by the listing rule the server applies. */
@@ -2984,6 +2985,7 @@ function createMailboxController(props: MailboxControllerProps) {
     viewPreference,
     largeLayout,
     columnsWide,
+    listCounts,
     sharedMailbox,
     assigneeNames,
     changeLargeView,
@@ -3201,8 +3203,22 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       onLoadMore={controller().loadMoreConversations}
       onRefresh={controller().reconcileWorkspace}
       columns={wide ? { shared: controller().sharedMailbox(), assigneeNames: controller().assigneeNames } : undefined}
+      assignedGroups={controller().listCounts().assignedGroups}
       hiddenDone={(() => {
         const data = controller().data;
+        // Assigned to me ends with the done conversations that were assigned to you.
+        if (data.assignedGroups)
+          return {
+            count: null,
+            more: false,
+            href: buildMailShowDoneHref({
+              requestUrl: mailRouteUrl(controller().requestPath()),
+              mailboxId: data.mailbox.id,
+              search: data.search,
+              folderId: null,
+              savedViewExpression: { type: "assigned_to_me" },
+            }),
+          };
         if (!data.hiddenDone) return null;
         return {
           ...data.hiddenDone,

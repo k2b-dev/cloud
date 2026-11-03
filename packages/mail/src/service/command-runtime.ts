@@ -3007,21 +3007,34 @@ const scheduleOutboxRetry = async (params: {
    */
   waitForLogin?: boolean;
   /**
+   * The SMTP server rejected the message temporarily (4xx). Such retries have their own window
+   * and give the outbox attempt back, so they never use up the budget of later steps such as the
+   * Sent copy. The command's attempt still counts: it fences the worker against its effect marker.
+   */
+  smtpTransient?: { since: string; retries: number };
+  /**
    * The attempt already marked its provider effect, as one whose SMTP login was refused: it counts,
    * so the next claim gets a new attempt number that the marker does not cover.
    */
   effectMarked?: boolean;
 }): Promise<boolean> => {
   const waitForLogin = params.waitForLogin === true;
-  const delaySeconds = waitForLogin ? MAILBOX_LOGIN_RECHECK_SECONDS : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
+  const transient = params.smtpTransient;
+  const delaySeconds = waitForLogin
+    ? MAILBOX_LOGIN_RECHECK_SECONDS
+    : transient
+      ? Math.min(15 * 60, 30 * 2 ** transient.retries)
+      : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
   const refund = waitForLogin && params.effectMarked !== true ? 1 : 0;
+  const outboxRefund = (waitForLogin && params.effectMarked !== true) || transient ? 1 : 0;
+  const metadata = transient ? { [SMTP_TRANSIENT_SINCE]: transient.since, [SMTP_TRANSIENT_RETRIES]: transient.retries + 1 } : {};
   const updated = await sql.begin(async (tx) => {
     if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return false;
     await tx`
       UPDATE mail.outbox_submissions
       SET
         state = 'scheduled',
-        attempt = attempt - ${refund},
+        attempt = attempt - ${outboxRefund},
         mime_blob_id = CASE WHEN ${waitForLogin} THEN NULL ELSE mime_blob_id END,
         scheduled_at = now() + (${delaySeconds}::text || ' seconds')::interval,
         undo_until = NULL,
@@ -3035,6 +3048,7 @@ const scheduleOutboxRetry = async (params: {
       SET
         state = 'queued',
         attempt = attempt - ${refund},
+        transport_metadata = transport_metadata || ${metadata}::jsonb,
         worker_heartbeat_at = NULL,
         last_error_code = ${params.code},
         last_error_message = ${errorMessage(params.error, params.fallbackMessage)},
@@ -3297,6 +3311,13 @@ const deferSendWaitingForLogin = async (outboxId: string): Promise<boolean> => {
   `;
   return Boolean(deferred);
 };
+
+// Command metadata of temporary SMTP rejections: when the first came, and how many retries followed.
+const SMTP_TRANSIENT_SINCE = "smtpTransientSince";
+const SMTP_TRANSIENT_RETRIES = "smtpTransientRetries";
+// About an hour of retries: 30 s doubling up to 15 min between them, at most 12 in all.
+const SMTP_TRANSIENT_WINDOW_MS = 60 * 60_000;
+const SMTP_TRANSIENT_MAX_RETRIES = 12;
 
 const LOGIN_WAIT_CODES = new Set(["BINDING_UNAVAILABLE", "CREDENTIAL_REVISION_CHANGED"]);
 // The SMTP server refused the mailbox's login, or wants it done another way (534).
@@ -3596,15 +3617,23 @@ const persistSmtpFailure = async (params: {
     await recordRefusedProviderLogin({ bindingId: outbox.selected_binding_id, secretRevision: command.selected_secret_revision, error });
     if (await waitForMailboxLogin(outbox, command, { effectMarked: true })) return;
   }
-  if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode < 500 && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
-    await scheduleOutboxRetry({
-      outbox,
-      command,
-      error,
-      code: "SMTP_TRANSIENT_REJECTION",
-      fallbackMessage: "SMTP temporarily rejected the message",
-    });
-    return;
+  if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode < 500) {
+    // Servers reject temporarily for rate limits and quotas that can last a while, so these
+    // retries back off over about an hour, counted from the first one, before the send fails.
+    const metadata = parseJsonRecord(command.transport_metadata);
+    const since = typeof metadata[SMTP_TRANSIENT_SINCE] === "string" ? metadata[SMTP_TRANSIENT_SINCE] : new Date().toISOString();
+    const retries = Number(metadata[SMTP_TRANSIENT_RETRIES] ?? 0);
+    if (Date.now() - new Date(since).getTime() < SMTP_TRANSIENT_WINDOW_MS && retries < SMTP_TRANSIENT_MAX_RETRIES) {
+      await scheduleOutboxRetry({
+        outbox,
+        command,
+        error,
+        code: "SMTP_TRANSIENT_REJECTION",
+        fallbackMessage: "SMTP temporarily rejected the message",
+        smtpTransient: { since, retries },
+      });
+      return;
+    }
   }
   if (Number.isInteger(responseCode) && responseCode >= 400) {
     await finishOutbox({ outbox, command, outboxState: "failed", commandState: "failed", draftState: "draft", error });

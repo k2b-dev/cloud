@@ -17,6 +17,8 @@ const snapshotSchema = z.object({
   at: z.number().finite(),
   counts: z.object({
     views: z.record(conversationViewSchema, z.number().int().nonnegative()),
+    // A snapshot from before this count existed fails the schema and is computed again.
+    mineWaiting: z.number().int().nonnegative(),
     doneByFolder: z.record(z.uuid(), z.number().int().nonnegative()),
   }),
 });

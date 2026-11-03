@@ -7,7 +7,7 @@ import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
-import type { MailboxListView, MailboxPageData } from "../service/workspace";
+import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
@@ -192,6 +192,13 @@ const teamUsers = [
   { id: "user-1", uid: "robin", displayName: "Robin Example" },
   { id: "user-2", uid: "nora", displayName: "Nora Example" },
 ].map((user) => ({ ...user, avatarHash: null, scope: "mailbox" as const, permission: "write" as const, description: "" }));
+/** Who wrote in a few rows: Conv02 the sender and the team, Conv03 three people, Conv05 seventeen (ten named). */
+const crowd = ["Lea Brandt", "Tom Keller", "Anna Roth", "Ben Fischer", "Clara Hoff", "David Lang", "Eva Pohl", "Finn Braun", "Greta Vogel"];
+const listParticipants: Record<number, Pick<MailListItem, "participants" | "participantCount">> = {
+  1: { participants: [{ name: "Sender 2" }, { name: "Robin Example", kind: "user" }] },
+  2: { participants: [{ name: "Sender 3" }, { name: "Nora Example", kind: "user" }, { name: "Invoices", kind: "workflow" }] },
+  4: { participants: [{ name: "Sender 5" }, ...crowd.map((name) => ({ name, kind: "user" as const }))], participantCount: 17 },
+};
 export const listRows = Array.from({ length: 12 }, (_, index) =>
   mailTestRow(`Conv${String(index + 1).padStart(2, "0")}`, {
     subject: `Example request ${index + 1}`,
@@ -202,12 +209,17 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
     ...(index % 4 === 0 ? { attachmentCount: index / 4 + 1 } : {}),
+    ...listParticipants[index],
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],
     localTags: index === 0 ? localTags.slice(0, 1) : [],
   }),
 );
+/** Assigned to me (`?view=mine`): the service lists the three that need action before the two that wait. */
+const mineRows = listRows
+  .slice(0, 5)
+  .map((row, index) => ({ ...row, assigneeUserIds: ["user-1"], workStatus: index < 3 ? ("needs_action" as const) : ("waiting" as const) }));
 /** Conv02 is a long conversation: six messages, oldest first as the service sends them, so the reader folds the older ones. */
 const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, (_, index) => {
   const at = new Date(Date.parse(MAIL_SHELL_NOW) - (5 - index) * 86_400_000).toISOString();
@@ -467,21 +479,25 @@ export function mailboxData(url: URL): MailboxPageData {
     listItems:
       scheduledMode || draftsMode || url.searchParams.get("view") === "events" || url.searchParams.get("inbox") === "empty"
         ? []
-        : selectedMailbox.id === "Box001"
-          ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation.
-            url.searchParams.has("team")
-            ? listRows.map((row, index) => (index === 0 ? { ...row, assigneeUserIds: [teamUsers[1]!.id] } : row))
-            : listRows
-          : listRows.map((row) => ({
-              ...row,
-              id: `${selectedMailbox.id}-${row.id}`,
-              conversationId: `${selectedMailbox.id}-${row.conversationId}`,
-              subject: `${selectedMailbox.name}: ${row.subject}`,
-            })),
+        : activeView === "mine"
+          ? mineRows
+          : selectedMailbox.id === "Box001"
+            ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation.
+              url.searchParams.has("team")
+              ? listRows.map((row, index) => (index === 0 ? { ...row, assigneeUserIds: [teamUsers[1]!.id] } : row))
+              : listRows
+            : listRows.map((row) => ({
+                ...row,
+                id: `${selectedMailbox.id}-${row.id}`,
+                conversationId: `${selectedMailbox.id}-${row.conversationId}`,
+                subject: `${selectedMailbox.name}: ${row.subject}`,
+              })),
     listCursor: null,
     nextListCursor: null,
     listError: null,
     // ?hidden=1207 names done conversations the list leaves out; "more" is over the count window, "unknown" uncounted.
+    // Assigned to me: three conversations need action and two wait for a reply.
+    assignedGroups: activeView === "mine" ? { needsAction: 3, waiting: 2 } : null,
     hiddenDone: (() => {
       const hidden = url.searchParams.get("hidden");
       if (!hidden) return null;
@@ -630,6 +646,7 @@ export function mailboxList(url: URL): MailboxListView {
     nextListCursor,
     listError,
     hiddenDone,
+    assignedGroups,
     listTitle,
   } = mailboxData(url);
   return {
@@ -657,6 +674,7 @@ export function mailboxList(url: URL): MailboxListView {
     nextListCursor,
     listError,
     hiddenDone,
+    assignedGroups,
     listTitle,
   };
 }

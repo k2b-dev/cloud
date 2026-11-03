@@ -194,6 +194,7 @@ const deliveryMessages = i18n.define({
   messages: {
     en: {
       tryingAgain: ({ attempt, total }: { attempt: number; total: number }) => `Trying again · ${attempt}/${total}`,
+      tryingAgainLater: "Trying again",
       waitingForSignIn: "Waiting for sign-in",
       scheduled: "Scheduled",
       sending: "Sending",
@@ -208,6 +209,7 @@ const deliveryMessages = i18n.define({
     },
     de: {
       tryingAgain: ({ attempt, total }) => `Erneuter Versuch · ${attempt}/${total}`,
+      tryingAgainLater: "Wird erneut versucht",
       waitingForSignIn: "Wartet auf Anmeldung",
       scheduled: "Geplant",
       sending: "Wird gesendet",
@@ -233,6 +235,10 @@ export const messageDeliveryPresentation = (
     case "scheduled":
       if (typeof delivery !== "string" && delivery.lastErrorCode === "MAILBOX_AUTH_REQUIRED") {
         return { label: t.waitingForSignIn, icon: "ti ti-lock", tone: "warning" };
+      }
+      // A temporary rejection has its own retry window, so an attempt count would mislead.
+      if (typeof delivery !== "string" && delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION") {
+        return { label: t.tryingAgainLater, icon: "ti ti-refresh", tone: "warning" };
       }
       return typeof delivery !== "string" && delivery.lastErrorCode
         ? {

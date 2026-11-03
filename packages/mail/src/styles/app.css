@@ -164,6 +164,15 @@
     color: var(--k2b-text-muted);
   }
 
+  /* Three faces and "+nn" fit the fixed column, so a row's stack never moves the columns beside it. */
+  .mail-row-participants {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--k2b-text-secondary);
+    --k2b-avatar-stack-ring: var(--k2b-surface);
+  }
+
   .mail-row-assignee-cell {
     display: block;
     overflow: hidden;
@@ -218,15 +227,42 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* The column template: shared mailboxes show who is responsible and the status; personal ones do not. */
+  /* The column template: every mailbox shows who wrote; shared ones also who is responsible and the status. */
   .mail-columns,
   .mail-columns-head {
-    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem max-content;
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) 6rem minmax(7rem, 0.9fr) 9rem max-content;
   }
 
   .mail-columns.mail-columns-personal,
   .mail-columns-head.mail-columns-personal {
-    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) max-content;
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) 6rem max-content;
+  }
+
+  /* The list and its heading measure their shared width: who wrote shows only where the other columns keep their room,
+     from 52 rem in a shared mailbox and 34 rem in a personal one. The query matches on the server render too, so
+     nothing moves once the page runs. */
+  .mail-columns-area {
+    container: mail-columns / inline-size;
+  }
+
+  @container mail-columns (width < 52rem) {
+    :is(.mail-columns, .mail-columns-head):not(.mail-columns-personal) :is(.mail-row-cells, .mail-columns-head-cells) {
+      --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem max-content;
+    }
+
+    :is(.mail-columns, .mail-columns-head):not(.mail-columns-personal) :is(.mail-row-participants-cell, .mail-columns-head-participants) {
+      display: none;
+    }
+  }
+
+  @container mail-columns (width < 34rem) {
+    .mail-columns-personal :is(.mail-row-cells, .mail-columns-head-cells) {
+      --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) max-content;
+    }
+
+    .mail-columns-personal :is(.mail-row-participants-cell, .mail-columns-head-participants) {
+      display: none;
+    }
   }
 
   /* Same horizontal geometry as a row, so every heading sits above its column. */
@@ -255,6 +291,13 @@
     height: 2rem;
     align-items: flex-end;
     padding: 0 0.625rem 0.25rem 1.3125rem;
+  }
+
+  /* Assigned to me's group headings sit where day headings do; the needs-action dot repeats the status column's. */
+  .mail-assigned-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
   }
 
   /* The day's progress above the list: fixed height, so it never pushes the rows when the count changes. */
@@ -361,6 +404,7 @@
       content: none;
     }
 
+    .mail-row-participants-cell,
     .mail-row-assignee-cell,
     .mail-row-status-cell {
       display: none;

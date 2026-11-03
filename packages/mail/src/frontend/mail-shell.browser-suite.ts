@@ -3325,6 +3325,60 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+        for (const [locale, turn, waiting, doneText] of [
+          ["en", "Your turn · 3", "Waiting for reply · 2", "Done conversations that were assigned to you"],
+          ["de", "Du bist dran · 3", "Wartet auf Antwort · 2", "Erledigtes, das dir zugewiesen war"],
+        ] as const)
+          for (const width of [1440, 390] as const)
+            test(`assigned to me groups whose turn it is above what waits (${locale}, ${width})`, async () => {
+              const page = await open(`${boxPath}?view=mine&team=1&locale=${locale}`, width);
+              try {
+                const list = page.locator(".mail-workspace [role='list']").first();
+                const entries = await list
+                  .locator(":scope > [role='listitem']")
+                  .evaluateAll((items) =>
+                    items.map((item) => item.getAttribute("data-mail-assigned-group") ?? item.getAttribute("data-conversation-id")),
+                  );
+                expect(entries).toEqual(["needsAction", "Conv01", "Conv02", "Conv03", "waiting", "Conv04", "Conv05"]);
+                expect(await list.locator("[data-mail-assigned-group='needsAction'] h3").textContent()).toBe(turn);
+                expect(await list.locator("[data-mail-assigned-group='waiting'] h3").textContent()).toBe(waiting);
+                expect(await page.locator(".mail-workspace [data-mail-day-group]").count()).toBe(0);
+                const footer = page.locator(".mail-workspace [data-mail-hidden-done]");
+                expect(await footer.textContent()).toContain(doneText);
+                const href = new URL((await footer.locator("[data-mail-show-done]").getAttribute("href"))!, "https://cloud.example");
+                expect(JSON.parse(href.searchParams.get("search")!).expression).toEqual({
+                  type: "and",
+                  expressions: [{ type: "assigned_to_me" }, { type: "work_status", value: "done" }],
+                });
+                // Headings keep the height of day headings, so the rows do not move after hydration.
+                const heights = await list
+                  .locator("[data-mail-assigned-group]")
+                  .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+                for (const height of heights) expect(height).toBe(32);
+                if (screenshots && locale === "de") {
+                  mkdirSync(join(screenshots, browserName), { recursive: true });
+                  await page.screenshot({ path: join(screenshots, browserName, `assigned-groups-light-${width}.png`) });
+                }
+              } finally {
+                await close(page);
+              }
+            });
+
+        test("assigned to me with nothing open says so and still leads to the done conversations", async () => {
+          const page = await open(`${boxPath}?view=mine&inbox=empty&locale=de`);
+          try {
+            await page.getByText("Dir ist nichts Offenes zugewiesen").waitFor();
+            await page.getByText("Neue Zuweisungen erscheinen hier und in deinen Mitteilungen.").waitFor();
+            expect(await page.locator(".mail-workspace [data-mail-show-done]").count()).toBe(1);
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, "assigned-groups-empty-light-1440.png") });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
         for (const [locale, one, two] of [
           ["en", "1 attachment", "2 attachments"],
           ["de", "1 Anhang", "2 Anhänge"],
@@ -3337,6 +3391,54 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await mark("Conv05").getAttribute("aria-label")).toBe(two);
               await mark("Conv05").hover();
               await page.getByRole("tooltip").filter({ hasText: two }).waitFor();
+            } finally {
+              await close(page);
+            }
+          });
+
+        for (const [locale, summary] of [
+          [
+            "en",
+            "17 participants · External: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel and 7 more",
+          ],
+          [
+            "de",
+            "17 Beteiligte · Extern: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel und 7 weitere",
+          ],
+        ] as const)
+          test(`the wide list shows who wrote, three faces and +n, and names them in a tooltip (${locale})`, async () => {
+            const page = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`);
+            try {
+              const stack = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] [data-mail-participants]`);
+              expect(await stack("Conv05").getAttribute("aria-label")).toBe(summary);
+              expect(await stack("Conv05").locator(".k2b-avatar").count()).toBe(3);
+              expect(await stack("Conv05").locator(".k2b-avatar-stack__more").textContent()).toBe("+14");
+              // A row where only its sender wrote shows that sender alone.
+              expect(await stack("Conv01").locator(".k2b-avatar").count()).toBe(1);
+              expect(await stack("Conv01").locator(".k2b-avatar-stack__more").count()).toBe(0);
+              // Every stack starts at the same place and has the same width, so no row moves its columns.
+              const boxes = await page.locator(".mail-workspace .mail-row-participants-cell").evaluateAll((cells) =>
+                cells.map((cell) => {
+                  const { left, width } = cell.getBoundingClientRect();
+                  return { left, width };
+                }),
+              );
+              expect(boxes.length).toBe(12);
+              for (const box of boxes) expect(box).toEqual(boxes[0]!);
+              await stack("Conv05").hover();
+              await page.getByRole("tooltip").filter({ hasText: summary }).waitFor();
+              if (screenshots && locale === "de") {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, "participants-light-1440.png") });
+                // Phones keep their two-line rows; who wrote waits in the reader.
+                const phone = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`, 390);
+                try {
+                  expect(await phone.locator(".mail-workspace .mail-row-participants-cell:visible").count()).toBe(0);
+                  await phone.screenshot({ path: join(screenshots, browserName, "participants-light-390.png") });
+                } finally {
+                  await close(phone);
+                }
+              }
             } finally {
               await close(page);
             }

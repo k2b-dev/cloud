@@ -741,6 +741,24 @@ describe("IMAP push lease renewal", () => {
       expect(await listener.task).toEqual({ error: null });
     }));
 
+  test("a quiet listener writes its unchanged health at most once a minute", () =>
+    withFakeTimers(async () => {
+      const listener = startIdleListener({ leader: new FakeMutex() });
+      await listener.listening;
+      await settle();
+      const before = listener.events.health.length;
+
+      // Lease renewals run every 20 seconds; the unchanged state is written once a minute.
+      await advance(5 * 60_000);
+      const writes = listener.events.health.slice(before);
+      expect(writes.length).toBeGreaterThanOrEqual(4);
+      expect(writes.length).toBeLessThanOrEqual(5);
+      expect(writes.every((patch) => patch.state === "listening")).toBe(true);
+
+      listener.controller.abort(new Error("test shutdown"));
+      expect(await listener.task).toEqual({ error: null });
+    }));
+
   test("keeps the listener up through one renewal the lease store did not answer", () =>
     withFakeTimers(async () => {
       const leader = new ScriptedMutex();

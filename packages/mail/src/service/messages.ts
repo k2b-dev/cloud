@@ -9,7 +9,12 @@ import { conversationVisibleTo, draftVisibleTo, type MailboxAccess, messageVisib
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, personalPrincipal } from "./auth";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
-import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
+import {
+  type ConversationCursorGroup,
+  type ConversationCursorScope,
+  decodeConversationCursor,
+  encodeConversationCursor,
+} from "./conversation-cursor";
 import { isKeptConversation, isKeptMessage } from "./conversation-keep-rules";
 import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
@@ -514,24 +519,48 @@ export const listConversations = async (params: {
   };
   const cursor = decodeConversationCursor(params.cursor, cursorScope);
   if (!cursor.ok) return cursor;
+  // Assigned to me lists the conversations that need action before those waiting for a reply, each newest first.
+  const grouped = view === "mine" && !params.status;
+  if (grouped && cursor.data && !cursor.data.group) return fail(err.badInput("Invalid pagination cursor"));
   const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
   // Bound all access, placement, view and cursor filters before enriching the selected page.
-  const candidates = conversationCandidatesQuery({
-    mailboxId: params.mailboxId,
-    visibility,
-    currentUserId,
-    folderId,
-    excludedFolderIds,
-    status: params.status ?? null,
-    view,
-    unread: params.unread ?? null,
-    lapsedAssignees,
-    aggregatedScope,
-    openOnly,
-    cursor: cursor.data ?? null,
-    limit: limit + 1,
-  });
+  const candidatesFor = (status: ConversationWorkStatus | null, pageCursor: { date: string; id: string } | null) =>
+    conversationCandidatesQuery({
+      mailboxId: params.mailboxId,
+      visibility,
+      currentUserId,
+      folderId,
+      excludedFolderIds,
+      status,
+      view,
+      unread: params.unread ?? null,
+      lapsedAssignees,
+      aggregatedScope,
+      openOnly,
+      cursor: pageCursor,
+      limit: limit + 1,
+    });
+  // Each group reads its own status newest first, so both keep the plain sort column and stop at the page. The waiting
+  // ones are read only when those that need action do not fill the page (a one-time filter: otherwise the plan never
+  // runs them), and a page that ended among the waiting ones continues there.
+  const pageSize = () => sql.unsafe(String(Math.trunc(limit + 1)));
+  const candidates = !grouped
+    ? candidatesFor(params.status ?? null, cursor.data ?? null)
+    : cursor.data?.group === "waiting"
+      ? candidatesFor("waiting", cursor.data)
+      : sql`
+          WITH needs_page AS MATERIALIZED (${candidatesFor("needs_action", cursor.data ?? null)})
+          SELECT c.*
+          FROM (
+            SELECT * FROM needs_page
+            UNION ALL
+            SELECT * FROM (${candidatesFor("waiting", null)}) waiting_page
+            WHERE (SELECT count(*) FROM needs_page) < ${pageSize()}
+          ) c
+          ORDER BY c.work_status = 'waiting', ${conversationSortColumn(view)} DESC, c.id DESC
+          LIMIT ${pageSize()}
+        `;
   const rows = await sql<(DbConversation & { cursor_at: string })[]>`
     WITH candidates AS MATERIALIZED (${candidates})
     SELECT
@@ -655,7 +684,7 @@ export const listConversations = async (params: {
       JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
       WHERE attachment_cm.conversation_id = c.id
     ) attachment_state ON true
-    ORDER BY ${conversationSortColumn(view)} DESC, c.id DESC
+    ORDER BY ${grouped ? sql`c.work_status = 'waiting',` : sql``} ${conversationSortColumn(view)} DESC, c.id DESC
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
@@ -686,7 +715,17 @@ export const listConversations = async (params: {
   const lastRow = pageRows.at(-1);
   return ok({
     items,
-    nextCursor: hasMore && last && lastRow ? encodeConversationCursor({ scope: cursorScope, date: lastRow.cursor_at, id: last.id }) : null,
+    nextCursor:
+      hasMore && last && lastRow
+        ? encodeConversationCursor({
+            scope: cursorScope,
+            date: lastRow.cursor_at,
+            id: last.id,
+            ...(grouped
+              ? { group: (lastRow.work_status === "waiting" ? "waiting" : "needs_action") satisfies ConversationCursorGroup }
+              : {}),
+          })
+        : null,
     openOnly,
   });
 };
