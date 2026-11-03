@@ -472,7 +472,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       const response = await send({ operation: "example.read" });
       expect(response.status).toBe(200);
       const [stored] = await sql<{ result: unknown; ordinal: number; state: string; kind: string; capability: string; call: unknown }[]>`
-        SELECT result,ordinal,state,kind,capability,call FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+        SELECT result,ordinal,state,kind,call->>'capability' AS capability,call FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
       const expected = { ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } };
       expect(stored?.result).toEqual(expected);
       expect(stored?.state).toBe("failed");
