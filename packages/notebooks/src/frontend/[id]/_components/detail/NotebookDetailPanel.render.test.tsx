@@ -32,6 +32,9 @@ const renderPanel = (overrides: Partial<Props> = {}) =>
           taskProgress: { done: 2, total: 4 },
           attachments: [],
           backlinks: [],
+          relations: { outgoing: [], tags: [] },
+          accessVisible: false,
+          canManageAccess: false,
           namedBlocks: [],
           currentNotebookId: "book01",
           notebookId: "book01",
@@ -140,11 +143,24 @@ describe("Notebook note detail panel", () => {
       expect(rows.some((row) => /\bH[1-6]\b/.test(text(row)))).toBe(false);
     });
   });
-  test("follows the shared outline: kind line, no section icons, activity under Mehr zu dieser Notiz", () => {
+  test("follows the shared outline: kind line, section icons, order of use, more under Mehr zu dieser Notiz", () => {
     inspect({}, (document) => {
       expect(text(document.querySelector(".k2b-detail-panel__kind"))).toBe("Notiz");
       expect(document.querySelector(".k2b-detail-panel__header-icon")).toBeNull();
-      expect(document.querySelector(".k2b-detail-panel__section-icon, .k2b-discussion__icon")).toBeNull();
+      // Every section has its icon, so its content starts on the title's text edge (one edge per section).
+      const titles = [...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section, .k2b-discussion)")]
+        .filter((section) => !section.closest(".k2b-detail-panel__group"))
+        .map((section) => {
+          expect(
+            section.querySelector(
+              ":scope > header .k2b-detail-panel__section-icon, :scope > header .k2b-discussion__icon, :scope > div > .k2b-button .k2b-detail-panel__section-icon, :scope > div > header .k2b-detail-panel__section-icon",
+            ),
+          ).not.toBeNull();
+          return text(section.querySelector("h3, .k2b-detail-panel__section-title"));
+        });
+      expect(titles).toEqual(["Gerade hier", "Kommentare", "Aufgaben", "Inhalt", "Tags", "Verknüpfungen"]);
+      const more = [...document.querySelectorAll(".k2b-detail-panel__group .k2b-detail-panel__section-title")].map((title) => text(title));
+      expect(more).toEqual(["Eigenschaften", "Aktivität"]);
       // "More actions" sits in the action row beside Ansicht; the header's trailing slot keeps only Close.
       expect(document.querySelector('.k2b-detail-panel__primary-actions [role="menu"][aria-label="Weitere Aktionen"]')).not.toBeNull();
       const group = document.querySelector(".k2b-detail-panel__group-title")?.closest(".k2b-detail-panel__group");
@@ -154,6 +170,38 @@ describe("Notebook note detail panel", () => {
       const summary = group?.querySelector(".notebook-activity .k2b-detail-panel__section-summary");
       expect(summary?.getAttribute("aria-expanded")).toBe("false");
     });
+  });
+  test("Zugriff is read-only for members and absent for public-link readers", () => {
+    inspect({ accessVisible: true, canManageAccess: false }, (document) => {
+      const group = document.querySelector(".k2b-detail-panel__group");
+      const titles = [...(group?.querySelectorAll(".k2b-detail-panel__section-title") ?? [])].map((title) => text(title));
+      expect(titles).toEqual(["Zugriff", "Eigenschaften", "Aktivität"]);
+      // Closed; the list loads after the first paint, so the server render holds no names.
+      expect(group?.querySelector(".k2b-detail-access .k2b-detail-panel__section-summary")?.getAttribute("aria-expanded")).toBe("false");
+      expect(text(group)).not.toContain("Zugriff verwalten");
+    });
+    inspect({ accessVisible: true, canManageAccess: true }, (document) => expect(text(document.body)).toContain("Zugriff verwalten"));
+    inspect({ accessVisible: false }, (document) => expect(document.querySelector(".k2b-detail-access")).toBeNull());
+  });
+  test("tags lead to their notes and links show both directions", () => {
+    inspect(
+      {
+        relations: {
+          tags: ["kühlkette"],
+          outgoing: [{ noteId: "n5", title: "Lagerplätze", notebookId: "book01", notebookName: "Handbuch", updatedAt: created }],
+        },
+        backlinks: [{ noteId: "n2", title: "Onboarding", notebookId: "book02", notebookName: "Handbuch Versand", updatedAt: created }],
+      },
+      (document) => {
+        expect(document.querySelector('.k2b-detail-tag[href="/app/notebooks/book01/tags/k%C3%BChlkette"]')).not.toBeNull();
+        const links = text(document.querySelector(".k2b-detail-links"));
+        expect(links).toContain("Verlinkt von 1");
+        expect(links).toContain("Verweist auf 1");
+        expect(links).toContain("Handbuch Versand");
+        expect(document.querySelector('.k2b-detail-links a[href="/app/notebooks/book01/notes/n5"]')).not.toBeNull();
+      },
+    );
+    inspect({}, (document) => expect(text(document.querySelector(".k2b-detail-links"))).toBe("VerknüpfungenNoch keine"));
   });
   test("attachments are a short file list: kind and size, files before images", () => {
     const attachment = (id: string, filename: string, mimeType: string) => ({

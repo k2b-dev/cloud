@@ -20,7 +20,7 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const [notebook, setNotebook] = createSignal(props.notebook);
-  const [activeTab, setActiveTab] = createSignal("general");
+  const [activeTab, setActiveTab] = createSignal(props.initialTab ?? "general");
   const [generalDirty, setGeneralDirty] = createSignal(false);
   const [exportDirty, setExportDirty] = createSignal(false);
   const activeTabDirty = () => (activeTab() === "general" ? generalDirty() : activeTab() === "export" ? exportDirty() : false);

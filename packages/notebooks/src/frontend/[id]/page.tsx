@@ -125,6 +125,8 @@ export default ssr<AuthContext>(async (c) => {
     showDetailPanel,
     panelAttachments,
     backlinks,
+    relations,
+    accessVisible,
     initialCommentsPage,
     initialAnnotations,
     dateConfig,
@@ -244,6 +246,7 @@ export default ssr<AuthContext>(async (c) => {
                     taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
                     attachments: panelAttachments,
                     backlinks,
+                    relations,
                     namedBlocks,
                   }}
                 />
@@ -276,6 +279,9 @@ export default ssr<AuthContext>(async (c) => {
               taskProgress={selectedRouteState?.taskProgress ?? { done: 0, total: 0 }}
               attachments={panelAttachments}
               backlinks={backlinks}
+              relations={relations}
+              accessVisible={accessVisible}
+              canManageAccess={data.permission === "admin"}
               namedBlocks={namedBlocks}
               currentNotebookId={notebook.id}
               notebookId={notebook.id}

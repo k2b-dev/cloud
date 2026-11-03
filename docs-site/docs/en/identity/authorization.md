@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-24
+updated: 2026-11-03
 ---
 
 # Resource authorization
@@ -242,6 +242,34 @@ To decide one resource for many subjects, for example the readers of a
 per subject, in the same order, with one query instead of one per subject, by
 the same rules. `accessIds` accepts an array or a Bun `SQLQuery` selecting one
 uuid column, so large grant sets can stay in the database.
+
+### Show who has access
+
+Everyone with access of their own may see who else has access to a resource
+and with which role, read-only. Access of one's own is a direct, group, or
+authenticated grant. Public access alone never shows the list: anyone with the
+link reads a public resource. Decide it on the server with
+`getMemberPermission({ accessIds, subject })`. It follows the rules of
+`getEffectivePermission` without the public tier and returns `none` for an
+anonymous caller. Return the list as `AccessMember` values from
+`@k2b/cloud/contracts`, through `toAccessMember(entry)`: principal, role,
+display name, avatar, and service-account kind, without grant IDs, dates, or
+scopes. Keep the full `AccessEntry` list for people who may manage access.
+
+```ts
+import { toAccessMember } from "@k2b/cloud/contracts";
+import { getMemberPermission, hasPermission } from "@k2b/cloud/server";
+
+const member = await getMemberPermission({ accessIds: entries.map((entry) => entry.id), subject });
+if (!hasPermission(member, "read")) return respond(c, fail(err.forbidden("No access")));
+return respond(c, ok(entries.map(toAccessMember)));
+```
+
+Cap a service account's member permission by its credential scopes, as for
+every other check. Make the same decision before the page shows the section,
+so a public-link reader neither gets the list nor sees an empty section. The
+`DetailAccess` section of a [detail panel](/en/docs/frontend/detail-panels)
+renders the result.
 
 ### Resolve the caller's group IDs
 

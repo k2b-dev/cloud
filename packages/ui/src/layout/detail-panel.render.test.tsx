@@ -312,9 +312,10 @@ describe("DetailPanel", () => {
       )?.[1] ?? "";
     expect(dangerRule).toContain("color: var(--k2b-danger-text);");
     const leadingRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-leading \{([^}]*)\}/)?.[1] ?? "";
-    // The section icon's 20 px column, so row text starts where the section title does.
+    // A 20 px icon column on the section text edge; the row text follows it.
     expect(leadingRule).toContain("width: 1.25rem;");
-    expect(leadingRule).toContain("justify-content: center;");
+    // The icon column stands on the section text edge (one edge per section), so its icon starts there too.
+    expect(leadingRule).toContain("justify-content: flex-start;");
     expect(leadingRule).toContain("color: var(--k2b-text-muted);");
     const titleRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-title \{([^}]*)\}/)?.[1] ?? "";
     expect(titleRule).toContain("color: inherit;");

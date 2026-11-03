@@ -6,8 +6,9 @@ import { requestedPresentationMode, withPresentationMode } from "../lib/presenta
 import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from "../lib/sidebar-filter";
 import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
-import type { Backlink } from "./links";
+import { type Backlink, listNoteRelations } from "./links";
 import type { Note } from "./notes";
+import { extractTags } from "./tags";
 
 type PublicAttachment = Omit<Attachment, "shortId">;
 
@@ -29,8 +30,18 @@ export type SelectedNoteRouteState = {
   taskProgress: TaskProgress;
   namedBlocks: NamedBlockSummary[];
   backlinks: Backlink[];
+  relations: NoteDetailRelations;
   panelAttachments: PublicAttachment[];
 };
+
+/** What a note links to and its tags, for the detail panel. */
+export type NoteDetailRelations = {
+  outgoing: Backlink[];
+  tags: string[];
+};
+
+/** Links the panel lists for a note, the most one page of note links returns. */
+const OUTGOING_LINKS_LIMIT = 100;
 
 export type EditableNoteRouteData = {
   href: string;
@@ -58,6 +69,7 @@ export type EditableNoteRouteData = {
     taskProgress: TaskProgress;
     attachments: PublicAttachment[];
     backlinks: Backlink[];
+    relations: NoteDetailRelations;
     namedBlocks: NamedBlockSummary[];
   };
 };
@@ -100,7 +112,7 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
   const namedBlocks = extractNamedBlockSummaries(note.contentMd);
 
   const attachmentShortIds = notebooksService.attachment.extractIds(note.contentMd);
-  const [referencedAttachments, backlinks, noteAuthors] = await Promise.all([
+  const [referencedAttachments, backlinks, outgoing, noteAuthors] = await Promise.all([
     attachmentShortIds.length > 0
       ? notebooksService.attachment.listByShortIds({ shortIds: attachmentShortIds, notebookId: params.notebookId })
       : Promise.resolve([]),
@@ -108,6 +120,12 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
       noteId: note.id,
       userId: params.userId,
       bypassAccess: params.bypassAccess,
+    }),
+    listNoteRelations({
+      noteId: note.id,
+      userId: params.userId,
+      direction: "outgoing",
+      pagination: { limit: OUTGOING_LINKS_LIMIT, offset: 0 },
     }),
     notebooksService.activity.noteAuthors({ noteId: note.id }),
   ]);
@@ -120,6 +138,16 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
     taskProgress,
     namedBlocks,
     backlinks,
+    relations: {
+      outgoing: outgoing.map((link) => ({
+        noteId: link.noteId,
+        title: link.title,
+        notebookId: link.notebookId,
+        notebookName: link.notebookName,
+        updatedAt: link.updatedAt,
+      })),
+      tags: extractTags(note.contentMd),
+    },
     panelAttachments: referencedAttachments.map((attachment) => ({
       id: attachment.shortId,
       notebookId: params.notebookShortId,
@@ -216,6 +244,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         taskProgress: state.taskProgress,
         attachments: state.panelAttachments,
         backlinks: state.backlinks,
+        relations: state.relations,
         namedBlocks: state.namedBlocks,
       },
     },

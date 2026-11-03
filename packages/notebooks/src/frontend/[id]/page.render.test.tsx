@@ -397,6 +397,7 @@ const renderNotebookWithNotes = async (
         taskProgress: { done: 0, total: 0 },
         panelAttachments: [],
         backlinks: [],
+        relations: { outgoing: [], tags: [] },
       }),
     );
     spies.push(
@@ -509,6 +510,7 @@ const renderEditorPage = async (
       taskProgress: { done: 0, total: 0 },
       namedBlocks: [],
       backlinks: [],
+      relations: { outgoing: [], tags: [] },
       panelAttachments: [],
     }),
   );
