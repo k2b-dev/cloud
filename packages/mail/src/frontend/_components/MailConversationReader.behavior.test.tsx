@@ -735,7 +735,7 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
       [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
     expect(menuItem("Move to Trash")?.disabled).toBe(false);
     expect(menuItem("Keep")?.disabled).toBe(true);
-    expect(menuItem("Tags")?.disabled).toBe(true);
+    expect(menuItem("Manage tags")?.disabled).toBe(true);
   } finally {
     dispose();
     dom.cleanup();
