@@ -16,19 +16,20 @@ Cloud uses five words and three rules to explain access.
 
 | Word | Meaning |
 | --- | --- |
-| **Account** | A person, an agent, or a service account. An agent is an account without a person, created by an administrator. A service account belongs to an object or an app, such as a mailbox, and never has an API key of its own. |
+| **Account** | A person, an agent, or a service account. An agent is an account without a person, created by an administrator. A service account belongs to an object or an app, such as a mailbox. |
 | **Group** | Many accounts together. |
 | **Permission** (German: **Recht**) | An account or group, a level, and an object. The levels are **View**, **Edit**, and **Manage** (German: **Ansehen**, **Bearbeiten**, **Verwalten**). |
-| **API key** | On an account, another sign-in with exactly that account's permissions. For agents, this also takes the form of a client ID and client secret for OAuth programs. On an object, a key may do exactly one thing on that object and belongs to no account. |
-| **Manifest** | The app's declaration (`defineApp`): what it offers and needs from the platform. Deployed means allowed. |
+| **API key** | On an account, another sign-in that may do what that account may do. A new agent key acts exactly as its agent; an older key keeps the narrower scopes it was created with, and a models-only key reaches only AI models. For agents, an OAuth client ID and secret are the other form. On an object, a key may do one thing on that object and acts for no person or agent; Cloud stores it on a resource-bound account of that object. |
+| **Manifest** | The app's declaration (`defineApp`): what it offers and needs from the platform. Deploying the app grants its declared platform permissions; a few, such as reading other apps' mail, also need an operator's grant. |
 
 ## Three rules
 
-1. Every call runs as one account. The provider checks that account's
-   permission on the object and the action's rules.
+1. Every call on an object runs as one account. The provider checks that
+   account's permission on the object and the action's rules.
 2. An app has no permissions of its own on objects. With a person, it passes
    that person through. Alone, it uses an agent or an object API key stored
-   in a setting.
+   in a setting. An app may call platform services without a person
+   (`appCaller()`), but that reaches no object.
 3. Background work runs as its owner, like crontab, with the owner's current
    permissions.
 
@@ -48,8 +49,8 @@ notification view.
 
 ## Words outside this model
 
-Scopes on new account keys are no longer a separate concept: the account's
-permissions decide what the key may do. “As the app” is not an identity with
+Scopes on new agent keys are no longer a separate concept: the agent's
+permissions decide what the key may do. Older keys keep their scopes. “As the app” is not an identity with
 object permissions. Runtime keys are platform internals, not another account
 or permission model.
 

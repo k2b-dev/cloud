@@ -178,7 +178,7 @@ describe("App access through real browser controls and same-origin transport", (
           );
         expect(await heights()).toEqual([36, 36, 36]);
         const picker = page.locator("input[role=combobox]");
-        expect(await picker.getAttribute("placeholder")).toBe("Person, Gruppe, Agent oder Dienstkonto hinzufügen");
+        expect(await picker.getAttribute("placeholder")).toBe("Person, Gruppe, Agenten oder Dienstkonto hinzufügen");
         expect(await picker.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
         expect(await picker.evaluate((element) => getComputedStyle(element).fontSize)).toBe("15px");
         await picker.fill("Lea");

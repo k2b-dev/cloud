@@ -253,7 +253,7 @@ const catalog = i18n.define({
       wormholeNotFound: "Der Wurmloch-Link wurde nicht gefunden",
       attachmentNotFound: "Der Anhang wurde nicht gefunden",
       endpointNeedsUser: "Für diesen Endpunkt ist ein Benutzerkonto erforderlich",
-      reactionsNeedUser: "Reaktionen erfordern eine Person oder einen eigenständigen Dienstaccount",
+      reactionsNeedUser: "Reaktionen erfordern eine Person oder einen Agenten",
       emoji: "Emoji",
       reviewAddReaction: ({ title }) => `Deine Reaktion zu ${title} hinzufügen.`,
       reviewRemoveReaction: ({ title }) => `Deine Reaktion von ${title} entfernen.`,

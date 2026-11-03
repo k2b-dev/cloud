@@ -1650,7 +1650,7 @@ export const accountsMessages = i18n.define({
       searchTarget: "Zielbenutzer oder -gruppe durchsuchen…",
       filterByActor: "Nach ausführender Person filtern",
       filterByTarget: "Nach Ziel filtern",
-      filterByServiceAccount: "Nach Agent oder Dienstkonto filtern",
+      filterByServiceAccount: "Nach Agenten oder Dienstkonto filtern",
       createUserAudit: "Benutzer erstellen",
       updateUserAudit: "Benutzer bearbeiten",
       resetPasswordAudit: "Passwort zurücksetzen",
