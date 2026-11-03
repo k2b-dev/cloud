@@ -134,4 +134,45 @@ suite("machine API keys from the administrator route", () => {
         await sql`DELETE FROM auth.users WHERE id=${admin!.id}::uuid`;
       }
     });
+
+  test("an agent's key list and revoke reach only that agent's keys", async () => {
+    const suffix = crypto.randomUUID();
+    const [admin] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users(uid,provider,profile,admin) VALUES (${`key-admin-${suffix}`},'local','user',true) RETURNING id`;
+    const actor = buildProjectedUser({
+      id: admin!.id,
+      uid: `key-admin-${suffix}`,
+      provider: "local",
+      profile: "user",
+      effective_admin: true,
+    });
+    const first = await serviceAccounts.createStandalone({ name: `First ${suffix}`, kind: "agent", createdBy: admin!.id });
+    const second = await serviceAccounts.createStandalone({ name: `Second ${suffix}`, kind: "agent", createdBy: admin!.id });
+    if (!first.ok || !second.ok) throw new Error("Fixture accounts failed");
+    const routes = createAdminIdentityRoutes(async (c, next) => {
+      c.set("user", actor);
+      await next();
+    });
+    try {
+      const own = await serviceAccountCredentials.createStandaloneApiToken({ serviceAccountId: first.data.id, actor, name: "Own" });
+      const other = await serviceAccountCredentials.createStandaloneApiToken({ serviceAccountId: second.data.id, actor, name: "Other" });
+      if (!own.ok || !other.ok) throw new Error("Fixture keys failed");
+      const listed = z
+        .object({ items: z.array(z.object({ id: z.string() })), total: z.number() })
+        .parse(await (await routes.request(`/service-accounts/${first.data.id}/api-keys`)).json());
+      expect(listed.items.map((item) => item.id)).toEqual([own.data.credential.id]);
+      expect(listed.total).toBe(1);
+      const crossed = await routes.request(`/service-accounts/${first.data.id}/api-keys/${other.data.credential.id}`, { method: "DELETE" });
+      expect(crossed.status).toBe(404);
+      expect((await serviceAccountCredentials.getOverview({ id: other.data.credential.id }))?.status).toBe("active");
+      expect(await serviceAccountCredentials.authenticateApiToken(other.data.token)).not.toBeNull();
+      const revoked = await routes.request(`/service-accounts/${first.data.id}/api-keys/${own.data.credential.id}`, { method: "DELETE" });
+      expect(revoked.status).toBe(200);
+      expect((await serviceAccountCredentials.getOverview({ id: own.data.credential.id }))?.status).toBe("revoked");
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id IN (${first.data.id}::uuid, ${second.data.id}::uuid)`;
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${admin!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${admin!.id}::uuid`;
+    }
+  });
 });
