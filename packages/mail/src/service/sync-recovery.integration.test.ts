@@ -21,7 +21,8 @@ import {
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
-import { claimFence, commitSyncBatch, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import { takeFolderSyncActivity } from "./sync-activity";
+import { claimFence, commitSyncBatch, enqueueFolderSync, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -467,7 +468,7 @@ suite("mail sync recovery", () => {
         SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name
       `;
       console.info("idle sync run", { statements, writes });
-      expect(statements).toBe(17); // Includes BEGIN/COMMIT for both fence claim and commit.
+      expect(statements).toBe(16); // Includes BEGIN/COMMIT for both fence claim and commit; the Drafts role rides on the folder lock.
       expect(writes).toEqual([
         { table_name: "provider_bindings", count: 1 },
         { table_name: "remote_resources", count: 2 },
@@ -501,9 +502,40 @@ suite("mail sync recovery", () => {
         const batchWrites = await sql<{ table_name: string; count: number }[]>`
           SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name`;
         console.info("whole idle folder batch", { statements: batchStatements, writes: batchWrites });
-        expect(batchStatements).toBe(24);
-        expect(batch).toMatchObject({ imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
-        expect(batchWrites).toEqual(writes);
+        // An unchanged folder claims no fence and commits nothing: was 24 commands and five row writes.
+        expect(batchStatements).toBe(7);
+        expect(batch).toMatchObject({ unchanged: true, imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
+        expect(batchWrites).toEqual([]);
+
+        // Its sync time moves on at most once a minute, without a run.
+        const runs = async () =>
+          (
+            await sql<
+              { count: number }[]
+            >`SELECT count(*)::int AS count FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`
+          )[0]!.count;
+        const runsBefore = await runs();
+        await sql`UPDATE mail.remote_resources SET last_sync_at = now() - interval '2 minutes' WHERE id = ${fixture.resourceId}::uuid`;
+        await sql`TRUNCATE mail.idle_write_probe`;
+        const staleCheck = counter.count();
+        expect(await syncFolderBatch(fixture.folderId, async () => undefined)).toMatchObject({ unchanged: true });
+        console.info("idle folder batch with an old sync time", { statements: counter.count() - staleCheck });
+        expect(await sql<{ table_name: string }[]>`SELECT table_name FROM mail.idle_write_probe`).toEqual([
+          { table_name: "remote_resources" },
+        ]);
+        expect((await transportState(fixture)).last_sync_at!.getTime()).toBeGreaterThan(Date.now() - 30_000);
+        expect(await runs()).toBe(runsBefore);
+
+        // The process counts what asked for a sync and how each batch ended.
+        takeFolderSyncActivity();
+        await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit: () => undefined });
+        expect(takeFolderSyncActivity()).toEqual({ triggers: {}, batches: { unchanged: 1 } });
+
+        // A sync command waiting for the folder settles on a completed run.
+        await enqueueFolderSync(fixture.folderId, { trigger: "maintenance", awaited: true });
+        expect(await syncFolderBatch(fixture.folderId, async () => undefined)).not.toHaveProperty("unchanged");
+        expect(await runs()).toBe(runsBefore + 1);
+        expect(takeFolderSyncActivity().triggers).toEqual({ maintenance: 1 });
       } finally {
         idleStatus.mockRestore();
         process.env.DATABASE_URL = originalUrl;
