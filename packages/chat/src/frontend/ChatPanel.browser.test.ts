@@ -1247,8 +1247,14 @@ for (const historyFailure of [false, true]) {
       await page.locator('html[data-fixture-ready="true"]').waitFor();
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
-      await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+      // The list opens the chat in place, one entry above the list, so Back to chats would step back in history.
+      // A click before the island mounted would load the chat as a document instead and test another way back.
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+      await panel.getByRole("link", { name: "Back to chats", exact: true }).waitFor();
+      expect(
+        await panel.locator("html").evaluate(() => [location.pathname, (history.state as { chatFromList?: boolean } | null)?.chatFromList]),
+      ).toEqual([`/app/chat/panel/c/${id}`, true]);
       await page.route(`**/api/chat/conversations/${id}/messages`, async (route) => {
         if (route.request().method() === "GET") {
           await gate;
@@ -1266,19 +1272,26 @@ for (const historyFailure of [false, true]) {
       await panel.getByRole("button", { name: "Send message", exact: true }).click();
       await reading;
       expect(fixture.backend.posted).toHaveLength(0);
+      // Back is refused before history moves: a Back that left and then came back showed the list's address in
+      // between (#2503). Back runs first, so the one notice is its own; the notice throttles a second one.
+      await panel.locator("html").evaluate(() => {
+        const traversals: string[] = [];
+        addEventListener("popstate", () => traversals.push(location.pathname));
+        Object.assign(window, { chatTraversals: traversals });
+      });
+      await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
+      await panel
+        .getByRole("region", { name: "Notifications", exact: true })
+        .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
+        .waitFor();
+      expect(
+        await panel.locator("html").evaluate(() => [location.pathname, (window as Window & { chatTraversals?: string[] }).chatTraversals]),
+      ).toEqual([`/app/chat/panel/c/${id}`, []]);
       // The same archive action is visible in a wide full view; a narrow panel keeps it in the list.
       const archive = panel.locator('a[href="/app/chat/panel/archive"]').first();
       await archive.evaluate((element: HTMLAnchorElement) => element.click());
       expect(await archive.getAttribute("aria-current")).not.toBe("page");
       expect(await panel.locator("html").evaluate(() => location.search)).toBe("");
-      await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
-      await panel
-        .getByRole("region", { name: "Notifications", exact: true })
-        .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
-        // Archive and Back can each notify after the throttle elapses; expiration is not the subject of this guard.
-        .first()
-        .waitFor();
-      expect(await panel.locator("html").evaluate(() => location.pathname)).toBe(`/app/chat/panel/c/${id}`);
       await page.locator("[data-cloud-panel-close]").click();
       expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
       await page.locator('[data-cloud-panel-provider="second"]').click();

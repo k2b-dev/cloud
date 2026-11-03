@@ -1723,6 +1723,9 @@ describe("Chat info reopening", () => {
         await page.getByRole("button", { name: "Close chat info", exact: true }).click();
         await page.waitForURL(`**/c/${chat}`);
         await viewTransitionEnded(page);
+        // A wide screen slides the panel out first and gives the chat its room back 140 ms later, in one step.
+        // Playwright's stability check can pass before that step, so the press could land as Info moves (#2487).
+        await settled(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await toggle.click();

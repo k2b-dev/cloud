@@ -242,6 +242,14 @@ before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
 `packages/ui/test/browser.ts` before its next click or Back. See the Info and
 thread tests in `packages/chat/src/frontend`.
 
+On a wide screen, a closing `AppWorkspace` detail panel slides out first, and
+only 140 ms later the content takes its room back in one step. Playwright's
+stability check can pass before that step, so a press can start on a control
+that then moves, and the click goes to an ancestor. After closing a detail
+panel, a test awaits `settled(page)` before its next press. See the Info
+reopening test in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`
+([#2487](https://github.com/k2b-dev/cloud/issues/2487)).
+
 After a pointer move, a test waits until the target matches `:hover`, or for
 the control that the hover reveals, before it reads what the hover changes.
 WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
