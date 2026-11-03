@@ -2457,6 +2457,40 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
+        // WebKit reports a ResizeObserver loop as a page error (close() checks those); this case drives the fitted head
+        // through load, the reader and resizes at 834 px, where it showed, and also listens on the window.
+        test("S3 head: fitting the tabs leaves no ResizeObserver notification undelivered", async () => {
+          const page = await open(`${boxPath}?layout=auto`, 834, 1194);
+          try {
+            await page.addInitScript(() => {
+              const seen: string[] = [];
+              Reflect.set(window, "loopErrors", seen);
+              window.addEventListener("error", (event) => {
+                if (String(event.message).includes("ResizeObserver")) seen.push(event.message);
+              });
+            });
+            for (const [path, width, height] of [
+              [`${boxPath}?layout=auto`, 834, 1194],
+              [`${boxPath}?layout=auto&conversation=Conv01`, 834, 1194],
+              [`${boxPath}?layout=auto&conversation=Conv01`, 1024, 768],
+              [`${boxPath}?layout=auto`, 1280, 800],
+            ] as const) {
+              await page.setViewportSize({ width, height });
+              await page.goto(new URL(path, server.url).href);
+              await ready(page);
+              await settled(page);
+              for (const next of [1680, 900, 1440, width]) {
+                await page.setViewportSize({ width: next, height });
+                await settled(page);
+              }
+              await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+              expect(await page.evaluate(() => Reflect.get(window, "loopErrors")), `${path} at ${width}`).toEqual([]);
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
         test("S3 head on a phone: the view strip keeps scrolling with its first views and More", async () => {
           const page = await open(`${boxPath}?layout=auto`, 390, 844);
           try {

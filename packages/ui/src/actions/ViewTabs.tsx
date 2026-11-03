@@ -58,6 +58,7 @@ function settleViewTabs(list: Element | null, edges: (element: HTMLElement) => s
   const more = list.querySelector<HTMLElement>(":scope > .k2b-view-tabs__more");
   const fitCount = more?.querySelector<HTMLElement>('.k2b-view-tabs__more-count[data-level="fit"]');
   const flowing = Array.from(list.querySelectorAll<HTMLElement>(":scope > .k2b-view-tabs__item:not([data-pinned])"));
+
   for (const item of flowing) item.removeAttribute("data-fit-hidden");
   more?.removeAttribute("data-fit");
   // The shown entries against the strip's inner room, whatever its scroll and padding.
@@ -116,7 +117,13 @@ function settleViewTabs(list: Element | null, edges: (element: HTMLElement) => s
 }
 
 type WatchedViewTabs = HTMLElement & {
-  __k2bViewTabsWatch?: { resize: ResizeObserver; focus: (event: FocusEvent) => void; preferCurrent: boolean };
+  __k2bViewTabsWatch?: {
+    resize: ResizeObserver;
+    focus: (event: FocusEvent) => void;
+    preferCurrent: boolean;
+    connect: () => void;
+    frame: number;
+  };
 };
 
 /** Also embedded, so it must not close over module state. */
@@ -132,34 +139,57 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
         settle(list, edges, event.target);
       }
     };
+    // Head actions parse after the views; settle again after their layout, before paint, and on later resizes.
+    const connect = () => {
+      if (!watch) return;
+      watch.resize.disconnect();
+      watch.resize.observe(list);
+      for (const child of Array.from(list.children)) watch.resize.observe(child);
+      // A fitted strip is only as wide as its views, so the room around it tells when more of them fit.
+      const room = list.closest(".k2b-app-workspace__head-lead") ?? list.parentElement?.parentElement;
+      if (list.hasAttribute("data-fit-room") && room) watch.resize.observe(room);
+    };
+    const settleNow = () => {
+      const focused = document.activeElement;
+      if (
+        watch?.preferCurrent === false &&
+        focused instanceof HTMLElement &&
+        list.contains(focused) &&
+        focused.matches(".k2b-view-tabs__tab:focus-visible")
+      )
+        settle(list, edges, focused);
+      else settle(list, edges);
+    };
     watch = {
       resize: new ResizeObserver(() => {
-        const focused = document.activeElement;
-        if (
-          watch?.preferCurrent === false &&
-          focused instanceof HTMLElement &&
-          list.contains(focused) &&
-          focused.matches(".k2b-view-tabs__tab:focus-visible")
-        )
-          settle(list, edges, focused);
-        else settle(list, edges);
+        // Fitting resizes boxes that other observers may watch, such as the head. Inside a ResizeObserver callback
+        // that would leave their notifications undelivered, so a fitting strip settles in the next frame instead,
+        // still before that frame paints. A scrolling strip only scrolls and settles at once.
+        if (!list.hasAttribute("data-fit-room")) return settleNow();
+        if (!watch || watch.frame) return;
+        watch.frame = requestAnimationFrame(() => {
+          if (!watch) return;
+          watch.frame = 0;
+          if (list.isConnected) settleNow();
+        });
       }),
       focus,
       preferCurrent: true,
+      connect,
+      frame: 0,
     };
     Object.defineProperty(list, "__k2bViewTabsWatch", { value: watch, configurable: true });
     list.addEventListener("focusin", focus);
   }
   watch.preferCurrent = true;
-  const { resize } = watch;
-  resize.disconnect();
-  // Head actions parse after the views; settle again after their layout, before paint, and on later resizes.
-  resize.observe(list);
-  for (const child of Array.from(list.children)) resize.observe(child);
-  // A fitted strip is only as wide as its views, so the room around it tells when more of them fit.
-  const room = list.closest(".k2b-app-workspace__head-lead") ?? list.parentElement?.parentElement;
-  if (list.hasAttribute("data-fit-room") && room) resize.observe(room);
+  watch.connect();
   settle(list, edges);
+  // The head's actions parse after the views. The frame's animation callbacks run before its first layout and
+  // paint, so the fit also counts their room in the first frame.
+  if (list.hasAttribute("data-fit-room"))
+    requestAnimationFrame(() => {
+      if (list.isConnected) settle(list, edges);
+    });
   return watch;
 }
 const VIEW_TABS_SCRIPT = `(${watchViewTabs})(document.currentScript&&document.currentScript.previousElementSibling,${settleViewTabs},${scrollFadeEdges})`;
@@ -189,6 +219,7 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
     onCleanup(() => {
       disposed = true;
       watch?.resize.disconnect();
+      if (watch?.frame) cancelAnimationFrame(watch.frame);
       if (list && watch) {
         list.removeEventListener("focusin", watch.focus);
         Reflect.deleteProperty(list, "__k2bViewTabsWatch");
