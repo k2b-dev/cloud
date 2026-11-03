@@ -338,8 +338,11 @@ const createProvider = (kind: ProviderKind) => {
       failingSearches = count;
       searchFailureCode = code;
     },
-    failNextSubmission: (code: string, afterTransfer: boolean) => {
-      submissionFailure = { error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN" }), afterTransfer };
+    failNextSubmission: (code: string, afterTransfer: boolean, responseCode?: number) => {
+      submissionFailure = {
+        error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN", ...(responseCode ? { responseCode } : {}) }),
+        afterTransfer,
+      };
     },
     refuseRecipient: (address: string) => {
       refusedRecipients.add(address);
@@ -2309,6 +2312,72 @@ suite("mail sent message projection", () => {
       `;
       expect(await sendRetryNow(outbox.id)).toBe("sent");
       expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose SMTP login is refused waits for a new login and goes out once the mailbox is signed in again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      for (const [responseCode, key] of [
+        [535, "smtp-login-refused"],
+        [534, "smtp-login-elsewhere"],
+      ] as const) {
+        const draft = await newDraft(mailbox, `SMTP ${responseCode}`);
+        provider.failNextSubmission("EAUTH", false, responseCode);
+        const outbox = await send(mailbox, draft.id, draft.revision, key, "scheduled");
+        // The mailbox shows that it needs a new login, as when IMAP refuses it, and the send waits.
+        expect(await delivery(outbox.id)).toEqual({
+          state: "scheduled",
+          last_error_code: "MAILBOX_AUTH_REQUIRED",
+          command_state: "queued",
+          draft_state: "scheduled",
+        });
+        const [state] = await sql<{ health: string; connection_status: string; binding_state: string }[]>`
+          SELECT mailbox.health, connection.status AS connection_status, binding.state AS binding_state
+          FROM mail.outbox_submissions outbox
+          JOIN mail.mailboxes mailbox ON mailbox.id = outbox.mailbox_id
+          JOIN mail.provider_bindings binding ON binding.id = outbox.selected_binding_id
+          JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+          WHERE outbox.id = ${outbox.id}::uuid
+        `;
+        expect(state).toEqual({ health: "auth_required", connection_status: "degraded", binding_state: "degraded" });
+        expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+
+        // A new password, verified for the account and its sender, lets the send go out once.
+        await sql`
+          UPDATE mail.provider_connections connection
+          SET secret_revision = connection.secret_revision + 1, status = 'active', last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_bindings binding
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND connection.id = binding.connection_id
+        `;
+        await sql`
+          UPDATE mail.provider_bindings binding
+          SET state = 'active', verified_secret_revision = connection.secret_revision, last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_connections connection
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND connection.id = binding.connection_id
+        `;
+        await sql`
+          UPDATE mail.sender_identity_bindings sender_binding
+          SET verified_secret_revision = binding.verified_secret_revision
+          FROM mail.provider_bindings binding
+          WHERE sender_binding.sender_identity_id = ${mailbox.identityId}::uuid AND binding.id = sender_binding.binding_id
+        `;
+        await sql`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL WHERE id = ${mailbox.mailboxId}::uuid`;
+        const submitted = provider.submissions();
+        expect(await sendRetryNow(outbox.id)).toBe("sent");
+        expect(provider.submissions()).toBe(submitted + 1);
+      }
+
+      // Any other permanent rejection stays final.
+      const rejected = await newDraft(mailbox, "SMTP 550");
+      provider.failNextSubmission("EENVELOPE", false, 550);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "smtp-550", "failed");
+      expect(await delivery(failed.id)).toMatchObject({ state: "failed", draft_state: "draft" });
     } finally {
       provider.restore();
     }

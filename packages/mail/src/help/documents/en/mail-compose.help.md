@@ -235,7 +235,7 @@ Scheduled delivery and Undo Send require an active mailbox transport. When someo
 
 A message waits and shows **Waiting for sign-in** when it is due and one of these applies:
 
-- the mailbox needs a new sign-in;
+- the mailbox needs a new sign-in, also because its outgoing mail server refused the password;
 - someone replaced its password, and the mailbox or the sending identity is not verified with the new password yet.
 
 Mail tells you once. It sends the message as soon as the account is reconnected, still dated when it goes out. If nobody reconnects the account within six days after the due time, the message shows **Couldn’t send** and returns to Drafts. Mail then tells you again.

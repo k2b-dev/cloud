@@ -744,6 +744,22 @@ const markRediscoveryFailure = async (
 };
 
 /**
+ * The provider refused the connection's login outside a rediscovery, for example at SMTP. The
+ * mailbox then needs a new login, as when a rediscovery's login is refused.
+ */
+export const recordRefusedProviderLogin = async (params: { bindingId: string; secretRevision: number; error: unknown }): Promise<void> => {
+  const [binding] = await sql<{ connection_id: string }[]>`
+    SELECT connection_id FROM mail.provider_bindings WHERE id = ${params.bindingId}::uuid
+  `;
+  if (!binding) return;
+  const refused = Object.assign(new Error(providerErrorMessage(params.error, "The mail server refused the login")), {
+    code: "EAUTH",
+    authenticationFailed: true,
+  });
+  await markRediscoveryFailure(params.bindingId, binding.connection_id, params.secretRevision, refused);
+};
+
+/**
  * Settles with the abort reason as soon as the signal aborts. Provider libraries
  * do not reliably settle a pending call when their socket is closed, and an
  * aborted rediscovery must still record its failure and release its lease.
