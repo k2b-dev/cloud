@@ -831,11 +831,26 @@
     height: auto;
   }
 
-  .mail-attachment-preview {
+  /* A message's attachments sit between its header and its body, so they show without scrolling past the text. */
+  .mail-message-attachments {
+    margin-bottom: 0.75rem;
+  }
+
+  .mail-message-attachments__head {
+    display: flex;
     min-height: 1.75rem;
-    padding: 0 0.375rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .mail-message-attachments__count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     font-size: 0.75rem;
-    line-height: 1rem;
+    font-weight: 500;
+    color: var(--k2b-text-secondary);
   }
 
   .mail-composer-surface {

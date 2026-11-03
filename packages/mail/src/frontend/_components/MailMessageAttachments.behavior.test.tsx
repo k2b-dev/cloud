@@ -53,8 +53,14 @@ describe("Mail attachment preview", () => {
       dom.root,
     );
     const dialog = () => dom.document.querySelector<HTMLElement>(".k2b-dialog[open]")!;
-    const preview = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".mail-attachment-preview")[index]!;
+    // A click on an item opens its preview; the fourth item shows once the full list is open.
+    const preview = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".k2b-file-grid__open")[index]!;
     try {
+      expect(dom.root.querySelector("[data-mail-message-attachments]")?.textContent).toContain("4 attachments");
+      expect(dom.root.querySelectorAll(".k2b-file-grid__open")).toHaveLength(3);
+      dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid-stack__more")!.click();
+      await settle();
+      expect(dom.root.querySelectorAll(".k2b-file-grid__open")).toHaveLength(4);
       preview(0).click();
       await settle();
       expect(dialog().className).toContain("mail-attachment-dialog--reading");

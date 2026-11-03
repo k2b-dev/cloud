@@ -327,6 +327,56 @@ describe("Mail conversation reader", () => {
     expect(olderArticle).toContain('aria-expanded="true"');
   });
 
+  test("shows a message's attachments above its body and their count in every message header", () => {
+    /** Invented demo attachments: one image the HTML body shows in place, four photos, and a PDF. */
+    const attachment = (id: string, filename: string, contentType: string, contentId: string | null = null) => ({
+      id,
+      filename,
+      contentType,
+      sizeBytes: 120_000,
+      contentId,
+      checksum: null,
+    });
+    const withFiles: MessageDetail = {
+      ...message,
+      hasAttachments: true,
+      sanitizedHtml: '<p>Photos from the summer party</p><img src="cid:logo@example.com">',
+      attachments: [
+        attachment("Att001", "logo.png", "image/png", "<logo@example.com>"),
+        attachment("Att002", "Programme.pdf", "application/pdf"),
+        ...["Att003", "Att004", "Att005", "Att006"].map((id, index) => attachment(id, `Photo_${index + 1}.jpg`, "image/jpeg")),
+      ],
+    };
+    const older = { ...withFiles, id: "MsgOld", internalDate: "2026-08-16T11:00:00.000Z", sentAt: "2026-08-16T11:00:00.000Z" };
+    const html = renderReader([], { messages: [older, withFiles], readingFormat: "html" });
+    const latestStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="Msg001"'));
+    const latest = html.slice(latestStart, html.indexOf("</article>", latestStart));
+    const olderStart = html.lastIndexOf("<article", html.indexOf('data-mail-message-id="MsgOld"'));
+    const olderArticle = html.slice(olderStart, html.indexOf("</article>", olderStart));
+
+    // The list sits between the header and the body and leaves out the image the body already shows.
+    const list = latest.indexOf("data-mail-message-attachments");
+    expect(list).toBeGreaterThan(latest.indexOf("data-mail-message-header"));
+    expect(list).toBeLessThan(latest.indexOf("mail-message-body"));
+    expect(latest).toContain("5 attachments");
+    expect(latest).not.toContain("logo.png");
+    // The first three, then "Show all 5"; images get a preview, other files their type, never the MIME type.
+    expect(latest).toContain("Programme.pdf");
+    expect(latest).toContain("Photo_2.jpg");
+    expect(latest).not.toContain("Photo_3.jpg");
+    expect(latest).toContain("Show all 5");
+    expect(latest).toContain('src="/api/mail/mailboxes/Box001/messages/Msg001/attachments/Att003?inline=true"');
+    expect(latest).not.toContain("application/pdf");
+    // A collapsed message names its attachments in its header, without the list.
+    expect(olderArticle).toContain('aria-expanded="false"');
+    expect(olderArticle).toContain("data-mail-message-attachment-count");
+    expect(olderArticle).not.toContain("data-mail-message-attachments");
+    // Open, the list says it; the header repeats nothing.
+    expect(latest).not.toContain("data-mail-message-attachment-count");
+    // The plain alternative shows no inline image, so the image is listed there.
+    expect(renderReader([], { messages: [{ ...withFiles, plainText: "Photos" }], readingFormat: "plain" })).toContain("6 attachments");
+  });
+
   test("renders meaningful SSR activity inline without turning it into a message card", () => {
     const html = renderReader([], {
       activity: [

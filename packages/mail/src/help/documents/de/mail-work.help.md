@@ -140,7 +140,7 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
 
-Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst.
+Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst. Eine offene Nachricht zeigt ihre Anhänge über dem Text: die Anzahl, die ersten drei Dateien mit Vorschau oder Dateityp und **Alle anzeigen**. Eine zugeklappte Nachricht zeigt die Anzahl ihrer Anhänge neben dem Datum. Bilder, die der Text schon zeigt, stehen nicht in der Liste.
 
 Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung in einer hervorgehobenen Karte erscheinen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen → Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 

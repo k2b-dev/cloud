@@ -140,7 +140,7 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
 
-Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.
+Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content. An open message shows its attachments above its text: the number, the first three files with a preview or their type, and **Show all**. A collapsed message shows the number of its attachments next to its date. Images that the text already shows are not in the list.
 
 An optional conversation summary appears in a highlighted card above the messages. To keep it current with Markdown formatting, use **Edit summary** or **More conversation actions → Create summary**. Summaries are shared Mail context, and an automation can also update them.
 
