@@ -12,8 +12,11 @@ const doneByFolderSchema = z.preprocess(
   z.record(z.uuid(), z.number().int().nonnegative()),
 );
 
-/** The view counts and, per folder, the done conversations its list leaves out. */
-export type MailboxConversationCounts = { views: ConversationViewCounts; doneByFolder: Record<string, number> };
+/**
+ * The view counts, the conversations assigned to the reader that wait for a reply (Assigned to me's second group),
+ * and, per folder, the done conversations its list leaves out.
+ */
+export type MailboxConversationCounts = { views: ConversationViewCounts; mineWaiting: number; doneByFolder: Record<string, number> };
 
 /** The authoritative query, also used to measure the prepared statement on a fixture transaction. */
 export const queryConversationViewCounts = async (
@@ -32,6 +35,7 @@ export const queryConversationViewCounts = async (
     {
       needs_action: number;
       mine: number;
+      mine_waiting: number;
       unassigned: number;
       waiting: number;
       done: number;
@@ -82,6 +86,12 @@ export const queryConversationViewCounts = async (
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS mine,
         COUNT(*) FILTER (
+          WHERE scope.follow_up
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.principal_id = ${params.currentUserId}::uuid)
+            AND scope.work_status = 'waiting'
+            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+        )::int AS mine_waiting,
+        COUNT(*) FILTER (
           WHERE scope.aggregated
             AND scope.follow_up
             AND ${isUnassignedConversation(lapsedAssignees, sql`scope`)}
@@ -119,5 +129,5 @@ export const queryConversationViewCounts = async (
     recently_active: row?.recently_active ?? 0,
     kept: row?.kept ?? 0,
   };
-  return { views, doneByFolder: doneByFolderSchema.parse(row?.done_by_folder ?? {}) };
+  return { views, mineWaiting: row?.mine_waiting ?? 0, doneByFolder: doneByFolderSchema.parse(row?.done_by_folder ?? {}) };
 };

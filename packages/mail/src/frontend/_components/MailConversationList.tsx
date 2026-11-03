@@ -21,7 +21,7 @@ import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
-import type { MailListError, MailListMode } from "../../service/workspace";
+import type { MailAssignedGroups, MailListError, MailListMode } from "../../service/workspace";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
@@ -105,6 +105,8 @@ export default function MailConversationList(props: {
   doneToday?: { done: number; automated: number; open: number; logHref: string } | null;
   /** The done conversations this work list leaves out, named at its end, and where "Show done" leads. */
   hiddenDone?: { count: number | null; more: boolean; href: string } | null;
+  /** Assigned to me: "Your turn" above "Waiting for reply", each with its count for the whole view. */
+  assignedGroups?: MailAssignedGroups | null;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
@@ -202,8 +204,25 @@ export default function MailConversationList(props: {
   // Day headings follow the person's calendar; a search may sort by relevance, so it shows none.
   /** An empty list after a day with completed work: "All done." takes the placeholder's place. */
   const allDone = () => props.items.length === 0 && !searchActive() && (props.doneToday?.done ?? 0) > 0;
+  /** Where each of Assigned to me's groups starts; the service lists every row that needs action first. */
+  const assignedStarts = createMemo(() => {
+    const starts = new Map<number, keyof MailAssignedGroups>();
+    if (!props.assignedGroups) return starts;
+    const seen = new Set<keyof MailAssignedGroups>();
+    props.items.forEach((item, index) => {
+      const group = item.workStatus === "waiting" ? "waiting" : "needsAction";
+      if (seen.has(group)) return;
+      seen.add(group);
+      starts.set(index, group);
+    });
+    return starts;
+  });
+  const assignedHeading = (group: keyof MailAssignedGroups) => {
+    const count = new Intl.NumberFormat(locale()).format(props.assignedGroups?.[group] ?? 0);
+    return group === "waiting" ? messages().groupWaiting({ count }) : messages().groupYourTurn({ count });
+  };
   const dayStarts = createMemo(() =>
-    searchActive()
+    searchActive() || props.assignedGroups
       ? new Map<number, MailDayGroup>()
       : mailDayGroupStarts(
           props.items,
@@ -228,6 +247,7 @@ export default function MailConversationList(props: {
     return hidden;
   };
   const hiddenDoneText = (hidden: { count: number | null; more: boolean }) => {
+    if (props.assignedGroups) return messages().assignedDone;
     if (hidden.count === null) return null;
     const formatted = new Intl.NumberFormat(locale()).format(hidden.count);
     return hidden.more ? messages().hiddenDoneMore({ formatted }) : messages().hiddenDone({ count: hidden.count, formatted });
@@ -418,21 +438,25 @@ export default function MailConversationList(props: {
             </div>
           ) : props.items.length === 0 ? (
             <Placeholder
-              icon={searchActive() ? "ti ti-search" : "ti ti-mail-off"}
+              icon={searchActive() ? "ti ti-search" : props.assignedGroups ? "ti ti-mood-smile" : "ti ti-mail-off"}
               variant="panel"
               title={
                 searchActive()
                   ? messages().noMatchingMessages
-                  : props.listMode === "conversations"
-                    ? messages().noConversations
-                    : messages().noMessages
+                  : props.assignedGroups
+                    ? messages().nothingAssigned
+                    : props.listMode === "conversations"
+                      ? messages().noConversations
+                      : messages().noMessages
               }
               description={
                 searchActive()
                   ? messages().changeFilters
-                  : props.mailbox.accessScope === "assigned"
-                    ? messages().appearsOnceAssigned
-                    : messages().newMailAppears
+                  : props.assignedGroups
+                    ? messages().nothingAssignedText
+                    : props.mailbox.accessScope === "assigned"
+                      ? messages().appearsOnceAssigned
+                      : messages().newMailAppears
               }
               action={
                 searchActive() ? (
@@ -500,6 +524,18 @@ export default function MailConversationList(props: {
                         {(group) => (
                           <div role="listitem" class="mail-day-group" data-mail-day-group={group()}>
                             <h3 class="k2b-list-group-heading">{dayLabel(group())}</h3>
+                          </div>
+                        )}
+                      </Show>
+                      <Show when={assignedStarts().get(index())}>
+                        {(group) => (
+                          <div role="listitem" class="mail-day-group" data-mail-assigned-group={group()}>
+                            <h3 class="k2b-list-group-heading mail-assigned-group">
+                              <Show when={group() === "waiting"} fallback={<span class="mail-row-status-dot" aria-hidden="true" />}>
+                                <i class="ti ti-hourglass" aria-hidden="true" />
+                              </Show>
+                              {assignedHeading(group())}
+                            </h3>
                           </div>
                         )}
                       </Show>

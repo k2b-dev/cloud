@@ -257,6 +257,13 @@
     padding: 0 0.625rem 0.25rem 1.3125rem;
   }
 
+  /* Assigned to me's group headings sit where day headings do; the needs-action dot repeats the status column's. */
+  .mail-assigned-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
   /* The day's progress above the list: fixed height, so it never pushes the rows when the count changes. */
   .mail-done-line {
     display: flex;

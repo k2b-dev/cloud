@@ -29,7 +29,7 @@ const counts = (value: number): ConversationViewCounts => ({
   recently_active: value,
   kept: value,
 });
-const snapshot = (value: number) => ({ views: counts(value), doneByFolder: {} });
+const snapshot = (value: number) => ({ views: counts(value), mineWaiting: 0, doneByFolder: {} });
 
 suite("Mail count cache", () => {
   let context: MailRequestContext;
