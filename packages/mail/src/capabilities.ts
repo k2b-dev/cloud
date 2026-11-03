@@ -2052,7 +2052,10 @@ const queryDefinitions = {
       if (!serviceResult.ok) return serviceResult;
       const items = await activityPublic.projectActivityItems(serviceResult.data.items);
       // The audit timeline keeps its contract; the feed's subject and assignee names belong to the Mail UI.
-      const result = mapPage(ok({ ...serviceResult.data, items }), ({ conversationSubject: _subject, assignees: _assignees, ...item }) => item);
+      const result = mapPage(
+        ok({ ...serviceResult.data, items }),
+        ({ conversationSubject: _subject, assignees: _assignees, ...item }) => item,
+      );
       if (!result.ok) return result;
       const refs = input.conversationId
         ? [{ type: "mail.conversation" as const, id: input.conversationId }]

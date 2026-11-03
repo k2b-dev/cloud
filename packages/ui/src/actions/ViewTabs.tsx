@@ -3,7 +3,17 @@ import { useUiMessages } from "../intl/messages";
 import { createScrollFade, scrollFadeEdges } from "../layout/scroll-fade";
 import Dropdown, { type DropdownItem } from "./Dropdown";
 
-export type ViewTab = { id: string; label: string; href: string; icon?: string; count?: number | string };
+export type ViewTab = {
+  id: string;
+  label: string;
+  href: string;
+  icon?: string;
+  count?: number | string;
+  /** A short quiet label after the count, such as "New" for a view people have not opened yet. */
+  badge?: string;
+  /** Stays in the strip after More at every width, for a view of another kind than the ones that overflow. */
+  pinned?: boolean;
+};
 export type ViewTabsProps = {
   /** Accessible name of the navigation landmark, e.g. "Views". */
   label: string;
@@ -19,15 +29,19 @@ export type ViewTabsProps = {
 export function viewTabsLayout(items: readonly ViewTab[], current: string | undefined, max = 5) {
   // At least one slot keeps the current view visible, including for an invalid limit.
   const limit = Number.isFinite(max) ? Math.max(1, Math.floor(max)) : 5;
+  // Pinned views never overflow, so they take no slot.
+  const flowing = items.flatMap((item, index) => (item.pinned ? [] : [index]));
+  const pinned = items.flatMap((item, index) => (item.pinned ? [index] : []));
   const currentIndex = items.findIndex((item) => item.id === current);
+  const currentPosition = flowing.indexOf(currentIndex);
   const visible = (size: number) => {
-    const indices = items.slice(0, size).map((_, index) => index);
-    if (currentIndex >= size) indices[indices.length - 1] = currentIndex;
+    const indices = flowing.slice(0, size);
+    if (currentPosition >= size) indices[indices.length - 1] = currentIndex;
     return indices;
   };
   const wide = visible(limit);
   const compact = visible(Math.min(limit, 3));
-  return { wide, compact, wideHidden: items.length - wide.length, compactHidden: items.length - compact.length };
+  return { wide, compact, pinned, wideHidden: flowing.length - wide.length, compactHidden: flowing.length - compact.length };
 }
 
 /** Self-contained: the server script embeds this before hydration. */
@@ -152,7 +166,9 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
         props.items
           .filter(
             (item, index) =>
-              item.id !== props.current && (!layout().wide.includes(index) || stripItems.get(index)?.getClientRects().length === 0),
+              !item.pinned &&
+              item.id !== props.current &&
+              (!layout().wide.includes(index) || stripItems.get(index)?.getClientRects().length === 0),
           )
           .map((item) => ({
             href: item.href,
@@ -171,29 +187,29 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
       <Show when={item.count !== undefined}>
         <span class="k2b-view-tabs__count">{item.count}</span>
       </Show>
+      <Show when={item.badge}>{(badge) => <span class="k2b-view-tabs__badge">{badge()}</span>}</Show>
     </>
   );
+  const stripItem = (index: number) => {
+    const item = () => props.items[index]!;
+    onCleanup(() => stripItems.delete(index));
+    return (
+      <li
+        ref={(element) => stripItems.set(index, element)}
+        class="k2b-view-tabs__item"
+        data-view-tab={item().id}
+        data-compact-hidden={!item().pinned && !layout().compact.includes(index) ? "" : undefined}
+      >
+        <a class="k2b-view-tabs__tab" href={item().href} aria-current={item().id === props.current ? "page" : undefined}>
+          {tabContent(item())}
+        </a>
+      </li>
+    );
+  };
   return (
     <nav class={`k2b-view-tabs ${props.class ?? ""}`} aria-label={props.label}>
       <ul ref={list} class="k2b-view-tabs__list" data-scroll-fade-mode="both" data-scroll-fade-axis="horizontal">
-        <For each={layout().wide}>
-          {(index) => {
-            const item = () => props.items[index]!;
-            onCleanup(() => stripItems.delete(index));
-            return (
-              <li
-                ref={(element) => stripItems.set(index, element)}
-                class="k2b-view-tabs__item"
-                data-view-tab={item().id}
-                data-compact-hidden={!layout().compact.includes(index) ? "" : undefined}
-              >
-                <a class="k2b-view-tabs__tab" href={item().href} aria-current={item().id === props.current ? "page" : undefined}>
-                  {tabContent(item())}
-                </a>
-              </li>
-            );
-          }}
-        </For>
+        <For each={layout().wide}>{stripItem}</For>
         <Show when={layout().compactHidden + layout().wideHidden > 0}>
           <li class="k2b-view-tabs__more" data-wide={layout().wideHidden > 0 ? "" : undefined}>
             <Dropdown.Root items={menuItems()} open={open()} onOpenChange={onOpenChange} label={messages().moreViews}>
@@ -214,6 +230,7 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
             </Dropdown.Root>
           </li>
         </Show>
+        <For each={layout().pinned}>{stripItem}</For>
       </ul>
       <script innerHTML={VIEW_TABS_SCRIPT} />
     </nav>

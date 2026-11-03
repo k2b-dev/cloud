@@ -37,6 +37,7 @@ import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesList
 import { mailFolderNames } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
+import { readMailEventsFilter } from "../mail-events-route";
 import type { MailViewPreference } from "../mail-view-preference";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
@@ -52,6 +53,7 @@ import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
 import MailDetailsPanel, { MailDetailsSkeleton } from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
+import { createMailEventsFeed, MailEventsFeed } from "./_components/MailEventsFeed";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar, { type MailSidebarMailbox, type MailSidebarOpenMailbox } from "./_components/MailSidebar";
@@ -89,6 +91,7 @@ import { mailConversationUiMessages } from "./_components/mail-conversation-ui-m
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { mailEventsMessages } from "./_components/mail-events-messages";
 import { createRetryToasts } from "./_components/mail-feedback";
 import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
@@ -743,6 +746,8 @@ function createMailboxController(props: MailboxControllerProps) {
   const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
   const [searchDiscovered, setSearchDiscovered] = createSignal(Boolean(props.initialPreferences.searchDiscovered));
   const [searchHintDismissed, setSearchHintDismissed] = createSignal(Boolean(props.initialPreferences.searchHintDismissed));
+  // Events is marked new until the person first opens it; the cookie is written once, on that first visit.
+  const [eventsDiscovered, setEventsDiscovered] = createSignal(Boolean(props.initialPreferences.eventsDiscovered));
   const searchControls = createMailboxSearch({
     mailboxId,
     get requestUrl() {
@@ -770,7 +775,7 @@ function createMailboxController(props: MailboxControllerProps) {
       return canWrite();
     },
     get enabled() {
-      return !data.scheduledMode && !data.draftsMode && !selectionMode();
+      return !data.scheduledMode && !data.draftsMode && !data.eventsMode && !selectionMode();
     },
     onOpenHref: (href, replace) => openWorkspaceHref(href, replace),
     onNavigationStart: props.onNavigationStart,
@@ -845,6 +850,12 @@ function createMailboxController(props: MailboxControllerProps) {
       pendingPreferences = {};
     }, 120);
   };
+
+  createEffect(() => {
+    if (!data.eventsMode || untrack(eventsDiscovered)) return;
+    setEventsDiscovered(true);
+    persistPreferences({ eventsDiscovered: true });
+  });
 
   const setCollapsed = (collapsed: boolean) => {
     setListCollapsed(collapsed);
@@ -1255,7 +1266,8 @@ function createMailboxController(props: MailboxControllerProps) {
       { defer: true },
     ),
   );
-  const largeLayout = createMemo(() => resolveMailLargeLayout(viewPreference().large, hasSelection()));
+  // The Events feed has no columns: it fills the main area until a conversation opens beside it.
+  const largeLayout = createMemo(() => resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection()));
   /** Columns over the full main area: the list pane closes and the list takes the reader's place. */
   const columnsWide = () => !data.scheduledMode && !data.draftsMode && largeLayout().list === "full";
   const listOpen = () => largeLayout().list === "pane" && (!listCollapsed() || !hasSelection());
@@ -1601,7 +1613,7 @@ function createMailboxController(props: MailboxControllerProps) {
     // V switches between columns and list with reader (F2); typing, menus and dialogs keep the key.
     const switchView = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "v" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      if (event.defaultPrevented || event.repeat || event.isComposing || data.scheduledMode || data.draftsMode) return;
+      if (event.defaultPrevented || event.repeat || event.isComposing || data.scheduledMode || data.draftsMode || data.eventsMode) return;
       if (
         event.target instanceof Element &&
         event.target.closest(
@@ -2680,6 +2692,7 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 
   const sidebarText = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const eventsText = createMemo(() => mailEventsMessages.resolve([locale()]).t);
   const mailboxMenu = createMailboxMenu(() => ({
     mailboxId: data.mailbox.id,
     syncEnabled: data.mailbox.syncEnabled,
@@ -2702,6 +2715,7 @@ function createMailboxController(props: MailboxControllerProps) {
     mailboxCurrentTab({
       scheduledMode: data.scheduledMode,
       draftsMode: data.draftsMode,
+      eventsMode: data.eventsMode,
       folderId: data.folderId,
       activeView: data.query ? null : data.activeView,
       savedViewId: data.savedViewId,
@@ -2729,6 +2743,7 @@ function createMailboxController(props: MailboxControllerProps) {
       assignedOnly: assignedOnly(),
       labels: {
         all: sidebarText().allConversations,
+        events: eventsText().events,
         needs_action: sidebarText().needsAction,
         mine: sidebarText().assignedToMe,
         waiting: sidebarText().waitingForReply,
@@ -2738,9 +2753,29 @@ function createMailboxController(props: MailboxControllerProps) {
         recently_active: sidebarText().recentActivity,
         kept: sidebarText().kept,
       },
+      eventsBadge: eventsDiscovered() ? undefined : eventsText().eventsNew,
       formatCount: (count) => count.toLocaleString(locale()),
     }),
   );
+  const eventsFeed = createMailEventsFeed({
+    mailboxId,
+    page: () => data.eventsPage,
+    failedMessage: () => eventsText().loadMoreFailed,
+  });
+  const eventsFilter = createMemo(() => data.eventsPage?.filter ?? readMailEventsFilter(mailRouteUrl(requestPath())));
+  /** Another filter or the tab itself is on its way; opening a conversation beside the feed or a refresh keeps it. */
+  const eventsLoading = () => data.eventsMode && workspaceQuery.loading() && !conversationOpening();
+  /** A click on an event opens its conversation beside the feed; the feed keeps its pages. */
+  const openEventConversation = async (href: string, conversationId: string, subject: string) => {
+    navigationStart(href);
+    const result = inCurrentList(href)
+      ? await openConversationInList(href, conversationId, null, subject)
+      : await replaceWorkspaceRoute(href);
+    if (result === "applied") {
+      setConversationOpenIntent((intent) => intent + 1);
+      navigate(href, { scroll: "preserve", viewTransition: false });
+    } else if (result === "failed") toast.error(t().openConversationFailed);
+  };
   /** A search narrows the list: the head offers Reset back to where the search started. */
   const searchFiltered = () => Boolean(data.query.trim() || activeSearch().expression);
 
@@ -2841,6 +2876,10 @@ function createMailboxController(props: MailboxControllerProps) {
     mergeSelectedConversation,
     navigateConversation,
     navigateWorkspace,
+    openEventConversation,
+    eventsFeed,
+    eventsFilter,
+    eventsLoading,
     openHealth,
     openSettings,
     openWorkspaceHref,
@@ -2901,6 +2940,25 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         return createMailboxController({ ...props, ...session });
       },
     ),
+  );
+
+  /** The Events tab's feed, in the list's place: over the full main area, or beside the open conversation. */
+  const eventsFeed = () => (
+    <MailEventsFeed
+      mailboxId={controller().data.mailbox.id}
+      feed={controller().eventsFeed}
+      page={controller().data.eventsPage}
+      filter={controller().eventsFilter()}
+      error={controller().data.eventsError}
+      loading={controller().eventsLoading()}
+      selectedConversationId={controller().data.selectedConversationId}
+      currentUserId={props.currentUserId}
+      dateConfig={props.dateConfig}
+      localTags={controller().data.localTags}
+      onOpenHref={(href) => void controller().openWorkspaceHref(href)}
+      onOpenConversation={(href, conversationId, subject) => void controller().openEventConversation(href, conversationId, subject)}
+      onRetry={() => void controller().reconcileWorkspace()}
+    />
   );
 
   /** The conversation list; `wide` draws the columns view (F2) over the full main area. */
@@ -3068,7 +3126,8 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         filters={
           controller().selectionMode() ||
           controller().data.scheduledMode ||
-          controller().data.draftsMode ? undefined : controller().searchControls.opened() ? (
+          controller().data.draftsMode ||
+          controller().data.eventsMode ? undefined : controller().searchControls.opened() ? (
             <MailSearchOptions search={controller().searchControls} count={controller().listView().items.length} />
           ) : (
             <MailboxHeadFilters
@@ -3096,7 +3155,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         }}
         actions={
           <>
-            <Show when={!controller().data.scheduledMode && !controller().data.draftsMode}>
+            <Show when={!controller().data.scheduledMode && !controller().data.draftsMode && !controller().data.eventsMode}>
               <Show when={!controller().searchControls.opened() && !controller().selectionMode()}>
                 <MailSearchTrigger search={controller().searchControls} unseen={!controller().searchDiscovered()} />
                 <span class="max-md:hidden">
@@ -3176,7 +3235,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
               menu={controller().mailboxMenu}
               label={controller().sidebarText().mailboxMenu({ name: controller().data.mailbox.name })}
               leading={
-                controller().data.draftsMode || controller().data.scheduledMode
+                controller().data.draftsMode || controller().data.scheduledMode || controller().data.eventsMode
                   ? []
                   : [
                       {
@@ -3258,9 +3317,9 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                   minSize={300}
                   maxSize={620}
                 >
-                  {conversationList(false)}
+                  {controller().data.eventsMode ? eventsFeed() : conversationList(false)}
                 </AppWorkspace.MainPane>
-                <Show when={!controller().columnsWide()} fallback={conversationList(true)}>
+                <Show when={!controller().columnsWide()} fallback={controller().data.eventsMode ? eventsFeed() : conversationList(true)}>
                   <MailConversationReader
                     currentUserId={props.currentUserId}
                     mailboxId={controller().data.mailbox.id}

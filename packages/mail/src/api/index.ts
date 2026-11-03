@@ -326,7 +326,9 @@ const activityQuerySchema = cursorQuerySchema.extend({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true")
-    .describe("Only events that concern the caller: their own, ones that assign or unassign them, and ones on conversations assigned to them"),
+    .describe(
+      "Only events that concern the caller: their own, ones that assign or unassign them, and ones on conversations assigned to them",
+    ),
 });
 const workspaceRouteQuerySchema = z.object({
   href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),

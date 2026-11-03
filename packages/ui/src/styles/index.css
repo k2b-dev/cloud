@@ -15262,6 +15262,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
+.k2b-ui .k2b-view-tabs__badge {
+  padding: 0 0.3125rem;
+  border-radius: 0.3125rem;
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1rem;
+}
+
 .k2b-ui .k2b-view-tabs__tab:hover:not([aria-current="page"]) {
   color: var(--k2b-text);
   background: var(--k2b-app-workspace-hover);
@@ -15279,6 +15289,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-view-tabs__tab[aria-current="page"] :is(i, .k2b-view-tabs__count) {
   color: inherit;
+}
+
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"] .k2b-view-tabs__badge {
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-view-tabs__tab:focus-visible {

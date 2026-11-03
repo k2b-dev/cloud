@@ -918,14 +918,14 @@ const buildMailboxListView = async (
       : eventsMode
         ? t.events
         : resolvedSearch.error
-        ? t.search
-        : searchExpression
-          ? query
-            ? t.resultsFor({ query })
-            : t.filteredSearch
-          : activeView
-            ? t.view({ view: activeView })
-            : (activeSavedView?.name ?? (activeFolder ? mailFolderNames(params.locale ?? "en")(activeFolder) : t.allMail)),
+          ? t.search
+          : searchExpression
+            ? query
+              ? t.resultsFor({ query })
+              : t.filteredSearch
+            : activeView
+              ? t.view({ view: activeView })
+              : (activeSavedView?.name ?? (activeFolder ? mailFolderNames(params.locale ?? "en")(activeFolder) : t.allMail)),
   };
 };
 
