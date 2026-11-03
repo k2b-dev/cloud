@@ -9,6 +9,7 @@ import {
   fail,
   getEffectivePermission,
   hasPermission,
+  lockAccessMutationAuthority,
   ok,
   type PermissionLevel,
   type Principal,
@@ -869,21 +870,28 @@ const deleteVenue = async (id: string): Promise<Result<void>> => {
   return ok();
 };
 
-const grantAccess = async (venueId: string, principal: Principal, permission: PermissionLevel): Promise<Result<AccessEntry>> => {
-  const existing = await listAccess(venueId);
-  const duplicate = existing.find((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal));
-  if (duplicate) return fail(err.conflict("Access entry"));
-
-  const created = await createAccess({ principal, permission });
+const grantAccess = async (
+  venueId: string,
+  principal: Principal,
+  permission: PermissionLevel,
+  actor: UserLike | VenueAccessSubject,
+): Promise<Result<AccessEntry>> => {
+  const created = await sql.begin(async (tx) => {
+    const subject = toAccessSubject(actor);
+    if (!(await lockAccessMutationAuthority({ subject: subject.subject, principal }, tx)))
+      return fail(err.forbidden("You do not have access to this venue"));
+    const [venue] = await tx`SELECT id FROM venue.venues WHERE id = ${venueId}::uuid FOR UPDATE`;
+    if (!venue) return fail(err.notFound("Venue"));
+    if (!hasPermission(await grantedPermission(venueId, subject, tx), "admin"))
+      return fail(err.forbidden("You do not have access to this venue"));
+    const existing = await readAccessEntries(venueId, tx);
+    if (existing.some((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal))) return fail(err.conflict("Access entry"));
+    const result = await createAccess({ principal, permission }, tx);
+    if (!result.ok) return result;
+    await tx`INSERT INTO venue.venue_access (venue_id, access_id) VALUES (${venueId}::uuid, ${result.data.id}::uuid)`;
+    return result;
+  });
   if (!created.ok) return created;
-
-  try {
-    await sql`INSERT INTO venue.venue_access (venue_id, access_id) VALUES (${venueId}::uuid, ${created.data.id}::uuid)`;
-  } catch (error) {
-    await deleteAccess({ id: created.data.id });
-    throw error;
-  }
-
   const entries = await listAccess(venueId);
   const entry = entries.find((candidate) => candidate.id === created.data.id);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
@@ -893,7 +901,7 @@ const grantAccess = async (venueId: string, principal: Principal, permission: Pe
  * Change or remove one grant under the venue row lock, so concurrent changes see
  * each other: the actor must still manage the venue, and none of the changes
  * leaves it without a manager. The caller has resolved the venue for the actor,
- * as the routes do; under the lock only the grants can have changed since.
+ * as the routes do; identity, directory and target authority are retained together.
  */
 const writeAccess = (
   venueId: string,
@@ -903,6 +911,8 @@ const writeAccess = (
   locale?: string,
 ): Promise<Result<void>> =>
   sql.begin(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: toAccessSubject(actor).subject, accessId }, tx)))
+      return fail(err.forbidden("You do not have access to this venue"));
     await tx`SELECT id FROM venue.venues WHERE id = ${venueId}::uuid FOR UPDATE`;
     if (!hasPermission(await grantedPermission(venueId, toAccessSubject(actor), tx), "admin")) {
       return fail(err.forbidden("You do not have access to this venue"));

@@ -16,6 +16,7 @@ export type {
   ResourceAccessAdapter,
 } from "./access";
 export {
+  AccessMutationBusyError,
   buildAccessPrincipalCondition,
   buildAccessPrincipalTierConditions,
   createAccess,
@@ -28,6 +29,7 @@ export {
   getEffectivePermissions,
   hasPermission,
   listUsersWithAccess,
+  lockAccessMutationAuthority,
   PERMISSION_LEVELS,
   resolveDisplayNames,
   updateAccess,

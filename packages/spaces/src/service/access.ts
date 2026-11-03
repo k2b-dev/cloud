@@ -9,6 +9,7 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   type RequestActor,
@@ -17,6 +18,7 @@ import {
   userFromActor,
 } from "@k2b/cloud/server";
 import {
+  accounts,
   audit,
   type ServiceAccountCredential,
   serviceAccountCredentials,
@@ -96,7 +98,12 @@ const authorizeAccessMutation = async (
   if (caller?.actor.kind === "service_account" && caller.actor.serviceAccount.kind === "code") return false;
   if (!caller) return true;
   const user = caller.actor.kind === "user" ? caller.actor.user : caller.actor.delegatedUser;
-  if (caller.authority === "administration") return Boolean(user && hasRole(user, "admin"));
+  if (caller.authority === "administration")
+    return Boolean(
+      user &&
+        hasRole(user, "admin") &&
+        (await accounts.users.hasInstallationAdminInTransaction(caller.actor.kind === "user" ? caller.actor : { kind: "user", user }, db)),
+    );
   const account = caller.actor.kind === "service_account" ? caller.actor.serviceAccount : null;
   if (
     account?.kind === "resource_bound" &&
@@ -203,6 +210,7 @@ export const addSpaceAccess = async (spaceId: string, accessId: string): Promise
   try {
     const result = await sql.begin(async (tx): Promise<Result<void>> => {
       // Code manager checks hold a shared target lock until their write completes.
+      if (!(await lockAccessMutationAuthority({ subject: null, accessId }, tx))) return fail(err.forbidden("Access denied"));
       const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
       if (!resource) return fail(err.notFound("Space"));
       await tx`
@@ -254,13 +262,14 @@ const mutateSpaceAccess = async (params: {
   caller?: SpaceAccessCaller;
 }): Promise<Result<void>> => {
   const result = await sql.begin(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, accessId: params.accessId }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${params.spaceId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Space"));
     const before = await listSpaceAccess(params.spaceId, tx);
     if (!(await authorizeAccessMutation(params.spaceId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
     const current = before.find((entry) => entry.id === params.accessId);
     if (!current) return fail(err.notFound("Access entry for this space"));
-    if (current.serviceAccountKind === "code") return fail(err.badInput("Manage Code access through Core using its grantId"));
     const permission = params.permission;
     const after =
       permission === undefined
@@ -368,6 +377,8 @@ export const grantSpaceAccess = async (params: {
 }): Promise<Result<AccessEntry>> => {
   const { spaceId, principal, permission } = params;
   const result = await sql.begin(async (tx): Promise<Result<string>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, principal }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Space"));
     const before = await listSpaceAccess(spaceId, tx);

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # API surface
@@ -717,3 +717,9 @@ Core activation services and status schemas are documented in
 [Code activation](/en/docs/platform/code-activation). These Core-owned services
 are consumed by the Code CLI, lifecycle, runner and resource UI slices; they are
 not application imports from the public platform package.
+
+`lockAccessMutationAuthority` from `@k2b/cloud/server` retains live identity and
+directory authority for normal share mutations. `AccessMutationBusyError`
+reports retryable lock contention. Use the helper before the target lock and
+recheck target management on the same transaction, as described in
+[Resource authorization](/en/docs/identity/authorization#retain-manager-authority-while-changing-a-grant).

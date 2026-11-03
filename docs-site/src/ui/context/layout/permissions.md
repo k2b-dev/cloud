@@ -115,3 +115,12 @@ selected principal's `displayName`; keep it on the draft `AccessEntry` so newly
 selected users and groups remain recognizable. It is presentation metadata,
 not an authorization input. Commit the draft through the owning resource
 service when the whole form is saved; cancelling must discard it.
+
+## Code service accounts
+
+A supplied `code` service account uses ordinary grant, update and revoke
+callbacks. Carry `serviceAccountKind: "code"` in selected display metadata and
+stored rows. The editor offers View and Edit for that row and draft, filters
+out Manage, and explains that anyone editing the Code acts with this right.
+The general directory does not discover these accounts by name. Target-scoped
+identifier search belongs to the authorized identity lookup, not this control.

@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-24
+updated: 2026-11-03
 ---
 
 # Resource authorization
@@ -75,9 +75,9 @@ type Principal =
 | --- | --- |
 | User | One user |
 | Group | Direct and nested members |
-| Service account | One machine identity: resource-bound, standalone, or agent |
-| Authenticated | Any authenticated user or service account |
-| Public | Every caller, including anonymous requests |
+| Service account | One machine identity: resource-bound, standalone, agent, or Code |
+| Authenticated | Any authenticated user or service account except Code accounts |
+| Public | Every caller, including anonymous requests, except Code accounts |
 
 ### Discover principals safely
 
@@ -500,6 +500,9 @@ transaction as its second argument:
 
 ```ts
 const result = await sql.begin(async (tx): Promise<Result<void>> => {
+  if (!(await lockAccessMutationAuthority({ subject: c.get("accessSubject"), accessId }, tx))) {
+    return fail(err.forbidden("Access denied"));
+  }
   await tx`SELECT id FROM items.items WHERE id = ${itemId}::uuid FOR UPDATE`;
   const before = await listItemAccess(itemId, tx);
   const accessIds = before.map((entry) => entry.id);
@@ -508,8 +511,7 @@ const result = await sql.begin(async (tx): Promise<Result<void>> => {
   const after = before.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry));
   const guarded = ensureManagerRemains({ before, after, locale: getLocale(c) });
   if (!guarded.ok) return guarded;
-  await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${accessId}::uuid`;
-  return ok();
+  return updateAccess({ id: accessId, permission }, tx);
 });
 ```
 
@@ -650,50 +652,55 @@ before confirmation finishes, the pending change is not sent.
 
 ### Code with access
 
-Entries of a `code` service account never appear as ordinary rows, and
-`PrincipalPicker` never offers Code accounts. A search in `PermissionEditor`
-that finds nobody says so and adds that Code is never listed there; `empty` on
-`PrincipalPicker` sets that text. During a search, the picker lists "everyone"
-entries only when their label matches. `PermissionEditor` lists Code accounts in
-its own "Code with access" section below the people and groups. Every
-application that mounts the editor gets the section; it needs no props.
+A `code` service account receives `read` or `write` through the target's normal
+`grantAccess` callback, just like another principal. Pass
+`serviceAccountKind: "code"` in both selected display metadata and stored
+`AccessEntry` rows. `PermissionEditor` shows ordinary editable rows, filters out
+Manage even when `allowedLevels` includes it, and uses the normal update and
+revoke callbacks. Each row explains that anyone editing the Code acts with
+this permission. Existing loading, save, failure and retry feedback applies.
 
-- Each row names the Code after its owner, such as "Code of info@". Core reads
-  the owner's current title through the owner's reader under the viewer's own
-  authority, so a renamed owner shows its new title. Code owned by a whole
-  application shows that application's name to people who may use it. An owner
-  the viewer cannot read appears as "Code whose owner you can't see".
-- People who may change access also see each grant's operations, such as
-  `spaces.task.create`, the automations of the running version that use them
-  here ("for “deliveries”"), and who switched it on and when. The automation
-  names come from the [checker](/en/docs/platform/code-checker); a call the
-  checker cannot place adds no name, and the remove confirmation then speaks of
-  "the code" instead of naming automations. Core returns these
-  details only for grants the application's own `code.access.list` lists for
-  that person, so only at resources they manage. Other viewers see the entry's
-  level in the editor's own vocabulary.
-- "Remove" asks for confirmation, then Core calls the application's generated
-  `code.access.rm` with the entry's `grantId`. The application checks that the
-  person manages the resource. Removal takes effect at once: the Code's calls
-  here fail until someone switches it on again. Cloud never restores access
-  automatically; only a new activation grants it again.
-- The section stays hidden when there is no Code entry. While owners and
-  details load, it holds one row per entry. A failed load leaves the people list usable and
-  offers a retry; a failed removal stays on its row with a retry.
-- Without `canEdit`, for an entry without `grantId`, or on a page that does not
-  name its application, the row has no "Remove" button.
+`PrincipalPicker` accepts a Code account supplied in a result. It does not add a
+name-search path; the general directory continues to exclude Code accounts
+until target-scoped identifier lookup is available. Applications must authorize
+the lookup for the target before returning these identities.
 
-The application includes Code entries in the normal share list with
-`serviceAccountKind: "code"` and `grantId`, as the
-[Code access contract](/en/docs/platform/capabilities#code-access-at-the-target)
-requires. Its ordinary update and revoke endpoints refuse Code entries. The
-editor reads owner titles from Core at `POST /api/resources/code-access/accounts`,
-reads grant details from
-[`POST /api/code/access/target`](/en/docs/platform/code-activation), and removes
-through `POST /api/resources/code-access/remove`. It sends the
-current application's ID with each removal. Both routes accept only
-same-origin `application/json` requests. Apps do not call these routes
-themselves.
+`createAccess` and `updateAccess` reject `admin` for a Code account, and the
+database rejects direct inserts and updates too. Code accounts inherit no
+group, authenticated or public grant. Use the canonical principal predicates
+for joined queries and the shared permission resolvers for single or batched
+subjects. Credential ceilings and the exact `accessSubject` still apply;
+configuration that names a target supplies no permission.
+
+#### Retain manager authority while changing a grant
+
+Use `lockAccessMutationAuthority` from `@k2b/cloud/server` in the same SQL
+transaction that changes the share. Pass the current `subject` and either the
+recipient `principal` on create or the `accessId` on update/removal. An access
+ID may also be a SQL fragment selecting the internal UUID from an application's
+public short ID. A subject whose account is missing, inactive or expired fails the check.
+
+Acquire this lock before the resource lock. Then lock the target with the same
+lock used by every grant or ownership change and recheck the current manager's
+permission on that transaction's connection, including credential ceilings.
+The helper retains account, person and directory authority; it grants no
+permission. Identity or directory contention throws `AccessMutationBusyError`, aborting the
+transaction instead of waiting while holding identity locks. It carries HTTP
+409 and `retryable: true`; pass that response through so the caller can retry.
+Only trusted initialization or recovery paths may pass `subject: null`.
+
+```ts
+const result = await sql.begin(async (tx) => {
+  if (!(await lockAccessMutationAuthority({ subject, principal }, tx))) {
+    return fail(err.forbidden("Access denied"));
+  }
+  // Lock the target, then reload and check its manager permission using tx.
+  // Insert the grant and its resource link in this same transaction.
+});
+```
+
+Code access adapters remain available during the activation migration. Normal
+grants and their revocation do not depend on them.
 
 To share a Code itself with its editors and readers, spread
 `codeSharing(locale)` from `@k2b/cloud/access/ui` into the editor. It offers
@@ -798,6 +805,7 @@ kind:
 | --- | --- | --- |
 | `agent` | `ti-robot` | Agent |
 | `standalone` | `ti-key` | Service account |
+| `code` | `ti-code` | Code |
 | `resource_bound` | `ti-box` | Resource-bound service account |
 | `user_delegated` | `ti-user-key` | User-bound service account |
 

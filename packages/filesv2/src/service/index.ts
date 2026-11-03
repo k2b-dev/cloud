@@ -1674,7 +1674,7 @@ export function createFilesService(
       input: { path: string; principal: Principal; permission: "read" | "write" | "admin" },
     ) {
       await requireAdmin(call.actor);
-      const result = await grantStorage(baseId, userPath(input.path), input.principal, input.permission);
+      const result = await grantStorage(call.actor, baseId, userPath(input.path), input.principal, input.permission);
       await audit.record({
         actor: filesAuditActor(call.actor),
         action: "files.storage.grant",
@@ -1687,7 +1687,7 @@ export function createFilesService(
     },
     async revokeStorage(call: UserFilesCall, baseId: string, accessId: string) {
       await requireAdmin(call.actor);
-      await revokeStorage(baseId, accessId);
+      await revokeStorage(call.actor, baseId, accessId);
       await audit.record({
         actor: filesAuditActor(call.actor),
         action: "files.storage.revoke",

@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQLQuery } from "bun";
+import { HTTPException } from "hono/http-exception";
 import { type ManagerCandidate, removesLastManager } from "../../access/managers";
 import { accessMessages } from "../../access/messages";
 import { sql } from "../../runtime/clients";
@@ -189,11 +190,14 @@ export const createAccess = async (
     }
   } else if (principal.type === "service_account") {
     serviceAccountId = principal.serviceAccountId;
-    const [serviceAccount] = await db<{ id: string }[]>`
-      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active' AND kind <> 'code'
+    const [serviceAccount] = await db<{ id: string; kind: ServiceAccountKind }[]>`
+      SELECT id, kind FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active' FOR SHARE
     `;
     if (!serviceAccount) {
       return fail(err.notFound("Service account"));
+    }
+    if (serviceAccount.kind === "code" && permission === "admin") {
+      return fail(err.badInput("Code accounts cannot receive manage access"));
     }
   } else if (principal.type === "authenticated") {
     authenticatedOnly = true;
@@ -229,12 +233,16 @@ export const getAccess = async (params: { id: string }, db: AccessDb = sql): Pro
  * Update an access entry's permission level.
  */
 export const updateAccess = async (params: { id: string; permission: PermissionLevel }, db: AccessDb = sql): Promise<Result<void>> => {
+  if (params.permission === "admin") {
+    const [account] = await db`SELECT account.id FROM auth.service_accounts account
+      JOIN auth.access entry ON entry.service_account_id = account.id
+      WHERE entry.id = ${params.id}::uuid AND account.kind = 'code' FOR SHARE OF account`;
+    if (account) return fail(err.badInput("Code accounts cannot receive manage access"));
+  }
   const result = await db`
     UPDATE auth.access
     SET permission = ${params.permission}::auth.permission_level
     WHERE id = ${params.id}::uuid
-      AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
-        WHERE account.id = auth.access.service_account_id AND account.kind = 'code')
   `;
 
   if (result.count === 0) {
@@ -242,6 +250,72 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
   }
 
   return ok();
+};
+
+/** A concurrent identity or directory write won; retry the complete grant transaction. */
+export class AccessMutationBusyError extends HTTPException {
+  readonly code = "CONFLICT";
+  readonly retryable = true;
+
+  constructor() {
+    const message = "Access permissions are being updated. Try again.";
+    super(409, { message, res: Response.json({ code: "CONFLICT", message, retryable: true }, { status: 409 }) });
+    this.name = "AccessMutationBusyError";
+  }
+}
+
+/**
+ * Retain the live account and directory authority for a normal grant mutation.
+ * Call inside the write transaction BEFORE locking the target; then lock the
+ * target with the same lock every grant/ownership mutation uses and recheck the
+ * manager's effective permission on this connection. This helper grants nothing.
+ * `subject: null` is reserved for trusted initialization/recovery, not requests.
+ * Pass the recipient principal on create or accessId on update/delete so account
+ * deletion cannot invert the account -> target lock order through an FK cascade.
+ * Directory contention aborts rather than waiting while holding identity locks.
+ */
+export const lockAccessMutationAuthority = async (
+  params: { subject: AccessSubject | null; principal?: Principal; accessId?: string | SQLQuery },
+  db: AccessDb,
+): Promise<boolean> => {
+  try {
+    const { subject, principal, accessId } = params;
+    const [entry] = accessId
+      ? await db<
+          { service_account_id: string | null; user_id: string | null }[]
+        >`SELECT service_account_id, user_id FROM auth.access WHERE id = ${accessId}::uuid`
+      : [];
+    const accountIds = uniqueIds([
+      subject?.type === "service_account" ? subject.serviceAccountId : (subject?.delegatedByServiceAccountId ?? ""),
+      principal?.type === "service_account" ? principal.serviceAccountId : (entry?.service_account_id ?? ""),
+    ]);
+    const accounts = accountIds.length
+      ? await db<
+          { id: string; status: string; delegated_user_id: string | null }[]
+        >`SELECT id, status, delegated_user_id FROM auth.service_accounts
+          WHERE id = ANY(${toPgUuidArray(accountIds)}::uuid[]) ORDER BY id FOR SHARE NOWAIT`
+      : [];
+    const subjectAccountId = subject?.type === "service_account" ? subject.serviceAccountId : subject?.delegatedByServiceAccountId;
+    if (subjectAccountId && !accounts.some((account) => account.id === subjectAccountId && account.status === "active")) return false;
+    const userIds = uniqueIds([
+      subject?.type === "user" ? subject.userId : "",
+      principal?.type === "user" ? principal.userId : (entry?.user_id ?? ""),
+      ...accounts.flatMap((account) => (account.delegated_user_id ? [account.delegated_user_id] : [])),
+    ]);
+    const people = userIds.length
+      ? await db<
+          { id: string; active: boolean }[]
+        >`SELECT id, (account_expires IS NULL OR account_expires > statement_timestamp()) AS active
+          FROM auth.users WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[]) ORDER BY id FOR SHARE NOWAIT`
+      : [];
+    if (subject?.type === "user" && !people.some((person) => person.id === subject.userId && person.active)) return false;
+    await db`LOCK TABLE settings.entries IN SHARE MODE NOWAIT`;
+    await db`LOCK TABLE auth.groups, auth.group_groups_v2, auth.user_groups_v2, auth.service_account_groups, auth.ipa_user_effective_groups IN SHARE MODE NOWAIT`;
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "errno" in error && error.errno === "55P03") throw new AccessMutationBusyError();
+    throw error;
+  }
 };
 
 /**

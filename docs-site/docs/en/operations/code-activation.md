@@ -5,7 +5,7 @@ section: Operations
 order: 1255
 description: Inspect durable activations and cleanup without recreating revoked target access.
 tags: [code, operations, recovery]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Code activation recovery
@@ -38,3 +38,23 @@ Cloud-admin notifications use durable recipient rows and stable notification
 idempotency keys. Retrying delivery does not create a second notice for the same
 activation, target and person. Target access removed by a manager is never
 restored by recovery, reconciliation or cleanup.
+
+## Ordinary target grants during the access-model transition
+
+Target managers can now add a Code service account through the target's ordinary
+share service. It receives only direct View or Edit grants, never Manage,
+group, signed-in or public access. Applications deployed with an older
+`@k2b/cloud` must update before relying on this contract; see
+[Authorization](/en/docs/identity/authorization#retain-manager-authority-while-changing-a-grant)
+for the required transaction and lock order.
+
+A concurrent identity, settings or directory write can make sharing return HTTP
+409 with `retryable: true`. Retry the complete share operation after that write
+finishes. Retrying never bypasses the current manager check. Administration
+repairs recheck live Cloud-admin authority, including supported delegated
+credentials; an app session does not supply that authority.
+
+Existing activation adapters and their recovery workers remain until their
+separate removal. This transition adds no migration, credentials, worker or
+operator setting. To restore access intentionally removed by a manager, use the
+normal share dialog; recovery does not recreate it.

@@ -2,10 +2,13 @@ import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
   type AccessSubject,
+  createAccess,
   ensureManagerRemains,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   resolveDisplayNames,
+  updateAccess,
 } from "@k2b/cloud/server";
 import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -211,36 +214,9 @@ const insertAccessRow = async (
   client: SqlClient,
   locale?: string,
 ): Promise<Result<{ id: string }>> => {
-  const messages = getGridsCrudMessages(locale);
-  let userId: string | null = null;
-  let groupId: string | null = null;
-  let serviceAccountId: string | null = null;
-  let authenticatedOnly = false;
-
-  if (params.principal.type === "user") {
-    userId = params.principal.userId;
-    const [user] = await client<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
-    if (!user) return fail(err.notFound(messages.user));
-  } else if (params.principal.type === "group") {
-    groupId = params.principal.groupId;
-    const [group] = await client<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ${groupId}::uuid`;
-    if (!group) return fail(err.notFound(messages.group));
-  } else if (params.principal.type === "service_account") {
-    serviceAccountId = params.principal.serviceAccountId;
-    const [account] = await client<{ id: string }[]>`
-      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active' AND kind <> 'code'
-    `;
-    if (!account) return fail(err.notFound(messages.serviceAccount));
-  } else if (params.principal.type === "authenticated") {
-    authenticatedOnly = true;
-  }
-
-  const [row] = await client<{ id: string }[]>`
-    INSERT INTO auth.access (user_id, group_id, service_account_id, authenticated_only, permission)
-    VALUES (${userId}::uuid, ${groupId}::uuid, ${serviceAccountId}::uuid, ${authenticatedOnly}, ${params.permission}::auth.permission_level)
-    RETURNING id
-  `;
-  return row ? ok({ id: row.id }) : fail(err.internal(messages.accessCreateFailed));
+  const result = await createAccess(params, client);
+  if (!result.ok && result.error.code === "INTERNAL") return fail(err.internal(getGridsCrudMessages(locale).accessCreateFailed));
+  return result;
 };
 
 const insertAccessBinding = async (
@@ -292,6 +268,8 @@ export const grantAccess = async (params: {
   const principalError = validateAccessPrincipal(params.resourceType, params.principal, params.locale);
   if (principalError) return fail(err.badInput(principalError));
   const result = await sql.begin(async (tx): Promise<Result<{ accessId: string }>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.authorization?.subject ?? null, principal: params.principal }, tx)))
+      return fail(err.forbidden(messages.adminAccessLost));
     const binding = await resolveResourceBinding(params.resourceType, params.resourceId, { client: tx });
     if (!binding) return fail(err.notFound(messages.resource));
     // Account deletion locks the recipient before cascading into memberships.
@@ -304,7 +282,7 @@ export const grantAccess = async (params: {
       `;
       serviceAccountKind = account?.kind;
     }
-    await lockBaseAuthorization([binding.baseId], tx);
+    await lockBaseAuthorization([binding.baseId], tx, { nowait: true });
     const authorized = await authorizeMutation(binding, params.authorization, tx, params.locale);
     if (!authorized.ok) return fail(authorized.error);
     // Only a deny can take Manage away; it shadows the same principal's allows.
@@ -321,7 +299,12 @@ export const grantAccess = async (params: {
     // can receive it; resource-bound credentials remain confined to their base.
     if (params.principal.type === "service_account") {
       if (!serviceAccountKind) return fail(err.notFound(messages.serviceAccount));
-      if (params.resourceType === "customApp" && serviceAccountKind !== "standalone" && serviceAccountKind !== "agent") {
+      if (
+        params.resourceType === "customApp" &&
+        serviceAccountKind !== "standalone" &&
+        serviceAccountKind !== "agent" &&
+        serviceAccountKind !== "code"
+      ) {
         return fail(err.badInput(messages.appServiceAccountUnsupported));
       }
     }
@@ -412,12 +395,14 @@ export const updateAccessLevel = async (
 ): Promise<Result<void>> => {
   const messages = getGridsCrudMessages(locale);
   const result = await sql.begin(async (tx): Promise<Result<AccessBinding>> => {
+    if (!(await lockAccessMutationAuthority({ subject: authorization?.subject ?? null, accessId }, tx)))
+      return fail(err.forbidden(messages.adminAccessLost));
     const binding = await resolveAccessBinding(accessId, tx);
     if (!binding) return fail(err.notFound(messages.accessEntry));
     const validationError = validateAccessPermission(binding.resourceType, level, locale);
     if (validationError) return fail(err.badInput(validationError));
     await lockAccessRecipient(accessId, tx);
-    await lockBaseAuthorization([binding.baseId], tx);
+    await lockBaseAuthorization([binding.baseId], tx, { nowait: true });
     const authorized = await authorizeMutation(binding, authorization, tx, locale);
     if (!authorized.ok) return fail(authorized.error);
     const access = await getAccessSnapshot(accessId, tx);
@@ -429,12 +414,8 @@ export const updateAccessLevel = async (
       locale,
     );
     if (!guarded.ok) return fail(guarded.error);
-    const update = await tx`
-      UPDATE auth.access SET permission = ${level}::auth.permission_level WHERE id = ${accessId}::uuid
-        AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
-          WHERE account.id = auth.access.service_account_id AND account.kind = 'code')
-    `;
-    if (update.count === 0) return fail(err.notFound(messages.accessEntry));
+    const update = await updateAccess({ id: accessId, permission: level }, tx);
+    if (!update.ok) return fail(update.error);
     if (access.permission !== level) {
       await logAccessAudit({ action: "access.updated", binding, access, actorId, nextPermission: level, client: tx });
     }
@@ -454,10 +435,12 @@ export const revokeAccess = async (
 ): Promise<Result<void>> => {
   const messages = getGridsCrudMessages(locale);
   const result = await sql.begin(async (tx): Promise<Result<AccessBinding>> => {
+    if (!(await lockAccessMutationAuthority({ subject: authorization?.subject ?? null, accessId }, tx)))
+      return fail(err.forbidden(messages.adminAccessLost));
     const binding = await resolveAccessBinding(accessId, tx);
     if (!binding) return fail(err.notFound(messages.accessEntry));
     await lockAccessRecipient(accessId, tx);
-    await lockBaseAuthorization([binding.baseId], tx);
+    await lockBaseAuthorization([binding.baseId], tx, { nowait: true });
     const authorized = await authorizeMutation(binding, authorization, tx, locale);
     if (!authorized.ok) return fail(authorized.error);
     const access = await getAccessSnapshot(accessId, tx);

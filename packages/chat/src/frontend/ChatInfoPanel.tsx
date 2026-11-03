@@ -368,12 +368,17 @@ export function ChatMemberRow(props: {
                       ? t().standaloneAccount
                       : kind() === "resource_bound"
                         ? t().resourceAccount
-                        : t().delegatedAccount
+                        : kind() === "code"
+                          ? t().codeAccount
+                          : t().delegatedAccount
                 }
               />
             )}
           </Show>
         </span>
+        <Show when={props.member.serviceAccountKind === "code"}>
+          <span class="text-xs text-dimmed">{t().codeAuthority}</span>
+        </Show>
         <Show when={markers().length > 0}>
           <span class="truncate text-xs text-dimmed">{markers().join(" · ")}</span>
         </Show>
@@ -394,7 +399,7 @@ export function ChatMemberRow(props: {
           size="xs"
           position="bottom-left"
           disabled={props.disabled}
-          options={LEVELS.map((option) => {
+          options={LEVELS.filter((option) => props.member.serviceAccountKind !== "code" || option.value !== "admin").map((option) => {
             const kept = props.locked && option.value !== "admin";
             return {
               value: option.value,

@@ -5,7 +5,7 @@ section: Platform services
 order: 963
 description: Activate submitted Code with durable target checks, version mandates, rollback and draining.
 tags: [code, identity, permissions]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Activate a Code version
@@ -74,9 +74,10 @@ platform writes that event in the same transaction as the target's removal.
 Both are `null` when no such event exists, for example after audit retention.
 The [Code page](/en/docs/platform/code-page) shows them.
 
-`/api/code/access/target` serves the share dialog's
-[Code with access](/en/docs/identity/authorization#code-with-access) section and
-needs no rights on the Code itself. For each Code account, Core calls the target
+`/api/code/access/target` remains available for legacy activation-grant details
+and needs no rights on the Code itself. The
+[shared rights editor](/en/docs/identity/authorization#code-with-access) now uses
+normal target grant callbacks instead of this detail route. For each Code account, Core calls the target
 application's `code.access.list` with the person's own authority. A grant
 appears only when that list returns it, which happens only at targets the person
 manages, and only when Core's record names the same Code account and the same

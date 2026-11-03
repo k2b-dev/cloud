@@ -8,6 +8,7 @@ import {
   deleteAccess,
   ensureManagerRemains,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   updateAccess,
@@ -594,6 +595,7 @@ export const aiProjects = {
     input: { principal: Principal; permission: AiProjectPermission },
   ): Promise<AiProjectAccess | null> {
     return sql.begin(async (tx) => {
+      if (!subject || !(await lockAccessMutationAuthority({ subject: subject.accessSubject, principal: input.principal }, tx))) return null;
       const [row] = await tx<ProjectRow[]>`
         SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE
       `;
@@ -609,6 +611,17 @@ export const aiProjects = {
     permission: AiProjectPermission,
   ): Promise<boolean> {
     return sql.begin(async (tx) => {
+      if (
+        !subject ||
+        !(await lockAccessMutationAuthority(
+          {
+            subject: subject.accessSubject,
+            accessId: sql`(SELECT access_id FROM ai.project_access WHERE project_id = ${projectId}::uuid AND short_id = ${accessId})`,
+          },
+          tx,
+        ))
+      )
+        return false;
       const [project] = await tx<ProjectRow[]>`
         SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE
       `;
@@ -619,6 +632,17 @@ export const aiProjects = {
 
   async revokeAccess(projectId: string, accessId: string, subject: AiResourceContext | null): Promise<boolean> {
     return sql.begin(async (tx) => {
+      if (
+        !subject ||
+        !(await lockAccessMutationAuthority(
+          {
+            subject: subject.accessSubject,
+            accessId: sql`(SELECT access_id FROM ai.project_access WHERE project_id = ${projectId}::uuid AND short_id = ${accessId})`,
+          },
+          tx,
+        ))
+      )
+        return false;
       const [project] = await tx<ProjectRow[]>`
         SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE
       `;

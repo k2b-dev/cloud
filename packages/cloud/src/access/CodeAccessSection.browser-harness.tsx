@@ -1,5 +1,7 @@
 import { DialogHeader, dialogCore, LocaleProvider } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import type { AccessEntry } from "../contracts/shared";
+import CodeAccessSection, { isCodeAccessEntry } from "./CodeAccessSection";
 import PermissionEditor from "./PermissionEditor";
 
 // Fictional fixtures from the published mockup's share dialog (studio-mockup v14, screen D).
@@ -39,6 +41,9 @@ const entries: AccessEntry[] = [
       ]),
 ];
 
+const [legacyEntries, setLegacyEntries] = createSignal(entries.filter(isCodeAccessEntry));
+
+// Exercise the retained legacy component independently of the normal A1 editor.
 dialogCore.open(
   (close) => (
     <LocaleProvider locale="de">
@@ -49,12 +54,20 @@ dialogCore.open(
             expanded={query.get("compact") !== "1"}
             canEdit={query.get("readonly") !== "1"}
             ownEntryIds={["access-ben"]}
-            initialEntries={entries}
+            initialEntries={query.get("ordinary") === "1" ? entries : entries.filter((entry) => !isCodeAccessEntry(entry))}
             grantAccess={async () => {
               throw new Error("Not used");
             }}
             updateAccess={async () => {}}
             revokeAccess={async () => {}}
+          />
+          <CodeAccessSection
+            entries={query.get("ordinary") === "1" ? [] : legacyEntries()}
+            expanded={query.get("compact") !== "1"}
+            canEdit={query.get("readonly") !== "1"}
+            levelLabel={(entry) => (entry.permission === "write" ? "Bearbeiten" : "Ansehen")}
+            manageLabel="Verwalten"
+            onRemoved={(entry) => setLegacyEntries((current) => current.filter((item) => item.id !== entry.id))}
           />
         </div>
       </div>

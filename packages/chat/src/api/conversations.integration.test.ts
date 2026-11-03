@@ -1744,6 +1744,28 @@ suite("chat conversations, people, and directory groups", () => {
     },
   });
 
+  test("ordinary member grants accept Code View/Edit and refuse Manage", async () => {
+    const owner = await user(),
+      headers = await cookie(owner),
+      chat = await fixture(owner);
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind) VALUES('Code member','code') RETURNING id`;
+    if (!account) throw new Error("Missing Code account");
+    trackedAccounts.push(account.id);
+    const response = await request(headers, `/${chat.shortId}/members`, "POST", {
+      members: [{ type: "service_account", serviceAccountId: account.id }],
+    });
+    expect(response.status).toBe(200);
+    const [grant] = await sql<{ id: string }[]>`SELECT a.id FROM auth.access a JOIN chat.conversation_access ca ON ca.access_id=a.id
+      WHERE ca.conversation_id=${chat.id}::uuid AND a.service_account_id=${account.id}::uuid`;
+    if (!grant) throw new Error("Missing Code grant");
+    for (const permission of ["read", "write"]) {
+      expect((await request(headers, `/${chat.shortId}/members/${grant.id}`, "PATCH", { permission })).status).toBe(200);
+      expect((await sql`SELECT permission FROM auth.access WHERE id=${grant.id}::uuid`)[0].permission).toBe(permission);
+    }
+    expect((await request(headers, `/${chat.shortId}/members/${grant.id}`, "PATCH", { permission: "admin" })).status).toBe(400);
+    expect((await request(headers, `/${chat.shortId}/members/${grant.id}`, "DELETE")).status).toBe(200);
+  });
+
   test("bound and delegated service accounts cannot become inactive direct members", async () => {
     const owner = await user();
     const headers = await cookie(owner);

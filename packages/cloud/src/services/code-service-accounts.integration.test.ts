@@ -50,8 +50,6 @@ suite("code service-account boundaries", () => {
           () => serviceAccountCredentials.createStandaloneApiToken({ serviceAccountId: id, actor, name: "blocked", access: "models" }),
         ],
         ["resource API token", () => serviceAccountCredentials.createResourceApiToken({ serviceAccountId: id, actor, name: "blocked" })],
-        ["normal read share", () => createAccess({ principal, permission: "read" })],
-        ["normal write share", () => createAccess({ principal, permission: "write" })],
         ["normal admin share", () => createAccess({ principal, permission: "admin" })],
         ["directory recipient", () => directoryShares.grant({ actor, recipientId: id, principal: { type: "user", userId: creatorId } })],
         ["directory target", () => directoryShares.grant({ actor, recipientId, principal })],
@@ -61,19 +59,27 @@ suite("code service-account boundaries", () => {
         const result = await entities.list({ visibility: { type: "directory" }, kinds: ["service_account"], search: id, ...query });
         expect(result.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === id)).toBe(false);
       }
-      await expect(
-        changeAppAccess({
-          app: { id: appId, name: "Fixture", access: appAccess.grants() },
-          authority: {
-            actor: { kind: "user", user: actor },
-            accessSubject: { type: "user", userId: actor.id },
-            credentialKind: "session",
-            scopes: [],
-          },
-          repair: true,
-          change: { action: "grant", principal, permission: "read" },
-        }),
-      ).rejects.toThrow();
+      for (const permission of ["read", "write"] as const) {
+        const granted = await createAccess({ principal, permission });
+        if (!granted.ok) throw new Error(granted.error.message);
+        expect(await getEffectivePermission({ accessIds: [granted.data.id], subject: principal })).toBe(permission);
+      }
+      const request = {
+        app: { id: appId, name: "Fixture", access: appAccess.grants() },
+        authority: {
+          actor: { kind: "user" as const, user: actor },
+          accessSubject: { type: "user" as const, userId: actor.id },
+          credentialKind: "session" as const,
+          scopes: [],
+        },
+        repair: true,
+        change: { action: "grant" as const, principal, permission: "read" as const },
+      };
+      await sql`UPDATE auth.users SET admin = false WHERE id = ${creatorId}::uuid`;
+      await expect(changeAppAccess(request)).rejects.toMatchObject({ status: 403 });
+      await sql`UPDATE auth.users SET admin = true WHERE id = ${creatorId}::uuid`;
+      const appGrant = await changeAppAccess(request);
+      expect(appGrant.entry).toMatchObject({ principal, permission: "read" });
       // The storage seam refuses both credential kinds, including direct inserts.
       // Execute rejection probes explicitly: matchers do not start Bun's lazy SQL.
       for (const accountId of [id, recipientId]) {
@@ -109,6 +115,7 @@ suite("code service-account boundaries", () => {
       const listed = await serviceAccounts.listStandalone({ search: id });
       expect(listed.items.some((account) => account.id === id)).toBe(false);
     } finally {
+      await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM auth.app_access WHERE app_id = ${appId})`;
       await sql`DELETE FROM auth.app_access_state WHERE app_id = ${appId}`;
       await sql`DELETE FROM auth.service_accounts WHERE id IN (${id}::uuid, ${recipientId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id = ${creatorId}::uuid`;
