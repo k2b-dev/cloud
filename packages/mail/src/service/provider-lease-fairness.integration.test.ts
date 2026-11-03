@@ -1871,6 +1871,38 @@ suite("mail provider lease fairness", () => {
     }
   }, 120_000);
 
+  test("a folder check keeps no IMAP connection while a send waits for the mailbox, and the send goes next", async () => {
+    const mailbox = await connect("check-before-send");
+    const inbox = mailbox.folderId(INBOX);
+    await runFolderSyncJob(inbox);
+    const kept: boolean[] = [];
+    let sendArrives = false;
+    const send = { waiter: `outbox:${randomUUID()}`, priority: "command" as const };
+    const session = spyOn(imapSmtpConnector, "withSession").mockImplementation(async (config, fn, options) => {
+      const result = await fn(config);
+      // A send lines up while the check still holds the mailbox's lease.
+      if (sendArrives) {
+        const turn = await acquireProviderLease({ resource: mailbox.remoteResourceId, ...send, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+        expect(turn.lock).toBeNull();
+      }
+      if (options?.keep) kept.push(await options.keep());
+      return result;
+    });
+    try {
+      // With nobody waiting, a check may keep its connection for the account's next check.
+      await syncFolderBatch(inbox, async () => undefined);
+      sendArrives = true;
+      await syncFolderBatch(inbox, async () => undefined);
+    } finally {
+      session.mockRestore();
+    }
+    expect(kept).toEqual([true, false]);
+    // The check never held anything back: the send takes the lease right after it.
+    const turn = await acquireProviderLease({ resource: mailbox.remoteResourceId, ...send, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    expect(turn.lock).not.toBeNull();
+    if (turn.lock) await releaseProviderLease(turn.lock);
+  });
+
   test("a sync requested for a folder that backfills old mail goes before the mailbox's commands", async () => {
     await ensureHydrationRuntime();
     const mailbox = await connect("requested");

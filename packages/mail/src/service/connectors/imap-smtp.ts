@@ -254,7 +254,7 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   config: C,
   createSession: () => Promise<ImapSession>,
   fn: (session: C) => Promise<T>,
-  options: { reuseKey?: string } = {},
+  options: { reuseKey?: string; keep?: () => Promise<boolean> } = {},
 ): Promise<T> => {
   const opened: Promise<SharedImapConnection>[] = [];
   let current: Promise<SharedImapConnection> | undefined;
@@ -263,6 +263,7 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
     current = Promise.resolve({ session: reused, connected: Promise.resolve(null) });
     opened.push(current);
   }
+  // The session succeeded and may hand its connection on.
   let succeeded = false;
   const open = async (): Promise<SharedImapConnection> => {
     const session = await createSession();
@@ -310,7 +311,8 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   sharedImapSessions.set(scoped, run);
   try {
     const result = await fn(scoped);
-    succeeded = true;
+    // Asked once at the end: whether the caller's next work may want the connection at all.
+    succeeded = options.keep ? await options.keep().catch(() => false) : true;
     return result;
   } finally {
     sharedImapSessions.delete(scoped);
@@ -347,7 +349,7 @@ const withImapClient = async <T>(
 const withSession = <C extends ProviderConnectionInput, T>(
   config: C,
   fn: (session: C) => Promise<T>,
-  options: { reuseKey?: string } = {},
+  options: { reuseKey?: string; keep?: () => Promise<boolean> } = {},
 ): Promise<T> => withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn, options);
 
 const capability = (client: ImapFlow, name: string): boolean => client.capabilities.has(name) || client.enabled.has(name);

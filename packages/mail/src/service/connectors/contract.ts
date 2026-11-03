@@ -292,8 +292,12 @@ export interface MailConnector {
   /**
    * Runs `fn` with one shared IMAP connection. With `reuseKey`, the connection may come from, and be
    * kept for, the previous and next session with the same key; the key must name the same account
-   * and credential revision.
+   * and credential revision. `keep`, asked once after `fn` succeeded, can decline keeping it.
    */
-  withSession<C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>, options?: { reuseKey?: string }): Promise<T>;
+  withSession<C extends ProviderConnectionInput, T>(
+    config: C,
+    fn: (session: C) => Promise<T>,
+    options?: { reuseKey?: string; keep?: () => Promise<boolean> },
+  ): Promise<T>;
   listenForChanges?(config: ProviderConnectionInput, request: ConnectorChangeListenerRequest): Promise<ConnectorChangeListener>;
 }

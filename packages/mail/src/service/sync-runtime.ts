@@ -66,6 +66,7 @@ import {
   type ProviderLeasePriority,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
+  providerLeaseWaitedForByOtherWork,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
@@ -2580,7 +2581,13 @@ export const syncFolderBatch = async (
               removed: result.removed,
             };
           },
-          { reuseKey },
+          {
+            reuseKey,
+            // Only the next folder check of this account takes a kept connection over. While a send,
+            // a command or other work waits for the account, the check keeps none, so the provider
+            // never sees an idle connection of Mail next to that work.
+            keep: async () => !(await providerLeaseWaitedForByOtherWork(folder.remote_resource_id)),
+          },
         );
       },
     });

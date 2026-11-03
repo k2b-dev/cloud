@@ -522,6 +522,45 @@ describe("Shared IMAP sessions", () => {
     expect(stats.logouts).toBe(stats.logins);
   });
 
+  test("a session never waits for a kept connection, and keeps none when its caller declines", async () => {
+    const { server, stats } = mailServer();
+    try {
+      const check = (key: string, keep?: () => Promise<boolean>) =>
+        withSharedImapSession(
+          config,
+          sessionFor(server.port, 5_000),
+          (session) => imapSmtpConnector.getMessageState(session, inboxMessage),
+          {
+            reuseKey: key,
+            keep,
+          },
+        );
+      // A check that knows other work waits for the account keeps no connection.
+      await check("account:declined", async () => false);
+      await check("account:declined");
+      expect(stats.logins).toBe(2);
+
+      // Two sessions of one account at once: the second opens its own connection instead of waiting.
+      const release = Promise.withResolvers<void>();
+      const first = withSharedImapSession(
+        config,
+        sessionFor(server.port, 5_000),
+        async (session) => {
+          await imapSmtpConnector.getMessageState(session, inboxMessage);
+          await release.promise;
+        },
+        { reuseKey: "account:busy" },
+      );
+      await check("account:busy");
+      expect(stats.logins).toBe(4);
+      release.resolve();
+      await first;
+    } finally {
+      await closeReusableImapSessions();
+      server.stop(true);
+    }
+  });
+
   test("a kept connection that timed out is replaced by a new one", async () => {
     const { server, stats } = mailServer();
     const created: ImapSession[] = [];
