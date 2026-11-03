@@ -5,7 +5,7 @@ section: Platform services
 order: 965
 description: Start Code, understand retry and schedule outcomes, and read the recorded calls.
 tags: [code, runs, schedules, runner]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Code runs
@@ -102,6 +102,29 @@ observations committed before invoking a capability, with the result recorded
 afterward. An unfinished call in a lost attempt has state `uncertain` and result
 code `code_result_unknown`: the effect may have completed. An authoritative
 result arriving later replaces that marker; it does not restart the run.
+
+Both run Queries include `firstRefusedCallOrdinal: number | null` on each run.
+It records the first call, in invocation order, for which the target application
+returned 403 or 404. It contains no target data. Policy and approval refusals,
+app admission denials and bridge failures never set it. Older runs without a
+recorded classification return `null`.
+
+For editors, `core.code.run.read` also returns
+`contents.firstRefusedCall: { ordinal, kind, capability, target } | null`.
+`kind` is `query` or `action`, `capability` is its qualified ID, and `target` is
+`{ type, id }` or `null` for an operation without a target. This summary comes
+from the recorded call, independently of the selected call page and full-input
+chunking. One Query supplies the refused call's action and coordinates without
+reading another application. Each paged call also has
+`refusalKind: "target_refused" | "policy" | "approval" | "app_not_allowed" | "bridge" | null`.
+A `null` classification means a success, an unfinished call, or a legacy call.
+Readers, including Cloud administrators without Code editor rights, still get
+`contents: null`; neither run Query exposes target IDs to them.
+
+A refusal is an observed fact, not necessarily the cause of a failed run: Code
+may catch it and later fail for another reason, or succeed. A page should show
+the refusal warning only for a failed run. A target's 404 does not distinguish
+missing access from an object that does not exist.
 
 Core maintainers consume the scheduling contracts from
 `packages/core/src/code/index.ts`: `CodeStartRequestSchema`, `CodeStartRequest`,

@@ -231,7 +231,8 @@ owner-deletion outbox.
 ## Maintainer contracts
 
 Core modules consume `packages/core/src/code/index.ts`. It exports Zod schemas
-and types (`CodeOwner`, `Code`, `CodeVersion`, `CodeRun`, `CodeCall`),
+and types (`CodeOwner`, `Code`, `CodeVersion`, `CodeRun`, `CodeCall`,
+`CodeCallRefusalKind`, `CodeRefusedCall`),
 `codeQueryContracts`, `CODE_TABLES`, permission-aware reads and version/share
 services. `CODE_TABLES.shares` names `code.shares`, which links editor/reader
 shares to `auth.access`; it is separate from target Code grants. Use
@@ -243,7 +244,11 @@ consume the five capabilities instead of importing Core or accessing its tables.
 `insertCodeRun`, `appendCodeCall` and `finishCodeCall` are internal runner-host
 storage seams. The dispatcher must authorize execution and validate its lease
 and generation in the same transaction before recording calls. They do not
-grant invocation authority. `generation` and `lease_expires_at` reserve the
+grant invocation authority. `finishCodeCall` accepts the bridge's optional `refusalKind`; it writes a
+`target_refused` call's ordinal onto its run in the same transaction. The
+[run Query contract](/en/docs/platform/code-runs#read-runs-and-calls) keeps
+refused target coordinates inside editor-only contents.
+`generation` and `lease_expires_at` reserve the
 additive storage columns for the execution service.
 
 Scheduling, retries, generation fencing and skipped ticks are described in
