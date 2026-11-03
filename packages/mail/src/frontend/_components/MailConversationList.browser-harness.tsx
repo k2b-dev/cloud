@@ -348,10 +348,9 @@ window.mountMailList = (options) => {
                     readingFormat="automatic"
                     theme="light"
                     calendarIntegrationAvailable={false}
-                    listCollapsed={false}
+                    listAway={false}
                     detailsOpen={false}
                     toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onToggleList={noop}
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
                     actionPending={false}
