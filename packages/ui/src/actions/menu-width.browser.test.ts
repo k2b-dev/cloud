@@ -13,7 +13,7 @@ const entry = resolve(import.meta.dir, "menu-width.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AutocompleteEditor, Chat, ContextMenu, Dropdown, FilterChip, Select, SelectChip, SplitButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AutocompleteEditor, Chat, ContextMenu, Dropdown, FilterChip, MultiSelectInput, Select, SelectChip, SplitButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const long = "Gutschrift des Lieferanten für die Rücksendung vom 30. September an das Lager in Konstanz";
 const word = "Lieferantengutschriftsrücksendungsnummernkreisverwaltung";
@@ -85,6 +85,19 @@ render(
       options: [
         { value: "debit", label: "Debitorenkonto", description: "Forderungen aus Lieferungen und Leistungen gegenüber Kunden" },
         { value: "credit", label: word },
+      ],
+    }),
+    // An assignee picker in a narrow property row, with invented people.
+    createComponent(MultiSelectInput, {
+      "aria-label": "Assigned",
+      appearance: "plain",
+      class: "narrow-picker",
+      placeholder: "Nobody",
+      value: [],
+      options: [
+        { id: "u1", label: "Henrike Albrecht-Lindqvist", description: "henrike.albrecht-lindqvist@example.org", icon: "ti ti-user" },
+        { id: "u2", label: "Bendix Okonkwo", description: "Support team", icon: "ti ti-user" },
+        { id: "u3", label: "Mail triage", description: "Agent", icon: "ti ti-robot" },
       ],
     }),
     createComponent(AutocompleteEditor, {
@@ -165,7 +178,7 @@ const load = async (options: (typeof viewports)[keyof typeof viewports]) => {
   const page = await browser.newPage(options);
   // Triggers sit at both edges, where a menu is most likely to leave the viewport.
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .narrow-field { width: 12rem } .row-end, .k2b-chat-composer-shell { flex-basis: 100% } .row-end { justify-content: flex-end }</style></head>` +
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .narrow-field { width: 12rem } .narrow-picker { width: 7rem } .row-end, .k2b-chat-composer-shell { flex-basis: 100% } .row-end { justify-content: flex-end }</style></head>` +
       `<body class="k2b-ui" style="margin:0"><main id="app" style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px"></main></body></html>`,
   );
   await page.addScriptTag({ content: script });
@@ -183,6 +196,24 @@ const triggerBoxes = (page: Page) =>
       return [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 100) / 100);
     }),
   );
+
+/** The open choice popover's box, its cut-off labels, and which labels take more than one line. */
+const choiceList = (page: Page) =>
+  page.evaluate(() => {
+    const popover = document.querySelector<HTMLElement>(".k2b-choice-popover:popover-open")!;
+    const box = popover.getBoundingClientRect();
+    const labels = Array.from(popover.querySelectorAll<HTMLElement>(".k2b-choice-option strong, .k2b-choice-option small"));
+    const wraps = (label: HTMLElement) =>
+      label.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(label).lineHeight) * 1.5;
+    return {
+      width: box.width,
+      left: box.left,
+      right: box.right,
+      cut: labels.filter((label) => label.scrollWidth > label.clientWidth).map((label) => label.textContent),
+      wrapped: labels.map(wraps),
+      names: Array.from(popover.querySelectorAll<HTMLElement>(".k2b-choice-option strong"), wraps),
+    };
+  });
 
 /** The open menu's box and whether any of its labels or section headings is cut off. */
 const openMenu = (page: Page) =>
@@ -316,7 +347,7 @@ describe("@k2b/ui menus size to their entries", () => {
       }
     });
 
-    test(`at ${options.viewport.width} px a select's option list keeps the field's width and wraps long options`, async () => {
+    test(`at ${options.viewport.width} px a select's option list grows to its names like a menu and wraps descriptions`, async () => {
       const page = await load(options);
       try {
         const trigger = page.getByRole("combobox", { name: "Account" });
@@ -324,24 +355,44 @@ describe("@k2b/ui menus size to their entries", () => {
         await trigger.click();
         await page.locator(".k2b-choice-popover:popover-open").waitFor();
         await settle(page);
-        const list = await page.evaluate(() => {
-          const popover = document.querySelector<HTMLElement>(".k2b-choice-popover:popover-open")!;
-          const box = popover.getBoundingClientRect();
-          const labels = Array.from(popover.querySelectorAll<HTMLElement>(".k2b-choice-option strong, .k2b-choice-option small"));
-          return {
-            width: box.width,
-            right: box.right,
-            cut: labels.filter((label) => label.scrollWidth > label.clientWidth).map((label) => label.textContent),
-            wrapped: labels.map(
-              (label) => label.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(label).lineHeight) * 1.5,
-            ),
-          };
-        });
-        expect(Math.round(list.width)).toBe(Math.round(field!.width));
+        const list = await choiceList(page);
+        expect(list.width).toBeGreaterThanOrEqual(field!.width);
+        expect(list.left).toBeGreaterThanOrEqual(8);
         expect(list.right).toBeLessThanOrEqual(options.viewport.width - 8);
         expect(list.cut).toEqual([]);
-        // The short label stays on one line; the description and the long word wrap.
-        expect(list.wrapped).toEqual([false, true, true]);
+        // The name stays on one line and the description wraps at 16rem; the long word fits on a desktop and
+        // wraps only where the viewport ends.
+        expect(list.wrapped).toEqual([false, true, options.viewport.width < 1000]);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`at ${options.viewport.width} px a narrow assignee picker keeps every name on one line and never narrows while filtering`, async () => {
+      const page = await load(options);
+      try {
+        const before = await triggerBoxes(page);
+        const trigger = page.getByRole("combobox", { name: "Assigned" });
+        const field = await trigger.boundingBox();
+        await trigger.click();
+        await page.locator(".k2b-choice-popover:popover-open").waitFor();
+        await settle(page);
+        const list = await choiceList(page);
+        // At least 12rem and the trigger, whatever the trigger's width, and inside the viewport.
+        expect(list.width).toBeGreaterThanOrEqual(Math.max(192, field!.width));
+        expect(list.left).toBeGreaterThanOrEqual(8);
+        expect(list.right).toBeLessThanOrEqual(options.viewport.width - 8);
+        expect(list.cut).toEqual([]);
+        // Names and their second lines, an address included, each stay on one line.
+        expect(list.names).toEqual([false, false, false]);
+        expect(list.wrapped).toEqual([false, false, false, false, false, false]);
+        await page.keyboard.type("Ben");
+        await settle(page);
+        const filtered = await choiceList(page);
+        expect(filtered.names).toEqual([false]);
+        expect(filtered.width).toBe(list.width);
+        expect(filtered.left).toBe(list.left);
+        expect(await triggerBoxes(page)).toEqual(before);
       } finally {
         await page.close();
       }
