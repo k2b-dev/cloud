@@ -25,11 +25,12 @@ const parsePage = (value: string | undefined): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
 
-const buildUrl = (params: { search?: string; kind?: string; status?: string; page?: number }) => {
+const buildUrl = (params: { search?: string; kind?: string; status?: string; automatic?: boolean; page?: number }) => {
   const query = new URLSearchParams();
   if (params.search?.trim()) query.set("search", params.search.trim());
   if (params.kind?.trim()) query.set("kind", params.kind.trim());
   if (params.status?.trim() && params.status !== "active") query.set("status", params.status.trim());
+  if (params.automatic) query.set("automatic", "1");
   if (params.page && params.page > 1) query.set("page", String(params.page));
   const search = query.toString();
   return search ? `/app/accounts/service-accounts?${search}` : "/app/accounts/service-accounts";
@@ -46,6 +47,12 @@ export default ssr<AuthContext>(async (c) => {
   const modelsAvailable = await coreSettings.get<boolean>("ai.openai_api_enabled");
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
+  const automatic = c.req.query("automatic") === "1";
+  const automaticParams = new URL(c.req.url).searchParams;
+  automaticParams.delete("page");
+  if (automatic) automaticParams.delete("automatic");
+  else automaticParams.set("automatic", "1");
+  const automaticUrl = `/app/accounts/service-accounts?${automaticParams}`;
   const search = (c.req.query("search") ?? "").trim();
   const kind = (c.req.query("kind") ?? "").trim();
   const rawStatus = (c.req.query("status") ?? "active").trim();
@@ -56,6 +63,7 @@ export default ssr<AuthContext>(async (c) => {
     serviceAccountCredentials.listOverview({
       pagination: { page, perPage },
       filter: {
+        automatic: automatic ? "include" : "hide",
         search: search || undefined,
         serviceAccountKind:
           kind === "user_delegated" || kind === "resource_bound" || kind === "standalone" || kind === "agent" ? kind : undefined,
@@ -69,6 +77,7 @@ export default ssr<AuthContext>(async (c) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (kind) params.set("kind", kind);
+    if (automatic) params.set("automatic", "1");
     if (status !== "active") params.set("status", status);
     const query = params.toString();
     return query ? `/app/accounts/service-accounts?${query}&page=` : "/app/accounts/service-accounts?page=";
@@ -108,7 +117,7 @@ export default ssr<AuthContext>(async (c) => {
 
           <div style="view-transition-name: accounts-service-accounts-search">
             <SearchBar
-              action={buildUrl({ kind, status, page: 1 })}
+              action={buildUrl({ kind, status, automatic, page: 1 })}
               value={search}
               placeholder={t.searchServiceAccounts}
               ariaLabel={t.searchServiceAccountsLabel}
@@ -116,9 +125,18 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <div class="flex flex-wrap items-center gap-2" style="view-transition-name: accounts-service-accounts-filters">
-            <ServiceAccountsFilters search={search} kind={kind} status={status} />
+            <ServiceAccountsFilters search={search} kind={kind} status={status} automatic={automatic} />
             <DirectoryShares />
           </div>
+
+          {automatic || (credentialsPage.hiddenAutomaticCount ?? 0) > 0 ? (
+            <p class="text-xs text-dimmed">
+              {automatic ? t.automaticAppKeysShown : t.automaticAppKeysHidden({ count: credentialsPage.hiddenAutomaticCount ?? 0 })}{" "}
+              <a href={automaticUrl} class="font-medium text-primary hover:underline">
+                {automatic ? t.hideAutomatic : t.showAutomatic}
+              </a>
+            </p>
+          ) : null}
 
           {credentialsPage.items.length === 0 ? (
             <Placeholder surface="paper" description={<>{t.noServiceAccounts}</>} />

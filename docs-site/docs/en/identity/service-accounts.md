@@ -88,6 +88,8 @@ The access token carries `principal_type: "service_account"`,
 API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
 Accounts app and through `cld accounts service-accounts`.
+The Accounts key list hides automatic app runtime keys by default; **Show**
+includes them, while CLI and administrator API lists always include them.
 
 A key created with **Full access** carries `read`, `write`, and `admin`. The API
 never chooses for you: a general key must name its `scopes`, and a request with

@@ -15,6 +15,7 @@ type AuditFiltersProps = {
   outcome: "" | AuditOutcome;
   provider: "" | "local" | "ipa";
   days: number;
+  automatic: boolean;
 };
 
 const buildAuditUrl = (params: AuditFiltersProps & { page?: number }) => {
@@ -28,6 +29,7 @@ const buildAuditUrl = (params: AuditFiltersProps & { page?: number }) => {
   if (params.outcome) query.set("outcome", params.outcome);
   if (params.provider) query.set("provider", params.provider);
   if (params.days !== 30) query.set("days", String(params.days));
+  if (params.automatic) query.set("automatic", "1");
   if (params.page && params.page > 1) query.set("page", String(params.page));
   const search = query.toString();
   return search ? `/app/accounts/audit?${search}` : "/app/accounts/audit";

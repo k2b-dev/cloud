@@ -6,13 +6,15 @@ type Props = {
   search: string;
   kind: string;
   status: string;
+  automatic: boolean;
 };
 
-const buildUrl = (params: { search?: string; kind?: string; status?: string; page?: number }) => {
+const buildUrl = (params: { search?: string; kind?: string; status?: string; automatic?: boolean; page?: number }) => {
   const query = new URLSearchParams();
   if (params.search?.trim()) query.set("search", params.search.trim());
   if (params.kind?.trim()) query.set("kind", params.kind.trim());
   if (params.status?.trim() && params.status !== "active") query.set("status", params.status.trim());
+  if (params.automatic) query.set("automatic", "1");
   if (params.page && params.page > 1) query.set("page", String(params.page));
   const search = query.toString();
   return search ? `/app/accounts/service-accounts?${search}` : "/app/accounts/service-accounts";
