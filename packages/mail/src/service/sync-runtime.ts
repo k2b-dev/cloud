@@ -2584,8 +2584,8 @@ export const syncFolderBatch = async (
           {
             reuseKey,
             // Only the next folder check of this account takes a kept connection over. While a send,
-            // a command or other work waits for the account, the check keeps none, so the provider
-            // never sees an idle connection of Mail next to that work.
+            // a command or other work already waits for the account, the check keeps none, so it adds
+            // no idle connection at the provider next to that work.
             keep: async () => !(await providerLeaseWaitedForByOtherWork(folder.remote_resource_id)),
           },
         );

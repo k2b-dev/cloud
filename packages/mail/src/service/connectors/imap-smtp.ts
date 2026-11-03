@@ -311,8 +311,17 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   sharedImapSessions.set(scoped, run);
   try {
     const result = await fn(scoped);
-    // Asked once at the end: whether the caller's next work may want the connection at all.
-    succeeded = options.keep ? await options.keep().catch(() => false) : true;
+    // Asked once at the end, and only with a connection to keep: whether the caller's next work
+    // may want it at all.
+    succeeded =
+      options.keep && options.reuseKey && opened.length > 0
+        ? await Promise.resolve()
+            .then(() => options.keep?.())
+            .then(
+              (keep) => keep === true,
+              () => false,
+            )
+        : true;
     return result;
   } finally {
     sharedImapSessions.delete(scoped);
