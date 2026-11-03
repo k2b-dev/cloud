@@ -60,6 +60,7 @@ The sidebar contains **Focus** and your mailboxes, with pinned mailboxes first. 
 
 - **Inbox**, **Drafts**, **Scheduled**, **Send problems**, and **Sent**.
 - **More** for Archive, Trash, and Junk. It stays open while one of these folders is current.
+- Standard folders show their usual name in your language, for example **Sent** for "Sent Items". A folder with a name of its own keeps that name. The folder settings also show the name on the mail server.
 - Custom provider folders and their nested hierarchy, with unread counts.
 - **Hidden mailboxes**, **New mailbox**, and **Recently deleted mailboxes** remain available below the mailbox list.
 

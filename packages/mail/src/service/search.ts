@@ -1,9 +1,10 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { escapeLikePattern } from "@k2b/cloud/services/postgres";
+import { escapeLikePattern, toPgTextArray } from "@k2b/cloud/services/postgres";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";
+import { standardFolderNameAliases } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import { conversationVisibleTo, type MailboxAccess, messageVisibleTo } from "./access";
@@ -291,14 +292,32 @@ const commentMatch = (
     AND ${textMatch(sql`comment.body_markdown`, query, match)}
 )`;
 
+/** The localized names Mail shows for a standard folder (`standardFolderNameKey`), or an empty string. */
+const shownFolderNames = (name: SqlFragment, role: SqlFragment): SqlFragment => {
+  const normalized = sql`lower(regexp_replace(btrim(normalize(${name}, NFC)), '[[:space:]]+', ' ', 'g'))`;
+  const cases = standardFolderNameAliases().map(
+    ({ key, serverNames, names }) =>
+      sql`WHEN ${role} = ${key}::text AND ${normalized} = ANY(${toPgTextArray(serverNames)}::text[]) THEN ${names.join(" ")}::text`,
+  );
+  return sql`(CASE ${cases.reduce((all, next) => sql`${all} ${next}`)} ELSE '' END)`;
+};
+
 const folderMatch = (query: string, match: Extract<MailSearchExpression, { type: "text" }>["match"]): SqlFragment => sql`EXISTS (
   SELECT 1
   FROM mail.message_placements folder_placement
   JOIN mail.folders folder ON folder.id = folder_placement.folder_id
   LEFT JOIN mail.binding_folder_refs folder_ref ON folder_ref.folder_id = folder.id
+  LEFT JOIN mail.folder_role_overrides folder_role_override ON folder_role_override.folder_id = folder.id
   WHERE folder_placement.message_id = mc.id
     AND folder_placement.deleted_at IS NULL
-    AND ${textMatch(sql`(folder.name || ' ' || folder.role || ' ' || COALESCE(folder_ref.remote_path, ''))`, query, match)}
+    AND ${textMatch(
+      sql`(folder.name || ' ' || folder.role || ' ' || COALESCE(folder_ref.remote_path, '') || ' ' || ${shownFolderNames(
+        sql`folder.name`,
+        sql`COALESCE(folder_role_override.role, folder.role)`,
+      )})`,
+      query,
+      match,
+    )}
 )`;
 
 const tagMatch = (

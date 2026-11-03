@@ -1,6 +1,7 @@
 import { Dropdown, FilterChip, FilterToggle, useLocale, ViewTabs } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { MailSearchState } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
@@ -67,6 +68,7 @@ export function MailboxHeadFilters(
 ) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const { url, folder, knownQuick } = createMailboxFilterContext(props);
   const searchSummary = () => {
     const expression = props.search.expression;
@@ -86,7 +88,7 @@ export function MailboxHeadFilters(
       <Show when={folder() && knownQuick()}>
         <Show when={props.folderId !== folder()?.id}>
           <span class="shrink-0 text-sm text-primary" data-mail-filter-folder>
-            {messages().inFolder({ name: folder()!.name })}
+            {messages().inFolder({ name: folderName()(folder()!) })}
           </span>
         </Show>
         <Show when={folder()?.role !== "sent"}>

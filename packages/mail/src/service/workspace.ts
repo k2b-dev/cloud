@@ -13,6 +13,7 @@ import {
   type SenderIdentity,
 } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, withOpenWork } from "../folder-display-rules";
+import { mailFolderNames } from "../folder-names";
 import type { MailDoneTodayCounts, MailViewPreference } from "../mail-view-preference";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
@@ -858,7 +859,7 @@ const buildMailboxListView = async (
             : t.filteredSearch
           : activeView
             ? t.view({ view: activeView })
-            : (activeSavedView?.name ?? activeFolder?.name ?? t.allMail),
+            : (activeSavedView?.name ?? (activeFolder ? mailFolderNames(params.locale ?? "en")(activeFolder) : t.allMail)),
   };
 };
 

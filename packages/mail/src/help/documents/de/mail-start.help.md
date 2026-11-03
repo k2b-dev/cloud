@@ -57,8 +57,9 @@ Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchr
 
 Die Seitenleiste enthält **Fokus** und deine Postfächer, angeheftete zuerst. Das geöffnete Postfach zeigt darunter seine Ziele:
 
-- **Posteingang**, **Entwürfe**, **Geplant**, **Versandprobleme** und **Gesendet**.
+- **Eingang**, **Entwürfe**, **Geplant**, **Versandprobleme** und **Gesendet**.
 - **Mehr** für Archiv, Papierkorb und Spam. Die Gruppe bleibt offen, solange einer dieser Ordner aktiv ist.
+- Standardordner zeigen ihren üblichen Namen in deiner Sprache, zum Beispiel **Gesendet** für „Sent Items“. Ein Ordner mit eigenem Namen behält diesen Namen. Die Ordnereinstellungen zeigen auch den Namen auf dem Mailserver.
 - Eigene Ordner des Anbieters mit ihrer Hierarchie und der Zahl ungelesener E-Mails.
 - **Ausgeblendete Postfächer**, **Neues Postfach** und **Kürzlich gelöschte Postfächer** unter der Postfachliste.
 
