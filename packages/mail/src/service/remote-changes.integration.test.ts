@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { redis, sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { createActorCommand, createMaintenanceCommand } from "./commands";
 import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
@@ -641,26 +641,12 @@ suite("mail sync of changes made in other clients", () => {
     }
     expect([...queued].sort()).toEqual([...eligible].sort());
 
-    // A folder a live IMAP push listener watches is its listener's; a stopped one gives it back.
+    // A folder whose sync was requested within the last 75 seconds, as an IMAP push listener does
+    // every minute, needs no scheduled sync; once the requests stop, the scheduler takes it back.
     const watched = inboxes[0]!;
-    const [binding] = await sql<{ id: string }[]>`
-      SELECT binding.id
-      FROM mail.folders folder
-      JOIN mail.provider_bindings binding ON binding.remote_resource_id = folder.remote_resource_id
-      WHERE folder.id = ${watched}::uuid
-      LIMIT 1
-    `;
-    const heartbeat = async (age: string) =>
-      sql`
-        INSERT INTO mail.imap_push_listener_health (binding_id, generation, state, mode, folder_id, last_heartbeat_at)
-        VALUES (${binding!.id}::uuid, 1, 'listening', 'idle', ${watched}::uuid, now() - ${age}::interval)
-        ON CONFLICT (binding_id) DO UPDATE SET
-          state = 'listening', mode = 'idle', folder_id = EXCLUDED.folder_id, last_heartbeat_at = EXCLUDED.last_heartbeat_at
-      `;
-    await heartbeat("10 seconds");
+    await redis.send("SET", [`mail:sync-recent:${watched}`, "1", "PX", "75000"]);
     expect(await submitDueFolderSyncs(100_000)).not.toContain(watched);
-    await heartbeat("2 minutes");
+    await redis.send("DEL", [`mail:sync-recent:${watched}`]);
     expect(await submitDueFolderSyncs(100_000)).toContain(watched);
-    await sql`DELETE FROM mail.imap_push_listener_health WHERE binding_id = ${binding!.id}::uuid`;
   });
 });

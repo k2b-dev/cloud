@@ -3155,8 +3155,14 @@ const startRediscoveryJob = async (): Promise<void> => {
   });
 };
 
-const submitSyncFolderJob = async (folderId: string): Promise<void> => {
+// Slightly longer than a minute, so a listener's minute check and the scheduler's tick do not
+// both run when their timers drift apart.
+const RECENT_REQUEST_MS = 75_000;
+const recentRequestKey = (folderId: string): string => `mail:sync-recent:${folderId}`;
+
+const submitSyncFolderJob = async (folderId: string, options: { scheduled?: boolean } = {}): Promise<void> => {
   await (syncTasks.run(async () => {
+    if (!options.scheduled) await redis.send("SET", [recentRequestKey(folderId), "1", "PX", String(RECENT_REQUEST_MS)]);
     await redis.send("SET", [syncRequestKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
     await syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } });
   }) ?? Promise.resolve());
@@ -3232,7 +3238,9 @@ export const recoverInterruptedHydrations = async (): Promise<number> => {
 
 // Each minute queues at most this many folder syncs. Every Inbox goes first; the other folders
 // take the remaining places in turn by folder id, so with more eligible folders every folder
-// still gets a sync every few minutes. A folder an IMAP push listener watches is its listener's.
+// still gets a sync every few minutes. A folder whose sync someone else requested within
+// RECENT_REQUEST_MS needs none: that request runs the same coalesced job. An IMAP push listener
+// requests its folder every minute, so the folder is its listener's while the listener works.
 const DUE_FOLDER_SYNCS_PER_RUN = 500;
 const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
 
@@ -3263,22 +3271,15 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
           AND pc.status = 'active'
           AND pc.encrypted_secret IS NOT NULL
       )
-      -- A connected or polling IMAP push listener checks its folder itself (imap-push-runtime);
-      -- it renews its heartbeat every 20 seconds, so a stopped one gives the folder back here.
-      AND NOT EXISTS (
-        SELECT 1
-        FROM mail.imap_push_listener_health listener
-        WHERE listener.folder_id = f.id
-          AND listener.state IN ('listening', 'polling')
-          AND listener.last_heartbeat_at > now() - interval '1 minute'
-      )
     ORDER BY f.role <> 'inbox', f.id <= ${after}::uuid, f.id
     LIMIT ${limit}
   `;
   const last = folders.at(-1);
   if (last) await redis.set(DUE_FOLDER_CURSOR_KEY, last.id);
-  for (const folder of folders) await submitSyncFolderJob(folder.id);
-  return folders.map((folder) => folder.id);
+  const recent = folders.length > 0 ? await redis.mget(...folders.map((folder) => recentRequestKey(folder.id))).catch(() => []) : [];
+  const due = folders.filter((_folder, index) => recent[index] == null);
+  for (const folder of due) await submitSyncFolderJob(folder.id, { scheduled: true });
+  return due.map((folder) => folder.id);
 };
 
 const submitDueWork = async (): Promise<{
