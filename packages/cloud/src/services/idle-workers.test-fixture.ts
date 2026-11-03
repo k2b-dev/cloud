@@ -172,15 +172,20 @@ await advance(60_000);
 assert.equal(polls, 12, "app event outbox: at most 12 idle DB claims per minute");
 await appOutbox.stop();
 
-const { createWorkflowWorker } = await import("../workflows/store/worker-runtime");
+const { createWorkflowWorker, notifyWorkflowWorker } = await import("../workflows/store/worker-runtime");
 let claims = 0;
 let recoveries = 0;
+let readyRuns = 0;
+let executions = 0;
 const workflow = createWorkflowWorker({
   appId: "idle-budget",
   concurrency: 2,
   run: async () => {
     claims++;
-    return false;
+    if (readyRuns === 0) return false;
+    readyRuns--;
+    executions++;
+    return true;
   },
   recover: async () => {
     recoveries++;
@@ -190,8 +195,17 @@ await workflow.start();
 await settled();
 claims = recoveries = 0;
 await advance(60_000);
-assert.equal(recoveries, 12, "workflow: at most 12 recovery scans per minute");
-assert.equal(claims, 48, "workflow: at most 12 scans x 2 wakes x 2 slots per minute");
+assert.equal(recoveries, 2, "workflow: at most 2 recovery scans per minute");
+assert.equal(claims, 8, "workflow: at most 2 scans x 2 wakes x 2 slots per minute");
+readyRuns++;
+notifyWorkflowWorker("idle-budget");
+await settled();
+assert.equal(executions, 1, "committed work wakes immediately without advancing the safety clock");
+readyRuns++;
+await advance(29_999);
+assert.equal(executions, 1, "a deliberately lost hint waits for the recovery scan");
+await advance(1);
+assert.equal(executions, 2, "a lost hint is repaired within the 30-second safety budget");
 await workflow.stop();
 const stoppedClaims = claims;
 await advance(60_000);
@@ -234,5 +248,5 @@ Object.defineProperty(globalThis, "clearInterval", { value: realClearInterval })
 mock.restore();
 setSystemTime();
 console.log(
-  "Idle minute: outbox 12 claims; workflow 12 recoveries / 48 slot claims; Core without registry events: 12 claims / 1 maintenance pass",
+  "Idle minute: outbox 12 claims; workflow 2 recoveries / 8 slot claims; Core without registry events: 12 claims / 1 maintenance pass",
 );
