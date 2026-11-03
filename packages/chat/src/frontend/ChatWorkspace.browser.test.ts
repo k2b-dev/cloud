@@ -1725,6 +1725,8 @@ describe("Chat info reopening", () => {
         await viewTransitionEnded(page);
         // A wide screen slides the panel out first and gives the chat its room back 140 ms later, in one step.
         // Playwright's stability check can pass before that step, so the press could land as Info moves (#2487).
+        // The pointer leaves X first: Info could move under it, and its hover would start while the page settles.
+        await page.mouse.move(0, 0);
         await settled(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");

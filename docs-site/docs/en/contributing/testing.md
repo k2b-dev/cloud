@@ -246,7 +246,8 @@ On a wide screen, a closing `AppWorkspace` detail panel slides out first, and
 only 140 ms later the content takes its room back in one step. Playwright's
 stability check can pass before that step, so a press can start on a control
 that then moves, and the click goes to an ancestor. After closing a detail
-panel, a test awaits `settled(page)` before its next press. See the Info
+panel, a test moves the pointer off the content that moves, so no hover starts
+while it settles, and awaits `settled(page)` before its next press. See the Info
 reopening test in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`
 ([#2487](https://github.com/k2b-dev/cloud/issues/2487)).
 

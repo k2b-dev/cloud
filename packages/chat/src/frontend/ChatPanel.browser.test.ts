@@ -1255,6 +1255,16 @@ for (const historyFailure of [false, true]) {
       expect(
         await panel.locator("html").evaluate(() => [location.pathname, (history.state as { chatFromList?: boolean } | null)?.chatFromList]),
       ).toEqual([`/app/chat/panel/c/${id}`, true]);
+      // The open ran in the panel's view transition; WebKit sends input to <html> while one is active.
+      await page.waitForFunction(
+        () =>
+          !(
+            document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument as
+              | (Document & { activeViewTransition?: unknown })
+              | null
+              | undefined
+          )?.activeViewTransition,
+      );
       await page.route(`**/api/chat/conversations/${id}/messages`, async (route) => {
         if (route.request().method() === "GET") {
           await gate;
