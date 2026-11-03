@@ -1,14 +1,13 @@
 import { Button, IconButton, Select, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { MailAutomationAction, MailAutomationCondition, MailAutomationConditions } from "../../contracts";
-import { mailFolderNames } from "../../folder-names";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
 import {
   type AutomationActionKind,
   createMailAutomationAction,
   MAIL_AUTOMATION_STATUSES,
   mailAutomationActionKindsFor,
-  mailAutomationDestinationFolders,
+  mailAutomationDestinationOptions,
 } from "./mail-automation-actions";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -239,17 +238,7 @@ export function MailAutomationActionEditor(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
-  // Standard folders show their localized names; the server's path stays beside them.
-  const destinationOptions = createMemo(() => {
-    const folderName = mailFolderNames(locale());
-    return mailAutomationDestinationFolders(props.catalog).map((folder) => {
-      const serverPath = folder.path ?? folder.name;
-      const shown = folder.role ? folderName({ role: folder.role, name: folder.name }) : folder.name;
-      if (shown === folder.name) return { id: folder.id, label: serverPath };
-      const label = serverPath.endsWith(folder.name) ? `${serverPath.slice(0, serverPath.length - folder.name.length)}${shown}` : shown;
-      return { id: folder.id, label, description: serverPath };
-    });
-  });
+  const destinationOptions = createMemo(() => mailAutomationDestinationOptions(props.catalog, locale()));
   const kinds = () =>
     mailAutomationActionKindsFor({
       actions: [...props.otherActions, props.action],

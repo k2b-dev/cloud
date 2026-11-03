@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { mailFolderNameMessages, mailFolderNames, type StandardFolderNameKey, standardFolderNameKey } from "./folder-names";
+import {
+  mailFolderNameMessages,
+  mailFolderNames,
+  type StandardFolderNameKey,
+  standardFolderNameAliases,
+  standardFolderNameKey,
+} from "./folder-names";
 
 describe("standardFolderNameKey", () => {
   test.each<[StandardFolderNameKey, string]>([
@@ -69,6 +75,12 @@ describe("mailFolderNames", () => {
   test("other folders keep the server's name", () => {
     expect(mailFolderNames("de")({ role: "sent", name: "Rechnungen gesendet" })).toBe("Rechnungen gesendet");
     expect(mailFolderNames("de")({ role: "other", name: "Projects" })).toBe("Projects");
+  });
+
+  test("a search knows each standard folder by its server names and every locale's name", () => {
+    const sent = standardFolderNameAliases().find((alias) => alias.key === "sent")!;
+    expect(sent.serverNames).toContain("sent items");
+    expect(sent.names).toEqual(["Sent", "Gesendet"]);
   });
 
   test("every locale names every standard folder", () => {

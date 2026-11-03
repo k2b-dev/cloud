@@ -76,6 +76,17 @@ export const mailFolderNameMessages = i18n.define({
   },
 });
 
+/**
+ * Each standard folder's server names and its names in every locale, so a folder search finds a folder by the
+ * name any reader sees, whatever the searcher's language.
+ */
+export const standardFolderNameAliases = (): { key: StandardFolderNameKey; serverNames: string[]; names: string[] }[] =>
+  (Object.keys(DEFAULT_NAMES) as StandardFolderNameKey[]).map((key) => ({
+    key,
+    serverNames: [...DEFAULT_NAMES[key]],
+    names: [...new Set(mailFolderNameMessages.locales.map((locale) => mailFolderNameMessages.resolve([locale]).t[key]))],
+  }));
+
 export type MailFolderNamed = { role: string; name: string };
 
 /**

@@ -257,6 +257,15 @@ suite("Mail search by public folder and tag IDs", () => {
     expect(await titleFor(`${mailboxHref}?folder=${folderShortId}`, "en")).toBe("Inbox");
   });
 
+  test("a folder text search finds a standard folder by its server name and by its localized names", async () => {
+    for (const query of ["Inbox", "Eingang"]) {
+      const route = await workspaceRoute(searchHref({ type: "text", field: "folder", query, match: "contains" }));
+      expect(route.listItems.map((item) => item.conversationId)).toEqual([conversationShortId]);
+    }
+    const otherFolder = await workspaceRoute(searchHref({ type: "text", field: "folder", query: "Papierkorb", match: "contains" }));
+    expect(otherFolder.listItems).toEqual([]);
+  });
+
   test("a failing list reports a stable code instead of raw service text", async () => {
     const invalid = await workspaceRoute(`/app/mail/${mailboxShortId}?search=${encodeURIComponent("{not json")}`);
     expect(invalid.listError).toBe("invalid_search");
