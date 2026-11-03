@@ -153,6 +153,16 @@ describe("Cloud cards", () => {
       const page = await value.newPage();
       await show(page, { scenario: "idle", locale: "de" });
       expect(await page.locator(".auth-cloud__open").count()).toBe(0);
+      // Hovering or pressing a card that is not a button changes nothing on it.
+      const idle = page.locator(".auth-cloud").first();
+      const resting = await idle.evaluate((el) => getComputedStyle(el).backgroundColor);
+      const middle = (await idle.boundingBox())!;
+      await page.mouse.move(middle.x + middle.width / 2, middle.y + middle.height / 2);
+      await page.mouse.down();
+      // settled: the subject is that the press starts no transition and no new fill on the card.
+      expect(await idle.evaluate((el) => [el.getAnimations().length, getComputedStyle(el).backgroundColor])).toEqual([0, resting]);
+      await page.mouse.up();
+      await page.mouse.move(195, 820);
       await page.locator(".auth-cloud .auth-status").first().click();
       await page.waitForTimeout(100);
       expect(await page.locator("dialog[open]").count()).toBe(0);
@@ -239,15 +249,18 @@ describe("Cloud cards", () => {
       expect(hit).toBe(true);
       for (const close of ["button", "escape", "outside"] as const) {
         await info.click();
+        // The drawer's own content is the outcome; the card's and the button's hover fades may still run.
         const dialog = page.locator("dialog[open]");
-        await dialog.waitFor();
-        await settled(page);
+        await dialog.locator(".auth-details-close").waitFor();
         expect(await dialog.locator(".auth-comparison").count()).toBe(0);
         expect(await dialog.locator("h2").textContent()).toBe("Example Cloud");
         if (close === "button") await dialog.locator(".auth-details-close").click();
         if (close === "escape") await page.keyboard.press("Escape");
         if (close === "outside") await page.mouse.click(195, 40);
         await dialog.waitFor({ state: "detached" });
+        // Focus returns to the info button, and the pointer leaves the card before the next press.
+        await page.waitForFunction(() => document.activeElement?.classList.contains("auth-cloud-info"));
+        await page.mouse.move(195, 820);
       }
     } finally {
       await value.close();
@@ -272,8 +285,9 @@ describe("Cloud cards", () => {
         const before = await cards(page);
         await page.evaluate(() => window.recheckAnswer(1200, "idle"));
         await reload.click();
-        // The turning icon never ends while it checks; settled waits only for finite animations.
-        await settled(page);
+        // The check's own state, not global settledness: the button's hover fade may still run.
+        await page.waitForFunction(() => document.querySelector(".auth-status__reload")?.hasAttribute("data-busy"));
+        // settled: the turning icon is the subject, and a hover fade changes colour, never geometry.
         expect(await reload.getAttribute("data-busy")).toBe("");
         expect(await page.locator('.auth-cloud [role="status"].k2b-sr-only').first().textContent()).toBe("Wird geprüft…");
         const turning = await reload.locator("i").evaluate((icon) => getComputedStyle(icon).animationName);
@@ -404,6 +418,8 @@ describe("Cloud cards", () => {
         const value = await context(view);
         try {
           const save = async (page: Page, file: string) => {
+            // Off every card and button, so no hover fade keeps running.
+            await page.mouse.move(195, 820);
             await settled(page);
             await page.screenshot({ path: join(shots, `${name}-${file}.png`), animations: "disabled" });
           };
