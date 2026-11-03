@@ -40,6 +40,8 @@ export type AvatarStackProps = {
   hint?: JSX.Element;
   /** Faces before "+n". Defaults to 3. */
   max?: number;
+  /** What the button shows instead of the faces, such as a "+n" chip and the viewer's own chip. */
+  trigger?: JSX.Element;
   class?: string;
 };
 
@@ -239,15 +241,24 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
         aria-controls={popoverId}
         onClick={toggle}
       >
-        <span class="k2b-avatar-stack__faces" aria-hidden="true">
-          <For each={shown()}>
-            {(person) => <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} size="xs" alt="" />}
-          </For>
-        </span>
-        <Show when={more() > 0}>
-          <span class="k2b-avatar-stack__more" aria-hidden="true" title={messages().moreCount({ count: more() })}>
-            +{more()}
+        <Show
+          when={props.trigger === undefined}
+          fallback={
+            <span class="k2b-avatar-stack__custom" aria-hidden="true">
+              {props.trigger}
+            </span>
+          }
+        >
+          <span class="k2b-avatar-stack__faces" aria-hidden="true">
+            <For each={shown()}>
+              {(person) => <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} size="xs" alt="" />}
+            </For>
           </span>
+          <Show when={more() > 0}>
+            <span class="k2b-avatar-stack__more" aria-hidden="true" title={messages().moreCount({ count: more() })}>
+              +{more()}
+            </span>
+          </Show>
         </Show>
       </button>
       <div
