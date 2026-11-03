@@ -44,6 +44,12 @@ for an application-specific audience. A standalone service account has no user
 roles; it can use `signedIn`, `noGuests`, or an explicit grant. A Cloud app
 session never regains the Cloud administrator role through this check.
 
+Spaces, Grids, Contacts, Mail, Pulse, and Venue use `noGuests()`. Guests and
+credentials delegated by them cannot use these apps through pages, API, CLI,
+capabilities, widgets, or search, even with an object grant. Public-route
+exemptions and independent resource-bound keys retain their contracts.
+Operators should [check affected guests before upgrading](/en/docs/operations/app-access-upgrade#check-guest-access-before-upgrading).
+
 Credentials retain their scopes and resource binding. App access opens the
 application; it does not widen a key or replace route and resource checks.
 

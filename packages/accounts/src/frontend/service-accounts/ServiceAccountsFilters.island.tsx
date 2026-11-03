@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type Props = {
@@ -19,6 +19,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; pag
 };
 
 export default function ServiceAccountsFilters(props: Props) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const kindOptions = (): FilterChipSection[] => [
     {
@@ -39,7 +40,7 @@ export default function ServiceAccountsFilters(props: Props) {
     },
   ];
   const navigate = (patch: Partial<Props>) => {
-    navigateTo(buildUrl({ ...props, ...patch, page: 1 }));
+    openPage(buildUrl({ ...props, ...patch, page: 1 }));
   };
 
   return (

@@ -1,11 +1,11 @@
 import { openAvatarUploadDialog } from "@k2b/cloud/account/ui";
 import type { AccountActionNoticeInput } from "@k2b/cloud/shared";
-import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, DatePicker, NoticeCard, prompts, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../../action-notice";
 import { useAccountsMessages } from "../../../messages";
 import { createDeleteUserAction } from "../../delete-user";
@@ -59,6 +59,7 @@ const confirmProviderSwitch = (config: {
   );
 
 export function createUserActions(props: UserActionsProps) {
+  const { openPage, showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const notice = (action: AccountActionNoticeInput["action"], extra: Partial<AccountActionNoticeInput> = {}) =>
     showAccountActionNotice(
@@ -101,7 +102,7 @@ export function createUserActions(props: UserActionsProps) {
       const email = vars.mail === undefined ? props.user.mail : vars.mail;
       await notice("user.update", { email: email ?? "", firstName: vars.givenname, lastName: vars.sn });
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 
@@ -114,7 +115,7 @@ export function createUserActions(props: UserActionsProps) {
       const data = await res.json();
       throw new Error(data.message ?? messages().updateAvatarFailed);
     }
-    refreshCurrentPath();
+    showChanges();
   };
 
   const removeAvatar = async () => {
@@ -125,7 +126,7 @@ export function createUserActions(props: UserActionsProps) {
     if (!res.ok) {
       throw new Error(data.message ?? messages().removeAvatarFailed);
     }
-    refreshCurrentPath();
+    showChanges();
   };
 
   const resetPasswordMutation = mutations.create<{ message: string; password: string }, void>({
@@ -156,7 +157,7 @@ export function createUserActions(props: UserActionsProps) {
     onError: (err) => prompts.error(err.message),
   });
 
-  const deleteUser = createDeleteUserAction({ user: props.user, onDeleted: () => navigateTo(props.listHref) });
+  const deleteUser = createDeleteUserAction({ user: props.user, onDeleted: () => openPage(props.listHref) });
 
   const setExpiryMutation = mutations.create<{ message: string }, string | null>({
     mutation: async (expiryDate) => {
@@ -173,7 +174,7 @@ export function createUserActions(props: UserActionsProps) {
     },
     onSuccess: () => {
       toast.success(messages().updated);
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -194,7 +195,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       return data;
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 
@@ -211,7 +212,7 @@ export function createUserActions(props: UserActionsProps) {
       await notice("user.admin");
       return data;
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 
@@ -228,7 +229,7 @@ export function createUserActions(props: UserActionsProps) {
       await notice("user.provider", { provider: "ipa", category: "freeipa" });
       return data;
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 
@@ -245,7 +246,7 @@ export function createUserActions(props: UserActionsProps) {
       await notice("user.provider", { provider: "local", category: props.user.profile === "guest" ? "guest" : "login" });
       return data;
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 

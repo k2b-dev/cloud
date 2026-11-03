@@ -91,6 +91,7 @@ const build = (locale?: string) =>
       "app-credentials": "Manage per-application credentials for background work.",
       agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
       "agents avatar": "Show and change an agent's picture: its robot parts or a photo.",
+      "agents keys": "Create, list and revoke an agent's API keys; a new key acts as its agent.",
       "app-sign-in": "Manage app sign-in and pairing.",
       apps: localizeCloudCliText(locale, {
         en: "Inspect registered apps and manage app keys and domains.",

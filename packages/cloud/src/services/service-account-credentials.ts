@@ -509,7 +509,7 @@ export const createStandaloneApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.actor.id,
-      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : params.scopes,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : (params.scopes ?? ["read", "write", "admin"]),
     });
 
     return audit.recordResult({

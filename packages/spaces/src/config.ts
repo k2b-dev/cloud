@@ -3,8 +3,8 @@ import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "spaces",
-  // APIs admit roleless service accounts; navigation keeps its narrower audience.
-  access: appAccess.signedIn({
+  // Resource-bound and roleless service accounts remain eligible.
+  access: appAccess.noGuests({
     publicRoutes: ["/api/spaces/openapi.json"],
   }),
   cli: { spaces: { module: "src/cli.ts", references: "src/cli-references" } },

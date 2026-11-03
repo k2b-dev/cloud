@@ -3,7 +3,7 @@ title: Upgrade application access declarations
 navTitle: App access upgrade
 section: Operations
 order: 1190
-description: Roll out declarative application access while preserving public routes and existing callers.
+description: Roll out application access rules and check affected callers before upgrading.
 tags: [operations, upgrades, identity]
 updated: 2026-11-03
 ---
@@ -81,9 +81,10 @@ transition behavior.
 ## Built-in application rules
 
 Gateway (`gateway-ops`), Hosts (`ipa-hosts`), OAuth, and Proxy Auth declare administrator-only use.
-The other built-in applications declare signed-in use and keep their existing
-route and resource permissions. No built-in application switches to an access
-list in this rollout.
+Spaces, Grids, Contacts, Mail, Pulse, and Venue declare `appAccess.noGuests()`;
+see the [guest upgrade check](#check-guest-access-before-upgrading). Other built-in
+applications retain their declared rules and existing route and resource
+permissions. No built-in application switches to an access list in this rollout.
 
 Declared public routes retain their existing authentication, including share
 tokens, Cloud Login, phone device keys, and Pulse ingest credentials. An
@@ -93,6 +94,82 @@ other routes.
 API Docs and Tools no longer appear in navigation for signed-out visitors.
 Their public direct URLs remain available. Signed-in discovery still depends
 on the caller's app access and the application's navigation placement.
+
+## Check guest access before upgrading
+
+Spaces, Grids, Contacts, Mail, Pulse, and Venue now reject guest accounts on
+API and CLI requests as well as pages. A direct or group-inherited object
+grant no longer admits a guest to these apps. Personal keys, OAuth tokens,
+and other credentials delegated by a guest have the same restriction.
+Rejected API requests return HTTP 403 with `code: "app_access_denied"`.
+The apps also disappear from guest discovery, including Assistant and Chat
+capabilities, widgets, search providers, and CLI plugins.
+
+Before deploying this change, run this read-only query against the installation's
+Postgres database. It lists guest accounts with direct or group-inherited
+`read`, `write`, or `admin` grants, including nested groups, with an object count
+per app. Counts deduplicate multiple grants to the same object. Grids counts
+bases and custom apps separately; Mail includes both mailbox-wide and
+assigned-conversation grants, counting each mailbox once.
+
+```sql
+WITH RECURSIVE guest_groups(user_id, group_id) AS (
+  SELECT ug.user_id, ug.group_id
+  FROM auth.user_groups_v2 ug
+  JOIN auth.users u ON u.id = ug.user_id
+  WHERE u.profile = 'guest'
+  UNION
+  SELECT gg.user_id, nested.parent_group_id
+  FROM guest_groups gg
+  JOIN auth.group_groups_v2 nested ON nested.child_group_id = gg.group_id
+), object_grants(app, object_type, object_id, access_id) AS (
+  SELECT 'spaces', 'space', space_id, access_id FROM spaces.space_access
+  UNION ALL
+  SELECT 'grids', 'base', base_id, access_id FROM grids.base_access
+  UNION ALL
+  SELECT 'grids', 'custom_app', custom_app_id, access_id FROM grids.custom_app_access
+  UNION ALL
+  SELECT 'contacts', 'book', book_id, access_id FROM contacts.book_access
+  UNION ALL
+  SELECT 'mail', 'mailbox', mailbox_id, access_id FROM mail.mailbox_access
+  UNION ALL
+  SELECT 'mail', 'mailbox', mailbox_id, access_id FROM mail.mailbox_assigned_access
+  UNION ALL
+  SELECT 'pulse', 'base', base_id, access_id FROM pulse.base_access
+  UNION ALL
+  SELECT 'venue', 'venue', venue_id, access_id FROM venue.venue_access
+)
+SELECT u.id AS guest_id, u.uid, u.mail, o.app,
+       count(DISTINCT (o.object_type, o.object_id)) AS object_count
+FROM auth.users u
+JOIN auth.access a ON a.user_id = u.id OR EXISTS (
+  SELECT 1 FROM guest_groups gg
+  WHERE gg.user_id = u.id AND gg.group_id = a.group_id
+)
+JOIN object_grants o ON o.access_id = a.id
+WHERE u.profile = 'guest' AND a.permission IN ('read', 'write', 'admin')
+GROUP BY u.id, u.uid, u.mail, o.app
+ORDER BY u.uid, o.app;
+```
+
+Run it where all six apps' schemas are installed. This is an inventory of
+stored direct and group grants, including expired accounts and grants on
+archived objects; it does not prove that every listed object is currently usable.
+Public and signed-in audience grants are outside this report. An empty result
+means no direct or group grants were found, not that guests cannot currently
+reach objects through those audiences.
+
+For each affected person, give them a full account before upgrading if they
+should retain access, or accept that their guest account will lose it. Existing
+object grants stay stored; no data migration or grant copying is needed.
+
+Declared public routes retain their own authentication: Grids forms, document
+shares and published apps; Mail attachment links; Pulse ingest keys and
+published dashboards; and Venue public status, feedback, and calendar links.
+OpenAPI routes remain public. Resource-bound object keys, standalone service
+accounts, and agent accounts remain eligible, with the same scopes, bindings,
+and object permissions. A key's creator being a guest does not turn an
+independent resource-bound key into a guest-delegated credential.
 
 ## Roll out resource-derived app access
 
@@ -242,3 +319,14 @@ FROM object_queries
 \gexec
 COMMIT;
 ```
+
+## New machine credentials
+
+New standalone and agent API keys created with `access: "full"` and omitted
+`scopes` act as their account. Issuance stores `read`, `write`, and `admin`;
+resource grants still limit every operation. Explicit scopes remain accepted
+but are deprecated for new keys. Existing keys are unchanged, including empty
+scope lists. Replace a limited key by issuing a new one and revoking the old
+one. New OAuth clients created with `cld admin agents create` include `admin`;
+existing clients are unchanged. No data migration is required. See
+[Standalone service accounts and agents](/en/docs/identity/service-accounts#use-an-agent-from-the-cli).

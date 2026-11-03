@@ -4,8 +4,8 @@ import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "grids",
-  // APIs admit roleless service accounts; navigation keeps its narrower audience.
-  access: appAccess.signedIn({
+  // Resource-bound and roleless service accounts remain eligible.
+  access: appAccess.noGuests({
     publicRoutes: [
       "/share/grids/forms/:token",
       "/share/grids/documents/:token",

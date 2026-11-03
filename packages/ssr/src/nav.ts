@@ -199,5 +199,5 @@ export function Link(props: LinkProps) {
   );
 }
 
-export { installPageSwap, swapPage } from "./nav-swap";
+export { installPageSwap, type SwapPageOptions, swapPage } from "./nav-swap";
 export { type BeforeLeaveEvent, onBeforeLeave } from "./nav-veto";

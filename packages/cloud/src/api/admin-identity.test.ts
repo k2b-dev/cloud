@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
+import { generateSpecs } from "hono-openapi";
 import type { AuthContext } from "../server";
 import { createAdminIdentityRoutes } from "./admin-identity";
 
@@ -167,11 +168,35 @@ describe("identity key administration", () => {
     });
     expect(response.status).toBe(400);
   });
-  test("a general key must name its scopes", async () => {
+  test("P15: omitted scopes reach issuance; explicit scopes are preserved", async () => {
+    const base = dependencies();
+    const calls: Array<{ scopes?: string[]; access?: string }> = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        credentials: {
+          ...base.credentials,
+          createStandaloneApiToken: async (input) => {
+            calls.push(input);
+            return base.credentials.createStandaloneApiToken(input);
+          },
+        },
+      }),
+    );
+    for (const body of [{ name: "ci" }, { name: "ci", access: "full" }, { name: "ci", access: "full", scopes: ["read"] }]) {
+      const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(201);
+      expect(calls.at(-1)?.scopes).toEqual(body.scopes);
+      expect(calls.at(-1)?.access).toBe("full");
+    }
+  });
+  test("an explicitly empty scope list is still refused; it could never enter an application", async () => {
     const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
     for (const body of [
-      { name: "ci" },
-      { name: "ci", access: "full" },
       { name: "ci", scopes: [] },
       { name: "ci", access: "full", scopes: [] },
     ]) {
@@ -182,6 +207,63 @@ describe("identity key administration", () => {
       });
       expect(response.status).toBe(400);
     }
+  });
+  test("lists and revokes only the API keys of the named standalone account", async () => {
+    const base = dependencies();
+    const created = await base.credentials.createStandaloneApiToken({ serviceAccountId: STANDALONE_ID, actor: admin, name: "ci" });
+    if (!created.ok) throw new Error("Test credential setup failed");
+    const overview = {
+      ...created.data.credential,
+      serviceAccount: standaloneAccount(),
+      owner: { type: "standalone" as const, serviceAccountId: STANDALONE_ID, name: "Release robot", kind: "agent" as const },
+    };
+    const filters: unknown[] = [];
+    const revoked: string[] = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        credentials: {
+          ...base.credentials,
+          listOverview: async (input) => {
+            filters.push(input?.filter);
+            return { items: [overview], page: 1, perPage: 100, total: 1, hasNext: false };
+          },
+          getOverview: async () => overview,
+          revoke: async ({ credentialId }) => {
+            revoked.push(credentialId);
+            return ok();
+          },
+        },
+      }),
+    );
+    const listed = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`);
+    expect(listed.status).toBe(200);
+    expect(JSON.stringify(await listed.json())).not.toContain("only-once-secret");
+    expect(filters).toEqual([{ serviceAccountId: STANDALONE_ID, serviceAccountKind: standaloneAccount().kind }]);
+    expect((await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}/api-keys`)).status).toBe(404);
+    const other = await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}/api-keys/${CREDENTIAL_ID}`, { method: "DELETE" });
+    expect(other.status).toBe(404);
+    expect(revoked).toEqual([]);
+    const own = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys/${CREDENTIAL_ID}`, { method: "DELETE" });
+    expect(own.status).toBe(200);
+    expect(revoked).toEqual([CREDENTIAL_ID]);
+  });
+  test("OpenAPI deprecates explicit standalone key scopes", async () => {
+    const spec = await generateSpecs(createAdminIdentityRoutes(authenticateAdmin, dependencies()));
+    expect(spec.paths?.["/service-accounts/{id}/api-keys"]?.post?.requestBody).toMatchObject({
+      content: {
+        "application/json": {
+          schema: {
+            properties: {
+              scopes: {
+                deprecated: true,
+                description: "New keys act as their account; omit scopes.",
+              },
+            },
+          },
+        },
+      },
+    });
   });
   test("models purpose uses the administrator creation boundary and refuses mixed scopes", async () => {
     const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());

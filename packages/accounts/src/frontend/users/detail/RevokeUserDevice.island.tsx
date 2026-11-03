@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../../messages";
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
 };
 
 export default function RevokeUserDevice(props: Props) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const revokeMutation = mutations.create<void, void>({
     mutation: async () => {
@@ -23,7 +24,7 @@ export default function RevokeUserDevice(props: Props) {
         throw new Error(message ?? messages().revokeDeviceFailed);
       }
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (error) => prompts.error(error.message),
   });
 

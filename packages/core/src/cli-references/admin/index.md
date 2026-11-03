@@ -351,11 +351,15 @@ access, and so on).
 cld admin agents create "Release agent" --profile release-agent --yes
 cld admin agents ls --json
 cld admin agents rotate-secret "Release agent" --profile release-agent --yes
+cld admin agents keys create "Release agent" --name automation
+cld admin agents keys list "Release agent"
+cld admin agents keys revoke "Release agent" <key-id> --yes
 cld admin agents revoke "Release agent" --yes
 ```
 
-`create` creates the account and a confidential OAuth client with the scopes of
-a `cld login` session (`openid profile email offline_access read write`), then
+`create` creates the account and a confidential OAuth client with the scopes
+`openid profile email offline_access read write admin`, so the agent acts as
+far as its grants reach; `admin` gives no administrator role. It then
 writes the client ID and secret into the local `cld` profile named by
 `--profile`. The secret is never printed, also not with `--json`; add `--fd0`
 to keep it in fd0 instead of the config file, and `--server` when the profile
@@ -363,6 +367,13 @@ should target another origin than the administrator's. If the client or the
 profile cannot be created, the new account is disabled again. Afterwards the
 agent runs `cld --profile release-agent …` and `cld` obtains and renews its
 access tokens itself.
+
+`keys create` issues an API key that acts as the agent and prints it once;
+`--models` limits it to AI models, `--expires` sets an ISO 8601 expiry. There
+are no scope flags. `keys list` shows each key's metadata and access: `full`,
+`models`, or `legacy, limited` for an older key that keeps its narrower scopes.
+To replace such a key, create a new one and revoke the old one with
+`keys revoke`, which revokes only a key of the named agent.
 
 `revoke` disables the account: its tokens, secret, and API keys stop working
 at once. `rotate-secret` regenerates the client secret and updates the local

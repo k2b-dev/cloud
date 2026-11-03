@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
@@ -6,14 +6,16 @@ import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { bindResourceAppAccess, RESOURCE_ACCESS_PROBE_TIMEOUT_MS } from "../_internal/app-access-resources";
 import { compileCapabilities } from "../_internal/capabilities";
+import { person } from "../_internal/define-app.test-fixture";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
+import * as appAccessService from "../services/app-access";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import type { signInvocationToken } from "../services/identity/invocation-token";
-import { issueInvocationToken } from "../services/identity/issue-invocation";
+import { prepareFanoutIssuance } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes as buildSearchRoutes } from "./search";
 import type { SearchStreamLine } from "./search/schemas";
@@ -51,7 +53,7 @@ const app: CapabilityRegistryEntry = {
 };
 
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
-  const user = { id: "11111111-1111-4111-8111-111111111111", roles: ["user"] } as AuthContext["Variables"]["user"];
+  const user = person;
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", { type: "user", userId: user.id });
   c.set("user", user);
@@ -116,6 +118,16 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
   return buildSearchRoutes({
     withActiveSigner,
     signInvocation: async (params) => fakeInvocation(params),
+    prepareFanout: (params, options) =>
+      prepareFanoutIssuance(params, {
+        ...options,
+        resolve: async () => ({
+          actor: { kind: "user", user: person },
+          accessSubject: { type: "user", userId: person.id },
+          credentialKind: "session",
+          scopes: [],
+        }),
+      }),
     ...dependencies,
     listCapabilities: async () => {
       entries = (await dependencies.listCapabilities?.()) ?? [];
@@ -138,7 +150,49 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
 };
 
 describe("global capability search", () => {
-  test("shares one deadline across resource discovery, issuance revalidation and provider I/O", async () => {
+  for (const accept of ["application/json", "application/x-ndjson"]) {
+    test.each([1, 15])(`resolves issuance once for %i admitted apps (${accept}) without per-target app access`, async (count) => {
+      const admitted = Array.from({ length: count }, (_, index) => provider(index));
+      const hidden = provider(99);
+      const resolve = mock(async () => ({
+        actor: { kind: "user" as const, user: person },
+        accessSubject: { type: "user" as const, userId: person.id },
+        credentialKind: "session" as const,
+        scopes: [],
+      }));
+      const sign = mock(async (params: Parameters<typeof signInvocationToken>[0]) => fakeInvocation(params));
+      const access = spyOn(appAccessService, "canUseApp");
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => [...admitted, hidden],
+        listApps: async () =>
+          [...admitted, hidden].map((entry) => ({
+            id: entry.appId,
+            name: entry.appName,
+            description: "",
+            icon: entry.appIcon,
+            routes: [],
+            baseUrl: "http://test.invalid",
+            access: entry === hidden ? appAccess.roles(["admin"]) : appAccess.signedIn(),
+          })),
+        prepareFanout: (params, options) => prepareFanoutIssuance(params, { ...options, resolve }),
+        signInvocation: sign,
+        fetch: async () => Response.json({ data: [] }),
+      });
+      try {
+        const response = await routes.request("/search?q=needle", { headers: { accept } });
+        expect(response.status).toBe(200);
+        expect(await response.text()).not.toContain(hidden.appId);
+        expect(resolve).toHaveBeenCalledTimes(1);
+        expect(access).not.toHaveBeenCalled();
+        expect(sign.mock.calls.map(([params]) => params.targetAppId)).toEqual(admitted.map((entry) => entry.appId));
+      } finally {
+        access.mockRestore();
+      }
+    });
+  }
+
+  test("shares one deadline across resource discovery, issuance and provider I/O", async () => {
     const deadline = new AbortController();
     const probeDeadline = new AbortController();
     const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
@@ -173,21 +227,6 @@ describe("global capability search", () => {
           access: compileAppAccess(declaration),
         },
       ],
-      signInvocation: (params, options) =>
-        issueInvocationToken(params, {
-          ...options,
-          resolve: async () => ({
-            actor: {
-              kind: "user",
-              user: { id: params.authority.sub, roles: ["user"] } as AuthContext["Variables"]["user"],
-            },
-            accessSubject: { type: "user", userId: params.authority.sub },
-            credentialKind: "session",
-            scopes: [],
-          }),
-          getApp: async () => ({ id: app.appId, access: compileAppAccess(declaration) }),
-          sign: async (params) => fakeInvocation(params),
-        }),
       fetch: async (_url, init) => {
         providerSignal = init?.signal;
         return Response.json({ data: [] });
@@ -198,6 +237,7 @@ describe("global capability search", () => {
       expect(response.status).toBe(200);
       // One shared search deadline replaces discovery/entry defaults. The
       // independent short discovery probe must still inherit its cancellation.
+      // Discovery probes once; issuance asks the owner again per resource target, as before, within the same deadline.
       expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, RESOURCE_ACCESS_PROBE_TIMEOUT_MS]);
       expect(accessSignals).toHaveLength(2);
       expect(providerSignal?.aborted).toBe(false);

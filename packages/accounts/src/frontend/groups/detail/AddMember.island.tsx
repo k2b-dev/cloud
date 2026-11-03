@@ -1,8 +1,8 @@
 import { EntitySearch } from "@k2b/cloud/account/ui";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
@@ -25,6 +25,7 @@ type AddMemberProps = {
 };
 
 export default function AddMember(props: AddMemberProps) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const mutation = mutations.create<void, { type: "user" | "group" | "service_account"; id: string }>({
     mutation: async (vars) => {
@@ -46,7 +47,7 @@ export default function AddMember(props: AddMemberProps) {
         messages(),
       );
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 

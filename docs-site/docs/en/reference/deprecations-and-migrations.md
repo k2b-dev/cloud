@@ -21,6 +21,17 @@ they are redeployed. Run the read-only
 [pre-switch inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people)
 and review app-owned copies of the predicate before switching.
 
+## New agent API keys act as their account
+
+For standalone and agent keys, `POST /api/admin/identity/service-accounts/<id>/api-keys`
+with `access: "full"` and no `scopes` now stores `read`, `write`, and `admin`.
+Explicit scopes are deprecated for new keys but remain accepted unchanged.
+Existing keys, including empty-scope keys, keep their limits. No migration
+widens issued keys. New OAuth clients from `cld admin agents create` also
+include `admin`; existing clients are unchanged. Scopes do not grant roles or
+resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
+for issuance and the `cld admin agents keys` commands.
+
 ## Application deployment moves to key files
 
 This release replaces ordinary apps' shared infrastructure environment block
