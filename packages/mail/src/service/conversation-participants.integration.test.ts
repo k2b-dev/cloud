@@ -31,8 +31,10 @@ suite("Mail conversation participants", () => {
   let identityId = "";
   let bindingId = "";
   let messageIndex = 0;
-  const conversations: Record<"crowd" | "team" | "assigned" | "hidden" | "single", string> = {
+  const workflowIds: string[] = [];
+  const conversations: Record<"crowd" | "team" | "automated" | "assigned" | "hidden" | "single", string> = {
     crowd: "",
+    automated: "",
     team: "",
     assigned: "",
     hidden: "",
@@ -76,8 +78,8 @@ suite("Mail conversation participants", () => {
   /** One message from `from`; with `sentBy`, Mail sent it for that actor through a command. */
   const addMessage = async (
     conversationId: string,
-    from: { email: string; name?: string } | null,
-    sentBy?: { kind: "user" | "service_account"; id: string; state?: string },
+    from: { email: string; name?: string } | { email: string; name?: string }[] | null,
+    sentBy?: { kind: "user" | "service_account" | "workflow"; id: string; state?: string },
   ) => {
     const index = messageIndex++;
     const date = new Date(anchor.getTime() + index * 60_000);
@@ -91,15 +93,15 @@ suite("Mail conversation participants", () => {
       VALUES (${folderId}::uuid, ${message!.id}::uuid, 1, ${index + 1}) RETURNING id`;
     await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
       VALUES (${ref!.id}::uuid, ${folderId}::uuid, ${message!.id}::uuid, ARRAY['\\Seen']::text[])`;
-    if (from)
+    for (const [position, address] of (Array.isArray(from) ? from : from ? [from] : []).entries())
       await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
-        VALUES (${message!.id}::uuid, 'from', 0, ${from.name ?? null}, ${from.email}, ${from.email.toLowerCase()})`;
+        VALUES (${message!.id}::uuid, 'from', ${position}, ${address.name ?? null}, ${address.email}, ${address.email.toLowerCase()})`;
     if (!sentBy) return;
     const key = crypto.randomUUID();
     const [command] = await sql<{ id: string }[]>`INSERT INTO mail.commands
       (mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload, access_subject_kind, access_subject_id, credential_scopes)
       VALUES (${mailboxId}::uuid, 'send', ${sentBy.kind}, ${sentBy.id}::uuid, ${key}, ${"f".repeat(64)}, '{}', '{}',
-        ${sentBy.kind}, ${sentBy.id}::uuid, ARRAY[]::text[]) RETURNING id`;
+        'user', ${owner.id}::uuid, ARRAY[]::text[]) RETURNING id`;
     const [draft] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
       (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id,
         last_editor_kind, last_editor_id, subject, body_markdown, state, updated_at)
@@ -167,6 +169,26 @@ suite("Mail conversation participants", () => {
     await addMessage(conversations.team, { email: "team@example.test", name: "Team desk" });
     await addMessage(conversations.team, { email: "team@example.test" }, { kind: "user", id: reader.id, state: "scheduled" });
 
+    // Two versions of one workflow reply, and one message names two authors in From.
+    const [workflow] = await sql<{ id: string }[]>`INSERT INTO workflows.workflow (app_id, scope_id, key, name, created_by_kind)
+      VALUES ('mail', ${mailboxId}, ${`replies-${suffix}`}, 'Invoices', 'system') RETURNING id`;
+    workflowIds.push(workflow!.id);
+    const versions: string[] = [];
+    for (const revision of [1, 2]) {
+      const [version] = await sql<{ id: string }[]>`INSERT INTO workflows.version
+        (workflow_id, revision, source, source_hash, plan, language_id, language_version, manifest_hash, created_by_kind)
+        VALUES (${workflow!.id}::uuid, ${revision}, 'source', ${String(revision).repeat(64)}, '{}', 'test', 1, ${"b".repeat(64)}, 'system')
+        RETURNING id`;
+      versions.push(version!.id);
+    }
+    conversations.automated = await createConversation("Automated", 6);
+    await addMessage(conversations.automated, [
+      { email: "karin@example.test", name: "Karin Lutz" },
+      { email: "rolf@example.test", name: "Rolf Becker" },
+    ]);
+    await addMessage(conversations.automated, { email: "team@example.test" }, { kind: "workflow", id: versions[0]! });
+    await addMessage(conversations.automated, { email: "team@example.test" }, { kind: "workflow", id: versions[1]! });
+
     // The reader is assigned only the first of these two.
     conversations.assigned = await createConversation("Assigned", 3);
     await addMessage(conversations.assigned, { email: "anna@example.test", name: "Anna Roth" });
@@ -186,6 +208,7 @@ suite("Mail conversation participants", () => {
   afterAll(async () => {
     if (mailboxId) await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     if (agentId) await sql`DELETE FROM auth.service_accounts WHERE id = ${agentId}::uuid`;
+    for (const id of workflowIds) await sql`DELETE FROM workflows.workflow WHERE id = ${id}::uuid`;
     for (const id of userIds) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
 
@@ -214,6 +237,16 @@ suite("Mail conversation participants", () => {
         { name: `Reply agent ${suffix}`, kind: "service_account" },
         { name: "Team desk" },
       ],
+    });
+  });
+
+  test("counts every author a message names and a workflow once across its versions", async () => {
+    const result = unwrap(
+      await listConversationParticipants({ context: contextFor(owner), mailboxId, conversationIds: [conversations.automated] }),
+    );
+    expect(result.get(conversations.automated)).toEqual({
+      count: 3,
+      people: [{ name: "Karin Lutz" }, { name: "Rolf Becker" }, { name: "Invoices", kind: "workflow" }],
     });
   });
 

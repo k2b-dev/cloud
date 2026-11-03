@@ -6,14 +6,14 @@ import type { MailListItem } from "./mail-navigation";
 type Messages = ReturnType<(typeof mailConversationUiMessages)["resolve"]>["t"];
 
 /**
- * Who wrote in a row's conversation and how many. A row without `participants` had only the sender it already names
- * write (the server leaves the list out then), so that sender stands alone.
+ * Who wrote in a row's conversation and how many. The server leaves `participants` out when only the sender the row
+ * names wrote, so that sender stands alone; a row that names nobody had nobody write that the reader can see.
  */
 export const mailRowParticipants = (
-  item: Pick<MailListItem, "participants" | "participantCount">,
-  sender: string,
+  item: Pick<MailListItem, "participants" | "participantCount" | "participantLabels">,
 ): { people: MailConversationParticipant[]; count: number } => {
-  const people = item.participants ?? [{ name: sender }];
+  const sender = item.participantLabels[0];
+  const people = item.participants ?? (sender ? [{ name: sender }] : []);
   return { people, count: Math.max(item.participantCount ?? 0, people.length) };
 };
 

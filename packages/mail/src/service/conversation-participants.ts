@@ -35,9 +35,14 @@ export const listConversationParticipants = async (params: {
     WITH writers AS (
       SELECT
         cm.conversation_id,
-        COALESCE(writer.actor_kind || ':' || writer.actor_id::text, 'address:' || sender.normalized_email) AS key,
+        -- A workflow is one writer across its versions.
+        CASE
+          WHEN writer.actor_kind = 'workflow' THEN 'workflow:' || writer.workflow_id::text
+          WHEN writer.actor_kind IS NOT NULL THEN writer.actor_kind || ':' || writer.actor_id::text
+          ELSE 'address:' || sender.normalized_email
+        END AS key,
         writer.actor_kind AS kind,
-        COALESCE(writer.name, sender.label) AS name,
+        COALESCE(writer.name, writer.from_label, sender.label) AS name,
         mc.internal_date,
         mc.id AS message_id
       FROM mail.conversations c
@@ -47,7 +52,15 @@ export const listConversationParticipants = async (params: {
         SELECT
           command.actor_kind,
           command.actor_id,
-          COALESCE(NULLIF(actor_user.display_name, ''), actor_user.uid, actor_service.name, actor_workflow.name) AS name
+          actor_workflow.id AS workflow_id,
+          COALESCE(NULLIF(actor_user.display_name, ''), actor_user.uid, actor_service.name, actor_workflow.name) AS name,
+          (
+            SELECT COALESCE(NULLIF(address.display_name, ''), address.email)
+            FROM mail.message_addresses address
+            WHERE address.message_id = mc.id AND address.role = 'from'
+            ORDER BY address.position
+            LIMIT 1
+          ) AS from_label
         FROM mail.outbox_submissions submission
         JOIN mail.commands command ON command.id = submission.command_id
         LEFT JOIN auth.users actor_user ON command.actor_kind = 'user' AND actor_user.id = command.actor_id
@@ -57,34 +70,34 @@ export const listConversationParticipants = async (params: {
           ON command.actor_kind = 'workflow' AND actor_workflow_version.id = command.actor_id
         LEFT JOIN workflows.workflow actor_workflow ON actor_workflow.id = actor_workflow_version.workflow_id
         WHERE submission.message_id = mc.id
-          AND command.actor_kind IN ('user', 'service_account', 'workflow')
           AND command.actor_id IS NOT NULL
-        LIMIT 1
+          AND (command.actor_kind IN ('user', 'service_account') OR (command.actor_kind = 'workflow' AND actor_workflow.id IS NOT NULL))
       ) writer ON true
+      -- Without a command, every From address of the message wrote it.
       LEFT JOIN LATERAL (
         SELECT address.normalized_email, COALESCE(NULLIF(address.display_name, ''), address.email) AS label
         FROM mail.message_addresses address
-        WHERE address.message_id = mc.id AND address.role = 'from'
-        ORDER BY address.position
-        LIMIT 1
+        WHERE address.message_id = mc.id AND address.role = 'from' AND writer.actor_kind IS NULL
       ) sender ON true
       WHERE c.mailbox_id = ${params.mailboxId}::uuid
         AND c.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
         AND ${conversationVisibleTo(allowed.data, sql`c.id`)}
         AND ${messageVisibleTo(allowed.data, sql`mc.id`)}
         AND NOT ${isUnsentOutboundMessage(sql`mc.id`)}
-        AND COALESCE(writer.name, sender.label) IS NOT NULL
+        AND (writer.actor_kind IS NOT NULL OR sender.normalized_email IS NOT NULL)
+        AND COALESCE(writer.name, writer.from_label, sender.label) IS NOT NULL
     ),
+    -- One row per writer with the name from their newest message, as the reader shows it; sorting, not arrays, so a
+    -- long conversation costs no memory per message.
     people AS (
-      SELECT
+      SELECT DISTINCT ON (conversation_id, key)
         conversation_id,
         key,
-        (array_agg(kind))[1] AS kind,
-        -- The name from their newest message, as the reader shows it.
-        (array_agg(name ORDER BY internal_date DESC, message_id DESC))[1] AS name,
-        min(internal_date) AS first_at
+        kind,
+        name,
+        min(internal_date) OVER (PARTITION BY conversation_id, key) AS first_at
       FROM writers
-      GROUP BY conversation_id, key
+      ORDER BY conversation_id, key, internal_date DESC, message_id DESC
     ),
     ranked AS (
       SELECT

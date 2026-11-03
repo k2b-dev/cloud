@@ -84,7 +84,7 @@ export default function MailConversationRow(props: {
   const bulkSelected = () => Boolean(props.item.conversationId && state().selectedConversationIds.has(props.item.conversationId));
   const attachmentDownloadHref = () => buildMailAttachmentDownloadHref(props.requestUrl, props.item);
   const attachmentLabel = () => t().attachmentCount({ count: props.item.attachmentCount ?? 0 });
-  const participants = createMemo(() => mailRowParticipants(props.item, primaryCorrespondent()));
+  const participants = createMemo(() => mailRowParticipants(props.item));
   const participantLabel = () => mailParticipantSummary(t(), participants().people, participants().count);
   const [menuOpen, setMenuOpen] = createSignal(false);
   let activation: "keyboard" | "pointer" = "keyboard";
@@ -248,7 +248,7 @@ export default function MailConversationRow(props: {
               </span>
               {/* Who wrote: up to three faces in a fixed-width column, then "+n"; the tooltip names them by kind. */}
               <span class="mail-row-cell mail-row-participants-cell">
-                <Show when={props.item.selectionKind === "conversation"}>
+                <Show when={props.item.selectionKind === "conversation" && participants().count > 0}>
                   <Tooltip.Anchor content={participantLabel()}>
                     <span class="mail-row-participants" role="img" aria-label={participantLabel()} data-mail-participants>
                       <AvatarFaces people={mailParticipantFaces(participants().people)} total={participants().count} size="md" />

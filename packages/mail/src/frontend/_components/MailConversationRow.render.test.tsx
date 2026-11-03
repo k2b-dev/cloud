@@ -125,6 +125,11 @@ describe("Mail conversation participants column", () => {
     expect(cell(html)).not.toContain("data-tint");
   });
 
+  test("nobody the reader can see wrote: the column stays empty instead of guessing a sender", () => {
+    const html = renderRow({ ...item, attachmentMatch: null, participantLabels: [] }, { assignees: [] });
+    expect(cell(html)).not.toContain("data-mail-participants");
+  });
+
   test("three people: three faces, team members tinted, external gray", () => {
     const html = renderRow(
       {
