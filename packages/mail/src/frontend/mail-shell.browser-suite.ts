@@ -3325,6 +3325,60 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+        for (const [locale, turn, waiting, doneText] of [
+          ["en", "Your turn · 3", "Waiting for reply · 2", "Done conversations that were assigned to you"],
+          ["de", "Du bist dran · 3", "Wartet auf Antwort · 2", "Erledigtes, das dir zugewiesen war"],
+        ] as const)
+          for (const width of [1440, 390] as const)
+            test(`assigned to me groups whose turn it is above what waits (${locale}, ${width})`, async () => {
+              const page = await open(`${boxPath}?view=mine&team=1&locale=${locale}`, width);
+              try {
+                const list = page.locator(".mail-workspace [role='list']").first();
+                const entries = await list
+                  .locator(":scope > [role='listitem']")
+                  .evaluateAll((items) =>
+                    items.map((item) => item.getAttribute("data-mail-assigned-group") ?? item.getAttribute("data-conversation-id")),
+                  );
+                expect(entries).toEqual(["needsAction", "Conv01", "Conv02", "Conv03", "waiting", "Conv04", "Conv05"]);
+                expect(await list.locator("[data-mail-assigned-group='needsAction'] h3").textContent()).toBe(turn);
+                expect(await list.locator("[data-mail-assigned-group='waiting'] h3").textContent()).toBe(waiting);
+                expect(await page.locator(".mail-workspace [data-mail-day-group]").count()).toBe(0);
+                const footer = page.locator(".mail-workspace [data-mail-hidden-done]");
+                expect(await footer.textContent()).toContain(doneText);
+                const href = new URL((await footer.locator("[data-mail-show-done]").getAttribute("href"))!, "https://cloud.example");
+                expect(JSON.parse(href.searchParams.get("search")!).expression).toEqual({
+                  type: "and",
+                  expressions: [{ type: "assigned_to_me" }, { type: "work_status", value: "done" }],
+                });
+                // Headings keep the height of day headings, so the rows do not move after hydration.
+                const heights = await list
+                  .locator("[data-mail-assigned-group]")
+                  .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+                for (const height of heights) expect(height).toBe(32);
+                if (screenshots && locale === "de") {
+                  mkdirSync(join(screenshots, browserName), { recursive: true });
+                  await page.screenshot({ path: join(screenshots, browserName, `assigned-groups-light-${width}.png`) });
+                }
+              } finally {
+                await close(page);
+              }
+            });
+
+        test("assigned to me with nothing open says so and still leads to the done conversations", async () => {
+          const page = await open(`${boxPath}?view=mine&inbox=empty&locale=de`);
+          try {
+            await page.getByText("Dir ist nichts Offenes zugewiesen").waitFor();
+            await page.getByText("Neue Zuweisungen erscheinen hier und in deinen Mitteilungen.").waitFor();
+            expect(await page.locator(".mail-workspace [data-mail-show-done]").count()).toBe(1);
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, "assigned-groups-empty-light-1440.png") });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
         for (const [locale, one, two] of [
           ["en", "1 attachment", "2 attachments"],
           ["de", "1 Anhang", "2 Anhänge"],

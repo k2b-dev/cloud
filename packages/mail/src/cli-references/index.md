@@ -93,7 +93,7 @@ cld --json mail ls Support --view mine
 cld --json mail ls "Support:Projekte / 2025" --status needs_action --limit 20
 ```
 
-Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, `recently_active`, or `kept`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, `unassigned` includes conversations with no eligible assignee, including when every stored assignee has lost access or expired, and `kept` lists the kept conversations from every folder. Each item carries `kept`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
+Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, `recently_active`, or `kept`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, `unassigned` includes conversations with no eligible assignee, including when every stored assignee has lost access or expired, and `kept` lists the kept conversations from every folder. `mine` lists the conversations that need action before those waiting for a reply, each group newest first; its cursor continues in the group where the page ended. Each item carries `kept`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
 
 Show one conversation with its summary, status, assignees, tags, and latest messages, then print one message:
 

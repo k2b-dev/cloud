@@ -212,6 +212,8 @@ export type MailboxPageData = {
   listError: MailListError | null;
   /** The done conversations the list leaves out, named at its end; null while more pages follow or when it leaves none out. */
   hiddenDone: MailHiddenDone | null;
+  /** Assigned to me's two groups, counted for the whole view; null in every other list and when they could not be counted. */
+  assignedGroups: MailAssignedGroups | null;
   listTitle: string;
   detailMessages: MailWorkspaceMessage[];
   conversationRowState: ConversationRowState | null;
@@ -343,6 +345,9 @@ type MailListPage = {
 
 /** The done conversations a work list leaves out, named at its end. `count` is null when it could not be counted. */
 export type MailHiddenDone = { count: number | null; more: boolean };
+
+/** Assigned to me lists whose turn it is, then the conversations waiting for a reply; each heading names its count. */
+export type MailAssignedGroups = { needsAction: number; waiting: number };
 
 export const searchHitToListItem = (item: search.MessageSearchHit, listMode: MailListMode): MailListItem => {
   const selectionKind = listMode === "messages" || !item.conversationId ? "message" : "conversation";
@@ -659,6 +664,22 @@ const loadListItems = async (params: {
   });
 };
 
+/** Assigned to me's group counts from the cached view counts, never from the page: later pages keep the same headings. */
+const loadAssignedGroups = async (params: { context: MailRequestContext; mailboxId: string }): Promise<MailAssignedGroups | null> => {
+  try {
+    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
+    if (!counts.ok) return null;
+    const waiting = Math.min(counts.data.mineWaiting, counts.data.views.mine);
+    return { needsAction: counts.data.views.mine - waiting, waiting };
+  } catch (error) {
+    log.warn("Failed to count the groups of a Mail Assigned to me list", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+};
+
 /**
  * The done conversations a work list leaves out, once it reached its end. All mail and folders read them from the
  * cached workspace counts; a search, tag, filter or saved view counts them once, bounded like a ranked search.
@@ -775,6 +796,7 @@ export type MailboxListView = Pick<
   | "nextListCursor"
   | "listError"
   | "hiddenDone"
+  | "assignedGroups"
   | "listTitle"
 > & { scheduledCount?: number };
 
@@ -887,10 +909,13 @@ const buildMailboxListView = async (
       : Promise.resolve(null),
     eventsMode ? loadEventsPage(params.context, params.mailboxId, readMailEventsFilter(params.requestUrl)) : Promise.resolve(null),
   ]);
-  const hiddenDone =
-    "openOnly" in list
-      ? await loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds })
-      : null;
+  // The same listing the service sorts by group: the Assigned to me tab without a search or another list mode.
+  const grouped =
+    activeView === "mine" && !searchExpression && !resolvedSearch.error && listMode === "conversations" && !scheduledMode && !eventsMode;
+  const [hiddenDone, assignedGroups] = await Promise.all([
+    "openOnly" in list ? loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds }) : null,
+    grouped && !list.error ? loadAssignedGroups({ context: params.context, mailboxId: params.mailboxId }) : null,
+  ]);
   return {
     scheduledMode,
     ...(scheduledPageResult?.ok ? { scheduledCount: scheduledPageResult.data.total } : {}),
@@ -914,6 +939,7 @@ const buildMailboxListView = async (
     nextListCursor: list.nextCursor,
     listError: list.error,
     hiddenDone,
+    assignedGroups,
     listTitle: scheduledMode
       ? t.scheduled
       : eventsMode

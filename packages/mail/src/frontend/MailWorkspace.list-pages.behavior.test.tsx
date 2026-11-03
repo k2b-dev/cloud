@@ -83,6 +83,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
@@ -233,6 +234,7 @@ describe("Mail workspace list pages", () => {
       nextListCursor: page.next,
       listError: null,
       hiddenDone: null,
+      assignedGroups: null,
       listTitle: searching ? "Search results" : "Needs action",
     };
   };

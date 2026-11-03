@@ -62,6 +62,7 @@ export const composeMailListSnapshot = (frame: MailWorkspaceFrame, list: Mailbox
   nextListCursor: list.nextListCursor,
   listError: list.listError,
   hiddenDone: list.hiddenDone,
+  assignedGroups: list.assignedGroups,
   listTitle: list.listTitle,
   scheduledCount: list.scheduledPage ? list.scheduledPage.total : frame.scheduledCount,
   ...emptyMailSelection(),
