@@ -29,6 +29,7 @@ export type AdminAppsFixtureState =
   | "provider"
   | "core-fail"
   | "router-unknown"
+  | "added"
   | "keys-off"
   | "keys-error"
   | "keys-late"
@@ -321,7 +322,8 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                   ? { state: "failed" }
                   : {
                       state: "ok",
-                      apps: state === "empty" ? [] : apps,
+                      // "added": the open app was just added under "Add app" and is not in any list yet.
+                      apps: state === "empty" ? [] : state === "added" ? apps.filter((app) => app.id !== query.app) : apps,
                       issues: state === "rejected" ? [{ key: "apps/maps", reason: "routes fehlt" }] : [],
                       unchecked: 0,
                       logsHref: "/admin/observability/logs",

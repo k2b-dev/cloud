@@ -14,11 +14,15 @@ export type ConversationCursorScope = {
   openOnly: boolean;
 };
 
+/** "Assigned to me" lists whose turn it is first; its cursor names the group the page ended in. */
+export type ConversationCursorGroup = "needs_action" | "waiting";
+
 type ConversationCursor = {
   version: 4;
   scope: ConversationCursorScope;
   date: string;
   id: string;
+  group?: ConversationCursorGroup;
 };
 
 const conversationCursorSchema = z.object({
@@ -35,6 +39,7 @@ const conversationCursorSchema = z.object({
   }),
   date: z.iso.datetime({ offset: true }),
   id: z.uuid(),
+  group: z.enum(["needs_action", "waiting"]).optional(),
 });
 
 const sameScope = (left: ConversationCursorScope, right: ConversationCursorScope): boolean =>

@@ -44,8 +44,15 @@
   box-shadow: var(--k2b-shadow-frame);
 }
 
+/* A clickable card keeps a light 1 px border in every state and casts no
+   shadow; hover darkens the fill only. */
+.k2b-ui .k2b-paper[data-interactive="true"] {
+  border-color: var(--k2b-border-strong);
+  box-shadow: none;
+}
+
 .k2b-ui .k2b-paper[data-interactive="true"]:hover {
-  background: var(--k2b-hover);
+  background: var(--k2b-edge-hover-bg);
 }
 
 .k2b-ui .k2b-paper[data-interactive="true"]:focus-visible {
@@ -75,6 +82,9 @@
   font-size: 0.875rem;
   font-weight: 600;
   object-fit: cover;
+  /* A picture is an <img>: the base image rule's max-width must never squeeze it into an oval in a narrow slot. */
+  max-width: none;
+  max-height: none;
 }
 .k2b-ui .k2b-avatar[data-tint="0"] { --k2b-avatar-hue: #3b82f6; }
 .k2b-ui .k2b-avatar[data-tint="1"] { --k2b-avatar-hue: #6366f1; }
@@ -1219,7 +1229,7 @@
   align-items: center;
 }
 
-.k2b-ui .k2b-avatar-stack__faces > .k2b-avatar {
+.k2b-ui .k2b-avatar-stack__faces > .k2b-avatar[data-size] {
   width: 1.25rem;
   height: 1.25rem;
   box-shadow: 0 0 0 2px var(--k2b-avatar-stack-ring, var(--k2b-surface-elevated));
@@ -1228,6 +1238,21 @@
 
 .k2b-ui .k2b-avatar-stack__faces > .k2b-avatar + .k2b-avatar {
   margin-inline-start: -0.3125rem;
+}
+
+/* `AvatarFaces size="md"`: larger faces that overlap less, so initials stay readable beside row text. */
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar[data-size] {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.5625rem;
+}
+
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar + .k2b-avatar {
+  margin-inline-start: -0.1875rem;
+}
+
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar > i {
+  font-size: 0.875rem;
 }
 
 .k2b-ui .k2b-avatar-stack__more {

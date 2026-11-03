@@ -352,6 +352,28 @@ export const AccessEntrySchema = z.object({
 });
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;
 
+/**
+ * Who has access to a resource and with which role, as everyone with member access may read it: names and roles
+ * only, without grant IDs, dates, or scopes. Nobody can change a grant from it.
+ */
+export const AccessMemberSchema = AccessEntrySchema.pick({
+  principal: true,
+  permission: true,
+  displayName: true,
+  avatarHash: true,
+  serviceAccountKind: true,
+});
+export type AccessMember = z.infer<typeof AccessMemberSchema>;
+
+/** The read-only member view of a grant. */
+export const toAccessMember = (entry: AccessEntry): AccessMember => ({
+  principal: entry.principal,
+  permission: entry.permission,
+  ...(entry.displayName === undefined ? {} : { displayName: entry.displayName }),
+  ...(entry.avatarHash === undefined ? {} : { avatarHash: entry.avatarHash }),
+  ...(entry.serviceAccountKind === undefined ? {} : { serviceAccountKind: entry.serviceAccountKind }),
+});
+
 export const NotebookPresenceParticipantSchema = z.object({
   userId: z.uuid(),
   displayName: z.string(),

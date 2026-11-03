@@ -116,7 +116,12 @@ the scroll area, not fixed or sticky layers.
 ### Touch rules
 
 While a shell is mounted, these rules apply to the whole page, portalled
-dialogs and menus included. They never apply to pages without a shell.
+dialogs and menus included. They never apply to pages without a shell. The
+shell marks the document with `data-k2b-mobile-shell` on `<html>` when it
+mounts (`"sidebar"` while it shows its sidebar). Inside the shell the sizes
+apply from the first paint; a host that renders the page on the server writes
+`data-k2b-mobile-shell=""` into its `<html>`, so the document rules apply from
+the first paint too.
 
 - `html` and `body` do not scroll and have `overscroll-behavior: none`, so
   there is nothing to rubber-band. Only the content scrolls, and it contains
@@ -217,8 +222,9 @@ page arrives.
 
 A page that renders the shell only on the server, with islands inside
 it, calls `observeMobileShell(root)` once in the browser instead, with the
-shell's root element. It keeps the same measurements, the scroll fade, and link
-taps working and returns the cleanup:
+shell's root element. It keeps the same measurements, the scroll fade, link
+taps, and the document's `data-k2b-mobile-shell` working and returns the
+cleanup:
 
 ```ts
 import { observeMobileShell } from "@k2b/ui";

@@ -1,7 +1,7 @@
-export type { AvatarProps, AvatarRing, AvatarShape, AvatarSize } from "./Avatar";
+export type { AvatarProps, AvatarRing, AvatarShape, AvatarSize, AvatarTone } from "./Avatar";
 export { Avatar } from "./Avatar";
-export type { AvatarStackPerson, AvatarStackProps } from "./AvatarStack";
-export { AvatarStack } from "./AvatarStack";
+export type { AvatarFacesPerson, AvatarFacesProps, AvatarStackPerson, AvatarStackProps } from "./AvatarStack";
+export { AvatarFaces, AvatarStack } from "./AvatarStack";
 export type { DescriptionListItem, DescriptionListProps } from "./DescriptionList";
 export { DescriptionList } from "./DescriptionList";
 export type { DotStripProps, DotStripTone } from "./DotStrip";

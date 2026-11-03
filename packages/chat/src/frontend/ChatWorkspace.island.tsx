@@ -1240,6 +1240,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     preparingShownAt = shownAt;
     toast(t().sendPreparing, { duration: PREPARING_NOTICE_MS });
   };
+  /** A message being prepared keeps its chat open; true when that refused a move to `chatId`. */
+  const keepsChat = (chatId: string | null) => {
+    if (pendingSends === 0 || chatId === route().chatId) return false;
+    notifyPreparing();
+    return true;
+  };
   const changeList = async (next: "all" | "unread" | "archive") => {
     if (!store || listLoading() || listPending()) return;
     if (next === "archive" && pendingSends > 0) {
@@ -1379,10 +1385,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     systemOpen++;
 
     if (!store) return "failed";
-    if (pendingSends > 0 && next.chatId !== route().chatId) {
-      notifyPreparing();
-      return "blocked";
-    }
+    if (keepsChat(next.chatId)) return "blocked";
     if (
       pendingOpen === 0 &&
       route().chatId === next.chatId &&
@@ -1536,8 +1539,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
-    if (depth > 0) history.go(-depth);
-    else if ((await open(chatRoute(null))) === "applied") navigation.push(listHref(), { scroll: "preserve" });
+    // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
+    if (depth > 0) {
+      if (!keepsChat(null)) history.go(-depth);
+    } else if ((await open(chatRoute(null))) === "applied") navigation.push(listHref(), { scroll: "preserve" });
   };
   const backToThreads = async (navigation: LinkNavigateEvent) => {
     const state: unknown = history.state;
@@ -2034,8 +2039,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         )
           return false;
         const depth = listDepth();
-        if (depth > 0) history.go(-depth);
-        else
+        if (depth > 0) {
+          if (!keepsChat(null)) history.go(-depth);
+        } else
           void open(chatRoute(null)).then(
             (result) => result === "applied" && navigate(listHref(archived() ? `${basePath}/archive` : basePath)),
           );

@@ -89,3 +89,49 @@ test("options rebuilt with new objects keep their rows and the focus on the chos
   dispose();
   dom.cleanup();
 });
+
+test("arrows, Home and End step over options that cannot be chosen, and a click on one changes nothing", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click", "keydown"], dom.document);
+  const { ChoiceList } = await import("../src/inputs/ChoiceList");
+  const [value, setValue] = createSignal<string | null>("b");
+  const dispose = render(
+    () =>
+      createComponent(ChoiceList, {
+        "aria-label": "Delivery",
+        options: [
+          { value: "a", label: "A", disabled: true },
+          { value: "b", label: "B" },
+          { value: "c", label: "C", disabled: true },
+          { value: "d", label: "D" },
+          { value: "e", label: "E", disabled: true },
+        ],
+        value,
+        onValueChange: setValue,
+      }),
+    dom.root,
+  );
+  const radios = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+  const press = async (key: string) => {
+    (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    await flush();
+  };
+  radios()[1]!.focus();
+  await press("ArrowDown");
+  expect(value()).toBe("d");
+  expect(document.activeElement).toBe(radios()[3]!);
+  // Down wraps past the disabled last and first options.
+  await press("ArrowDown");
+  expect(value()).toBe("b");
+  await press("ArrowUp");
+  expect(value()).toBe("d");
+  await press("Home");
+  expect(value()).toBe("b");
+  await press("End");
+  expect(value()).toBe("d");
+  radios()[0]!.click();
+  await flush();
+  expect(value()).toBe("d");
+  dispose();
+  dom.cleanup();
+});

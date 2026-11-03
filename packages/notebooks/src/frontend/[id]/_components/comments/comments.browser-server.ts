@@ -472,6 +472,7 @@ export const startCommentsServer = async () => {
           taskProgress: { done: 0, total: 0 },
           attachments: [],
           backlinks: [],
+          relations: { outgoing: [], tags: [] },
           namedBlocks: [],
         },
       } satisfies ComponentProps<typeof NoteEditor>;

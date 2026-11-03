@@ -1,5 +1,6 @@
 import { Button, FilterChip, IconButton, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, Show } from "solid-js";
+import { mailFolderNames } from "../../folder-names";
 import { DEFAULT_MAIL_QUICK_SEARCH_FIELDS } from "../../search-url";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { type createMailboxSearch, isDefaultQuickSearch } from "./mailbox-search";
@@ -86,6 +87,11 @@ export function MailSearchInput(props: { search: Search; mailboxName: string }) 
 export function MailSearchOptions(props: { search: Search; count: number }) {
   const locale = useLocale();
   const text = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
+  const scopeFolderName = () => {
+    const folder = props.search.scopeFolder();
+    return folder ? folderName()(folder) : props.search.scopeFolderId()!;
+  };
   return (
     <span class="contents" data-mail-head-search-options>
       <FilterChip
@@ -100,9 +106,7 @@ export function MailSearchOptions(props: { search: Search; count: number }) {
       />
       <FilterChip
         label={text().placeValue({
-          value: props.search.scopeFolderId()
-            ? text().onlyFolder({ name: props.search.scopeFolder()?.name ?? props.search.scopeFolderId()! })
-            : text().wholeMailbox,
+          value: props.search.scopeFolderId() ? text().onlyFolder({ name: scopeFolderName() }) : text().wholeMailbox,
         })}
         icon="ti ti-map-pin"
         options={[
@@ -114,12 +118,17 @@ export function MailSearchOptions(props: { search: Search; count: number }) {
                 ? [
                     {
                       value: props.search.scopeFolderId()!,
-                      label: text().onlyFolder({ name: props.search.scopeFolder()?.name ?? props.search.scopeFolderId()! }),
+                      label: text().onlyFolder({ name: scopeFolderName() }),
                     },
                   ]
                 : []),
               ...(props.search.originFolder()
-                ? [{ value: props.search.originFolder()!.id, label: text().onlyFolder({ name: props.search.originFolder()!.name }) }]
+                ? [
+                    {
+                      value: props.search.originFolder()!.id,
+                      label: text().onlyFolder({ name: folderName()(props.search.originFolder()!) }),
+                    },
+                  ]
                 : []),
             ],
           },

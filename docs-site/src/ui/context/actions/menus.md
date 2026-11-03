@@ -158,7 +158,10 @@ row to it and Left back; Up and Down skip it and move from row to row. A
 labelled section can carry a `labelAction` of the same shape, such as **All**,
 at the end of its label. Both keep the menu open.
 
-Set `variant: "danger"` only on destructive items. `variant: "accent"` gives
+Set `variant: "danger"` only on destructive items and on items that end a
+session, such as **Sign out**; give such an item a section of its own at the
+end. Its text takes the danger color, and hover and keyboard focus tint its row
+with the danger surface. `variant: "accent"` gives
 the icon of the entry most people want the action color, such as a blank item
 above a list of templates.
 

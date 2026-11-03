@@ -24,7 +24,8 @@ declare global {
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "date-picker-weekend.fixture.ts");
-// One component per page keeps the phone fixture usable without scrolling past other pickers.
+// One component per page keeps the phone fixture usable without scrolling past other pickers. The plain trigger
+// opens the shared calendar as a popover on every viewport; the typed field has its own test.
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
@@ -40,9 +41,9 @@ render(() => options.kind === "calendar"
       range: options.dayHours ? { from: "2026-10-12", to: "2026-10-19" } : undefined,
     })
   : options.kind === "date"
-    ? createComponent(DatePicker, { label: "Date", value: "2026-10-05", dateConfig })
+    ? createComponent(DatePicker, { label: "Date", value: "2026-10-05", dateConfig, appearance: "plain" })
     : createComponent(DateRangePicker, {
-        label: "Range", get value() { return range(); }, dateConfig,
+        label: "Range", get value() { return range(); }, dateConfig, appearance: "plain",
         onValueChange: setRange,
         onValueCommit: (value) => window.weekendCommits.push(value),
       }), document.getElementById("app"));

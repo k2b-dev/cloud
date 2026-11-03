@@ -7,7 +7,7 @@ import {
   createMailAutomationAction,
   MAIL_AUTOMATION_STATUSES,
   mailAutomationActionKindsFor,
-  mailAutomationDestinationFolders,
+  mailAutomationDestinationOptions,
 } from "./mail-automation-actions";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -238,6 +238,7 @@ export function MailAutomationActionEditor(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const destinationOptions = createMemo(() => mailAutomationDestinationOptions(props.catalog, locale()));
   const kinds = () =>
     mailAutomationActionKindsFor({
       actions: [...props.otherActions, props.action],
@@ -277,7 +278,7 @@ export function MailAutomationActionEditor(props: {
           label={messages().destinationFolder}
           value={() => (props.action.kind === "move_to_folder" ? props.action.folderId : "")}
           onValueChange={(folderId) => props.onChange({ kind: "move_to_folder", folderId: folderId ?? "" })}
-          options={mailAutomationDestinationFolders(props.catalog).map((folder) => ({ id: folder.id, label: folder.path ?? folder.name }))}
+          options={destinationOptions()}
         />
       </Show>
       <Show when={props.action.kind === "add_local_tag"}>

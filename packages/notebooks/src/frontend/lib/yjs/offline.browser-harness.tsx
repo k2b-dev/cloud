@@ -53,6 +53,7 @@ render(
           taskProgress: { total: 0, done: 0 },
           attachments: [],
           backlinks: [],
+          relations: { outgoing: [], tags: [] },
           namedBlocks: [],
         }}
       />

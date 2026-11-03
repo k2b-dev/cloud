@@ -21,7 +21,8 @@ import {
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
-import { claimFence, commitSyncBatch, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import { takeFolderSyncActivity } from "./sync-activity";
+import { claimFence, commitSyncBatch, enqueueFolderSync, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -400,6 +401,80 @@ suite("mail sync recovery", () => {
     });
     expect(await loadImapPushPlan(fixture.bindingId)).toBeNull();
   });
+  test("a changed quiet folder claims its fence before the STATUS its run records, and a reset during the check wins", async () => {
+    const fixture = await createSyncedMailbox("quiet-change");
+    const warm = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      warm.mockRestore();
+    }
+    const runningRun = async () =>
+      (
+        await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid AND state = 'running'`
+      )[0]!.count > 0;
+
+    // The quiet check reads STATUS without a run; the batch then reads it again under its run,
+    // so a sync command that started meanwhile is not confirmed by a STATUS from before it.
+    const claimedAtStatus: boolean[] = [];
+    const changed = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      claimedAtStatus.push(await runningRun());
+      return { ...EMPTY_INBOX, messages: 1 };
+    });
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      changed.mockRestore();
+    }
+    expect(claimedAtStatus).toEqual([false, true]);
+
+    // A rebuild while the quiet check reads STATUS resets the folder; the batch must not write
+    // its old cursor over the reset.
+    let reset = false;
+    const rebuilt = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      if (!reset) {
+        reset = true;
+        await sql`UPDATE mail.folders SET envelope_cursor = '{}'::jsonb, sync_status = 'rebuilding' WHERE id = ${fixture.folderId}::uuid`;
+        await sql`UPDATE mail.remote_resources SET sync_generation = sync_generation + 1 WHERE id = ${fixture.resourceId}::uuid`;
+      }
+      return { ...EMPTY_INBOX, messages: 2 };
+    });
+    try {
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "STALE_SYNC_FENCE" });
+    } finally {
+      rebuilt.mockRestore();
+    }
+    const [folder] = await sql<{ envelope_cursor: unknown; sync_status: string }[]>`
+      SELECT envelope_cursor, sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+    expect(folder).toEqual({ envelope_cursor: {}, sync_status: "rebuilding" });
+
+    // A quiet check that fails after the folder's binding changed claims no fence and leaves the
+    // failure state to the batch that owns the folder now.
+    const quiet = await createSyncedMailbox("quiet-failure");
+    const warmQuiet = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(quiet.folderId, async () => undefined);
+      await syncFolderBatch(quiet.folderId, async () => undefined);
+    } finally {
+      warmQuiet.mockRestore();
+    }
+    const failing = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      await sql`UPDATE mail.provider_bindings SET state = 'pending' WHERE id = ${quiet.bindingId}::uuid`;
+      throw connectTimeout();
+    });
+    try {
+      await expect(syncFolderBatch(quiet.folderId, async () => undefined)).rejects.toMatchObject({ code: "CONNECT_TIMEOUT" });
+    } finally {
+      failing.mockRestore();
+    }
+    expect(await transportState(quiet)).toMatchObject({ resource_status: "active", health: "active", binding_state: "pending" });
+    const [binding] = await sql<{ last_error_code: string | null }[]>`
+      SELECT last_error_code FROM mail.provider_bindings WHERE id = ${quiet.bindingId}::uuid`;
+    expect(binding?.last_error_code).toBeNull();
+  });
+
   test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
     const fixture = await createSyncedMailbox("idle-writes");
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
@@ -467,7 +542,7 @@ suite("mail sync recovery", () => {
         SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name
       `;
       console.info("idle sync run", { statements, writes });
-      expect(statements).toBe(17); // Includes BEGIN/COMMIT for both fence claim and commit.
+      expect(statements).toBe(16); // Includes BEGIN/COMMIT for both fence claim and commit; the Drafts role rides on the folder lock.
       expect(writes).toEqual([
         { table_name: "provider_bindings", count: 1 },
         { table_name: "remote_resources", count: 2 },
@@ -501,9 +576,40 @@ suite("mail sync recovery", () => {
         const batchWrites = await sql<{ table_name: string; count: number }[]>`
           SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name`;
         console.info("whole idle folder batch", { statements: batchStatements, writes: batchWrites });
-        expect(batchStatements).toBe(24);
-        expect(batch).toMatchObject({ imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
-        expect(batchWrites).toEqual(writes);
+        // An unchanged folder claims no fence and commits nothing: was 24 commands and five row writes.
+        expect(batchStatements).toBe(7);
+        expect(batch).toMatchObject({ unchanged: true, imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
+        expect(batchWrites).toEqual([]);
+
+        // Its sync time moves on at most once a minute, without a run.
+        const runs = async () =>
+          (
+            await sql<
+              { count: number }[]
+            >`SELECT count(*)::int AS count FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`
+          )[0]!.count;
+        const runsBefore = await runs();
+        await sql`UPDATE mail.remote_resources SET last_sync_at = now() - interval '2 minutes' WHERE id = ${fixture.resourceId}::uuid`;
+        await sql`TRUNCATE mail.idle_write_probe`;
+        const staleCheck = counter.count();
+        expect(await syncFolderBatch(fixture.folderId, async () => undefined)).toMatchObject({ unchanged: true });
+        console.info("idle folder batch with an old sync time", { statements: counter.count() - staleCheck });
+        expect(await sql<{ table_name: string }[]>`SELECT table_name FROM mail.idle_write_probe`).toEqual([
+          { table_name: "remote_resources" },
+        ]);
+        expect((await transportState(fixture)).last_sync_at!.getTime()).toBeGreaterThan(Date.now() - 30_000);
+        expect(await runs()).toBe(runsBefore);
+
+        // The process counts what asked for a sync and how each batch ended.
+        takeFolderSyncActivity();
+        await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit: () => undefined });
+        expect(takeFolderSyncActivity()).toEqual({ triggers: {}, batches: { unchanged: 1 } });
+
+        // A sync command waiting for the folder settles on a completed run.
+        await enqueueFolderSync(fixture.folderId, { trigger: "maintenance", awaited: true });
+        expect(await syncFolderBatch(fixture.folderId, async () => undefined)).not.toHaveProperty("unchanged");
+        expect(await runs()).toBe(runsBefore + 1);
+        expect(takeFolderSyncActivity().triggers).toEqual({ maintenance: 1 });
       } finally {
         idleStatus.mockRestore();
         process.env.DATABASE_URL = originalUrl;

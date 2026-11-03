@@ -1,6 +1,7 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, toast } from "@k2b/ui";
 import { onCleanup, Show } from "solid-js";
+import { appsHref, listStateOf } from "./model";
 import { appsPageMessages } from "./page-messages";
 
 /** Hides an app that is not running from the list; Core and every provider that reported it forget its entry. */
@@ -33,7 +34,9 @@ export const openRemoveDialog = (app: { id: string; name: string }, locale: stri
           toast.success(t.removed({ name: app.name }));
           close(true);
           const url = new URL(window.location.href);
-          window.location.assign(url.searchParams.get("app") === app.id ? "/admin/apps" : `${url.pathname}${url.search}`);
+          window.location.assign(
+            url.searchParams.get("app") === app.id ? appsHref({ list: listStateOf(url.search) }) : `${url.pathname}${url.search}`,
+          );
         },
       });
       onCleanup(() => remove.abort());

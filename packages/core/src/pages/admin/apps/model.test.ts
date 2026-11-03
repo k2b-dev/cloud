@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { fixtureApps } from "./AdminApps.fixture-data";
-import { type AppInput, appsHref, countStatuses, deriveApp, parseAppsQuery, sortApps } from "./model";
+import { type AppInput, appsHref, countStatuses, deriveApp, hasProblem, matchesSearch, parseAppsQuery, sortApps } from "./model";
 
 const app = (id: string): AppInput => fixtureApps().find((candidate) => candidate.id === id)!;
 
@@ -55,6 +55,13 @@ test("the address keeps the open app, its column and the routes window; old name
   expect(appsHref({ app: "mail", view: "routes", window: "24h" })).toBe("/admin/apps?app=mail&view=routes");
   expect(appsHref({ app: "mail", view: "routes", window: "1h" })).toBe("/admin/apps?app=mail&view=routes&window=1h");
   expect(appsHref({})).toBe("/admin/apps");
+  // Search and filter ride along every link, so opening an app or a view keeps the rows beside it.
+  expect(parseAppsQuery({ q: "  pul ", filter: "problems" }).list).toEqual({ q: "pul", problems: true });
+  expect(parseAppsQuery({ filter: "other" }).list).toEqual({ q: "", problems: false });
+  expect(appsHref({ app: "mail", view: "keys", list: { q: "ma il", problems: true } })).toBe(
+    "/admin/apps?app=mail&view=keys&q=ma+il&filter=problems",
+  );
+  expect(appsHref({ list: { q: "", problems: false } })).toBe("/admin/apps");
 });
 
 test("key hints come only from known facts and only for apps that can have a key", () => {
@@ -99,4 +106,13 @@ test("a refused start leads, replaces what it already explains and makes the app
   expect(first.hints.map((hint) => hint.kind)).toEqual(["startRejected"]);
   // Core and Gateway have no app keys and no refused starts.
   expect(deriveApp({ ...app("chat"), keysSupported: false, startRejected: { at, reason: "revoked" } }).hints).toEqual([]);
+});
+
+test("Problems holds every row that is not running cleanly or has something to do; search finds names and IDs", () => {
+  const derived = new Map(fixtureApps().map((input) => [input.id, deriveApp(input)]));
+  const problems = [...derived.values()].filter(hasProblem).map((entry) => entry.id);
+  expect(problems).toEqual(["files", "grids", "inventar", "notebooks", "pulse", "spaces", "tools", "wiki"]);
+  expect(matchesSearch({ id: "files", name: "Dateien" }, "DAT", "de")).toBe(true);
+  expect(matchesSearch({ id: "files", name: "Dateien" }, "fil", "de")).toBe(true);
+  expect(matchesSearch({ id: "files", name: "Dateien" }, "mail", "de")).toBe(false);
 });

@@ -2407,11 +2407,18 @@ html {
   display: flex;
 }
 
-.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head {
+/* A page that renders its own `PageTitle` needs no title from the chrome. The
+   host marks the page, or the `k2b-ui` root, with `data-k2b-own-title` (see
+   `PageTrailProvider`); the doubled attribute keeps the weight of the former
+   document-wide `:has()`. */
+:is(.k2b-ui[data-k2b-own-title][data-k2b-own-title], .k2b-ui [data-k2b-own-title][data-k2b-own-title]) .k2b-app-workspace__head {
   display: none;
 }
 
-.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head > .k2b-app-workspace__head-lead > .k2b-page-title {
+:is(.k2b-ui[data-k2b-own-title][data-k2b-own-title], .k2b-ui [data-k2b-own-title][data-k2b-own-title])
+  .k2b-app-workspace__head
+  > .k2b-app-workspace__head-lead
+  > .k2b-page-title {
   display: none;
 }
 
@@ -2486,12 +2493,15 @@ html {
 }
 
 /* A page without its own `h1` keeps the head's heading for assistive
-   technology, whether or not the visible title shows. */
-.k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
-  .k2b-app-workspace:not(:has(.k2b-app-workspace__main h1))
-  > .k2b-app-workspace__head[data-row]
+   technology, whether or not the visible title shows. The head asks the
+   content after it (a head comes before Content), not the workspace its whole
+   subtree: a `:has()` on a large ancestor restyles it entirely on every change
+   inside. */
+.k2b-ui
+  .k2b-app-workspace
+  > .k2b-app-workspace__head[data-row]:not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
   > .k2b-app-workspace__head-lead
-  > .k2b-app-workspace__head-heading {
+  > .k2b-app-workspace__head-heading:not([data-k2b-own-title][data-k2b-own-title] *) {
   display: block;
 }
 
@@ -2706,10 +2716,10 @@ html {
   /* A visible title takes the first row with the actions; the views move to
      their own row. The title shows here only on a page with a way up that
      does not render its own `PageTitle`. */
-  .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+  .k2b-ui
     .k2b-app-workspace__head[data-row][data-trail="up"]
     > .k2b-app-workspace__head-lead
-    > .k2b-app-workspace__head-views {
+    > .k2b-app-workspace__head-views:not([data-k2b-own-title][data-k2b-own-title] *) {
     order: 2;
     flex: 1 1 100%;
     margin-inline: -1rem;
@@ -2783,11 +2793,15 @@ html {
      On a page without its own `h1` the head's heading stays for assistive
      technology. A collapsed sidebar shows no names and keeps the head. */
   .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
-    )
-    > .k2b-app-workspace__head[data-trail="up"] {
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+    > :is(
+      .k2b-app-workspace__head:has(
+          ~ .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+        ),
+      .k2b-app-workspace__sidebar:not([hidden]):has([aria-current="page"]) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]) ~ .k2b-app-workspace__head
+    )[data-trail="up"] {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2800,22 +2814,30 @@ html {
   }
 
   .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+    > :is(
+      .k2b-app-workspace__head:has(
+          ~ .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+        ),
+      .k2b-app-workspace__sidebar:not([hidden]):has([aria-current="page"]) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]) ~ .k2b-app-workspace__head
     )
-    > .k2b-app-workspace__head
     > .k2b-app-workspace__head-lead
     > .k2b-page-title {
     display: none;
   }
 
   .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
-    ):not(:has(.k2b-app-workspace__main h1))
-    > .k2b-app-workspace__head
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+    > :is(
+      .k2b-app-workspace__head:has(
+          ~ .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+        ),
+      .k2b-app-workspace__sidebar:not([hidden]):has([aria-current="page"]) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]) ~ .k2b-app-workspace__head
+    ):not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
     > .k2b-app-workspace__head-lead
     > .k2b-app-workspace__head-heading {
     display: block;
@@ -2902,14 +2924,14 @@ html {
 
     /* A head row shows the title beside the overlay's button, as the head
        does, unless the page shows its own. */
-    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+    .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head[data-row]
       > .k2b-app-workspace__head-lead
-      > .k2b-page-title.k2b-page-title {
+      > .k2b-page-title.k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
       display: flex;
     }
 
@@ -3427,6 +3449,11 @@ html {
   margin-inline: -0.75rem -0.5rem;
 }
 
+/* A level's own parent in the same column: its step shows at every width. */
+.k2b-ui .k2b-app-workspace__level-head > .k2b-app-workspace__level-back--own {
+  display: inline-flex;
+}
+
 .k2b-ui .k2b-app-workspace__level-back .ti {
   width: 1.25rem;
   height: 1.25rem;
@@ -3757,14 +3784,14 @@ html {
     }
 
     /* The head's title comes back unless the page shows its own. */
-    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+    .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
       > .k2b-app-workspace__head-lead
-      > .k2b-page-title.k2b-page-title {
+      > .k2b-page-title.k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
       display: flex;
     }
 
@@ -4089,30 +4116,27 @@ html {
 /* ------------------------------------------------------------ mobile shell */
 
 /* While a phone shell is the page, the document never scrolls, so iOS has
-   nothing to rubber-band; only the shell's scroll area does. */
-html:has(.k2b-mobile-shell),
-html:has(.k2b-mobile-shell) body {
+   nothing to rubber-band; only the shell's scroll area does. The shell marks
+   the document (`data-k2b-mobile-shell`); a `:has()` on the document would
+   restyle the whole page on every change inside it. */
+html[data-k2b-mobile-shell],
+html[data-k2b-mobile-shell] body {
   overflow: hidden;
   overscroll-behavior: none;
 }
 
-/* No pinch zoom on the whole page, portalled dialogs and menus included. iOS
-   ignores `user-scalable=no`; it honours touch-action. Zero specificity, so a
-   component's own touch-action, such as a drag handle's `none`, still wins. */
-:where(html:has(.k2b-mobile-shell) *) {
-  touch-action: pan-x pan-y;
-}
-
 /* App-sized controls on every pointer: 44 px targets, and 16 px field text,
-   so iOS never zooms into a focused field. */
-html:has(.k2b-mobile-shell) .k2b-button,
-html:has(.k2b-mobile-shell) .k2b-dropdown__trigger,
-html:has(.k2b-mobile-shell) .k2b-segmented-control button {
+   so iOS never zooms into a focused field. Inside the shell they apply from
+   the first paint, outside it, in portalled dialogs and menus, once the shell
+   has marked the document. */
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-button,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-dropdown__trigger,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-segmented-control button {
   min-height: 44px;
 }
 
-html:has(.k2b-mobile-shell) input:not([type="checkbox"]):not([type="radio"]),
-html:has(.k2b-mobile-shell) textarea {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) input:not([type="checkbox"]):not([type="radio"]),
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) textarea {
   min-height: 44px;
   font-size: 16px;
 }
@@ -4124,33 +4148,34 @@ html:has(.k2b-mobile-shell) textarea {
    segmented options stay compact so several fit one row. Shared components
    that are sized for dense desktop surfaces follow the scale while a shell is
    mounted; icon buttons keep their glyph sizes. */
-html:has(.k2b-mobile-shell) .k2b-ui,
-html:has(.k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
+html[data-k2b-mobile-shell] .k2b-ui,
+.k2b-ui .k2b-mobile-shell,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
   font-size: 1rem;
 }
 
-html:has(.k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
   font-size: 1.125rem;
   letter-spacing: normal;
 }
 
-html:has(.k2b-mobile-shell) .k2b-settings-section__heading h2,
-html:has(.k2b-mobile-shell) .k2b-notice-card__title,
-html:has(.k2b-mobile-shell) .k2b-placeholder__title {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading h2,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__title,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-placeholder__title {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.5rem;
 }
 
-html:has(.k2b-mobile-shell) .k2b-settings-section__heading p,
-html:has(.k2b-mobile-shell) .k2b-notice-card__description,
-html:has(.k2b-mobile-shell) .k2b-notice-card__body,
-html:has(.k2b-mobile-shell) .k2b-placeholder__description,
-html:has(.k2b-mobile-shell) .k2b-navigation__copy small,
-html:has(.k2b-mobile-shell) .k2b-segmented-control .k2b-segmented-control__option,
-html:has(.k2b-mobile-shell) .k2b-field__label,
-html:has(.k2b-mobile-shell) .k2b-field__description,
-html:has(.k2b-mobile-shell) .k2b-field__error {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading p,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__description,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__body,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-placeholder__description,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-navigation__copy small,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-segmented-control .k2b-segmented-control__option,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__label,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__description,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__error {
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
@@ -4312,7 +4337,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     grid-column: 1;
   }
 
-  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > :not(.k2b-mobile-shell__sidebar) {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__sidebar ~ :not(.k2b-mobile-shell__sidebar) {
     grid-column: 2;
     min-width: 0;
   }
@@ -4322,7 +4347,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   }
 
   /* The sidebar replaces the footer, such as a tab bar. */
-  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__main ~ * {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__sidebar ~ .k2b-mobile-shell__main ~ * {
     display: none;
   }
 
@@ -4349,13 +4374,13 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   }
 
   /* Toasts belong to the page beside the sidebar: centred at its bottom edge. */
-  html:has(.k2b-mobile-shell > .k2b-mobile-shell__sidebar):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-container] {
+  html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-left: 15rem;
     --k2b-toast-rail-width: auto;
     align-items: center;
   }
 
-  html:has(.k2b-mobile-shell > .k2b-mobile-shell__sidebar):not(:has(dialog:modal))
+  html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal])
     .k2b-ui
     [data-k2b-toast-container]
     > .k2b-toast-slot {
@@ -5412,5 +5437,21 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     )
     > .k2b-app-workspace__head.k2b-app-workspace__head[data-workspace-head-pane] {
     --k2b-workspace-head-end: 1rem;
+  }
+}
+
+/* Details buttons, shared and app-owned: while their panel is open they show
+   the selection fill in the platform blue, without a border or shadow. Only
+   colour and fill change, so opening moves nothing. */
+.k2b-ui .k2b-details-toggle[aria-expanded="true"],
+.k2b-ui .k2b-details-toggle[aria-expanded="true"]:hover:not(:disabled) {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-details-toggle[aria-expanded="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
   }
 }

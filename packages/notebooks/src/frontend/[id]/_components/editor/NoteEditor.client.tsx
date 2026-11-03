@@ -33,6 +33,7 @@ import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 import { notebookTableOptions } from "../../../../lib/table-options";
 import type { Backlink } from "../../../../service/links";
+import type { NoteDetailRelations } from "../../../../service/route-state";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
@@ -158,6 +159,7 @@ type SoftNavigatedDetail = {
   taskProgress: ReturnType<typeof extractTaskProgress>;
   attachments: Attachment[];
   backlinks: Backlink[];
+  relations: NoteDetailRelations;
   namedBlocks: ReturnType<typeof extractNamedBlockSummaries>;
 };
 

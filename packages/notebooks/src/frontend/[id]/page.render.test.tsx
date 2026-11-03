@@ -78,6 +78,8 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
@@ -203,6 +205,8 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(withHome));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(withHome));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("read"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(
@@ -285,6 +289,8 @@ test.each([
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
@@ -345,6 +351,8 @@ const renderNotebookWithNotes = async (
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([note("note01", "Private folder"), note("note02", "Team notes")]));
   spies.push(
@@ -397,6 +405,7 @@ const renderNotebookWithNotes = async (
         taskProgress: { done: 0, total: 0 },
         panelAttachments: [],
         backlinks: [],
+        relations: { outgoing: [], tags: [] },
       }),
     );
     spies.push(
@@ -489,6 +498,8 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
@@ -509,6 +520,7 @@ const renderEditorPage = async (
       taskProgress: { done: 0, total: 0 },
       namedBlocks: [],
       backlinks: [],
+      relations: { outgoing: [], tags: [] },
       panelAttachments: [],
     }),
   );
@@ -685,6 +697,8 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(linkedNotebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(linkedNotebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue(permission));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([{ ...note, children: [] }]));

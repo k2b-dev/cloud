@@ -6,6 +6,8 @@ export type MailWorkspacePreferences = {
   /** Browser-level discovery of the mailbox head search, read on the server too. */
   searchDiscovered?: boolean;
   searchHintDismissed?: boolean;
+  /** The person opened the mailbox's Events tab once; until then it is marked new. */
+  eventsDiscovered?: boolean;
   detailsOpen: boolean;
   toolbarActions: MailConversationToolbarActionId[];
   listMode: MailListMode;
@@ -30,6 +32,7 @@ const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePrefere
   searchHintDismissed: Boolean(
     value && typeof value === "object" && (value as { searchHintDismissed?: unknown }).searchHintDismissed === true,
   ),
+  eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
   listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
   detailsOpen: Boolean(value && typeof value === "object" && (value as { detailsOpen?: unknown }).detailsOpen === true),
   toolbarActions: normalizeMailConversationToolbarActions(

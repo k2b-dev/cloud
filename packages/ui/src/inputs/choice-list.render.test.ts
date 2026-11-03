@@ -65,6 +65,29 @@ describe("ChoiceList", () => {
     expect(html.match(/k2b-choice-list__details/g)).toHaveLength(1);
   });
 
+  test("an option shows its icon before the text, and a disabled option gives the tab stop to the next one that can be chosen", () => {
+    const html = renderToString(() =>
+      createComponent(ChoiceList, {
+        "aria-label": "Delivery",
+        value: "courier",
+        options: [
+          { value: "courier", label: "Courier", description: "Only within the city.", icon: "ti ti-bike", disabled: true },
+          { value: "parcel", label: "Parcel", icon: "ti ti-truck" },
+          { value: "pickup", label: "Pickup" },
+        ],
+      }),
+    );
+    expect(html.match(/<i class="k2b-choice-list__icon ti ti-[a-z]+" aria-hidden="true"><\/i>/g)).toHaveLength(2);
+    expect(html.match(/<button[^>]* disabled[ >]/g)).toHaveLength(1);
+    // The chosen option stays marked as chosen, but focus starts on the first option that can be chosen.
+    const courier = html.match(/<button[^>]*>(?=<span class="k2b-choice-list__radio"[^]*?Courier)/)?.[0] ?? "";
+    expect(courier).toContain('aria-checked="true"');
+    expect(courier).toContain('tabindex="-1"');
+    expect(courier).toMatch(/ disabled[ >]/);
+    expect(html).toMatch(/tabindex="0"[^>]*>.*Parcel/s);
+    expect(html.match(/tabindex="0"/g)).toHaveLength(1);
+  });
+
   test("a disabled list disables every row", () => {
     const html = renderToString(() => createComponent(ChoiceList, { "aria-label": "Level", value: "all", options, disabled: true }));
     expect(html).toContain('aria-disabled="true"');

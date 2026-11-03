@@ -54,6 +54,7 @@ import { emitWorkflowRuntimeEvent } from "./workflow-runtime-events";
 import { workflowServiceText } from "./workflow-service-messages";
 
 export {
+  getRecordEventActiveSince,
   getWorkflowByShortIdForBase,
   listRecordEventBaseIds,
   listRecordEventWorkflows,

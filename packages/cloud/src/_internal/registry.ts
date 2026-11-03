@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Ephemeral, EphemeralConfig, MutexConfig } from "@k2b/sync";
+import type { Ephemeral, EphemeralConfig, EphemeralEntry, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import { appStatusIssues } from "../contracts/app-status";
 import { calendarSourceIssues } from "../contracts/calendar-source";
@@ -20,9 +20,9 @@ import {
 import type { PlatformBootstrapMetadata } from "../runtime/connections";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
+import { createObservedView, freezeObserved } from "./observed-view";
 import { lazySync, processSyncReaders } from "./process-sync";
 import { parseAppRegistryEntry } from "./registry-validation";
-import { createRegistryView } from "./registry-view";
 import { watchRegistryChanges } from "./registry-watch";
 import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
@@ -85,48 +85,72 @@ export const appMembershipLock = lazySync((sync) => sync.mutex(APP_MEMBERSHIP_LO
 
 export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest; presentation?: CapabilityPresentationCatalog };
 
-const appRegistryViews = new WeakMap<Ephemeral<AppRegistryEntry>, { invalidate: () => void }>();
-export const appRegistry = lazySync((sync) => {
-  const registry = sync.ephemeral<AppRegistryEntry>(APP_REGISTRY_CONFIG);
-  // A completed local mutation is a read-after-write barrier. Other processes
-  // observe it through their covering watch, without caching any access decision.
-  const published: Ephemeral<AppRegistryEntry> = {
-    ...registry,
-    upsert: async (input) => {
+type RegistryWriter<T> = Pick<ReturnType<typeof createObservedView<T, unknown>>, "accept" | "reconcile" | "invalidate">;
+
+/** Local acknowledgements update only their key; remote mutations arrive through the watch. */
+const observedRegistry = <T>(config: EphemeralConfig) => {
+  const context = lazySync((sync) => {
+    const registry = sync.ephemeral<T>(config);
+    let view: RegistryWriter<T> | undefined;
+    const mutation = async <R>(
+      input: { key: string; tenantId?: string },
+      write: () => Promise<R>,
+      accept: (result: R) => Promise<void> | void,
+    ) => {
       try {
-        return await registry.upsert(input);
-      } finally {
-        appRegistryViews.get(published)?.invalidate();
+        const result = await write();
+        if (!input.tenantId || input.tenantId === "default") await accept(result);
+        return result;
+      } catch (error) {
+        view?.invalidate();
+        throw error;
       }
-    },
-    touch: async (input) => {
-      try {
-        return await registry.touch(input);
-      } finally {
-        appRegistryViews.get(published)?.invalidate();
-      }
-    },
-    delete: async (input) => {
-      try {
-        return await registry.delete(input);
-      } finally {
-        appRegistryViews.get(published)?.invalidate();
-      }
-    },
-  };
-  return published;
-});
-export const capabilityRegistry = lazySync((sync) => sync.ephemeral<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG));
+    };
+    const published: Ephemeral<T> = {
+      ...registry,
+      upsert: (input) =>
+        mutation(
+          input,
+          () => registry.upsert(input),
+          (entry) => view?.accept(entry),
+        ),
+      touch: (input) =>
+        mutation(
+          input,
+          () => registry.touch(input),
+          () => view?.reconcile(input.key),
+        ),
+      delete: (input) =>
+        mutation(
+          input,
+          () => registry.delete(input),
+          () => view?.reconcile(input.key),
+        ),
+    };
+    return {
+      published,
+      observe: (observed: RegistryWriter<T>) => {
+        view = observed;
+      },
+    };
+  });
+  return { published: () => context().published, observe: (view: RegistryWriter<T>) => context().observe(view) };
+};
+const appsObserved = observedRegistry<AppRegistryEntry>(APP_REGISTRY_CONFIG);
+const capabilitiesObserved = observedRegistry<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG);
+export const appRegistry = appsObserved.published;
+export const capabilityRegistry = capabilitiesObserved.published;
 
 /**
  * Follow the app registry until `signal` aborts. The watch first replays the
- * current entries, then streams changes. While a refresh runs, further events
- * coalesce into one follow-up refresh. Resync also refreshes an empty registry.
+ * current entries, then streams content changes and lease renewals. While a
+ * refresh runs, further events coalesce into one follow-up refresh. Resync also
+ * refreshes an empty registry.
  * Shutdown waits for received invalidations; refresh errors stop the watch.
  */
 export const watchAppRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
-  const view = appRegistryView();
-  await watchRegistryChanges({ signal, onChange, watch: (signal) => view.changes(signal) });
+  const view = observedApps();
+  await watchRegistryChanges({ signal, onChange, watch: (signal) => view.changes(signal, { liveness: true }) });
 };
 
 /**
@@ -172,68 +196,78 @@ const reportInvalidEntry = (issue: AppRegistryIssue): void => {
   );
 };
 
-const appRegistryView = lazySync(() => {
-  const readers = processSyncReaders();
-  const registry = appRegistry();
-  const view = createRegistryView({
-    registry,
-    prefix: APP_REGISTRY_PREFIX,
-    ttlMs: APP_REGISTRY_TTL_MS,
-    signal: readers.signal,
-    read: (entry): { app: AppRegistryDetail; issue?: never } | { app?: never; issue: AppRegistryIssue } => {
-      const parsed = parseAppRegistryEntry(entry.value);
-      const reason =
-        parsed.reason ?? (entry.key !== `${APP_REGISTRY_PREFIX}${parsed.value.id}` ? "registry key must match entry id" : null);
-      if (reason || !parsed.value) {
-        const issue = { key: entry.key, version: entry.revision, reason: reason ?? "invalid entry" };
-        reportInvalidEntry(issue);
-        return { issue };
-      }
-      loggedInvalidReasons.delete(entry.key);
-      const updatedAt = entry.updatedAt.getTime();
-      return {
-        app: {
-          ...parsed.value,
-          createdAt: parsed.value.startedAt ?? updatedAt,
-          updatedAt,
-          expiresAt: updatedAt + APP_REGISTRY_TTL_MS,
-          version: entry.revision,
-        },
-      };
-    },
+/** Own transport invalidation and cleanup identically for every observed registry. */
+const processObservedView = <T, V>(source: () => Ephemeral<T>, prefix: string, read: (entry: EphemeralEntry<T>) => V) =>
+  lazySync(() => {
+    const readers = processSyncReaders();
+    const view = createObservedView({ registry: source(), prefix, ttlMs: APP_REGISTRY_TTL_MS, signal: readers.signal, read });
+    const status = readers.connection?.status()[Symbol.asyncIterator]();
+    const statusTask = status
+      ? (async () => {
+          for (;;) {
+            const next = await status.next();
+            if (next.done || readers.signal.aborted) break;
+            if (["disconnect", "reconnect", "reconnecting", "staleConnection", "close"].includes(next.value.type)) view.invalidate();
+          }
+        })()
+      : undefined;
+    void readers.connection?.closed().then(() => view.invalidate());
+    const stop = async () => {
+      await view.stop();
+      // return() cannot interrupt a pending NATS status next(); transport drain closes it.
+      void statusTask?.finally(() => status?.return?.());
+      readers.stops.delete(stop);
+    };
+    readers.stops.add(stop);
+    return view;
   });
-  appRegistryViews.set(registry, view);
-  // Disconnect invalidates immediately, even if the KV watch silently reconnects.
-  // Reconnect requires a new covering snapshot before local reads resume.
-  const status = readers.connection?.status()[Symbol.asyncIterator]();
-  const statusTask = status
-    ? (async () => {
-        for (;;) {
-          const next = await status.next();
-          if (next.done) break;
-          if (readers.signal.aborted) break;
-          if (["disconnect", "reconnect", "reconnecting", "staleConnection", "close"].includes(next.value.type)) view.invalidate();
-        }
-      })()
-    : undefined;
-  void readers.connection?.closed().then(() => view.invalidate());
-  const stop = async () => {
-    await view.stop();
-    // NATS closes its status iterator when the process-owned connection drains.
-    // return() cannot interrupt a pending next(), so never await it before drain.
-    void statusTask?.finally(() => status?.return?.());
-    readers.stops.delete(stop);
-    appRegistryViews.delete(registry);
-  };
-  readers.stops.add(stop);
-  return view;
+
+type ObservedApp = { app: AppRegistryEntry; issue?: never } | { app?: never; issue: string };
+const appRegistryView = processObservedView(appRegistry, APP_REGISTRY_PREFIX, (entry): ObservedApp => {
+  const parsed = parseAppRegistryEntry(entry.value);
+  const reason = parsed.reason ?? (entry.key !== `${APP_REGISTRY_PREFIX}${parsed.value.id}` ? "registry key must match entry id" : null);
+  if (reason || !parsed.value) {
+    const issue = { key: entry.key, version: entry.revision, reason: reason ?? "invalid entry" };
+    reportInvalidEntry(issue);
+    return { issue: issue.reason };
+  }
+  loggedInvalidReasons.delete(entry.key);
+  return { app: parsed.value };
 });
+const observedApps = () => {
+  // Initialize the published handle before attaching its local write-through view.
+  appRegistry();
+  const view = appRegistryView();
+  appsObserved.observe(view);
+  return view;
+};
+const capabilityRegistryView = processObservedView(capabilityRegistry, "capabilities/", (entry) => entry.value);
+const observedCapabilities = () => {
+  capabilityRegistry();
+  const view = capabilityRegistryView();
+  capabilitiesObserved.observe(view);
+  return view;
+};
 
 export const readAppRegistrySnapshot = async (): Promise<AppRegistrySnapshot> => {
-  const values = await appRegistryView().values();
-  const apps = values.flatMap((value) => (value.app ? [value.app] : []));
-  const issues = values.flatMap((value) => (value.issue ? [value.issue] : []));
-  const keys = new Set([...apps.map((app) => `${APP_REGISTRY_PREFIX}${app.id}`), ...issues.map((issue) => issue.key)]);
+  const entries = await observedApps().entries();
+  const apps = entries.flatMap((entry) =>
+    entry.value.app
+      ? [
+          {
+            ...entry.value.app,
+            createdAt: entry.value.app.startedAt ?? entry.updatedAt.getTime(),
+            updatedAt: entry.updatedAt.getTime(),
+            expiresAt: entry.updatedAt.getTime() + APP_REGISTRY_TTL_MS,
+            version: entry.revision,
+          },
+        ]
+      : [],
+  );
+  const issues = entries.flatMap((entry) =>
+    entry.value.issue ? [{ key: entry.key, version: entry.revision, reason: entry.value.issue }] : [],
+  );
+  const keys = new Set(entries.map((entry) => entry.key));
   for (const key of loggedInvalidReasons.keys()) if (!keys.has(key)) loggedInvalidReasons.delete(key);
   return { apps, issues };
 };
@@ -248,15 +282,20 @@ export const requireUsableAppRegistry = (snapshot: AppRegistrySnapshot): AppRegi
 /**
  * List all currently live (TTL-valid) app registry entries.
  */
-export const listApps = async (): Promise<AppRegistryEntry[]> => {
-  const snapshot = await readAppRegistrySnapshot();
-  return requireUsableAppRegistry(snapshot);
+export const listApps = async (): Promise<AppRegistryEntry[]> => requireUsableAppRegistry(await readAppRegistrySnapshot());
+
+/** Stable payload identities for joins; public lists retain their lease metadata. */
+const listObservedApps = async (): Promise<AppRegistryEntry[]> => {
+  const values = await observedApps().values();
+  const apps = values.flatMap((value) => (value.app ? [value.app] : []));
+  if (!apps.length && values.some((value) => value.issue))
+    throw new Error(`App registry contains no valid entries (${values.length} rejected)`);
+  return apps;
 };
 
 /** Reads one live app from the process-owned registry view. */
 export const getApp = async (appId: string): Promise<AppRegistryEntry | null> => {
-  const snapshot = await readAppRegistrySnapshot();
-  return snapshot.apps.find((app) => app.id === appId) ?? null;
+  return (await observedApps().get(`${APP_REGISTRY_PREFIX}${appId}`))?.app ?? null;
 };
 
 const capabilityEndpoint = (baseUrl: string): string | null => {
@@ -475,21 +514,85 @@ export const resolveLiveCapabilityRegistryEntry = (
   }
 };
 
+// Cache joins by immutable payload identity; lease metadata never invalidates a manifest.
+const resolvedCapabilities = new WeakMap<AppRegistryEntry, WeakMap<CapabilityRegistryRecord, CapabilityRegistryEntry | null>>();
+const resolveObservedCapability = (key: string, record: CapabilityRegistryRecord, app: AppRegistryEntry | undefined) => {
+  if (!app) return null;
+  let records = resolvedCapabilities.get(app);
+  if (!records) {
+    records = new WeakMap();
+    resolvedCapabilities.set(app, records);
+  }
+  if (record && typeof record === "object") {
+    if (records.has(record)) return records.get(record) ?? null;
+    const resolved = freezeObserved(resolveLiveCapabilityRegistryEntry(key, record, app));
+    records.set(record, resolved);
+    return resolved;
+  }
+  return null;
+};
 export const listCapabilities = async (appSnapshot?: AppRegistryEntry[]): Promise<CapabilityRegistryEntry[]> => {
-  const [snap, apps] = await Promise.all([capabilityRegistry().snapshot({ prefix: "capabilities/" }), appSnapshot ?? listApps()]);
+  const [entries, apps] = await Promise.all([observedCapabilities().entries(), appSnapshot ?? listObservedApps()]);
   const byId = new Map(apps.map((app) => [app.id, app]));
-  return snap.entries.flatMap((entry) => {
-    const appId = entry.key.startsWith("capabilities/") ? entry.key.slice("capabilities/".length) : "";
-    const capability = resolveLiveCapabilityRegistryEntry(entry.key, entry.value, byId.get(appId));
+  return entries.flatMap((entry) => {
+    const app = byId.get(entry.key.slice("capabilities/".length));
+    // Supplied snapshots belong to the caller and may change between calls.
+    // Never freeze them or cache joins under their mutable object identity.
+    const capability = appSnapshot
+      ? freezeObserved(structuredClone(resolveLiveCapabilityRegistryEntry(entry.key, entry.value, app)))
+      : resolveObservedCapability(entry.key, entry.value, app);
     return capability ? [capability] : [];
   });
 };
 
 export const getCapability = async (appId: string): Promise<CapabilityRegistryEntry | null> => {
   const key = `capabilities/${appId}`;
-  const [snap, app] = await Promise.all([capabilityRegistry().snapshot({ prefix: key }), getApp(appId)]);
-  const entry = snap.entries.find((candidate) => candidate.key === key);
-  return entry ? resolveLiveCapabilityRegistryEntry(entry.key, entry.value, app ?? undefined) : null;
+  const [record, app] = await Promise.all([observedCapabilities().get(key), getApp(appId)]);
+  return record ? resolveObservedCapability(key, record, app ?? undefined) : null;
+};
+
+/** Internal runtime consumer: one refresh for content changes in either registry. */
+export const watchRuntimeRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
+  const views = [observedApps(), observedCapabilities()];
+  await watchRegistryChanges({
+    signal,
+    onChange,
+    watch: (signal) => ({
+      async *[Symbol.asyncIterator]() {
+        let dirty = true;
+        let wake: (() => void) | undefined;
+        const controller = new AbortController();
+        const notify = () => {
+          dirty = true;
+          wake?.();
+        };
+        const abort = () => {
+          controller.abort();
+          notify();
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+        const tasks = views.map(async (view) => {
+          for await (const _ of view.changes(controller.signal, { initial: false })) notify();
+        });
+        try {
+          while (!signal.aborted) {
+            if (!dirty)
+              await new Promise<void>((resolve) => {
+                wake = resolve;
+              });
+            if (signal.aborted) break;
+            dirty = false;
+            yield { type: "change" };
+          }
+        } finally {
+          controller.abort();
+          signal.removeEventListener("abort", abort);
+          await Promise.all(tasks);
+        }
+      },
+    }),
+  });
 };
 
 /**

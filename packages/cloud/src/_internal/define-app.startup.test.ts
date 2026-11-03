@@ -46,7 +46,8 @@ describe("application startup readiness", () => {
           },
         })),
         stubConnections(),
-        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async () => {
+        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async (applicationId) => {
+          expect(applicationId).toBe("startup-test");
           await step("links");
           return async () => {
             events.push("stop-links");
