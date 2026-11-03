@@ -1596,6 +1596,38 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("layout", () => {
+      // #2507: on a phone the list always has its head, in every layout; the reader hides it and Back brings it back.
+      for (const layout of ["auto", "columns", "split"] as const)
+        for (const selected of [false, true])
+          test(`390 ${layout}${selected ? " with a conversation" : ""}: the list shows its head with tabs and Compose`, async () => {
+            const page = await open(`${boxPath}?layout=${layout}${selected ? "&conversation=Conv01" : ""}`, 390, 844);
+            try {
+              const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
+              const headShown = async () => {
+                expect(await head.isVisible()).toBe(true);
+                expect(await tabs(page).getByRole("link", { name: /^All/ }).isVisible()).toBe(true);
+                expect(await page.locator("[data-workspace-primary]").isVisible()).toBe(true);
+              };
+              const serverHead = (JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!) as Frame).find(
+                (part) => part.part === "k2b-app-workspace__head",
+              );
+              if (!selected) {
+                // The server's first frame already has the head, so it never appears late.
+                expect(serverHead?.height).toBeGreaterThan(0);
+                await headShown();
+                return;
+              }
+              expect(serverHead?.height).toBe(0);
+              expect(await head.isVisible()).toBe(false);
+              await page.locator(".mail-reader-back").click();
+              await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
+              await settled(page);
+              await headShown();
+            } finally {
+              await close(page);
+            }
+          });
+
       // F2: "Automatisch" shows columns until a conversation opens; one case per page (#1966).
       for (const width of [1440, 390])
         test(`views: automatic shows columns without a selection at ${width}, from the server on`, async () => {
