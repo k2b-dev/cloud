@@ -39,12 +39,7 @@ export default ssr<AuthContext>(async (c) => {
   ];
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.accounts, href: "/app/accounts" }, { title: t.duplicateEmails }]}>
-      <AccountsWorkspace
-        active="duplicate-emails"
-        isAdmin={true}
-        pendingRequests={pending}
-        scrollPreserveKey="accounts-duplicate-emails"
-      >
+      <AccountsWorkspace active="duplicate-emails" isAdmin={true} pendingRequests={pending} scrollPreserveKey="accounts-duplicate-emails">
         <div class="flex flex-col gap-4">
           <div>
             <h1 class="text-base font-semibold text-primary">{t.duplicateEmails}</h1>
