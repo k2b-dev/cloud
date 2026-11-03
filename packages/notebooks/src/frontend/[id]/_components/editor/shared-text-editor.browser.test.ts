@@ -278,6 +278,8 @@ describe("Notebook on the shared text editor", () => {
       await page.evaluate(() => window.noteHarness.setOnline(false));
       await cell(page, 2, 1).click();
       await toolbarButton(page, "Edit table").click();
+      // A closed menu keeps its entries (#2492); they follow the current state after its open event.
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true, disabled: true }).waitFor();
       expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).toBe("true");
       expect(await page.getByRole("menuitem", { name: "Delete row" }).getAttribute("aria-disabled")).toBe("true");
       expect(await page.getByRole("menuitem", { name: /^Insert row below(?:\s*Enter)?$/ }).getAttribute("aria-disabled")).not.toBe("true");
@@ -291,6 +293,7 @@ describe("Notebook on the shared text editor", () => {
       // Reconnecting re-enables the menu without another document change.
       await page.evaluate(() => window.noteHarness.setOnline(true));
       await toolbarButton(page, "Edit table").click();
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true, disabled: false }).waitFor();
       expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).not.toBe("true");
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
     } finally {
