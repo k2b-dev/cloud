@@ -1,12 +1,20 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import type { AuthContext } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { app } from "../config";
 import { newShortId } from "../lib/short-id";
 import spacesApi from ".";
+
+const gatedApi = new Hono<AuthContext>()
+  .use(requireAppAccess(app.meta, async () => new Response("denied", { status: 403 })))
+  .route("/api/spaces", spacesApi);
 
 const suite = databaseSuite();
 setDefaultTimeout(30_000);
@@ -36,7 +44,7 @@ const apiAs = async (account: { id: string }, scopes: string[]) => {
   if (!created.ok) throw new Error(created.error.message);
   const authorization = `Bearer ${created.data.token}`;
   return (path: string, init?: { method?: string; body?: unknown }) =>
-    spacesApi.request(path, {
+    gatedApi.request(`/api/spaces${path === "/" ? "" : path}`, {
       method: init?.method ?? "GET",
       headers: { authorization, ...(init?.body === undefined ? {} : { "content-type": "application/json" }) },
       ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
@@ -157,7 +165,7 @@ credentialSuite("Space sharing with named machine principals", () => {
         await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${space!.id}::uuid, ${manager!.id}::uuid)`;
         const cookie = `session_token=${await createTestSession(owner!.id)}`;
         const sharing = (path: string, method = "GET", body?: unknown) =>
-          spacesApi.request(path, {
+          gatedApi.request(`/api/spaces${path === "/" ? "" : path}`, {
             method,
             headers: { cookie, "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),

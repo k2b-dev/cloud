@@ -4,8 +4,8 @@ import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "pulse",
-  // APIs admit roleless service accounts; navigation keeps its narrower audience.
-  access: appAccess.signedIn({
+  // Resource-bound and roleless service accounts remain eligible.
+  access: appAccess.noGuests({
     // Source keys and dashboard publication tokens retain their own domain checks.
     publicRoutes: [
       "/api/pulse/openapi.json",
