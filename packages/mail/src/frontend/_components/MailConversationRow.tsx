@@ -82,7 +82,7 @@ export default function MailConversationRow(props: {
   const tagLabel = () => props.item.localTags.map((tag) => tag.name).join(", ");
   const bulkSelected = () => Boolean(props.item.conversationId && state().selectedConversationIds.has(props.item.conversationId));
   const attachmentDownloadHref = () => buildMailAttachmentDownloadHref(props.requestUrl, props.item);
-  const attachmentLabel = () => t().attachmentCount({ count: props.item.attachmentCount });
+  const attachmentLabel = () => t().attachmentCount({ count: props.item.attachmentCount ?? 0 });
   const [menuOpen, setMenuOpen] = createSignal(false);
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
@@ -221,9 +221,9 @@ export default function MailConversationRow(props: {
                 </Show>
                 <span class="mail-row-subject">{props.item.subject || t().noSubject}</span>
                 <span class="mail-row-inline-preview">{props.item.preview}</span>
-                <Show when={props.item.hasAttachments || props.item.flagged || props.item.kept}>
+                <Show when={props.item.attachmentCount || props.item.flagged || props.item.kept}>
                   <span class="mail-row-marks">
-                    <Show when={props.item.hasAttachments}>
+                    <Show when={props.item.attachmentCount}>
                       <Tooltip.Anchor content={attachmentLabel()}>
                         <span class="mail-row-mark" role="img" aria-label={attachmentLabel()}>
                           <i class="ti ti-paperclip" aria-hidden="true" />
@@ -299,7 +299,7 @@ export default function MailConversationRow(props: {
                 </span>
               </Show>
               <span class="mail-row-marks">
-                <Show when={props.item.hasAttachments}>
+                <Show when={props.item.attachmentCount}>
                   <Tooltip.Anchor content={attachmentLabel()}>
                     <span class="mail-row-mark" role="img" aria-label={attachmentLabel()}>
                       <i class="ti ti-paperclip" aria-hidden="true" />

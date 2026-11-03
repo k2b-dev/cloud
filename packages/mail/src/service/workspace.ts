@@ -68,8 +68,8 @@ export type MailListItem = {
   unread: boolean;
   activeFolderIds: string[];
   flagged: boolean;
-  hasAttachments: boolean;
-  attachmentCount: number;
+  /** Left out when the conversation has none, so most rows of a page cost nothing for it. */
+  attachmentCount?: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -291,8 +291,7 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   unread: conversation.unread,
   activeFolderIds: conversation.activeFolderIds,
   flagged: conversation.flagged,
-  hasAttachments: conversation.hasAttachments,
-  attachmentCount: conversation.attachmentCount,
+  ...(conversation.attachmentCount > 0 ? { attachmentCount: conversation.attachmentCount } : {}),
   messageCount: conversation.messageCount,
   workStatus: conversation.workStatus,
   assigneeUserIds: conversation.assigneeUserIds,
@@ -336,8 +335,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     unread: item.unread,
     activeFolderIds: item.activeFolderIds,
     flagged: item.flagged,
-    hasAttachments: item.hasAttachments,
-    attachmentCount: item.attachmentCount,
+    ...(item.attachmentCount > 0 ? { attachmentCount: item.attachmentCount } : {}),
     messageCount: item.messageCount,
     workStatus: item.workStatus,
     assigneeUserIds: item.assigneeUserIds,

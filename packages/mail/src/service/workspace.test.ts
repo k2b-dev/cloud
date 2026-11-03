@@ -40,6 +40,12 @@ const hit: MessageSearchHit = {
 };
 
 describe("Mail workspace search results", () => {
+  test("a row carries its attachment count only when it has attachments", () => {
+    expect(searchHitToListItem(hit, "conversations")).not.toHaveProperty("attachmentCount");
+    expect(searchHitToListItem(hit, "conversations")).not.toHaveProperty("hasAttachments");
+    expect(searchHitToListItem({ ...hit, hasAttachments: true, attachmentCount: 3 }, "conversations").attachmentCount).toBe(3);
+  });
+
   test("uses the conversation ID for grouped conversation rows", () => {
     expect(searchHitToListItem(hit, "conversations")).toMatchObject({
       id: conversationId,

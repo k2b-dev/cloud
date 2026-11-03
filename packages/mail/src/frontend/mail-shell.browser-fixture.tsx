@@ -196,8 +196,7 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     latestMessageAt: new Date(Date.parse(MAIL_SHELL_NOW) - index * 3_600_000).toISOString(),
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
-    hasAttachments: index % 4 === 0,
-    attachmentCount: index % 4 === 0 ? index / 4 + 1 : 0,
+    ...(index % 4 === 0 ? { attachmentCount: index / 4 + 1 } : {}),
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],
@@ -205,9 +204,13 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
   }),
 );
 export const focusPage = (view: MailFocusView): MailFocusPage => ({
-  items: listRows
-    .slice(0, Math.min(focusCounts[view], 12))
-    .map((row) => ({ ...row, mailboxId: "Box001", mailboxName: "Example support", workStatus: row.workStatus ?? "needs_action" })),
+  items: listRows.slice(0, Math.min(focusCounts[view], 12)).map((row) => ({
+    ...row,
+    mailboxId: "Box001",
+    mailboxName: "Example support",
+    workStatus: row.workStatus ?? "needs_action",
+    hasAttachments: Boolean(row.attachmentCount),
+  })),
   nextCursor: null,
   counts: focusCounts,
   mailboxCounts: focusMailboxCounts,
