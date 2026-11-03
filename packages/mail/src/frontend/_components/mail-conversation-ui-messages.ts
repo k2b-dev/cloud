@@ -343,6 +343,8 @@ export const mailConversationUiMessages = i18n.define({
         "The connection ended before the receiving server confirmed the result. Mail will not send again automatically because that could create a duplicate.",
       retryExplanation: ({ attempt, total }: { attempt: number; total: number }) =>
         `${attempt} of ${total} delivery attempts did not succeed. Mail will try again automatically.`,
+      transientRejectionExplanation:
+        "The mail server rejected the message for now, for example because of a sending limit. Mail tries again automatically for up to an hour. If it still fails, the message returns to your drafts.",
       sentCopyExplanation: "The message was sent, but Mail could not save its copy in the Sent folder. Do not send it again.",
       recipientsRejected: "The receiving server rejected the recipients.",
       authenticationFailed: "Mail could not authenticate with the sending account.",
@@ -382,6 +384,7 @@ export const mailConversationUiMessages = i18n.define({
       scheduledMessage: "Scheduled message",
       deliveryDelayed: "Delivery delayed",
       retryControl: ({ attempt, total }: { attempt: number; total: number }) => `Trying again · ${attempt}/${total}`,
+      tryingAgain: "Trying again",
       waitingForSignIn: "Waiting for sign-in",
       waitingForSignInExplanation:
         "The mailbox needs to be signed in again. Mail sends the message as soon as the account is reconnected. If that takes more than six days after the message was due, Mail returns it to Drafts.",
@@ -772,6 +775,8 @@ export const mailConversationUiMessages = i18n.define({
         "Die Verbindung wurde beendet, bevor der empfangende Server das Ergebnis bestätigt hat. Mail sendet nicht automatisch erneut, weil dadurch eine doppelte Nachricht entstehen könnte.",
       retryExplanation: ({ attempt, total }) =>
         `${attempt} von ${total} Zustellversuchen waren nicht erfolgreich. Mail versucht es automatisch erneut.`,
+      transientRejectionExplanation:
+        "Der Mailserver hat die Nachricht vorerst abgelehnt, zum Beispiel wegen eines Versandlimits. Mail versucht es bis zu eine Stunde lang automatisch erneut. Klappt es dann noch nicht, kehrt die Nachricht zu deinen Entwürfen zurück.",
       sentCopyExplanation:
         "Die Nachricht wurde gesendet, aber Mail konnte keine Kopie im Ordner „Gesendet“ speichern. Sende sie nicht erneut.",
       recipientsRejected: "Der empfangende Server hat die Empfänger abgelehnt.",
@@ -815,6 +820,7 @@ export const mailConversationUiMessages = i18n.define({
       scheduledMessage: "Geplante Nachricht",
       deliveryDelayed: "Zustellung verzögert",
       retryControl: ({ attempt, total }) => `Erneuter Versuch · ${attempt}/${total}`,
+      tryingAgain: "Wird erneut versucht",
       waitingForSignIn: "Wartet auf Anmeldung",
       waitingForSignInExplanation:
         "Für das Postfach ist eine erneute Anmeldung erforderlich. Mail sendet die Nachricht, sobald das Konto wieder verbunden ist. Dauert das mehr als sechs Tage nach dem geplanten Zeitpunkt, legt Mail sie wieder in die Entwürfe.",
