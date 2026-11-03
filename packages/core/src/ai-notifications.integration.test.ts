@@ -279,47 +279,60 @@ suite("Core AI completion notifications", () => {
     const userId = user.id;
     const service = createAiNotificationService(app.notifications);
     try {
-      const chat = await aiConversations.createConversation({ ownerUserId: userId });
-      const { turn } = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "mock",
-        runConfig: { kind: "chat", input: "Send", signedInSession: true },
-        userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
-      });
-      const request = await approvals.request({
-        appId: "mail",
-        action: "draft.send",
-        requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/send` },
-        subjectId: userId,
-        approverUserId: userId,
-        assurance: "confirm",
-        sentence: "Mail: Send draft",
-        input: {},
-        expiresInMs: 600_000,
-      });
-      if (!request.ok) throw new Error("Missing approval");
-      await aiConversations.savePendingTurnAction({
-        approvalId: request.id,
-        conversationId: chat.id,
-        turnId: turn.id,
-        callId: "send",
-        kind: "approval",
-        status: "pending",
-        name: "mail.draft.send",
-        args: {},
-        allowAlways: false,
-        approvalScope: "draft",
-        resolvedEvent: null,
-      });
-      const closed = async () => void (await service.notifyApprovalWaiting(request.id));
-      const tabs = await Promise.all([1, 2].map(() => watchAiConversation(chat.id, closed)));
-      const notices = () => sql<{ idempotency_key: string }[]>`SELECT idempotency_key FROM notifications.events
+      const ask = async () => {
+        const chat = await aiConversations.createConversation({ ownerUserId: userId });
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "mock",
+          runConfig: { kind: "chat", input: "Send", signedInSession: true },
+          userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+        });
+        const request = await approvals.request({
+          appId: "mail",
+          action: "draft.send",
+          requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/send` },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "confirm",
+          sentence: "Mail: Send draft",
+          input: {},
+          expiresInMs: 600_000,
+        });
+        if (!request.ok) throw new Error("Missing approval");
+        await aiConversations.savePendingTurnAction({
+          approvalId: request.id,
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId: "send",
+          kind: "approval",
+          status: "pending",
+          name: "mail.draft.send",
+          args: {},
+          allowAlways: false,
+          approvalScope: "draft",
+          resolvedEvent: null,
+        });
+        return { id: request.id, chatId: chat.id };
+      };
+      const notices = async () =>
+        (
+          await sql<{ idempotency_key: string }[]>`SELECT idempotency_key FROM notifications.events
+          WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid ORDER BY created_at,id`
+        ).map((row) => row.idempotency_key);
+      const older = await ask();
+      const open = await ask();
+      const closed = async () => void (await service.notifyApprovalWaiting(open.id));
+      const tabs = await Promise.all([1, 2].map(() => watchAiConversation(open.chatId, closed)));
+      // The newest request shows in a tab, so the notice names the older one from the closed chat.
+      expect(await service.notifyApprovalWaiting(open.id)).toMatchObject({ scanned: 1, sent: 1 });
+      expect(await notices()).toEqual([`approval:${older.id}`]);
+      await sql`UPDATE notifications.events SET created_at=created_at-interval '16 minutes'
         WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid`;
-      expect(await service.notifyApprovalWaiting(request.id)).toEqual({ scanned: 1, sent: 0, failed: 0 });
+      expect(await service.notifyApprovalWaiting(open.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       // Two tabs close on two replicas at once; the request is noticed once.
       await Promise.all(tabs.map((tab) => tab.release()));
-      expect(await notices()).toEqual([{ idempotency_key: `approval:${request.id}` }]);
-      expect(await service.notifyApprovalWaiting(request.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(await notices()).toEqual([`approval:${older.id}`, `approval:${open.id}`]);
+      expect(await service.notifyApprovalWaiting(open.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
     } finally {
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;

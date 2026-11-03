@@ -11,7 +11,7 @@ import {
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
 import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "@k2b/cloud/services/approvals";
-import { toPgTextArray } from "@k2b/cloud/services/postgres";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { resolveAppIdentityPresentation } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
@@ -373,13 +373,16 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     // One notice per person and window counts all their waiting requests and names the newest, so it never repeats.
     // A request that arrives inside the window waits for the scheduled run after it. A decision made since the newest
     // request was asked means the person is deciding in Cloud already; requests from before registration stay silent.
-    const candidates = await sql<{ id: string; user_id: string; count: number }[]>`
+    // A request that a chat tab shows leaves the selection, so the person's newest request outside a tab is named.
+    const watched: string[] = [];
+    const select = () => sql<{ id: string; user_id: string; count: number }[]>`
       WITH eligible AS MATERIALIZED (
         SELECT r.id,r.approver_user_id,r.created_at FROM approvals.requests r JOIN auth.users u ON u.id=r.approver_user_id
         WHERE r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
           AND (${input.approvalId ?? null}::uuid IS NULL OR r.approver_user_id=(
             SELECT approver_user_id FROM approvals.requests WHERE id=${input.approvalId ?? null}::uuid))
           AND EXISTS (SELECT 1 FROM ai.pending_actions p WHERE p.approval_id=r.id AND p.status='pending')
+          AND NOT (r.id=ANY(${toPgUuidArray(watched)}::uuid[]))
       ), ranked AS (
         SELECT *,row_number() OVER (PARTITION BY approver_user_id ORDER BY created_at DESC,id DESC) AS position,
           count(*) OVER (PARTITION BY approver_user_id)::int AS count FROM eligible
@@ -395,13 +398,20 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
         AND NOT EXISTS (SELECT 1 FROM approvals.requests seen
           WHERE seen.approver_user_id=r.approver_user_id AND seen.decided_at > r.created_at)
       ORDER BY r.created_at,r.id LIMIT ${input.limit ?? RECOVERY_BATCH_SIZE}`;
+    // Each pass drops the watched requests it selected; a person has few chats open, which bounds the passes.
+    let candidates = await select();
+    for (;;) {
+      const found: string[] = [];
+      for (const candidate of candidates) if (!(await aiApprovalUnwatched(candidate.id))) found.push(candidate.id);
+      if (!found.length) break;
+      watched.push(...found);
+      candidates = await select();
+    }
     const locale = await coreSettings.get<string>("app.locale");
     let sent = 0;
     let failed = 0;
     for (const candidate of candidates) {
       try {
-        // A tab that streams the chat shows the newest request; closing the last one asks again.
-        if (!(await aiApprovalUnwatched(candidate.id))) continue;
         let recipientLocale = locale;
         let question: string | undefined;
         let reason: string | undefined;

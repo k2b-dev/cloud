@@ -140,6 +140,7 @@ browser tab shows its chat. While a tab streams the chat, the request appears
 there and Core sends nothing. When the last such tab closes while the turn
 keeps running, Core checks the chat's waiting requests again, as for a new
 request. Turns from `cld`, an editor bridge, or a routine have no such tab.
+A notice names the newest request that no tab shows.
 A person gets at most one notice every 15 minutes. One notice covers all
 their waiting requests. A request that arrives within 15 minutes of the last
 notice is included in a later notice, which Core sends once the 15 minutes

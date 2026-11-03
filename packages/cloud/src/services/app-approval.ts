@@ -468,9 +468,10 @@ export const createAppApprovalService = (
         if (!cfg.enabled || !cfg.appOrigin) return;
         // A tab that streams the chat shows the approval; closing the last one asks again.
         if (!(await aiApprovalUnwatched(approvalId))) return;
-        // One statement wakes the devices and marks the approval, committed before any push. The device
-        // window keeps concurrent replicas apart; the mark keeps a later closed tab from waking them again.
-        // An approval that woke no device stays unmarked, so it can wake them once the window allows.
+        // One statement wakes the devices and marks the approval, committed before any push. A replica that
+        // waited for another's device lock sees that device woken for this approval and skips it; the mark keeps
+        // a later closed tab from waking the devices again after another request. An approval that woke no
+        // device stays unmarked, so it can wake them once the window allows.
         const rows = await db()<{ push_token: string; user_id: string }[]>`
           WITH woken AS (
             UPDATE auth.app_devices d SET action_wake_at=now(), action_wake_ref=${approvalId}::uuid
@@ -483,7 +484,8 @@ export const createAppApprovalService = (
                 AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL
                 AND device.actions_at IS NOT NULL
               LIMIT ${limits.devicesPerAccount}
-            ) AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${WAKE_SECONDS} * interval '1 second'
+            ) AND d.action_wake_ref IS DISTINCT FROM ${approvalId}::uuid
+              AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${WAKE_SECONDS} * interval '1 second'
               OR NOT EXISTS (SELECT 1 FROM approvals.requests w
                 WHERE w.id=d.action_wake_ref AND w.status='pending' AND w.expires_at > now()))
             RETURNING d.push_token,d.user_id

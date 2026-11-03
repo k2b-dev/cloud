@@ -2792,6 +2792,27 @@ suite("isolated app approval protocol", () => {
       const unseen = await askAction(owner, { signedInSession: true });
       await Promise.all([service.wakeForAction(unseen.id), service.wakeForAction(unseen.id)]);
       expect(pushes.slice(start + 1).map((push) => push.body.requestRef)).toEqual([unseen.id]);
+
+      // A replica that waited for another replica's device lock re-reads the device and finds it woken for this
+      // request, even when the other wake's start lies outside the 30-second window.
+      const raced = await askAction(owner);
+      let wake: Promise<void> | undefined;
+      let blocked = false;
+      await sql.begin(async (tx) => {
+        await tx`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds', action_wake_ref=${raced.id}::uuid
+          WHERE id=${phone.id}::uuid`;
+        wake = service.wakeForAction(raced.id);
+        for (let i = 0; i < 200; i++) {
+          const [waiting] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE wait_event_type='Lock' AND query LIKE '%WITH woken AS%'`;
+          blocked = Boolean(waiting?.count);
+          if (blocked) break;
+          await Bun.sleep(10);
+        }
+      });
+      await wake;
+      expect(blocked).toBe(true);
+      expect(pushes.slice(start + 2)).toEqual([]);
     });
   });
 });
