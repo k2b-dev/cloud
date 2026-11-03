@@ -106,6 +106,9 @@ const technicalMetadataKeys = new Set([
   "effectId",
 ]);
 
+/** Principal references stay as they are: Cloud names people by their principal ID, as list items do for assignees. */
+const principalMetadataKeys = new Set(["assigneeUserIds", "assigneeUserId"]);
+
 const collectMetadataIds = (value: unknown, ids: Map<Table, string[]>): void => {
   if (Array.isArray(value)) {
     value.forEach((item) => collectMetadataIds(item, ids));
@@ -131,6 +134,7 @@ const publicResourceValue = (table: Table, value: unknown, maps: Map<Table, Map<
 };
 
 const projectMetadata = (value: unknown, maps: Map<Table, Map<string, string>>, key?: string): unknown => {
+  if (key && principalMetadataKeys.has(key)) return value;
   if (key && metadataTables[key]) return publicResourceValue(metadataTables[key], value, maps);
   if (Array.isArray(value)) return value.map((item) => projectMetadata(item, maps));
   if (value && typeof value === "object")
@@ -178,4 +182,5 @@ export const activityPublicContract = {
   technicalTargetTypes,
   metadataTables,
   technicalMetadataKeys,
+  principalMetadataKeys,
 };

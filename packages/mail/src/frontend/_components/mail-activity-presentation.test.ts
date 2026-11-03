@@ -12,6 +12,8 @@ const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
   targetId: crypto.randomUUID(),
   metadata,
   createdAt: "2026-07-22T10:00:00.000Z",
+  conversationSubject: null,
+  assignees: null,
 });
 
 describe("mail activity presentation", () => {

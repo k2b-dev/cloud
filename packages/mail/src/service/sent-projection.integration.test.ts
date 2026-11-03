@@ -338,8 +338,11 @@ const createProvider = (kind: ProviderKind) => {
       failingSearches = count;
       searchFailureCode = code;
     },
-    failNextSubmission: (code: string, afterTransfer: boolean) => {
-      submissionFailure = { error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN" }), afterTransfer };
+    failNextSubmission: (code: string, afterTransfer: boolean, responseCode?: number) => {
+      submissionFailure = {
+        error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN", ...(responseCode ? { responseCode } : {}) }),
+        afterTransfer,
+      };
     },
     refuseRecipient: (address: string) => {
       refusedRecipients.add(address);
@@ -1206,6 +1209,48 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, 5xx and 535 fail at once", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      // A temporary rejection at the end of DATA: the server took the bytes but accepted nothing.
+      const draft = await newDraft(mailbox, "SMTP temporarily rejected");
+      provider.failNextSubmission("EMESSAGE", true, 451);
+      const outbox = await send(mailbox, draft.id, draft.revision, "smtp-4xx", "scheduled");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "SMTP_TRANSIENT_REJECTION",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      for (let attempt = 2; attempt <= 5; attempt += 1) {
+        provider.failNextSubmission("EMESSAGE", true, 451);
+        await sendRetryNow(outbox.id);
+      }
+      // Each attempt submitted once; the last one ends the budget with the message back in drafts.
+      expect(provider.submissions()).toBe(5);
+      expect(await delivery(outbox.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
+      expect(await sendRetryNow(outbox.id)).toBeNull();
+      expect(provider.submissions()).toBe(5);
+
+      // A permanent rejection and a refused login fail at once, without a second submission.
+      for (const [code, responseCode, key] of [
+        ["EENVELOPE", 550, "smtp-5xx"],
+        ["EAUTH", 535, "smtp-535"],
+      ] as const) {
+        const rejected = await newDraft(mailbox, `SMTP ${responseCode}`);
+        provider.failNextSubmission(code, false, responseCode);
+        const failed = await send(mailbox, rejected.id, rejected.revision, key, "failed");
+        expect(await delivery(failed.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
+        expect(await sendRetryNow(failed.id)).toBeNull();
+      }
+      expect(provider.submissions()).toBe(5);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a send whose IMAP server is unreachable before dispatch is retried instead of dropped", async () => {
     const provider = createProvider("imap");
     try {
@@ -1946,6 +1991,58 @@ suite("mail sent message projection", () => {
         draft_state: "sent",
       });
       expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("every settled send records one feed event in its conversation, with its outcome", async () => {
+    const sentEvents = async (outboxId: string) =>
+      sql<
+        {
+          conversation_id: string | null;
+          outcome: string;
+          metadata: { result: string; intent: string | null; code: string | null; outboundMessageId: string | null };
+        }[]
+      >`
+        SELECT activity.conversation_id, activity.outcome, activity.metadata
+        FROM mail.activity_events activity
+        JOIN mail.outbox_submissions outbox ON outbox.command_id = activity.command_id
+        WHERE outbox.id = ${outboxId}::uuid AND activity.action = 'message.sent'
+      `;
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "feed-reply");
+      const reply = await replyDraft(mailbox, inbound);
+      const sent = await send(mailbox, reply.id, reply.revision, "feed-reply");
+      expect(await sentEvents(sent.id)).toEqual([
+        {
+          conversation_id: inbound.conversation_id,
+          outcome: "confirmed",
+          metadata: { result: "sent", intent: "reply", code: null, outboundMessageId: sent.message_id },
+        },
+      ]);
+
+      // A new message names the conversation it started once it is sent.
+      const fresh = await newDraft(mailbox, "Feed new message");
+      const started = await send(mailbox, fresh.id, fresh.revision, "feed-new");
+      const [newEvent] = await sentEvents(started.id);
+      expect(newEvent?.metadata).toEqual({ result: "sent", intent: "new", code: null, outboundMessageId: started.message_id });
+      expect(newEvent?.conversation_id).toBe((await sentProjection(mailbox, started.stable_message_id)).messages[0]!.conversation_id);
+      expect(newEvent?.conversation_id).not.toBeNull();
+
+      const rejected = await newDraft(mailbox, "Feed failed send");
+      provider.failNextSubmission("ETLS", false);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "feed-failed", "failed");
+      expect((await sentEvents(failed.id)).map((row) => [row.outcome, row.metadata.result, row.metadata.code])).toEqual([
+        ["failed", "failed", "ETLS"],
+      ]);
+
+      const partly = await partlyDeliverableDraft(mailbox, "Feed partial send");
+      provider.refuseRecipient(MISTYPED);
+      const partial = await send(mailbox, partly.id, partly.revision, "feed-partial", "needs_attention");
+      expect((await sentEvents(partial.id)).map((row) => [row.outcome, row.metadata.result])).toEqual([["failed", "partial"]]);
     } finally {
       provider.restore();
     }

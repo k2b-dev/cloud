@@ -1,9 +1,11 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import type { ConversationView } from "../contracts";
+import type { ConversationView, MailActivityKind } from "../contracts";
 import { mailFolderNames } from "../folder-names";
+import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
+import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
@@ -185,6 +187,11 @@ const localTags: MailboxPageData["localTags"] = [
     updatedAt: MAIL_SHELL_NOW,
   },
 ];
+/** The invented team of `?team=1`; the first person is the one signed in. */
+const teamUsers = [
+  { id: "user-1", uid: "robin", displayName: "Robin Example" },
+  { id: "user-2", uid: "nora", displayName: "Nora Example" },
+].map((user) => ({ ...user, avatarHash: null, scope: "mailbox" as const, permission: "write" as const, description: "" }));
 export const listRows = Array.from({ length: 12 }, (_, index) =>
   mailTestRow(`Conv${String(index + 1).padStart(2, "0")}`, {
     subject: `Example request ${index + 1}`,
@@ -194,7 +201,7 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     latestMessageAt: new Date(Date.parse(MAIL_SHELL_NOW) - index * 3_600_000).toISOString(),
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
-    hasAttachments: index % 4 === 0,
+    ...(index % 4 === 0 ? { attachmentCount: index / 4 + 1 } : {}),
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],
@@ -236,6 +243,140 @@ const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, 
     attachments: [],
   };
 });
+
+const people = {
+  me: { id: "user-1", displayName: "Lea Brandt", avatarHash: null },
+  jonas: { id: "11111111-1111-4111-8111-000000000001", displayName: "Jonas Weber", avatarHash: null },
+  mira: { id: "11111111-1111-4111-8111-000000000002", displayName: "Mira Schulz", avatarHash: null },
+  tom: { id: "11111111-1111-4111-8111-000000000003", displayName: "Tom Keller", avatarHash: null },
+  clara: { id: "11111111-1111-4111-8111-000000000004", displayName: "Clara Hoff", avatarHash: null },
+};
+type FixtureEvent = MailActivityEvent & { kind: MailActivityKind; mine?: boolean };
+const at = (minutes: number) => new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString();
+const fixtureEvent = (
+  id: number,
+  kind: MailActivityKind,
+  actor: { id: string; displayName: string; avatarHash: null } | { workflow: string },
+  minutes: number,
+  input: Partial<MailActivityEvent>,
+  mine = false,
+): FixtureEvent => ({
+  id: String(id),
+  kind,
+  mine,
+  conversationId: "Conv01",
+  conversationSubject: "Example request 1",
+  actor: "workflow" in actor ? { kind: "workflow", id: null, displayName: actor.workflow, avatarHash: null } : { kind: "user", ...actor },
+  action: "conversation.comment_created",
+  outcome: "confirmed",
+  targetType: "conversation",
+  targetId: null,
+  metadata: {},
+  createdAt: at(minutes),
+  assignees: null,
+  ...input,
+});
+/** Invented feed events after the approved mockup: today and yesterday, every kind, one failed send. */
+const fixtureEvents: FixtureEvent[] = [
+  fixtureEvent(12, "assignment", people.jonas, 16, {
+    action: "conversation.collaboration_updated",
+    metadata: { before: { assigneeUserIds: [] }, after: { assigneeUserIds: [people.jonas.id] } },
+    assignees: { before: [], after: [people.jonas] },
+  }),
+  fixtureEvent(11, "sent", people.mira, 17, { action: "message.sent", metadata: { result: "sent", intent: "reply" } }),
+  fixtureEvent(10, "automation", { workflow: "Rechnungen" }, 19, {
+    action: "conversation.local_tags_added",
+    metadata: { addedTagIds: ["Tag001"] },
+  }),
+  fixtureEvent(9, "draft", people.tom, 30, { action: "draft.created", conversationId: "Conv02", conversationSubject: "Example request 2" }),
+  fixtureEvent(8, "comment", people.mira, 40, { conversationId: "Conv02", conversationSubject: "Example request 2" }, true),
+  fixtureEvent(
+    7,
+    "assignment",
+    people.jonas,
+    47,
+    {
+      action: "conversation.collaboration_updated",
+      conversationId: "Conv02",
+      conversationSubject: "Example request 2",
+      metadata: { before: { assigneeUserIds: [people.jonas.id] }, after: { assigneeUserIds: [people.jonas.id, people.me.id] } },
+      assignees: { before: [people.jonas], after: [people.jonas, people.me] },
+    },
+    true,
+  ),
+  fixtureEvent(6, "sent", people.clara, 62, {
+    action: "message.sent",
+    outcome: "failed",
+    conversationId: "Conv04",
+    conversationSubject: "Example request 4",
+    metadata: { result: "failed", intent: "reply", code: "SMTP_REJECTED" },
+  }),
+  fixtureEvent(5, "status", people.tom, 80, {
+    action: "conversation.collaboration_updated",
+    conversationId: "Conv03",
+    conversationSubject: "Example request 3",
+    metadata: { before: { workStatus: "needs_action" }, after: { workStatus: "done" } },
+  }),
+  fixtureEvent(4, "sent", people.jonas, 17 * 60, {
+    action: "message.sent",
+    conversationId: "Conv04",
+    conversationSubject: "Example request 4",
+    metadata: { result: "sent", intent: "reply" },
+  }),
+  fixtureEvent(
+    3,
+    "assignment",
+    people.me,
+    20 * 60,
+    {
+      action: "conversation.collaboration_updated",
+      conversationId: "Conv05",
+      conversationSubject: "Example request 5",
+      metadata: { before: { assigneeUserIds: [] }, after: { assigneeUserIds: [people.mira.id] } },
+      assignees: { before: [], after: [people.mira] },
+    },
+    true,
+  ),
+  fixtureEvent(2, "draft", people.tom, 23 * 60, {
+    action: "draft.discarded",
+    conversationId: "Conv06",
+    conversationSubject: "Example request 6",
+  }),
+];
+/** Older events that "Load older events" brings, from the activity API. */
+export const olderFixtureEvents: MailActivityEvent[] = [
+  fixtureEvent(1, "status", people.mira, 30 * 60, {
+    action: "conversation.collaboration_updated",
+    conversationId: "Conv07",
+    conversationSubject: "Example request 7",
+    metadata: { before: { workStatus: "done" }, after: { workStatus: "needs_action" } },
+  }),
+];
+/** `?view=events` with `events=empty|error|more`, filtered like the server by `eventKind`, `eventActor` and `eventMine`. */
+const eventsFixture = (url: URL): Pick<MailboxPageData, "eventsMode" | "eventsPage" | "eventsError"> => {
+  if (url.searchParams.get("view") !== "events") return { eventsMode: false, eventsPage: null, eventsError: null };
+  const state = url.searchParams.get("events");
+  if (state === "error")
+    return { eventsMode: true, eventsPage: null, eventsError: "The server did not answer in time. Your mailbox is unchanged." };
+  const filter = readMailEventsFilter(url);
+  const items =
+    state === "empty"
+      ? []
+      : fixtureEvents
+          .filter((event) => (!filter.kind || event.kind === filter.kind) && (!filter.mine || event.mine))
+          .filter((event) => !filter.actorId || event.actor.id === filter.actorId)
+          .map(({ kind: _kind, mine: _mine, ...event }) => event);
+  return {
+    eventsMode: true,
+    eventsPage: {
+      items,
+      nextCursor: state === "more" ? "cursor-older" : null,
+      filter,
+      people: [people.me, people.jonas, people.mira, people.tom, people.clara],
+    },
+    eventsError: null,
+  };
+};
 
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
 export function mailboxData(url: URL): MailboxPageData {
@@ -302,6 +443,7 @@ export function mailboxData(url: URL): MailboxPageData {
         }
       : null,
     draftsError: null,
+    ...eventsFixture(url),
     activeView,
     savedViewId,
     savedViews: ["Priority view", "Team view"].map((name, index) => ({
@@ -323,10 +465,13 @@ export function mailboxData(url: URL): MailboxPageData {
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
     listItems:
-      scheduledMode || draftsMode || url.searchParams.get("inbox") === "empty"
+      scheduledMode || draftsMode || url.searchParams.get("view") === "events" || url.searchParams.get("inbox") === "empty"
         ? []
         : selectedMailbox.id === "Box001"
-          ? listRows
+          ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation.
+            url.searchParams.has("team")
+            ? listRows.map((row, index) => (index === 0 ? { ...row, assigneeUserIds: [teamUsers[1]!.id] } : row))
+            : listRows
           : listRows.map((row) => ({
               ...row,
               id: `${selectedMailbox.id}-${row.id}`,
@@ -419,7 +564,14 @@ export function mailboxData(url: URL): MailboxPageData {
     automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
-      ? { conversationId: selectedConversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 }
+      ? {
+          conversationId: selectedConversationId,
+          assignees: url.searchParams.has("team") && selectedConversationId === "Conv01" ? [teamUsers[1]!] : [],
+          // ?work=done opens a conversation that is already done.
+          workStatus: url.searchParams.get("work") === "done" ? "done" : "needs_action",
+          snoozedUntil: null,
+          revision: 1,
+        }
       : null,
     localTags,
     conversationLocalTags: selectedConversationId
@@ -427,7 +579,7 @@ export function mailboxData(url: URL): MailboxPageData {
       : null,
     comments: [],
     commentsCursor: null,
-    assignableUsers: [],
+    assignableUsers: url.searchParams.has("team") ? teamUsers : [],
     activity: [],
     reminder: null,
     keep: null,
@@ -464,6 +616,9 @@ export function mailboxList(url: URL): MailboxListView {
     draftsMode,
     draftsPage,
     draftsError,
+    eventsMode,
+    eventsPage,
+    eventsError,
     activeView,
     savedViewId,
     listMode,
@@ -488,6 +643,9 @@ export function mailboxList(url: URL): MailboxListView {
     draftsMode,
     draftsPage,
     draftsError,
+    eventsMode,
+    eventsPage,
+    eventsError,
     activeView,
     savedViewId,
     listMode,

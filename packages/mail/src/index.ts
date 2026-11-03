@@ -6,6 +6,7 @@ import { mailCapabilities } from "./capabilities";
 import { app } from "./config";
 import { mailHelp } from "./help";
 import {
+  buildActivityFeedIndex,
   buildBackfillActivityIndex,
   buildCommandTargetIndex,
   buildOpenConversationIndex,
@@ -48,6 +49,7 @@ const result = await app.start({
         if ((await buildCommandTargetIndex()) === "busy") return;
         if ((await buildProviderMessageIndex()) === "busy") return;
         if ((await buildOpenConversationIndex()) === "busy") return;
+        if ((await buildActivityFeedIndex()) === "busy") return;
         await buildOptionalSearchIndex();
       })();
     },

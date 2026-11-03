@@ -205,7 +205,7 @@ const executeFolderRebuild = async (command: DbMaintenanceCommand, folderId: str
     `;
     return { folderId, staleRemoteMessages: staleRefs.length };
   });
-  if (enqueueWork) await enqueueFolderSync(folderId);
+  if (enqueueWork) await enqueueFolderSync(folderId, { trigger: "maintenance" });
   return { ...result, queued: enqueueWork };
 };
 
@@ -255,7 +255,7 @@ const executeMaintenanceWork = async (
     if (reason) return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
   }
   if (command.kind === "sync_mailbox") {
-    if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id) };
+    if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id, { trigger: "maintenance", awaited: true }) };
     const [folders] = await sql<{ count: number }[]>`
       SELECT COUNT(*)::int AS count
       FROM mail.folders folder
@@ -272,7 +272,7 @@ const executeMaintenanceWork = async (
   }
   if (command.kind === "sync_folder") {
     const { folderId } = folderTargetSchema.parse(target);
-    if (enqueueWork) await enqueueFolderSync(folderId);
+    if (enqueueWork) await enqueueFolderSync(folderId, { trigger: "maintenance", awaited: true });
     return { folderId, queued: enqueueWork };
   }
   if (command.kind === "rebuild_folder") {

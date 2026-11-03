@@ -33,7 +33,6 @@ const item: MailListItem = {
   unread: false,
   activeFolderIds: [],
   flagged: false,
-  hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
   assigneeUserIds: [],

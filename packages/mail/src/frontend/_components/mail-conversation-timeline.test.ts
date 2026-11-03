@@ -12,6 +12,8 @@ const activity = (overrides: Partial<MailActivityEvent> = {}): MailActivityEvent
   targetId: "Tag001",
   metadata: {},
   createdAt: "2026-08-20T12:02:00.000Z",
+  conversationSubject: null,
+  assignees: null,
   ...overrides,
 });
 
