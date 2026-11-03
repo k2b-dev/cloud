@@ -112,6 +112,16 @@ original order, with counts as quiet trailing text. It never repeats the
 current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
+Set `fit` when the head should show as many views as its room allows, as in
+a mailbox with many work and saved views, and pair it with a larger `max`,
+such as the number of views. A fitting strip measures its room and moves the
+views that do not fit under **More**, last ones first, instead of scrolling
+them; the current view and pinned views stay. **More +n** then counts every
+view behind it. The strip fits again when the head's room changes, before
+paint, also in the server frame and on the narrow head level. The phone's head
+row keeps its scrolling strip. Without `fit`, the levels above apply
+unchanged.
+
 A `pinned` view takes no slot and never moves under **More**: it stays after
 **More** at every width, also while it is current. Use it for one view of
 another kind than the ones that overflow, such as an activity feed beside
@@ -152,6 +162,6 @@ type ViewTab = {
 };
 type ViewTabsProps = {
   label: string; items: readonly ViewTab[]; current: string | undefined; max?: number;
-  class?: string;
+  fit?: boolean; class?: string;
 };
 ```

@@ -1777,7 +1777,7 @@ describe("scoped flag search builder", () => {
               await trigger.press("Enter");
               await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
             }
-            await currentPage.getByRole("button", { name: "Search filters", exact: true }).click();
+            await currentPage.getByRole("button", { name: "More filters", exact: true }).click();
             await currentPage.getByRole("dialog").waitFor({ state: "visible" });
           };
           await openBuilder(currentPage);
@@ -1848,7 +1848,7 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
     );
     if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
       await page.getByRole("button", { name: "Search (/)", exact: true }).click();
-    await page.getByRole("button", { name: "Search filters", exact: true }).click();
+    await page.getByRole("button", { name: "More filters", exact: true }).click();
     await page.getByRole("alert").waitFor({ state: "visible" });
     expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
     fail = false;

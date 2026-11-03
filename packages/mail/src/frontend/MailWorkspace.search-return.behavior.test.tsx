@@ -468,13 +468,13 @@ describe("Mail workspace search return", () => {
     };
     builderResult = { action: "apply", state, serialized: JSON.stringify(state) };
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
     await settle();
     expect(new URL(location.href).searchParams.get("searchFrom")).toBe("view=needs_action&conversation=one");
     expect(title()).toBe("Search results");
     builderResult = { action: "clear" };
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
     await settle();
     assertRoute("view=needs_action&conversation=one", "Needs action");
   });

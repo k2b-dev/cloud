@@ -135,7 +135,7 @@ To check one folder from a terminal, `cld mail ls "Mailbox:Sent Mail"` also acce
 
 :::steps
 1. Clear the current search. Check that the conversation appears in an unfiltered folder or work view.
-2. Open **Search filters**. Check whether **Any condition** or **All conditions** matches what you want.
+2. Open **More filters**. Check whether **Any condition** or **All conditions** matches what you want.
 3. Remove outdated fields such as Folder, Local tag, or Provider keyword.
 4. If the message body is still synchronizing, try again after loading completes.
 5. If the missing words are in a newly received attachment, wait for background extraction to finish. Then try again.

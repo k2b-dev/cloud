@@ -20,8 +20,13 @@ export type ViewTabsProps = {
   items: readonly ViewTab[];
   /** Id of the open view; the server reads it from `?view=`. Unknown ids select nothing. */
   current: string | undefined;
-  /** Tabs shown before More (default 5). */
+  /** At most this many views before More (default 5). */
   max?: number;
+  /**
+   * The strip shows only the views that fit its room and counts the rest in More, instead of scrolling them. The open
+   * view and pinned views stay. Pair it with a larger `max` so a wide head shows more views.
+   */
+  fit?: boolean;
   class?: string;
 };
 
@@ -44,9 +49,46 @@ export function viewTabsLayout(items: readonly ViewTab[], current: string | unde
   return { wide, compact, pinned, wideHidden: flowing.length - wide.length, compactHidden: flowing.length - compact.length };
 }
 
-/** Self-contained: the server script embeds this before hydration. */
+/**
+ * Self-contained: the server script embeds this before hydration. A fitting strip first keeps only the views that fit
+ * its room and counts the rest in More; then the open or focused view scrolls into the strip.
+ */
 function settleViewTabs(list: Element | null, edges: (element: HTMLElement) => string | undefined, focused?: HTMLElement) {
   if (!(list instanceof HTMLElement)) return;
+  const more = list.querySelector<HTMLElement>(":scope > .k2b-view-tabs__more");
+  const fitCount = more?.querySelector<HTMLElement>('.k2b-view-tabs__more-count[data-level="fit"]');
+  const flowing = Array.from(list.querySelectorAll<HTMLElement>(":scope > .k2b-view-tabs__item:not([data-pinned])"));
+  for (const item of flowing) item.removeAttribute("data-fit-hidden");
+  more?.removeAttribute("data-fit");
+  // The shown entries against the strip's inner room, whatever its scroll and padding.
+  const overflows = () => {
+    const boxes = Array.from(list.children)
+      .filter((child) => child instanceof HTMLElement && child.tagName === "LI" && child.getClientRects().length > 0)
+      .map((child) => child.getBoundingClientRect());
+    if (boxes.length === 0) return false;
+    const style = getComputedStyle(list);
+    const room = list.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    return Math.max(...boxes.map((box) => box.right)) - Math.min(...boxes.map((box) => box.left)) > room + 0.5;
+  };
+  // The phone head row keeps its scrolling strip: its CSS turns fitting off.
+  const fits = list.hasAttribute("data-fit-room") && getComputedStyle(list).getPropertyValue("--k2b-view-tabs-fit").trim() !== "none";
+  if (fits && more && fitCount && overflows()) {
+    // Count from the level on screen: the compact strip already keeps fewer views than the wide one.
+    const compact = more.querySelector<HTMLElement>('.k2b-view-tabs__more-count[data-level="compact"]');
+    const compactShown = Boolean(compact && getComputedStyle(compact).display !== "none");
+    const behind = Number(compactShown ? more.dataset.behindCompact : more.dataset.behindWide) || 0;
+    // The last views on screen leave first; the open view stays.
+    const candidates = flowing.filter((item) => item.getClientRects().length > 0 && !item.querySelector("[aria-current=page]")).reverse();
+    more.setAttribute("data-fit", "");
+    let hidden = 0;
+    for (const item of candidates) {
+      item.setAttribute("data-fit-hidden", "");
+      hidden += 1;
+      fitCount.textContent = `+${behind + hidden}`;
+      if (!overflows()) break;
+    }
+    if (hidden === 0) more.removeAttribute("data-fit");
+  }
   const current = focused ?? list.querySelector(".k2b-view-tabs__tab[aria-current=page]");
   if (current && current.getClientRects().length > 0 && list.scrollWidth - list.clientWidth > 1) {
     const bounds = list.getBoundingClientRect();
@@ -114,6 +156,9 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
   // Head actions parse after the views; settle again after their layout, before paint, and on later resizes.
   resize.observe(list);
   for (const child of Array.from(list.children)) resize.observe(child);
+  // A fitted strip is only as wide as its views, so the room around it tells when more of them fit.
+  const room = list.closest(".k2b-app-workspace__head-lead") ?? list.parentElement?.parentElement;
+  if (list.hasAttribute("data-fit-room") && room) resize.observe(room);
   settle(list, edges);
   return watch;
 }
@@ -153,7 +198,12 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
   // User effects run after Solid's render effects, including For and aria-current, in the same task.
   createEffect(
     on(
-      () => props.current,
+      // A new view or another label, count or badge changes what fits, as does another open view.
+      () => [
+        props.current,
+        layout(),
+        props.items.map((item) => `${item.label}\u0000${item.count ?? ""}\u0000${item.badge ?? ""}`).join("\u0001"),
+      ],
       () => watchViewTabs(list ?? null, settleViewTabs, scrollFadeEdges),
       { defer: true },
     ),
@@ -198,6 +248,7 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
         ref={(element) => stripItems.set(index, element)}
         class="k2b-view-tabs__item"
         data-view-tab={item().id}
+        data-pinned={item().pinned ? "" : undefined}
         data-compact-hidden={!item().pinned && !layout().compact.includes(index) ? "" : undefined}
       >
         <a class="k2b-view-tabs__tab" href={item().href} aria-current={item().id === props.current ? "page" : undefined}>
@@ -208,10 +259,22 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
   };
   return (
     <nav class={`k2b-view-tabs ${props.class ?? ""}`} aria-label={props.label}>
-      <ul ref={list} class="k2b-view-tabs__list" data-scroll-fade-mode="both" data-scroll-fade-axis="horizontal">
+      <ul
+        ref={list}
+        class="k2b-view-tabs__list"
+        data-scroll-fade-mode="both"
+        data-scroll-fade-axis="horizontal"
+        data-fit-room={props.fit ? "" : undefined}
+      >
         <For each={layout().wide}>{stripItem}</For>
-        <Show when={layout().compactHidden + layout().wideHidden > 0}>
-          <li class="k2b-view-tabs__more" data-wide={layout().wideHidden > 0 ? "" : undefined}>
+        {/* A fitting strip keeps More ready, hidden until a view leaves the strip. */}
+        <Show when={layout().compactHidden + layout().wideHidden > 0 || (props.fit && layout().wide.length > 1)}>
+          <li
+            class="k2b-view-tabs__more"
+            data-wide={layout().wideHidden > 0 ? "" : undefined}
+            data-behind-wide={layout().wideHidden}
+            data-behind-compact={layout().compactHidden}
+          >
             <Dropdown.Root items={menuItems()} open={open()} onOpenChange={onOpenChange} label={messages().moreViews}>
               <Dropdown.Trigger appearance="plain" class="k2b-view-tabs__tab k2b-view-tabs__more-trigger" label={messages().moreViews}>
                 <span class="k2b-view-tabs__label">{messages().more}</span>
@@ -225,6 +288,8 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
                     +{layout().compactHidden}
                   </span>
                 </Show>
+                {/* Written by the strip's fit, never by the render, so a rerender keeps the count it measured. */}
+                <span class="k2b-view-tabs__more-count" data-level="fit" />
                 <i class="ti ti-chevron-down" aria-hidden="true" />
               </Dropdown.Trigger>
             </Dropdown.Root>

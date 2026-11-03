@@ -134,7 +134,7 @@ Um einen Ordner im Terminal zu prüfen, akzeptiert `cld mail ls "Mailbox:Sent Ma
 
 :::steps
 1. Leere die aktuelle Suche. Prüfe, ob die Unterhaltung in einem ungefilterten Ordner oder einer ungefilterten Arbeitsansicht erscheint.
-2. Öffne **Suchfilter**. Prüfe, ob **Mindestens eine Bedingung** oder **Alle Bedingungen** zu deinem Ziel passt.
+2. Öffne **Weitere Filter**. Prüfe, ob **Mindestens eine Bedingung** oder **Alle Bedingungen** zu deinem Ziel passt.
 3. Entferne veraltete Felder wie Ordner, Lokaler Tag oder Anbieter-Schlüsselwort.
 4. Wird der Nachrichteninhalt noch synchronisiert, versuche es nach dem Laden erneut.
 5. Stehen die gesuchten Wörter in einem neu empfangenen Anhang, warte, bis die Texterkennung im Hintergrund fertig ist. Versuche es dann erneut.

@@ -14,7 +14,7 @@ Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardm�
 
 Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
-Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Suchfilter**.
+Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Weitere Filter**. Auf dem Smartphone stehen **Suchen in**, **Ort** und **Weitere Filter …** zusammen in einem Menü, dessen Knopf die aktuelle Wahl nennt, etwa **Alles · Ganzes Postfach**.
 
 Der Filterdialog zeigt die aktuelle Suche als Bedingungen, die du bearbeiten kannst. Wähle **Filter hinzufügen** für ein weiteres Feld. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt eingeklappt, bis du alternative oder verschachtelte Gruppen brauchst.
 
@@ -53,7 +53,7 @@ Passt erkannter Anhangstext, nennt das Ergebnis den Anhang und zeigt einen kurze
 
 ## Nachverfolgung, Zuweisung und Ordner gezielt nutzen {icon="layout-list"}
 
-Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Unter **Mehr** findest du Später, Erledigt, Letzte Aktivität, Aufbewahrt und gespeicherte Ansichten. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
+Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Was nicht in den Kopf passt, etwa Später, Erledigt, Letzte Aktivität, Aufbewahrt oder gespeicherte Ansichten, findest du unter **Mehr**. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
 
 | Ort | Ansicht | Inhalt |
 | --- | --- | --- |

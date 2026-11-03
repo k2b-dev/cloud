@@ -835,7 +835,7 @@
     gap: 0.125rem;
   }
 
-  .mail-reader-toolbar-actions > :has([data-section-start]) {
+  .mail-reader-toolbar-actions > :is([data-section-start], :has([data-section-start])) {
     margin-inline-start: 0.375rem;
   }
 
@@ -1376,6 +1376,32 @@
 .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) .mail-reader-respond-label {
   display: none;
 }
+/* The person's other actions are icons until the bar has room for their short names. */
+.k2b-ui .mail-reader-toolbar .mail-reader-toolbar-action {
+  width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+.k2b-ui .mail-reader-toolbar .mail-reader-action-label {
+  display: none;
+}
+/* With the subject in its own row, a wide bar names its actions: the replies, and up to three other actions. */
+@container mail-reader-toolbar (width >= 48rem) {
+  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) {
+    width: auto;
+    padding-inline: 0.625rem;
+  }
+  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) .mail-reader-respond-label {
+    display: inline;
+  }
+  .k2b-ui .mail-reader-toolbar-actions:not(:has(> :nth-child(4))) .mail-reader-toolbar-action {
+    width: auto;
+    padding-inline: 0.625rem;
+  }
+  .k2b-ui .mail-reader-toolbar-actions:not(:has(> :nth-child(4))) .mail-reader-action-label {
+    display: inline;
+  }
+}
 .k2b-ui .mail-reader-toolbar-actions > :nth-child(n + 5) {
   display: none;
 }
@@ -1404,8 +1430,18 @@
   }
 }
 
+/* From tablets on, the actions take their own row above the subject, which then has the toolbar's full width to wrap. */
+@media (min-width: 48rem) {
+  .mail-reader-toolbar { flex-wrap: wrap; row-gap: 0.25rem; }
+  .mail-reader-controls { flex: 1 1 auto; min-width: 0; }
+  .mail-reader-toolbar .mail-reader-subject { flex: 1 1 100%; min-width: 0; }
+}
+
 @media not all and (min-width: 48rem) {
   .mail-reader-toolbar { padding: 0.375rem 0.5rem 0.25rem; }
+  /* Phones keep the subject between the way back and the reader's few controls. */
+  .mail-reader-toolbar .mail-reader-subject { order: 1; }
+  .mail-reader-toolbar .mail-reader-controls { order: 2; }
   .k2b-ui .mail-reader-toolbar .mail-reader-back { min-height: 2.25rem; }
   .mail-reader-subject { flex-wrap: wrap; row-gap: 0.125rem; padding-block: 0; }
   .mail-reader-title-line { flex-basis: 100%; min-height: 2.25rem; padding-block-start: 0.4375rem; }
@@ -2045,9 +2081,11 @@
   .k2b-ui .mail-workspace > .k2b-app-workspace__head:has([data-mail-head-selection]) .k2b-app-workspace__head-views { flex: 1 1 100%; }
 }
 
-.mail-search-advanced-label { display: none; }
+/* Wide, the search names its three options; a phone combines them in one menu. */
+.k2b-ui .mail-workspace .mail-search-phone-options { display: none; }
 @media (width < 48rem) {
-  .mail-search-advanced-label { display: inline; }
+  .k2b-ui .mail-workspace .mail-search-wide-option { display: none; }
+  .k2b-ui .mail-workspace .mail-search-phone-options { display: inline-flex; }
 }
 
 @media (width < 48rem) {
