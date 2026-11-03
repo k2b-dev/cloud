@@ -375,6 +375,8 @@ export const fixtureCodes = (): CodeAdminCode[] => [
 ];
 export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
   const base = fixtureCodes().find((code) => code.id === codeId) ?? fixtureCodes()[4]!;
+  // The app's Code tried to create a task in a space that has not added its service account.
+  const refused = base.owner.kind === "app";
   return {
     code: { ...base, activeVersionNumber: 1, createdAt: "2026-10-20T09:00:00.000Z" },
     pendingVersionId: V.rechnungen2,
@@ -442,7 +444,8 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
         },
       },
     ],
-    runs: [
+    // The newest finished run is the failed one when the app's Code was refused.
+    runs: ((runs: CodeAdminCodeDetail["runs"]) => (refused ? [{ ...runs[1]!, createdAt: "2026-11-01T09:10:00.000Z" }, runs[0]!] : runs))([
       {
         id: "90000000-0000-4000-8000-000000000001",
         codeId: base.id,
@@ -469,12 +472,35 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
         createdAt: "2026-10-31T16:10:00.000Z",
         startedAt: "2026-10-31T16:10:01.000Z",
         endedAt: "2026-10-31T16:10:02.000Z",
-        firstRefusedCallOrdinal: null,
+        firstRefusedCallOrdinal: refused ? 2 : null,
         rerunOf: null,
         rerunByName: null,
       },
-    ],
+    ]),
     cleanup: [],
+    refusal: refused
+      ? {
+          editor: true,
+          refusal: {
+            kind: "target_refused",
+            runId: "90000000-0000-4000-8000-000000000002",
+            versionId: "c0000000-0000-4000-8000-000000000001",
+            call: {
+              capability: "spaces.task.create",
+              title: "Aufgabe erstellen",
+              target: {
+                key: "spaces.space\u0000k7qm2x9a",
+                ref: { type: "spaces.space", id: "k7qm2x9a" },
+                title: null,
+                typeTitle: "Space",
+                icon: "ti ti-layout-kanban",
+                own: false,
+                href: "/app/spaces/k7qm2x9a",
+              },
+            },
+          },
+        }
+      : null,
   };
 };
 

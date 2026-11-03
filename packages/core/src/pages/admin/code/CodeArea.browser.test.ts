@@ -263,3 +263,20 @@ test("a phone shows one level with its decision bar in reach", async () => {
   expect(approve !== null && approve.y + approve.height <= 844).toBe(true);
   await page.getByText("Warum du freigibst").waitFor();
 }, 20_000);
+
+test("Code of an app shows its service account and refused call like any Code page, on a computer and a phone", async () => {
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 390, height: 844 },
+  ]) {
+    await goto("sec=code&id=c_portal", viewport);
+    await settled(page);
+    await page.getByText("Läuft als Dienstkonto „Code von", { exact: false }).waitFor();
+    await page.getByText("Kein Zugriff auf Space", { exact: false }).waitFor();
+    expect(await page.locator('a[href="/app/spaces/k7qm2x9a"]').count()).toBe(1);
+    expect(await page.getByText("Der nächste Lauf versucht es erneut.", { exact: false }).isVisible()).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    if (process.env.CODE_PAGE_SHOTS)
+      await page.screenshot({ path: `${process.env.CODE_PAGE_SHOTS}/admin-app-${viewport.width}.png`, fullPage: false });
+  }
+}, 30_000);

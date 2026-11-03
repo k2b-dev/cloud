@@ -551,13 +551,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               inputChunked: false,
               content: null,
               nextCursor: null,
-              calls: [stored],
+              calls: [{ ...stored, refusalKind: classification?.refusal_kind }],
             },
           },
         }),
       });
       const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
-      expect(page?.calls[0]?.accessRefused).toBe(failure.status === 403 || failure.status === 404);
+      expect(page?.calls[0]?.refusal).toBe(failure.status === 403 || failure.status === 404 ? "target_refused" : "bridge");
     }
   });
   test("A3a a provider review requiring confirmation is policy, despite its HTTP 403", async () => {
