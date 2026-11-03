@@ -5910,6 +5910,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-danger-text);
 }
 
+.k2b-ui .k2b-dropdown__item[data-danger="true"]:is(:hover, :focus-visible) {
+  background: var(--k2b-danger-surface);
+}
+
 .k2b-ui .k2b-dropdown__item:disabled {
   opacity: 0.45;
   cursor: not-allowed;

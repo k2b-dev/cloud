@@ -249,7 +249,8 @@ describe("Cloud layouts SSR", () => {
         expect(html.includes('data-shell-focus="true"'), path + " focus").toBe(hidden);
         expect(html.includes('data-cloud-shell-focus-toggle="hide"'), path + " hide").toBe(controls);
         expect(html.includes('data-cloud-shell-focus-toggle="show"'), path + " show").toBe(controls);
-        expect(html.includes('class="cloud-shell-show"')).toBe(controls);
+        expect(html.includes("data-cloud-shell-focus-return")).toBe(controls);
+        expect(html.includes('class="cloud-shell-show"')).toBe(false);
         expect(html.includes("data-cloud-shell-reveal")).toBe(controls);
       }
     } finally {

@@ -35,7 +35,6 @@ import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
 import { requestPath } from "./request-path";
 import { getDisplayRuntimeContext, getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
-import ShellFocusToggle from "./ShellFocusToggle";
 import ShellRuntime from "./ShellRuntime.island";
 import { type ShellData, ShellDataProvider, ShellDataScript } from "./shell-data";
 
@@ -379,7 +378,6 @@ export default function Layout(props: LayoutProps) {
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} />}
-          {showRail && <ShellFocusToggle variant="float" />}
           {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
           <div
             class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"

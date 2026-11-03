@@ -734,33 +734,49 @@ solid-island {
 }
 
 /* Focus: the app bar and the outermost workspace's navigation hide together
-   (Cmd/Ctrl+\ or the sidebar buttons). The canvas carries the state from the
-   `cloud_shell_focus` cookie, so the server renders the same first frame.
-   Phones ignore it. The app area takes the app bar's place and starts at the
-   card spacing. The button that
-   shows them again floats at the app area's bottom start corner; on touch
-   screens a drag from the 18 px strip at the left edge does the same. In an
-   app host below 64 rem (a window from 768 to 1023 px, or the app beside the
-   panel column) the navigation is already an overlay behind the workspace
-   head's button, so there only the app bar hides. */
-.cloud-shell-show,
-.cloud-shell-reveal {
+   (Cmd/Ctrl+\, the profile menu's first entry, or the command). The canvas
+   carries the state from the `cloud_shell_focus` cookie, so the server renders
+   the same first frame. Phones ignore it. The app area takes the app bar's
+   place and starts at the card spacing. Of the app bar only the avatar stays:
+   it floats at the app area's bottom start corner, and its menu shows the
+   sidebar again. On touch screens a drag from the 18 px strip at the left
+   edge does the same. In an app host below 64 rem (a window from 768 to
+   1023 px, or the app beside the panel column) the navigation is already an
+   overlay behind the workspace head's button, so there only the app bar
+   hides. */
+.cloud-shell-reveal,
+.cloud-app-canvas .layout-profile-preferences [data-cloud-shell-focus-toggle="show"],
+.cloud-app-canvas[data-shell-focus] .layout-profile-preferences [data-cloud-shell-focus-toggle="hide"] {
   display: none;
+}
+
+.cloud-app-canvas[data-shell-focus] .layout-profile-preferences [data-cloud-shell-focus-toggle="show"] {
+  display: flex;
 }
 
 @media (min-width: 768px) {
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail {
+    width: 0;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    background-image: none !important;
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail > .layout-rail-logo,
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-navigation > :not(.layout-rail-actions),
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > :not(.layout-profile-preferences) {
     display: none;
   }
-  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
     position: absolute;
     left: calc(env(safe-area-inset-left, 0px) + 0.75rem);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
     z-index: 15;
-    display: flex;
   }
-  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show .k2b-icon-button {
-    box-shadow: var(--k2b-shadow-float);
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail
+    :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) {
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-float);
   }
 }
 
@@ -779,7 +795,7 @@ solid-island {
 
 @media (min-width: 768px) {
   @media not all and (min-width: 1024px) {
-    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
       left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
       bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
     }
@@ -790,7 +806,7 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] {
     padding-left: max(var(--cloud-card-inset), env(safe-area-inset-left, 0px));
   }
-  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
     left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
     bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
   }
