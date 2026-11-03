@@ -3739,20 +3739,23 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     stopFolderSyncActivityReport();
     for (const worker of [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker]) worker?.stop();
     syncTasks.close();
-    await stopRuntimeResources([
-      () =>
-        mailSchedulerWorker?.drain().then(() => {
-          mailSchedulerWorker = undefined;
-        }),
-      () => stopDraftProjectionRuntime(),
-      () =>
-        stopRuntimeJobs(
-          syncTasks,
-          [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker].filter((worker): worker is Worker => worker !== undefined),
-        ),
-    ]);
-    // A batch that finished while the workers drained may have kept its connection.
-    await closeReusableImapSessions();
+    try {
+      await stopRuntimeResources([
+        () =>
+          mailSchedulerWorker?.drain().then(() => {
+            mailSchedulerWorker = undefined;
+          }),
+        () => stopDraftProjectionRuntime(),
+        () =>
+          stopRuntimeJobs(
+            syncTasks,
+            [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker].filter((worker): worker is Worker => worker !== undefined),
+          ),
+      ]);
+    } finally {
+      // A batch that finished while the workers drained may have kept its connection.
+      await closeReusableImapSessions();
+    }
   },
 });
 
