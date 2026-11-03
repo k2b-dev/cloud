@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, set
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
-import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT, RECONNECT_EVENT, SYNC_STATE_EVENT } from "./events";
+import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT, RECONNECT_EVENT, SYNC_STATE_EVENT, TOC_UPDATE_EVENT } from "./events";
 
 const now = "2026-10-16T19:30:00.000Z";
 const until = async (predicate: () => boolean) => {
@@ -153,6 +153,37 @@ describe("Notebook detail panel recovery and pagination", () => {
     } finally {
       dispose();
       window.removeEventListener(RECONNECT_EVENT, onReconnect);
+    }
+  });
+
+  test("sync states and outlines sent while typing keep the header and outline elements", async () => {
+    answer = () => Response.json({ data: [activity(0)], nextCursor: null });
+    const outline = [
+      { id: "ziele", text: "Ziele", level: 2 },
+      { id: "termine", text: "Termine", level: 2 },
+    ];
+    const sendOutline = (items: typeof outline) => window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: items }));
+    const elements = () => [dom.root.querySelector(".notebook-meta-name"), ...dom.root.querySelectorAll(".notebook-outline-row")];
+    const dispose = await renderPanel();
+    try {
+      await until(() => Boolean(dom.root.querySelector(".notebook-meta-name")));
+      sendOutline(outline);
+      await until(() => dom.root.querySelectorAll(".notebook-outline-row").length === 2);
+      const before = elements();
+      // Typing sends a new sync state on every step and a new outline after every pause, mostly with equal content.
+      // Each element rendered again would restyle the whole page through the shared `:has()` rules.
+      for (let step = 0; step < 3; step++) {
+        window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: true, lastSavedAt: null } }));
+        sendOutline(outline.map((item) => ({ ...item })));
+      }
+      sendOutline([outline[0]!, { ...outline[1]!, text: "Termine und Orte" }]);
+      const after = elements();
+      expect(after.length).toBe(before.length);
+      expect(after.every((element, index) => element === before[index])).toBe(true);
+      expect(after.at(-1)?.textContent).toContain("Termine und Orte");
+      expect(after[0]?.textContent).toBe("Author 0");
+    } finally {
+      dispose();
     }
   });
 
