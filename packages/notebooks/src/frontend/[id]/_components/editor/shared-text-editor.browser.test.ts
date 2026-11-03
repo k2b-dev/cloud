@@ -292,7 +292,10 @@ describe("Notebook on the shared text editor", () => {
       // Reconnecting re-enables the menu without another document change.
       await page.evaluate(() => window.noteHarness.setOnline(true));
       await toolbarButton(page, "Edit table").click();
-      await page.getByRole("menuitem", { name: "Insert column right", exact: true }).and(page.locator(':not([aria-disabled="true"])')).waitFor();
+      await page
+        .getByRole("menuitem", { name: "Insert column right", exact: true })
+        .and(page.locator(':not([aria-disabled="true"])'))
+        .waitFor();
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
     } finally {
       await close();
