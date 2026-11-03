@@ -1,6 +1,7 @@
 import { Button, IconButton, Select, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { MailAutomationAction, MailAutomationCondition, MailAutomationConditions } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
 import {
   type AutomationActionKind,
@@ -238,6 +239,17 @@ export function MailAutomationActionEditor(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  // Standard folders show their localized names; the server's path stays beside them.
+  const destinationOptions = createMemo(() => {
+    const folderName = mailFolderNames(locale());
+    return mailAutomationDestinationFolders(props.catalog).map((folder) => {
+      const serverPath = folder.path ?? folder.name;
+      const shown = folder.role ? folderName({ role: folder.role, name: folder.name }) : folder.name;
+      if (shown === folder.name) return { id: folder.id, label: serverPath };
+      const label = serverPath.endsWith(folder.name) ? `${serverPath.slice(0, serverPath.length - folder.name.length)}${shown}` : shown;
+      return { id: folder.id, label, description: serverPath };
+    });
+  });
   const kinds = () =>
     mailAutomationActionKindsFor({
       actions: [...props.otherActions, props.action],
@@ -277,7 +289,7 @@ export function MailAutomationActionEditor(props: {
           label={messages().destinationFolder}
           value={() => (props.action.kind === "move_to_folder" ? props.action.folderId : "")}
           onValueChange={(folderId) => props.onChange({ kind: "move_to_folder", folderId: folderId ?? "" })}
-          options={mailAutomationDestinationFolders(props.catalog).map((folder) => ({ id: folder.id, label: folder.path ?? folder.name }))}
+          options={destinationOptions()}
         />
       </Show>
       <Show when={props.action.kind === "add_local_tag"}>

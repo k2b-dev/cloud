@@ -8,6 +8,7 @@ import { createEffect, createMemo, createSignal, For, getOwner, on, onCleanup, r
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type { ConversationView, DeletedMailbox, DeletedMailboxPage, Mailbox } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { MailFolderTreeNode } from "../../folder-tree";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import { mailOverviewMessages } from "../mail-overview-messages";
@@ -98,6 +99,7 @@ export default function MailSidebar(
   const openMailbox = createMemo(() => props.open);
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const overviewText = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
   const formatCount = (count: number) => count.toLocaleString(locale());
 
@@ -354,7 +356,7 @@ export default function MailSidebar(
     return (
       <AppWorkspace.NavTree.Item
         id={folder.id}
-        label={folder.name}
+        label={folderName()(folder)}
         href={folder.selectable ? `/app/mail/${open().mailboxId}?folder=${folder.id}` : undefined}
         icon={hasChildren ? "ti ti-folder-plus" : folderIcon(folder.role)}
         expandedIcon={hasChildren ? "ti ti-folder-open" : undefined}
@@ -373,7 +375,7 @@ export default function MailSidebar(
             </span>
           ) : undefined
         }
-        title={onlyInFolder ? messages().onlyInFolderTitle({ name: folder.name }) : folder.name}
+        title={onlyInFolder ? messages().onlyInFolderTitle({ name: folderName()(folder) }) : folderName()(folder)}
         navigation="enhanced"
         onNavigate={folder.selectable ? open().onNavigate : undefined}
         scroll="preserve"
@@ -636,7 +638,7 @@ export default function MailSidebar(
     const folder = node.folder;
     const common = {
       id: `folder:${folder.id}`,
-      label: folder.name,
+      label: folderName()(folder),
       icon: folderIcon(folder.role),
       active: activeFolderId() === folder.id,
       badge: folder.role === "sent" ? undefined : (folder.role === "drafts" ? folder.total : folder.unread) || undefined,

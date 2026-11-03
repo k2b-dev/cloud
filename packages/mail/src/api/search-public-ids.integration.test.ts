@@ -252,6 +252,9 @@ suite("Mail search by public folder and tag IDs", () => {
     expect(await titleFor(`${mailboxHref}?scheduled=1`, "de")).toBe("Postausgang");
     expect(await titleFor(`${mailboxHref}?search=${encodeURIComponent("{not json")}`, "de")).toBe("Suche");
     expect(await titleFor(mailboxHref, "de")).toBe("Alle E-Mails");
+    // A standard folder's title is its localized name; its server name stays "Inbox".
+    expect(await titleFor(`${mailboxHref}?folder=${folderShortId}`, "de")).toBe("Eingang");
+    expect(await titleFor(`${mailboxHref}?folder=${folderShortId}`, "en")).toBe("Inbox");
   });
 
   test("a failing list reports a stable code instead of raw service text", async () => {

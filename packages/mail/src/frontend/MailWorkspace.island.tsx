@@ -34,6 +34,7 @@ import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
 import type { AutomationLogItem, MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
+import { mailFolderNames } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
 import type { MailViewPreference } from "../mail-view-preference";
@@ -229,6 +230,7 @@ function createMailboxController(props: MailboxControllerProps) {
     }
   });
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   // A store keeps shell, list, and detail consumers granular even though the
   // server snapshot remains one canonical contract.
@@ -1688,10 +1690,12 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 
   const chooseDestinationFolder = async () => {
-    const paths = mailFolderPaths(data.folders);
+    // The picker shows localized standard folder names; a search also finds the server's names.
+    const paths = mailFolderPaths(data.folders, folderName());
+    const serverPaths = mailFolderPaths(data.folders);
     const folders = data.folders
       .filter((folder) => folder.selectable && folder.discoveryState === "active")
-      .map((folder) => ({ ...folder, path: paths.get(folder.id) ?? folder.name }));
+      .map((folder) => ({ ...folder, path: paths.get(folder.id) ?? folder.name, serverPath: serverPaths.get(folder.id) ?? folder.name }));
     const selected = await openSpotlightSearch<{ folderId: string }>({
       title: t().moveToFolder,
       icon: "ti ti-folder-symlink",
@@ -1700,10 +1704,13 @@ function createMailboxController(props: MailboxControllerProps) {
       resolve: ({ query }) => {
         const needle = query.trim().toLocaleLowerCase();
         return folders
-          .filter((folder) => !needle || folder.path.toLocaleLowerCase().includes(needle))
+          .filter(
+            (folder) =>
+              !needle || folder.path.toLocaleLowerCase().includes(needle) || folder.serverPath.toLocaleLowerCase().includes(needle),
+          )
           .map((folder) => ({
             label: folder.path,
-            desc: folder.role === "folder" ? t().providerFolder : folder.role,
+            desc: folder.serverPath !== folder.path ? folder.serverPath : folder.role === "folder" ? t().providerFolder : folder.role,
             icon: "ti ti-folder",
             value: { folderId: folder.id },
           }));
@@ -2309,7 +2316,8 @@ function createMailboxController(props: MailboxControllerProps) {
         if (disposed) return;
         const messageRows = targets.every((target) => target.messageIds);
         const count = messageRows ? targets.reduce((count, target) => count + (target.messageIds?.length ?? 0), 0) : targets.length;
-        const folder = data.folders.find((folder) => folder.id === destinationFolderId)?.name ?? "";
+        const destination = data.folders.find((folder) => folder.id === destinationFolderId);
+        const folder = destination ? folderName()(destination) : "";
         const notice = toast.success(t().actionMoved({ actionId, count, messages: messageRows, folder }), {
           action: {
             label: t().undo,
@@ -2406,7 +2414,8 @@ function createMailboxController(props: MailboxControllerProps) {
       },
       showUndoFailed: (targets, destinationFolderId) => {
         if (disposed) return;
-        const folder = data.folders.find((folder) => folder.id === destinationFolderId)?.name ?? null;
+        const destination = data.folders.find((folder) => folder.id === destinationFolderId);
+        const folder = destination ? folderName()(destination) : null;
         const first = targets[0];
         if (!first) return;
         toast.error(
