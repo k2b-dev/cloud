@@ -1161,7 +1161,7 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, 5xx and 535 fail at once", async () => {
+  test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, other 5xx fail at once", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
@@ -1185,10 +1185,11 @@ suite("mail sent message projection", () => {
       expect(await sendRetryNow(outbox.id)).toBeNull();
       expect(provider.submissions()).toBe(5);
 
-      // A permanent rejection and a refused login fail at once, without a second submission.
+      // A permanent rejection fails at once, without a second submission. A refused login (534/535)
+      // waits for a new login instead; see the test after this one.
       for (const [code, responseCode, key] of [
         ["EENVELOPE", 550, "smtp-5xx"],
-        ["EAUTH", 535, "smtp-535"],
+        ["EENVELOPE", 554, "smtp-554"],
       ] as const) {
         const rejected = await newDraft(mailbox, `SMTP ${responseCode}`);
         provider.failNextSubmission(code, false, responseCode);
