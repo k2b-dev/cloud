@@ -675,12 +675,20 @@ const updateMailboxBindingHealth = async (
     return;
   }
   const authFailure = failure ? isProviderAuthenticationFailure(failure, failure.code) : false;
+  // A failure that is no refused login, such as an unreachable server, does not show that the
+  // login works again: a mailbox that needs one keeps saying so, and its sends keep waiting.
+  const keepsLoginRequest = failure !== undefined && !authFailure;
   await sql`
     UPDATE mail.mailboxes
     SET
-      health = CASE WHEN sync_enabled = false THEN 'paused' ELSE ${authFailure ? "auth_required" : "connection_required"} END,
+      health = CASE
+        WHEN sync_enabled = false THEN 'paused'
+        WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health
+        ELSE ${authFailure ? "auth_required" : "connection_required"}
+      END,
       health_reason = CASE
         WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
+        WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health_reason
         ELSE ${failure?.message ?? "No active provider binding is available"}
       END
     WHERE id = ${mailboxId}::uuid AND deleted_at IS NULL
@@ -741,6 +749,22 @@ const markRediscoveryFailure = async (
     // The code alone does not show a login the provider rejected, so the classification travels along.
     await updateMailboxBindingHealth(mailboxId, { code, message, authenticationFailed: authFailure });
   }
+};
+
+/**
+ * The provider refused the connection's login outside a rediscovery, for example at SMTP. The
+ * mailbox then needs a new login, as when a rediscovery's login is refused.
+ */
+export const recordRefusedProviderLogin = async (params: { bindingId: string; secretRevision: number; error: unknown }): Promise<void> => {
+  const [binding] = await sql<{ connection_id: string }[]>`
+    SELECT connection_id FROM mail.provider_bindings WHERE id = ${params.bindingId}::uuid
+  `;
+  if (!binding) return;
+  const refused = Object.assign(new Error(providerErrorMessage(params.error, "The mail server refused the login")), {
+    code: "EAUTH",
+    authenticationFailed: true,
+  });
+  await markRediscoveryFailure(params.bindingId, binding.connection_id, params.secretRevision, refused);
 };
 
 /**

@@ -1393,15 +1393,23 @@ const recordSyncFailure = async (params: {
         last_error_message = ${message}
       WHERE id = ${folder.remote_resource_id}::uuid
     `;
-      // Pausing does not fence a running sync; a late failure must not hide the pause.
+      // Pausing does not fence a running sync; a late failure must not hide the pause. A refused
+      // login leaves no binding to sync with, so a sync that finds none keeps the login's reason:
+      // sends wait for a new login only while the mailbox says it needs one.
+      const keepsLoginRequest = !authFailure && code === "NO_SYNC_BINDING";
       await tx`
       UPDATE mail.mailboxes
       SET
         health = CASE
           WHEN sync_enabled = false THEN 'paused'
+          WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health
           ELSE ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"}
         END,
-        health_reason = CASE WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator' ELSE ${message} END
+        health_reason = CASE
+          WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
+          WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health_reason
+          ELSE ${message}
+        END
       WHERE id = ${folder.mailbox_id}::uuid
     `;
     })
@@ -3339,6 +3347,11 @@ const startRediscoveryJob = async (): Promise<void> => {
   });
 };
 
+// Slightly longer than a minute, so a listener's minute check and the scheduler's tick do not
+// both run when their timers drift apart.
+const RECENT_REQUEST_MS = 75_000;
+const recentRequestKey = (folderId: string): string => `mail:sync-recent:${folderId}`;
+
 const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger, awaited = false): Promise<void> => {
   countFolderSyncTrigger(trigger);
   // Recorded even while this process stops and queues nothing: another one's scheduled sync of the
@@ -3347,6 +3360,8 @@ const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger,
   await (syncTasks.run(async () => {
     await redis.send("SET", [syncRequestKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
     await syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } });
+    // Only a submitted request stands in for the scheduled sync.
+    if (trigger !== "scheduled") await redis.send("SET", [recentRequestKey(folderId), "1", "PX", String(RECENT_REQUEST_MS)]);
   }) ?? Promise.resolve());
 };
 
@@ -3420,7 +3435,10 @@ export const recoverInterruptedHydrations = async (): Promise<number> => {
 
 // Each minute queues at most this many folder syncs. Every Inbox goes first; the other folders
 // take the remaining places in turn by folder id, so with more eligible folders every folder
-// still gets a sync every few minutes.
+// still gets a sync every few minutes. While every eligible folder fits in one run, a folder whose
+// sync was requested otherwise within RECENT_REQUEST_MS needs none: that request runs the same
+// coalesced job. An IMAP push listener requests its folder every minute, so the folder is its
+// listener's while the listener works.
 const DUE_FOLDER_SYNCS_PER_RUN = 500;
 const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
 
@@ -3456,8 +3474,15 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
   `;
   const last = folders.at(-1);
   if (last) await redis.set(DUE_FOLDER_CURSOR_KEY, last.id);
-  for (const folder of folders) await submitSyncFolderJob(folder.id, "scheduled");
-  return folders.map((folder) => folder.id);
+  // Only a run that reaches every eligible folder skips one: the next run reaches it again. A
+  // run at the limit takes folders in turn, and a skipped turn would wait for the next round.
+  const recent =
+    folders.length > 0 && folders.length < limit
+      ? await redis.mget(...folders.map((folder) => recentRequestKey(folder.id))).catch(() => [])
+      : [];
+  const due = folders.filter((_folder, index) => recent[index] == null);
+  for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled");
+  return due.map((folder) => folder.id);
 };
 
 const submitDueWork = async (): Promise<{

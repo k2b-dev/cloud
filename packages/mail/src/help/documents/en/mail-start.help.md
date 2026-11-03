@@ -92,6 +92,8 @@ Next to a composer, the conversation history contains only messages. Operational
 
 Use **View** in a mailbox to choose how its list and reader appear. On large screens, **Automatic** shows columns until you open a conversation, then shows the list beside the reader. You can also keep **Columns** or **List + reader**. On a phone, choose **Compact** or **Detailed**.
 
+While you read beside the list, **View → Hide conversation list** hides it, and the reader uses the full width. The `[` key hides and shows it. Without a reader beside the list, the switch is unavailable. Mail remembers the choice in this browser.
+
 Mail remembers each choice for you and this mailbox, separately for phones and large screens. A choice on one phone applies on your other phones too. Without a saved choice, Mail uses Automatic on large screens and Compact on phones. Administrators do not set your default.
 
 **Done today** counts the conversations you can see that became done during the current day in Cloud's time zone. Each conversation counts once, even if reopened. The automation count uses the actor of its latest completion today.
