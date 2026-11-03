@@ -25,6 +25,9 @@ const MAX_RENEWAL_RETRY_DELAY_MS = 5_000;
 const SCAN_INTERVAL_MS = 15_000;
 const HINT_COALESCE_MS = 200;
 const POLL_FALLBACK_MS = 30_000;
+// A connected listener checks its folder this often besides its hints, for changes the server
+// never announced. The scheduled sync leaves such a folder to it (submitDueFolderSyncs).
+const LISTENER_CHECK_MS = 60_000;
 const MAX_PENDING_HINTS = 128;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const STABLE_CONNECTION_MS = 60_000;
@@ -637,7 +640,7 @@ const consumeHints = async (params: {
       .finally(() => {
         fallbackTask = null;
       });
-  }, POLL_FALLBACK_MS);
+  }, LISTENER_CHECK_MS);
 
   try {
     for await (const hint of params.listener.hints) {
