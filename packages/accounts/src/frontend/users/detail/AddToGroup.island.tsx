@@ -1,8 +1,8 @@
 import { EntitySearch } from "@k2b/cloud/account/ui";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
@@ -28,7 +28,7 @@ export default function AddToGroup(props: AddToGroupProps) {
       }
       await showAccountActionNotice({ action: "group.member.add", id: groupId, relatedId: props.id }, messages());
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 

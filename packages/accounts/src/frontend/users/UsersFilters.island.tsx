@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { openPage } from "@/frontend/lib/page-swap";
 import { buildUsersUrl, type UsersListState } from "../lib/url-state";
 import { useAccountsMessages } from "../messages";
 
@@ -26,7 +26,7 @@ export default function UsersFilters(props: UsersFiltersProps) {
     },
   ];
   const navigate = (patch: Partial<UsersListState>) => {
-    navigateTo(
+    openPage(
       buildUsersUrl({
         ...props.state,
         ...patch,

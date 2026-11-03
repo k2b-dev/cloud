@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, CodeDisplay, dialogCore, PanelDialog, panelDialogOptions, prompts } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { type AccountsMessages, useAccountsMessages } from "../messages";
 
 type Props = {
@@ -55,7 +55,7 @@ export default function NotificationRecipientActions(props: Props) {
         param: { id: props.batchId, userId: props.userId },
       });
       if (!res.ok) throw new Error(await readError(res, messages().retryRecipientFailed));
-      refreshCurrentPath();
+      showChanges();
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
     } finally {

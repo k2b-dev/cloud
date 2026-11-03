@@ -1,5 +1,4 @@
 import { isPosixName } from "@k2b/cloud/contracts";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -16,6 +15,7 @@ import {
 import { createSignal, createUniqueId, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BaseGroup, BaseGroupSchema, ErrorResponseSchema } from "@/contracts";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../action-notice";
 import { useAccountsMessages } from "../messages";
 
@@ -186,7 +186,7 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean; linuxEnabled
       { action: "group.create", id: result.group.id, name: result.group.name, provider: result.group.provider },
       messages(),
     );
-    refreshCurrentPath();
+    showChanges();
   };
   const openCreate = async () => {
     if (opening()) return;

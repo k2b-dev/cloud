@@ -1,7 +1,7 @@
 import { CloudAvatar, openProfilePictureDialog } from "@k2b/cloud/account/ui";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { AvatarStateSchema, SaveServiceAccountAvatarSchema } from "@k2b/cloud/contracts/profile";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type Props = { id: string; name: string; avatarHash: string | null };
@@ -23,7 +23,7 @@ export default function AgentPictureTrigger(props: Props) {
       save: async (next) => read(await route().$put({ param, json: SaveServiceAccountAvatarSchema.parse(next) })),
       deletePhoto: async () => read(await route().$delete({ param })),
     });
-    if (changed) await refreshCurrentPath();
+    if (changed) await showChanges();
   };
   return (
     <button

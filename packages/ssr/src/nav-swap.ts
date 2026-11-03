@@ -686,8 +686,14 @@ export function installPageSwap(): () => void {
   return state.uninstall;
 }
 
+/**
+ * Options of a swap started from code. `scroll: "preserve"` keeps the window and keyed regions where they are, for
+ * showing the current page again after a change; by default a swap opens the page at the top or its hash.
+ */
+export type SwapPageOptions = { replace?: boolean; scroll?: "top" | "preserve" };
+
 /** Fetch and swap a declared content column, or fall back to one document load. Never rejects. */
-export async function swapPage(href: string, options: { replace?: boolean } = {}): Promise<void> {
+export async function swapPage(href: string, options: SwapPageOptions = {}): Promise<void> {
   return runSwap(href, options);
 }
 
@@ -699,7 +705,7 @@ const parseUrl = (href: string): URL | undefined => {
   }
 };
 
-async function runSwap(href: string, options: { replace?: boolean }, traversal?: Traversal): Promise<void> {
+async function runSwap(href: string, options: SwapPageOptions, traversal?: Traversal): Promise<void> {
   if (typeof window === "undefined") return;
   const state = shared[swapKey];
   const requested = parseUrl(href);
@@ -730,6 +736,8 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
   }
   const controller = new AbortController();
   state.active = controller;
+  // Hosts can show that the page is changing; the attribute stays while any swap is pending.
+  context.shell.setAttribute("data-nav-pending", "");
   const active = () => {
     if (state.native?.controller === controller && state.native.event.eventPhase === Event.NONE && !state.native.event.defaultPrevented) {
       // Dispatch finished without prevention, so the browser's native default action ran and wins.
@@ -810,6 +818,7 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
     fail(error);
   } finally {
     if (state.active === controller) state.active = undefined;
+    if (!state.active) context.shell.removeAttribute("data-nav-pending");
   }
 }
 
@@ -824,7 +833,7 @@ const commit = (
   fetched: Document,
   finalUrl: URL,
   requested: URL,
-  options: { replace?: boolean },
+  options: SwapPageOptions,
   traversal?: Traversal,
 ): void => {
   // The commit owns the page from here: a navigation that cleanups or new islands start cannot stop it halfway.
@@ -906,7 +915,7 @@ const commit = (
     }
     mountIslands(root);
     // Keyed regions inside islands exist only after mounting.
-    const restored = traversal ? savedScroll(state, entry) : undefined;
+    const restored = traversal ? savedScroll(state, entry) : options.scroll === "preserve" ? snapshot : undefined;
     if (restored) restoreScroll(restored);
     else {
       if (!traversal) {

@@ -1,10 +1,10 @@
 import { groupDisplayName } from "@k2b/cloud/shared";
-import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import { ErrorResponseSchema } from "@/contracts";
+import { openPage, showChanges } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
@@ -39,7 +39,7 @@ export default function GroupActions(props: GroupActionsProps) {
         messages().groupDeletedFrom({ name: displayName(), provider: props.provider === "ipa" ? "FreeIPA" : messages().local }),
       );
       await showAccountActionNotice({ action: "group.delete", id: props.id, name: props.name, provider: props.provider }, messages());
-      navigateTo(props.listHref);
+      openPage(props.listHref);
     },
     onError: (err) => {
       prompts.error(err.message);
@@ -59,7 +59,7 @@ export default function GroupActions(props: GroupActionsProps) {
     },
     onSuccess: async () => {
       await showAccountActionNotice({ action: "group.update", id: props.id, name: props.name, provider: props.provider }, messages());
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -94,7 +94,7 @@ export default function GroupActions(props: GroupActionsProps) {
     },
     onSuccess: async () => {
       await showAccountActionNotice({ action: "group.posix", id: props.id, name: props.name, provider: props.provider }, messages());
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (error) => prompts.error(error.message),
   });

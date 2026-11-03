@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { openPage } from "@/frontend/lib/page-swap";
 import { buildGroupsUrl, type GroupsListState } from "../lib/url-state";
 import { useAccountsMessages } from "../messages";
 
@@ -44,7 +44,7 @@ export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
         const nextProvider =
           value.find((entry): entry is GroupsListState["provider"] => PROVIDER_VALUES.has(entry as GroupsListState["provider"])) ?? "";
 
-        navigateTo(
+        openPage(
           buildGroupsUrl(
             {
               ...props.state,

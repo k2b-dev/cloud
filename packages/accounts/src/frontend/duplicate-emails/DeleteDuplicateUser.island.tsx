@@ -1,5 +1,5 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button } from "@k2b/ui";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 import { createDeleteUserAction } from "../users/delete-user";
 
@@ -11,7 +11,7 @@ export default function DeleteDuplicateUser(props: Omit<Props, "onDeleted">) {
   const action = createDeleteUserAction({
     user: props.user,
     onDeleted: () => {
-      refreshCurrentPath();
+      showChanges();
     },
   });
   return (

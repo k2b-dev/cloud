@@ -259,6 +259,23 @@ test("rapid A then B aborts A and only B mounts and commits", async () => {
   expect(replace).not.toHaveBeenCalled();
 });
 
+test("the shell carries data-nav-pending while any swap is pending, and loses it after the last one", async () => {
+  install();
+  const shell = document.querySelector("[data-nav-shell]")!;
+  const requests = deferredFetch();
+  const a = swapPage("/app/A");
+  expect(shell.hasAttribute("data-nav-pending")).toBe(true);
+  const b = swapPage("/app/B");
+  await a;
+  expect(shell.hasAttribute("data-nav-pending")).toBe(true);
+  requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
+  await b;
+  expect(shell.hasAttribute("data-nav-pending")).toBe(false);
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html(), { status: 403 }));
+  await swapPage("/app/C");
+  expect(shell.hasAttribute("data-nav-pending")).toBe(false);
+});
+
 const failures = [
   ["non-HTML", () => response("plain", { headers: { "content-type": "text/plain" } })],
   ["403", () => response(html(), { status: 403 })],
@@ -960,6 +977,26 @@ test("a composed click reaches an anchor inside a shell shadow root", async () =
   expect(window.location.pathname).toBe("/app/shadow");
   expect(assign).not.toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalled();
+});
+
+test("scroll preserve shows the current page again where it was, window and keyed regions included", async () => {
+  install();
+  spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(response(html("list-old", wrapper("list-old", scrollId)), {}, "https://example.test/app/list-old"))
+    .mockResolvedValueOnce(response(html("list-new", wrapper("list-new", scrollId)), {}, "https://example.test/app/list-old"));
+  await swapPage("/app/list-old");
+  const before = window.history.length;
+  document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop = 125;
+  Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });
+  (window.scrollTo as unknown as ReturnType<typeof spyOn>).mockClear();
+  await swapPage("/app/list-old", { replace: true, scroll: "preserve" });
+  const next = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  expect(next.textContent).toBe("list-new");
+  expect(next.scrollTop).toBe(125);
+  expect(window.scrollTo).toHaveBeenCalledWith(0, 640);
+  expect(window.scrollTo).not.toHaveBeenCalledWith(0, 0);
+  expect(window.history.length).toBe(before);
+  expect(assign).not.toHaveBeenCalled();
 });
 
 test("a keyed region created by an island restores its scroll after the new island mounts", async () => {

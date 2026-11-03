@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type DenyRequestProps = {
@@ -24,7 +24,7 @@ export default function DenyRequest(props: DenyRequestProps) {
       }
     },
     onSuccess: () => {
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (err) => prompts.error(err.message),
   });

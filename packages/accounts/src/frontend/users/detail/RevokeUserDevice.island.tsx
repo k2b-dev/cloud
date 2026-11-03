@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { showChanges } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../../messages";
 
 type Props = {
@@ -23,7 +23,7 @@ export default function RevokeUserDevice(props: Props) {
         throw new Error(message ?? messages().revokeDeviceFailed);
       }
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (error) => prompts.error(error.message),
   });
 
