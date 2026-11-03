@@ -25,6 +25,7 @@ import {
   type AppPwaRegistrationView,
   AppPwaSecret,
   type AppPwaStaffAction,
+  type AppPwaStaffTarget,
   type AppPwaVisitActor,
   type AppPwaVisitView,
   type AppPwaWebSignIn,
@@ -95,6 +96,14 @@ export const appPwaDigest = (value: unknown): string => {
   };
   return pairingSecret.hash(canonical(value));
 };
+
+/** Six digits from a registration's server-only browser hash; staff and other browsers cannot derive them. */
+export const appPwaPresenceCode = (appId: string, registrationId: string, browserHash: string, window: number): string =>
+  String(
+    Number.parseInt(pairingSecret.hash(`cloud-app-pwa:presence:${appId}:${registrationId}:${browserHash}:${window}`).slice(0, 12), 16) %
+      1_000_000,
+  ).padStart(6, "0");
+const presenceWindow = (time: Date) => Math.floor(time.getTime() / (limits.presenceSeconds * 1000));
 
 const earlier = (...values: Date[]): Date => new Date(Math.min(...values.map((value) => value.getTime())));
 const plus = (time: Date, seconds: number): Date => new Date(time.getTime() + seconds * 1000);
@@ -405,15 +414,59 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     >`SELECT NULLIF(trim(display_name), '') AS name FROM auth.users WHERE id = ${userId}::uuid`;
     return row?.name ?? null;
   };
-  const registrationGuestView = (
-    registration: Registration,
-    holder: { displayName: string | null } | null,
-  ): AppPwaRegistrationGuestView => ({
+  const registrationStaffView = (registration: Registration, holder: { displayName: string | null } | null) => ({
     id: registration.id,
     name: registration.name,
     expiresAt: registration.expires_at.toISOString(),
     holder,
   });
+  // Only the registered browser receives its presence code; staff responses never contain it.
+  const registrationGuestView = (
+    registration: Registration,
+    holder: { displayName: string | null } | null,
+    time: Date,
+  ): AppPwaRegistrationGuestView => {
+    const window = presenceWindow(time);
+    return {
+      ...registrationStaffView(registration, holder),
+      presence: {
+        code: appPwaPresenceCode(appId, registration.id, registration.browser_hash, window),
+        expiresAt: new Date((window + 1) * limits.presenceSeconds * 1000).toISOString(),
+      },
+    };
+  };
+  const presenceMatches = (registration: Registration, code: string, time: Date) => {
+    const window = presenceWindow(time);
+    // Compare both accepted windows every time, in constant time.
+    const current = pairingSecret.matches(
+      code,
+      pairingSecret.hash(appPwaPresenceCode(appId, registration.id, registration.browser_hash, window)),
+    );
+    const previous = pairingSecret.matches(
+      code,
+      pairingSecret.hash(appPwaPresenceCode(appId, registration.id, registration.browser_hash, window - 1)),
+    );
+    return current || previous;
+  };
+  const presenceLimiter = ratelimit({
+    id: `app-pwa:${appId}:presence`,
+    limit: limits.presenceAttempts,
+    windowSecs: limits.presenceSeconds,
+  });
+  // Registration actions change or reveal other people's state; the app may narrow them per registration.
+  const authorizeTarget = async (
+    tx: TransactionSQL,
+    signIn: AppPwaWebSignIn,
+    action: AppPwaStaffAction,
+    target: AppPwaStaffTarget,
+    beforeCommit?: BeforeCommit,
+  ) => {
+    const check = async () => {
+      if (!(await options.authorizeStaff(action, signIn, tx, target))) pwaFail("FORBIDDEN", 403);
+    };
+    await check();
+    beforeCommit?.authorize(check);
+  };
   // Ending a use revokes its device row and any running visit. Callers hold the registration lock.
   const endUse = async (tx: TransactionSQL, device: Device, actor: AppPwaWebSignIn) => {
     if (device.state !== "revoked")
@@ -624,7 +677,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         return {
           ...deviceView(device, finish),
           registration: registration
-            ? registrationGuestView(registration, { displayName: await holderName(tx, device.owner_user_id) })
+            ? registrationGuestView(registration, { displayName: await holderName(tx, device.owner_user_id) }, finish)
             : null,
         };
       }, signal),
@@ -833,10 +886,14 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           authorizations.forEach(beforeCommit.authorize);
           deadlines.forEach(beforeCommit.deadline);
           const displayName = await holderName(tx, current.ownerUserId);
-          return { device: current.device, visit: current.visit, registration: registrationGuestView(registration, { displayName }) };
+          return {
+            device: current.device,
+            visit: current.visit,
+            registration: registrationGuestView(registration, { displayName }, await databaseClock(tx)),
+          };
         } catch (error) {
           if (!leaseEnded(error)) throw error;
-          return { device: null, visit: null, registration: registrationGuestView(registration, null) };
+          return { device: null, visit: null, registration: registrationGuestView(registration, null, await databaseClock(tx)) };
         }
       }, signal),
     coreQuery: async (
@@ -1009,10 +1066,14 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         "list-registrations",
         async (tx) => {
           if (after) parse(AppPwaId, after);
-          const rows = await tx<(Registration & { device_id: string | null })[]>`SELECT r.*, b.device_id
+          const page = await tx<(Registration & { device_id: string | null })[]>`SELECT r.*, b.device_id
             FROM ${tables.registrations} r LEFT JOIN ${tables.browsers} b ON b.app_id = r.app_id AND b.credential_hash = r.browser_hash
             WHERE r.app_id = ${appId} AND r.state = 'active' ${after ? db()`AND r.id > ${after}::uuid` : db()``}
             ORDER BY r.id LIMIT ${options.budgets.listPageSize}`;
+          // The page cursor stays on the unfiltered rows, so hidden registrations never stall paging.
+          const rows: typeof page = [];
+          for (const row of page)
+            if (await options.authorizeStaff("list-registrations", signIn, tx, { registrationId: row.id, name: row.name })) rows.push(row);
           const leaseIds = rows.flatMap((row) => (row.device_id ? [row.device_id] : []));
           const leases = leaseIds.length
             ? await tx<Device[]>`SELECT * FROM ${tables.devices} WHERE app_id = ${appId} AND id = ANY(${db().array(leaseIds, "uuid")})`
@@ -1051,7 +1112,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
                   : null,
             };
           });
-          return { items, next: rows.length === options.budgets.listPageSize ? (rows.at(-1)?.id ?? null) : null };
+          return { items, next: page.length === options.budgets.listPageSize ? (page.at(-1)?.id ?? null) : null };
         },
         signal,
       ),
@@ -1060,14 +1121,27 @@ export const createAppPwaService = (options: AppPwaOptions) => {
      * `expectedDeviceId` names it (the use the staff UI showed and the person confirmed).
      * The previous use and its running visit end in the same transaction.
      */
-    takeOverDevice: (signIn: AppPwaWebSignIn, input: { registrationId: string; expectedDeviceId: string | null }, signal?: AbortSignal) =>
-      staff(
+    takeOverDevice: async (
+      signIn: AppPwaWebSignIn,
+      input: { registrationId: string; expectedDeviceId: string | null; presenceCode: string },
+      signal?: AbortSignal,
+    ) => {
+      parse(z.strictObject({ registrationId: AppPwaId, expectedDeviceId: AppPwaId.nullable(), presenceCode: z.string().max(16) }), input);
+      // Every attempt counts, also a correct one, so guessing stays bounded per displayed code.
+      let limited: boolean;
+      try {
+        limited = (await presenceLimiter.check(input.registrationId)).limited;
+      } catch {
+        return pwaFail("UNAVAILABLE", 503);
+      }
+      if (limited) return pwaFail("RATE_LIMITED", 429);
+      return staff(
         signIn,
         "take-over-device",
-        async (tx, authority) => {
-          parse(z.strictObject({ registrationId: AppPwaId, expectedDeviceId: AppPwaId.nullable() }), input);
+        async (tx, authority, beforeCommit) => {
           // Lock order: web authority -> registration -> previous use -> its visit -> browser binding.
           const registration = await lockRegistration(tx, input.registrationId);
+          await authorizeTarget(tx, signIn, "take-over-device", { registrationId: registration.id, name: registration.name }, beforeCommit);
           let time = await databaseClock(tx);
           if (registration.state === "revoked") return pwaFail("REVOKED", 410);
           if (registration.expires_at <= time) return pwaFail("EXPIRED", 410);
@@ -1075,13 +1149,16 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           const [snapshot] = await tx<Browser[]>`SELECT * FROM ${tables.browsers}
             WHERE app_id = ${appId} AND credential_hash = ${registration.browser_hash}`;
           if (!snapshot || snapshot.expires_at <= time) return pwaFail("EXPIRED", 410);
+          // Presence at the device: only its registered browser sees this code. An orphaned
+          // registration whose browser is gone can therefore not be taken over.
+          if (!presenceMatches(registration, input.presenceCode, time)) return pwaFail("PRESENCE_REQUIRED", 403);
           const previous = snapshot.device_id ? await lockDevice(tx, snapshot.device_id) : undefined;
           const [previousView] = previous ? await staffDeviceViews(tx, [previous]) : [];
           const live = previous && previousView?.state === "active" ? previous : undefined;
           if (live && live.owner_user_id === signIn.userId && live.initiator_sid === signIn.sid) {
             // A retry from the session that already uses the device changes nothing.
             return {
-              registration: registrationGuestView(registration, { displayName: await holderName(tx, signIn.userId) }),
+              registration: registrationStaffView(registration, { displayName: await holderName(tx, signIn.userId) }),
               device: deviceView(live, time),
             };
           }
@@ -1117,19 +1194,27 @@ export const createAppPwaService = (options: AppPwaOptions) => {
             previousOwnerUserId: live?.owner_user_id ?? null,
           });
           return {
-            registration: registrationGuestView(registration, { displayName: await holderName(tx, signIn.userId) }),
+            registration: registrationStaffView(registration, { displayName: await holderName(tx, signIn.userId) }),
             device: deviceView(device, time),
           };
         },
         signal,
-      ),
+      );
+    },
     /** Unregister a shared device: its use and visit end and its browser must be registered again. */
     revokeRegistration: (signIn: AppPwaWebSignIn, registrationId: string, signal?: AbortSignal) =>
       staff(
         signIn,
         "revoke-registration",
-        async (tx) => {
+        async (tx, _authority, beforeCommit) => {
           const registration = await lockRegistration(tx, registrationId);
+          await authorizeTarget(
+            tx,
+            signIn,
+            "revoke-registration",
+            { registrationId: registration.id, name: registration.name },
+            beforeCommit,
+          );
           if (registration.state === "revoked") return { state: "revoked" };
           const [snapshot] = await tx<Browser[]>`SELECT * FROM ${tables.browsers}
             WHERE app_id = ${appId} AND credential_hash = ${registration.browser_hash}`;

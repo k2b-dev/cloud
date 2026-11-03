@@ -12,6 +12,7 @@ export {
   type AppPwaRegistrationGuestView,
   type AppPwaRegistrationView,
   type AppPwaStaffAction,
+  type AppPwaStaffTarget,
   type AppPwaVisitActor,
   type AppPwaVisitContext,
   type AppPwaVisitView,

@@ -10,6 +10,10 @@ export const APP_PWA_LIMITS = {
   visitSeconds: 60 * 60,
   /** A registered shared browser; the cookie lifetime upper bound that browsers enforce (RFC 6265bis). */
   registrationSeconds: 400 * 24 * 60 * 60,
+  /** A registered device shows a rotating presence code; the previous window is still accepted. */
+  presenceSeconds: 30,
+  /** Takeover attempts per registration and presence window, bounding guesses of its six digits. */
+  presenceAttempts: 5,
 } as const;
 
 export const AppPwaId = z.uuid();
@@ -44,7 +48,11 @@ export type AppPwaRegistrationGuestView = {
   name: string;
   expiresAt: string;
   holder: { displayName: string | null } | null;
+  /** Show this code on the device; staff type it to take the device over. */
+  presence: { code: string; expiresAt: string };
 };
+/** The registration a staff action changes or lists. */
+export type AppPwaStaffTarget = { registrationId: string; name: string };
 export type AppPwaRegistrationView = {
   id: string;
   name: string;
@@ -156,8 +164,10 @@ export type AppPwaOptions = {
   subject: z.ZodType;
   /** Explicit application budgets, covering transport, stored results, and staff pagination. */
   budgets: { requestBytes: number; responseBytes: number; listPageSize: number; maxAccessIds: number };
-  /** Mandatory application authorization, repeated under the current web authority locks for every staff action. */
-  authorizeStaff(action: AppPwaStaffAction, signIn: AppPwaWebSignIn, tx: TransactionSQL): Promise<boolean>;
+  /** Mandatory application authorization, repeated under the current web authority locks for every staff action.
+   * Registration actions act on other people's state. They are called once without `target` and again
+   * with the registration they take over, revoke, or list; return false to narrow them. */
+  authorizeStaff(action: AppPwaStaffAction, signIn: AppPwaWebSignIn, tx: TransactionSQL, target?: AppPwaStaffTarget): Promise<boolean>;
   /** Authorize exposing this validated domain subject to a customer; lock its authority using tx.
    * Called before issuance and again before commit, including issuance retries. */
   authorizeVisit(signIn: AppPwaWebSignIn, subject: unknown, tx: TransactionSQL): Promise<boolean>;
@@ -186,6 +196,7 @@ export type AppPwaErrorCode =
   | "ALREADY_CLAIMED"
   | "ACTIVE_VISIT"
   | "IN_USE"
+  | "PRESENCE_REQUIRED"
   | "ATTEMPT_CONFLICT"
   | "TOO_LARGE"
   | "RATE_LIMITED"

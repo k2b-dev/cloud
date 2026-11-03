@@ -65,37 +65,59 @@ user's ID, display name, use `deviceId`, its expiry, and `visitActive`, or
 `null` when nobody uses it. The staff list falls back to the login name.
 
 `registrations/take-over` (`take-over-device`) takes `{ registrationId,
-expectedDeviceId }`. A free device is taken without confirmation. When someone
-else uses it, Cloud returns `409 IN_USE` unless `expectedDeviceId` is the use
-the staff page showed. Ask the employee to confirm the displayed holder, then
-send that `holder.deviceId`. A use that changed in the meantime is never
-replaced silently. A retry from the session that already uses the device
-returns its current use.
+expectedDeviceId, presenceCode }`. The device shows a six-digit presence code
+on its waiting screen; the employee types it at the desk. This proves that they
+stand at that device and replaces the QR scan. The code changes every 30
+seconds, and the previous code is still accepted. It is bound to the
+registration and its browser, so a code from another device never matches, and a
+registration whose browser is gone can no longer be taken over. A missing or
+wrong code returns `403 PRESENCE_REQUIRED`. Each registration accepts five
+attempts per 30 seconds, correct or not; more return `429 RATE_LIMITED`. A
+Valkey failure returns `503 UNAVAILABLE`.
+
+A free device is taken without confirmation. When someone else uses it, Cloud
+returns `409 IN_USE` unless `expectedDeviceId` is the use the staff page showed.
+Ask the employee to confirm the displayed holder, then send that
+`holder.deviceId`. A use that changed in the meantime is never replaced
+silently. A retry from the session that already uses the device returns its
+current use.
 
 A takeover ends the previous use and its running visit in the same transaction
-and records `app_pwa.registration.taken_over` with the new user as actor and
-`previousOwnerUserId`, `previousDeviceId`, and the ended `visitId`. End your
+and records `app_pwa.registration.taken_over` with the new user as actor,
+`previousDeviceId`, and the ended `visitId`. `previousOwnerUserId` is set only
+when the previous use was still live; it is `null` for a free device. End your
 own use with `devices/revoke` and its `deviceId`. `registrations/revoke`
 (`revoke-registration`) unregisters the device: its use and visit end, and the
 browser must bootstrap again.
 
+Listing, taking over, and unregistering act on other people's state. By default
+any employee whom `authorizeStaff` admits for the action can do so for every
+registered device of the application. Cloud calls `authorizeStaff` once without
+a target and again with `target: { registrationId, name }` for the registration
+being taken over or unregistered, and for each listed registration. Return
+`false` to narrow the action, for example to one location's devices. A listed
+registration that the app refuses is left out of the page.
+
 ### Show who uses it
 
 Guest `status` returns `registration` for a registered browser:
-`{ id, name, expiresAt, holder }`. `holder` is `{ displayName }` while a use is
-live and `null` otherwise. Without a use, `device` and `visit` are `null`.
+`{ id, name, expiresAt, holder, presence }`. `holder` is `{ displayName }` while
+a use is live and `null` otherwise. `presence` is `{ code, expiresAt }`; poll
+`status` at least every 30 seconds and show the current code. Staff responses
+never contain it. Without a use, `device` and `visit` are `null`.
 The device only learns the display name; it never receives an account ID,
 login name, or contact detail, and an empty display name is `null`. Show the
 name so customers and staff can see whose device it is.
 
 ### Send a visit without a QR
 
-The current user can call `visits/issue` with `push: true` for the device they
-use. The visit opens immediately, bound to that device's browser, and appears
-on the next `status` poll. `qr` is `null`. `authorizeVisit` still decides the
-subject, and deadlines start at issuance. A live visit on the device returns
+`visits/issue` with `push: true` works for any active device that the caller
+owns: a device they paired by QR or their current use of a registered device.
+The visit opens immediately, bound to that device's browser, and appears on the
+next `status` poll. `qr` is `null`. `authorizeVisit` still decides the subject,
+and deadlines start at issuance. A live visit on the device returns
 `409 ACTIVE_VISIT`; end or revoke it first. Repeating the request ID returns
-the same visit. Only the owner of a use can push to it.
+the same visit. Nobody else can push to a device.
 
 ### Recover on the device
 
@@ -110,6 +132,10 @@ authority from a registration.
 | Action | Authority |
 | --- | --- |
 | Issue a device, list it, or revoke it | Current authenticated web session, application staff authorization, and device ownership |
+| Push a visit to a device | Current web session, `issue-visit` and visit authorization, and ownership of that active device |
+| Register a shared device | Current web session and `register-device` authorization; the registering employee becomes its first user |
+| List registered devices or unregister one | Current web session and application staff authorization for that registration; app-wide unless the app narrows it, no device ownership |
+| Take over a registered device | Same as listing, plus the presence code shown on that device and confirmation of a live holder |
 | Open, read, or complete a customer's visit | Paired device and browser, current visit, and the application's visit and document rules |
 | Suggest addresses through an allowlisted Core query | Current pairing and visit, charged to the owner’s Geo budget |
 | Use a declared Cloud resource operation | Explicit device permission ceiling intersected with the owner's current resource grants |
@@ -215,7 +241,7 @@ Import these server APIs from `@k2b/cloud/app-pwa`:
 
 Pass the application ID and declared `installable.path`, a canonical configured
 HTTPS `publicOrigin`, its Postgres `schema`, a subject schema, and application
-staff authorization. `authorizeStaff(action, signIn, tx)` checks staff actions;
+staff authorization. `authorizeStaff(action, signIn, tx, target?)` checks staff actions;
 `authorizeVisit(signIn, subject, tx)` must separately authorize exposing the
 validated domain subject to a customer. Both are required and repeated before
 issuance commits. Lock the subject's domain authority with `tx`; a schema-valid

@@ -215,7 +215,10 @@ export const createAppPwaRouter = (service: AppPwaService) => {
   });
   router.post(`${staffBase}/registrations/take-over`, async (c) => {
     const signIn = await staff(c);
-    const input = parse(registrationIdInput.extend({ expectedDeviceId: AppPwaId.nullable() }), await body(c));
+    const input = parse(
+      registrationIdInput.extend({ expectedDeviceId: AppPwaId.nullable(), presenceCode: z.string().max(16) }),
+      await body(c),
+    );
     return c.json(await service.takeOverDevice(signIn, input, c.req.raw.signal));
   });
   router.post(`${staffBase}/registrations/revoke`, async (c) => {

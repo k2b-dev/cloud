@@ -57,7 +57,10 @@ export const setupAppPwa = async (db: SQL, schemaName: string): Promise<void> =>
       .simple();
     // A registered shared browser holds no authority itself. Each use is an ordinary
     // session-bound device row that carries the registration ID.
-    await tx.unsafe(`ALTER TABLE ${schema}._cloud_pwa_devices ADD COLUMN IF NOT EXISTS registration_id uuid`).simple();
+    // Look first: ALTER TABLE takes ACCESS EXCLUSIVE even when the column already exists.
+    const [column] = await tx`SELECT 1 FROM information_schema.columns
+      WHERE table_schema = ${schema} AND table_name = '_cloud_pwa_devices' AND column_name = 'registration_id'`;
+    if (!column) await tx.unsafe(`ALTER TABLE ${schema}._cloud_pwa_devices ADD COLUMN registration_id uuid`).simple();
     await tx
       .unsafe(`CREATE TABLE IF NOT EXISTS ${schema}._cloud_pwa_registrations (
       app_id text NOT NULL, id uuid NOT NULL, name text NOT NULL, browser_hash text NOT NULL,
