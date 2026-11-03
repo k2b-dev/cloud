@@ -1161,54 +1161,6 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an operator's reconcile of an unclear send checks Sent and settles it without sending again", async () => {
-    const provider = createProvider("imap");
-    try {
-      const mailbox = await connect(provider);
-      const draft = await newDraft(mailbox, "Unclear, then reconciled");
-      // The connection dropped after the server received the message; Sent has no copy yet.
-      provider.failNextSubmission("ECONNECTION", true);
-      const outbox = await send(mailbox, draft.id, draft.revision, "operator-reconciles-unclear", "unknown");
-      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
-      expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "AMBIGUOUS_SMTP_OUTCOME", command_state: "needs_attention" });
-
-      // The copy shows up later, for example after the server's own delay.
-      await provider.storeSent(`Message-ID: ${outbox.stable_message_id}\r\nSubject: Unclear, then reconciled\r\n\r\nBody\r\n`, false);
-      const [target] = await sql<{ command_id: string }[]>`
-        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
-      `;
-      const reconcile = await createMailCommand({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconcile-of-unclear-${suffix}` },
-        enqueue: false,
-      });
-      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
-      const attempts = () =>
-        sql<{ outbox_attempt: number; command_attempt: number }[]>`
-          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt
-          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
-          WHERE outbox.id = ${outbox.id}::uuid`;
-      // Its checks were used up, as for a provider that saves sent mail itself.
-      await sql`UPDATE mail.outbox_submissions SET attempt = 5 WHERE id = ${outbox.id}::uuid`;
-      const [before] = await attempts();
-      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
-      // The attempts fence the outbox worker, so a stale worker never matches the check's claim.
-      expect(await attempts()).toEqual([before!]);
-
-      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
-      expect(await delivery(outbox.id)).toEqual({
-        state: "reconciled_accepted",
-        last_error_code: null,
-        command_state: "reconciled",
-        draft_state: "sent",
-      });
-      expect(provider.submissions()).toBe(1);
-    } finally {
-      provider.restore();
-    }
-  });
-
   test("an SMTP rejection never sends twice and always ends visible: 4xx retries within its budget, other 5xx fail at once", async () => {
     const provider = createProvider("imap");
     try {
@@ -2248,6 +2200,54 @@ suite("mail sent message projection", () => {
       expect(provider.submissions()).toBe(1);
       expect(provider.appends).toEqual(["Drafts", "Sent"]);
       expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an operator's reconcile of an unclear send checks Sent and settles it without sending again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Unclear, then reconciled");
+      // The connection dropped after the server received the message; Sent has no copy yet.
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "operator-reconciles-unclear", "unknown");
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "AMBIGUOUS_SMTP_OUTCOME", command_state: "needs_attention" });
+
+      // The copy shows up later, for example after the server's own delay.
+      await provider.storeSent(`Message-ID: ${outbox.stable_message_id}\r\nSubject: Unclear, then reconciled\r\n\r\nBody\r\n`, false);
+      const [target] = await sql<{ command_id: string }[]>`
+        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      const reconcile = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconcile-of-unclear-${suffix}` },
+        enqueue: false,
+      });
+      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      const attempts = () =>
+        sql<{ outbox_attempt: number; command_attempt: number }[]>`
+          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+      // Its checks were used up, as for a provider that saves sent mail itself.
+      await sql`UPDATE mail.outbox_submissions SET attempt = 5 WHERE id = ${outbox.id}::uuid`;
+      const [before] = await attempts();
+      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      // The attempts fence the outbox worker, so a stale worker never matches the check's claim.
+      expect(await attempts()).toEqual([before!]);
+
+      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "reconciled_accepted",
+        last_error_code: null,
+        command_state: "reconciled",
+        draft_state: "sent",
+      });
+      expect(provider.submissions()).toBe(1);
     } finally {
       provider.restore();
     }
