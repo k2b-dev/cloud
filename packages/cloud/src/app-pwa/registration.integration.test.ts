@@ -92,7 +92,9 @@ suite("App-PWA shared device registration", () => {
     expect(again.credential).toBe(boot.credential);
     expect(again.persistUntil).toBe(claimed.registration?.expiresAt ?? "");
     // Without a use, the device can neither claim visits nor run commands.
-    await expect(service.command(boot.credential, id(), "sign", id(), { finish: false })).rejects.toMatchObject({ status: 410 });
+    await expect(service.command(boot.credential, id(), "sign", id(), { finish: false })).rejects.toMatchObject({
+      code: "WEB_SESSION_REQUIRED",
+    });
     // An ordinary paired browser keeps today's session cookie.
     expect((await service.bootstrap()).persistUntil).toBeNull();
   });
