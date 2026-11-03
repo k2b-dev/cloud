@@ -1931,31 +1931,34 @@ const checkVanishedMessages = async (params: {
  * windows, and the Drafts folder records its projection on every batch, so neither ever counts
  * as unchanged. The count comparison runs on a copy of the cursor, as the batch would.
  */
+const mayBeUnchangedFolder = (cursor: EnvelopeCursor, draftsFolder: boolean): boolean =>
+  !draftsFolder &&
+  cursor.highestModseq != null &&
+  cursor.backfillComplete &&
+  cursor.incrementalNextHigh == null &&
+  cursor.flagNextLow == null &&
+  cursor.flagTargetModseq == null &&
+  cursor.reconcileNextLow == null &&
+  cursor.vanishedSearch !== true &&
+  cursor.sweepOlderDue !== true &&
+  cursor.lastFullReconcileAt != null &&
+  Date.now() - new Date(cursor.lastFullReconcileAt).getTime() < FULL_RECONCILE_INTERVAL_MS;
+
+/** STATUS of a folder `mayBeUnchangedFolder` admits matches its cursor; see there. */
 const isUnchangedFolder = async (params: {
   cursor: EnvelopeCursor;
   status: FolderStatus;
   folderId: string;
-  draftsFolder: boolean;
   countDrafts: (maxUid: number) => Promise<number>;
 }): Promise<boolean> => {
   const { cursor, status } = params;
   if (
-    params.draftsFolder ||
     status.highestModseq == null ||
     cursor.highestModseq == null ||
     BigInt(status.highestModseq) !== BigInt(cursor.highestModseq) ||
     cursor.uidValidity !== status.uidValidity ||
     cursor.highestSeenUid !== status.uidNext - 1 ||
-    cursor.countedMessages !== status.messages ||
-    !cursor.backfillComplete ||
-    cursor.incrementalNextHigh != null ||
-    cursor.flagNextLow != null ||
-    cursor.flagTargetModseq != null ||
-    cursor.reconcileNextLow != null ||
-    cursor.vanishedSearch === true ||
-    cursor.sweepOlderDue === true ||
-    !cursor.lastFullReconcileAt ||
-    Date.now() - new Date(cursor.lastFullReconcileAt).getTime() >= FULL_RECONCILE_INTERVAL_MS
+    cursor.countedMessages !== status.messages
   ) {
     return false;
   }
@@ -2442,122 +2445,136 @@ export const syncFolderBatch = async (
         const folderExecution = execution.data.folders[folderId];
         if (!folderExecution) throw Object.assign(new Error("Selected sync binding has no folder locator"), { code: "NO_FOLDER_LOCATOR" });
         const bindingId = execution.data.bindingId;
-        failedRun.claimFence = () => claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
         const runtimeSnapshot = await loadResolvedRuntimeSnapshot(execution.data.connectionId, secretRevision);
-        const runtime = runtimeSnapshot.runtime;
-        const status = await imapSmtpConnector.getFolderStatus(runtime, folderExecution.path, signal);
-        await extendSyncLease(lock, "after status refresh");
-        const currentHighUid = Math.max(0, status.uidNext - 1);
-        const beforeCursor = parseCursor(folder.envelope_cursor);
-        const uidValidityChanged = Boolean(beforeCursor && beforeCursor.uidValidity !== status.uidValidity);
-        const draftsFolder = folder.is_drafts;
-        const countDrafts = (maxUid: number) =>
-          imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, status.uidValidity, maxUid, signal);
-        // Most checks find nothing new. Such a check ends here, before it claims a fence or
-        // records a run; a sync command waiting for the folder still gets a recorded run.
-        if (
-          beforeCursor &&
-          !uidValidityChanged &&
-          (await isUnchangedFolder({ cursor: beforeCursor, status, folderId, draftsFolder, countDrafts })) &&
-          !(await folderSyncAwaited(folderId)) &&
-          (await confirmUnchangedFolder({ folderId, bindingId, secretRevision, cursor: beforeCursor, status }))
-        ) {
-          return { ...emptyBatch(), unchanged: true };
-        }
-        failedRun.claimFence = null;
-        const fence = await claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
-        activeFence = fence;
-        runId = fence.runId;
-        const cursor =
-          !beforeCursor || uidValidityChanged
-            ? initialCursor(status.uidValidity, currentHighUid, status.highestModseq)
-            : structuredClone(beforeCursor);
+        // The batch's provider reads share one IMAP connection.
+        return imapSmtpConnector.withSession(runtimeSnapshot.runtime, async (runtime) => {
+          const beforeCursor = parseCursor(folder.envelope_cursor);
+          const draftsFolder = folder.is_drafts;
+          const readStatus = async (): Promise<FolderStatus> => {
+            const status = await imapSmtpConnector.getFolderStatus(runtime, folderExecution.path, signal);
+            await extendSyncLease(lock, "after status refresh");
+            return status;
+          };
+          const draftCounter = (uidValidity: string) => (maxUid: number) =>
+            imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, uidValidity, maxUid, signal);
+          // Most checks of a quiet folder find nothing new. Such a check reads STATUS first and ends
+          // before it claims a fence or records a run. A sync command waiting for the folder needs
+          // a recorded run, so its folder claims the fence first.
+          if (beforeCursor && mayBeUnchangedFolder(beforeCursor, draftsFolder) && !(await folderSyncAwaited(folderId))) {
+            failedRun.claimFence = () => claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
+            const status = await readStatus();
+            if (
+              (await isUnchangedFolder({ cursor: beforeCursor, status, folderId, countDrafts: draftCounter(status.uidValidity) })) &&
+              (await confirmUnchangedFolder({ folderId, bindingId, secretRevision, cursor: beforeCursor, status }))
+            ) {
+              return { ...emptyBatch(), unchanged: true };
+            }
+            failedRun.claimFence = null;
+          }
+          const fence = await claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
+          activeFence = fence;
+          runId = fence.runId;
+          // A rebuild or transport change reset the folder after the batch read it; the next batch
+          // starts from the reset cursor.
+          if (fence.generation !== Number(folder.sync_generation)) {
+            throw Object.assign(new Error("Mail folder was reset during sync"), { code: "STALE_SYNC_FENCE" });
+          }
+          // Read after the claim: a completed run covers what the provider held when it started.
+          const status = await readStatus();
+          const currentHighUid = Math.max(0, status.uidNext - 1);
+          const uidValidityChanged = Boolean(beforeCursor && beforeCursor.uidValidity !== status.uidValidity);
+          const countDrafts = draftCounter(status.uidValidity);
+          const cursor =
+            !beforeCursor || uidValidityChanged
+              ? initialCursor(status.uidValidity, currentHighUid, status.highestModseq)
+              : structuredClone(beforeCursor);
 
-        await checkVanishedMessages({ cursor, status, folderId, draftsFolder, countDrafts });
+          await checkVanishedMessages({ cursor, status, folderId, draftsFolder, countDrafts });
 
-        const envelope = await fetchEnvelopeStep({
-          cursor,
-          currentHighUid,
-          runtime,
-          folderPath: folderExecution.path,
-          folderId,
-          uidValidity: status.uidValidity,
-          signal,
+          const envelope = await fetchEnvelopeStep({
+            cursor,
+            currentHighUid,
+            runtime,
+            folderPath: folderExecution.path,
+            folderId,
+            uidValidity: status.uidValidity,
+            signal,
+          });
+          const envelopeBatch = envelope.batch;
+          if (envelopeBatch) await extendSyncLease(lock, "after envelope fetch");
+          // Once this batch commits, Mail holds every UID this count covers; see checkVanishedMessages.
+          cursor.countedMessages = cursor.backfillComplete && cursor.highestSeenUid === currentHighUid ? status.messages : null;
+
+          const flagChanges = await fetchFlagStep({
+            cursor,
+            currentHighUid,
+            runtime,
+            folderPath: folderExecution.path,
+            uidValidity: status.uidValidity,
+            highestModseq: status.highestModseq,
+            signal,
+          });
+          if (flagChanges.length > 0) await extendSyncLease(lock, "after flag fetch");
+
+          const reconcileWindow = await fetchReconcileStep({
+            cursor,
+            currentHighUid,
+            remoteMessages: status.messages,
+            highestModseq: status.highestModseq,
+            runtime,
+            folderPath: folderExecution.path,
+            folderId,
+            uidValidity: status.uidValidity,
+            draftsFolder,
+            fetchedUids: new Set(
+              (envelopeBatch?.messages ?? [])
+                .filter((message) => draftsFolder || !isProviderDraft(message))
+                .map((message) => Number(message.remoteRef.uid)),
+            ),
+            signal,
+          });
+          if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
+
+          await extendSyncLease(lock, "before commit");
+          const result = await commitSyncBatch({
+            folder,
+            folderId,
+            bindingId,
+            secretRevision,
+            fence,
+            status,
+            beforeCursor,
+            cursor,
+            uidValidityChanged,
+            envelopeBatch,
+            envelopeKind: envelope.kind,
+            flagChanges,
+            reconcileWindow,
+          });
+
+          await enqueueDraftImports(result.draftImportSnapshotIds);
+          await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
+          // A sweep that started before this batch ends at its own target; mail that arrived after
+          // it is next, without waiting for the next scheduled sync.
+          const newMailPending = cursor.incrementalNextHigh != null || cursor.highestSeenUid < currentHighUid;
+          const hasMore =
+            newMailPending ||
+            !cursor.backfillComplete ||
+            cursor.flagNextLow != null ||
+            cursor.reconcileNextLow != null ||
+            (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
+            cursor.sweepOlderDue === true;
+          return {
+            hasMore,
+            syncPending: newMailPending || cursor.flagNextLow != null,
+            imported: result.hydratedIds.length,
+            uidValidityReset: uidValidityChanged,
+            draftImportsQueued: result.draftImportSnapshotIds.length,
+            draftExportsQueued: result.draftExportSnapshotIds.length,
+            flagsUpdated: result.flagsUpdated,
+            removed: result.removed,
+          };
         });
-        const envelopeBatch = envelope.batch;
-        if (envelopeBatch) await extendSyncLease(lock, "after envelope fetch");
-        // Once this batch commits, Mail holds every UID this count covers; see checkVanishedMessages.
-        cursor.countedMessages = cursor.backfillComplete && cursor.highestSeenUid === currentHighUid ? status.messages : null;
-
-        const flagChanges = await fetchFlagStep({
-          cursor,
-          currentHighUid,
-          runtime,
-          folderPath: folderExecution.path,
-          uidValidity: status.uidValidity,
-          highestModseq: status.highestModseq,
-          signal,
-        });
-        if (flagChanges.length > 0) await extendSyncLease(lock, "after flag fetch");
-
-        const reconcileWindow = await fetchReconcileStep({
-          cursor,
-          currentHighUid,
-          remoteMessages: status.messages,
-          highestModseq: status.highestModseq,
-          runtime,
-          folderPath: folderExecution.path,
-          folderId,
-          uidValidity: status.uidValidity,
-          draftsFolder,
-          fetchedUids: new Set(
-            (envelopeBatch?.messages ?? [])
-              .filter((message) => draftsFolder || !isProviderDraft(message))
-              .map((message) => Number(message.remoteRef.uid)),
-          ),
-          signal,
-        });
-        if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
-
-        await extendSyncLease(lock, "before commit");
-        const result = await commitSyncBatch({
-          folder,
-          folderId,
-          bindingId,
-          secretRevision,
-          fence,
-          status,
-          beforeCursor,
-          cursor,
-          uidValidityChanged,
-          envelopeBatch,
-          envelopeKind: envelope.kind,
-          flagChanges,
-          reconcileWindow,
-        });
-
-        await enqueueDraftImports(result.draftImportSnapshotIds);
-        await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
-        // A sweep that started before this batch ends at its own target; mail that arrived after
-        // it is next, without waiting for the next scheduled sync.
-        const newMailPending = cursor.incrementalNextHigh != null || cursor.highestSeenUid < currentHighUid;
-        const hasMore =
-          newMailPending ||
-          !cursor.backfillComplete ||
-          cursor.flagNextLow != null ||
-          cursor.reconcileNextLow != null ||
-          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
-          cursor.sweepOlderDue === true;
-        return {
-          hasMore,
-          syncPending: newMailPending || cursor.flagNextLow != null,
-          imported: result.hydratedIds.length,
-          uidValidityReset: uidValidityChanged,
-          draftImportsQueued: result.draftImportSnapshotIds.length,
-          draftExportsQueued: result.draftExportSnapshotIds.length,
-          flagsUpdated: result.flagsUpdated,
-          removed: result.removed,
-        };
       },
     });
     // Reserve the turn for the continuation runSyncFolderJob resubmits for a request made while

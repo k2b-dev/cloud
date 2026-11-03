@@ -401,6 +401,56 @@ suite("mail sync recovery", () => {
     });
     expect(await loadImapPushPlan(fixture.bindingId)).toBeNull();
   });
+  test("a changed quiet folder claims its fence before the STATUS its run records, and a reset during the check wins", async () => {
+    const fixture = await createSyncedMailbox("quiet-change");
+    const warm = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      warm.mockRestore();
+    }
+    const runningRun = async () =>
+      (
+        await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid AND state = 'running'`
+      )[0]!.count > 0;
+
+    // The quiet check reads STATUS without a run; the batch then reads it again under its run,
+    // so a sync command that started meanwhile is not confirmed by a STATUS from before it.
+    const claimedAtStatus: boolean[] = [];
+    const changed = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      claimedAtStatus.push(await runningRun());
+      return { ...EMPTY_INBOX, messages: 1 };
+    });
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      changed.mockRestore();
+    }
+    expect(claimedAtStatus).toEqual([false, true]);
+
+    // A rebuild while the quiet check reads STATUS resets the folder; the batch must not write
+    // its old cursor over the reset.
+    let reset = false;
+    const rebuilt = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      if (!reset) {
+        reset = true;
+        await sql`UPDATE mail.folders SET envelope_cursor = '{}'::jsonb, sync_status = 'rebuilding' WHERE id = ${fixture.folderId}::uuid`;
+        await sql`UPDATE mail.remote_resources SET sync_generation = sync_generation + 1 WHERE id = ${fixture.resourceId}::uuid`;
+      }
+      return { ...EMPTY_INBOX, messages: 2 };
+    });
+    try {
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "STALE_SYNC_FENCE" });
+    } finally {
+      rebuilt.mockRestore();
+    }
+    const [folder] = await sql<{ envelope_cursor: unknown; sync_status: string }[]>`
+      SELECT envelope_cursor, sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+    expect(folder).toEqual({ envelope_cursor: {}, sync_status: "rebuilding" });
+  });
+
   test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
     const fixture = await createSyncedMailbox("idle-writes");
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
