@@ -135,11 +135,12 @@ such as `appAccess.signedIn()` are unchanged.
 Before upgrading:
 
 1. Run the read-only inventory below in `psql` against the installation's
-   database. It lists each active agent or standalone account and the link
-   table and resource ID with an authenticated grant but no own or recursively
-   inherited local-group row. Positive public access excludes an object where
-   that application supports it. Any own or group row, including a deny,
-   excludes it. Files storage includes grants on ancestor paths.
+   database. It lists active agent, standalone and resource-bound accounts,
+   the link table and resource ID, and the authenticated permission they lose.
+   A result is excluded only when an own, recursively inherited local-group,
+   or supported public grant retains at least that permission (`read` < `write`
+   < `admin`). A `none` row never excludes a result. Only standalone and agent
+   accounts inherit local groups. Files storage includes grants on ancestor paths.
 2. For every result, decide whether the machine should retain access. Add an
    explicit row or a local-group grant through the owning app before switching.
    Review AI quota rules separately: their grants are JSON configuration, not
@@ -153,7 +154,8 @@ This is an inventory of stored grants, not a proof that a credential can
 execute an operation: scopes, bindings, archived resources, app entry and
 application-specific eligibility still apply. Review the listed resources in
 their owning app. The accompanying integration guard checks the query against migrated test
-schemas with absent, direct, denied, public and nested-group alternatives.
+schemas with absent, weaker, equal, stronger, denied, public and nested-group
+alternatives, including resource-bound accounts.
 
 The first SELECT generates a second read-only SELECT; `\gexec` executes it in
 the same read-only transaction. Optional app tables are included only when
@@ -162,7 +164,8 @@ installed. Resource IDs are JSON arrays containing the resource key, or
 migrations referencing `auth.access`. `assistant.artifact_machine_rights`
 is grant metadata, not another object link. Mail's assigned-conversation
 links are included for any stored audience grants; mailbox-wide alternatives
-exclude them, and conversation assignments still restrict actual reads.
+exclude them only at an equal or higher permission, and conversation assignments
+still restrict actual reads.
 Code is outside this migration.
 
 ```sql
@@ -197,11 +200,12 @@ WITH links(link_table, resource_expression, public_allowed) AS (
 SELECT format($inventory$
 WITH RECURSIVE machines AS (
   SELECT id, name, kind FROM auth.service_accounts
-  WHERE status = 'active' AND kind IN ('agent', 'standalone')
+  WHERE status = 'active' AND kind IN ('agent', 'standalone', 'resource_bound')
 ), machine_groups AS (
   SELECT m.id AS service_account_id, sg.group_id
   FROM machines m JOIN auth.service_account_groups sg ON sg.service_account_id = m.id
   JOIN auth.groups g ON g.id = sg.group_id AND g.provider = 'local'
+  WHERE m.kind IN ('standalone', 'agent')
   UNION
   SELECT mg.service_account_id, gg.parent_group_id
   FROM machine_groups mg JOIN auth.group_groups_v2 gg ON gg.child_group_id = mg.group_id
@@ -209,7 +213,8 @@ WITH RECURSIVE machines AS (
 ), object_grants AS (
   %s
 )
-SELECT DISTINCT m.id AS service_account_id, m.name, m.kind, a.link_table, a.resource_id
+SELECT DISTINCT m.id AS service_account_id, m.name, m.kind, a.link_table, a.resource_id,
+  a.permission AS lost_permission
 FROM machines m CROSS JOIN object_grants a
 WHERE a.authenticated_only AND a.permission IN ('read', 'write', 'admin')
   AND NOT EXISTS (
@@ -222,13 +227,15 @@ WHERE a.authenticated_only AND a.permission IN ('read', 'write', 'admin')
         AND (other.resource_id->>1 = '' OR
           left(a.resource_id->>1, length(other.resource_id->>1) + 1) = (other.resource_id->>1) || '/')
       ))
+      AND CASE other.permission WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 ELSE 0 END
+        >= CASE a.permission WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 ELSE 0 END
       AND (other.service_account_id = m.id
         OR other.group_id IN (SELECT group_id FROM machine_groups WHERE service_account_id = m.id)
         OR (other.public_allowed AND NOT other.authenticated_only
           AND other.user_id IS NULL AND other.group_id IS NULL AND other.service_account_id IS NULL
           AND other.permission IN ('read', 'write', 'admin')))
   )
-ORDER BY m.name, m.id, a.link_table, a.resource_id
+ORDER BY m.name, m.id, a.link_table, a.resource_id, a.permission
 $inventory$, COALESCE(body,
   'SELECT NULL::text AS link_table, NULL::jsonb AS resource_id, false AS public_allowed, a.* FROM auth.access a WHERE false')) AS inventory_query
 FROM object_queries

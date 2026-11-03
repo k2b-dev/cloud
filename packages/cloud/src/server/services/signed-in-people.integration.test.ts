@@ -54,7 +54,16 @@ suiteFor(
         const invocation = await resolveIssuanceAuthority(invocationAuthorityFromRequest(authority), "core");
         if (!invocation) throw new Error("Invocation lost its resolved authority");
         authorities.push(invocation);
-        expect(invocation.accessSubject).toEqual(authority.accessSubject);
+        expect(invocation.accessSubject.type).toBe(authority.accessSubject.type);
+        if (authority.accessSubject.type === "user") {
+          if (invocation.accessSubject.type !== "user") throw new Error("Invocation lost its user subject");
+          expect(invocation.accessSubject.userId).toBe(authority.accessSubject.userId);
+          expect(invocation.accessSubject.delegatedByServiceAccountId).toBe(
+            authority.actor.kind === "service_account" ? authority.actor.serviceAccount.id : undefined,
+          );
+        } else {
+          expect(invocation.accessSubject).toEqual(authority.accessSubject);
+        }
       }
       const [audience] = await sql<{ id: string }[]>`INSERT INTO auth.access(authenticated_only, permission)
         VALUES (true, 'read') RETURNING id`;

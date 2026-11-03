@@ -527,11 +527,10 @@ regardless of its current members. Public entries never count, and neither do
 resource-bound or user-delegated service accounts: they disappear with their
 key or their user without passing the resource's rules.
 
-`isManagerEntry(entry, subject)` excludes the authenticated tier for a machine
-or anonymous caller. Without a subject, it classifies grant rows for
-last-manager protection: an authenticated admin row still keeps the resource
-manageable by people. Authorize callers with the resource resolver before
-changing grants.
+`isManagerEntry(entry)` classifies grant rows for last-manager protection.
+An authenticated admin row always counts because it keeps the resource
+manageable by people. The helper takes only the entry; authorize callers with
+the resource resolver before changing grants.
 
 Check every change of an existing grant with `ensureManagerRemains()` from
 `@k2b/cloud/server`, on administration routes too. Lock the resource row, then
