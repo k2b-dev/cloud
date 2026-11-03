@@ -15,7 +15,7 @@ To narrow the search, use the search-in button. Choose any combination of **Send
 
 **Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. After you open search with the magnifier or `/`, clearing or deleting the text restores the starting view and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
 
-For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **Search filters**.
+For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **More filters**. On a phone, **Search in**, **Place**, and **More filters …** share one menu, and its button names the current choice, such as **Everything · Whole mailbox**.
 
 The filter dialog shows the current search as conditions that you can edit. Choose **Add filter** for another field. When several filters are active, choose whether all filters or any filter must match. **Advanced conditions** stays collapsed until you need alternative or nested groups.
 
@@ -53,7 +53,7 @@ When extracted attachment text matches, the result names the attachment and show
 
 ## Use follow-up, assignment, and folders for different purposes {icon="layout-list"}
 
-The view tabs in the head show what happens next and who owns the work. Open **More** for Later, Done, Recent activity, Kept, and saved views. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
+The view tabs in the head show what happens next and who owns the work. Views that do not fit the head, such as Later, Done, Recent activity, Kept, or saved views, are under **More**. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
 
 | Place | View | What it shows |
 | --- | --- | --- |
@@ -286,7 +286,7 @@ For composing, drafts, attachments, signatures, and delivery options, see [Write
 
 ## Create reusable views and local tags {icon="layout-list"}
 
-Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Open saved views under **More** in the head. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
+Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Saved views are tabs in the head, under **More** when the head has no room for them. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
 
 - **Only me** creates a private view.
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.

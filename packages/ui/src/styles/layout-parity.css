@@ -2748,6 +2748,11 @@ html {
     display: none;
   }
 
+  /* The phone's view strip scrolls; a fitting strip keeps every view it shows here (see ViewTabs `fit`). */
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list {
+    --k2b-view-tabs-fit: none;
+  }
+
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more {
     display: flex;
   }

@@ -112,7 +112,7 @@ test.skipIf(isServer)("search filters open one builder however often they are pr
   };
   const dispose = render(() => createComponent(MailSearchHarness, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd" }), dom.root);
   try {
-    const filters = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!;
+    const filters = dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!;
     filters.click();
     // The trigger shows that it is busy and stays enabled, so it keeps focus for the dialog to return it.
     expect(filters.getAttribute("aria-busy")).toBe("true");
@@ -173,7 +173,7 @@ for (const [query, expected] of [
     );
     try {
       const before = searchBuilderOpens.length;
-      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+      dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
       const deadline = performance.now() + 2000;
       while (searchBuilderOpens.length === before && performance.now() < deadline) await Bun.sleep(1);
       expect(searchBuilderOpens.at(-1)).toMatchObject({ initialState: { expression: { query: expected } } });

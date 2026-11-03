@@ -340,6 +340,8 @@ const open = async (
   width = 1440,
   height: number = sizes.find(([w]) => w === width)?.[1] ?? 900,
   motion: "reduce" | "no-preference" = "reduce",
+  /** Runs before the first navigation, for example to delay some responses. */
+  prepare?: (page: Page) => Promise<void>,
 ) => {
   const context = await browser.newContext({
     viewport: { width, height },
@@ -362,6 +364,7 @@ const open = async (
       assets.push(`${response.url()}: HTTP ${response.status()}`);
   });
   try {
+    await prepare?.(page);
     await page.goto(new URL(path, server.url).href);
     await ready(page);
     return page;
@@ -728,7 +731,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 mkdirSync(directory, { recursive: true });
                 await page.screenshot({ path: join(directory, `search-head-${theme}-${width}.png`) });
               }
-              const fields = page.getByRole("button", { name: "Search in: Everything", exact: true });
+              // A phone combines Search in, Place and More filters in one menu.
+              const fields =
+                width === 390
+                  ? page.getByRole("button", { name: "Search options: Everything · Whole mailbox", exact: true })
+                  : page.getByRole("button", { name: "Search in: Everything", exact: true });
               await fields.focus();
               await fields.press("/");
               expect(await input.evaluate((element) => document.activeElement === element)).toBe(true);
@@ -748,6 +755,66 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await close(page);
             }
           });
+
+      // S3: wide, the search names its three options as equal chips; a phone combines them in one menu.
+      test("S3 search at 1680: Search in, Place and More filters stand as labelled chips in one row", async () => {
+        const page = await open(`${boxPath}?layout=auto`, 1680, 1050);
+        try {
+          await page.locator("[data-mail-search-trigger]").click();
+          await page.locator('input[name="q"]').waitFor({ state: "visible" });
+          await settled(page);
+          const chips = await page.evaluate(() =>
+            Array.from(document.querySelectorAll<HTMLElement>("[data-mail-head-search-options] .k2b-filter-chip"))
+              .filter((element) => element.getClientRects().length > 0)
+              .map((element) => ({
+                text: element.textContent?.trim(),
+                y: element.getBoundingClientRect().y,
+                height: element.getBoundingClientRect().height,
+              })),
+          );
+          expect(chips.map((chip) => chip.text)).toEqual(["Search in: Everything", "Place: Whole mailbox", "More filters"]);
+          expect(new Set(chips.map((chip) => chip.y)).size).toBe(1);
+          expect(new Set(chips.map((chip) => chip.height)).size).toBe(1);
+          expect(await page.locator("[data-mail-search-phone-options]").isVisible()).toBe(false);
+          await page.getByRole("button", { name: "More filters", exact: true }).click();
+          await page.getByRole("dialog").waitFor({ state: "visible" });
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("S3 search at 390: one menu holds Search in, Place and More filters, and its button names the choice", async () => {
+        const page = await open(`${boxPath}?folder=Filed1`, 390, 844);
+        try {
+          await page.locator("[data-mail-search-trigger]").click();
+          await page.locator('input[name="q"]').waitFor({ state: "visible" });
+          await settled(page);
+          const trigger = page.locator("[data-mail-search-phone-options]");
+          expect((await trigger.textContent())?.trim()).toBe("Everything · Whole mailbox");
+          expect(await page.locator("[data-mail-head-search-options] .mail-search-wide-option:visible").count()).toBe(0);
+          const before = await page.locator('input[name="q"]').boundingBox();
+          await trigger.click();
+          // A phone opens the menu as a sheet.
+          await page.getByRole("group", { name: "Search in" }).waitFor({ state: "visible" });
+          await page.getByRole("group", { name: "Place" }).waitFor({ state: "visible" });
+          await page.getByRole("menuitemcheckbox", { name: "Subject" }).click();
+          // A choice keeps the menu open and the button names it at once.
+          await page.getByRole("menuitemradio", { name: /Only Filed/ }).click();
+          await page.keyboard.press("Escape");
+          await settled(page);
+          expect((await trigger.textContent())?.trim()).toBe("Everything, Subject · Only Filed");
+          expect(await page.locator('input[name="q"]').boundingBox()).toEqual(before);
+          await trigger.click();
+          await page.getByRole("menuitem", { name: "More filters …" }).click();
+          await page
+            .getByRole("dialog")
+            .filter({ hasText: /filter/i })
+            .first()
+            .waitFor({ state: "visible" });
+        } finally {
+          await close(page);
+        }
+      });
 
       test("compact search head: Escape from a result returns to the source folder and magnifier", async () => {
         const page = await open(`${boxPath}?folder=Filed1`);
@@ -2336,6 +2403,354 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       ] as const;
 
       section("wide", () => {
+        /** The head's view strip: which tabs show, what More counts, and whether the shown ones fit its room. */
+        const headTabs = (page: Page) =>
+          page.evaluate(() => {
+            const list = document.querySelector<HTMLElement>(".mail-workspace .k2b-view-tabs__list")!;
+            const shown = (element: Element) => element.getClientRects().length > 0;
+            const items = Array.from(list.querySelectorAll<HTMLElement>(":scope > .k2b-view-tabs__item"));
+            const more = list.querySelector<HTMLElement>(":scope > .k2b-view-tabs__more");
+            const count =
+              more && shown(more) ? Array.from(more.querySelectorAll(".k2b-view-tabs__more-count")).find(shown)?.textContent : null;
+            const boxes = Array.from(list.children)
+              .filter(shown)
+              .map((child) => child.getBoundingClientRect());
+            const style = getComputedStyle(list);
+            const room = list.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+            const bounds = list.getBoundingClientRect();
+            const events = list.querySelector('[data-view-tab="events"]')!.getBoundingClientRect();
+            return {
+              shown: items.filter((item) => shown(item) && !item.hasAttribute("data-pinned")).map((item) => item.dataset.viewTab!),
+              flowing: items.filter((item) => !item.hasAttribute("data-pinned")).length,
+              more: count ? Number(count.replace("+", "")) : 0,
+              overflow: Math.max(...boxes.map((box) => box.right)) - Math.min(...boxes.map((box) => box.left)) - room,
+              eventsWhole: events.width > 0 && events.left >= bounds.left - 0.5 && events.right <= bounds.right + 0.5,
+            };
+          });
+
+        // S3: on wide screens the number of tabs follows the head's room instead of five and More.
+        for (const [width, height, reading, least, most] of [
+          [1680, 1050, false, 8, 99],
+          [1680, 1050, true, 6, 99],
+          [1280, 800, false, 4, 99],
+          [1280, 800, true, 2, 5],
+          [1024, 768, true, 1, 3],
+        ] as const)
+          test(`S3 head at ${width}${reading ? " while reading" : ""}: the tabs fill the head's room, More counts the rest, Events stays whole`, async () => {
+            const page = await open(`${boxPath}?layout=auto${reading ? "&conversation=Conv01" : ""}`, width, height);
+            try {
+              await settled(page);
+              const tabs = await headTabs(page);
+              expect(tabs.overflow, JSON.stringify(tabs)).toBeLessThanOrEqual(1);
+              expect(tabs.eventsWhole).toBe(true);
+              expect(tabs.shown).toContain("all");
+              expect(tabs.shown.length + tabs.more).toBe(tabs.flowing);
+              expect(tabs.shown.length).toBeGreaterThanOrEqual(least);
+              expect(tabs.shown.length).toBeLessThanOrEqual(most);
+              // An open view beyond the room keeps its place in the strip.
+              await page.goto(new URL(`${boxPath}?layout=auto&view=kept${reading ? "&conversation=Conv01" : ""}`, server.url).href);
+              await ready(page);
+              await settled(page);
+              const kept = await headTabs(page);
+              expect(kept.shown).toContain("kept");
+              expect(kept.overflow).toBeLessThanOrEqual(1);
+              expect(kept.shown.length + kept.more).toBe(kept.flowing);
+            } finally {
+              await close(page);
+            }
+          });
+
+        // The fit converges: a bounded number of passes on load and per resize, then none while nothing changes.
+        // A pass clears every view's fit mark first, so the calls on the "All" view count the passes. WebKit reports a
+        // ResizeObserver loop as a page error, which close() checks; the window listener covers Chromium.
+        for (const reading of [false, true])
+          test(`S3 head${reading ? " while reading" : ""}: the tab fit settles in a bounded number of passes and then stays still`, async () => {
+            const page = await open(`${boxPath}?layout=auto${reading ? "&conversation=Conv01" : ""}`, 834, 1194);
+            try {
+              await page.addInitScript(() => {
+                const state = { passes: 0, loops: [] as string[] };
+                Reflect.set(window, "fitState", state);
+                const remove = Element.prototype.removeAttribute;
+                Element.prototype.removeAttribute = function (this: Element, name: string) {
+                  if (name === "data-fit-hidden" && this.matches('.mail-workspace .k2b-view-tabs__item[data-view-tab="all"]'))
+                    state.passes += 1;
+                  return remove.call(this, name);
+                };
+                window.addEventListener("error", (event) => {
+                  if (String(event.message).includes("ResizeObserver")) state.loops.push(event.message);
+                });
+              });
+              await page.reload();
+              await ready(page);
+              await settled(page);
+              const frames = (count: number) =>
+                page.evaluate(
+                  (count) =>
+                    new Promise<void>((done) => {
+                      let left = count;
+                      const step = () => (--left <= 0 ? done() : requestAnimationFrame(step));
+                      requestAnimationFrame(step);
+                    }),
+                  count,
+                );
+              const fit = () => page.evaluate(() => Reflect.get(window, "fitState") as { passes: number; loops: string[] });
+              await frames(10);
+              const loaded = (await fit()).passes;
+              // The server frame and its next frame, the client render, its mount and next frame; 6 in Chromium.
+              expect(loaded).toBeLessThanOrEqual(8);
+              await frames(10);
+              expect((await fit()).passes, "no passes while nothing changes").toBe(loaded);
+              let before = loaded;
+              for (const width of [1680, 900, 1440, 834]) {
+                await page.setViewportSize({ width, height: 1194 });
+                await frames(10);
+                const after = (await fit()).passes;
+                expect(after - before, `passes for ${width}`).toBeLessThanOrEqual(2);
+                await frames(10);
+                expect((await fit()).passes, `still at ${width}`).toBe(after);
+                before = after;
+              }
+              expect((await fit()).loops).toEqual([]);
+            } finally {
+              await close(page);
+            }
+          });
+
+        // A first visit can paint before the web fonts load (font-display: swap): the fit must then follow the fonts, so
+        // the server frame, measured once they are ready, and the client render show the same tabs.
+        for (const [width, height] of [
+          [1440, 900],
+          [834, 1194],
+        ] as const)
+          test(`S3 head at ${width}: web fonts that load late fit the server frame like the client render`, async () => {
+            const page = await open(`${boxPath}?layout=auto`, width, height, "reduce", async (page) => {
+              await page.route(/\.woff2(\?|$)/, async (route) => {
+                // The text font late, the icon font later: the Events tab's icon then widens after the head settled.
+                await new Promise((done) => setTimeout(done, route.request().url().includes("ibm-plex") ? 300 : 700));
+                await route.continue();
+              });
+            });
+            try {
+              // Visible tab labels and the strip's right edge, before and after the client render.
+              const strip = async (name: "server" | "hydrated") => {
+                const value: { right: number; labels: { text: string }[] } = JSON.parse(
+                  (await page.locator("html").getAttribute(`data-${name}-strip`))!,
+                );
+                return { right: value.right, labels: value.labels.map((label) => label.text) };
+              };
+              const server = await strip("server");
+              const hydrated = await strip("hydrated");
+              expect(hydrated.labels).toEqual(server.labels);
+              expect(Math.abs(hydrated.right - server.right)).toBeLessThanOrEqual(0.5);
+              assertFrame(await recordedFrame(page, "server"), await recordedFrame(page, "hydrated"), "server → hydrated");
+              await settled(page);
+              expect((await headTabs(page)).overflow).toBeLessThanOrEqual(1);
+            } finally {
+              await close(page);
+            }
+          });
+
+        test("S3 head on a phone: the view strip keeps scrolling with its first views and More", async () => {
+          const page = await open(`${boxPath}?layout=auto`, 390, 844);
+          try {
+            await settled(page);
+            expect(await page.locator(".mail-workspace .k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
+            expect((await headTabs(page)).shown).toEqual(["all", "needs_action", "mine"]);
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("S3 head: widening and narrowing the window brings tabs back and lets them go, without overflow", async () => {
+          const page = await open(`${boxPath}?layout=auto`, 1280, 800);
+          try {
+            await settled(page);
+            const narrow = await headTabs(page);
+            await page.setViewportSize({ width: 1680, height: 1050 });
+            await settled(page);
+            const wide = await headTabs(page);
+            expect(wide.shown.length).toBeGreaterThan(narrow.shown.length);
+            expect(wide.overflow).toBeLessThanOrEqual(1);
+            await page.setViewportSize({ width: 1280, height: 800 });
+            await settled(page);
+            expect(await headTabs(page)).toEqual(narrow);
+          } finally {
+            await close(page);
+          }
+        });
+
+        // S3: the reader's actions take their own row above the subject; a wide bar names them, a laptop shows icons.
+        for (const [width, height, labels] of [
+          [1680, 1050, true],
+          [1440, 900, true],
+          [1280, 800, false],
+        ] as const)
+          test(`S3 reader bar at ${width}: actions above the subject, ${labels ? "with their names" : "as icons"}`, async () => {
+            const page = await open(`${boxPath}?layout=auto&conversation=Conv01`, width, height);
+            try {
+              const toolbar = page.locator("[data-mail-reader-toolbar]");
+              await toolbar.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
+              await settled(page);
+              const geometry = await toolbar.evaluate((element) => {
+                const box = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
+                const label = (id: string) =>
+                  element.querySelector(`[data-mail-toolbar-action="${id}"] :is(.mail-reader-action-label, .mail-reader-respond-label)`);
+                return {
+                  controlsBottom: box(".mail-reader-controls").bottom,
+                  titleTop: box("[data-mail-reader-heading]").top,
+                  titleLeft: box("[data-mail-reader-heading]").left,
+                  controlsLeft: box(".mail-reader-controls").left,
+                  named: ["reply_all", "forward", "done", "spam", "trash"].map((id) => label(id)?.getClientRects().length ?? 0),
+                  doneName: label("done")?.textContent,
+                };
+              });
+              expect(geometry.controlsBottom).toBeLessThanOrEqual(geometry.titleTop + 0.5);
+              expect(Math.abs(geometry.controlsLeft - geometry.titleLeft)).toBeLessThanOrEqual(8);
+              expect(geometry.named.map((count) => count > 0)).toEqual(geometry.named.map(() => labels));
+              if (labels) {
+                expect(geometry.doneName).toBe("Done");
+                // The short name is part of the accessible name, which still names the whole action.
+                expect(await toolbar.locator('[data-mail-toolbar-action="done"]').getAttribute("aria-label")).toBe("Mark as done");
+                expect(await toolbar.locator('[data-mail-toolbar-action="trash"]').getAttribute("aria-label")).toBe("Move to Trash");
+              }
+              // The named bar still fits the reader.
+              expect(await toolbar.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+            } finally {
+              await close(page);
+            }
+          });
+
+        // The longest German names of three other actions still fit the widest bar beside the named replies.
+        for (const toolbar of ["reply,reply_all,forward,move,read,print", "reply,reply_all,forward,flag,tags,merge"])
+          test(`S3 reader bar at 1440 in German with ${toolbar}: every name fits`, async () => {
+            const page = await open(`${boxPath}?layout=auto&conversation=Conv01&locale=de&toolbar=${toolbar}`, 1440, 900);
+            try {
+              const toolbarElement = page.locator("[data-mail-reader-toolbar]");
+              await toolbarElement.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
+              await settled(page);
+              const result = await toolbarElement.evaluate((element) => ({
+                overflow: element.scrollWidth - element.clientWidth,
+                controls:
+                  element.querySelector(".mail-reader-controls")!.scrollWidth - element.querySelector(".mail-reader-controls")!.clientWidth,
+                names: Array.from(element.querySelectorAll(".mail-reader-action-label")).filter(
+                  (label) => label.getClientRects().length > 0,
+                ).length,
+              }));
+              expect(result.names).toBe(3);
+              expect(result.overflow).toBeLessThanOrEqual(1);
+              expect(result.controls).toBeLessThanOrEqual(1);
+            } finally {
+              await close(page);
+            }
+          });
+
+        test("S3 reader bar on a phone: the subject stays between the way back and the controls", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
+          try {
+            const toolbar = page.locator("[data-mail-reader-toolbar]");
+            await toolbar.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
+            await settled(page);
+            const boxes = await toolbar.evaluate((element) =>
+              [".mail-reader-back", "[data-mail-reader-heading]", ".mail-reader-controls"].map((selector) => {
+                const { left, top } = element.querySelector(selector)!.getBoundingClientRect();
+                return { left, top };
+              }),
+            );
+            expect(boxes[0]!.left).toBeLessThan(boxes[1]!.left);
+            expect(boxes[1]!.left).toBeLessThan(boxes[2]!.left);
+            expect(Math.abs(boxes[0]!.top - boxes[2]!.top)).toBeLessThanOrEqual(2);
+          } finally {
+            await close(page);
+          }
+        });
+
+        // S3: opening and closing the reader moves nothing in the head (layout-shift entries with a source there).
+        for (const [layout, width, height] of [
+          ["columns", 1680, 1050],
+          ["columns", 1280, 800],
+          ["split", 1680, 1050],
+          ["auto", 1280, 800],
+        ] as const)
+          test(`S3: opening ${layout === "columns" ? "and closing " : ""}the reader (${layout}) at ${width} moves nothing in the head`, async () => {
+            const page = await open(`${boxPath}?layout=${layout}`, width, height);
+            try {
+              await settled(page);
+              const head = () =>
+                page.evaluate(() =>
+                  Array.from(
+                    document.querySelectorAll(".mail-workspace .k2b-app-workspace__head :is(.k2b-view-tabs__item, .k2b-view-tabs__more)"),
+                  )
+                    .filter((element) => element.getClientRects().length > 0)
+                    .map((element) => {
+                      const { x, y, width, height } = element.getBoundingClientRect();
+                      return { x, y, width, height };
+                    }),
+                );
+              await page.evaluate(() => {
+                const shifts: string[] = [];
+                Reflect.set(window, "headShifts", shifts);
+                new PerformanceObserver((list) => {
+                  for (const entry of list.getEntries())
+                    for (const source of (entry as PerformanceEntry & { sources?: { node?: Node }[] }).sources ?? [])
+                      if (source.node instanceof Element && source.node.closest(".k2b-app-workspace__head"))
+                        shifts.push(source.node.className || source.node.tagName);
+                }).observe({ type: "layout-shift", buffered: false });
+              });
+              const before = await head();
+              await page.locator('[data-conversation-id="Conv03"] .mail-list-row').first().click();
+              await page.waitForURL(/conversation=Conv03/);
+              await page.locator("[data-mail-reader-heading]").waitFor({ state: "visible" });
+              await settled(page);
+              if (layout !== "auto") expect(await head()).toEqual(before);
+              if (layout === "columns") {
+                await page.locator("[data-mail-reader-close]").click();
+                await page.waitForURL((url) => !url.searchParams.has("conversation"));
+                await settled(page);
+                expect(await head()).toEqual(before);
+              }
+              await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+              expect(await page.evaluate(() => Reflect.get(window, "headShifts"))).toEqual([]);
+            } finally {
+              await close(page);
+            }
+          });
+
+        if (screenshots)
+          test("optional wide head review screenshots", async () => {
+            const directory = join(resolve(screenshots), "wide-head");
+            mkdirSync(directory, { recursive: true });
+            for (const [width, height] of [
+              [1680, 1050],
+              [1440, 900],
+              [1280, 800],
+              [1024, 768],
+              [390, 844],
+            ] as const)
+              for (const [name, path] of [
+                ["list", `${boxPath}?layout=auto&theme=light`],
+                ["reader", `${boxPath}?layout=auto&conversation=Conv01&theme=light`],
+              ] as const) {
+                const page = await open(path, width, height);
+                try {
+                  await settled(page);
+                  await page.screenshot({ path: join(directory, `${width}-${name}.png`) });
+                  if (name === "list") {
+                    await page.locator("[data-mail-search-trigger]").first().click();
+                    await page.locator("[data-mail-head-search] input").waitFor({ state: "visible" });
+                    await settled(page);
+                    await page.screenshot({ path: join(directory, `${width}-search.png`) });
+                    if (width === 390) {
+                      await page.locator("[data-mail-search-phone-options]").click();
+                      await page.getByRole("group", { name: "Place" }).waitFor({ state: "visible" });
+                      await page.waitForTimeout(300);
+                      await page.screenshot({ path: join(directory, `${width}-search-menu.png`) });
+                    }
+                  }
+                } finally {
+                  await close(page);
+                }
+              }
+          });
         for (const row of table) {
           const label = `${row.width}${row.panel ? ` with a ${row.panel} px panel` : ""}`;
           test(`F2 at ${label}: list, reader, reading column and Detail follow the 1920/2560 table, server = hydrated = settled`, async () => {
@@ -2403,11 +2818,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           });
 
         for (const item of [
-          { path: widePath(), width: 2560, height: 1080, labels: false, shown: true },
+          // S3: a bar with room names its replies; a narrower one shows icons.
+          { path: widePath(), width: 2560, height: 1080, labels: true, shown: true },
           { path: widePath(), width: 1920, height: 1080, labels: false, shown: true },
           { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194, labels: false, shown: false },
         ] as const)
-          test(`reader toolbar at ${item.width}: optional replies are icons and move into overflow below 576 px`, async () => {
+          test(`reader toolbar at ${item.width}: optional replies are ${item.labels ? "named" : "icons"} and move into overflow below 576 px`, async () => {
             const page = await open(item.path, item.width, item.height);
             try {
               const label = `${item.width}`;
