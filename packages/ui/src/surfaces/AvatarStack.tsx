@@ -4,7 +4,7 @@ import { prefersMenuSheet } from "../actions/menu-sheet";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
-import { Avatar, type AvatarShape } from "./Avatar";
+import { Avatar, type AvatarShape, type AvatarTone } from "./Avatar";
 import { useAvatarMessages } from "./avatar-messages";
 
 export type AvatarStackPerson = {
@@ -135,13 +135,51 @@ const PeopleList = (props: {
   </>
 );
 
+export type AvatarFacesPerson = Pick<AvatarStackPerson, "name" | "src" | "icon" | "shape"> & { tone?: AvatarTone };
+
+export type AvatarFacesProps = {
+  people: readonly AvatarFacesPerson[];
+  /** Faces before "+n". Defaults to 3. */
+  max?: number;
+  /** Everyone the faces stand for when `people` lists only some of them; "+n" counts the rest. */
+  total?: number;
+  /** `sm` (default) matches the stack button; `md` suits a row or table cell whose text the faces stand beside. */
+  size?: "sm" | "md";
+};
+
+/**
+ * The stack's faces and "+n" without its button or list, for a row or link that is already interactive. The faces
+ * are decorative: name the people in the surrounding label or a tooltip.
+ */
+export function AvatarFaces(props: AvatarFacesProps): JSX.Element {
+  const messages = useAvatarMessages();
+  const max = () => Math.max(1, props.max ?? 3);
+  const shown = () => props.people.slice(0, max());
+  const more = () => Math.max(0, Math.max(props.total ?? 0, props.people.length) - shown().length);
+  return (
+    <>
+      <span class="k2b-avatar-stack__faces" data-faces-size={props.size === "md" ? "md" : undefined} aria-hidden="true">
+        <For each={shown()}>
+          {(person) => (
+            <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} tone={person.tone} size="xs" alt="" />
+          )}
+        </For>
+      </span>
+      <Show when={more() > 0}>
+        <span class="k2b-avatar-stack__more" aria-hidden="true" title={messages().moreCount({ count: more() })}>
+          +{more()}
+        </span>
+      </Show>
+    </>
+  );
+}
+
 /**
  * A few overlapping faces, then "+n", as one button. It opens the full list of people beside it, or as a bottom sheet
  * on phones. People with `self` are listed last and never shown in the stack.
  */
 export function AvatarStack(props: AvatarStackProps): JSX.Element {
   const locale = useLocale();
-  const messages = useAvatarMessages();
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const popoverId = `k2b-avatar-stack-${id}`;
   const titleId = `${popoverId}-title`;
@@ -153,9 +191,6 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
   onCleanup(() => disposed.abort());
 
   const faces = () => props.people.filter((person) => !person.self);
-  const max = () => Math.max(1, props.max ?? 3);
-  const shown = () => faces().slice(0, max());
-  const more = () => Math.max(0, faces().length - max());
 
   const place = () => {
     const rect = dropdownPosition(trigger.getBoundingClientRect(), popover.getBoundingClientRect(), "bottom-left", {
@@ -249,16 +284,7 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
             </span>
           }
         >
-          <span class="k2b-avatar-stack__faces" aria-hidden="true">
-            <For each={shown()}>
-              {(person) => <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} size="xs" alt="" />}
-            </For>
-          </span>
-          <Show when={more() > 0}>
-            <span class="k2b-avatar-stack__more" aria-hidden="true" title={messages().moreCount({ count: more() })}>
-              +{more()}
-            </span>
-          </Show>
+          <AvatarFaces people={faces()} max={props.max} />
         </Show>
       </button>
       <div

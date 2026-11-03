@@ -466,108 +466,112 @@ export default function MailConversationList(props: {
                   </p>
                 )}
               </Show>
-              <Show when={props.columns}>
-                {(columns) => (
-                  <div class="mail-columns-head" classList={{ "mail-columns-personal": !columns().shared }} aria-hidden="true">
-                    <span />
-                    <span class="mail-columns-head-cells">
-                      <span>{messages().columnFrom}</span>
-                      <span>{messages().columnSubject}</span>
-                      <Show when={columns().shared}>
-                        <span>{messages().columnAssignees}</span>
-                        <span>{messages().columnStatus}</span>
-                      </Show>
-                      <span class="mail-columns-head-time">{messages().columnTime}</span>
-                    </span>
-                  </div>
-                )}
-              </Show>
-              <div
-                class="flex flex-col gap-0.5"
-                classList={{ "mail-columns": Boolean(props.columns), "mail-columns-personal": props.columns?.shared === false }}
-                style={{ opacity: props.loading ? 0.5 : undefined }}
-                role="list"
-                aria-label={
-                  props.listMode === "conversations"
-                    ? messages().conversationListLabel({ title: props.title })
-                    : messages().messageListLabel({ title: props.title })
-                }
-              >
-                <For each={props.items}>
-                  {(item, index) => (
-                    <>
-                      <Show when={dayStarts().get(index())}>
-                        {(group) => (
-                          <div role="listitem" class="mail-day-group" data-mail-day-group={group()}>
-                            <h3 class="k2b-list-group-heading">{dayLabel(group())}</h3>
-                          </div>
-                        )}
-                      </Show>
-                      <MailConversationRow
-                        item={item}
-                        columns={
-                          props.columns
-                            ? { assignees: props.columns.shared ? props.columns.assigneeNames(item.assigneeUserIds) : null }
-                            : undefined
-                        }
-                        leaving={props.leavingKeys?.has(mailListRowKey(item))}
-                        requestUrl={requestUrl()}
-                        state={{
-                          selectedConversationId: props.selectedConversationId,
-                          selectedMessageId: props.selectedMessageId,
-                          selectedConversationIds: props.selectedConversationIds,
-                          selectionMode: props.selectionMode,
-                          canWrite: props.canWrite,
-                          spamAction: spamAction(item),
-                          dateConfig: props.dateConfig,
-                          currentUserId: props.currentUserId,
-                        }}
-                        actions={{
-                          navigate: props.onNavigateItem,
-                          toggleSelection: props.onToggleSelection,
-                          itemAction: props.onItemAction,
-                          manageTags: props.onManageTags,
-                          merge: props.onMergeItem,
-                          respond: props.onRespondItem,
-                          assignToMe: props.onAssignItemToMe,
-                          assigneeNames: props.assigneeNames,
-                          setCompletion: props.onSetItemCompletion,
-                        }}
-                        quickLook={{
-                          id: quickLook.id,
-                          anchor: quickLook.anchor,
-                          active: quickLook.active,
-                          begin: () => {
-                            cancelPrefetch();
-                            hoverAttempt = null;
-                          },
-                          // Every mouse move restarts the rest, so the card usually opens with its data.
-                          prefetch: (item, row, pointer) => {
-                            cancelPrefetch();
-                            if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
-                            prefetchTimer = setTimeout(() => {
-                              prefetchTimer = undefined;
-                              // The list may have moved another row under the still mouse before its scroll event.
-                              const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
-                              if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
-                              const key = attemptKey(item);
-                              if (key === hoverAttempt) return;
-                              hoverAttempt = key;
-                              quickLookData.load(item);
-                            }, QUICK_LOOK_PREFETCH_DELAY);
-                          },
-                          release: (item) => {
-                            cancelPrefetch();
-                            if (quickLook.active() !== item.conversationId) {
-                              if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
-                              quickLookData.cancel(item);
-                            }
-                          },
-                        }}
-                      />
-                    </>
+              {/* The columns' heading and rows share one measured width (`mail-columns`). */}
+              <div class="mail-columns-area">
+                <Show when={props.columns}>
+                  {(columns) => (
+                    <div class="mail-columns-head" classList={{ "mail-columns-personal": !columns().shared }} aria-hidden="true">
+                      <span />
+                      <span class="mail-columns-head-cells">
+                        <span>{messages().columnFrom}</span>
+                        <span>{messages().columnSubject}</span>
+                        <span class="mail-columns-head-participants">{messages().columnParticipants}</span>
+                        <Show when={columns().shared}>
+                          <span>{messages().columnAssignees}</span>
+                          <span>{messages().columnStatus}</span>
+                        </Show>
+                        <span class="mail-columns-head-time">{messages().columnTime}</span>
+                      </span>
+                    </div>
                   )}
-                </For>
+                </Show>
+                <div
+                  class="flex flex-col gap-0.5"
+                  classList={{ "mail-columns": Boolean(props.columns), "mail-columns-personal": props.columns?.shared === false }}
+                  style={{ opacity: props.loading ? 0.5 : undefined }}
+                  role="list"
+                  aria-label={
+                    props.listMode === "conversations"
+                      ? messages().conversationListLabel({ title: props.title })
+                      : messages().messageListLabel({ title: props.title })
+                  }
+                >
+                  <For each={props.items}>
+                    {(item, index) => (
+                      <>
+                        <Show when={dayStarts().get(index())}>
+                          {(group) => (
+                            <div role="listitem" class="mail-day-group" data-mail-day-group={group()}>
+                              <h3 class="k2b-list-group-heading">{dayLabel(group())}</h3>
+                            </div>
+                          )}
+                        </Show>
+                        <MailConversationRow
+                          item={item}
+                          columns={
+                            props.columns
+                              ? { assignees: props.columns.shared ? props.columns.assigneeNames(item.assigneeUserIds) : null }
+                              : undefined
+                          }
+                          leaving={props.leavingKeys?.has(mailListRowKey(item))}
+                          requestUrl={requestUrl()}
+                          state={{
+                            selectedConversationId: props.selectedConversationId,
+                            selectedMessageId: props.selectedMessageId,
+                            selectedConversationIds: props.selectedConversationIds,
+                            selectionMode: props.selectionMode,
+                            canWrite: props.canWrite,
+                            spamAction: spamAction(item),
+                            dateConfig: props.dateConfig,
+                            currentUserId: props.currentUserId,
+                          }}
+                          actions={{
+                            navigate: props.onNavigateItem,
+                            toggleSelection: props.onToggleSelection,
+                            itemAction: props.onItemAction,
+                            manageTags: props.onManageTags,
+                            merge: props.onMergeItem,
+                            respond: props.onRespondItem,
+                            assignToMe: props.onAssignItemToMe,
+                            assigneeNames: props.assigneeNames,
+                            setCompletion: props.onSetItemCompletion,
+                          }}
+                          quickLook={{
+                            id: quickLook.id,
+                            anchor: quickLook.anchor,
+                            active: quickLook.active,
+                            begin: () => {
+                              cancelPrefetch();
+                              hoverAttempt = null;
+                            },
+                            // Every mouse move restarts the rest, so the card usually opens with its data.
+                            prefetch: (item, row, pointer) => {
+                              cancelPrefetch();
+                              if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
+                              prefetchTimer = setTimeout(() => {
+                                prefetchTimer = undefined;
+                                // The list may have moved another row under the still mouse before its scroll event.
+                                const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+                                if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
+                                const key = attemptKey(item);
+                                if (key === hoverAttempt) return;
+                                hoverAttempt = key;
+                                quickLookData.load(item);
+                              }, QUICK_LOOK_PREFETCH_DELAY);
+                            },
+                            release: (item) => {
+                              cancelPrefetch();
+                              if (quickLook.active() !== item.conversationId) {
+                                if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
+                                quickLookData.cancel(item);
+                              }
+                            },
+                          }}
+                        />
+                      </>
+                    )}
+                  </For>
+                </div>
               </div>
             </>
           )}

@@ -3194,6 +3194,54 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
+        for (const [locale, summary] of [
+          [
+            "en",
+            "17 participants · External: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel and 7 more",
+          ],
+          [
+            "de",
+            "17 Beteiligte · Extern: Sender 5 · Team: Lea Brandt, Tom Keller, Anna Roth, Ben Fischer, Clara Hoff, David Lang, Eva Pohl, Finn Braun, Greta Vogel und 7 weitere",
+          ],
+        ] as const)
+          test(`the wide list shows who wrote, three faces and +n, and names them in a tooltip (${locale})`, async () => {
+            const page = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`);
+            try {
+              const stack = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] [data-mail-participants]`);
+              expect(await stack("Conv05").getAttribute("aria-label")).toBe(summary);
+              expect(await stack("Conv05").locator(".k2b-avatar").count()).toBe(3);
+              expect(await stack("Conv05").locator(".k2b-avatar-stack__more").textContent()).toBe("+14");
+              // A row where only its sender wrote shows that sender alone.
+              expect(await stack("Conv01").locator(".k2b-avatar").count()).toBe(1);
+              expect(await stack("Conv01").locator(".k2b-avatar-stack__more").count()).toBe(0);
+              // Every stack starts at the same place and has the same width, so no row moves its columns.
+              const boxes = await page.locator(".mail-workspace .mail-row-participants-cell").evaluateAll((cells) =>
+                cells.map((cell) => {
+                  const { left, width } = cell.getBoundingClientRect();
+                  return { left, width };
+                }),
+              );
+              expect(boxes.length).toBe(12);
+              for (const box of boxes) expect(box).toEqual(boxes[0]!);
+              await stack("Conv05").hover();
+              await page.getByRole("tooltip").filter({ hasText: summary }).waitFor();
+              if (screenshots && locale === "de") {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, "participants-light-1440.png") });
+                // Phones keep their two-line rows; who wrote waits in the reader.
+                const phone = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`, 390);
+                try {
+                  expect(await phone.locator(".mail-workspace .mail-row-participants-cell:visible").count()).toBe(0);
+                  await phone.screenshot({ path: join(screenshots, browserName, "participants-light-390.png") });
+                } finally {
+                  await close(phone);
+                }
+              }
+            } finally {
+              await close(page);
+            }
+          });
+
         test("Copy Cloud ID writes the permalink and the structured reference from every menu and the details", async () => {
           const { parseCloudResourceClipboard, parseCloudResourceUrl } = await import("@k2b/cloud/contracts");
           const page = await open(`${boxPath}?conversation=Conv01&details=1`);

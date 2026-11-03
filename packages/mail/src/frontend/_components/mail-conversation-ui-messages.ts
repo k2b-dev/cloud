@@ -79,6 +79,11 @@ export const mailConversationUiMessages = i18n.define({
       flaggedItem: ({ kind }: { kind: string }) => `Flagged ${kind}.`,
       additionalCorrespondents: ({ count, names }: { count: number; names: string }) =>
         `${count} additional correspondent${count === 1 ? "" : "s"}: ${names}`,
+      participants: ({ count }: { count: number }) => `${count} participant${count === 1 ? "" : "s"}`,
+      participantsExternal: ({ names }: { names: string }) => `External: ${names}`,
+      participantsTeam: ({ names }: { names: string }) => `Team: ${names}`,
+      participantsAutomations: ({ names }: { names: string }) => `Automations: ${names}`,
+      participantsMore: ({ names, count }: { names: string; count: number }) => `${names} and ${count} more`,
       matchedAttachmentTitle: ({ name }: { name: string }) => `Matched in attachment ${name}`,
       matchedAttachment: ({ name, snippet }: { name: string; snippet: string }) => `Matched in ${name}: ${snippet}`,
       untitledAttachment: "Untitled attachment",
@@ -501,6 +506,11 @@ export const mailConversationUiMessages = i18n.define({
       flaggedItem: ({ kind }) => `${kind} markiert.`,
       additionalCorrespondents: ({ count, names }) =>
         `${count} weitere ${count === 1 ? "beteiligte Person" : "beteiligte Personen"}: ${names}`,
+      participants: ({ count }) => (count === 1 ? "1 beteiligte Person" : `${count} Beteiligte`),
+      participantsExternal: ({ names }) => `Extern: ${names}`,
+      participantsTeam: ({ names }) => `Team: ${names}`,
+      participantsAutomations: ({ names }) => `Automationen: ${names}`,
+      participantsMore: ({ names, count }) => `${names} und ${count} weitere`,
       matchedAttachmentTitle: ({ name }) => `Treffer im Anhang ${name}`,
       matchedAttachment: ({ name, snippet }) => `Treffer in ${name}: ${snippet}`,
       untitledAttachment: "Anhang ohne Namen",

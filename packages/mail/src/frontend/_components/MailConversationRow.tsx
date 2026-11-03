@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { ContextMenu, Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
+import { AvatarFaces, ContextMenu, Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
@@ -7,6 +7,7 @@ import { type MailRespondIntent, mailConversationMenuItems } from "./mail-conver
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
+import { mailParticipantFaces, mailParticipantSummary, mailRowParticipants } from "./mail-row-participants";
 
 /** Tags shown as pills on a row's fourth line; the rest are counted. */
 const MAX_ROW_TAGS = 3;
@@ -83,6 +84,8 @@ export default function MailConversationRow(props: {
   const bulkSelected = () => Boolean(props.item.conversationId && state().selectedConversationIds.has(props.item.conversationId));
   const attachmentDownloadHref = () => buildMailAttachmentDownloadHref(props.requestUrl, props.item);
   const attachmentLabel = () => t().attachmentCount({ count: props.item.attachmentCount ?? 0 });
+  const participants = createMemo(() => mailRowParticipants(props.item, primaryCorrespondent()));
+  const participantLabel = () => mailParticipantSummary(t(), participants().people, participants().count);
   const [menuOpen, setMenuOpen] = createSignal(false);
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
@@ -241,6 +244,16 @@ export default function MailConversationRow(props: {
                       </span>
                     </Show>
                   </span>
+                </Show>
+              </span>
+              {/* Who wrote: up to three faces in a fixed-width column, then "+n"; the tooltip names them by kind. */}
+              <span class="mail-row-cell mail-row-participants-cell">
+                <Show when={props.item.selectionKind === "conversation"}>
+                  <Tooltip.Anchor content={participantLabel()}>
+                    <span class="mail-row-participants" role="img" aria-label={participantLabel()} data-mail-participants>
+                      <AvatarFaces people={mailParticipantFaces(participants().people)} total={participants().count} size="md" />
+                    </span>
+                  </Tooltip.Anchor>
                 </Show>
               </span>
               <Show when={columns().assignees}>

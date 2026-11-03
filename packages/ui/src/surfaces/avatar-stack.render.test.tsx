@@ -11,7 +11,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { AvatarStack } = await import("./AvatarStack");
+const { AvatarFaces, AvatarStack } = await import("./AvatarStack");
 
 const people = [
   { id: "me", name: "Anna Becker", self: true, detail: "writing" },
@@ -64,5 +64,27 @@ describe("AvatarStack", () => {
     expect(html).toMatch(/<button type="button" class="k2b-avatar-stack__row"/);
     // The server disposes the render after it returns; a row's focus cleanup must not run there.
     await Bun.sleep(0);
+  });
+
+  test("draws the faces without a button for a row that is already interactive, counting everyone in +n", () => {
+    const html = renderToString(() =>
+      createComponent(AvatarFaces, {
+        people: [{ name: "Sabine Jahn", tone: "neutral" }, { name: "Lea Brandt" }, { name: "Tom Keller" }, { name: "Anna Roth" }],
+        total: 17,
+      }),
+    );
+    expect(html).not.toContain("<button");
+    expect(html).toContain('class="k2b-avatar-stack__faces" aria-hidden="true"');
+    expect(html.match(/class="k2b-avatar "/g)?.length).toBe(3);
+    expect(html).toContain('title="14 more">+14</span>');
+    // The external sender stays gray; team members keep their tint.
+    const faces = html.split('class="k2b-avatar "').slice(1);
+    expect(faces[0]).not.toContain("data-tint");
+    expect(faces[1]).toContain("data-tint");
+  });
+
+  test("shows no +n when every person has a face", () => {
+    const html = renderToString(() => createComponent(AvatarFaces, { people: [{ name: "Petra Albers" }, { name: "Jonas Weber" }] }));
+    expect(html).not.toContain("k2b-avatar-stack__more");
   });
 });
