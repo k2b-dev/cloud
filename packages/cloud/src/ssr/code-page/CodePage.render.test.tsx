@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -8,7 +8,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { currentLibrary } from "../../../test/future-capability-manifest";
 import { capabilityResultSchema } from "../../contracts/capabilities";
-import { isAccessRefusal, loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
+import { cloudResourcePageHref } from "../../contracts/resource-pages";
+import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
 import { describeCodeSchedule } from "./schedule";
@@ -18,7 +19,8 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
-const { attributeMissingAccess, loadTarget, permissionRef, targetKey, visiblePersonIds } = await import("./load");
+const { describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");
+const capabilityServer = await import("../../capabilities/server");
 const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
 const { LocaleProvider } = await import("@k2b/ui");
@@ -36,7 +38,9 @@ const html = (state: State, locale = "de") =>
 const text = (state: State, locale = "de") =>
   html(state, locale)
     .replaceAll(/<[^>]+>/g, " ")
-    .replaceAll(/\s+/g, " ");
+    .replaceAll(/\s+/g, " ")
+    // A sentence may end right after a linked ID.
+    .replaceAll(/ \./g, ".");
 
 const personal = (state: State, locale = "de") =>
   renderToString(() =>
@@ -95,20 +99,24 @@ describe("personal Code", () => {
 });
 
 describe("Code page states", () => {
-  test("overview lists automations with schedule, status and last run, and access as operation at target", () => {
+  test("overview lists automations with schedule, status and last run, and targets as operation at target", () => {
     const page = text("overview");
-    expect(page).toContain("Handelt im Namen von info@moebel-beispiel.de, nicht als Person");
+    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · Kennung code-7k2q9m4xwt Kopieren");
     expect(page).toContain("Version 4");
     expect(page).toContain("Ursprünge im Internet");
     expect(page).toContain("https://bank.example");
     expect(page).toContain("https://status.example:8443");
-    expect(page).toContain("eingeschaltet von Ben Schulz am");
+    // Who switched a version on came from target grants; the page reads none.
+    expect(page).not.toContain("eingeschaltet von");
     expect(page).toContain("alle 15 Minuten");
     expect(page).toContain("montags 07:00");
     expect(page).toContain("nächster Lauf");
     expect(page).toContain("spaces.task.create");
-    expect(page).toContain("an Space Logistik (sp_2lg8)");
+    // A foreign target by type and ID, linked from its type's page pattern; never by name.
+    expect(page).toContain("an Space sp_2lg8");
+    expect(html("overview")).toContain('<a href="/app/spaces/sp_2lg8">an Space sp_2lg8</a>');
     expect(page).toContain("an info@moebel-beispiel.de selbst");
+    expect(page).toContain("Ob er darf, entscheidet, wer das Ziel verwaltet.");
     expect(page).toContain("Keine. Darum hat dieser Code keine Adresse, nur Automationen.");
     expect(page).toContain("Mit Gustav bearbeiten");
     // A place's Code is titled "Code" (mockup v17); screen readers hear whose Code it is.
@@ -140,42 +148,104 @@ describe("Code page states", () => {
     expect(page).not.toContain("Version 5 einschalten");
   });
 
-  test("removed access and an unreachable target say what fails and how to recover", () => {
-    const removed = text("removed");
-    expect(removed).toContain("Zugriff auf Space Logistik wurde entfernt.");
-    expect(removed).toContain(
-      "Mia Koch hat ihn heute um 11:20 entfernt. Aufrufe an Space Logistik scheitern, bis jemand neu einschaltet. Darum ist der letzte Lauf von „lieferungenEintragen“ fehlgeschlagen. „anfragenSortieren“ läuft weiter.",
+  test("a failed run with a target refusal says what was refused, as a fact, with type, ID, link and handle", () => {
+    const page = text("refused");
+    expect(page).toContain("Letzter Lauf");
+    expect(page).toContain(
+      "Kein Zugriff auf Space sp_2lg8. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von info@moebel-beispiel.de“ das Recht dafür, oder das Ziel existiert nicht.",
     );
-    expect(removed).toContain("heute 11:20 von Mia Koch entfernt");
-    // A hidden name still says when; without the removal's audit event the page says only that it was removed.
-    const unnamed = text("removed-unnamed");
-    expect(unnamed).toContain("Jemand hat ihn heute um 11:20 entfernt.");
-    expect(unnamed).toContain("heute 11:20 entfernt");
-    expect(unnamed).not.toContain("Mia Koch");
-    const unknown = text("removed-unknown");
-    expect(unknown).toContain("Zugriff auf Space Logistik wurde entfernt. Aufrufe an Space Logistik scheitern");
-    expect(unknown).toContain("Zugriff entfernt");
-    expect(unknown).not.toContain("hat ihn");
-    expect(text("removed", "en")).toContain("Mia Koch removed it today at 11:20.");
-    expect(text("removed", "en")).toContain("removed by Mia Koch today at 11:20");
-    expect(removed).toContain("Wieder einschalten");
-    expect(removed).toContain("Mit Gustav bearbeiten");
-    // Only the affected automation shows missing access; nothing is paused per automation.
-    expect(html("removed").match(/k2b-status-badge__label">Zugriff fehlt</g)).toHaveLength(1);
-    expect(removed).not.toContain("Pausiert");
-    expect(removed).toContain("Pausieren lässt sich nur der ganze Code.");
-    // A reader's "not found" may also mean the person may not read it: neither "deleted" nor its name.
-    const missing = text("target-missing");
-    expect(missing).toContain("Space sp_2lg8 ist nicht erreichbar.");
-    expect(missing).toContain("Aufrufe an Space sp_2lg8 scheitern. Wer das Ziel verwaltet, kann sagen, warum.");
-    expect(missing).toContain("Ziel nicht erreichbar");
-    expect(missing).not.toContain("Logistik");
-    expect(missing).not.toContain("gelöscht");
-    expect(missing).not.toContain("Wieder einschalten");
-    expect(html("target-missing")).not.toContain("/app/spaces/sp_2lg8");
-    const english = text("target-missing", "en");
-    expect(english).toContain("Space sp_2lg8 cannot be reached.");
-    expect(english).not.toContain("deleted");
+    expect(html("refused")).toContain('<a class="k2b-text-link" href="/app/spaces/sp_2lg8"><code>sp_2lg8</code></a>');
+    expect(page).toContain("Kennung kopieren");
+    expect(page).toContain(
+      "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels mit der Kennung code-7k2q9m4xwt hinzu. Der nächste Lauf versucht es erneut.",
+    );
+    // The page names no foreign target and asks nobody for access.
+    expect(page).not.toContain("Logistik");
+    expect(page.toLowerCase()).not.toContain("zugriff anfragen");
+    const english = text("refused", "en");
+    expect(english).toContain("No access to Space sp_2lg8. The Code tried “Aufgabe erstellen” there.");
+    expect(english).toContain("Copy handle");
+    expect(english).toContain("The next run tries again.");
+  });
+
+  test("a type whose page also needs another ID gets no link, only its ID", () => {
+    const page = text("refused-nolink");
+    expect(page).toContain("Kein Zugriff auf Aufgabe it_7f3k.");
+    expect(html("refused-nolink")).toContain("<code>it_7f3k</code>");
+    expect(html("refused-nolink")).not.toContain("it_7f3k</code></a>");
+  });
+
+  test("a reader learns only that a call was refused, without action, target ID, link or handle", () => {
+    const page = text("refused-reader");
+    expect(page).toContain(
+      "Ein Aufruf wurde abgelehnt. Der Code läuft als Dienstkonto „Code von info@moebel-beispiel.de“. Welches Ziel abgelehnt hat, sehen alle, die den Code bearbeiten dürfen.",
+    );
+    for (const hidden of ["sp_2lg8", "Aufgabe erstellen", "spaces.task.create", "Kennung kopieren", "Rechte-Editor", "/app/spaces/"])
+      expect(html("refused-reader").replace(/<li class="cloud-code__row cloud-code__row--access">[\s\S]*?<\/li>/g, "")).not.toContain(
+        hidden,
+      );
+  });
+
+  test("an editor whose refused call could not be read is told so, not given the reader's text", () => {
+    const page = text("refused-unloaded");
+    expect(page).toContain("Ein Aufruf wurde abgelehnt. Welches Ziel abgelehnt hat, ließ sich gerade nicht laden.");
+    expect(page).not.toContain("sehen alle, die den Code bearbeiten dürfen");
+    expect(page).not.toContain("Kennung kopieren");
+  });
+
+  test("policy and approval refusals never read as a target refusal and offer no handle", () => {
+    const policy = text("refused-policy");
+    expect(policy).toContain("Die Richtlinie erlaubt das nicht.");
+    expect(policy).toContain("Der Code wollte „Kommentar schreiben“ an Space sp_2lg8.");
+    expect(policy).toContain("Die Richtlinie für Code legt der Cloud-Admin fest.");
+    const approval = text("refused-approval");
+    expect(approval).toContain("Diese Version braucht die Freigabe des Cloud-Admins.");
+    expect(approval).toContain("Der Code wollte „Aufgabe erstellen“ an Space sp_2lg8.");
+    // Cloud admins decide approvals, so only they get the link to the version's review.
+    expect(approval).toContain("Freigabe ansehen");
+    expect(html("refused-approval")).toContain('href="/admin/code?sec=approvals&amp;id=00000000-0000-4000-8000-000000000004"');
+    for (const page of [policy, approval]) {
+      expect(page).not.toContain("Kein Zugriff");
+      expect(page).not.toContain("Kennung kopieren");
+      expect(page).not.toContain("Wer das Ziel verwaltet");
+      expect(page).not.toContain("das Recht dafür");
+    }
+    expect(text("refused-policy")).not.toContain("Freigabe ansehen");
+    expect(text("refused-policy", "en")).toContain("The policy does not allow this.");
+    expect(text("refused-approval", "en")).toContain("This version needs the Cloud admin's approval.");
+    expect(text("run-refused-policy")).toContain("Die Richtlinie erlaubt das nicht.");
+  });
+
+  test("a successful last run shows no refusal notice, even when one of its calls was refused", () => {
+    for (const state of ["overview", "runs"] as const) {
+      expect(text(state)).not.toContain("Kein Zugriff");
+      expect(text(state)).not.toContain("abgelehnt");
+    }
+  });
+
+  test("the handle shows before the first run, and without one the hint still says what to do", () => {
+    const first = codePageFixture("overview");
+    if (first.state.kind !== "ready") throw new Error("Expected ready fixture");
+    first.state.runs = { items: [], nextCursor: null };
+    const render = (data: ReturnType<typeof codePageFixture>) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      )
+        .replaceAll(/<[^>]+>/g, " ")
+        .replaceAll(/\s+/g, " ");
+    expect(render(first)).toContain("Kennung code-7k2q9m4xwt Kopieren");
+    const unknown = codePageFixture("refused");
+    unknown.owner = { ...unknown.owner, handle: null };
+    const page = render(unknown);
+    expect(page).not.toContain("Kennung kopieren");
+    expect(page).toContain(
+      "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels hinzu. Der nächste Lauf versucht es erneut.",
+    );
   });
 
   test("paused Code offers resume", () => {
@@ -192,10 +262,30 @@ describe("Code page states", () => {
   });
 
   test("a run that failed after its first action offers run again", () => {
-    const page = text("run-failed");
+    const failed = codePageFixture("run-failed");
+    if (failed.state.kind !== "ready") throw new Error("Expected ready fixture");
+    failed.state.run!.refusal = null;
+    failed.state.run!.calls![1]!.refusal = "bridge";
+    const page = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: failed });
+        },
+      }),
+    )
+      .replaceAll(/<[^>]+>/g, " ")
+      .replaceAll(/\s+/g, " ");
     expect(page).toContain("Fehlgeschlagen nach dem ersten Aufruf.");
     expect(page).toContain("Erneut ausführen");
-    expect(page).toContain("Zeitüberschreitung nach 10 s");
+  });
+
+  test("a failed run's refusal takes the place of the generic failure and keeps run again", () => {
+    const page = text("run-failed");
+    expect(page).toContain("Kein Zugriff auf Space sp_2lg8.");
+    expect(page).toContain("Erneut ausführen");
+    expect(page).toContain("Kennung kopieren");
+    expect(page).not.toContain("Fehlgeschlagen nach dem ersten Aufruf.");
   });
 
   test("a failed run offers a look with the panel, under the panel's own name and icon", () => {
@@ -207,7 +297,7 @@ describe("Code page states", () => {
   });
 
   test("the Edit with panel buttons show the panel's icon, never a spark", () => {
-    for (const state of ["overview", "empty", "removed"] as const) {
+    for (const state of ["overview", "empty", "refused"] as const) {
       const page = html(state);
       expect(page).toContain("ti ti-moustache");
       expect(page).not.toContain("ti-sparkles");
@@ -289,12 +379,6 @@ describe("Code page states", () => {
     expect(text("error")).toContain("info@moebel-beispiel.de und laufende Automationen sind nicht betroffen.");
   });
 
-  test("the header credits only the activation of the running version, never an older reused grant", () => {
-    const line = html("overview").match(/<p class="cloud-code__vline">.*?<\/p>/)?.[0] ?? "";
-    expect(line).toContain("eingeschaltet von Ben Schulz am 28. Okt. 2026");
-    expect(line).not.toContain("14. Okt.");
-  });
-
   test("a failed run whose calls are not all loaded makes no claim about its first action", () => {
     const page = text("run-unclassified");
     expect(page).not.toContain("Erneut ausführen");
@@ -314,35 +398,55 @@ describe("Code page states", () => {
 
   test("English copy", () => {
     expect(text("waiting", "en")).toContain("Version 5 is ready but still off.");
-    expect(text("removed", "en")).toContain("Access to Space Logistik was removed.");
+    expect(text("refused-reader", "en")).toContain("A call was refused.");
   });
 });
 
 describe("Code page helpers", () => {
-  test("a target whose reader answers 404 is only missing: no name, no link, never deleted", async () => {
+  test("a target is described from its type in the registry: type title, icon and a link only for a pattern with just :id", async () => {
     const library = {
       appId: "library",
       appName: "Library",
       appIcon: "ti ti-books",
       appDescription: "Books",
-      manifest: currentLibrary.manifest,
+      manifest: {
+        ...currentLibrary.manifest,
+        resourcePages: [
+          { type: "book", path: "/app/library/books/:id" },
+          { type: "author", path: "/app/library/:shelf/authors?author=:id" },
+        ],
+      },
     };
     const catalog = async () => ({ ok: true as const, data: library });
-    // Apps answer 404 also when the person may not read the resource; the page cannot tell the two apart.
-    const notFound: CodePageInvoke = async () => ({ ok: false, error: { code: "NOT_FOUND", message: "Book not found", status: 404 } });
-    const target = await loadTarget({ type: "library.book", id: "b1" }, { codeId: "c1" }, notFound, catalog);
-    expect(target).toMatchObject({ title: null, typeTitle: "Book", href: null, missing: true });
-    expect(target).not.toHaveProperty("deleted");
-    const refused: CodePageInvoke = async () => ({ ok: false, error: { code: "FORBIDDEN", message: "Access denied", status: 403 } });
-    expect(await loadTarget({ type: "library.book", id: "b1" }, { codeId: "c1" }, refused, catalog)).toMatchObject({
+    expect(await describeTarget({ type: "library.book", id: "b 1" }, { codeId: "c1" }, catalog)).toEqual({
+      key: "library.book\u0000b 1",
+      ref: { type: "library.book", id: "b 1" },
       title: null,
-      missing: false,
+      typeTitle: "Book",
+      icon: null,
+      own: false,
+      href: "/app/library/books/b%201",
     });
+    // An author's page also needs its shelf: the reference alone cannot fill it, so only the ID shows.
+    expect(await describeTarget({ type: "library.author", id: "a1" }, { codeId: "c1" }, catalog)).toMatchObject({ href: null });
+    // A type without pages, an unknown app and a broken registry leave the ID only.
+    expect(await describeTarget({ type: "library.shelf", id: "s1" }, { codeId: "c1" }, catalog)).toMatchObject({
+      href: null,
+      typeTitle: "Shelf",
+    });
+    expect(await describeTarget({ type: "library.book", id: "b1" }, { codeId: "c1" }, async () => null)).toMatchObject({
+      title: null,
+      typeTitle: null,
+      href: null,
+    });
+    expect(cloudResourcePageHref("/app/spaces/:id", "k7qm2x9a")).toBe("/app/spaces/k7qm2x9a");
+    expect(cloudResourcePageHref("/app/spaces/:space?item=:id", "it_1")).toBeNull();
+    expect(cloudResourcePageHref("/app/files?file=:id", "a/b")).toBe("/app/files?file=a%2Fb");
   });
 
-  test("the page's own attention follows Core's rule: failed run, missing access or pending approval", () => {
+  test("the page's own attention follows Core's rule: failed run or pending approval", () => {
     expect(codePageNeedsAttention(codePageFixture("overview").state)).toBe(false);
-    expect(codePageNeedsAttention(codePageFixture("removed").state)).toBe(true);
+    expect(codePageNeedsAttention(codePageFixture("refused").state)).toBe(true);
     expect(codePageNeedsAttention(codePageFixture("approval").state)).toBe(true);
     expect(codePageNeedsAttention(codePageFixture("paused").state)).toBe(false);
   });
@@ -381,80 +485,6 @@ describe("Code page helpers", () => {
       id: "sp_2lg8",
     });
     expect(permissionRef({ operation: "spaces.task.create", target: { type: "spaces.space", id: null } })).toBeNull();
-  });
-
-  test("missing access is attributed only on evidence; unknown automations are never said to keep running", async () => {
-    const space = { type: "spaces.space", id: "sp_2lg8" };
-    const removed = new Set([targetKey(space)]);
-    const run = (id: string, state: "succeeded" | "failed") => ({
-      id,
-      versionId: "v",
-      versionNumber: 4,
-      trigger: "schedule" as const,
-      entrypoint: id,
-      state,
-      outcome: state,
-      createdAt: "2026-11-01T08:00:00.000Z",
-      startedAt: null,
-      endedAt: null,
-    });
-    const automation = (name: string, lastRun: ReturnType<typeof run> | null) => ({
-      entrypoint: name,
-      kind: "schedule" as const,
-      cron: null,
-      isNew: false,
-      lastRun,
-      missingTargets: [] as string[],
-      missingProven: false,
-      accessUnknown: false,
-    });
-    const call = (target: { type: string; id: string } | null, capability = "spaces.task.create", accessRefused = true) => ({
-      ordinal: 1,
-      kind: "action" as const,
-      capability,
-      target,
-      refs: [],
-      accessRefused,
-      state: "failed" as const,
-      summary: null,
-    });
-    const deliver = automation("deliver", run("deliver", "failed"));
-    const sort = automation("sort", run("sort", "succeeded"));
-    const other = automation("other", run("other", "failed"));
-    const reads: string[] = [];
-    await attributeMissingAccess([deliver, sort, other], removed, "editor", async (id) => {
-      reads.push(id);
-      return id === "deliver" ? { calls: [call(space)], next: null } : { calls: [call(null, "mail.send")], next: 5 };
-    });
-    expect(deliver).toMatchObject({ missingTargets: [targetKey(space)], missingProven: true, accessUnknown: false });
-    expect(sort).toMatchObject({ missingTargets: [], accessUnknown: false });
-    // Its calls were not all read: it may fail there too, so the page makes no claim.
-    expect(other).toMatchObject({ missingTargets: [], accessUnknown: true });
-    expect(reads).toEqual(["deliver", "other"]);
-
-    // A call that failed at the target for another reason shows the need, not the cause.
-    const timedOut = automation("timedOut", run("timedOut", "failed"));
-    await attributeMissingAccess([timedOut, automation("y", run("y", "succeeded"))], removed, "editor", async () => ({
-      calls: [call(space, "spaces.task.create", false)],
-      next: null,
-    }));
-    expect(timedOut).toMatchObject({ missingTargets: [targetKey(space)], missingProven: false, accessUnknown: false });
-
-    // A reader gets no calls: failed automations stay unknown; the only automation needs the access without proof.
-    const lone = automation("lone", run("lone", "succeeded"));
-    await attributeMissingAccess([lone], removed, "reader", async () => {
-      throw new Error("not read");
-    });
-    expect(lone).toMatchObject({ missingTargets: [targetKey(space)], missingProven: false });
-
-    // App-wide calls match an app-wide grant.
-    const app = { type: "app", id: "weather" };
-    const forecast = automation("forecast", run("forecast", "failed"));
-    await attributeMissingAccess([forecast, automation("x", run("x", "succeeded"))], new Set([targetKey(app)]), "editor", async () => ({
-      calls: [call(null, "weather.forecast.read")],
-      next: null,
-    }));
-    expect(forecast.missingTargets).toEqual([targetKey(app)]);
   });
 
   test("guests see only their own name, like in directory search", () => {
@@ -512,19 +542,6 @@ describe("Code page helpers", () => {
     expect(describeCodeSchedule("0 7 * 1 *", "de")).toBe("0 7 * 1 *");
   });
 
-  test("only an access refusal counts as missing access, not invalid input or an outage", () => {
-    expect(isAccessRefusal({ ok: false, error: { code: "FORBIDDEN", message: "Access denied", status: 403 } })).toBe(true);
-    expect(isAccessRefusal({ ok: false, error: { code: "NOT_FOUND", status: 404 } })).toBe(true);
-    expect(isAccessRefusal({ ok: false, error: { code: "BAD_INPUT", message: "Invalid title", status: 400 } })).toBe(false);
-    expect(isAccessRefusal({ ok: false, error: { code: "APP_UNAVAILABLE", status: 503 } })).toBe(false);
-    expect(isAccessRefusal({ error: { code: "accessRefused", status: 404 } })).toBe(true);
-    expect(isAccessRefusal({ error: { code: "accessRefused", status: 403 } })).toBe(true);
-    expect(isAccessRefusal({ error: { code: "ACCESS_LOOKUP_FAILED", status: 500 } })).toBe(false);
-    for (const code of ["FORBIDDEN", "NOT_FOUND", "accessRefused", "spacenotfound"])
-      expect(isAccessRefusal({ error: { code } })).toBe(false);
-    expect(isAccessRefusal(null)).toBe(false);
-  });
-
   test("call results become one short line, preferring an error message", () => {
     expect(summarizeCallResult({ error: { code: "FORBIDDEN", message: "Zugriff entfernt" } })).toBe("Zugriff entfernt");
     expect(summarizeCallResult({ id: "t_1" })).toBe('{"id":"t_1"}');
@@ -541,8 +558,8 @@ test("internet lists distinguish running/waiting versions, historical selection,
   expect(text("internet-failed")).toContain("Erneut versuchen");
 });
 
-test("automation rows and missing-access messages use reviewed titles with identifier fallback", () => {
-  for (const state of ["overview", "removed", "waiting"] as const) {
+test("automation rows and the last run use reviewed titles with identifier fallback", () => {
+  for (const state of ["overview", "refused", "waiting"] as const) {
     const data = codePageFixture(state, "de");
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
     for (const automation of data.state.automations ?? []) automation.title = "Lieferungen eintragen";
@@ -557,7 +574,7 @@ test("automation rows and missing-access messages use reviewed titles with ident
     const text = rendered.replaceAll(/<[^>]+>/g, " ");
     expect(text).toContain("Lieferungen eintragen");
     expect(text).not.toContain("anfragenSortieren");
-    if (state === "removed") expect(text).toContain("„Lieferungen eintragen“");
+    if (state === "refused") expect(text).toContain("Letzter Lauf");
   }
   expect(html("overview")).toContain("anfragenSortieren");
 });
@@ -577,4 +594,172 @@ test("run lists and details use the run's title with identifier fallback", () =>
   ).replaceAll(/<!--[^>]*-->/g, "");
   expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
   expect(rendered).toContain("anfragenSortieren");
+});
+
+describe("Code page loader", () => {
+  const V4 = "00000000-0000-4000-8000-000000000004";
+  const RUN = "2284a1b2-0000-4000-8000-000000000004";
+  const space = { type: "spaces.space", id: "k7qm2x9a" };
+  const manifest = {
+    entrypoints: [{ kind: "schedule", entrypoint: "lieferungenEintragen", cron: "0 8 * * 1-5" }],
+    permissions: [
+      { operation: "spaces.task.create", target: space, file: "code.ts", line: 3 },
+      { operation: "spaces.task.update", target: { type: "spaces.task", id: "it_7f3k" }, file: "code.ts", line: 4 },
+    ],
+  };
+  const run = {
+    id: RUN,
+    versionId: V4,
+    trigger: "schedule",
+    entrypoint: "lieferungenEintragen",
+    state: "failed",
+    outcome: "failed",
+    firstRefusedCallOrdinal: 2,
+    createdAt: "2026-11-01T08:30:00.000Z",
+    startedAt: null,
+    endedAt: null,
+  };
+  /** Core as the page reads it; every other app answers with an error, so any call to one would show. */
+  const core = (permission: "editor" | "reader") => (capabilityId: string, input: { content?: unknown }) => {
+    if (capabilityId === "code.list")
+      return {
+        items: [{ id: "c_3mfa", title: "Code", state: "active", activeVersionId: V4, pauseReason: null, permission }],
+        nextCursor: null,
+      };
+    if (capabilityId === "code.version.list")
+      return {
+        items: [
+          { version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" }, status: "approved", decision: null },
+        ],
+        nextBefore: null,
+      };
+    if (capabilityId === "code.version.read")
+      return {
+        version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" },
+        content: input.content ? { text: JSON.stringify(manifest), nextOffset: null } : null,
+      };
+    if (capabilityId === "code.run.list") return { items: [run], nextCursor: null };
+    if (capabilityId === "code.run.read")
+      return {
+        run,
+        contents:
+          permission === "editor"
+            ? {
+                input: null,
+                inputChunked: false,
+                content: null,
+                calls: [],
+                nextCursor: null,
+                firstRefusedCall: { ordinal: 2, kind: "action", capability: "spaces.task.create", target: space },
+              }
+            : null,
+      };
+    return { items: [] };
+  };
+  const registry = {
+    spaces: {
+      appId: "spaces",
+      appName: "Spaces",
+      appIcon: "ti ti-layout-kanban",
+      appDescription: "Spaces",
+      manifest: {
+        ...currentLibrary.manifest,
+        appId: "spaces",
+        types: [
+          { localId: "space", title: "Space", description: "One space.", icon: "ti ti-layout-kanban" },
+          { localId: "task", title: "Aufgabe", description: "One task." },
+        ],
+        actions: [{ ...currentLibrary.manifest.actions[0]!, localId: "task.create", title: "Aufgabe erstellen" }],
+        queries: [],
+        resourcePages: [
+          { type: "space", path: "/app/spaces/:id" },
+          { type: "task", path: "/app/spaces/:space?item=:id" },
+        ],
+      },
+    },
+  };
+  const load = async (permission: "editor" | "reader") => {
+    const appCalls: string[] = [];
+    const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+      if (invocation.appId !== "core") {
+        appCalls.push(`${invocation.appId}.${invocation.capabilityId}`);
+        return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Another app was asked", status: 503 } };
+      }
+      const data = core(permission)(invocation.capabilityId, invocation.input as { content?: unknown });
+      return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
+    });
+    const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
+      ok: true,
+      data: appId === "spaces" ? registry.spaces : null,
+    }));
+    const fetched = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async () => {
+          throw new Error("The Code page fetched something");
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const request = new Request("https://cloud.test/app/mail/Mb4kd2/code");
+    const variables: Record<string, unknown> = {
+      actor: { kind: "user", sessionKind: "web" },
+      credentialKind: "session",
+      user: { id: "00000000-0000-4000-8000-0000000000a1", roles: ["user"] },
+      runtime: { apps: [] },
+    };
+    const c = {
+      req: { url: request.url, raw: request, header: (name: string) => request.headers.get(name) ?? undefined },
+      get: (key: string) => variables[key],
+    } as unknown as Context;
+    try {
+      const data = await loadCodePage(c, {
+        owner: { ref: { type: "mail.mailbox", id: "Mb4kd2" }, title: "info@moebel-beispiel.de" },
+        href: "/app/mail/Mb4kd2/code",
+        canManageOwner: permission === "editor",
+      });
+      return { data, appCalls, fetches: fetched.mock.calls.length };
+    } finally {
+      invoke.mockRestore();
+      catalog.mockRestore();
+      fetched.mockRestore();
+    }
+  };
+
+  test("an editor reads the refused call once at Core; the page asks no other app and names targets by type and ID", async () => {
+    const { data, appCalls, fetches } = await load("editor");
+    expect(appCalls).toEqual([]);
+    expect(fetches).toBe(0);
+    if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
+    expect(data.state.refusal).toEqual({
+      kind: "target_refused",
+      runId: RUN,
+      versionId: V4,
+      call: {
+        capability: "spaces.task.create",
+        title: "Aufgabe erstellen",
+        target: {
+          key: "spaces.space\u0000k7qm2x9a",
+          ref: space,
+          title: null,
+          typeTitle: "Space",
+          icon: "ti ti-layout-kanban",
+          own: false,
+          href: "/app/spaces/k7qm2x9a",
+        },
+      },
+    });
+    // A task's page needs its space too, so it is listed by ID only.
+    expect(data.state.targets?.find((row) => row.target.ref.type === "spaces.task")?.target).toMatchObject({ href: null, title: null });
+    expect(JSON.stringify(data)).not.toContain('"missing"');
+  });
+
+  test("a reader's page data carries no target ID of the refused call", async () => {
+    const { data, appCalls } = await load("reader");
+    expect(appCalls).toEqual([]);
+    if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
+    expect(data.state.refusal).toEqual({ kind: "target_refused", runId: RUN, versionId: V4, call: null });
+    const serialized = JSON.stringify({ ...data.state, targets: null, diff: null, waitingTargets: null });
+    expect(serialized).not.toContain("k7qm2x9a");
+    expect(serialized).not.toContain("spaces.task.create");
+  });
 });

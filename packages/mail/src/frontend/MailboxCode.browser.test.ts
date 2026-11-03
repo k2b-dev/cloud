@@ -163,7 +163,21 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 describe("Mailbox Code page in a browser", () => {
   for (const [name, width] of Object.entries(widths))
     test(`${name} ${width}px: every state fits without horizontal scrolling`, async () => {
-      for (const state of ["overview", "waiting", "removed", "internet", "runs", "run-failed", "versions", "empty", "error"]) {
+      for (const state of [
+        "overview",
+        "waiting",
+        "refused",
+        "refused-nolink",
+        "refused-reader",
+        "refused-policy",
+        "refused-approval",
+        "internet",
+        "runs",
+        "run-failed",
+        "versions",
+        "empty",
+        "error",
+      ]) {
         const page = await load(state, width);
         try {
           expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
@@ -199,7 +213,7 @@ describe("Mailbox Code page in a browser", () => {
 
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [
-      ["removed", true],
+      ["refused", true],
       ["overview", false],
     ] as const) {
       const page = await load(state, 1440);
@@ -246,12 +260,12 @@ describe("Mailbox Code page in a browser", () => {
       const confirm = dialog.getByRole("button", { name: "Version 5 einschalten" });
       const before = await confirm.boundingBox();
       await confirm.click();
-      await dialog.getByText("Du bist nicht Admin von Space Logistik.", { exact: false }).waitFor();
+      await dialog.getByText("Du bist nicht Admin von diesem Ziel (sp_2lg8).", { exact: false }).waitFor();
       expect(activations).toHaveLength(1);
       expect(await dialog.getByText("Es wurde nichts eingeschaltet, Version 4 läuft weiter.", { exact: false }).isVisible()).toBe(true);
       expect(await dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).toBe(true);
-      // The person may read the space, so the message names who manages it.
-      expect(await dialog.getByText("Das ist hier Ben Schulz.", { exact: false }).isVisible()).toBe(true);
+      // A foreign target is never named, nor who manages it, whatever the refusal carries.
+      expect((await dialog.textContent()) ?? "").not.toContain("Ben Schulz");
       expect(await dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).toBe(true);
       // Blocked, the confirm button says only what it would do and stays disabled.
       expect(await dialog.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
@@ -266,7 +280,7 @@ describe("Mailbox Code page in a browser", () => {
     }
   }, 30_000);
 
-  test("the dialog blocks before the click and names who manages the target when the target refuses", async () => {
+  test("the dialog blocks before the click and never names a foreign target or who manages it", async () => {
     activations.length = 0;
     checks.length = 0;
     const own = { target: { type: "mail.mailbox", id: "Mb4kd2" }, state: "granted", failure: null };
@@ -290,11 +304,11 @@ describe("Mailbox Code page in a browser", () => {
     try {
       await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
       const dialog = page.getByRole("dialog");
-      await dialog.getByText("Du bist nicht Admin von Space Logistik.", { exact: false }).waitFor();
+      await dialog.getByText("Du bist nicht Admin von diesem Ziel (sp_2lg8).", { exact: false }).waitFor();
       expect(checks).toHaveLength(1);
       expect(activations).toHaveLength(0);
       expect(await dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).toBe(true);
-      expect(await dialog.getByText("Das ist hier Ben Schulz.", { exact: false }).isVisible()).toBe(true);
+      expect((await dialog.textContent()) ?? "").not.toContain("Ben Schulz");
       expect(await dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).toBe(true);
       expect(await dialog.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
       await shoot(page, "blockiert-vorab-1440");
@@ -316,7 +330,7 @@ describe("Mailbox Code page in a browser", () => {
     try {
       await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
       const dialog = page.getByRole("dialog");
-      await dialog.getByText("du verwaltest Space Logistik", { exact: false }).waitFor();
+      await dialog.getByText("du verwaltest Space sp_2lg8", { exact: false }).waitFor();
       expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isEnabled()).toBe(true);
       expect(activations).toHaveLength(0);
       await shoot(page, "einschalten-vorab-1440");
@@ -339,7 +353,7 @@ describe("Mailbox Code page in a browser", () => {
       await dialog.getByText("wird geprüft", { exact: false }).first().waitFor();
       expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isDisabled()).toBe(true);
       release();
-      await dialog.getByText("du verwaltest Space Logistik", { exact: false }).waitFor();
+      await dialog.getByText("du verwaltest Space sp_2lg8", { exact: false }).waitFor();
       await dialog.getByRole("button", { name: "Version 5 einschalten", disabled: false }).waitFor();
     } finally {
       release();
@@ -454,11 +468,11 @@ describe("Mailbox Code page in a browser", () => {
   });
 
   test("dark theme keeps the page readable", async () => {
-    const page = await load("removed", 1440, { dark: true });
+    const page = await load("refused", 1440, { dark: true });
     try {
       const color = await page.locator(".cloud-code__lead").evaluate((element) => getComputedStyle(element).color);
       expect(color).not.toBe("rgb(0, 0, 0)");
-      await shoot(page, "removed-dark-1440");
+      await shoot(page, "refused-dark-1440");
     } finally {
       await page.context().close();
     }
