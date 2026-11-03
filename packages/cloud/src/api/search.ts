@@ -18,8 +18,8 @@ import { appAccessAuthority } from "../services/app-access";
 import { discoverableAppEntries } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
-import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
-import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
+import { normalizeInvocationRequestId, type signInvocationToken } from "../services/identity/invocation-token";
+import { prepareFanoutIssuance } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { ndjsonLine, ndjsonStream, ndjsonStreamHeaders, startBounded, waitWithin } from "./fanout";
@@ -88,6 +88,7 @@ type SearchRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
   listApps?: typeof listApps;
   signInvocation?: typeof signInvocationToken;
+  prepareFanout?: typeof prepareFanoutIssuance;
   withActiveSigner?: typeof withActiveIdentitySigner;
 };
 
@@ -241,28 +242,34 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
           signedInvocations = await waitWithin(
             (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer, db) =>
-                Promise.all(
+              async (signer, db) => {
+                const sign = await (dependencies.prepareFanout ?? prepareFanoutIssuance)(
+                  { authority: invocationAuthority, callingAppId: "core", entries: active },
+                  {
+                    db,
+                    groupsAdmin: signer.groupsAdmin,
+                    signal: fanoutSignal,
+                    registry: dependencies.listApps,
+                    sign: dependencies.signInvocation,
+                  },
+                );
+                return Promise.all(
                   startBounded(
                     active,
                     PROVIDER_CONCURRENCY,
                     (provider) =>
-                      (dependencies.signInvocation ?? signInvocationToken)(
-                        {
-                          targetAppId: provider.appId,
-                          callingAppId: "core",
-                          operation: searchInvocationOperation,
-                          schemaHash: provider.schemaHash,
-                          authority: invocationAuthority,
-                          requestId,
-                          signer,
-                          issuer: signer.issuer,
-                        },
-                        { db, groupsAdmin: signer.groupsAdmin, signal: fanoutSignal },
-                      ),
+                      sign({
+                        targetAppId: provider.appId,
+                        operation: searchInvocationOperation,
+                        schemaHash: provider.schemaHash,
+                        requestId,
+                        signer,
+                        issuer: signer.issuer,
+                      }),
                     fanoutSignal,
                   ),
-                ),
+                );
+              },
               { signal: fanoutSignal, timeoutMs: PROVIDER_TIMEOUT_MS },
             ),
             fanoutSignal,

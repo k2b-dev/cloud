@@ -64,12 +64,16 @@ describe("machine API key creation", () => {
     const dom = createDomTestHarness();
     const { CreateMachineKeyDialog } = await import("../src/frontend/service-accounts/CreateMachineKey.island");
     let closed = 0;
+    let changed = 0;
     const dispose = render(
       () =>
         createComponent(CreateMachineKeyDialog, {
           modelsAvailable,
           close: () => {
             closed++;
+          },
+          onChanged: () => {
+            changed++;
           },
         }),
       dom.root,
@@ -78,7 +82,7 @@ describe("machine API key creation", () => {
       dispose();
       dom.cleanup();
     };
-    return { ...dom, closed: () => closed };
+    return { ...dom, closed: () => closed, changed: () => changed };
   };
   const choose = async (doc: Document) => {
     findButton(doc, "Choose a standalone account or agent").click();
@@ -107,6 +111,8 @@ describe("machine API key creation", () => {
     await flush();
     expect(dom.document.querySelector('[role="alert"]')?.textContent).toContain("Account disabled");
     expect(dom.document.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe("Model cleanup");
+    // A rejected key changes nothing behind the dialog, so the list is not shown again.
+    expect(dom.changed()).toBe(0);
     submit(dom.document);
     await flush();
     posts[1]!.resolve(Response.json({ token: "fictional-one-time-key" }));
@@ -114,6 +120,7 @@ describe("machine API key creation", () => {
     expect(dom.document.body.textContent).toContain("fictional-one-time-key");
     expect(dom.document.body.textContent).toContain("only be shown once");
     expect(dom.document.querySelector("form")).toBeNull();
+    expect(dom.changed()).toBe(1);
     findButton(dom.document, "Done").click();
     expect(dom.closed()).toBe(1);
   });
@@ -135,6 +142,8 @@ describe("machine API key creation", () => {
     posts[0]!.reject(new Error("Connection lost"));
     await flush();
     expect(dom.document.querySelector('[role="alert"]')?.textContent).toContain("could not be confirmed");
+    // The key may exist, so the list behind the dialog must show it.
+    expect(dom.changed()).toBe(1);
     expect(findButton(dom.document, "Create API key").disabled).toBe(true);
     submit(dom.document);
     await flush();

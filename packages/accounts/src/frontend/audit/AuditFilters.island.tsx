@@ -1,7 +1,7 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import type { AuditActionGroup, AuditOutcome } from "@k2b/cloud/services";
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection, FilterToggle, prompts } from "@k2b/ui";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 import { actionOptions } from "./audit-labels";
 
@@ -36,6 +36,7 @@ const buildAuditUrl = (params: AuditFiltersProps & { page?: number }) => {
 };
 
 export default function AuditFilters(props: AuditFiltersProps) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const outcomeOptions = (): FilterChipSection[] => [
     {
@@ -67,7 +68,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
     { options: [{ value: "service_accounts", label: messages().serviceAccounts, icon: "ti ti-user-key" }] },
   ];
   const navigate = (patch: Partial<AuditFiltersProps>) => {
-    navigateTo(
+    openPage(
       buildAuditUrl({
         ...props,
         ...patch,

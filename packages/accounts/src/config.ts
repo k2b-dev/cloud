@@ -24,6 +24,8 @@ export const app = defineApp({
   },
   appearance: { accent: "#4f46e5", background: { from: "#6366f1" } },
   basePath: "/app/accounts",
+  // Lists, filters and actions change only the content column; the rail and panel stay.
+  pageSwap: true,
   baseUrl: "http://app-accounts:3000",
   notifications: NOTIFICATIONS,
   nav: {

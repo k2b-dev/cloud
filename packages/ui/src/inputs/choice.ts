@@ -102,11 +102,17 @@ export function createChoiceLoader<T extends string>(
     timer = undefined;
     controller?.abort();
     controller = undefined;
+    request++;
+    setLoading(false);
   };
 
   const run = async (query: string) => {
     const loadOptions = loader();
-    if (!loadOptions) return;
+    if (!loadOptions) {
+      // The source went away while its search waited out the debounce.
+      setLoading(false);
+      return;
+    }
 
     controller?.abort();
     controller = new AbortController();
@@ -124,7 +130,7 @@ export function createChoiceLoader<T extends string>(
         setError(errorMessage(reason));
       }
     } finally {
-      if (currentRequest === request) setLoading(false);
+      if (currentRequest === request && !timer) setLoading(false);
     }
   };
 
@@ -132,6 +138,9 @@ export function createChoiceLoader<T extends string>(
     lastQuery = query;
     if (timer) clearTimeout(timer);
     timer = undefined;
+    // A search waiting out its debounce is already loading: the list shows its
+    // loading rows, not "no results" for a request that has not run yet.
+    if (loader()) setLoading(true);
     if (immediate || debounceMs() <= 0) {
       void run(query);
       return;
@@ -228,6 +237,11 @@ export function createChoicePopover(
     if (!triggerElement || !popoverElement || !open()) return;
     placeChoicePopover(triggerElement, popoverElement, placement(), widest);
     widest = popoverElement.getBoundingClientRect().width;
+    // Hold the width now, while it is the one on screen. Shorter results then
+    // keep it without a resize, so the observer below never has to widen the
+    // popover again during its own delivery, which WebKit reports as a
+    // "ResizeObserver loop" error.
+    if (placement().width !== "own") popoverElement.style.setProperty("--k2b-choice-min-width", `${widest}px`);
   };
 
   const show = () => {
