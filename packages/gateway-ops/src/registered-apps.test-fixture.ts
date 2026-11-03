@@ -6,14 +6,16 @@ const epoch = Date.UTC(2030, 0, 1);
 setSystemTime(epoch);
 const calls: { text: string; values: unknown[] }[] = [];
 let fail = false;
+let rows: Record<string, unknown>[] = [];
 mock.module("@k2b/cloud", () => ({
   sql: async (parts: TemplateStringsArray, ...values: unknown[]) => {
     if (fail) throw new Error("database unavailable");
-    calls.push({ text: parts.join("?"), values });
-    return [];
+    const text = parts.join("?");
+    calls.push({ text, values });
+    return text.includes("SELECT *") ? rows : [];
   },
 }));
-const { upsertRegisteredApps } = await import("./registered-apps");
+const { upsertRegisteredApps, listRegisteredApps } = await import("./registered-apps");
 try {
   for (const count of [5, 20]) {
     const apps: (AppRegistryEntry & { updatedAt: number })[] = Array.from({ length: count }, (_, i) => ({
@@ -25,6 +27,19 @@ try {
       baseUrl: `http://app-${i}:3000`,
       updatedAt: epoch,
     }));
+    rows = apps.map((app) => ({
+      id: app.id,
+      name: app.name,
+      icon: app.icon,
+      description: app.description,
+      base_url: app.baseUrl,
+      routes: [],
+      last_seen_at: new Date(epoch),
+      first_seen_at: new Date(epoch),
+      updated_at: new Date(epoch),
+      removed_at: null,
+      last_offline_logged_at: null,
+    }));
     await upsertRegisteredApps(apps);
     calls.length = 0;
     // One deterministic minute of heartbeat notifications, including registry-only metadata.
@@ -32,6 +47,12 @@ try {
       await upsertRegisteredApps(apps.map((app) => ({ ...app, updatedAt: epoch + second * 1000 })));
     }
     assert.equal(calls.length, 0, `${count} apps cost zero SQL calls while idle`);
+    assert.equal(
+      (await listRegisteredApps()).at(-1)!.lastSeenAt,
+      epoch + 60_000,
+      "status readers see live heartbeat without SQL persistence",
+    );
+    calls.length = 0;
     fail = true;
     await assert.rejects(upsertRegisteredApps(apps.map((app, i) => (i === 0 ? { ...app, name: "Changed" } : app))));
     fail = false;

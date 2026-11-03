@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
+import { Buffer } from "node:buffer";
 import { createSync } from "@k2b/sync";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
-import { notifyGatewayDomainsChanged, watchGatewayDomainChanges } from "./gateway";
+import { buildGatewayRouteSnapshot, notifyGatewayDomainsChanged, publishGatewayRouteSnapshot, watchGatewayDomainChanges } from "./gateway";
 
 suiteFor("nats")("gateway domain invalidation", () => {
   test("domain hints reach another gateway subscriber and shutdown drains it", async () => {
@@ -23,6 +24,28 @@ suiteFor("nats")("gateway domain invalidation", () => {
     });
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
+      // Provision exactly the old declaration before the new writer joins it.
+      const oldSnapshots = remote.ephemeral({ id: "gateway-route-snapshots", owner: "cloud", ttlMs: 30_000, maxValueBytes: 128_000 });
+      await oldSnapshots.ready();
+      const snapshot = buildGatewayRouteSnapshot({
+        instanceId: "upgrade-test",
+        baseUrl: "http://gateway:3000",
+        startedAt: Date.UTC(2030, 0, 1),
+        routeHash: "[]",
+        routeWarnings: [],
+        table: { version: 1, builtAt: Date.UTC(2030, 0, 1), routeCount: 0, routes: [] },
+        stats: { totalRequests: 0, noRouteCount: 0, byApp: new Map(), byRoute: new Map() },
+      });
+      await publishGatewayRouteSnapshot(snapshot);
+      expect((await oldSnapshots.snapshot()).entries.map((entry) => entry.value)).toEqual([snapshot]);
+      const bucket = (await remote.resources()).find((resource) => resource.id === "gateway-route-snapshots");
+      expect(bucket).toBeDefined();
+      const stored = await connection.request(
+        `$JS.API.STREAM.MSG.GET.${bucket!.natsNames[0]}`,
+        new TextEncoder().encode(JSON.stringify({ seq: 1 })),
+      );
+      const message = JSON.parse(new TextDecoder().decode(stored.data));
+      expect(Buffer.from(message.message.hdrs, "base64").toString()).toContain("Nats-TTL: 90s");
       const topic = remote.topic<null>({
         id: "cloud:gateway-domain-changes",
         owner: "cloud",

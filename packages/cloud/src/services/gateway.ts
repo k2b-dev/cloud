@@ -95,7 +95,8 @@ const snapshots = lazySync((sync) =>
   sync.ephemeral<GatewayRouteSnapshot>({
     id: "gateway-route-snapshots",
     owner: GATEWAY_RESOURCE_OWNER,
-    ttlMs: SNAPSHOT_TTL_MS,
+    // Preserve the existing bucket declaration across rolling upgrades; each write sets its lease.
+    ttlMs: 30_000,
     maxValueBytes: 128_000,
   }),
 );
@@ -143,7 +144,7 @@ export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): Gat
 });
 
 export const publishGatewayRouteSnapshot = async (snapshot: GatewayRouteSnapshot): Promise<void> => {
-  await snapshots().upsert({ key: `instances/${snapshot.instanceId}`, value: snapshot });
+  await snapshots().upsert({ key: `instances/${snapshot.instanceId}`, value: snapshot, ttlMs: SNAPSHOT_TTL_MS });
 };
 
 export const removeGatewayRouteSnapshot = async (instanceId: string): Promise<void> => {

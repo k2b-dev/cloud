@@ -66,7 +66,7 @@ const mapRow = (row: DbRegisteredAppRow): PersistentRegisteredApp => ({
   widgets: jsonArray<NonNullable<AppRegistryEntry["widgets"]>[number]>(row.widgets),
   openapi: row.openapi ?? undefined,
   firstSeenAt: asMs(row.first_seen_at) ?? Date.now(),
-  lastSeenAt: asMs(row.last_seen_at) ?? Date.now(),
+  lastSeenAt: Math.max(asMs(row.last_seen_at) ?? 0, observed.get(row.id)?.lastSeenAt ?? 0),
   updatedAt: asMs(row.updated_at) ?? Date.now(),
   removedAt: asMs(row.removed_at),
   lastOfflineLoggedAt: asMs(row.last_offline_logged_at),
