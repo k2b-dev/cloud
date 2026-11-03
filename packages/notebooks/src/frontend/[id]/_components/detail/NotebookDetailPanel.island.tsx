@@ -28,7 +28,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
@@ -688,16 +688,32 @@ export default function NotebookDetailPanel(props: Props) {
     />
   );
 
-  /** "Jana Berger · edited 12 min ago", or the state that matters more: offline, locked, read only. */
+  /**
+   * "Jana Berger · edited 12 min ago", or the state that matters more: offline, locked, read only. Every sync event
+   * and edit re-reads these states; only a change of branch renders new elements, because each inserted element
+   * restyles the whole page through the shared `:has()` rules.
+   */
   const metaLine = (): JSX.Element => {
     const edited = (lead: boolean) => (
       <>
         {lead ? t().editedAtStart : t().editedAt} <Time value={editedAt()} focusable />
       </>
     );
-    if (offline())
-      return (
-        <>
+    return (
+      <Switch
+        fallback={
+          <Show when={lastEditor()} fallback={edited(true)}>
+            {(person) => (
+              <>
+                <span class="notebook-meta-name">{actorName(person())}</span>
+                {" · "}
+                {edited(false)}
+              </>
+            )}
+          </Show>
+        }
+      >
+        <Match when={offline()}>
           <span class="notebook-meta-state" data-tone="warning">
             <i class="ti ti-cloud-off" aria-hidden="true" /> {t().offline}
           </span>
@@ -709,39 +725,26 @@ export default function NotebookDetailPanel(props: Props) {
               </>
             )}
           </Show>
-        </>
-      );
-    if (lockedAt())
-      return (
-        <>
-          <Tooltip.Anchor content={t().lockedSince({ time: exact(lockedAt()!) })} class="notebook-meta-state" data-tone="warning">
-            <span tabIndex={0}>
-              <i class="ti ti-lock" aria-hidden="true" /> {t().locked}
-            </span>
-          </Tooltip.Anchor>
-          {" · "}
-          {edited(false)}
-        </>
-      );
-    if (!props.canWrite)
-      return (
-        <>
+        </Match>
+        <Match when={lockedAt()}>
+          {(locked) => (
+            <>
+              <Tooltip.Anchor content={t().lockedSince({ time: exact(locked()) })} class="notebook-meta-state" data-tone="warning">
+                <span tabIndex={0}>
+                  <i class="ti ti-lock" aria-hidden="true" /> {t().locked}
+                </span>
+              </Tooltip.Anchor>
+              {" · "}
+              {edited(false)}
+            </>
+          )}
+        </Match>
+        <Match when={!props.canWrite}>
           <span class="notebook-meta-state">{t().readOnlyShort}</span>
           {" · "}
           {edited(false)}
-        </>
-      );
-    const editor = lastEditor();
-    return (
-      <Show when={editor} fallback={edited(true)}>
-        {(person) => (
-          <>
-            <span class="notebook-meta-name">{actorName(person())}</span>
-            {" · "}
-            {edited(false)}
-          </>
-        )}
-      </Show>
+        </Match>
+      </Switch>
     );
   };
 
@@ -870,18 +873,20 @@ export default function NotebookDetailPanel(props: Props) {
           <Show when={outline().length >= 2}>
             <DetailPanel.Section title={t().contents} count={outline().length} collapsible defaultOpen>
               <div class="notebook-panel-rows">
-                <For each={outline()}>
+                {/* The editor sends a new outline after each pause in typing. Rows keep their elements and only take the
+                    new values: a row inserted for the same heading would restyle the whole page through `:has()`. */}
+                <Index each={outline()}>
                   {(item) => (
                     <DetailPanel.Action
-                      href={`#${item.id}`}
+                      href={`#${item().id}`}
                       class="notebook-outline-row"
-                      data-depth={Math.min(2, item.level - outlineBase())}
-                      current={activeHeading() === item.id}
-                      onClick={(event) => onTocItemClick(event, item.id)}
-                      title={item.text || t().untitled}
+                      data-depth={Math.min(2, item().level - outlineBase())}
+                      current={activeHeading() === item().id}
+                      onClick={(event) => onTocItemClick(event, item().id)}
+                      title={item().text || t().untitled}
                     />
                   )}
-                </For>
+                </Index>
               </div>
             </DetailPanel.Section>
           </Show>
@@ -889,17 +894,18 @@ export default function NotebookDetailPanel(props: Props) {
           <Show when={namedBlocks().length > 0}>
             <DetailPanel.Section title={t().references} count={namedBlocks().length} collapsible defaultOpen>
               <div class="notebook-panel-rows">
-                <For each={namedBlocks()}>
+                {/* Like the outline: the editor sends new summaries after each pause in typing. */}
+                <Index each={namedBlocks()}>
                   {(block) => (
                     <DetailPanel.Action
                       type="button"
-                      onClick={() => scrollToNamedBlock(block)}
-                      leading={<i class={`ti ${REFERENCE_ICONS[block.type] ?? "ti-at"}`} aria-hidden="true" />}
-                      title={<code class="notebook-reference-name">@{block.name}</code>}
-                      trailing={t().referenceType({ type: block.type })}
+                      onClick={() => scrollToNamedBlock(block())}
+                      leading={<i class={`ti ${REFERENCE_ICONS[block().type] ?? "ti-at"}`} aria-hidden="true" />}
+                      title={<code class="notebook-reference-name">@{block().name}</code>}
+                      trailing={t().referenceType({ type: block().type })}
                     />
                   )}
-                </For>
+                </Index>
               </div>
             </DetailPanel.Section>
           </Show>
