@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { createComponent, createRoot } from "solid-js";
+import { createComponent, createRoot, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { createChoiceLoader, filterChoiceOptions, fitChoicePills, nextEnabledChoiceIndex, placeChoicePopover } from "./choice";
 
@@ -831,6 +831,61 @@ describe("@k2b/ui complete choice input migrations", () => {
           expect(firstAborted).toBe(true);
           expect(loader.error()).toBeUndefined();
           expect(loader.options()).toEqual([{ value: "second", label: "SECOND" }]);
+          dispose();
+          resolveTest();
+        })().catch((error) => {
+          dispose();
+          rejectTest(error);
+        });
+      });
+    });
+  });
+
+  test("is loading from the moment a debounced search is scheduled until it answers or is cancelled", async () => {
+    await new Promise<void>((resolveTest, rejectTest) => {
+      createRoot((dispose) => {
+        const [source, setSource] = createSignal(true);
+        const held = new Map<string, () => void>();
+        const loader = createChoiceLoader(
+          () =>
+            source()
+              ? (query: string) =>
+                  new Promise<readonly { value: string; label: string }[]>((resolve) =>
+                    held.set(query, () => resolve([{ value: query, label: query }])),
+                  )
+              : undefined,
+          () => 5,
+        );
+
+        void (async () => {
+          loader.load("first");
+          expect(loader.loading()).toBe(true);
+          loader.cancel();
+          expect(loader.loading()).toBe(false);
+          // An active request that is cancelled stops loading at once, and its late answer changes nothing.
+          loader.load("active", true);
+          loader.cancel();
+          expect(loader.loading()).toBe(false);
+          held.get("active")!();
+          await Bun.sleep(0);
+          expect(loader.loading()).toBe(false);
+          expect(loader.options()).toEqual([]);
+          // An older answer that arrives while a newer search waits out its debounce keeps it loading.
+          loader.load("older", true);
+          loader.load("newer");
+          held.get("older")!();
+          await Bun.sleep(0);
+          expect(loader.loading()).toBe(true);
+          await Bun.sleep(20);
+          held.get("newer")!();
+          await Bun.sleep(0);
+          expect(loader.loading()).toBe(false);
+          expect(loader.options()).toEqual([{ value: "newer", label: "newer" }]);
+          // A source that goes away during the debounce ends the loading instead of keeping it forever.
+          loader.load("gone");
+          setSource(false);
+          await Bun.sleep(20);
+          expect(loader.loading()).toBe(false);
           dispose();
           resolveTest();
         })().catch((error) => {
