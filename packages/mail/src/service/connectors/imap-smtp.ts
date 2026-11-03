@@ -205,8 +205,48 @@ const sharedImapSessions = new WeakMap<ProviderConnectionInput, SharedImapSessio
 type SharedImapConnection = { session: ImapSession; connected: Promise<Error | null> };
 
 /**
+ * Connections a finished shared session left open for the next session with the same `reuseKey`,
+ * such as the next folder check of the same mailbox in this minute. One per key, for at most
+ * IMAP_SESSION_REUSE_MS, well inside the 60-second socket timeout of an idle connection.
+ */
+const reusableImapSessions = new Map<string, { session: ImapSession; timer: ReturnType<typeof setTimeout> }>();
+const IMAP_SESSION_REUSE_MS = 30_000;
+
+const takeReusableImapSession = (key: string): ImapSession | null => {
+  const entry = reusableImapSessions.get(key);
+  if (!entry) return null;
+  reusableImapSessions.delete(key);
+  clearTimeout(entry.timer);
+  if (entry.session.client.usable && !entry.session.failure()) return entry.session;
+  void disposeImapClient(entry.session.client);
+  return null;
+};
+
+/** Keeps a usable connection for the next session with the key; returns whether it did. */
+const keepReusableImapSession = (key: string, session: ImapSession): boolean => {
+  if (reusableImapSessions.has(key) || !session.client.usable || session.failure()) return false;
+  const timer = setTimeout(() => {
+    if (reusableImapSessions.get(key)?.session !== session) return;
+    reusableImapSessions.delete(key);
+    void disposeImapClient(session.client);
+  }, IMAP_SESSION_REUSE_MS);
+  timer.unref?.();
+  reusableImapSessions.set(key, { session, timer });
+  return true;
+};
+
+/** Closes every kept connection, for example when the process stops. */
+export const closeReusableImapSessions = async (): Promise<void> => {
+  const entries = [...reusableImapSessions.values()];
+  reusableImapSessions.clear();
+  for (const entry of entries) clearTimeout(entry.timer);
+  await Promise.all(entries.map((entry) => disposeImapClient(entry.session.client)));
+};
+
+/**
  * Runs `fn` with a copy of `config` whose operations share one connection, created by `createSession` on
- * first use and disposed when `fn` settles. Each operation is checked like one in `runImapSession`. An
+ * first use and disposed when `fn` settles. With `reuseKey`, a connection the last session with that key
+ * kept serves this one, and a usable connection outlives a successful `fn` for the next one. Each operation is checked like one in `runImapSession`. An
  * operation that finds the connection closed or failed, for example by the idle socket timeout while the
  * caller worked between two operations, opens a new one, exactly as a step on its own connection would.
  */
@@ -214,9 +254,16 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   config: C,
   createSession: () => Promise<ImapSession>,
   fn: (session: C) => Promise<T>,
+  options: { reuseKey?: string } = {},
 ): Promise<T> => {
   const opened: Promise<SharedImapConnection>[] = [];
   let current: Promise<SharedImapConnection> | undefined;
+  const reused = options.reuseKey ? takeReusableImapSession(options.reuseKey) : null;
+  if (reused) {
+    current = Promise.resolve({ session: reused, connected: Promise.resolve(null) });
+    opened.push(current);
+  }
+  let succeeded = false;
   const open = async (): Promise<SharedImapConnection> => {
     const session = await createSession();
     return {
@@ -262,13 +309,24 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   const scoped = { ...config };
   sharedImapSessions.set(scoped, run);
   try {
-    return await fn(scoped);
+    const result = await fn(scoped);
+    succeeded = true;
+    return result;
   } finally {
     sharedImapSessions.delete(scoped);
     for (const connection of opened) {
       const settled = await connection.catch(() => null);
       if (!settled) continue;
-      await settled.connected;
+      const connectFailure = await settled.connected;
+      if (
+        succeeded &&
+        options.reuseKey &&
+        connection === current &&
+        !connectFailure &&
+        keepReusableImapSession(options.reuseKey, settled.session)
+      ) {
+        continue;
+      }
       await disposeImapClient(settled.session.client);
     }
   }
@@ -286,8 +344,11 @@ const withImapClient = async <T>(
   return runImapSession(createImapClient(config, endpoint), fn, signal);
 };
 
-const withSession = <C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T> =>
-  withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn);
+const withSession = <C extends ProviderConnectionInput, T>(
+  config: C,
+  fn: (session: C) => Promise<T>,
+  options: { reuseKey?: string } = {},
+): Promise<T> => withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn, options);
 
 const capability = (client: ImapFlow, name: string): boolean => client.capabilities.has(name) || client.enabled.has(name);
 
