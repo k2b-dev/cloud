@@ -3006,10 +3006,15 @@ const scheduleOutboxRetry = async (params: {
    * out and carries that time. Its Message-ID stays.
    */
   waitForLogin?: boolean;
+  /**
+   * The attempt already marked its provider effect, as one whose SMTP login was refused: it counts,
+   * so the next claim gets a new attempt number that the marker does not cover.
+   */
+  effectMarked?: boolean;
 }): Promise<boolean> => {
   const waitForLogin = params.waitForLogin === true;
   const delaySeconds = waitForLogin ? MAILBOX_LOGIN_RECHECK_SECONDS : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
-  const refund = waitForLogin ? 1 : 0;
+  const refund = waitForLogin && params.effectMarked !== true ? 1 : 0;
   const updated = await sql.begin(async (tx) => {
     if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return false;
     await tx`
@@ -3298,7 +3303,11 @@ const LOGIN_WAIT_CODES = new Set(["BINDING_UNAVAILABLE", "CREDENTIAL_REVISION_CH
 const SMTP_LOGIN_REFUSED_CODES = new Set([534, 535]);
 
 /** A send whose mailbox needs a new login waits for it, or returns to the drafts after waiting too long. */
-const waitForMailboxLogin = async (outbox: DbOutboxExecution, command: DbCommandExecution): Promise<boolean> => {
+const waitForMailboxLogin = async (
+  outbox: DbOutboxExecution,
+  command: DbCommandExecution,
+  options: { effectMarked?: boolean } = {},
+): Promise<boolean> => {
   const loginWait = await mailboxLoginWait(outbox.id);
   if (loginWait === "waiting") {
     const waiting = await scheduleOutboxRetry({
@@ -3310,6 +3319,7 @@ const waitForMailboxLogin = async (outbox: DbOutboxExecution, command: DbCommand
       code: OUTBOX_MAILBOX_AUTH_REQUIRED,
       fallbackMessage: "The mailbox needs a new login",
       waitForLogin: true,
+      effectMarked: options.effectMarked,
     });
     if (waiting) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "waiting" });
     return true;
@@ -3584,7 +3594,7 @@ const persistSmtpFailure = async (params: {
   // has its own password, which a mailbox login does not renew, so its refusal stays final.
   if (SMTP_LOGIN_REFUSED_CODES.has(responseCode) && outbox.selected_identity_transport_revision === null) {
     await recordRefusedProviderLogin({ bindingId: outbox.selected_binding_id, secretRevision: command.selected_secret_revision, error });
-    if (await waitForMailboxLogin(outbox, command)) return;
+    if (await waitForMailboxLogin(outbox, command, { effectMarked: true })) return;
   }
   if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode < 500 && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
     await scheduleOutboxRetry({

@@ -2387,6 +2387,13 @@ suite("mail sent message projection", () => {
           WHERE outbox.id = ${outbox.id}::uuid
         `;
         expect(state).toEqual({ health: "auth_required", connection_status: "degraded", binding_state: "degraded" });
+        // The refused attempt counts, so the next claim's attempt is not the one its effect marker
+        // covers: a worker that stops before SMTP then is recovered as unsent, not as unclear.
+        const [marker] = await sql<{ provider_effect_attempt: number | null; attempt: number }[]>`
+          SELECT command.provider_effect_attempt, command.attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+        expect(marker).toEqual({ provider_effect_attempt: 1, attempt: 1 });
         // A folder sync queued before finds no binding; the mailbox still asks for the login.
         await expect(syncFolderBatch(mailbox.folderId(INBOX), async () => undefined)).rejects.toMatchObject({ code: "NO_SYNC_BINDING" });
         const [health] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailbox.mailboxId}::uuid`;
