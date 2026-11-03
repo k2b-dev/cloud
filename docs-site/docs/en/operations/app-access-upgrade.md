@@ -5,7 +5,7 @@ section: Operations
 order: 1190
 description: Roll out declarative application access while preserving public routes and existing callers.
 tags: [operations, upgrades, identity]
-updated: 2026-10-28
+updated: 2026-11-03
 ---
 
 # Upgrade application access declarations
@@ -122,3 +122,116 @@ Revocation takes effect on the next request; there is no cache across
 requests. Open live connections retain the one-minute revalidation bound.
 Verify grant, last-right removal, group removal, guest and service-account
 entry, and matching search and CLI visibility before adopting the rule.
+
+## All signed-in people
+
+**Breaking:** `authenticated` object and app-list grants now match people
+(`AccessSubject.type === "user"`), including guests. Agents and other service
+accounts no longer inherit that tier. A person's session, personal API key,
+OAuth credential, invocation or mandate still acts as that person. Public,
+direct and group grants keep their behavior. Fixed application entry rules
+such as `appAccess.signedIn()` are unchanged.
+
+Before upgrading:
+
+1. Run the read-only inventory below in `psql` against the installation's
+   database. It lists each active agent or standalone account and the link
+   table and resource ID with an authenticated grant but no own or recursively
+   inherited local-group row. Positive public access excludes an object where
+   that application supports it. Any own or group row, including a deny,
+   excludes it. Files storage includes grants on ancestor paths.
+2. For every result, decide whether the machine should retain access. Add an
+   explicit row or a local-group grant through the owning app before switching.
+   Review AI quota rules separately: their grants are JSON configuration, not
+   `auth.access` rows.
+3. Upgrade Core and built-in applications together, then check the affected
+   machine workflows. Third-party applications with an older `@k2b/cloud`
+   keep the old behavior until they update and redeploy. Update any app-owned
+   copies of the predicate to match user access subjects only.
+
+This is an inventory of stored grants, not a proof that a credential can
+execute an operation: scopes, bindings, archived resources, app entry and
+application-specific eligibility still apply. Review the listed resources in
+their owning app. The accompanying integration guard checks the query against migrated test
+schemas with absent, direct, denied, public and nested-group alternatives.
+
+The first SELECT generates a second read-only SELECT; `\gexec` executes it in
+the same read-only transaction. Optional app tables are included only when
+installed. Resource IDs are JSON arrays containing the resource key, or
+`[base_id, path]` for Files storage. The mapping comes from application
+migrations referencing `auth.access`. `assistant.artifact_machine_rights`
+is grant metadata, not another object link. Mail's assigned-conversation
+links are included for any stored audience grants; mailbox-wide alternatives
+exclude them, and conversation assignments still restrict actual reads.
+Code is outside this migration.
+
+```sql
+BEGIN TRANSACTION READ ONLY;
+WITH links(link_table, resource_expression, public_allowed) AS (
+  VALUES
+    ('auth.app_access', 'jsonb_build_array(l.app_id)', false),
+    ('auth.rail_shortcut_access', 'jsonb_build_array(l.shortcut_id)', true),
+    ('ai.project_access', 'jsonb_build_array(l.project_id)', true),
+    ('ai.skill_access', 'jsonb_build_array(l.skill_id)', true),
+    ('ai.model_access', 'jsonb_build_array(l.model_id)', true),
+    ('assistant.artifact_access', 'jsonb_build_array(l.artifact_id)', true),
+    ('spaces.space_access', 'jsonb_build_array(l.space_id)', true),
+    ('grids.base_access', 'jsonb_build_array(l.base_id)', false),
+    ('grids.custom_app_access', 'jsonb_build_array(l.custom_app_id)', true),
+    ('pulse.base_access', 'jsonb_build_array(l.base_id)', true),
+    ('notebooks.notebook_access', 'jsonb_build_array(l.notebook_id)', true),
+    ('contacts.book_access', 'jsonb_build_array(l.book_id)', true),
+    ('chat.conversation_access', 'jsonb_build_array(l.conversation_id)', true),
+    ('venue.venue_access', 'jsonb_build_array(l.venue_id)', true),
+    ('filesv2.storage_access', 'jsonb_build_array(l.base_id, l.path)', true),
+    ('filesv2.template_access', 'jsonb_build_array(l.template_id)', true),
+    ('mail.mailbox_access', 'jsonb_build_array(l.mailbox_id)', true),
+    ('mail.mailbox_assigned_access', 'jsonb_build_array(l.mailbox_id)', true)
+), object_queries AS (
+  SELECT string_agg(format(
+    'SELECT %L::text AS link_table, %s AS resource_id, %L::boolean AS public_allowed, a.* FROM %s l JOIN auth.access a ON a.id = l.access_id',
+    link_table, resource_expression, public_allowed, to_regclass(link_table)),
+    E'\nUNION ALL\n' ORDER BY link_table) AS body
+  FROM links WHERE to_regclass(link_table) IS NOT NULL
+)
+SELECT format($inventory$
+WITH RECURSIVE machines AS (
+  SELECT id, name, kind FROM auth.service_accounts
+  WHERE status = 'active' AND kind IN ('agent', 'standalone')
+), machine_groups AS (
+  SELECT m.id AS service_account_id, sg.group_id
+  FROM machines m JOIN auth.service_account_groups sg ON sg.service_account_id = m.id
+  JOIN auth.groups g ON g.id = sg.group_id AND g.provider = 'local'
+  UNION
+  SELECT mg.service_account_id, gg.parent_group_id
+  FROM machine_groups mg JOIN auth.group_groups_v2 gg ON gg.child_group_id = mg.group_id
+  JOIN auth.groups parent ON parent.id = gg.parent_group_id AND parent.provider = 'local'
+), object_grants AS (
+  %s
+)
+SELECT DISTINCT m.id AS service_account_id, m.name, m.kind, a.link_table, a.resource_id
+FROM machines m CROSS JOIN object_grants a
+WHERE a.authenticated_only AND a.permission IN ('read', 'write', 'admin')
+  AND NOT EXISTS (
+    SELECT 1 FROM object_grants other
+    WHERE (other.link_table = a.link_table OR (
+      a.link_table = 'mail.mailbox_assigned_access' AND other.link_table = 'mail.mailbox_access'))
+      AND (other.resource_id = a.resource_id OR (
+        a.link_table = 'filesv2.storage_access'
+        AND other.resource_id->>0 = a.resource_id->>0
+        AND (other.resource_id->>1 = '' OR
+          left(a.resource_id->>1, length(other.resource_id->>1) + 1) = (other.resource_id->>1) || '/')
+      ))
+      AND (other.service_account_id = m.id
+        OR other.group_id IN (SELECT group_id FROM machine_groups WHERE service_account_id = m.id)
+        OR (other.public_allowed AND NOT other.authenticated_only
+          AND other.user_id IS NULL AND other.group_id IS NULL AND other.service_account_id IS NULL
+          AND other.permission IN ('read', 'write', 'admin')))
+  )
+ORDER BY m.name, m.id, a.link_table, a.resource_id
+$inventory$, COALESCE(body,
+  'SELECT NULL::text AS link_table, NULL::jsonb AS resource_id, false AS public_allowed, a.* FROM auth.access a WHERE false')) AS inventory_query
+FROM object_queries
+\gexec
+COMMIT;
+```

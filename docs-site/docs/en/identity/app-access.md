@@ -5,7 +5,7 @@ section: Identity and access
 order: 315
 description: Declare who may use an application and keep entry and discovery decisions consistent.
 tags: [identity, applications, authorization]
-updated: 2026-10-28
+updated: 2026-11-03
 ---
 
 # App access
@@ -192,6 +192,14 @@ participate in the access decision.
 `appAccess.grants()` declares a platform-evaluated list, not a callback to
 application code. `read` means **Use**; `admin` means **Manage access** and also
 includes use. Installation administrators do not receive app use automatically.
+
+An `authenticated` grant means **All signed-in people**, including guests.
+It matches a user access subject, including a person's delegated credentials,
+invocations and mandates. Agents and other service accounts need a direct or
+group grant. Fixed rules such as `appAccess.signedIn()` retain their existing
+behavior; this change applies to grant rows. See the
+[upgrade inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
+
 
 When moving from a fixed rule to a list, declare the previous rule as `until`:
 
