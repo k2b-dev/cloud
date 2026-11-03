@@ -66,6 +66,10 @@ const inspect = (overrides: Partial<Props>, check: (document: Document) => void)
   }
 };
 const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+/** A panel section by its title, open or closed. */
+const titled = (root: ParentNode | null | undefined, title: string) =>
+  [...(root?.querySelectorAll("section.k2b-detail-panel__section") ?? [])].find((section) => text(section.querySelector("h3")) === title) ??
+  null;
 
 describe("Notebook note detail panel", () => {
   test.each(["write", "readonly", "book"] as const)("graph action preserves the explicit %s presentation", (presentationMode) => {
@@ -177,11 +181,11 @@ describe("Notebook note detail panel", () => {
       const titles = [...(group?.querySelectorAll(".k2b-detail-panel__section-title") ?? [])].map((title) => text(title));
       expect(titles).toEqual(["Zugriff", "Eigenschaften", "Aktivität"]);
       // Closed; the list loads after the first paint, so the server render holds no names.
-      expect(group?.querySelector(".k2b-detail-access .k2b-detail-panel__section-summary")?.getAttribute("aria-expanded")).toBe("false");
+      expect(titled(group, "Zugriff")?.querySelector(".k2b-detail-panel__section-summary")?.getAttribute("aria-expanded")).toBe("false");
       expect(text(group)).not.toContain("Zugriff verwalten");
     });
     inspect({ accessVisible: true, canManageAccess: true }, (document) => expect(text(document.body)).toContain("Zugriff verwalten"));
-    inspect({ accessVisible: false }, (document) => expect(document.querySelector(".k2b-detail-access")).toBeNull());
+    inspect({ accessVisible: false }, (document) => expect(titled(document, "Zugriff")).toBeNull());
   });
   test("tags lead to their notes and links show both directions", () => {
     inspect(
@@ -194,14 +198,14 @@ describe("Notebook note detail panel", () => {
       },
       (document) => {
         expect(document.querySelector('.k2b-detail-tag[href="/app/notebooks/book01/tags/k%C3%BChlkette"]')).not.toBeNull();
-        const links = text(document.querySelector(".k2b-detail-links"));
+        const links = text(titled(document, "Verknüpfungen"));
         expect(links).toContain("Verlinkt von 1");
         expect(links).toContain("Verweist auf 1");
         expect(links).toContain("Handbuch Versand");
-        expect(document.querySelector('.k2b-detail-links a[href="/app/notebooks/book01/notes/n5"]')).not.toBeNull();
+        expect(titled(document, "Verknüpfungen")?.querySelector('a[href="/app/notebooks/book01/notes/n5"]')).not.toBeNull();
       },
     );
-    inspect({}, (document) => expect(text(document.querySelector(".k2b-detail-links"))).toBe("VerknüpfungenNoch keine"));
+    inspect({}, (document) => expect(text(titled(document, "Verknüpfungen"))).toBe("VerknüpfungenNoch keine"));
   });
   test("attachments are a short file list: kind and size, files before images", () => {
     const attachment = (id: string, filename: string, mimeType: string) => ({

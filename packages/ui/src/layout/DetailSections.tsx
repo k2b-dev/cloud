@@ -168,7 +168,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
     const content = (
       <>
         <PresenceFace person={person} live={state() === "live"} />
-        <span class="k2b-detail-presence__name">{short(person)}</span>
+        {short(person)}
         <i
           class={person.activity === "writing" ? "ti ti-pencil k2b-detail-presence__activity" : "ti ti-eye k2b-detail-presence__activity"}
           data-activity={person.activity ?? "reading"}
@@ -214,7 +214,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
       count={count()}
       meta={meta()}
       actions={props.actions}
-      class={props.class ? `k2b-detail-presence-section ${props.class}` : "k2b-detail-presence-section"}
+      class={props.class}
     >
       <div class="k2b-detail-presence" data-state={state()} aria-busy={state() === "loading" ? "true" : undefined}>
         <Show
@@ -272,7 +272,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
                     {(person) => (
                       <span class="k2b-detail-presence__self">
                         <PresenceFace person={person()} live={false} />
-                        <span class="k2b-detail-presence__name">{t().you}</span>
+                        {t().you}
                       </span>
                     )}
                   </Show>
@@ -386,7 +386,7 @@ export function DetailAccess(props: DetailAccessProps): JSX.Element {
       defaultOpen={props.defaultOpen}
       open={props.open}
       onOpenChange={props.onOpenChange}
-      class={props.class ? `k2b-detail-access ${props.class}` : "k2b-detail-access"}
+      class={props.class}
     >
       <div class="k2b-detail-section-rows" aria-busy={state() === "loading" ? "true" : undefined}>
         <Show when={state() === "loading"}>
@@ -414,15 +414,7 @@ export function DetailAccess(props: DetailAccessProps): JSX.Element {
         </Show>
         <Show when={state() === "ready"}>
           <For each={shown()}>
-            {(entry) => (
-              <DetailPanel.Row
-                leading={leading(entry)}
-                title={nameOf(entry)}
-                description={entry.detail}
-                trailing={entry.role}
-                class={entry.self ? "k2b-detail-access__self" : undefined}
-              />
-            )}
+            {(entry) => <DetailPanel.Row leading={leading(entry)} title={nameOf(entry)} description={entry.detail} trailing={entry.role} />}
           </For>
           <Show when={hiddenCount() > 0}>
             <DetailPanel.Action
@@ -536,11 +528,10 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
     });
     return props.incoming.length ? t().linkedBySummary(names(props.incoming)) : t().linksToSummary(names(props.outgoing));
   };
-  const className = () => (props.class ? `k2b-detail-links ${props.class}` : "k2b-detail-links");
   return (
     <Show
       when={total() > 0}
-      fallback={<DetailPanel.Section title={props.title ?? t().links} icon="ti ti-arrows-exchange" count={0} class={className()} />}
+      fallback={<DetailPanel.Section title={props.title ?? t().links} icon="ti ti-arrows-exchange" count={0} class={props.class} />}
     >
       <DetailPanel.Section
         title={props.title ?? t().links}
@@ -549,7 +540,7 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
         collapsible
         defaultOpen={props.defaultOpen ?? true}
         summary={summary()}
-        class={className()}
+        class={props.class}
       >
         <div class="k2b-detail-section-rows">
           <Show when={props.incoming.length > 0}>
@@ -598,7 +589,7 @@ export function DetailProperties(props: DetailPropertiesProps): JSX.Element {
       collapsible
       defaultOpen={props.defaultOpen}
       summary={props.summary}
-      class={props.class ? `k2b-detail-properties-section ${props.class}` : "k2b-detail-properties-section"}
+      class={props.class}
     >
       <dl class="k2b-detail-properties">
         <For each={props.items}>
@@ -647,12 +638,7 @@ export type DetailTagsProps = {
 export function DetailTags(props: DetailTagsProps): JSX.Element {
   const t = useDetailSectionMessages();
   return (
-    <DetailPanel.Section
-      title={props.title ?? t().tags}
-      icon="ti ti-hash"
-      count={props.tags.length}
-      class={props.class ? `k2b-detail-tags-section ${props.class}` : "k2b-detail-tags-section"}
-    >
+    <DetailPanel.Section title={props.title ?? t().tags} icon="ti ti-hash" count={props.tags.length} class={props.class}>
       <Show when={props.tags.length > 0} fallback={props.emptyHint ? <p class="k2b-detail-section-note">{props.emptyHint}</p> : undefined}>
         <ul class="k2b-detail-tags">
           <For each={props.tags}>

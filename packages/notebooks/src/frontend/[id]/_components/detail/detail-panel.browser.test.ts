@@ -163,6 +163,10 @@ const sameBox = (actual: Awaited<ReturnType<typeof box>>, expected: Awaited<Retu
   for (const key of ["x", "y", "width", "height"] as const) closeTo(actual[key], expected[key], 0.5);
 };
 const header = ".k2b-discussion__header";
+/** A panel section by its title, open or closed. */
+const titled = (title: string) => `section.k2b-detail-panel__section:has(h3:text-is("${title}"))`;
+const access = titled("Zugriff");
+const presence = "section.k2b-detail-panel__section:has(.k2b-detail-presence)";
 const contents = '.k2b-detail-panel__section:has(h3:text-is("Inhalt"))';
 
 for (const width of [1440, 390]) {
@@ -176,7 +180,7 @@ for (const width of [1440, 390]) {
           .getByRole("button", { name, expanded: false })
           .first()
           .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
-      await page.locator(".k2b-detail-access .k2b-detail-panel__row", { hasText: "Lager-Team" }).waitFor();
+      await page.locator(`${access} .k2b-detail-panel__row`, { hasText: "Lager-Team" }).waitFor();
       await settle(page);
       const edges = await page.evaluate(() => {
         const visible = (element: Element) => element.getBoundingClientRect().width > 0 && element.getClientRects().length > 0;
@@ -265,7 +269,7 @@ for (const width of [1440, 390]) {
           .getByRole("button", { name, expanded: false })
           .first()
           .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
-      await page.locator(".k2b-detail-access .k2b-detail-panel__row", { hasText: "Lager-Team" }).waitFor();
+      await page.locator(`${access} .k2b-detail-panel__row`, { hasText: "Lager-Team" }).waitFor();
       await settle(page);
       const avatars = await page.evaluate(() =>
         [...document.querySelectorAll(".k2b-detail-panel .k2b-avatar")]
@@ -296,7 +300,7 @@ for (const width of [1440, 390]) {
   test(`${width}: people coming, going, and the connection failing never move the panel`, async () => {
     const { page } = await open(width);
     try {
-      const tracked = [".k2b-detail-presence-section", ".k2b-discussion__header", `${contents} .k2b-detail-panel__section-header`];
+      const tracked = [presence, ".k2b-discussion__header", `${contents} .k2b-detail-panel__section-header`];
       const outlineTitle = `${contents} .notebook-outline-row .k2b-detail-panel__action-title`;
       const loading = await Promise.all([...tracked, outlineTitle].map((selector) => box(page, selector)));
       const steps: [string, () => void][] = [
@@ -335,25 +339,25 @@ for (const width of [1440, 390]) {
     try {
       // Closed, the section names the first entries once the list has loaded after the first paint.
       await page
-        .locator(".k2b-detail-access .k2b-detail-panel__section-preview", { hasText: "Lager-Team, Jana Berger und 5 weitere" })
+        .locator(`${access} .k2b-detail-panel__section-preview`, { hasText: "Lager-Team, Jana Berger und 5 weitere" })
         .waitFor({ state: "attached" });
       await page
         .getByRole("button", { name: /^Zugriff/, expanded: false })
         .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
-      await page.locator(".k2b-detail-access .k2b-detail-panel__row", { hasText: "Lager-Team" }).waitFor();
-      const rows = await page.locator(".k2b-detail-access .k2b-detail-panel__row").allTextContents();
+      await page.locator(`${access} .k2b-detail-panel__row`, { hasText: "Lager-Team" }).waitFor();
+      const rows = await page.locator(`${access} .k2b-detail-panel__row`).allTextContents();
       expect(rows).toHaveLength(5);
       expect(rows[0]).toContain("Lager-Team");
       expect(rows[0]).toContain("Bearbeiten");
       expect(rows.some((row) => row.includes("Du") && row.includes("Verwalten"))).toBe(true);
       expect(await page.getByRole("button", { name: "2 weitere anzeigen" }).count()).toBe(1);
-      expect(await page.locator(".k2b-detail-access input, .k2b-detail-access select").count()).toBe(0);
+      expect(await page.locator(`${access} input, ${access} select`).count()).toBe(0);
     } finally {
       await page.close();
     }
     const reader = await open(width, false, "publiclink");
     try {
-      expect(await reader.page.locator(".k2b-detail-access").count()).toBe(0);
+      expect(await reader.page.locator(access).count()).toBe(0);
     } finally {
       await reader.page.close();
     }
