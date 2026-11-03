@@ -6729,6 +6729,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: none;
 }
 
+/* A popover placed by its trigger sizes like a menu: a name stays on one line
+   until the viewport ends, a second line wraps at 16rem instead of widening
+   it. It is never narrower than 12rem, its trigger, or what it already was
+   while open, so filtering never narrows it. A toolbar keeps its 26rem. */
+.k2b-ui .k2b-choice-popover[data-width="fit"] {
+  width: max-content;
+  min-width: max(min(12rem, calc(100vw - 1rem)), var(--k2b-choice-min-width, 0px));
+}
+
+.k2b-ui .k2b-choice-popover[data-width="fit"][data-toolbar="true"] {
+  min-width: max(min(26rem, calc(100vw - 1rem)), var(--k2b-choice-min-width, 0px));
+}
+
 .k2b-ui .k2b-choice-search {
   display: flex;
   min-height: 2rem;
@@ -7463,8 +7476,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
 }
 
-/* The list keeps the trigger's width, so a long option wraps instead of
-   truncating; grid tiles clamp their own text. */
+/* Every option stays readable: a long name widens the popover up to the
+   viewport, then wraps, and a long unbroken word breaks rather than
+   overflowing. Grid tiles clamp their own text. */
 .k2b-ui .k2b-choice-option strong {
   font-size: 0.75rem;
   font-weight: 600;
@@ -7475,6 +7489,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   overflow-wrap: anywhere;
+}
+
+/* A second line, such as an address, wraps at 16rem instead of widening the popover, as in a menu. */
+.k2b-ui .k2b-choice-options:not([data-view="grid"]) .k2b-choice-option small {
+  max-inline-size: 16rem;
 }
 .k2b-ui .k2b-choice-option__checkbox {
   display: flex;

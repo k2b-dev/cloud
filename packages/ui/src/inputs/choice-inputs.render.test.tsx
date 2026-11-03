@@ -961,7 +961,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(filled).toContain('<span class="k2b-tag">solid</span>');
   });
 
-  test("sizes choice popovers to their trigger and clamps them into the viewport", () => {
+  test("makes choice popovers at least as wide as their trigger and clamps them into the viewport", () => {
     const originalWindow = globalThis.window;
     Object.assign(globalThis, {
       window: { innerWidth: 1024, innerHeight: 300 },
@@ -974,9 +974,15 @@ describe("@k2b/ui complete choice input migrations", () => {
           height: values.bottom - values.top,
         }) as DOMRect;
       const style: Record<string, string> = {};
+      const setProperty = (name: string, value: string) => {
+        style[name] = value;
+      };
+      const dataset: Record<string, string> = {};
+      // The stylesheet lets the popover grow to its options; here it renders 240 px wide.
       const popover = {
-        style,
-        getBoundingClientRect: () => ({ height: 200, width: 160 }) as DOMRect,
+        style: Object.assign(style, { setProperty }),
+        dataset,
+        getBoundingClientRect: () => ({ height: 200, width: 240 }) as DOMRect,
       } as unknown as HTMLElement;
 
       placeChoicePopover(
@@ -986,10 +992,11 @@ describe("@k2b/ui complete choice input migrations", () => {
         popover,
       );
 
-      // Cloud sizes the panel to the control, with no minimum that would make a
-      // narrow trigger open a wider, misaligned dropdown.
-      expect(style.width).toBe("160px");
-      expect(style.left).toBe("856px");
+      // The trigger is the minimum, the rendered width decides the clamp at the viewport edge.
+      expect(dataset.width).toBe("fit");
+      expect(style["--k2b-choice-min-width"]).toBe("160px");
+      expect(style.width).toBeUndefined();
+      expect(style.left).toBe("776px");
       expect(style.top).toBe("46px");
 
       placeChoicePopover(
@@ -997,9 +1004,12 @@ describe("@k2b/ui complete choice input migrations", () => {
           getBoundingClientRect: () => rect({ left: 12, top: 10, bottom: 40, width: 96 }),
         } as HTMLElement,
         popover,
+        {},
+        240,
       );
 
-      expect(style.width).toBe("96px");
+      // While open, the widest width so far is the floor, so filtering never narrows it.
+      expect(style["--k2b-choice-min-width"]).toBe("240px");
       expect(style.left).toBe("12px");
       expect(style.top).toBe("44px");
     } finally {
