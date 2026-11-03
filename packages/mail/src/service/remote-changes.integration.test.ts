@@ -646,6 +646,8 @@ suite("mail sync of changes made in other clients", () => {
     const watched = inboxes[0]!;
     await redis.send("SET", [`mail:sync-recent:${watched}`, "1", "PX", "75000"]);
     expect(await submitDueFolderSyncs(100_000)).not.toContain(watched);
+    // A run at its limit takes folders in turn and skips none.
+    expect(await submitDueFolderSyncs(inboxes.length)).toContain(watched);
     await redis.send("DEL", [`mail:sync-recent:${watched}`]);
     expect(await submitDueFolderSyncs(100_000)).toContain(watched);
   });
