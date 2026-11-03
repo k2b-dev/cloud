@@ -903,7 +903,7 @@ describe("@k2b/ui complete action migrations", () => {
 
     const css = rule(".k2b-ui .k2b-button__busy");
     expect(css).toContain("position: absolute");
-    expect(rule(".k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label")).toContain("opacity: 0");
+    expect(rule(".k2b-ui .k2b-button > .k2b-button__label:has(+ .k2b-button__busy)")).toContain("opacity: 0");
   });
 
   test("gives every spotlight trigger variant a styled surface", () => {

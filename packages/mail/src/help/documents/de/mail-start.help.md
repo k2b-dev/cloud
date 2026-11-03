@@ -12,20 +12,17 @@ Der E-Mail-Anbieter bleibt die Quelle für übertragbare E-Mail-Zustände. Wenn 
 
 ## Den passenden Einstieg wählen {icon="square-plus"}
 
-- Wenn du Mail über die App-Navigation öffnest, siehst du **Fokus**. Fokus ist eine gemeinsame Arbeitsliste für alle Postfächer, die du ansehen kannst.
-- **Für mich** zeigt dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Arbeit mit Handlungsbedarf, der niemand zugewiesen ist, der sie noch bearbeiten kann.
-- **Wartet** zeigt deine zugewiesenen Unterhaltungen, die auf eine Antwort warten. **Alle aktiven** zeigt alle nicht erledigten Unterhaltungen, die du ansehen kannst und die nicht unter **Später** liegen.
-- In Fokus zeigt jede Postfachschaltfläche, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet ungelesene Unterhaltungen außerhalb von Papierkorb und Spam. Zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen. In einem Postfach zeigen die anderen Postfächer keine Zahlen, und das offene Postfach zeigt die Zahlen seiner Ansichten und Ordner.
-- Öffne ein Postfach, wenn du Ordner, eine Suche im ganzen Postfach oder Einstellungen brauchst.
+- Wenn du Mail über die App-Navigation öffnest, öffnet Mail direkt ein Postfach. Mit einem Postfach öffnet Mail dieses. Mit mehreren öffnet Mail das Postfach, das du in diesem Browser zuletzt genutzt hast, wenn du es noch ansehen kannst und es nicht ausgeblendet hast. Sonst öffnet Mail dein erstes angeheftetes Postfach oder das erste Postfach der Liste.
+- Eine Seite **Fokus** gibt es nicht mehr. In jedem Postfach zeigt **Mir zugewiesen**, was dir zugewiesen ist, und auch **Handlungsbedarf**, **Wartet auf Antwort** und **Nicht zugewiesen** sind Tabs. Ein alter Link auf Fokus öffnet dieselbe Ansicht oder Unterhaltung in einem Postfach. Ein Hinweis oben in der Seitenleiste sagt dir das einmal. Wähle **Verstanden**, um ihn auf allen deinen Geräten zu schließen.
+- Das offene Postfach zeigt die Zahlen seiner Ansichten und Ordner. Die anderen Postfächer zeigen keine Zahlen.
 - Wähle die Fahne neben einem Postfach, um es oben in der Liste anzuheften. Beim offenen Postfach liegen Fahne und Auge unter **…** in seiner Zeile.
-- Wähle das durchgestrichene Auge, um ein selten genutztes Postfach auszublenden, etwa eine No-Reply-Adresse. Das Postfach verschwindet aus der Liste, und seine Unterhaltungen verschwinden aus Fokus und den Zahlen in Fokus.
+- Wähle das durchgestrichene Auge, um ein selten genutztes Postfach auszublenden, etwa eine No-Reply-Adresse. Das Postfach verschwindet aus der Liste, und Mail öffnet es nicht, wenn du Mail öffnest.
 - Ausgeblendete Postfächer liegen unter **Ausgeblendet** unterhalb der Liste. Öffne diesen Abschnitt, um eines zu erreichen, und wähle das Auge, um es wieder einzublenden.
 - Deine angehefteten und ausgeblendeten Postfächer gelten auf jedem Gerät, auf dem du dich anmeldest. Sie gelten nur für dich. Andere mit Zugriff auf ein Postfach behalten ihre eigenen.
-- Wähle auf einem Tablet oder einem größeren Bildschirm eine Zeile in Fokus aus, um Kontext, Zusammenfassung, Workflow-Felder und Teamnotizen zu sehen. Mit genug Platz stehen sie neben der Liste, sonst öffnen sie sich über dem Ende der Liste; **Esc** oder **Details** legt sie wieder weg. Auf einem Telefon öffnet die Zeile die Unterhaltung in ihrem Postfach.
 - Wähle **Neues Postfach**, um ein weiteres E-Mail-Konto zu verbinden.
 - Ein neues Postfach ist zunächst privat. Du hast Zugriff **Verwalten**, und niemand sonst hat Zugriff, bis du ihn unter **… → Einstellungen → Zugriff** gibst.
 
-Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile behält ihr ursprüngliches Postfach. Wenn du eine Zeile öffnest, prüft Mail deinen aktuellen Zugriff auf das Postfach erneut.
+Die offene Arbeit aller deiner Postfächer zusammen listet `cld mail focus` auf der Kommandozeile. Jeder Eintrag behält sein Postfach, und Mail prüft deinen Zugriff erneut, wenn du ihn öffnest.
 
 ## Das erste Postfach verbinden {icon="square-plus"}
 
@@ -55,7 +52,7 @@ Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchr
 
 ## Dich im Postfach zurechtfinden {icon="layout-grid"}
 
-Die Seitenleiste enthält **Fokus** und deine Postfächer, angeheftete zuerst. Das geöffnete Postfach zeigt darunter seine Ziele:
+Die Seitenleiste enthält deine Postfächer, angeheftete zuerst. Das geöffnete Postfach zeigt darunter seine Ziele:
 
 - **Eingang**, **Entwürfe**, **Geplant**, **Versandprobleme** und **Gesendet**.
 - **Mehr** für Archiv, Papierkorb und Spam. Die Gruppe bleibt offen, solange einer dieser Ordner aktiv ist.
@@ -71,7 +68,7 @@ Im Kopfbereich findest du:
 - **… → Listenansicht auswählen** wechselt zwischen Unterhaltungen und einzelnen Nachrichten. Das Menü enthält außerdem Postfachdetails, Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, kann hier die Listenansicht wählen; das **…** des geöffneten Postfachs in der Seitenleiste bietet dann nur Anheften und Ausblenden.
 - **Verfassen** als Hauptaktion, wenn du senden kannst.
 
-Auf dem Smartphone öffnest du über den Postfachtitel Fokus, andere Postfächer und die Ordner des geöffneten Postfachs. Ansichten, Filter, Verfassen und **…** findest du im Kopfbereich.
+Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Ansichten, Filter, Verfassen und **…** findest du im Kopfbereich.
 
 **Postfachdetails** zeigt allen, die das Postfach ansehen können, denselben Überblick. Personen mit Zugriff **Ansehen** sehen ihn als **Über dieses Postfach**. Der Überblick zeigt:
 

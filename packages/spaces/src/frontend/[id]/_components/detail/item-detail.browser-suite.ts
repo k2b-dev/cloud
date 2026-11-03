@@ -10,7 +10,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -414,6 +414,8 @@ const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__secti
 const planningRow = (page: Page, term: string) =>
   page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
+  // A saved change reloads the panel and a closing menu still moves; the label is measured where it rests.
+  await settled(page);
   const label = (await planningRow(page, term).locator("dt").boundingBox())!;
   await page.mouse.click(label.x + 4, label.y + label.height / 2);
 };

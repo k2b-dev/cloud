@@ -279,7 +279,7 @@ cld mail use <mailbox-id>
 cld --json mail current
 ```
 
-Pin or hide mailboxes in your own overview. The lists belong to the signed-in person or service account, apply on every device, and hold up to 200 mailboxes each; a hidden mailbox leaves the web overview and its Focus but stays connected:
+Pin or hide mailboxes in your own mailbox list. The lists belong to the signed-in person or service account, apply on every device, and hold up to 200 mailboxes each; a hidden mailbox leaves the list in Mail's sidebar and Mail no longer opens it on its own, but it stays connected:
 
 ```bash
 cld --json mail mailbox preferences

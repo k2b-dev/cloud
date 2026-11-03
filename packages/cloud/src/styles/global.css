@@ -72,7 +72,7 @@
 
 /* Full-page workspaces own their inner scrolling. Stop iframe scroll gestures
    from rubber-banding the outer viewport or triggering pull-to-refresh. */
-html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
+html:has(> body > .cloud-app-canvas[data-layout-full-page="true"]) {
   overscroll-behavior: none;
 }
 
@@ -307,8 +307,13 @@ body {
 
 /* Pages of the mobile app paint the shell canvas, which their theme-color and
    html background repeat for the status bar. */
-html:has(.k2b-mobile-shell) body {
+html[data-k2b-mobile-shell] body {
   background-color: var(--k2b-surface-canvas);
+}
+
+/* The search bar's clear action appears once the field holds text. */
+.cloud-search:has(input:placeholder-shown) .cloud-search-clear {
+  visibility: hidden;
 }
 
 .dark {
@@ -377,7 +382,7 @@ solid-island {
      width: the document's, or the card's for signed-in people. Full-page
      surfaces, workspaces, and scroll areas own their inner scrolling, so the
      card reserves no second gutter beside theirs. */
-  html:has(.cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { scrollbar-gutter: stable; }
+  html:has(> body > .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { scrollbar-gutter: stable; }
   .cloud-app-canvas[data-layout-authenticated]:not([data-layout-full-page])
     .layout-content-main:not(:has(> .k2b-scroll-area, > .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace)) {
     scrollbar-gutter: stable;
@@ -393,7 +398,7 @@ solid-island {
   }
   /* Toasts at the top edge of a phone start below the header instead of
      covering its menu and search buttons. */
-  :root:has(.cloud-app-canvas .layout-header) {
+  :root:has(> body > .cloud-app-canvas[data-layout-header]) {
     --k2b-toast-offset-top: 2.875rem;
   }
 
@@ -457,32 +462,39 @@ solid-island {
       border-radius: 0;
       background: transparent;
       box-shadow: none;
+    }
 
-      & .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *) {
-        --k2b-workspace-inset-bottom: var(--cloud-tab-bar-space);
+    /* The workspace asks its own children, not `main` its whole subtree: a
+       `:has()` on a large ancestor restyles it entirely on every change inside. */
+    .cloud-app-canvas[data-layout-authenticated]
+      .layout-content-main
+      .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *, [hidden], [hidden] *):has(
+        > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])
+      ) {
+      --k2b-workspace-inset-bottom: var(--cloud-tab-bar-space);
 
-        &::before {
-          content: "";
-          grid-column: 1 / -1;
-          grid-row: head-start / -1;
-          min-height: 0;
-          pointer-events: none;
-          border-top: 1px solid transparent;
-          border-radius: 1.75rem 1.75rem 0 0;
-          background: var(--k2b-surface);
-          box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
-        }
+      &::before {
+        content: "";
+        grid-column: 1 / -1;
+        grid-row: head-start / -1;
+        min-height: 0;
+        pointer-events: none;
+        border-top: 1px solid transparent;
+        border-radius: 1.75rem 1.75rem 0 0;
+        background: var(--k2b-surface);
+        box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+      }
 
-        & > .k2b-app-workspace__head {
-          border-radius: 1.75rem 1.75rem 0 0;
-          background: transparent;
-        }
+      & > .k2b-app-workspace__head {
+        border-radius: 1.75rem 1.75rem 0 0;
+        background: transparent;
+      }
 
-        /* Cloud's page title hides the automatic head on phones. With no
-           explicit head, Content itself owns the card's rounded clip. */
-        &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
-          border-radius: 1.75rem 1.75rem 0 0;
-        }
+      /* Cloud's page title hides the automatic head on phones. With no
+         explicit head, Content itself owns the card's rounded clip. */
+      &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
+        border-radius: 1.75rem 1.75rem 0 0;
       }
     }
 
@@ -533,10 +545,11 @@ solid-island {
 }
 
 @media not all and (min-width: 48rem) {
-  :root:has(script[data-cloud-workspace-navigation]) .layout-header-title {
+  /* Layout marks a page with workspace navigation on its shell. */
+  .layout-shell-content[data-workspace-navigation] .layout-header-title {
     display: none;
   }
-  :root:has(script[data-cloud-workspace-navigation]) .layout-header-title-menu {
+  .layout-shell-content[data-workspace-navigation] .layout-header-title-menu {
     display: inline-flex;
   }
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
