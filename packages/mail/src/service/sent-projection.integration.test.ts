@@ -1181,7 +1181,17 @@ suite("mail sent message projection", () => {
         enqueue: false,
       });
       if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      const attempts = () =>
+        sql<{ outbox_attempt: number; command_attempt: number }[]>`
+          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+      // Its checks were used up, as for a provider that saves sent mail itself.
+      await sql`UPDATE mail.outbox_submissions SET attempt = 5 WHERE id = ${outbox.id}::uuid`;
+      const [before] = await attempts();
       expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      // The attempts fence the outbox worker, so a stale worker never matches the check's claim.
+      expect(await attempts()).toEqual([before!]);
 
       expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
       expect(await delivery(outbox.id)).toEqual({
