@@ -55,8 +55,8 @@ import {
   ButtonLink,
   Chat,
   type ChatMention,
+  DetailsToggle,
   dialogCore,
-  IconButton,
   LocaleProvider,
   NoticeCard,
   openSpotlightSearch,
@@ -2832,18 +2832,15 @@ export default function AssistantWorkspace(props: Props) {
                           </Show>
                         </div>
                         <Show when={activeConversation() && !emptyChat()}>
-                          <IconButton
+                          <DetailsToggle
                             ref={contextHost.toggleRef}
                             class="assistant-context-toggle"
                             size="sm"
-                            variant="ghost"
                             label={sidebarCopy().show}
                             aria-expanded="false"
                             aria-controls="assistant-chat-context"
                             onClick={contextHost.open}
-                          >
-                            <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
-                          </IconButton>
+                          />
                           <AssistantChatSidebarPanel
                             id="assistant-chat-context"
                             state={contextState}

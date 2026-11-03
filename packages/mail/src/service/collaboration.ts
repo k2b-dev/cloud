@@ -6,6 +6,7 @@ import type {
   ConversationCompletionResult,
   CreateConversationComment,
   DeleteConversationComment,
+  MailActivityKind,
   UpdateConversationCollaboration,
   UpdateConversationComment,
 } from "../contracts";
@@ -20,6 +21,7 @@ import {
   requireVisibleConversation,
   requireVisibleMessages,
 } from "./access";
+import { activityFeedCondition } from "./activity-feed";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { invalidateAutomationEffects } from "./automation-effect-state";
@@ -92,7 +94,13 @@ export type MailActivityEvent = {
   targetId: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
+  /** The subject of the event's conversation, so a mailbox-wide feed can name it; null without a conversation. */
+  conversationSubject: string | null;
+  /** Who was assigned before and after an assignment change, as principal references; null for every other event. */
+  assignees: { before: MailActivityPerson[]; after: MailActivityPerson[] } | null;
 };
+
+export type MailActivityPerson = Pick<MailCollaborator, "id" | "displayName" | "avatarHash" | "type">;
 
 type CollaborationRow = {
   id: string;
@@ -137,6 +145,7 @@ type ActivityRow = {
   target_id: string | null;
   conversation_reference_value: string | null;
   mailbox_short_id: string;
+  conversation_subject: string | null;
   metadata: Record<string, unknown> | string;
   created_at: Date | string;
 };
@@ -1659,12 +1668,25 @@ export const deleteConversationComment = async (params: {
   }
 };
 
+/** The assignees an activity snapshot names, including snapshots from before conversations had several. */
+const activityAssigneeIds = (snapshot: unknown): string[] => {
+  if (!snapshot || typeof snapshot !== "object") return [];
+  const value = snapshot as { assigneeUserIds?: unknown; assigneeUserId?: unknown };
+  if (Array.isArray(value.assigneeUserIds)) return value.assigneeUserIds.filter((id): id is string => typeof id === "string");
+  return typeof value.assigneeUserId === "string" ? [value.assigneeUserId] : [];
+};
+
 export const listActivity = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationId?: string | null;
   cursor?: string;
   limit?: number;
+  /** Feed filters, applied before the page limit; the cursor stays valid across them. */
+  kinds?: readonly MailActivityKind[];
+  actorId?: string | null;
+  /** Only events that concern the caller. */
+  mine?: boolean;
 }): Promise<Result<{ items: MailActivityEvent[]; nextCursor: string | null }>> => {
   const allowed = params.conversationId
     ? await requireMailboxAccess(params.context, params.mailboxId, "read")
@@ -1703,10 +1725,13 @@ export const listActivity = async (params: {
       activity.target_id,
       activity_reference.value AS conversation_reference_value,
       activity_mailbox.short_id AS mailbox_short_id,
+      activity_conversation.subject AS conversation_subject,
       activity.metadata,
       activity.created_at
     FROM mail.activity_events activity
     JOIN mail.mailboxes activity_mailbox ON activity_mailbox.id = activity.mailbox_id
+    LEFT JOIN mail.conversations activity_conversation
+      ON activity_conversation.id = activity.conversation_id AND activity_conversation.mailbox_id = activity.mailbox_id
     LEFT JOIN mail.conversation_references activity_reference
       ON activity.target_type = 'conversation_reference'
       AND activity_reference.id = activity.target_id
@@ -1748,12 +1773,32 @@ export const listActivity = async (params: {
           )
         )
       ))
+      AND ${activityFeedCondition({
+        kinds: params.kinds,
+        actorId: params.actorId,
+        concernsPrincipalId: params.mine ? personalPrincipal(params.context).id : null,
+      })}
       AND (${cursor.data ?? null}::bigint IS NULL OR activity.id < ${cursor.data ?? null}::bigint)
     ORDER BY activity.id DESC
     LIMIT ${limit + 1}
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const assigneeChanges = new Map(
+    pageRows.flatMap((row) => {
+      if (row.action !== "conversation.collaboration_updated") return [];
+      const metadata = parseMetadata(row.metadata);
+      const before = activityAssigneeIds(metadata.before);
+      const after = activityAssigneeIds(metadata.after);
+      return before.join() === after.join() ? [] : [[String(row.id), { before, after }] as const];
+    }),
+  );
+  const people = new Map(
+    (await listAssigneeCollaborators([...assigneeChanges.values()].flatMap((change) => [...change.before, ...change.after]))).map(
+      (person) => [person.id, { id: person.id, displayName: person.displayName, avatarHash: person.avatarHash, type: person.type }],
+    ),
+  );
+  const resolvePeople = (ids: readonly string[]): MailActivityPerson[] => ids.flatMap((id) => people.get(id) ?? []);
   const items = await projectActivityItems(
     pageRows.map((row) => ({
       id: String(row.id),
@@ -1775,6 +1820,11 @@ export const listActivity = async (params: {
             : row.target_id,
       metadata: parseMetadata(row.metadata),
       createdAt: toIso(row.created_at),
+      conversationSubject: row.conversation_id ? (row.conversation_subject ?? null) : null,
+      assignees: (() => {
+        const change = assigneeChanges.get(String(row.id));
+        return change ? { before: resolvePeople(change.before), after: resolvePeople(change.after) } : null;
+      })(),
     })),
   );
   const last = items.at(-1);

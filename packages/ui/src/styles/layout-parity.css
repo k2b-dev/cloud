@@ -5439,3 +5439,19 @@ html[data-k2b-mobile-shell] .k2b-ui,
     --k2b-workspace-head-end: 1rem;
   }
 }
+
+/* Details buttons, shared and app-owned: while their panel is open they show
+   the selection fill in the platform blue, without a border or shadow. Only
+   colour and fill change, so opening moves nothing. */
+.k2b-ui .k2b-details-toggle[aria-expanded="true"],
+.k2b-ui .k2b-details-toggle[aria-expanded="true"]:hover:not(:disabled) {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-details-toggle[aria-expanded="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
+  }
+}

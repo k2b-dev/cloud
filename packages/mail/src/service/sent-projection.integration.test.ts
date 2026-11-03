@@ -1903,6 +1903,58 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("every settled send records one feed event in its conversation, with its outcome", async () => {
+    const sentEvents = async (outboxId: string) =>
+      sql<
+        {
+          conversation_id: string | null;
+          outcome: string;
+          metadata: { result: string; intent: string | null; code: string | null; outboundMessageId: string | null };
+        }[]
+      >`
+        SELECT activity.conversation_id, activity.outcome, activity.metadata
+        FROM mail.activity_events activity
+        JOIN mail.outbox_submissions outbox ON outbox.command_id = activity.command_id
+        WHERE outbox.id = ${outboxId}::uuid AND activity.action = 'message.sent'
+      `;
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "feed-reply");
+      const reply = await replyDraft(mailbox, inbound);
+      const sent = await send(mailbox, reply.id, reply.revision, "feed-reply");
+      expect(await sentEvents(sent.id)).toEqual([
+        {
+          conversation_id: inbound.conversation_id,
+          outcome: "confirmed",
+          metadata: { result: "sent", intent: "reply", code: null, outboundMessageId: sent.message_id },
+        },
+      ]);
+
+      // A new message names the conversation it started once it is sent.
+      const fresh = await newDraft(mailbox, "Feed new message");
+      const started = await send(mailbox, fresh.id, fresh.revision, "feed-new");
+      const [newEvent] = await sentEvents(started.id);
+      expect(newEvent?.metadata).toEqual({ result: "sent", intent: "new", code: null, outboundMessageId: started.message_id });
+      expect(newEvent?.conversation_id).toBe((await sentProjection(mailbox, started.stable_message_id)).messages[0]!.conversation_id);
+      expect(newEvent?.conversation_id).not.toBeNull();
+
+      const rejected = await newDraft(mailbox, "Feed failed send");
+      provider.failNextSubmission("ETLS", false);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "feed-failed", "failed");
+      expect((await sentEvents(failed.id)).map((row) => [row.outcome, row.metadata.result, row.metadata.code])).toEqual([
+        ["failed", "failed", "ETLS"],
+      ]);
+
+      const partly = await partlyDeliverableDraft(mailbox, "Feed partial send");
+      provider.refuseRecipient(MISTYPED);
+      const partial = await send(mailbox, partly.id, partly.revision, "feed-partial", "needs_attention");
+      expect((await sentEvents(partial.id)).map((row) => [row.outcome, row.metadata.result])).toEqual([["failed", "partial"]]);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a message only some recipients accept is stored in Sent and still needs attention", async () => {
     const provider = createProvider("imap");
     try {

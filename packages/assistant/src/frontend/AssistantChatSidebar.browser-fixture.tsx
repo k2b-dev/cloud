@@ -64,7 +64,7 @@ export function SidebarHarness(props: {
             aria-controls="assistant-chat-context"
             onClick={host.open}
           >
-            <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
+            <i class="ti ti-info-circle" aria-hidden="true" />
           </IconButton>
           <AssistantChatSidebarPanel
             id="assistant-chat-context"

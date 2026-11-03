@@ -182,7 +182,7 @@ const portableSections = [
       page(
         "detail-panel",
         "DetailPanel",
-        "ti ti-layout-sidebar-right",
+        "ti ti-info-circle",
         "Quiet contextual inspectors with compact identity, flat sections, and one scroll owner.",
       ),
       page(
@@ -437,7 +437,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 176;
+export const portableUiComponentCount = 177;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -477,6 +477,7 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
   personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
   PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",

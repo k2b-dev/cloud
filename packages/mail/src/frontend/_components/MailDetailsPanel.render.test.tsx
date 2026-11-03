@@ -116,6 +116,8 @@ const activity: MailActivityEvent = {
   targetId: conversationId,
   metadata: {},
   createdAt: now,
+  conversationSubject: null,
+  assignees: null,
 };
 
 const presence: ConversationPresenceParticipant = {

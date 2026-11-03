@@ -253,6 +253,7 @@ export type ConversationSummary = {
   activeFolderIds: string[];
   flagged: boolean;
   hasAttachments: boolean;
+  attachmentCount: number;
   messageCount: number;
   preview: string | null;
   /** The folder in view, or the conversation's only folder in a folderless view; otherwise `null`. */
@@ -277,7 +278,7 @@ type DbConversation = {
   unread: boolean;
   active_folder_ids: string[];
   flagged: boolean;
-  has_attachments: boolean;
+  attachment_count: number;
   message_count: number;
   preview: string | null;
   folder_id: string | null;
@@ -552,7 +553,7 @@ export const listConversations = async (params: {
       unread_state.folder_ids AS unread_folder_ids,
       active_state.folder_ids AS active_folder_ids,
       COALESCE(flagged_state.present, false) AS flagged,
-      COALESCE(attachment_state.present, false) AS has_attachments,
+      COALESCE(attachment_state.count, 0) AS attachment_count,
       (
         SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id
       ) AS message_count,
@@ -649,11 +650,10 @@ export const listConversations = async (params: {
       LIMIT 1
     ) flagged_state ON true
     LEFT JOIN LATERAL (
-      SELECT true AS present
+      SELECT COUNT(*)::int AS count
       FROM mail.conversation_messages attachment_cm
       JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
       WHERE attachment_cm.conversation_id = c.id
-      LIMIT 1
     ) attachment_state ON true
     ORDER BY ${conversationSortColumn(view)} DESC, c.id DESC
   `;
@@ -675,7 +675,8 @@ export const listConversations = async (params: {
     unread: row.unread,
     activeFolderIds: row.active_folder_ids,
     flagged: row.flagged,
-    hasAttachments: row.has_attachments,
+    hasAttachments: row.attachment_count > 0,
+    attachmentCount: row.attachment_count,
     messageCount: row.message_count,
     preview: row.preview || null,
     folderId: row.folder_id,

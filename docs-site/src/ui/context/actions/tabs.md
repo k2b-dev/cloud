@@ -112,6 +112,13 @@ original order, with counts as quiet trailing text. It never repeats the
 current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
+A `pinned` view takes no slot and never moves under **More**: it stays after
+**More** at every width, also while it is current. Use it for one view of
+another kind than the ones that overflow, such as an activity feed beside
+work views. A `badge` adds a short quiet label after the label and count,
+such as "New" until a person first opens the view. Neither changes the tab's
+height.
+
 Every view is a document link, in the strip and under **More**, so reload,
 back, and forward show the view that the URL names.
 
@@ -141,6 +148,7 @@ A pill tab draws the edge around its label and close button together.
 ```ts
 type ViewTab = {
   id: string; label: string; href: string; icon?: string; count?: number | string;
+  badge?: string; pinned?: boolean;
 };
 type ViewTabsProps = {
   label: string; items: readonly ViewTab[]; current: string | undefined; max?: number;

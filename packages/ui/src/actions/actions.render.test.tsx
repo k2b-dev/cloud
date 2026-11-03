@@ -1077,12 +1077,34 @@ describe("workspace head navigation", () => {
     count: index,
   }));
   test("overflow replaces the last slot with the current view at both levels", () => {
-    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], wideHidden: 3, compactHidden: 5 });
+    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], pinned: [], wideHidden: 3, compactHidden: 5 });
     expect(viewTabsLayout(items, "missing").wide).toEqual([0, 1, 2, 3, 4]);
-    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], wideHidden: 0, compactHidden: 0 });
-    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], wideHidden: 6, compactHidden: 6 });
-    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], pinned: [], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], pinned: [], wideHidden: 6, compactHidden: 6 });
+    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], pinned: [], wideHidden: 0, compactHidden: 0 });
     for (const max of [0, -1, NaN, Infinity]) expect(viewTabsLayout(items, "7", max).wide).toContain(6);
+  });
+  test("a pinned view takes no overflow slot and stays after More at every level, also while it is current", () => {
+    const withPinned = [...items.slice(0, 7), { ...items[7]!, pinned: true, badge: "New" }];
+    expect(viewTabsLayout(withPinned, "2")).toEqual({
+      wide: [0, 1, 2, 3, 4],
+      compact: [0, 1, 2],
+      pinned: [7],
+      wideHidden: 2,
+      compactHidden: 4,
+    });
+    expect(viewTabsLayout(withPinned, "8")).toEqual({
+      wide: [0, 1, 2, 3, 4],
+      compact: [0, 1, 2],
+      pinned: [7],
+      wideHidden: 2,
+      compactHidden: 4,
+    });
+    const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items: withPinned, current: "8" }));
+    expect([...html.matchAll(/data-view-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(["1", "2", "3", "4", "5", "8"]);
+    expect(html.indexOf('data-view-tab="8"')).toBeGreaterThan(html.indexOf("k2b-view-tabs__more"));
+    expect(html).toMatch(/class="k2b-view-tabs__badge"[^>]*>New</);
+    expect(html).toMatch(/href="\?view=8" aria-current="page"/);
   });
   test("SSR renders ordinary view links and both CSS overflow levels", () => {
     const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "7", class: "custom" }));

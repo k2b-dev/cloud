@@ -12,6 +12,7 @@ import {
   DataPanel,
   DescriptionList,
   DetailPanel,
+  DetailsToggle,
   type DialogTone,
   Discussion,
   dialogCore,
@@ -2105,6 +2106,27 @@ const PullToRefreshDemo = () => (
   </DemoCard>
 );
 
+const DetailsToggleDemo = () => {
+  const [open, setOpen] = createSignal(true);
+  return (
+    <DemoCard
+      id="details-toggle"
+      chip={{ kind: "component", name: "DetailsToggle", from: "@k2b/ui" }}
+      description="The icon-only Details button for an app's own toolbar: the info circle in every app, with the selection fill while its panel is open."
+      code={`<DetailsToggle
+  label="Details"
+  aria-controls={appWorkspaceDetailElementId("note")}
+  data-app-workspace-detail-toggle=""
+/>`}
+    >
+      <div style="display: flex; gap: 1rem; align-items: center">
+        <DetailsToggle label="Details" aria-expanded={false} />
+        <DetailsToggle label="Details" aria-expanded={open()} onClick={() => setOpen(!open())} />
+      </div>
+    </DemoCard>
+  );
+};
+
 const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
@@ -2352,6 +2374,7 @@ const items = [
   workspace: () => (
     <DemoGrid columns="one">
       <WorkspaceHeadRowDemo />
+      <DetailsToggleDemo />
       <WorkspaceHeadLongViewsDemo />
       <NavigationDemo />
       <LiveWorkspaceDemo />

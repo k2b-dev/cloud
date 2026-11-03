@@ -1925,6 +1925,8 @@ suite("mail lifecycle control plane", () => {
     role: string;
     messages: ConnectorEnvelope[];
   }) => {
+    // The commit reads the folder's Drafts role with the locked folder row.
+    await sql`UPDATE mail.folders SET role = ${params.role} WHERE id = ${params.fixture.folderId}::uuid`;
     const fence = await claimFence(params.fixture.resourceId, bindingId, "backfill");
     const beforeCursor = reconcileCursor(params.uidValidity);
     const highestUid = Math.max(...params.messages.map((message) => Number(message.remoteRef.uid)));

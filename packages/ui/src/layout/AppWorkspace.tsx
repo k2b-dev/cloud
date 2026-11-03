@@ -59,6 +59,7 @@ import {
   isAppWorkspaceWidthShare,
 } from "./app-workspace-width";
 import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
+import { DETAILS_ICON } from "./DetailsToggle";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
@@ -1052,9 +1053,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
           data-app-workspace-detail-toggle=""
           data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
           disabled={props.available === false}
-          class="k2b-app-workspace__detail-toggle"
+          class="k2b-app-workspace__detail-toggle k2b-details-toggle"
         >
-          <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+          <i class={DETAILS_ICON} aria-hidden="true" />
           {workspaceMessages().details}
         </Button>
       </Show>

@@ -7,6 +7,7 @@ import { expBackoff } from "@k2b/sync/retry";
 import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
 import { remoteMessagePreconditionSchema } from "../contracts";
+import { MAIL_SENT_ACTIVITY_ACTION, mailSentActivityResult } from "./activity-feed";
 import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized, commandsStillAuthorized } from "./command-authorization";
 import { resolveUndoRequests } from "./command-undo";
@@ -2930,6 +2931,36 @@ const finishOutbox = async (params: {
       WHERE c.id = ${params.outbox.command_id}::uuid
     `;
     await refreshOutboxConversationTimeline(tx, params.outbox.id);
+    // The event feed's send, committed with the outcome it reports. A new message names the conversation it started.
+    await tx`
+      INSERT INTO mail.activity_events (
+        mailbox_id, conversation_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+      )
+      SELECT
+        c.mailbox_id,
+        COALESCE(
+          draft.conversation_id,
+          (SELECT link.conversation_id FROM mail.conversation_messages link WHERE link.message_id = outbox.message_id LIMIT 1)
+        ),
+        c.id,
+        c.actor_kind,
+        c.actor_id,
+        ${MAIL_SENT_ACTIVITY_ACTION},
+        ${params.commandState === "confirmed" || params.commandState === "reconciled" ? "confirmed" : "failed"},
+        'outbox_submission',
+        outbox.id,
+        jsonb_build_object(
+          'result', ${mailSentActivityResult(params.outboxState, delivered)}::text,
+          'intent', draft.intent,
+          'code', ${code}::text,
+          -- The sent message: people who see only assigned conversations see the event only while they see it.
+          'outboundMessageId', outbox.message_id
+        )
+      FROM mail.commands c
+      JOIN mail.outbox_submissions outbox ON outbox.id = ${params.outbox.id}::uuid
+      LEFT JOIN mail.drafts draft ON draft.id = outbox.draft_id
+      WHERE c.id = ${params.outbox.command_id}::uuid
+    `;
     if (params.commandState !== "confirmed" && params.commandState !== "reconciled") {
       return { updated: true, transition: null };
     }
