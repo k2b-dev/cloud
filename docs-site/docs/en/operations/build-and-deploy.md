@@ -751,6 +751,16 @@ authority invalidation and device revocation close access to its visits.
 Revocation and domain completion serialize in Postgres. Audit records include
 app, owner, device and visit identifiers, without QR or signature content.
 
+Applications can register a shared device once. `setup()` adds the
+`_cloud_pwa_registrations` table and a nullable `registration_id` column; both
+changes are additive. A registered browser keeps a persistent guest cookie for
+up to 400 days but holds no authority on its own. Each use still follows the
+12-hour and web-session rules above. Takeovers and unregistrations are audited
+as `app_pwa.registration.*`. To retire a lost or stolen device, unregister it
+in the application's staff screen. During a rolling upgrade, an older replica
+treats the end of a use as terminal: the device may have to be registered
+again, but it never gains access.
+
 Guest operations hold authority locks only for their bounded request
 transaction. Category-policy reads also hold a shared settings-table lock, and
 local device resource operations hold shared permission-table locks, so policy

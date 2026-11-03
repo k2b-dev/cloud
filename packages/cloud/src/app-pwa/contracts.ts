@@ -8,6 +8,8 @@ export const APP_PWA_LIMITS = {
   deviceSeconds: 12 * 60 * 60,
   visitIdleSeconds: 15 * 60,
   visitSeconds: 60 * 60,
+  /** A registered shared browser; the cookie lifetime upper bound that browsers enforce (RFC 6265bis). */
+  registrationSeconds: 400 * 24 * 60 * 60,
 } as const;
 
 export const AppPwaId = z.uuid();
@@ -33,6 +35,23 @@ export type AppPwaDeviceView = {
   name: string;
   state: "pending" | "active" | "expired" | "revoked";
   expiresAt: string | null;
+  /** Set when this device row is a use of a registered shared device. */
+  registrationId: string | null;
+};
+/** What a registered browser learns without a visit: never an account ID, login name, or contact detail. */
+export type AppPwaRegistrationGuestView = {
+  id: string;
+  name: string;
+  expiresAt: string;
+  holder: { displayName: string | null } | null;
+};
+export type AppPwaRegistrationView = {
+  id: string;
+  name: string;
+  state: "active" | "expired";
+  registeredAt: string;
+  expiresAt: string;
+  holder: { userId: string; displayName: string; deviceId: string; expiresAt: string | null; visitActive: boolean } | null;
 };
 export type AppPwaVisitView = {
   id: string;
@@ -41,7 +60,17 @@ export type AppPwaVisitView = {
   idleExpiresAt: string | null;
 };
 export type AppPwaWebSignIn = { userId: string; sid: string };
-export type AppPwaStaffAction = "issue-device" | "list-devices" | "device-status" | "revoke-device" | "issue-visit" | "revoke-visit";
+export type AppPwaStaffAction =
+  | "issue-device"
+  | "list-devices"
+  | "device-status"
+  | "revoke-device"
+  | "issue-visit"
+  | "revoke-visit"
+  | "register-device"
+  | "list-registrations"
+  | "take-over-device"
+  | "revoke-registration";
 
 export type AppPwaVisitContext = {
   actor: AppPwaVisitActor;
@@ -156,6 +185,7 @@ export type AppPwaErrorCode =
   | "REVOKED"
   | "ALREADY_CLAIMED"
   | "ACTIVE_VISIT"
+  | "IN_USE"
   | "ATTEMPT_CONFLICT"
   | "TOO_LARGE"
   | "RATE_LIMITED"

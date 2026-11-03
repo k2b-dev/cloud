@@ -55,5 +55,15 @@ export const setupAppPwa = async (db: SQL, schemaName: string): Promise<void> =>
       PRIMARY KEY (app_id, visit_id, attempt_id),
       FOREIGN KEY (app_id, visit_id) REFERENCES ${schema}._cloud_pwa_visits(app_id, id))`)
       .simple();
+    // A registered shared browser holds no authority itself. Each use is an ordinary
+    // session-bound device row that carries the registration ID.
+    await tx.unsafe(`ALTER TABLE ${schema}._cloud_pwa_devices ADD COLUMN IF NOT EXISTS registration_id uuid`).simple();
+    await tx
+      .unsafe(`CREATE TABLE IF NOT EXISTS ${schema}._cloud_pwa_registrations (
+      app_id text NOT NULL, id uuid NOT NULL, name text NOT NULL, browser_hash text NOT NULL,
+      registered_by uuid NOT NULL, registered_at timestamptz NOT NULL, expires_at timestamptz NOT NULL,
+      state text NOT NULL CHECK (state IN ('active', 'revoked')), revoked_at timestamptz,
+      PRIMARY KEY (app_id, id), UNIQUE (app_id, browser_hash))`)
+      .simple();
   });
 };

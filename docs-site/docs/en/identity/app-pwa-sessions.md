@@ -4,8 +4,8 @@ navTitle: App-PWA sessions
 section: Identity and access
 order: 535
 description: Let an employee pair a shared device while the application authorizes each customer visit.
-tags: [pwa, devices, visits, sessions]
-updated: 2026-10-28
+tags: [pwa, devices, visits, sessions, shared devices]
+updated: 2026-11-03
 ---
 
 # Pair devices and open customer visits
@@ -38,6 +38,72 @@ same record, without extending its original deadline. If it was already
 claimed, issuance returns its state with `qr: null`. The employee UI must show
 that state instead of attempting to render a missing QR. A new request ID
 starts a new issuance.
+
+## Register a shared device
+
+A reception iPad that several employees use can be registered once instead of
+paired by each person. Issue the device with `register: true`. Its QR is a
+normal device QR, and the device claims it with the same scanner. The
+registration needs the staff action `register-device`, not `issue-device`.
+
+A registered browser stays bound to this application for up to 400 days, the
+upper cookie lifetime that browsers allow. Its guest cookie then persists
+across restarts. The registration itself grants nothing: Cloud data and visits
+reach the device only through a current *use*. The employee who registers it is
+its first user.
+
+A use is an ordinary device in the table above, with an owner, the owner's
+current web session, and at most 12 hours. It ends on logout, authority
+invalidation, revocation, expiry, or a takeover. When it ends, the device stays
+registered and shows its waiting screen; it does not return to pairing.
+
+### Take over a device
+
+`registrations/list` (`list-registrations`) returns every registered device of
+the application, not only the caller's. Each item has `holder` with the current
+user's ID, display name, use `deviceId`, its expiry, and `visitActive`, or
+`null` when nobody uses it. The staff list falls back to the login name.
+
+`registrations/take-over` (`take-over-device`) takes `{ registrationId,
+expectedDeviceId }`. A free device is taken without confirmation. When someone
+else uses it, Cloud returns `409 IN_USE` unless `expectedDeviceId` is the use
+the staff page showed. Ask the employee to confirm the displayed holder, then
+send that `holder.deviceId`. A use that changed in the meantime is never
+replaced silently. A retry from the session that already uses the device
+returns its current use.
+
+A takeover ends the previous use and its running visit in the same transaction
+and records `app_pwa.registration.taken_over` with the new user as actor and
+`previousOwnerUserId`, `previousDeviceId`, and the ended `visitId`. End your
+own use with `devices/revoke` and its `deviceId`. `registrations/revoke`
+(`revoke-registration`) unregisters the device: its use and visit end, and the
+browser must bootstrap again.
+
+### Show who uses it
+
+Guest `status` returns `registration` for a registered browser:
+`{ id, name, expiresAt, holder }`. `holder` is `{ displayName }` while a use is
+live and `null` otherwise. Without a use, `device` and `visit` are `null`.
+The device only learns the display name; it never receives an account ID,
+login name, or contact detail, and an empty display name is `null`. Show the
+name so customers and staff can see whose device it is.
+
+### Send a visit without a QR
+
+The current user can call `visits/issue` with `push: true` for the device they
+use. The visit opens immediately, bound to that device's browser, and appears
+on the next `status` poll. `qr` is `null`. `authorizeVisit` still decides the
+subject, and deadlines start at issuance. A live visit on the device returns
+`409 ACTIVE_VISIT`; end or revoke it first. Repeating the request ID returns
+the same visit. Only the owner of a use can push to it.
+
+### Recover on the device
+
+On `401` or `410`, call `bootstrap` and then `status`. A registered browser keeps
+its credential through bootstrap and gets `registration`; show the waiting
+screen. Otherwise show pairing. A device on an older Cloud package treats the
+end of a use as terminal and must be registered again, but it never gains
+authority from a registration.
 
 ## Keep the authorities separate
 
@@ -238,7 +304,8 @@ GET mutation. Rate limiting uses Cloud's existing request budget.
 | `device/<name>` | `{ input }` |
 
 The staff protocol provides `bootstrap`, `devices/issue`, `devices/list`,
-`devices/status`, `devices/revoke`, `visits/issue`, and `visits/revoke`. Lists
+`devices/status`, `devices/revoke`, `visits/issue`, `visits/revoke`,
+`registrations/list`, `registrations/take-over`, and `registrations/revoke`. Lists
 return `{ items, next }`; pass `after: next` for another bounded page. Issuance
 returns `qr` and `qrExpiresAt` alongside state. Treat QR content as a transient
 secret: do not log, persist in browser storage, or put it in a navigated URL.

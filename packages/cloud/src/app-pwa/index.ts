@@ -9,6 +9,8 @@ export {
   AppPwaError,
   type AppPwaErrorCode,
   type AppPwaOptions,
+  type AppPwaRegistrationGuestView,
+  type AppPwaRegistrationView,
   type AppPwaStaffAction,
   type AppPwaVisitActor,
   type AppPwaVisitContext,
