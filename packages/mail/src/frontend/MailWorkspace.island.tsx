@@ -3006,7 +3006,8 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
   return (
     <>
       <AppWorkspace.Head
-        mobilePane="conversations"
+        // On a phone the head belongs to the list: its pane, or Main while the columns fill it (#2507).
+        mobilePane={controller().columnsWide() ? "main" : "conversations"}
         views={
           controller().canWrite() && controller().selectionMode() ? (
             <div data-mail-head-selection class="mail-head-selection">
