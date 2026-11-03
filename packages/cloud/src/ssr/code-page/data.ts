@@ -190,8 +190,11 @@ export type CodePageTarget = {
   icon: string | null;
   /** The owner resource itself. */
   own: boolean;
-  /** Its reader says it no longer exists. */
-  deleted: boolean;
+  /**
+   * Its reader answered "not found". Apps answer that both for a resource that does not exist and for one the person
+   * may not read, so this only means the page cannot reach it; its name stays unknown.
+   */
+  missing: boolean;
   href: string | null;
 };
 /** Operation at target, as the checker read it from the handles in the Code. */

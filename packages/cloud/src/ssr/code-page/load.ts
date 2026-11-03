@@ -130,7 +130,7 @@ const catalogCache = (locale: string) => {
 };
 
 /** Name a target through its own app's public reader, as the person may see it; its type gives the icon. */
-const loadTarget = async (
+export const loadTarget = async (
   ref: { type: string; id: string },
   owner: LoadCodePageOptions["owner"],
   invoke: CodePageInvoke,
@@ -144,7 +144,7 @@ const loadTarget = async (
     typeTitle: null,
     icon: null,
     own,
-    deleted: false,
+    missing: false,
     href: null,
   };
   try {
@@ -160,8 +160,8 @@ const loadTarget = async (
     const reader = own ? null : resolveCapabilityResourceReader(app.data.manifest, ref);
     if (!reader) return typed;
     const read = await invoke({ appId: app.data.appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } }, z.unknown());
-    // Only "not found" means deleted; a target the person may not read keeps its ID.
-    if (!read.ok) return { ...typed, deleted: read.error.status === 404 };
+    // "Not found" may also mean the person may not read it, so it is only missing, never "deleted".
+    if (!read.ok) return { ...typed, missing: read.error.status === 404 };
     return {
       ...typed,
       title: ReaderViewSchema.safeParse(read.data.data).data?.view.title ?? null,
@@ -381,7 +381,7 @@ const loadReady = async (
       typeTitle: null,
       icon: null,
       own: isOwnRef(ref, options.owner),
-      deleted: false,
+      missing: false,
       href: null,
     };
 

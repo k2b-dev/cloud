@@ -189,8 +189,8 @@ export const codePageMessages = i18n.define({
         count === 1 ? `${names} keeps running.` : `${names} keep running.`,
       needsThisAccess: ({ names, count }: { names: string; count: number }) =>
         count === 1 ? `${names} needs this access.` : `${names} need this access.`,
-      targetDeletedTitle: ({ name }: Name) => `${name} was deleted.`,
-      targetDeletedDescription: ({ name }: Name) => `Calls to ${name} fail. Change the Code so it no longer needs it.`,
+      targetMissingTitle: ({ name }: Name) => `${name} cannot be reached.`,
+      targetMissingDescription: ({ name }: Name) => `Calls to ${name} fail. Whoever manages the target can say why.`,
       allAccessRemovedTitle: "All access was removed.",
       allAccessRemovedDescription: ({ name }: Name) => `The Code stays switched on but can no longer act outside ${name}.`,
       // Sections
@@ -227,7 +227,7 @@ export const codePageMessages = i18n.define({
         `removed${name ? ` by ${name}` : ""} ${today ? "today" : `on ${date}`} at ${time}`,
       removedSentence: ({ name, today, date, time }: Removal) =>
         `${name ?? "Someone"} removed it ${today ? "today" : `on ${date}`} at ${time}.`,
-      targetDeleted: "Target deleted",
+      targetMissing: "Target not reachable",
       unavailable: "Not reachable right now",
       pagesAndRoutes: "Pages and routes",
       internet: "Internet",
@@ -488,8 +488,8 @@ export const codePageMessages = i18n.define({
         count === 1 ? `${names} läuft weiter.` : `${names} laufen weiter.`,
       needsThisAccess: ({ names, count }: { names: string; count: number }) =>
         count === 1 ? `${names} braucht diesen Zugriff.` : `${names} brauchen diesen Zugriff.`,
-      targetDeletedTitle: ({ name }: Name) => `${name} wurde gelöscht.`,
-      targetDeletedDescription: ({ name }: Name) => `Aufrufe an ${name} scheitern. Ändere den Code, damit er es nicht mehr braucht.`,
+      targetMissingTitle: ({ name }: Name) => `${name} ist nicht erreichbar.`,
+      targetMissingDescription: ({ name }: Name) => `Aufrufe an ${name} scheitern. Wer das Ziel verwaltet, kann sagen, warum.`,
       allAccessRemovedTitle: "Alle Zugriffe wurden entfernt.",
       allAccessRemovedDescription: ({ name }: Name) => `Der Code bleibt eingeschaltet, kann außerhalb von ${name} aber nichts mehr tun.`,
       automations: "Automationen",
@@ -524,7 +524,7 @@ export const codePageMessages = i18n.define({
       removedRow: ({ name, today, date, time }: Removal) => `${today ? "heute" : date} ${time}${name ? ` von ${name}` : ""} entfernt`,
       removedSentence: ({ name, today, date, time }: Removal) =>
         `${name ?? "Jemand"} hat ihn ${today ? "heute" : `am ${date}`} um ${time} entfernt.`,
-      targetDeleted: "Ziel gelöscht",
+      targetMissing: "Ziel nicht erreichbar",
       unavailable: "Gerade nicht erreichbar",
       pagesAndRoutes: "Seiten und Routen",
       internet: "Internet",
