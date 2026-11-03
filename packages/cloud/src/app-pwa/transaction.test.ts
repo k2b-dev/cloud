@@ -428,6 +428,25 @@ test("SQL and COMMIT receive decreasing request and authority budgets on Postgre
   }
 });
 
+test("an authority beyond the timer range does not expire the transaction at once", async () => {
+  const f = lifecycleFixture();
+  // 400 days exceeds setTimeout's 2^31-1 ms range, which would otherwise fire after 1 ms.
+  const registration = new Date(clock.getTime() + 400 * 24 * 60 * 60 * 1000);
+  f.query(async (statement) => {
+    if (statement === "SET CONSTRAINTS ALL IMMEDIATE") await Bun.sleep(10);
+    return [];
+  });
+  expect(
+    await withAppPwaTransaction(
+      f.db,
+      undefined,
+      async () => 7,
+      () => registration,
+    ),
+  ).toBe(7);
+  expect(f.statements.at(-1)).toBe("COMMIT");
+});
+
 test("a failed rollback discards the connection before release", async () => {
   const f = lifecycleFixture();
   f.query(async (statement) => {
