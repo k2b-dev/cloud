@@ -2344,7 +2344,12 @@ suite("mail sent message projection", () => {
           WHERE outbox.id = ${outbox.id}::uuid
         `;
         expect(state).toEqual({ health: "auth_required", connection_status: "degraded", binding_state: "degraded" });
+        // A folder sync queued before finds no binding; the mailbox still asks for the login.
+        await expect(syncFolderBatch(mailbox.folderId(INBOX), async () => undefined)).rejects.toMatchObject({ code: "NO_SYNC_BINDING" });
+        const [health] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailbox.mailboxId}::uuid`;
+        expect(health?.health).toBe("auth_required");
         expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+        expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "MAILBOX_AUTH_REQUIRED" });
 
         // A new password, verified for the account and its sender, lets the send go out once.
         await sql`
@@ -2366,6 +2371,14 @@ suite("mail sent message projection", () => {
           SET verified_secret_revision = binding.verified_secret_revision
           FROM mail.provider_bindings binding
           WHERE sender_binding.sender_identity_id = ${mailbox.identityId}::uuid AND binding.id = sender_binding.binding_id
+        `;
+        // The rediscovery after the new login makes the provider resource active again.
+        await sql`
+          UPDATE mail.remote_resources resource
+          SET status = 'active', last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_bindings binding
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND resource.id = binding.remote_resource_id
         `;
         await sql`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL WHERE id = ${mailbox.mailboxId}::uuid`;
         const submitted = provider.submissions();

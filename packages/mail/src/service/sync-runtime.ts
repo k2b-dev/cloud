@@ -1371,15 +1371,23 @@ const recordSyncFailure = async (params: {
         last_error_message = ${message}
       WHERE id = ${folder.remote_resource_id}::uuid
     `;
-      // Pausing does not fence a running sync; a late failure must not hide the pause.
+      // Pausing does not fence a running sync; a late failure must not hide the pause. A refused
+      // login leaves no binding to sync with, so a sync that finds none keeps the login's reason:
+      // sends wait for a new login only while the mailbox says it needs one.
+      const keepsLoginRequest = !authFailure && code === "NO_SYNC_BINDING";
       await tx`
       UPDATE mail.mailboxes
       SET
         health = CASE
           WHEN sync_enabled = false THEN 'paused'
+          WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health
           ELSE ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"}
         END,
-        health_reason = CASE WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator' ELSE ${message} END
+        health_reason = CASE
+          WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
+          WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health_reason
+          ELSE ${message}
+        END
       WHERE id = ${folder.mailbox_id}::uuid
     `;
     })
