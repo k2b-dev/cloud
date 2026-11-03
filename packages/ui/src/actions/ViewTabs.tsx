@@ -122,13 +122,25 @@ type WatchedViewTabs = HTMLElement & {
     focus: (event: FocusEvent) => void;
     preferCurrent: boolean;
     connect: () => void;
+    /** Runs one fit in the next frame; calls before it runs share it. */
+    schedule: () => void;
     frame: number;
+    /** The head lead's width that the last fit used. */
+    room: number;
   };
 };
 
-/** Also embedded, so it must not close over module state. */
+/**
+ * Also embedded, so it must not close over module state.
+ *
+ * A fitting strip converges by construction: it watches only the head lead, an inline-size container that takes no
+ * width from the strip, and fits again only when that width changes or the strip renders. A fit changes the strip and
+ * the lead's height, never the lead's width, so the notification it causes finds the same width and ends there.
+ */
 function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTabs, edges: (element: HTMLElement) => string | undefined) {
   if (!(list instanceof HTMLElement)) return;
+  const fits = list.hasAttribute("data-fit-room");
+  const roomOf = () => list.closest<HTMLElement>(".k2b-app-workspace__head-lead");
   // A DOM property survives hydration: one observer and focus listener per reused list.
   let watch = list.__k2bViewTabsWatch;
   if (!watch) {
@@ -138,16 +150,6 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
         watch.preferCurrent = false;
         settle(list, edges, event.target);
       }
-    };
-    // Head actions parse after the views; settle again after their layout, before paint, and on later resizes.
-    const connect = () => {
-      if (!watch) return;
-      watch.resize.disconnect();
-      watch.resize.observe(list);
-      for (const child of Array.from(list.children)) watch.resize.observe(child);
-      // A fitted strip is only as wide as its views, so the room around it tells when more of them fit.
-      const room = list.closest(".k2b-app-workspace__head-lead") ?? list.parentElement?.parentElement;
-      if (list.hasAttribute("data-fit-room") && room) watch.resize.observe(room);
     };
     const settleNow = () => {
       const focused = document.activeElement;
@@ -160,23 +162,43 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
         settle(list, edges, focused);
       else settle(list, edges);
     };
+    // Head actions parse after the views; settle again after their layout, before paint, and on later resizes.
+    const connect = () => {
+      if (!watch) return;
+      watch.resize.disconnect();
+      if (!fits) {
+        watch.resize.observe(list);
+        for (const child of Array.from(list.children)) watch.resize.observe(child);
+        return;
+      }
+      const room = roomOf();
+      if (room) watch.resize.observe(room);
+    };
+    // Fitting resizes the strip and possibly the head, which other observers may watch. Inside a ResizeObserver
+    // callback that would leave their notifications undelivered, so a fit runs in the next frame, still before it paints.
+    const schedule = () => {
+      if (!watch || watch.frame) return;
+      watch.frame = requestAnimationFrame(() => {
+        if (!watch) return;
+        watch.frame = 0;
+        if (!list.isConnected) return;
+        settleNow();
+        watch.room = roomOf()?.clientWidth ?? -1;
+      });
+    };
     watch = {
       resize: new ResizeObserver(() => {
-        // Fitting resizes boxes that other observers may watch, such as the head. Inside a ResizeObserver callback
-        // that would leave their notifications undelivered, so a fitting strip settles in the next frame instead,
-        // still before that frame paints. A scrolling strip only scrolls and settles at once.
-        if (!list.hasAttribute("data-fit-room")) return settleNow();
-        if (!watch || watch.frame) return;
-        watch.frame = requestAnimationFrame(() => {
-          if (!watch) return;
-          watch.frame = 0;
-          if (list.isConnected) settleNow();
-        });
+        // A scrolling strip only scrolls and settles at once.
+        if (!fits) return settleNow();
+        // Only a new width of the lead can change what fits; its height follows the fit and is ignored.
+        if (watch && (roomOf()?.clientWidth ?? -1) !== watch.room) watch.schedule();
       }),
       focus,
       preferCurrent: true,
       connect,
+      schedule,
       frame: 0,
+      room: -1,
     };
     Object.defineProperty(list, "__k2bViewTabsWatch", { value: watch, configurable: true });
     list.addEventListener("focusin", focus);
@@ -184,12 +206,12 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
   watch.preferCurrent = true;
   watch.connect();
   settle(list, edges);
-  // The head's actions parse after the views. The frame's animation callbacks run before its first layout and
-  // paint, so the fit also counts their room in the first frame.
-  if (list.hasAttribute("data-fit-room"))
-    requestAnimationFrame(() => {
-      if (list.isConnected) settle(list, edges);
-    });
+  if (fits) {
+    watch.room = roomOf()?.clientWidth ?? -1;
+    // The head's actions parse after the views. A frame's animation callbacks run before its first layout and
+    // paint, so this fit also counts their room in the first frame.
+    watch.schedule();
+  }
   return watch;
 }
 const VIEW_TABS_SCRIPT = `(${watchViewTabs})(document.currentScript&&document.currentScript.previousElementSibling,${settleViewTabs},${scrollFadeEdges})`;
@@ -227,18 +249,16 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
     });
   });
   // User effects run after Solid's render effects, including For and aria-current, in the same task.
-  createEffect(
-    on(
-      // A new view or another label, count or badge changes what fits, as does another open view.
-      () => [
-        props.current,
-        layout(),
-        props.items.map((item) => `${item.label}\u0000${item.count ?? ""}\u0000${item.badge ?? ""}`).join("\u0001"),
-      ],
-      () => watchViewTabs(list ?? null, settleViewTabs, scrollFadeEdges),
-      { defer: true },
-    ),
+  // What the strip shows: another open view, view, label, count or badge can change what fits. Equal content in a new
+  // array settles nothing again.
+  const shown = createMemo(() =>
+    [
+      props.current ?? "",
+      layout().wide.join(","),
+      ...props.items.map((item) => `${item.id}\u0000${item.label}\u0000${item.count ?? ""}\u0000${item.badge ?? ""}`),
+    ].join("\u0001"),
   );
+  createEffect(on(shown, () => watchViewTabs(list ?? null, settleViewTabs, scrollFadeEdges), { defer: true }));
   const [open, setOpen] = createSignal(false);
   const [menuItems, setMenuItems] = createSignal<DropdownItem[]>([]);
   const onOpenChange = (next: boolean) => {

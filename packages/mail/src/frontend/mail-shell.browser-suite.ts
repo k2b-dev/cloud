@@ -2457,39 +2457,61 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-        // WebKit reports a ResizeObserver loop as a page error (close() checks those); this case drives the fitted head
-        // through load, the reader and resizes at 834 px, where it showed, and also listens on the window.
-        test("S3 head: fitting the tabs leaves no ResizeObserver notification undelivered", async () => {
-          const page = await open(`${boxPath}?layout=auto`, 834, 1194);
-          try {
-            await page.addInitScript(() => {
-              const seen: string[] = [];
-              Reflect.set(window, "loopErrors", seen);
-              window.addEventListener("error", (event) => {
-                if (String(event.message).includes("ResizeObserver")) seen.push(event.message);
+        // The fit converges: a bounded number of passes on load and per resize, then none while nothing changes.
+        // A pass clears every view's fit mark first, so the calls on the "All" view count the passes. WebKit reports a
+        // ResizeObserver loop as a page error, which close() checks; the window listener covers Chromium.
+        for (const reading of [false, true])
+          test(`S3 head${reading ? " while reading" : ""}: the tab fit settles in a bounded number of passes and then stays still`, async () => {
+            const page = await open(`${boxPath}?layout=auto${reading ? "&conversation=Conv01" : ""}`, 834, 1194);
+            try {
+              await page.addInitScript(() => {
+                const state = { passes: 0, loops: [] as string[] };
+                Reflect.set(window, "fitState", state);
+                const remove = Element.prototype.removeAttribute;
+                Element.prototype.removeAttribute = function (this: Element, name: string) {
+                  if (name === "data-fit-hidden" && this.matches('.mail-workspace .k2b-view-tabs__item[data-view-tab="all"]'))
+                    state.passes += 1;
+                  return remove.call(this, name);
+                };
+                window.addEventListener("error", (event) => {
+                  if (String(event.message).includes("ResizeObserver")) state.loops.push(event.message);
+                });
               });
-            });
-            for (const [path, width, height] of [
-              [`${boxPath}?layout=auto`, 834, 1194],
-              [`${boxPath}?layout=auto&conversation=Conv01`, 834, 1194],
-              [`${boxPath}?layout=auto&conversation=Conv01`, 1024, 768],
-              [`${boxPath}?layout=auto`, 1280, 800],
-            ] as const) {
-              await page.setViewportSize({ width, height });
-              await page.goto(new URL(path, server.url).href);
+              await page.reload();
               await ready(page);
               await settled(page);
-              for (const next of [1680, 900, 1440, width]) {
-                await page.setViewportSize({ width: next, height });
-                await settled(page);
+              const frames = (count: number) =>
+                page.evaluate(
+                  (count) =>
+                    new Promise<void>((done) => {
+                      let left = count;
+                      const step = () => (--left <= 0 ? done() : requestAnimationFrame(step));
+                      requestAnimationFrame(step);
+                    }),
+                  count,
+                );
+              const fit = () => page.evaluate(() => Reflect.get(window, "fitState") as { passes: number; loops: string[] });
+              await frames(10);
+              const loaded = (await fit()).passes;
+              // The server frame and its next frame, the client render, its mount and next frame; 6 in Chromium.
+              expect(loaded).toBeLessThanOrEqual(8);
+              await frames(10);
+              expect((await fit()).passes, "no passes while nothing changes").toBe(loaded);
+              let before = loaded;
+              for (const width of [1680, 900, 1440, 834]) {
+                await page.setViewportSize({ width, height: 1194 });
+                await frames(10);
+                const after = (await fit()).passes;
+                expect(after - before, `passes for ${width}`).toBeLessThanOrEqual(2);
+                await frames(10);
+                expect((await fit()).passes, `still at ${width}`).toBe(after);
+                before = after;
               }
-              await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-              expect(await page.evaluate(() => Reflect.get(window, "loopErrors")), `${path} at ${width}`).toEqual([]);
+              expect((await fit()).loops).toEqual([]);
+            } finally {
+              await close(page);
             }
-          } finally {
-            await close(page);
-          }
-        });
+          });
 
         test("S3 head on a phone: the view strip keeps scrolling with its first views and More", async () => {
           const page = await open(`${boxPath}?layout=auto`, 390, 844);
