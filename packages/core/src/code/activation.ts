@@ -14,9 +14,8 @@ import {
 } from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
-import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
-import { mandates, parseMandatePolicy } from "@k2b/cloud/services/mandates";
+import { mandates } from "@k2b/cloud/services/mandates";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
@@ -202,6 +201,8 @@ async function authorizeActivation(
       : !(person.roles.includes("admin") && canRepairAppAccess(context.authority))
   )
     await requireCodePermission(code, context, true, db);
+  if (code.owner.kind === "person" && context.authority.credentialKind !== "session")
+    throw new CodeDataError("FORBIDDEN", "Personal Code activation requires its owner's browser session.");
   if (code.owner.kind === "person" && code.owner.userId !== person.id)
     throw new CodeDataError("FORBIDDEN", "Only the personal owner can activate personal Code.");
   return code;
@@ -807,40 +808,47 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
         if (!saved || saved.cancel_requested) refuse(null, "cancelled", "Activation cancelled.");
         const [priorMandate] = await tx<
           { id: string }[]
-        >`SELECT id FROM auth.mandates WHERE owner_app_id='core' AND workload_type='code.version'
+        >`SELECT id FROM auth.mandates WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
           AND workload_id=${row.version_id} AND state IN ('active','paused') AND confirmed_at IS NOT NULL FOR UPDATE`;
         let mandate = priorMandate ? await mandates.get(priorMandate.id, { db: tx }) : null;
         const subject =
           code.owner.kind === "person"
             ? { type: "user" as const, id: code.owner.userId }
             : { type: "service_account" as const, id: code.serviceAccountId! };
-        const policy = parseMandatePolicy(saved.mandate_policy);
         if (
           mandate &&
           (mandate.state !== "active" ||
             (mandate.expiresAt !== null && Date.parse(mandate.expiresAt) <= Date.now()) ||
             mandate.subject.type !== subject.type ||
-            mandate.subject.id !== subject.id ||
-            approvalArgsDigest(mandate.policy) !== approvalArgsDigest(policy))
+            mandate.subject.id !== subject.id)
         )
           throw new CodeDataError(
             "CONFLICT",
             "The existing version mandate changed or is inactive. Resolve it before activating this version.",
           );
         if (!mandate) {
-          const created = await mandates.create(
+          const created = await mandates.createPending(
             {
               authority: { kind: code.owner.kind === "person" ? "interactive" : "admin", userId: row.activating_person! },
               subject,
-              ownerAppId: "core",
+              ownerAppId: "runner",
               workloadType: "code.version",
               workloadId: row.version_id,
-              policy,
+              policy: null,
             },
             { db: tx },
           );
           if (!created.ok) throw new CodeDataError("CONFLICT", created.error.message);
-          mandate = created.data;
+          const confirmed = await mandates.confirm(
+            {
+              mandateId: created.data.id,
+              expectedRevision: created.data.revision,
+              authority: { kind: "workload", ownerAppId: "runner" },
+            },
+            { db: tx },
+          );
+          if (!confirmed.ok) throw new CodeDataError("CONFLICT", confirmed.error.message);
+          mandate = confirmed.data;
         }
         await tx`DELETE FROM code.version_grants WHERE version_id=${row.version_id}::uuid`;
         for (const item of plan.filter((item) => !item.owner)) {

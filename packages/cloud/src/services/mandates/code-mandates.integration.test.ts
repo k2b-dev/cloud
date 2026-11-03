@@ -143,10 +143,15 @@ suite("Code version and person routine target mandates", () => {
       capabilityId: "write",
       origin: "app",
       // Trusted Core admission; the runner bridge transport is covered by C4.
-      codeRun: mandate.id === codeMandate.id ? true : undefined,
+      codeRun: "workloadType" in mandate && mandate.workloadType === "code.version" ? true : undefined,
+      workloadRun: "fixture-code-run",
       input: { title: "Example" },
       target: { type: "demo.folder", id: targetId },
-      mandate: { mandateId: mandate.id, mandateRevision: mandate.revision, ownerAppId: "core" },
+      mandate: {
+        mandateId: mandate.id,
+        mandateRevision: mandate.revision,
+        ownerAppId: "ownerAppId" in mandate ? String(mandate.ownerAppId) : "core",
+      },
       dependencies: {
         getCapability: async () => entry,
         withActiveSigner: withSigner,
@@ -286,6 +291,88 @@ suite("Code version and person routine target mandates", () => {
     expect((await invoke(codeMandate, "a")).status).toBe(403);
     await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${codeId}::uuid`;
     expect((await invoke(codeMandate, "a")).status).toBe(200);
+  });
+
+  test("policy-free runner entries use current target rights while old Code mandates stay bounded", async () => {
+    const created = await mandates.createPending({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: codeId },
+      ownerAppId: "runner",
+      workloadType: "code.version",
+      workloadId: "version-policy-free",
+      policy: null,
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    expect(created.data).toMatchObject({ ownerAppId: "runner", policy: null, confirmedAt: null });
+    expect((await invoke(created.data, "b")).status).toBe(403);
+    const confirmed = await mandates.confirm({
+      mandateId: created.data.id,
+      expectedRevision: created.data.revision,
+      authority: { kind: "workload", ownerAppId: "runner" },
+    });
+    if (!confirmed.ok) throw new Error(confirmed.error.message);
+    expect((await invoke(confirmed.data, "b")).status).toBe(200);
+    // Reusing or updating the old entry cannot remove its policy, even for an administrator.
+    expect((await invoke(codeMandate, "b")).status).toBe(403);
+    expect(
+      (
+        await mandates.updatePolicy({
+          mandateId: codeMandate.id,
+          expectedRevision: codeMandate.revision,
+          authority: { kind: "admin", userId },
+          policy: null,
+        })
+      ).ok,
+    ).toBe(false);
+    const generic = await mandates.validateIssueAuthority({
+      mandateId: confirmed.data.id,
+      ownerAppId: "runner",
+      targetAppId: "demo",
+      operation: "capability.action.run:write",
+    });
+    expect(generic.ok).toBe(false);
+    const [authenticated] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(authenticated_only,permission) VALUES(true,'write') RETURNING id`;
+    const saved = accessByTarget.get("b")!;
+    accessByTarget.set("b", [authenticated!.id]);
+    try {
+      expect((await invoke(confirmed.data, "b")).status).toBe(403);
+    } finally {
+      accessByTarget.set("b", saved);
+    }
+    const paused = await mandates.pause({
+      mandateId: confirmed.data.id,
+      expectedRevision: confirmed.data.revision,
+      authority: { kind: "workload", ownerAppId: "runner" },
+    });
+    expect(paused.ok).toBe(true);
+    expect((await invoke(confirmed.data, "b")).status).toBe(403);
+  });
+
+  test("an unconfirmed policy-free entry expires through the existing reconciler", async () => {
+    const created = await mandates.createPending({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: codeId },
+      ownerAppId: "runner",
+      workloadType: "code.version",
+      workloadId: "version-expired-pending",
+      policy: null,
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    await sql`UPDATE auth.mandates SET created_at=now()-interval '20 minutes', confirmation_deadline=now()-interval '1 minute' WHERE id=${created.data.id}::uuid`;
+    expect(
+      (
+        await mandates.confirm({
+          mandateId: created.data.id,
+          expectedRevision: created.data.revision,
+          authority: { kind: "workload", ownerAppId: "runner" },
+        })
+      ).ok,
+    ).toBe(false);
+    await mandates.reconcileUnconfirmed();
+    expect(await mandates.get(created.data.id)).toMatchObject({ state: "revoked", policy: null });
+    expect((await invoke(created.data, "b")).status).toBe(403);
   });
 
   test("person routine uses the same target grant and retains current human entry checks", async () => {

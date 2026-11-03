@@ -97,9 +97,10 @@ Core performs these checks for each call:
    rule refuses immediately. Admin approval must cover this actual policy row
    and remain bound to the exact source, bundle and manifest through
    [version evidence](/en/docs/platform/code-versions).
-7. Bind the mandate to this version and the personal owner or credentialless
-   Code account. The existing C2 dispatcher checks the exact operation/target
-   pair, refs and fixed inputs against the current mandate. Steps 6–7 run
+7. Bind the active entry to this version and the personal owner or credentialless
+   Code account. New `runner` entries have no policy; target providers decide
+   current resource access. Older `core` mandates retain their saved operation,
+   target, reference and fixed-input restrictions. Steps 6–7 run
    inside the signing transaction, with a fresh fence check. Target applications
    check current resource rights. Immutable version hashes and submission
    bindings are checked without loading or hashing executable source or bundles
@@ -111,7 +112,10 @@ Core performs these checks for each call:
 Generic mandate brokers cannot execute a `code.version` workload: those
 calls must enter through this verified runner bridge. Code invocations do not
 create child-invocation exchange leases, so provider nesting cannot bypass
-the per-call bridge checks.
+the per-call bridge checks. Provider admission rechecks the active, confirmed,
+unexpired entry and subject for personal and service-account Code. The signed
+invocation includes `workload_run`, the approved version and entry revision;
+API keys or scopes cannot replace this chain.
 
 Responses use `RunnerCallResponse`: `{ ok: true, data }` or
 `{ ok: false, error: { code, status?, origin? } }`. For a failed capability call,

@@ -401,10 +401,30 @@ databaseSuite()("durable Code activation", () => {
     expect((await status(code, activation.id)).state).toBe("active");
     expect(sets).toHaveLength(0);
     const [mandate] = await sql<
-      { subject_kind: string; subject_user_id: string; policy: { grants?: unknown } }[]
+      { subject_kind: string; subject_user_id: string; policy: unknown }[]
     >`SELECT * FROM auth.mandates WHERE workload_id=${submitted.version.id}`;
     expect(mandate).toMatchObject({ subject_kind: "user", subject_user_id: ownerId });
-    expect(mandate!.policy.grants).toBeUndefined();
+    expect(mandate!.policy).toBeNull();
+    expect(mandate).toMatchObject({ owner_app_id: "runner", state: "active", confirmation_deadline: null });
+  });
+  test("personal policy-free activation requires the owner's browser, never OAuth, phone or key", async () => {
+    const id = `c_c9p${String(++ordinal).padStart(4, "0")}`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${id},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
+    const code = (await findCode(id))!,
+      submitted = await version(code);
+    for (const credentialKind of ["oauth", "api_key"] as const) {
+      const invalid = context();
+      invalid.authority.credentialKind = credentialKind;
+      await expect(
+        activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, invalid),
+      ).rejects.toThrow();
+    }
+    const phone = context();
+    if (phone.authority.actor.kind === "user") phone.authority.actor.sessionKind = "app";
+    await expect(
+      activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, phone),
+    ).rejects.toThrow();
+    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
   });
   test("same permissions reuse grants and require only owner authority", async () => {
     const code = await newCode(),
@@ -424,12 +444,7 @@ databaseSuite()("durable Code activation", () => {
     expect(sets.length).toBeGreaterThan(0);
     expect(sets.every((set) => set.id.startsWith("owner-") && set.dryRun)).toBe(true);
     const [mandate] = await sql<{ policy: unknown }[]>`SELECT policy FROM auth.mandates WHERE workload_id=${second.version.id}`;
-    expect(mandate!.policy).toMatchObject({
-      grants: [
-        { appId: "example", capabilityId: "item.change", kind: "action", target: { type: "example.item", id: "A" } },
-        { appId: "example", capabilityId: "item.change", kind: "action", target: { type: "example.item", id: "B" } },
-      ],
-    });
+    expect(mandate!.policy).toBeNull();
   });
   test("explicit reactivation reuses an unchanged mandate but never resumes a separately paused mandate", async () => {
     const code = await newCode(),

@@ -153,16 +153,16 @@ export async function cleanupCodeActivation(
       await sql`UPDATE code.target_grants SET state='released' WHERE grant_id=${grant.grant_id}::uuid`;
     }
     const drained = await sql<
-      { id: string; revision: number }[]
-    >`SELECT m.id,m.revision FROM auth.mandates m JOIN code.versions v ON v.id::text=m.workload_id
-      WHERE v.code_id=${codeId} AND m.owner_app_id='core' AND m.workload_type='code.version' AND m.state IN ('active','paused')
+      { id: string; revision: number; owner_app_id: string }[]
+    >`SELECT m.id,m.revision,m.owner_app_id FROM auth.mandates m JOIN code.versions v ON v.id::text=m.workload_id
+      WHERE v.code_id=${codeId} AND m.owner_app_id IN ('core','runner') AND m.workload_type='code.version' AND m.state IN ('active','paused')
         AND v.id IS DISTINCT FROM ${code.activeVersionId}::uuid
         AND NOT EXISTS(SELECT 1 FROM code.runs r WHERE r.version_id=v.id AND r.state IN ('queued','running')) ORDER BY m.id LIMIT 50`;
     for (const mandate of drained) {
       const revoked = await mandates.revoke({
         mandateId: mandate.id,
         expectedRevision: Number(mandate.revision),
-        authority: { kind: "workload", ownerAppId: "core" },
+        authority: { kind: "workload", ownerAppId: mandate.owner_app_id },
         reason: "Code version drained",
       });
       if (!revoked.ok) throw new Error("Code version mandate cleanup must retry");

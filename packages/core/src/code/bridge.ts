@@ -82,7 +82,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
   if (!budget?.valid) denied("code_wall_clock_limit");
   return { code, version, manifest: manifest.data };
 }
-async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<void> {
+async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
   // S2: the ACTUAL call determines this row. A checker permission/row is never authority.
   const policy = await readCodePolicySnapshot(db);
@@ -121,10 +121,16 @@ async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<void> {
   if (call.kind === "action" && (!call.policy || !("silent" in call.policy) || call.policy.routines === false))
     denied("code_unattended_forbidden");
   const [mandate] = await db<
-    { revision: number | bigint; subject_kind: string; subject_user_id: string | null; subject_service_account_id: string | null }[]
+    {
+      owner_app_id: "core" | "runner";
+      revision: number | bigint;
+      subject_kind: string;
+      subject_user_id: string | null;
+      subject_service_account_id: string | null;
+    }[]
   >`
-    SELECT revision,subject_kind,subject_user_id,subject_service_account_id FROM auth.mandates
-    WHERE id=${call.claims.mandateId}::uuid AND owner_app_id='core' AND workload_type='code.version' AND workload_id=${call.claims.versionId}
+    SELECT owner_app_id,revision,subject_kind,subject_user_id,subject_service_account_id FROM auth.mandates
+    WHERE id=${call.claims.mandateId}::uuid AND owner_app_id IN ('core','runner') AND workload_type='code.version' AND workload_id=${call.claims.versionId}
     AND state='active' AND confirmed_at IS NOT NULL AND (expires_at IS NULL OR expires_at>clock_timestamp()) FOR SHARE`;
   if (
     !mandate ||
@@ -134,6 +140,7 @@ async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<void> {
       : mandate.subject_kind !== "service_account" || mandate.subject_service_account_id !== code.serviceAccountId)
   )
     denied("code_mandate_mismatch");
+  return mandate.owner_app_id;
 }
 
 /** Postgres owns call ordering/budgets; the existing Valkey limiter owns shared admission across Core replicas. */
@@ -177,7 +184,8 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
         const fencedIssue: NonNullable<CapabilityDispatchDependencies["withMandateIssueAuthority"]> = async (input, use, options) => {
           if (!options?.db) denied("code_bridge_unavailable", 503);
           try {
-            await authorizeCall(call, options.db);
+            const ownerAppId = await authorizeCall(call, options.db);
+            input = { ...input, ownerAppId, codeRun: true };
             if (input.mandateId !== call.claims.mandateId || input.expectedRevision !== call.claims.mandateRevision)
               denied("code_mandate_mismatch");
           } catch (error) {

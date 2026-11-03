@@ -169,6 +169,9 @@ describe("Code with access in the shared rights editor", () => {
       try {
         await waitFor(() => view.section()?.textContent?.includes("Code von info@moebel-beispiel.de") === true, "owner titles");
         // Code accounts are never ordinary share rows and never show their account name.
+        expect(view.dom.root.querySelectorAll("[data-code-editor-authority]")).toHaveLength(2);
+        for (const sentence of view.dom.root.querySelectorAll("[data-code-editor-authority]"))
+          expect(sentence.textContent).toBe("Wer den Code bearbeitet, handelt mit diesem Recht.");
         expect(view.shareRows()).toHaveLength(1);
         expect(view.shareRows()[0]!.textContent).toContain("Ben Schulz");
         expect(view.dom.root.textContent).not.toContain("code:fixture");

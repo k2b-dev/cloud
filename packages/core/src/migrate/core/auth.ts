@@ -786,6 +786,12 @@ export const migrate = async (): Promise<void> => {
     ON auth.mandates(confirmation_deadline)
     WHERE state IN ('active', 'paused') AND confirmed_at IS NULL
   `.simple();
+  await sql`ALTER TABLE auth.mandates ALTER COLUMN policy DROP NOT NULL`.simple();
+  await sql`ALTER TABLE auth.mandates DROP CONSTRAINT IF EXISTS mandates_policy_version_check`.simple();
+  await sql`ALTER TABLE auth.mandates ADD CONSTRAINT mandates_policy_version_check CHECK (
+    (policy IS NULL AND owner_app_id='runner' AND workload_type='code.version') OR
+    (policy IS NOT NULL AND policy->>'version' IS NOT DISTINCT FROM '1')
+  )`.simple();
   console.log("  ✓ auth.mandates table");
 
   await sql`
