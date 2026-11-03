@@ -3132,6 +3132,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             if (theme === "dark" && width !== 1440 && width !== 390) continue;
             for (const [name, state, path] of [
               ["mailbox", "tabs", boxPath],
+              ["mailbox", "focus-notice", `${boxPath}?notice=1`],
               ...(theme === "light"
                 ? [
                     ["mailbox", "folder", `${boxPath}?folder=Filed1`],

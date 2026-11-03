@@ -1448,6 +1448,17 @@
   box-shadow: none;
 }
 
+/* The one-time notice that Focus is gone fits the sidebar's width and type size. Unlayered, like the notice card. */
+.k2b-ui .k2b-notice-card.mail-focus-notice {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .mail-focus-notice .k2b-notice-card__description + .k2b-notice-card__body {
+  margin-top: 0.375rem;
+}
+
 /* Folder settings: one compact tree. Each row is the trigger of its folder's menu; the state column has a fixed
    width, so choosing a display, hovering, or opening a menu never moves a row. Subfolders are a list inside their
    folder's item, but indent through the row's depth, so a provider group's folders stay at the top level. Indent
