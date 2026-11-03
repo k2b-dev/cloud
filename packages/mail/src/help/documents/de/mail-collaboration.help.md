@@ -24,6 +24,25 @@ Neue eingehende E-Mails setzen jede Unterhaltung auf **Handlungsbedarf**. Wenn d
 
 Verstehe **Erledigt** als Status des Teams, nicht als Archivierung der E-Mail. Markierst du eine Unterhaltung als erledigt oder öffnest du sie wieder, entfernt das sie auch aus **Später**.
 
+## Sehen, was im Postfach passiert ist {icon="history"}
+
+Der Tab **Ereignisse** im Kopfbereich zeigt, was das Team und Automatisierungen im ganzen Postfach getan haben. Die neuesten Ereignisse stehen oben, nach Tagen gruppiert:
+
+- Zuweisungen und entfernte Zuständige,
+- gesendete Antworten und Nachrichten, auch Sendungen, die fehlgeschlagen sind, nur einen Teil der Empfänger erreicht haben oder deren Ergebnis unklar ist,
+- begonnene und verworfene Entwürfe, ohne ihren Inhalt,
+- als erledigt markierte und wieder geöffnete Unterhaltungen,
+- interne Kommentare, ohne ihren Text,
+- was Automatisierungen getan haben, zum Beispiel Tags hinzufügen.
+
+Lesen, Markieren und Verschieben erscheinen dort nicht.
+
+Wähle ein Ereignis, um seine Unterhaltung neben der Liste zu öffnen. **Art**, **Person** und **Betrifft mich** grenzen die Liste ein. **Betrifft mich** zeigt deine eigenen Ereignisse, Zuweisungen, die dich hinzufügen oder entfernen, und Ereignisse in Unterhaltungen, die dir zugewiesen sind. Der Filter steht in der Adresse. Nach dem Neuladen oder über einen geteilten Link siehst du deshalb dieselben Ereignisse. **Ältere Ereignisse laden** lädt die nächsten 50.
+
+Ein Sendefehler nennt seinen Grund. Was du als Nächstes tun kannst, zeigt die Nachricht in der Unterhaltung.
+
+Alle, die das ganze Postfach ansehen können, sehen den Tab. Personen mit Zugriff nur auf zugewiesene Unterhaltungen sehen ihn nicht; ihnen zeigen die **Unterhaltungsdetails** die Aktivität ihrer Unterhaltungen.
+
 ## Interne Kommentare hinzufügen {icon="point"}
 
 Interne Kommentare sehen alle, die das Postfach lesen können. Sie werden nie an E-Mail-Empfänger gesendet. Nutze sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Mail benachrichtigt einzelne Personen nicht über Kommentare. Ist eine Person für den nächsten Schritt zuständig, weise ihr die Unterhaltung zu.

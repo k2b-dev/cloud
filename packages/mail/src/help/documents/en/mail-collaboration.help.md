@@ -25,6 +25,25 @@ New incoming mail changes any conversation to **Needs action**. When you mark a 
 
 Treat **Done** as a team state, not as an email archive action. Marking a conversation done or opening it again also removes it from **Later**.
 
+## See what happened in the mailbox {icon="history"}
+
+The **Events** tab in the mailbox head shows what the team and automations did across the whole mailbox. The newest events come first, grouped by day:
+
+- assignments and removed assignees,
+- sent replies and messages, also sends that failed, reached only some recipients, or have an unclear result,
+- drafts that someone started or discarded, without their content,
+- conversations marked done or opened again,
+- internal comments, without their text,
+- what automations did, such as adding tags.
+
+Reading, flagging, and moving do not show there.
+
+Select an event to open its conversation beside the list. **Kind**, **Person**, and **Concerns me** narrow the list. **Concerns me** shows your own events, assignments that add or remove you, and events in conversations assigned to you. The filter is part of the address, so a reload or a shared link shows the same events. **Load older events** loads the next 50.
+
+A failed send names its reason. The message in the conversation shows what you can do next.
+
+Everyone who can view the whole mailbox sees the tab. People with access to assigned conversations only do not see it; the **Conversation details** show them the activity of their conversations.
+
 ## Add internal comments {icon="point"}
 
 Internal comments are visible to people who can read the mailbox and are never sent to email recipients. Use them for handoffs, decisions, and shared context. Mail does not notify single people about comments. When one collaborator is responsible for the next step, assign the conversation.

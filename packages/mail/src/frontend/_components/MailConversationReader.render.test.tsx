@@ -390,6 +390,8 @@ describe("Mail conversation reader", () => {
           targetId: "Tag001",
           metadata: {},
           createdAt: "2026-08-16T12:01:00.000Z",
+          conversationSubject: null,
+          assignees: null,
         },
       ],
     });
