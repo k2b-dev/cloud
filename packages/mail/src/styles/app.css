@@ -594,23 +594,21 @@
     background: var(--ui-surface);
   }
 
-  .k2b-ui .mail-focus-workspace {
+  /* Mail's page without a mailbox: the setup or the error on the workspace's surface. */
+  .k2b-ui .mail-landing-workspace {
     background: var(--ui-surface);
   }
 
-  /* The head row above holds the views, so the list starts right below it. */
-  .k2b-ui .mail-focus-main {
+  .k2b-ui .mail-landing-main {
     padding: 0.25rem clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.5rem);
     overflow-y: auto;
     background: var(--ui-surface);
   }
 
-  /* Focus is deliberately not a mailbox: the views in the head, one list on
-     the workspace's surface. Objects live in the sidebar. */
-  .mail-overview-page {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
+  @media (max-width: 40rem) {
+    .k2b-ui .mail-landing-main {
+      padding: 0.25rem 1rem 1rem;
+    }
   }
 
   .mail-sidebar-needs-action {
@@ -719,68 +717,6 @@
     padding: 0.25rem 0.5rem;
     color: var(--color-zinc-500);
     font-size: 0.6875rem;
-  }
-
-  /* Focus rows are the mailbox list's rows, always with the fourth line for
-     their mailbox. The gap matches the mailbox list. */
-  .mail-focus-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .mail-focus-row {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .mail-focus-row:focus-visible {
-    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-    outline-offset: 2px;
-  }
-
-  /* A long mailbox name shortens before "Waiting", which keeps its room. */
-  .mail-row-mailbox {
-    display: inline-flex;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 16rem;
-    align-items: center;
-    gap: 0.1875rem;
-    overflow: hidden;
-  }
-
-  .mail-row-mailbox-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Loading rows have the layout of the rows they stand for, so the list keeps its size when the
-     rows arrive. They appear only once a read takes a moment, so a fast one never flashes them.
-     The delay is a debounce, not motion: it stays under reduced motion, which only makes the fade instant. */
-  .mail-focus-skeleton > .mail-focus-row {
-    animation: mail-focus-skeleton-appear 150ms ease-out 300ms both;
-    animation-delay: 300ms !important;
-  }
-
-  .mail-focus-skeleton > .mail-focus-row:hover {
-    background: none;
-  }
-
-  .mail-focus-skeleton-shape {
-    display: inline-block;
-    height: 0.75em;
-    border-radius: 0.25rem;
-    vertical-align: middle;
-    background: var(--k2b-surface-muted);
-  }
-
-  @media (max-width: 40rem) {
-    .k2b-ui .mail-focus-main {
-      padding: 0.25rem 1rem 1rem;
-    }
   }
 
   .mail-list-preview {
@@ -1389,8 +1325,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .k2b-ui .mail-quick-look__placeholder,
-  .k2b-ui .mail-focus-skeleton-shape {
+  .k2b-ui .mail-quick-look__placeholder {
     animation: mail-quick-look-pulse 1.4s ease-in-out infinite;
   }
 }
@@ -1403,12 +1338,6 @@
   to {
     height: 0;
     margin-bottom: -0.125rem;
-    opacity: 0;
-  }
-}
-
-@keyframes mail-focus-skeleton-appear {
-  from {
     opacity: 0;
   }
 }
@@ -1513,9 +1442,9 @@
   }
 }
 
-/* The overview's Main draws no shadow inside the workspace. Keep this outside
+/* The landing Main draws no shadow inside the workspace. Keep this outside
    layers, like the standalone workspace styles it overrides. */
-.k2b-ui .mail-focus-main {
+.k2b-ui .mail-landing-main {
   box-shadow: none;
 }
 

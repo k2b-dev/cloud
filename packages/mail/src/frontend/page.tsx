@@ -1,25 +1,17 @@
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { coreSettings } from "@k2b/cloud/services";
-import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
-import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import type { MailRequestContext } from "../service";
-import { focus, mailboxPreferences } from "../service";
+import { mailboxPreferences } from "../service";
 import { requestContactDirectory } from "../service/contact-directory";
 import { localizeMailError } from "../service/error-messages";
-import { loadMailboxConversationDetail } from "../service/workspace";
 import { mailWorkspaceCookie, readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
-import MailOverview from "./MailOverview.island";
-import { loadSidebarMailboxes, loadSidebarPreferences } from "./mail-sidebar-data";
+import MailLanding from "./MailLanding.island";
+import { readMailLandingLink } from "./mail-landing";
+import { loadMailLanding } from "./mail-sidebar-data";
 import { mailPageMessages } from "./pages-messages";
-import {
-  projectMailConversationDetail,
-  projectSsrFocusOverview,
-  resolveSsrMailboxId,
-  resolveSsrMailboxResourceId,
-} from "./ssr-public-boundary";
 
+/** Mail opens a mailbox directly; this page renders only when there is none to open, or the read failed. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = mailPageMessages.resolve([locale]);
@@ -31,77 +23,31 @@ export default ssr<AuthContext>(async (c) => {
     accessSubject: c.get("accessSubject"),
     requestId: c.req.header("x-request-id") ?? null,
   };
+  const link = readMailLandingLink((name) => c.req.query(name));
+  if ("href" in link) return c.redirect(link.href);
   const workspacePreferences = readMailWorkspacePreferences(c.req.header("cookie"));
-  const view = mailFocusViewSchema.catch("mine").parse(c.req.query("view"));
-  const mailboxSelection = ResourceShortIdSchema.safeParse(c.req.query("mailbox"));
-  const conversationSelection = ResourceShortIdSchema.safeParse(c.req.query("conversation"));
-  const initialSelection =
-    mailboxSelection.success && conversationSelection.success
-      ? { mailboxId: mailboxSelection.data, conversationId: conversationSelection.data }
-      : null;
-  const publicMailboxesPromise = loadSidebarMailboxes(context);
-  if (c.req.query("recent") === "true") {
-    const publicMailboxes = await publicMailboxesPromise;
-    const lastMailboxId = workspacePreferences.lastMailboxId;
-    if (lastMailboxId && publicMailboxes.some((mailbox) => mailbox.id === lastMailboxId)) {
-      return c.redirect(`/app/mail/${lastMailboxId}`);
-    }
+  // Pins and hidden mailboxes used to live in this cookie. Move this browser's lists to the person once, for
+  // mailboxes they can still read, and drop them from the cookie, before they decide which mailbox opens.
+  if (workspacePreferences.pinnedMailboxIds.length > 0 || workspacePreferences.hiddenMailboxIds.length > 0) {
+    await mailboxPreferences.importBrowserMailboxPreferences(context, workspacePreferences);
+    c.header("Set-Cookie", mailWorkspaceCookie({ ...workspacePreferences, pinnedMailboxIds: [], hiddenMailboxIds: [] }), {
+      append: true,
+    });
   }
-  const preferencesPromise = (async () => {
-    // Pins and hidden mailboxes used to live in this cookie. Move this browser's lists to the
-    // person once, for mailboxes they can still read, and drop them from the cookie.
-    if (workspacePreferences.pinnedMailboxIds.length > 0 || workspacePreferences.hiddenMailboxIds.length > 0) {
-      await mailboxPreferences.importBrowserMailboxPreferences(context, workspacePreferences);
-      c.header("Set-Cookie", mailWorkspaceCookie({ ...workspacePreferences, pinnedMailboxIds: [], hiddenMailboxIds: [] }), {
-        append: true,
-      });
-    }
-    // The same pins and hidden mailboxes the mailbox page's sidebar reads.
-    return loadSidebarPreferences(context);
-  })();
-  const [initialDetail, publicMailboxes, preferences, focusResult] = await Promise.all([
-    (async () => {
-      if (!initialSelection) return null;
-      const internalMailboxId = await resolveSsrMailboxId(initialSelection.mailboxId);
-      if (!internalMailboxId) return null;
-      const internalConversationId = await resolveSsrMailboxResourceId("conversations", internalMailboxId, initialSelection.conversationId);
-      if (!internalConversationId) return null;
-      const detail = await loadMailboxConversationDetail({
-        context,
-        mailboxId: internalMailboxId,
-        conversationId: internalConversationId,
-        locale,
-      });
-      return detail ? projectMailConversationDetail(detail) : null;
-    })(),
-    publicMailboxesPromise,
-    preferencesPromise,
-    // Every view's first page, so switching views shows rows at once while the island refreshes them.
-    (async () => focus.listFocusOverview({ context, excludedMailboxIds: (await preferencesPromise).hiddenMailboxIds }))(),
-  ]);
-  const initialFocus = focusResult.ok ? await projectSsrFocusOverview(focusResult.data) : null;
-  const [directory, appUrl] = await Promise.all([requestContactDirectory(c), coreSettings.get<string>("app.url")]);
+  const landing = await loadMailLanding(context, workspacePreferences.lastMailboxId);
+  if (landing.ok && landing.data) return c.redirect(`/app/mail/${landing.data}${link.view ? `?view=${link.view}` : ""}`);
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
       printHint={t.printHint}
-      // One sidebar for Focus and every mailbox: the same width, never collapsed, as on the mailbox page.
       workspaceSidebarCollapsible={false}
       title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}
     >
-      <MailOverview
-        mailboxes={publicMailboxes}
-        initialFocus={initialFocus}
-        initialFocusError={focusResult.ok ? null : localizeMailError(focusResult.error, locale).message}
-        initialView={view}
-        initialSelection={initialSelection}
-        initialDetail={initialDetail}
-        initialPinnedMailboxIds={preferences.publicPinnedMailboxIds}
-        initialHiddenMailboxIds={preferences.publicHiddenMailboxIds}
+      <MailLanding
+        error={landing.ok ? null : localizeMailError(landing.error, locale).message}
         currentUserEmail={user.mail}
         contactDirectory={directory}
-        cloudUrl={publicCloudOrigin(appUrl)}
-        dateConfig={getDateConfig(c)}
       />
     </Layout>
   );

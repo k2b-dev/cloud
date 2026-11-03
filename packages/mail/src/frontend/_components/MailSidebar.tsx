@@ -18,6 +18,7 @@ import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailboxHealthPresentation, mailboxOverviewSubtitle } from "./mail-health-presentation";
+import MailFocusNotice from "./MailFocusNotice";
 import { type MailboxPreferences, orderMailboxes } from "./mail-mailbox-preferences";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
 
@@ -74,8 +75,8 @@ const folderIcon = (role: string): string =>
               : "ti ti-folder";
 
 /**
- * Mail's one sidebar, the same on Focus and in every mailbox: Focus, then the mailboxes. The open mailbox expands to
- * its folders; another mailbox is one link away.
+ * Mail's one sidebar, the same in every mailbox: the mailboxes, of which the open one expands to its folders; another
+ * mailbox is one link away.
  */
 export default function MailSidebar(
   props: MailboxCreationContext & {
@@ -83,13 +84,15 @@ export default function MailSidebar(
     preferences: MailboxPreferences;
     counts: MailSidebarMailboxCounts[];
     canCreate: boolean;
-    /** Focus, or the mailbox the page shows. */
+    /** The mailbox the page shows, or null on Mail's page without a mailbox. */
     open: MailSidebarOpenMailbox | null;
-    /** Focus lists its mailboxes as chips on small screens; in a mailbox the phone opens them from the title. */
+    /** Without a mailbox the list stacks on small screens; in a mailbox the phone opens it from the title. */
     mobile?: "stacked" | "hidden";
+    /** Shows the one-time notice that Focus is gone above the mailboxes. */
+    focusNoticeOpen?: boolean;
     /** Runs after the person hid a mailbox from the sidebar. */
     onMailboxHidden?: (mailboxId: string) => void;
-    /** Opt in to island-owned mailbox navigation; Focus keeps ordinary document links. */
+    /** Opt in to island-owned mailbox navigation; without it the rows are ordinary document links. */
     onOpenMailbox?: (nav: LinkNavigateEvent) => void | Promise<void>;
     /** Whether the person collapsed what holds the open place's row: Hidden mailboxes or a folder branch. */
     onOpenPlaceRowHiddenChange?: (hidden: boolean) => void;
@@ -633,7 +636,7 @@ export default function MailSidebar(
     );
   };
 
-  // Phone: the title "Mailbox ⌄" opens Focus, the mailboxes, and the open mailbox's folders ----------------------------------
+  // Phone: the title "Mailbox ⌄" opens the mailboxes and the open mailbox's folders ---------------------------------------
   const folderEntry = (open: MailSidebarOpenMailbox, node: MailFolderTreeNode<MailFolderView>): NavigationItem => {
     const folder = node.folder;
     const common = {
@@ -704,7 +707,6 @@ export default function MailSidebar(
   };
   const navigation = createNavigation({
     items: () => [
-      { id: "focus", label: overviewText().focus, icon: "ti ti-focus-2", href: "/app/mail", active: !openMailbox() },
       { id: "mailboxes", label: overviewText().mailboxes, section: true, children: visibleMailboxes().map(mailboxEntry) },
       ...(hiddenMailboxes().length > 0
         ? [{ id: "hidden", label: messages().hiddenMailboxes, children: hiddenMailboxes().map(mailboxEntry) }]
@@ -731,11 +733,7 @@ export default function MailSidebar(
       <AppWorkspace.Sidebar label={overviewText().mailboxes} mobile={props.mobile ?? "hidden"} class="mail-sidebar">
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey={openMailboxId() ? `mail-sidebar-${openMailboxId()}` : false}>
-            <AppWorkspace.SidebarSection>
-              <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-focus-2" title={overviewText().focus} active={!openMailbox()}>
-                <AppWorkspace.SidebarItemLabel marquee={false}>{overviewText().focus}</AppWorkspace.SidebarItemLabel>
-              </AppWorkspace.SidebarItem>
-            </AppWorkspace.SidebarSection>
+            <MailFocusNotice open={props.focusNoticeOpen ?? false} />
             <AppWorkspace.SidebarSection title={overviewText().mailboxes}>
               <For each={visibleMailboxes()}>{mailboxRow}</For>
             </AppWorkspace.SidebarSection>
