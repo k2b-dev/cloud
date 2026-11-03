@@ -866,7 +866,7 @@
   padding-inline-end: 0.25rem;
   color: var(--k2b-action);
 }
-.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) i {
+.chat-conversation__back .k2b-icon-button i:has(~ .chat-conversation__back-count) {
   color: var(--k2b-action);
 }
 

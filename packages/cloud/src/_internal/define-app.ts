@@ -563,7 +563,8 @@ export const defineApp = <
         ? installableHead(pageInstallable, resolved)
         : pwa
           ? {
-              html: canvas ? ` style="background-color:${canvas}"` : "",
+              // PwaLayout renders a MobileShell: the document says so from the first paint (see `observeMobileShell`).
+              html: ` data-k2b-mobile-shell=""${canvas ? ` style="background-color:${canvas}"` : ""}`,
               viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
               app: `${
                 canvas

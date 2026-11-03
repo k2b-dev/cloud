@@ -36,6 +36,7 @@ import { sortRailApps } from "./rail-navigation";
 import { requestPath } from "./request-path";
 import { getDisplayRuntimeContext, getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import ShellRuntime from "./ShellRuntime.island";
+import { type ShellContentState, ShellContentStateContext } from "./shell-content-state";
 import { type ShellData, ShellDataProvider, ShellDataScript } from "./shell-data";
 
 // Types
@@ -305,6 +306,7 @@ export default function Layout(props: LayoutProps) {
       })
     : undefined;
   if (focusMode) {
+    const focusContent: ShellContentState = { workspaceNavigation: false, ownTitle: false };
     return (
       <LocaleProvider locale={lang}>
         <div
@@ -323,10 +325,25 @@ export default function Layout(props: LayoutProps) {
             help={runtimeHelp}
             panel={panel ? true : undefined}
           />
-          <PageTrailProvider trail={pageTrail}>
-            <main class="min-h-0 min-w-0 flex-1" data-cloud-app-area="">
-              <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-            </main>
+          <PageTrailProvider trail={pageTrail} onOwnTitle={() => (focusContent.ownTitle = true)}>
+            {(() => {
+              // As in the full shell: the page renders first, so its area can say whether it shows its own title.
+              const page = (
+                <ShellContentStateContext.Provider value={focusContent}>
+                  <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                </ShellContentStateContext.Provider>
+              );
+              return (
+                <main
+                  class="min-h-0 min-w-0 flex-1"
+                  data-cloud-app-area=""
+                  data-k2b-title-host=""
+                  data-k2b-own-title={focusContent.ownTitle ? "" : undefined}
+                >
+                  {page}
+                </main>
+              );
+            })()}
           </PageTrailProvider>
           {/* Focus pages also expose the canonical origin to their islands. */}
           <ShellDataProvider data={{ cloudOrigin, panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
@@ -359,6 +376,7 @@ export default function Layout(props: LayoutProps) {
         data-layout-authenticated={showRail ? "true" : undefined}
         data-shell-focus={shellFocus ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
+        data-layout-header=""
       >
         <ShellRuntime
           {...(currentApp?.access ? { appAccess: { id: currentApp.id, routes: currentApp.routes } } : {})}
@@ -379,40 +397,59 @@ export default function Layout(props: LayoutProps) {
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} />}
           {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
-          <div
-            class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"
-            data-cloud-app-area=""
-            data-nav-root={swap ? "" : undefined}
-          >
-            {swap && <ShellDataScript data={shellData} />}
-            <LayoutHeader
-              panelOpen={panel ? panelState.open : undefined}
-              authenticated={showRail}
-              title={appLabel ?? breadcrumbs.at(-1)?.title}
-              launchpad={!!(user || appLabel)}
-              breadcrumbs={user ? undefined : breadcrumbs}
-            />
-            {user && announcements && <AnnouncementBanners banners={announcements.banners} />}
-            {user && <ProfileWarnings user={user} locale={lang} />}
-            {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
-            <PageTrailProvider trail={pageTrail}>
-              <PageTrailRow trail={pageTrail} />
-              <main
-                class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
-                data-scroll-preserve={swap ? "cloud-main" : undefined}
-                data-scroll-page={swap ? "" : undefined}
+          {(() => {
+            // The page renders before the shell's element, so its attributes can say what the page holds. The parts
+            // render in their document order, so their ids stay as they were.
+            const content: ShellContentState = { workspaceNavigation: false, ownTitle: false };
+            const script = swap && <ShellDataScript data={shellData} />;
+            const header = [
+              <LayoutHeader
+                panelOpen={panel ? panelState.open : undefined}
+                authenticated={showRail}
+                title={appLabel ?? breadcrumbs.at(-1)?.title}
+                launchpad={!!(user || appLabel)}
+                breadcrumbs={user ? undefined : breadcrumbs}
+              />,
+              user && announcements && <AnnouncementBanners banners={announcements.banners} />,
+              user && <ProfileWarnings user={user} locale={lang} />,
+              user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />,
+            ].filter(Boolean);
+            const page = (
+              <ShellContentStateContext.Provider value={content}>
+                <PageTrailProvider trail={pageTrail} onOwnTitle={() => (content.ownTitle = true)}>
+                  <PageTrailRow trail={pageTrail} />
+                  <main
+                    class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
+                    data-scroll-preserve={swap ? "cloud-main" : undefined}
+                    data-scroll-page={swap ? "" : undefined}
+                  >
+                    <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                  </main>
+                </PageTrailProvider>
+              </ShellContentStateContext.Provider>
+            );
+            return (
+              <div
+                class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"
+                data-cloud-app-area=""
+                data-nav-root={swap ? "" : undefined}
+                data-k2b-title-host=""
+                data-k2b-own-title={content.ownTitle ? "" : undefined}
+                data-workspace-navigation={content.workspaceNavigation ? "" : undefined}
               >
-                <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-              </main>
-            </PageTrailProvider>
-            {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
-            {swap && (
-              <div data-print-fallback="">
-                <p>{t.printFallbackTitle}</p>
-                <p>{props.printHint ?? t.printFallbackHint}</p>
+                {script}
+                {header}
+                {page}
+                {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
+                {swap && (
+                  <div data-print-fallback="">
+                    <p>{t.printFallbackTitle}</p>
+                    <p>{props.printHint ?? t.printFallbackHint}</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
           {panel && <PanelSlot panel={panel} state={panelState} platform={shellData.platform} />}
           {showRail && <LayoutTabBar currentPath={requestPath(c)} />}
         </ShellDataProvider>
