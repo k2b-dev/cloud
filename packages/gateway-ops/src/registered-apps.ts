@@ -72,11 +72,13 @@ const mapRow = (row: DbRegisteredAppRow): PersistentRegisteredApp => ({
   lastOfflineLoggedAt: asMs(row.last_offline_logged_at),
 });
 
-// The live registry owns heartbeats. SQL keeps content and the final heartbeat on departure.
-const observed = new Map<string, { content: string; lastSeenAt: number }>();
+// Bound restart-related offline timestamp error without persisting each registry heartbeat.
+const LAST_SEEN_CHECKPOINT_MS = 5 * 60 * 1000;
+const observed = new Map<string, { content: string; lastSeenAt: number; persistedAt: number }>();
 export const upsertRegisteredApps = async (
   apps: readonly (AppRegistryEntry & Partial<Pick<AppRegistryDetail, "updatedAt">>)[],
 ): Promise<void> => {
+  const now = Date.now();
   const liveIds = new Set(apps.map((app) => app.id));
   for (const [id, previous] of observed) {
     if (liveIds.has(id)) continue;
@@ -104,6 +106,10 @@ export const upsertRegisteredApps = async (
     const lastSeenAt = Math.max(previous?.lastSeenAt ?? 0, app.updatedAt ?? Date.now());
     if (previous?.content === content) {
       previous.lastSeenAt = lastSeenAt;
+      if (now - previous.persistedAt >= LAST_SEEN_CHECKPOINT_MS) {
+        await sql`UPDATE gateway.registered_apps SET last_seen_at = ${new Date(lastSeenAt)} WHERE id = ${app.id}`;
+        previous.persistedAt = now;
+      }
       continue;
     }
     await sql`
@@ -150,7 +156,7 @@ export const upsertRegisteredApps = async (
         removed_at = NULL,
         last_offline_logged_at = NULL
     `;
-    observed.set(app.id, { content, lastSeenAt });
+    observed.set(app.id, { content, lastSeenAt, persistedAt: now });
   }
 };
 

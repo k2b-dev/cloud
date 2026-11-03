@@ -245,10 +245,18 @@ new replica has just written. That replica writes it again within 60 seconds.
 Gateway route and request-counter snapshots renew every 30 seconds with a
 90-second presence lease. Registry changes refresh routes immediately; committed
 app-domain assignments wake every gateway. A 30-second reconciliation repairs
-missed domain hints. Gateway Ops stores app metadata only when its content
-changes or an app reappears. Live status comes from the registry; on departure,
-it persists the last observed heartbeat once. After a Gateway Ops restart while
-an app is already offline, the saved timestamp is the last durable observation.
+missed domain hints. With an older Core that does not publish hints, every
+domain change waits for reconciliation, up to 30 seconds. Changes to `app.url`
+and `gateway.ingress_cert_resolver` also take up to 30 seconds to reach gateways.
+
+Gateway Ops stores app metadata only when its content changes or an app
+reappears. Live status comes from the registry. Registry notifications also
+checkpoint each app's last observed heartbeat at most once every five minutes:
+20 unchanged apps average four timestamp updates per minute, with no content
+upserts. On departure, Gateway Ops persists the final observed heartbeat once.
+After a restart that misses the departure, offline durations use the saved
+checkpoint and can overestimate downtime by one checkpoint interval plus the
+registry heartbeat cadence. Database write failures can extend this gap.
 
 Use the orchestrator, not the Cloud registry, to measure replica health and
 count.
