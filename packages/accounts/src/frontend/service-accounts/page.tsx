@@ -1,4 +1,4 @@
-import { isModelsOnlyApiKey } from "@k2b/cloud/contracts";
+import { isLegacyLimitedApiKey, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
@@ -120,6 +120,12 @@ export default ssr<AuthContext>(async (c) => {
             <DirectoryShares />
           </div>
 
+          {credentialsPage.items.some((entry) => entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry)) && (
+            <p class="text-xs text-dimmed">
+              <span class="font-medium text-secondary">{t.legacyLimitedKey}:</span> {t.legacyLimitedKeyHint}
+            </p>
+          )}
+
           {credentialsPage.items.length === 0 ? (
             <Placeholder surface="paper" description={<>{t.noServiceAccounts}</>} />
           ) : (
@@ -141,6 +147,11 @@ export default ssr<AuthContext>(async (c) => {
                           {isModelsOnlyApiKey(entry) && (
                             <Tag icon="ti ti-sparkles" size="sm">
                               {t.modelsOnlyKey}
+                            </Tag>
+                          )}
+                          {entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry) && (
+                            <Tag icon="ti ti-lock" size="sm">
+                              {t.legacyLimitedKey}
                             </Tag>
                           )}
                         </div>

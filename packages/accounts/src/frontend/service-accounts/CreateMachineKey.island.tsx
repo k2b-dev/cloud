@@ -6,9 +6,6 @@ import { z } from "zod";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
-/** What "Full access" names on the wire; the server never fills in scopes. */
-const FULL_ACCESS_SCOPES = ["read", "write", "admin"];
-
 export function CreateMachineKeyDialog(props: {
   modelsAvailable: boolean;
   close: () => void;
@@ -35,7 +32,6 @@ export function CreateMachineKeyDialog(props: {
           json: {
             name: name().trim(),
             access: access(),
-            ...(access() === "full" ? { scopes: FULL_ACCESS_SCOPES } : {}),
             expiresAt: expiry,
           },
         })
