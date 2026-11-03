@@ -2952,7 +2952,9 @@ const finishOutbox = async (params: {
         jsonb_build_object(
           'result', ${mailSentActivityResult(params.outboxState, delivered)}::text,
           'intent', draft.intent,
-          'code', ${code}::text
+          'code', ${code}::text,
+          -- The sent message: people who see only assigned conversations see the event only while they see it.
+          'outboundMessageId', outbox.message_id
         )
       FROM mail.commands c
       JOIN mail.outbox_submissions outbox ON outbox.id = ${params.outbox.id}::uuid

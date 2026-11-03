@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Avatar, Button, Dropdown, FilterChip, FilterToggle, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onMount, Show, untrack } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { apiClient } from "../../api/client";
 import { isMailActivityKind, MAIL_ACTIVITY_KINDS, type MailActivityKind } from "../../mail-activity-kinds";
@@ -51,6 +51,8 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
   const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
   let loadedFilter = initial?.filter ?? EMPTY_MAIL_EVENTS_FILTER;
   let loadGeneration = 0;
+  // Opening a conversation moves the feed beside the reader; the new place continues where the person was.
+  let scrollTop = 0;
   createEffect(
     on(
       snapshot,
@@ -61,7 +63,10 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
         setLoadMoreError(null);
         if (!page) return setPages(null);
         const first = { items: page.items, nextCursor: page.nextCursor };
-        setPages((shown) => (sameFilter(loadedFilter, page.filter) ? mergeMailEventPages(shown, first) : first));
+        const sameList = sameFilter(loadedFilter, page.filter);
+        // "Concerns me" follows who is assigned now, so an older loaded page may no longer match; it starts over.
+        setPages((shown) => (sameList && !page.filter.mine ? mergeMailEventPages(shown, first) : first));
+        if (!sameList) scrollTop = 0;
         loadedFilter = page.filter;
       },
       { defer: true },
@@ -90,7 +95,16 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
       if (generation === loadGeneration) setLoadingMore(false);
     }
   };
-  return { pages, loadingMore, loadMoreError, loadOlder };
+  return {
+    pages,
+    loadingMore,
+    loadMoreError,
+    loadOlder,
+    scrollTop: () => scrollTop,
+    keepScrollTop: (value: number) => {
+      scrollTop = value;
+    },
+  };
 }
 
 /**
@@ -99,6 +113,8 @@ export function createMailEventsFeed(input: { mailboxId: string; page: () => Mai
  */
 export function MailEventsFeed(props: {
   mailboxId: string;
+  /** The current workspace route, which filter and event links change only where they must. */
+  requestPath: string;
   feed: MailEventsFeedState;
   /** The first page the server rendered for `filter`; null while it could not load. */
   page: MailEventsPage | null;
@@ -119,19 +135,42 @@ export function MailEventsFeed(props: {
   const loadingMore = () => props.feed.loadingMore();
   const loadMoreError = () => props.feed.loadMoreError();
   const loadOlder = () => props.feed.loadOlder();
+  let scroller: HTMLDivElement | undefined;
+  onMount(() => {
+    const top = props.feed.scrollTop();
+    if (!scroller || top <= 0) return;
+    scroller.scrollTop = top;
+    // A pane that opens with the reader gets its height in the next frame.
+    requestAnimationFrame(() => {
+      if (scroller && scroller.scrollTop !== top) scroller.scrollTop = top;
+    });
+  });
 
-  const rows = createMemo(() =>
-    presentMailEvents(pages()?.items ?? [], {
+  // A refresh presents every row again; an unchanged row keeps its object, so `For` keeps its element and the feed
+  // keeps its scroll position and focus.
+  let shownRows = new Map<string, { key: string; row: PresentedMailEvent }>();
+  const rows = createMemo(() => {
+    const next = new Map<string, { key: string; row: PresentedMailEvent }>();
+    const presented = presentMailEvents(pages()?.items ?? [], {
       locale: locale(),
       currentUserId: props.currentUserId,
       dateConfig: props.dateConfig,
       now: new Date(),
       tagName: (id) => props.localTags.find((tag) => tag.id === id)?.name,
-    }),
-  );
+    }).map((row) => {
+      const key = JSON.stringify(row);
+      const shown = shownRows.get(row.event.id);
+      const kept = shown?.key === key ? shown.row : row;
+      next.set(row.event.id, { key, row: kept });
+      return kept;
+    });
+    shownRows = next;
+    return presented;
+  });
 
-  const href = (filter: MailEventsFilter, conversationId?: string | null) => mailEventsHref(props.mailboxId, filter, conversationId);
-  const setFilter = (change: Partial<MailEventsFilter>) => props.onOpenHref(href({ ...props.filter, ...change }));
+  const filterHref = (filter: MailEventsFilter) => mailEventsHref(props.requestPath, { filter });
+  const eventHref = (conversationId: string) => mailEventsHref(props.requestPath, { conversationId });
+  const setFilter = (change: Partial<MailEventsFilter>) => props.onOpenHref(filterHref({ ...props.filter, ...change }));
   const kindLabel = (kind: MailActivityKind) =>
     ({
       assignment: t().kindAssignment,
@@ -157,7 +196,7 @@ export function MailEventsFeed(props: {
     if (!conversationId || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
       return;
     event.preventDefault();
-    props.onOpenConversation(href(props.filter, conversationId), conversationId, row.subject ?? "");
+    props.onOpenConversation(eventHref(conversationId), conversationId, row.subject ?? "");
   };
 
   const rowContent = (row: PresentedMailEvent) => (
@@ -249,7 +288,7 @@ export function MailEventsFeed(props: {
           label={t().concernsMe}
           icon="ti ti-at"
           active={props.filter.mine}
-          href={href({ ...props.filter, mine: !props.filter.mine })}
+          href={filterHref({ ...props.filter, mine: !props.filter.mine })}
           onClick={(event) => {
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
@@ -257,12 +296,18 @@ export function MailEventsFeed(props: {
           }}
         />
         <Show when={mailEventsFiltered(props.filter)}>
-          <Button type="button" size="sm" variant="ghost" onClick={() => props.onOpenHref(href(EMPTY_MAIL_EVENTS_FILTER))}>
+          <Button type="button" size="sm" variant="ghost" onClick={() => props.onOpenHref(filterHref(EMPTY_MAIL_EVENTS_FILTER))}>
             {t().reset}
           </Button>
         </Show>
       </div>
-      <ScrollArea class="mail-events__scroll">
+      <ScrollArea
+        class="mail-events__scroll"
+        ref={(element: HTMLDivElement) => {
+          scroller = element;
+        }}
+        onScroll={(event) => props.feed.keepScrollTop(event.currentTarget.scrollTop)}
+      >
         <Show
           when={!props.loading}
           fallback={
@@ -293,7 +338,12 @@ export function MailEventsFeed(props: {
                     icon="ti ti-filter-off"
                     title={t().filteredEmptyTitle}
                     action={
-                      <Button type="button" size="sm" variant="secondary" onClick={() => props.onOpenHref(href(EMPTY_MAIL_EVENTS_FILTER))}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => props.onOpenHref(filterHref(EMPTY_MAIL_EVENTS_FILTER))}
+                      >
                         {t().resetFilter}
                       </Button>
                     }
@@ -317,7 +367,7 @@ export function MailEventsFeed(props: {
                           {(conversationId) => (
                             <a
                               class="mail-event mail-event--link"
-                              href={href(props.filter, conversationId())}
+                              href={eventHref(conversationId())}
                               aria-current={conversationId() === props.selectedConversationId ? "true" : undefined}
                               title={t().openConversation({ subject: row.subject ?? "" })}
                               onClick={(event) => open(event, row)}

@@ -55,7 +55,8 @@ const kindCondition = (kind: MailActivityKind) => {
       return sql`(activity.action IN ('conversation.collaboration_updated', 'conversation.work_state_changed')
         AND ${doneAt("before")} IS DISTINCT FROM ${doneAt("after")})`;
     case "draft":
-      return sql`activity.action IN ('draft.created', 'draft.discarded')`;
+      // "Use as new message" and resending start a draft as `draft.derived`.
+      return sql`activity.action IN ('draft.created', 'draft.derived', 'draft.discarded')`;
     case "comment":
       return sql`activity.action = 'conversation.comment_created'`;
     case "sent":

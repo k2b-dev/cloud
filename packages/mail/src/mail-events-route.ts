@@ -24,14 +24,30 @@ export const readMailEventsFilter = (url: URL): MailEventsFilter => {
 
 export const mailEventsFiltered = (filter: MailEventsFilter): boolean => Boolean(filter.kind || filter.actorId || filter.mine);
 
-/** The Events tab with a filter and, optionally, the conversation open beside it. */
-export const mailEventsHref = (mailboxId: string, filter: MailEventsFilter, conversationId?: string | null): string => {
-  const params = new URLSearchParams({ view: MAIL_EVENTS_VIEW });
-  if (filter.kind) params.set("eventKind", filter.kind);
-  if (filter.actorId) params.set("eventActor", filter.actorId);
-  if (filter.mine) params.set("eventMine", "1");
-  if (conversationId) params.set("conversation", conversationId);
-  return `/app/mail/${mailboxId}?${params}`;
+/**
+ * The Events tab of the current route with another filter or open conversation. Every other parameter stays, so an
+ * event opens beside the same feed instead of loading it again; `conversation: null` closes the open one.
+ */
+export const mailEventsHref = (current: string, change: { filter?: MailEventsFilter; conversationId?: string | null }): string => {
+  const url = new URL(current, "http://mail.local");
+  url.searchParams.set("view", MAIL_EVENTS_VIEW);
+  url.searchParams.delete("cursor");
+  if (change.filter) {
+    const values: Array<[string, string | null]> = [
+      ["eventKind", change.filter.kind],
+      ["eventActor", change.filter.actorId],
+      ["eventMine", change.filter.mine ? "1" : null],
+    ];
+    for (const [name, value] of values) {
+      if (value) url.searchParams.set(name, value);
+      else url.searchParams.delete(name);
+    }
+  }
+  if (change.conversationId !== undefined) {
+    if (change.conversationId) url.searchParams.set("conversation", change.conversationId);
+    else url.searchParams.delete("conversation");
+  }
+  return `${url.pathname}${url.search}`;
 };
 
 /** The kinds a filter shows: every feed kind unless one is chosen. */

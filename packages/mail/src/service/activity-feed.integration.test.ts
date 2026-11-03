@@ -180,6 +180,7 @@ suite("mail mailbox event feed", () => {
     if (!comment.ok) throw new Error(comment.error.message);
     await event({ action: "draft.created", targetType: "draft" });
     await event({ action: "draft.discarded", targetType: "draft" });
+    await event({ action: "draft.derived", targetType: "draft", conversationId: null });
     await event({ action: "draft.attachment_added", targetType: "draft" });
     await event({ action: MAIL_SENT_ACTIVITY_ACTION, targetType: "outbox_submission", metadata: { result: "failed", intent: "reply" } });
     await event({
@@ -196,7 +197,7 @@ suite("mail mailbox event feed", () => {
     const actions = async (kinds: MailActivityKind[]) => (await items(context, { kinds })).map((item) => item.action).sort();
     expect(await actions(["assignment"])).toEqual(["conversation.collaboration_updated"]);
     expect(await actions(["status"])).toEqual(["conversation.collaboration_updated"]);
-    expect(await actions(["draft"])).toEqual(["draft.created", "draft.discarded"]);
+    expect(await actions(["draft"])).toEqual(["draft.created", "draft.derived", "draft.discarded"]);
     expect(await actions(["comment"])).toEqual(["conversation.comment_created"]);
     expect(await actions(["sent"])).toEqual([MAIL_SENT_ACTIVITY_ACTION]);
     expect(await actions(["automation"])).toEqual(["conversation.local_tags_added"]);
@@ -206,6 +207,7 @@ suite("mail mailbox event feed", () => {
       "conversation.comment_created",
       "conversation.local_tags_added",
       "draft.created",
+      "draft.derived",
       "draft.discarded",
       MAIL_SENT_ACTIVITY_ACTION,
     ]);
@@ -255,7 +257,7 @@ suite("mail mailbox event feed", () => {
     `;
     const context = contextFor(reader);
     const draftPage = await items(context, { kinds: ["draft"], limit: 50 });
-    expect(draftPage.map((item) => item.action).sort()).toEqual(["draft.created", "draft.discarded"]);
+    expect(draftPage.map((item) => item.action).sort()).toEqual(["draft.created", "draft.derived", "draft.discarded"]);
 
     const seen: string[] = [];
     let cursor: string | undefined;
@@ -278,6 +280,33 @@ suite("mail mailbox event feed", () => {
     const boundary = BigInt(first.data.items.at(-1)!.id);
     expect(switched.every((item) => BigInt(item.id) < boundary)).toBe(true);
     expect(switched.map((item) => item.action)).toContain("draft.created");
+  });
+
+  test("a send shows to people who see only assigned conversations only while they see the sent message", async () => {
+    const messageOf = async (conversationId: string) => {
+      const [row] = await sql<{ message_id: string }[]>`
+        SELECT message_id FROM mail.conversation_messages WHERE conversation_id = ${conversationId}::uuid LIMIT 1`;
+      return row!.message_id;
+    };
+    const visible = await event({
+      action: MAIL_SENT_ACTIVITY_ACTION,
+      conversationId: assignedConversation,
+      targetType: "outbox_submission",
+      metadata: { result: "sent", intent: "reply", outboundMessageId: await messageOf(assignedConversation) },
+    });
+    // The sent message moved to a conversation they do not see: its send leaves their timeline too.
+    const moved = await event({
+      action: MAIL_SENT_ACTIVITY_ACTION,
+      conversationId: assignedConversation,
+      targetType: "outbox_submission",
+      metadata: { result: "sent", intent: "reply", outboundMessageId: await messageOf(otherConversation) },
+    });
+    const ids = (await items(contextFor(assignedReader), { kinds: ["sent"], conversationId: assignedConversation })).map((item) => item.id);
+    expect(ids).toContain(visible);
+    expect(ids).not.toContain(moved);
+    // People who see the whole mailbox see both.
+    const all = (await items(contextFor(reader), { kinds: ["sent"], conversationId: assignedConversation })).map((item) => item.id);
+    expect(all).toEqual(expect.arrayContaining([visible, moved]));
   });
 
   test("the mailbox feed needs the collaboration read permission; people who see only assigned items get none", async () => {

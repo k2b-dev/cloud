@@ -2959,6 +2959,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
   const eventsFeed = () => (
     <MailEventsFeed
       mailboxId={controller().data.mailbox.id}
+      requestPath={controller().requestPath()}
       feed={controller().eventsFeed}
       page={controller().data.eventsPage}
       filter={controller().eventsFilter()}

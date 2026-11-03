@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, setSystemTime, test } from "bun
 import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import { EMPTY_MAIL_EVENTS_FILTER, type MailEventsFilter } from "../../mail-events-route";
+import { EMPTY_MAIL_EVENTS_FILTER, type MailEventsFilter, mailEventsHref } from "../../mail-events-route";
 import type { MailActivityEvent } from "../../service/collaboration";
 import type { MailEventsPage } from "../../service/workspace";
 
@@ -70,6 +70,7 @@ const renderFeed = async (input: { page: MailEventsPage | null; error?: string |
         get children() {
           return createComponent(MailEventsFeed, {
             mailboxId: "Box001",
+            requestPath: mailEventsHref("/app/mail/Box001", { filter: input.filter ?? input.page?.filter ?? EMPTY_MAIL_EVENTS_FILTER }),
             feed,
             page: input.page,
             filter: input.filter ?? input.page?.filter ?? EMPTY_MAIL_EVENTS_FILTER,

@@ -1905,7 +1905,13 @@ suite("mail sent message projection", () => {
 
   test("every settled send records one feed event in its conversation, with its outcome", async () => {
     const sentEvents = async (outboxId: string) =>
-      sql<{ conversation_id: string | null; outcome: string; metadata: { result: string; intent: string | null; code: string | null } }[]>`
+      sql<
+        {
+          conversation_id: string | null;
+          outcome: string;
+          metadata: { result: string; intent: string | null; code: string | null; outboundMessageId: string | null };
+        }[]
+      >`
         SELECT activity.conversation_id, activity.outcome, activity.metadata
         FROM mail.activity_events activity
         JOIN mail.outbox_submissions outbox ON outbox.command_id = activity.command_id
@@ -1918,14 +1924,18 @@ suite("mail sent message projection", () => {
       const reply = await replyDraft(mailbox, inbound);
       const sent = await send(mailbox, reply.id, reply.revision, "feed-reply");
       expect(await sentEvents(sent.id)).toEqual([
-        { conversation_id: inbound.conversation_id, outcome: "confirmed", metadata: { result: "sent", intent: "reply", code: null } },
+        {
+          conversation_id: inbound.conversation_id,
+          outcome: "confirmed",
+          metadata: { result: "sent", intent: "reply", code: null, outboundMessageId: sent.message_id },
+        },
       ]);
 
       // A new message names the conversation it started once it is sent.
       const fresh = await newDraft(mailbox, "Feed new message");
       const started = await send(mailbox, fresh.id, fresh.revision, "feed-new");
       const [newEvent] = await sentEvents(started.id);
-      expect(newEvent?.metadata).toEqual({ result: "sent", intent: "new", code: null });
+      expect(newEvent?.metadata).toEqual({ result: "sent", intent: "new", code: null, outboundMessageId: started.message_id });
       expect(newEvent?.conversation_id).toBe((await sentProjection(mailbox, started.stable_message_id)).messages[0]!.conversation_id);
       expect(newEvent?.conversation_id).not.toBeNull();
 

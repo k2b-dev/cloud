@@ -3172,7 +3172,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
             await rows(page).first().locator("a").click();
             await response;
-            await page.waitForURL(new URL("/app/mail/Box001?view=events&conversation=Conv01", server.url).href);
+            // Every other parameter stays, so the feed stays as it is beside the reader.
+            await page.waitForURL(new URL(`${events}&conversation=Conv01`, server.url).href);
             await settled(page);
             expect(await page.locator(".mail-reader-subject").first().textContent()).toContain("Example request 1");
             if (width === 1440) {
@@ -3187,7 +3188,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
 
       test("events filters put the kind in the URL, survive a reload, reset, and show the empty and error states", async () => {
-        // Filter links carry only the feed's own state, so this case reads the base locale after its reload.
         const english = `${boxPath}?view=events&layout=auto`;
         const page = await open(english);
         try {
@@ -3205,7 +3205,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const reset = page.waitForResponse((response) => response.url().includes("/workspace-"));
           await page.getByRole("button", { name: "Reset" }).click();
           await reset;
-          await page.waitForURL(new URL("/app/mail/Box001?view=events", server.url).href);
+          await page.waitForURL(new URL(english, server.url).href);
           await settled(page);
           expect(await rows(page).count()).toBe(11);
 
@@ -3265,6 +3265,28 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.waitForURL(/eventMine=1/);
           await page.locator(".mail-events__skeleton").waitFor({ state: "detached" });
           expect(await rows(page).count()).toBe(3);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("opening an event far down the feed keeps the feed where the person was", async () => {
+        const page = await open(events, 1440, 560);
+        try {
+          const scroller = page.locator(".mail-events__scroll");
+          await scroller.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+          });
+          await settled(page);
+          const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
+          await rows(page).last().locator("a").click();
+          await response;
+          await page.waitForURL(/conversation=Conv06/);
+          await settled(page);
+          // The feed now sits beside the reader and still shows the event that was opened.
+          expect(await scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+          expect(await rows(page).last().locator("a").getAttribute("aria-current")).toBe("true");
+          expect(await rows(page).last().isVisible()).toBe(true);
         } finally {
           await close(page);
         }
