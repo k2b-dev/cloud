@@ -322,7 +322,8 @@ export const mailSettingsMessages = i18n.define({
         `${name}: ${display}.${subfolders > 0 ? ` Also applies to ${subfolders} subfolder${subfolders === 1 ? "" : "s"}.` : ""}`,
       folderInPath: ({ name, path }: { name: string; path: string }) => `${name}, in ${path}`,
       serverFolderName: ({ name }: { name: string }) => `Name on the mail server: ${name}`,
-      shownFolderName: ({ name }: { name: string }) => `Mail shows this standard folder as “${name}”. Renaming changes its name on the mail server.`,
+      shownFolderName: ({ name }: { name: string }) =>
+        `Mail shows this standard folder as “${name}”. Renaming changes its name on the mail server.`,
       subfoldersOf: ({ name }: { name: string }) => `Subfolders of ${name}`,
       sharedByProvider: "Shared by provider",
       notSubscribed: "Not subscribed",

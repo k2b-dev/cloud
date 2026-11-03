@@ -333,7 +333,9 @@ export default function MailConversationList(props: {
                 <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
                   {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
                   <p class="min-w-0 flex-[1_1_13rem]">
-                    <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: folderName()(hint().folder) })}</strong>{" "}
+                    <strong class="font-semibold text-primary">
+                      {messages().folderOnlyHintTitle({ name: folderName()(hint().folder) })}
+                    </strong>{" "}
                     {messages().folderOnlyHintDetail}
                   </p>
                   <div class="flex shrink-0 items-center gap-1">

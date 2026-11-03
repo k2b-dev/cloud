@@ -63,7 +63,7 @@ export const mailFolderNameMessages = i18n.define({
       junk: "Junk",
       archive: "Archive",
       all: "All Mail",
-    } satisfies Record<StandardFolderNameKey, string>,
+    },
     de: {
       inbox: "Eingang",
       drafts: "Entwürfe",

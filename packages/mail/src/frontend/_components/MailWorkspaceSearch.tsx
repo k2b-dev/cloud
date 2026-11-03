@@ -106,9 +106,7 @@ export function MailSearchOptions(props: { search: Search; count: number }) {
       />
       <FilterChip
         label={text().placeValue({
-          value: props.search.scopeFolderId()
-            ? text().onlyFolder({ name: scopeFolderName() })
-            : text().wholeMailbox,
+          value: props.search.scopeFolderId() ? text().onlyFolder({ name: scopeFolderName() }) : text().wholeMailbox,
         })}
         icon="ti ti-map-pin"
         options={[
@@ -125,7 +123,12 @@ export function MailSearchOptions(props: { search: Search; count: number }) {
                   ]
                 : []),
               ...(props.search.originFolder()
-                ? [{ value: props.search.originFolder()!.id, label: text().onlyFolder({ name: folderName()(props.search.originFolder()!) }) }]
+                ? [
+                    {
+                      value: props.search.originFolder()!.id,
+                      label: text().onlyFolder({ name: folderName()(props.search.originFolder()!) }),
+                    },
+                  ]
                 : []),
             ],
           },
