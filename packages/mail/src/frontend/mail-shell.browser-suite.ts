@@ -724,7 +724,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.locator("[data-mail-search-trigger]").click();
           await page.locator('input[name="q"]').fill("invoice");
           await page.waitForURL((url) => url.searchParams.get("q") === "invoice");
-          const row = page.locator("[data-mail-conversation-list] [data-conversation-id] > a").first();
+          const row = page.locator("[data-mail-conversation-list] [data-conversation-id] a.mail-list-row").first();
           await row.focus();
           await row.press("Escape");
           await page.waitForURL((url) => !url.searchParams.has("q") && url.searchParams.get("folder") === "Filed1");
