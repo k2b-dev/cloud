@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.57.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.56.0...npm-cloud-v0.57.0) (2026-11-03)
+
+
+### Features
+
+* **accounts:** pages, filters and actions change without a document load ([#2535](https://github.com/k2b-dev/cloud/issues/2535)) ([7753c4b](https://github.com/k2b-dev/cloud/commit/7753c4b15804139486bfd58a01bb6d28e8186283))
+* **cloud:** app PWAs can register a shared device and hand it over without QR codes ([#2496](https://github.com/k2b-dev/cloud/issues/2496)) ([7f87e13](https://github.com/k2b-dev/cloud/commit/7f87e1362e3d3069fa7b1cfa6c5e32ed5d8713b1))
+* **cloud:** new agent API keys act exactly as their agent ([#2533](https://github.com/k2b-dev/cloud/issues/2533)) ([b1d113b](https://github.com/k2b-dev/cloud/commit/b1d113b6c38ca3183117d4a519083e31769f09d5))
+* **cloud:** one access dialog collects changes and shows what changes before saving ([#2543](https://github.com/k2b-dev/cloud/issues/2543)) ([f88a68d](https://github.com/k2b-dev/cloud/commit/f88a68dcab732a6cb640b2d4a4c568330cb87dce))
+* **cloud:** the file chooser is a compact file dialog ([#2481](https://github.com/k2b-dev/cloud/issues/2481)) ([f771fd0](https://github.com/k2b-dev/cloud/commit/f771fd01eecfe54ac0e67931237e3274f4891fb7))
+* **cloud:** the profile menu hides the sidebar and the panel button matches search and help ([#2486](https://github.com/k2b-dev/cloud/issues/2486)) ([ed36267](https://github.com/k2b-dev/cloud/commit/ed36267bc4862090cfb5321b67efecfd40bd47e8))
+* **notebooks:** the detail panel shows who is here and who has access ([#2499](https://github.com/k2b-dev/cloud/issues/2499)) ([5c4b65e](https://github.com/k2b-dev/cloud/commit/5c4b65e1d40fc02fcf1e5fe9382a6963c9988522))
+
+
+### Bug Fixes
+
+* **accounts:** the requests badge counts instead of reading request rows ([#2532](https://github.com/k2b-dev/cloud/issues/2532)) ([afbc7a6](https://github.com/k2b-dev/cloud/commit/afbc7a6dd97e5e9b69f8be88dd50210c7c73dcdd))
+* **cloud:** secret settings stay encrypted in the shared cache and short-lived sign-in links are stored by hash ([9ca76e8](https://github.com/k2b-dev/cloud/commit/9ca76e8145b4323f77d07041a1fc189299f816df))
+* **grids:** avoid idle workflow polling and queue growth ([#2476](https://github.com/k2b-dev/cloud/issues/2476)) ([ee0ead8](https://github.com/k2b-dev/cloud/commit/ee0ead814e61a93de553552533cc8ed196956456))
+* **ui:** the shell no longer restyles the whole page when a node changes ([#2495](https://github.com/k2b-dev/cloud/issues/2495)) ([6bb2c9c](https://github.com/k2b-dev/cloud/commit/6bb2c9c40a572ccdb3e567f2b3d4c654e38b70b6))
+
+
+### Performance Improvements
+
+* **cloud:** guard startup-only Postgres application names ([#2484](https://github.com/k2b-dev/cloud/issues/2484)) ([9ca76e8](https://github.com/k2b-dev/cloud/commit/9ca76e8145b4323f77d07041a1fc189299f816df))
+* **cloud:** recover idle workflow workers every thirty seconds ([#2485](https://github.com/k2b-dev/cloud/issues/2485)) ([c327a3b](https://github.com/k2b-dev/cloud/commit/c327a3b2d88d514b0cb0fd2022942e60fb776409))
+* **cloud:** search and widgets resolve the person once per request ([#2530](https://github.com/k2b-dev/cloud/issues/2530)) ([48f1e59](https://github.com/k2b-dev/cloud/commit/48f1e5952d92946c5dc5c286017b7f5616d122a8))
+* **gateway:** persist app metadata only when it changes ([#2483](https://github.com/k2b-dev/cloud/issues/2483)) ([c0a6e4f](https://github.com/k2b-dev/cloud/commit/c0a6e4fe38f1d503b714a20249ac074a029a0c5a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.20.2 to 0.21.0
+    * @k2b/ui bumped from 0.45.0 to 0.46.0
+    * @k2b/editor bumped from 0.6.1 to 0.6.2
+
 ## [0.56.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.55.0...npm-cloud-v0.56.0) (2026-11-02)
 
 
