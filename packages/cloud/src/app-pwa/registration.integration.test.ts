@@ -293,6 +293,19 @@ suite("App-PWA shared device registration", () => {
         await service.takeOverDevice(ben, { registrationId, expectedDeviceId: null, presenceCode: "000000" }).catch((error) => error),
       );
     expect(attempts.at(-1)).toMatchObject({ code: "RATE_LIMITED", status: 429 });
+    // Another UUID casing names the same registration and shares its counter.
+    await expect(
+      service.takeOverDevice(ben, { registrationId: registrationId.toUpperCase(), expectedDeviceId: null, presenceCode: "000000" }),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+  });
+
+  test("a correct code is refused too once the attempts are used up", async () => {
+    const { boot, registrationId } = await registered();
+    for (let index = 0; index < APP_PWA_LIMITS.presenceAttempts; index++)
+      await service.takeOverDevice(ben, { registrationId, expectedDeviceId: null, presenceCode: "" }).catch(() => undefined);
+    await expect(
+      service.takeOverDevice(ben, { registrationId, expectedDeviceId: null, presenceCode: await code(boot.credential) }),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
   });
 
   test("registration actions pass their registration to authorizeStaff", async () => {
@@ -303,6 +316,8 @@ suite("App-PWA shared device registration", () => {
     staffAllowed = (action, _signIn, current) => !(action === "list-registrations" && current?.registrationId === second.registrationId);
     expect((await service.listRegistrations(ben)).items.map((item) => item.id)).toEqual([registrationId]);
     expect(staffTargets).toContainEqual({ action: "list-registrations", target: undefined });
+    // The included registration is checked again before commit.
+    expect(staffTargets.filter((entry) => entry.target?.registrationId === registrationId)).toHaveLength(2);
     expect(staffTargets).toContainEqual({
       action: "list-registrations",
       target: { registrationId: second.registrationId, name: "Reception iPad" },

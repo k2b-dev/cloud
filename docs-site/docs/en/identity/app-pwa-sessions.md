@@ -70,8 +70,9 @@ on its waiting screen; the employee types it at the desk. This proves that they
 stand at that device and replaces the QR scan. The code changes every 30
 seconds, and the previous code is still accepted. It is bound to the
 registration and its browser, so a code from another device never matches, and a
-registration whose browser is gone can no longer be taken over. A missing or
-wrong code returns `403 PRESENCE_REQUIRED`. Each registration accepts five
+registration whose browser is gone can no longer be taken over. An empty or
+wrong code returns `403 PRESENCE_REQUIRED`; a request without the
+`presenceCode` field is `400 INVALID_INPUT`. Each registration accepts five
 attempts per 30 seconds, correct or not; more return `429 RATE_LIMITED`. A
 Valkey failure returns `503 UNAVAILABLE`.
 
@@ -94,9 +95,10 @@ Listing, taking over, and unregistering act on other people's state. By default
 any employee whom `authorizeStaff` admits for the action can do so for every
 registered device of the application. Cloud calls `authorizeStaff` once without
 a target and again with `target: { registrationId, name }` for the registration
-being taken over or unregistered, and for each listed registration. Return
-`false` to narrow the action, for example to one location's devices. A listed
-registration that the app refuses is left out of the page.
+being taken over or unregistered, and for each listed registration. These
+checks repeat before the transaction commits. Return `false` to narrow the
+action, for example to one location's devices. A listed registration that the
+app refuses is left out of the page.
 
 ### Show who uses it
 

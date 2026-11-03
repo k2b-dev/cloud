@@ -1064,7 +1064,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       staff(
         signIn,
         "list-registrations",
-        async (tx) => {
+        async (tx, _authority, beforeCommit) => {
           if (after) parse(AppPwaId, after);
           const page = await tx<(Registration & { device_id: string | null })[]>`SELECT r.*, b.device_id
             FROM ${tables.registrations} r LEFT JOIN ${tables.browsers} b ON b.app_id = r.app_id AND b.credential_hash = r.browser_hash
@@ -1072,8 +1072,15 @@ export const createAppPwaService = (options: AppPwaOptions) => {
             ORDER BY r.id LIMIT ${options.budgets.listPageSize}`;
           // The page cursor stays on the unfiltered rows, so hidden registrations never stall paging.
           const rows: typeof page = [];
-          for (const row of page)
-            if (await options.authorizeStaff("list-registrations", signIn, tx, { registrationId: row.id, name: row.name })) rows.push(row);
+          for (const row of page) {
+            const target = { registrationId: row.id, name: row.name };
+            if (!(await options.authorizeStaff("list-registrations", signIn, tx, target))) continue;
+            rows.push(row);
+            // A registration in the response must still be allowed when the transaction commits.
+            beforeCommit.authorize(async () => {
+              if (!(await options.authorizeStaff("list-registrations", signIn, tx, target))) pwaFail("FORBIDDEN", 403);
+            });
+          }
           const leaseIds = rows.flatMap((row) => (row.device_id ? [row.device_id] : []));
           const leases = leaseIds.length
             ? await tx<Device[]>`SELECT * FROM ${tables.devices} WHERE app_id = ${appId} AND id = ANY(${db().array(leaseIds, "uuid")})`
@@ -1130,7 +1137,8 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       // Every attempt counts, also a correct one, so guessing stays bounded per displayed code.
       let limited: boolean;
       try {
-        limited = (await presenceLimiter.check(input.registrationId)).limited;
+        // PostgreSQL accepts any UUID casing; one canonical key keeps one counter per registration.
+        limited = (await presenceLimiter.check(input.registrationId.toLowerCase())).limited;
       } catch {
         return pwaFail("UNAVAILABLE", 503);
       }
