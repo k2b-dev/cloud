@@ -232,6 +232,11 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/actions") && request.method === "POST") return Response.json({ commands: [] });
       if (url.pathname.endsWith("/preference") && request.method === "PATCH") return Response.json(await request.json());
       if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
+      // Every invented photo of `photos=N` is the same small gradient; it answers late, so rows load visibly.
+      if (/\/messages\/Msg001\/attachments\/Att\d+$/.test(url.pathname) && url.searchParams.get("inline") === "true") {
+        await Bun.sleep(300);
+        return new Response(Buffer.from(photoPng, "base64"), { headers: { "content-type": "image/png" } });
+      }
       if (url.pathname.startsWith("/api/")) return Response.json({ error: "Outside synthetic fixture" }, { status: 404 });
       return new Response(pageHtml(url, request.headers.get("cookie")), { headers: { "content-type": "text/html; charset=utf-8" } });
     },
@@ -299,6 +304,9 @@ const ready = async (page: Page) => {
   );
   await settled(page);
 };
+/** An invented 48 × 36 gradient that stands in for every attachment photo. */
+const photoPng =
+  "iVBORw0KGgoAAAANSUhEUgAAADAAAAAkCAIAAABAJy5dAAABhklEQVR42s3OaSsDAAAG4Pe7M4ZcYeTKzdAcYeTKfTemGXKllGxj7GTMGLMZY5JSSkopKSWllJRSUkpJKSWllO/+xvv8ggd/e16/Hu8fj8/3ru/Xrt/njv/HTsC7O/DNLXjdDnrZDn7eCnnaCn10hT24wu83I+42I2+dUTfO6GtHzJVDeOmIvdiIO9+IP7MnnNoTT9aTjteTj9ZSDtdSD2xp+7Z0z2qGezXTtZLtXMmxW0U2a651Oc+ynG+2iE2WAoOlULtUpFkqVi+WKBdLJ81loNpMmCWg2owvlINqM7ZQAarN8HwlqDaD81Wg2ihM1aDayE01oNrIjLWg2kiNdaDadBrqQbVpNzSAatOibwTVplHfBKpNna4ZVJtaXSuoNlW6NlBtKrTtoNpItB2g2pTMdYJqUzTXBaqNeFYKqk3+bDeoNiJND6g2WRoZqDbpM72g2qTOyEG1SZ7uA9UmYVoBqk2cuh9UG6F6AFSbKNUgqDYRqiFQbUKVw6DahChHQLURTI3+A8OZrdHqu5LXAAAAAElFTkSuQmCC";
 const sizes = [
   [1920, 1080],
   [1440, 900],
@@ -2351,6 +2359,47 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       });
 
       section("reader", () => {
+        // A message with a PDF and 59 photos shows them before its text: the count, the first three, and "Show all".
+        for (const width of [1440, 390])
+          test(`attachments at ${width}: listed above the body, previews hold still, show all opens image tiles`, async () => {
+            const page = await open(`${boxPath}?conversation=Conv01&photos=59`, width, width === 390 ? 844 : 900);
+            try {
+              const list = page.locator("[data-mail-message-attachments]");
+              await list.waitFor();
+              expect(await list.locator(".mail-message-attachments__count").textContent()).toBe("60 attachments");
+              const box = (await list.boundingBox())!;
+              const body = (await page.locator(".mail-message-body").first().boundingBox())!;
+              expect(box.y + box.height).toBeLessThanOrEqual(body.y);
+              expect(box.y + box.height, "the list shows without scrolling").toBeLessThanOrEqual(width === 390 ? 844 : 900);
+              const items = list.locator(".k2b-file-grid__item");
+              expect(await items.count()).toBe(3);
+              expect(await list.getByText("application/pdf").count()).toBe(0);
+              const before = await items.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
+              await page.waitForFunction(() =>
+                [...document.querySelectorAll<HTMLImageElement>("[data-mail-message-attachments] img")].every(
+                  (image) => image.complete && image.naturalWidth > 0,
+                ),
+              );
+              await settled(page);
+              expect(await items.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()))).toEqual(before);
+              expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+              await list.getByRole("button", { name: "Show all 60" }).click();
+              await list.locator('.k2b-file-grid[data-layout="tiles"]').waitFor();
+              expect(await list.locator('.k2b-file-grid[data-layout="tiles"] .k2b-file-grid__item').count()).toBe(59);
+              await list.getByRole("button", { name: "Show less" }).click();
+              await settled(page);
+              if (screenshots) {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, `attachments-light-${width}.png`) });
+                await list.getByRole("button", { name: "Show all 60" }).click();
+                await settled(page);
+                await page.screenshot({ path: join(screenshots, browserName, `attachments-all-light-${width}.png`) });
+              }
+            } finally {
+              await close(page);
+            }
+          });
+
         // One case per trace, each on its own page (#1966): the current AI assignment leads, every effect stays below.
         for (const width of [1440, 390])
           for (const kind of ["name", "uncertain", "manual", "normal"] as const)

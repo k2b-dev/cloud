@@ -3,6 +3,7 @@ import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
 import { resolveMailSearchRoute } from "../search-state";
+import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
@@ -34,6 +35,23 @@ const traceFixture = (kind: string | null) => {
 };
 const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
 /** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
+/** `photos=N`: the message carries an invented programme PDF and N invented photos. */
+const photosFixture = (count: string | null): MessageDetail["attachments"] => {
+  const photos = Number(count ?? 0);
+  if (!Number.isSafeInteger(photos) || photos <= 0) return [];
+  return [
+    { id: "Att000", filename: "Programme.pdf", contentType: "application/pdf", sizeBytes: 182_000, contentId: null, checksum: null },
+    ...Array.from({ length: photos }, (_, index) => ({
+      id: `Att${String(index + 1).padStart(3, "0")}`,
+      filename: `Summer_party_${index + 1}.jpg`,
+      contentType: "image/jpeg",
+      sizeBytes: 2_400_000 + index * 1000,
+      contentId: null,
+      checksum: null,
+    })),
+  ];
+};
+
 const summaryFixture = (kind: string | null) => {
   const ai = summaryState({
     summary:
@@ -395,7 +413,7 @@ export function mailboxData(url: URL): MailboxPageData {
               mailingList: null,
               remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
               delivery: null,
-              attachments: [],
+              attachments: photosFixture(url.searchParams.get("photos")),
             },
           ]
       : [],
