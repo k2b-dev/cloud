@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -13,7 +13,8 @@ const settle = async () => {
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const MIRA = "22222222-2222-4222-8222-222222222222";
-const today = new Date().toISOString();
+const NOW = "2026-11-03T12:00:00.000Z";
+const today = "2026-11-03T09:00:00.000Z";
 
 const event = (id: string, overrides: Partial<MailActivityEvent> = {}): MailActivityEvent => ({
   id,
@@ -45,6 +46,8 @@ const page = (
 });
 
 const originalFetch = globalThis.fetch;
+beforeAll(() => setSystemTime(new Date(NOW)));
+afterAll(() => setSystemTime());
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });

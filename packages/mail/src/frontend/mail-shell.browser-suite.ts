@@ -234,7 +234,9 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/preference") && request.method === "PATCH") return Response.json(await request.json());
       // The Events tab's older page; a conversation's own activity stays empty.
       if (url.pathname.endsWith("/activity"))
-        return Response.json(url.searchParams.has("cursor") ? { items: olderFixtureEvents, nextCursor: null } : { items: [], nextCursor: null });
+        return Response.json(
+          url.searchParams.has("cursor") ? { items: olderFixtureEvents, nextCursor: null } : { items: [], nextCursor: null },
+        );
       // Every invented photo of `photos=N` is the same small gradient; it answers late, so rows load visibly.
       if (/\/messages\/Msg001\/attachments\/Att\d+$/.test(url.pathname) && url.searchParams.get("inline") === "true") {
         await Bun.sleep(300);
