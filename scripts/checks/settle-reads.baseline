@@ -47,7 +47,6 @@ packages/filesv2/src/frontend/StorageOverview.browser.test.ts | 3
 packages/filesv2/src/frontend/UploadPanel.browser.test.ts | 3
 packages/grids/src/frontend/custom-app/chart-tooltips.browser-suite.ts | 1
 packages/grids/src/styles/app-host.browser.test.ts | 2
-packages/mail/src/frontend/MailOverview.browser.test.ts | 5
 packages/mail/src/frontend/_components/MailComposerEditor.browser.test.ts | 8
 packages/mail/src/frontend/_components/MailConversationList.browser.test.ts | 45
 packages/mail/src/frontend/_components/MailFolderSettings.browser.test.ts | 13
