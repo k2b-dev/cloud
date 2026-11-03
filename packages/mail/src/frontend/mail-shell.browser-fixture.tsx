@@ -187,6 +187,11 @@ const localTags: MailboxPageData["localTags"] = [
     updatedAt: MAIL_SHELL_NOW,
   },
 ];
+/** The invented team of `?team=1`; the first person is the one signed in. */
+const teamUsers = [
+  { id: "user-1", uid: "robin", displayName: "Robin Example" },
+  { id: "user-2", uid: "nora", displayName: "Nora Example" },
+].map((user) => ({ ...user, avatarHash: null, scope: "mailbox" as const, permission: "write" as const, description: "" }));
 export const listRows = Array.from({ length: 12 }, (_, index) =>
   mailTestRow(`Conv${String(index + 1).padStart(2, "0")}`, {
     subject: `Example request ${index + 1}`,
@@ -196,7 +201,7 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     latestMessageAt: new Date(Date.parse(MAIL_SHELL_NOW) - index * 3_600_000).toISOString(),
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
-    hasAttachments: index % 4 === 0,
+    ...(index % 4 === 0 ? { attachmentCount: index / 4 + 1 } : {}),
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],
@@ -463,7 +468,10 @@ export function mailboxData(url: URL): MailboxPageData {
       scheduledMode || draftsMode || url.searchParams.get("view") === "events" || url.searchParams.get("inbox") === "empty"
         ? []
         : selectedMailbox.id === "Box001"
-          ? listRows
+          ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation.
+            url.searchParams.has("team")
+            ? listRows.map((row, index) => (index === 0 ? { ...row, assigneeUserIds: [teamUsers[1]!.id] } : row))
+            : listRows
           : listRows.map((row) => ({
               ...row,
               id: `${selectedMailbox.id}-${row.id}`,
@@ -556,7 +564,14 @@ export function mailboxData(url: URL): MailboxPageData {
     automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
-      ? { conversationId: selectedConversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 }
+      ? {
+          conversationId: selectedConversationId,
+          assignees: url.searchParams.has("team") && selectedConversationId === "Conv01" ? [teamUsers[1]!] : [],
+          // ?work=done opens a conversation that is already done.
+          workStatus: url.searchParams.get("work") === "done" ? "done" : "needs_action",
+          snoozedUntil: null,
+          revision: 1,
+        }
       : null,
     localTags,
     conversationLocalTags: selectedConversationId
@@ -564,7 +579,7 @@ export function mailboxData(url: URL): MailboxPageData {
       : null,
     comments: [],
     commentsCursor: null,
-    assignableUsers: [],
+    assignableUsers: url.searchParams.has("team") ? teamUsers : [],
     activity: [],
     reminder: null,
     keep: null,

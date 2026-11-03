@@ -745,7 +745,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.locator("[data-mail-search-trigger]").click();
           await page.locator('input[name="q"]').fill("invoice");
           await page.waitForURL((url) => url.searchParams.get("q") === "invoice");
-          const row = page.locator("[data-mail-conversation-list] [data-conversation-id] > a").first();
+          const row = page.locator("[data-mail-conversation-list] [data-conversation-id] a.mail-list-row").first();
           await row.focus();
           await row.press("Escape");
           await page.waitForURL((url) => !url.searchParams.has("q") && url.searchParams.get("folder") === "Filed1");
@@ -2375,7 +2375,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth),
             ).toBeLessThanOrEqual(0);
             await page.getByRole("button", { name: "More conversation actions" }).click();
-            for (const name of ["Forward", "Move to folder", "Tags"])
+            for (const name of ["Forward", "Move to folder", "Manage tags"])
               expect(await page.getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBeGreaterThan(0);
           } finally {
             await close(page);
@@ -2783,7 +2783,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("phone: Reply, Reply all, Forward and Archive wait at the bottom, work by touch and keyboard, and cover nothing", async () => {
+        test("phone: Reply, Reply all, Forward and Done wait at the bottom, work by touch and keyboard, and cover nothing", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
             const bar = page.locator("[data-mail-phone-actions] .k2b-toolbar");
@@ -2798,7 +2798,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
                   .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
               );
-            expect(names).toEqual(["Reply", "Reply all", "Forward", "Archive"]);
+            expect(names).toEqual(["Reply", "Reply all", "Forward", "Mark as done"]);
             // The bar is the reader's last row: the scrolled messages end above it.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
@@ -2816,10 +2816,15 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await bar.getByRole("button", { name: "Reply", exact: true }).focus();
             await page.keyboard.press("ArrowRight");
             expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reply all");
-            // Touch: Archive sends its command.
-            const archived = page.waitForRequest((request) => request.url().endsWith("/actions") && request.method() === "POST");
-            await bar.getByRole("button", { name: "Archive" }).tap();
-            expect(JSON.stringify((await archived).postDataJSON())).toContain("archive");
+            // Touch: Done marks the conversation done.
+            await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
+              route.fulfill({
+                json: { completion: "done", results: [{ conversationId: "Conv01", status: "ok", workStatus: "done", revision: 2 }] },
+              }),
+            );
+            const completed = page.waitForRequest((request) => request.url().endsWith("/conversations/completion"));
+            await bar.getByRole("button", { name: "Mark as done" }).tap();
+            expect((await completed).postDataJSON()).toEqual({ conversationIds: ["Conv01"], completion: "done" });
           } finally {
             await close(page);
           }
@@ -3071,6 +3076,123 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+
+        test("a list row opens its … menu on right-click and with the context-menu key or Shift+F10", async () => {
+          const page = await open(`${boxPath}?team=1`);
+          try {
+            const row = page.locator('.mail-workspace [data-conversation-id="Conv01"]');
+            const link = row.locator("a.mail-list-row");
+            await row.hover();
+            await row.getByRole("button", { name: "Actions for Example request 1" }).click();
+            const rowItems = await menuEntries(page, dropdown);
+            // Answers lead; taking the conversation follows, high and visible, then Done.
+            expect(rowItems.slice(0, 3)).toEqual(["Reply", "Reply in new window", "Forward"]);
+            expect(rowItems[3]).toBe("Assign to meNora Example stays responsible");
+            expect(rowItems[4]).toBe("Mark as done");
+            expect(rowItems).toContain("Archive");
+            expect(rowItems.at(-1)).toBe("Copy conversation Cloud ID");
+            await dismiss(page, dropdown);
+
+            await link.click({ button: "right" });
+            expect(await menuEntries(page, contextMenu)).toEqual(rowItems);
+            if (screenshots) await page.screenshot({ path: join(screenshots, "row-context-menu-light-1440.png") });
+            await dismiss(page, contextMenu);
+            expect(await page.locator(".mail-reader [data-mail-reader-heading]").count(), "a right-click opens no conversation").toBe(0);
+
+            await link.focus();
+            await page.keyboard.press("Shift+F10");
+            expect(await menuEntries(page, contextMenu)).toEqual(rowItems);
+            await dismiss(page, contextMenu);
+            expect(await link.evaluate((element) => element === document.activeElement)).toBe(true);
+            await page.keyboard.press("ContextMenu");
+            expect(await menuEntries(page, contextMenu)).toEqual(rowItems);
+
+            // Assign to me adds you; Nora Example stays responsible.
+            await page.route("**/api/mail/mailboxes/Box001/conversations/assign", (route) => route.fulfill({ json: { results: [] } }));
+            const assigned = page.waitForRequest((request) => request.url().endsWith("/conversations/assign"));
+            await page
+              .locator(contextMenu)
+              .getByRole("menuitem", { name: /^Assign to me/ })
+              .click();
+            expect((await assigned).postDataJSON()).toEqual({ conversationIds: ["Conv01"], assigneeUserIds: ["user-1"], mode: "add" });
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("Reply from a row's menu opens the conversation and starts the reply there", async () => {
+          const page = await open(boxPath);
+          try {
+            const row = page.locator('.mail-workspace [data-conversation-id="Conv01"]');
+            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            await row.locator("a.mail-list-row").click({ button: "right" });
+            await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
+            await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+            await drafts;
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("the reader's bar marks done where Archive was; Archive stays in …", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`);
+          try {
+            const toolbar = page.locator(".mail-reader-toolbar");
+            expect(await toolbar.locator('[data-mail-toolbar-action="archive"]').count()).toBe(0);
+            const done = toolbar.locator('[data-mail-toolbar-action="done"]');
+            expect(await done.getAttribute("aria-label")).toBe("Mark as done");
+            await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
+              route.fulfill({
+                json: { completion: "done", results: [{ conversationId: "Conv01", status: "ok", workStatus: "done", revision: 2 }] },
+              }),
+            );
+            const completed = page.waitForRequest((request) => request.url().endsWith("/conversations/completion"));
+            await done.click();
+            expect((await completed).postDataJSON()).toEqual({ conversationIds: ["Conv01"], completion: "done" });
+
+            // The reader's … menu has the row's order, and Archive keeps its path there.
+            await page.getByRole("button", { name: "More conversation actions" }).click();
+            const items = await menuEntries(page, dropdown);
+            expect(items.slice(0, 4)).toEqual(["Reply", "Reply in new window", "Reply all", "Forward"]);
+            const archived = page.waitForRequest((request) => request.url().endsWith("/actions") && request.method() === "POST");
+            await page.locator(dropdown).getByRole("menuitem", { name: "Archive", exact: true }).click();
+            expect(JSON.stringify((await archived).postDataJSON())).toContain("archive");
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("a done conversation offers Reopen in the bar and in its menus", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&work=done&locale=de`);
+          try {
+            expect(await page.locator('.mail-reader-toolbar [data-mail-toolbar-action="done"]').getAttribute("aria-label")).toBe(
+              "Wieder öffnen",
+            );
+            await page.locator("[data-mail-reader-heading]").click({ button: "right" });
+            const items = await menuEntries(page, contextMenu);
+            expect(items).toContain("Wieder öffnen");
+            expect(items).not.toContain("Als erledigt markieren");
+          } finally {
+            await close(page);
+          }
+        });
+
+        for (const [locale, one, two] of [
+          ["en", "1 attachment", "2 attachments"],
+          ["de", "1 Anhang", "2 Anhänge"],
+        ] as const)
+          test(`the paperclip names how many attachments a row has (${locale})`, async () => {
+            const page = await open(`${boxPath}?locale=${locale}`);
+            try {
+              const mark = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] .mail-row-mark:has(.ti-paperclip)`);
+              expect(await mark("Conv01").getAttribute("aria-label")).toBe(one);
+              expect(await mark("Conv05").getAttribute("aria-label")).toBe(two);
+              await mark("Conv05").hover();
+              await page.getByRole("tooltip").filter({ hasText: two }).waitFor();
+            } finally {
+              await close(page);
+            }
+          });
 
         test("Copy Cloud ID writes the permalink and the structured reference from every menu and the details", async () => {
           const { parseCloudResourceClipboard, parseCloudResourceUrl } = await import("@k2b/cloud/contracts");

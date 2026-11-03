@@ -80,6 +80,7 @@ import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
+import { type MailRespondIntent, type MailRespondRequest, openMailReplyWindow } from "./_components/mail-conversation-menu";
 import {
   emptyMailConversationSelection,
   findMailFocusAfterRemoval,
@@ -113,6 +114,7 @@ import { createMailboxPreferences } from "./_components/mail-mailbox-preferences
 import {
   buildMailListHref,
   buildMailSearchClearHref,
+  buildMailSelectionHref,
   buildMailShowDoneHref,
   isMailWorkspaceUrl,
   MAIL_SEARCH_FROM_PARAMETER,
@@ -2620,7 +2622,8 @@ function createMailboxController(props: MailboxControllerProps) {
       if (!props.currentUserId) return;
       const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
         param: { mailboxId },
-        json: { conversationIds: [conversationId], assigneeUserIds: [props.currentUserId], mode: "replace" },
+        // You join the people responsible; whoever is assigned already stays.
+        json: { conversationIds: [conversationId], assigneeUserIds: [props.currentUserId], mode: "add" },
       });
       if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
       const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
@@ -2632,6 +2635,85 @@ function createMailboxController(props: MailboxControllerProps) {
     const conversationId = data.selectedConversationId;
     if (!canWrite() || structurePending() || assignToMe.loading() || !conversationId) return;
     void assignToMe.mutate(conversationId);
+  };
+  const assignItemToMe = (item: MailListItem) => {
+    if (!canWrite() || structurePending() || assignToMe.loading() || !item.conversationId) return;
+    void assignToMe.mutate(item.conversationId);
+  };
+  // Where more than one person can be responsible, the conversation's menus offer to take it.
+  const assignment = createMemo(() => {
+    const userId = props.currentUserId;
+    const conversationId = data.selectedConversationId;
+    if (!userId || !conversationId || !canAssign() || !sharedMailbox()) return null;
+    const state = data.collaborationState;
+    const assignees =
+      state?.conversationId === conversationId
+        ? state.assignees.map((assignee) => assignee.id)
+        : (selectedListItem()?.assigneeUserIds ?? []);
+    return { assigned: assignees.includes(userId), others: assigneeNames(assignees.filter((id) => id !== userId)) };
+  });
+  const selectedWorkStatus = () => {
+    const state = data.collaborationState;
+    return state?.conversationId === data.selectedConversationId ? state.workStatus : (selectedListItem()?.workStatus ?? null);
+  };
+  /** Marks one conversation done or reopens it, through the same path as the details panel's button. */
+  const completion = mutation.create<void, { conversationId: string; completion: "done" | "open" }>({
+    mutation: async ({ conversationId, completion }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations.completion.$post({
+        param: { mailboxId },
+        json: { conversationIds: [conversationId], completion },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
+      for (const result of (await response.json()).results) {
+        if (result.status !== "ok") throw new Error(conversationText().completionFailed);
+        const patch = { workStatus: result.workStatus, snoozedUntil: null, revision: result.revision };
+        rememberPendingListState(result.conversationId, patch);
+        setConversationListState(result.conversationId, patch);
+        setData("collaborationState", (current) =>
+          current?.conversationId === result.conversationId ? { ...current, ...patch } : current,
+        );
+      }
+      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+      if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const setItemCompletion = (item: MailListItem, next: "done" | "open") => {
+    if (!canWrite() || completion.loading() || !item.conversationId) return;
+    void completion.mutate({ conversationId: item.conversationId, completion: next });
+  };
+  const setOpenConversationCompletion = (next: "done" | "open") => {
+    const conversationId = data.selectedConversationId;
+    if (!canWrite() || completion.loading() || !conversationId) return;
+    void completion.mutate({ conversationId, completion: next });
+  };
+  /**
+   * A row's Reply opens its conversation first; the reader then answers the latest message. A window of its own opens
+   * during the click, as browsers allow only then, and closes again when the conversation does not open.
+   */
+  const [respondRequest, setRespondRequest] = createSignal<MailRespondRequest | null>(null);
+  // The latest Reply wins: an earlier one still opening its conversation gives up its window.
+  let respondGeneration = 0;
+  let respondOpening = false;
+  const respondToItem = async (item: MailListItem, intent: MailRespondIntent, options: { window: boolean }) => {
+    const conversationId = item.conversationId;
+    if (!conversationId || !canWrite()) return;
+    const generation = ++respondGeneration;
+    const target = options.window ? openMailReplyWindow() : null;
+    if (options.window && !target) return void prompts.error(conversationText().allowReplyWindow);
+    respondRequest()?.window?.close();
+    setRespondRequest(null);
+    // Another Reply still opening its conversation would select it afterwards; this one opens its own again.
+    if (data.selectedConversationId !== conversationId || respondOpening) {
+      respondOpening = true;
+      try {
+        await navigateConversation(buildMailSelectionHref(mailRouteUrl(requestPath()), item), item, "pointer");
+      } finally {
+        if (generation === respondGeneration) respondOpening = false;
+      }
+    }
+    if (disposed || generation !== respondGeneration || data.selectedConversationId !== conversationId) return void target?.close();
+    setRespondRequest({ conversationId, intent, window: target });
   };
   const assignSelection = () => {
     const conversationIds = [...selectedConversationIds()];
@@ -2856,6 +2938,15 @@ function createMailboxController(props: MailboxControllerProps) {
     assignToMe,
     assignOpenConversation,
     assignOpenConversationToMe,
+    assignItemToMe,
+    assignment,
+    selectedWorkStatus,
+    completion,
+    setItemCompletion,
+    setOpenConversationCompletion,
+    respondRequest,
+    setRespondRequest,
+    respondToItem,
     actionTargetForItem,
     addTagsToSelection,
     applyCollaborationState,
@@ -3023,6 +3114,13 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         if (target) void controller().runAction(actionId, { targets: [target] });
       }}
       onManageTags={controller().manageConversationTags}
+      onRespondItem={(item, intent, options) => void controller().respondToItem(item, intent, options)}
+      onAssignItemToMe={
+        controller().canAssign() && controller().sharedMailbox() && props.currentUserId ? controller().assignItemToMe : undefined
+      }
+      onSetItemCompletion={controller().setItemCompletion}
+      currentUserId={props.currentUserId ?? null}
+      assigneeNames={controller().assigneeNames}
       onMergeItem={
         controller().assignedOnly()
           ? undefined
@@ -3364,6 +3462,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     onAssignConversation={controller().assignOpenConversation}
                     onAssignConversationToMe={controller().assignOpenConversationToMe}
                     automationPending={controller().automationUndo.loading() || controller().assignToMe.loading()}
+                    assignment={controller().assignment()}
+                    workStatus={controller().selectedWorkStatus()}
+                    completionPending={controller().completion.loading()}
+                    onSetCompletion={controller().setOpenConversationCompletion}
+                    respondRequest={controller().respondRequest()}
+                    onRespondRequestHandled={() => controller().setRespondRequest(null)}
                     totalMessageCount={
                       controller().hasSelection()
                         ? (controller().selectedListItem()?.messageCount ?? controller().data.detailMessages.length)

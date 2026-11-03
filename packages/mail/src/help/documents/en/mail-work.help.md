@@ -113,7 +113,7 @@ Choose **Assign** to change the assignees of the selected conversations. Choose 
 ### Work from Needs action
 
 We recommend **Needs action** as your inbox. Use folders for filing; filing and archiving change no work status.
-To empty the Inbox in other mail clients too, also choose **Archive**. Archive does not mark **Done**.
+To empty the Inbox in other mail clients too, also choose **Archive** in the conversation's **…** menu. Archive does not mark **Done**.
 
 - **Personal mailbox:** Work from **Needs action**. Use automations to mark noise **Done** and file it. Mark finished work **Done**.
   **Waiting for reply** follows a confirmed human reply automatically. Use **Show later** for date-dependent work.
@@ -200,7 +200,7 @@ Another Cloud app can keep a reference to a conversation or a message. To give i
 
 Mail confirms the copy. Paste the Cloud ID into the other app. It is a link such as `https://cloud.example.com/open/mail.message/~Ab12Cd`, and it opens the mail. The Cloud ID gives no access: the other app shows the mail only to people who can open it in Mail.
 
-A right-click in the conversation opens the same menu as its **…** button. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
+A right-click on a conversation in the list, or in the open conversation, opens the same menu as its **…** button. The menu starts with **Reply** and **Reply in new window**. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
 
 ## Keep conversations that must not be deleted {icon="lock"}
 

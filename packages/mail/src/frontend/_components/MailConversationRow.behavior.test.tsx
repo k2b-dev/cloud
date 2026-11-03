@@ -32,10 +32,19 @@ test.skipIf(isServer)("shares the row context projection across rendering and re
                 selectionMode: false,
                 canWrite: canWrite(),
                 spamAction: spamAction(),
+                currentUserId: null,
                 dateConfig: { locale: "en", timeZone: "UTC" },
               };
             },
-            actions: { navigate: () => {}, toggleSelection: () => {}, itemAction: () => {}, manageTags: () => {} },
+            actions: {
+              navigate: () => {},
+              toggleSelection: () => {},
+              itemAction: () => {},
+              manageTags: () => {},
+              respond: () => {},
+              assigneeNames: () => [],
+              setCompletion: () => {},
+            },
           });
         },
       }),
@@ -101,11 +110,21 @@ test.skipIf(isServer)("keeps menu rows through selection and callback changes, b
             selectionMode: false,
             canWrite: true,
             spamAction: spamAction(),
+            currentUserId: null,
             dateConfig: { locale: "en", timeZone: "UTC" },
           };
         },
         get actions() {
-          return { navigate: () => {}, toggleSelection: () => {}, itemAction: () => {}, manageTags: () => {}, merge: merge() };
+          return {
+            navigate: () => {},
+            toggleSelection: () => {},
+            itemAction: () => {},
+            manageTags: () => {},
+            merge: merge(),
+            respond: () => {},
+            assigneeNames: () => [],
+            setCompletion: () => {},
+          };
         },
       }),
     dom.root,

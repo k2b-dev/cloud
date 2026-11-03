@@ -44,6 +44,11 @@
     background: var(--ui-hover);
   }
 
+  /* So does the row whose right-click menu is open; the open and the checked rows keep their own fill. */
+  .mail-list-entry:where(:has(> [aria-haspopup="menu"][aria-expanded="true"])) {
+    background: var(--ui-hover);
+  }
+
   /* The open row and the checked rows share the app row fill; the checkbox carries the checked state. */
   .mail-list-entry-active,
   .mail-list-entry-active:hover,
