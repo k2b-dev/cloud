@@ -30,7 +30,13 @@ import {
   releaseCapabilityClaim,
   resolveCapabilityClaim,
 } from "../capabilities/executions";
-import { type CodeBridgeAuthority, type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
+import {
+  type CodeBridgeAuthority,
+  type CodeBridgeHost,
+  CodeBridgeRefusal,
+  codeBridgeDispatchRefusalKind,
+  codeBridgeLocalRefusalKind,
+} from "../code/bridge-contract";
 import type { CodeRunTokenClaims } from "../code/run-token";
 import { type CodeRunTokenVerifyOptions, verifyCodeRunToken } from "../code/run-token";
 import { RUNNER_PATHS, RunnerCallRequestSchema } from "../code/runner-protocol";
@@ -329,6 +335,8 @@ export type CapabilityDispatchParams = {
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
   onUpstreamAttempt?: () => void;
+  /** Internal observation of the actual provider status, before body validation or transport projection. */
+  onUpstreamResponse?: (status: number) => void;
   /** Core-only aggregate budget, charged on upstream bytes before parsing or validation. */
   consumeResponseBytes?: (bytes: number) => void;
   dependencies?: CapabilityDispatchDependencies;
@@ -934,6 +942,7 @@ const runCapabilityDispatch = async (
     return settle(unavailable, "uncertain");
   }
 
+  params.onUpstreamResponse?.(response.status);
   let upstreamBody: Awaited<ReturnType<typeof readBoundedJson>>;
   try {
     upstreamBody = await deadline.wait(() =>
@@ -1497,7 +1506,10 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
             const http = CodeHttpRequestSchema.safeParse(request.input);
             const ownOrigins = [new URL(c.req.url).origin, ...(await dependencies.ownOrigins())];
             if (!http.success) return codeBridgeError("code_http_invalid_call");
-            if (!codeHttpOriginAllowed(http.data.url, ownOrigins)) return codeBridgeError("code_http_origin_forbidden");
+            if (!codeHttpOriginAllowed(http.data.url, ownOrigins)) {
+              authority.onRefusal?.("policy");
+              return codeBridgeError("code_http_origin_forbidden");
+            }
             return dependencies.http
               ? dependencies.http({ claims, request: http.data, authority, ownOrigins, signal: c.req.raw.signal })
               : codeBridgeError("code_operation_not_found");
@@ -1516,12 +1528,17 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
       const kind = query ? "query" : "action";
       const policy = entry && kind === "action" ? capabilityActionPolicy(entry.manifest, capabilityId) : undefined;
       return await dependencies.host.withCall({ claims, call: sdk.data.call, kind, policy }, async (authority) => {
+        const refusePolicy = (code: string) => {
+          authority.onRefusal?.(codeBridgeLocalRefusalKind(code));
+          return codeBridgeError(code);
+        };
         if (!entry || !operation) return codeBridgeError("code_operation_not_found");
-        if (capabilityId.startsWith("code.access.")) return codeBridgeError("code_access_forbidden");
-        if (operation.stream) return codeBridgeError("code_stream_forbidden");
-        if ("code" in operation && operation.code === false) return codeBridgeError("code_disabled");
+        if (capabilityId.startsWith("code.access.")) return refusePolicy("code_access_forbidden");
+        if (operation.stream) return refusePolicy("code_stream_forbidden");
+        if ("code" in operation && operation.code === false) return refusePolicy("code_disabled");
         if (("unattended" in operation && operation.unattended === false) || ("appOnly" in operation && operation.appOnly))
-          return codeBridgeError("code_unattended_forbidden");
+          return refusePolicy("code_unattended_forbidden");
+        let targetStatus: number | undefined;
         const headers = new Headers({ "Content-Type": "application/json" });
         if (sdk.data.metadata.idempotencyKey) headers.set("Idempotency-Key", sdk.data.metadata.idempotencyKey);
         const response = await dispatchCapability({
@@ -1534,6 +1551,9 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
           input: sdk.data.call.input,
           origin: "app",
           codeRun: true,
+          onUpstreamResponse: (status) => {
+            targetStatus = status;
+          },
           workloadRun: claims.runId,
           callingAppId: "core",
           deadline: claims.exp * 1000,
@@ -1548,11 +1568,9 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
         const payload = z.object({ data: z.json() }).safeParse(result.ok ? result.data : null);
         if (response.ok && payload.success) return Response.json({ ok: true, data: payload.data.data });
         const failure = z.object({ code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/) }).safeParse(result.ok ? result.data : null);
-        return codeBridgeError(
-          failure.success ? failure.data.code.toLowerCase() : "code_call_failed",
-          200,
-          response.status >= 400 && response.status <= 599 ? response.status : undefined,
-        );
+        const code = failure.success ? failure.data.code.toLowerCase() : "code_call_failed";
+        authority.onRefusal?.(failure.success ? codeBridgeDispatchRefusalKind(code, targetStatus) : "bridge");
+        return codeBridgeError(code, 200, response.status >= 400 && response.status <= 599 ? response.status : undefined);
       });
     } catch (error) {
       if (error instanceof CodeBridgeRefusal) return codeBridgeError(error.code, error.status);

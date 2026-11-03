@@ -10,7 +10,15 @@ import {
 import { z } from "zod";
 import { aiCapabilities } from "../capabilities";
 import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
-import { CodeOwnerSchema, CodeRunCursorSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
+import {
+  CodeCallRefusalKindSchema,
+  CodeOwnerSchema,
+  type CodeRefusedCall,
+  type CodeRun,
+  CodeRunCursorSchema,
+  CodeSourceFilesSchema,
+  codeQueryContracts,
+} from "./contracts";
 import { runCodeQuery } from "./queries";
 import { codeSourceHash, codeTextChunk } from "./store";
 import { CodeVersionError } from "./versions";
@@ -53,6 +61,9 @@ const context: CapabilityExecutionContext = {
 };
 
 describe("Core Code data contracts", () => {
+  test("refusal kinds preserve policy and approval as separate public values", () => {
+    expect(CodeCallRefusalKindSchema.options).toEqual(["target_refused", "policy", "approval", "app_not_allowed", "bridge"]);
+  });
   test("exports permission-aware data and policy capabilities", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     expect(manifest.actions.find((action) => action.localId === "code.secret.set")?.idempotency).toBe("none");
@@ -260,4 +271,47 @@ test("large base conflicts retain their stable refusal and complete-diff reader"
   });
   expect(result).toMatchObject({ ok: false, error: { code: "code_version_conflict", details: { latestVersionId: user.id, diffRead } } });
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+});
+
+test("Code data contracts bundle for browsers without loading the server API", async () => {
+  const result = await Bun.build({ entrypoints: [new URL("./contracts.ts", import.meta.url).pathname], target: "browser" });
+  expect(result.logs).toEqual([]);
+  expect(result.success).toBe(true);
+});
+
+test("Code CLI run payload keeps version 1 and the additive refused-call summary", async () => {
+  const { codeAuthoringContracts } = await import("./authoring-contracts");
+  const run = {
+    id: user.id,
+    codeId: "c_test",
+    versionId: user.id,
+    trigger: "manual",
+    entrypoint: "weekly",
+    state: "failed",
+    outcome: "failed",
+    firstRefusedCallOrdinal: 2,
+    createdAt: "2026-11-03T12:00:00.000Z",
+    startedAt: null,
+    endedAt: null,
+    rerunOf: null,
+    rerunByName: null,
+  } satisfies CodeRun;
+  const summary = {
+    ordinal: 2,
+    kind: "action",
+    capability: "example.item.update",
+    target: { type: "example.item", id: "runtime-id" },
+  } satisfies CodeRefusedCall;
+  const contents = {
+    input: null,
+    output: null,
+    inputChunked: false,
+    outputChunked: false,
+    content: null,
+    firstRefusedCall: summary,
+    calls: [],
+    nextCursor: null,
+  };
+  expect(codeAuthoringContracts.runRead.data.parse({ version: 1, run, contents })).toEqual({ version: 1, run, contents });
+  expect(codeAuthoringContracts.runRead.data.parse({ version: 1, run, contents: null })).toEqual({ version: 1, run, contents: null });
 });

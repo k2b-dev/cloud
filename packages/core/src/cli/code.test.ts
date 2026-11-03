@@ -666,6 +666,7 @@ const runMetadata = {
   entrypoint: "monday",
   state: "failed",
   outcome: "lease_lost",
+  firstRefusedCallOrdinal: null,
   createdAt: serverCode.createdAt,
   startedAt: serverCode.createdAt,
   endedAt: serverCode.createdAt,
@@ -789,6 +790,7 @@ test("runs retain reader redaction and paginate ordered call metadata", async ()
 Laufinhalte erfordern Bearbeitungsrechte."
 `);
   const contents = {
+    firstRefusedCall: null,
     input: null,
     output: null,
     inputChunked: false,
@@ -799,6 +801,7 @@ Laufinhalte erfordern Bearbeitungsrechte."
         ordinal: 2,
         kind: "action",
         capability: "example.task.create",
+        refusalKind: null,
         call: null,
         result: null,
         callChunked: true,

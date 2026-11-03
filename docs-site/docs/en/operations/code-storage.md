@@ -5,7 +5,7 @@ section: Operations
 order: 1254
 description: Back up Code versions and understand run retention and storage budgets.
 tags: [operations, code, postgres]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Code storage
@@ -14,6 +14,13 @@ Core startup adds the Postgres schema `code`. Include it in the same backup
 as `auth` so owner identities, service accounts, grants, versions and run
 references remain consistent. The additive migration does not rewrite
 Assistant chats, settings or workflow records.
+
+Startup also adds nullable `code.calls.refusal_kind` and
+`code.runs.first_refused_call_ordinal`. Existing rows remain unclassified;
+there is no startup backfill or new configuration. New bridges commit a call's
+classification and the first target-refused ordinal together. Keep both tables
+in the same backup so that a refused call remains available after recovery,
+even when the runner crashed before completing its run.
 
 Source files and exact bundles live in Postgres with their immutable versions.
 They are not container files or runner caches. Configure their admission

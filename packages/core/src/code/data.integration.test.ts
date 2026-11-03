@@ -150,6 +150,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
 
   test("forward migration is idempotent on a filled DB and preserves pre-existing accounts", async () => {
     const before = await sql`SELECT * FROM code.codes ORDER BY id`;
+    // Upgrade a database that already applied the earlier pre-release four-kind constraint.
+    await sql`ALTER TABLE code.calls DROP CONSTRAINT calls_refusal_kind_check`;
+    await sql`ALTER TABLE code.calls ADD CONSTRAINT calls_refusal_kind_check
+      CHECK (refusal_kind IN ('target_refused','policy','app_not_allowed','bridge'))`;
     await migrateCode();
     await migrateCode();
     expect(await sql`SELECT * FROM code.codes ORDER BY id`).toEqual(before);
@@ -196,6 +200,93 @@ databaseSuite()("Core Code data and Query authorization", () => {
     );
     expect(second.ok && second.data.data.contents?.calls[0]?.ordinal).toBe(2);
   });
+  test("A3a commits the first target refusal with its call and restricts target coordinates to editors", async () => {
+    const refusedRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "weekly", input: null });
+    const target = { type: "example.item", id: "runtime-refused-target-id" };
+    await sql.begin(async (tx) => {
+      for (let n = 0; n < 4; n++)
+        await appendCodeCall(
+          {
+            runId: refusedRun,
+            kind: "action",
+            call: { capability: "example.item.update", target, refs: {}, input: { large: "x".repeat(17000) } },
+          },
+          tx,
+        );
+    });
+    await sql.begin(async (tx) => {
+      await finishCodeCall(
+        { runId: refusedRun, ordinal: 4, state: "failed", result: { ok: false }, refusalKind: "approval", endedAt: fixed },
+        tx,
+      );
+      const [run] = await tx`SELECT first_refused_call_ordinal FROM code.runs WHERE id=${refusedRun}::uuid`;
+      expect(run?.first_refused_call_ordinal).toBeNull();
+    });
+    const interrupted = new Error("crash before commit");
+    await expect(
+      sql.begin(async (tx) => {
+        await finishCodeCall(
+          { runId: refusedRun, ordinal: 2, state: "failed", result: { ok: false }, refusalKind: "target_refused", endedAt: fixed },
+          tx,
+        );
+        // Both facts are visible inside the same transaction, before runner completion.
+        const [run] = await tx`SELECT first_refused_call_ordinal FROM code.runs WHERE id=${refusedRun}::uuid`;
+        expect(run?.first_refused_call_ordinal).toBe(2);
+        throw interrupted;
+      }),
+    ).rejects.toBe(interrupted);
+    const [rolledBack] =
+      await sql`SELECT r.first_refused_call_ordinal,c.state,c.refusal_kind FROM code.runs r JOIN code.calls c ON c.run_id=r.id
+      WHERE r.id=${refusedRun}::uuid AND c.ordinal=2`;
+    expect(rolledBack).toMatchObject({ first_refused_call_ordinal: null, state: "running", refusal_kind: null });
+    await sql.begin(async (tx) => {
+      for (const ordinal of [3, 2])
+        await finishCodeCall(
+          {
+            runId: refusedRun,
+            ordinal,
+            state: "failed",
+            result: { ok: false },
+            refusalKind: "target_refused",
+            endedAt: fixed,
+          },
+          tx,
+        );
+      await finishCodeCall(
+        { runId: refusedRun, ordinal: 1, state: "failed", result: { ok: false }, refusalKind: "policy", endedAt: fixed },
+        tx,
+      );
+    });
+    // No completion update is needed: a crashed/running run already carries the fact.
+    for (const id of [ids.owner, ids.editor, ids.reader, ids.admin]) {
+      const c = context(id, id === ids.admin);
+      const response = await aiCapabilities.queries["code.run.read"].run(
+        { codeId: code.id, runId: refusedRun, cursor: 0, offset: 0, length: 16384 },
+        c,
+      );
+      if (!response.ok) throw new Error("run query failed");
+      expect(codeQueryContracts.runRead.data.safeParse(response.data.data).success).toBe(true);
+      expect(response.data.data.run.firstRefusedCallOrdinal).toBe(2);
+      if (id === ids.reader || id === ids.admin) {
+        expect(response.data.data.contents).toBeNull();
+        expect(JSON.stringify(response)).not.toContain(target.id);
+      } else {
+        // The refused call is outside this call page and its full input is chunked.
+        expect(response.data.data.contents?.calls[0]).toMatchObject({ ordinal: 1, refusalKind: "policy", call: null, callChunked: true });
+        expect(response.data.data.contents?.firstRefusedCall).toEqual({
+          ordinal: 2,
+          kind: "action",
+          capability: "example.item.update",
+          target,
+        });
+      }
+      const list = await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, c);
+      if (!list.ok) throw new Error("run list failed");
+      expect(list.data.data.items.find((item) => item.id === refusedRun)?.firstRefusedCallOrdinal).toBe(2);
+      expect(JSON.stringify(list)).not.toContain(target.id);
+    }
+  });
+
   test("a Code account itself sees none of the five Queries, even with an accidental direct grant", async () => {
     const resource = await createCode(
       { owner: { kind: "resource", ref: { type: "example.mailbox", id: "own-account" } }, title: "Resource" },
