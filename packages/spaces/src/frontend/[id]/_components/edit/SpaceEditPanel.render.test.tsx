@@ -250,26 +250,24 @@ describe("Spaces settings: Access", () => {
       createComponent(LocaleProvider, {
         locale: "en",
         get children() {
-          return createComponent(PermissionsSection, { spaceId, accessEntries });
+          return createComponent(PermissionsSection, { spaceId, spaceName: "Launch", accessEntries });
         },
       }),
     );
-  // The editor marks the only manager's remove button with the reason it cannot be removed.
-  const lockedRows = (html: string) => html.match(/aria-description=/g)?.length ?? 0;
-
-  test("shows an agent that manages the space, so a person managing next to it is not locked", () => {
+  test("lists who may use the space, agents included, and edits it in the access dialog", () => {
     const html = renderAccess([person, agent, apiKey]);
 
     expect(html).toContain("Ada Lovelace");
     expect(html).toContain("Triage agent");
     expect(html).toContain("(Agent)");
-    expect(lockedRows(html)).toBe(0);
+    expect(html).toContain("Edit access");
+    // The list only shows what is stored; changing it happens in the dialog.
+    expect(html).not.toContain("Remove Ada Lovelace");
   });
 
-  test("keeps API keys in their own section and does not count them as managers", () => {
+  test("keeps API keys in their own section, so the dialog never counts them as managers", () => {
     const html = renderAccess([person, apiKey]);
 
     expect(html).not.toContain("Launch API keys");
-    expect(lockedRows(html)).toBe(1);
   });
 });
