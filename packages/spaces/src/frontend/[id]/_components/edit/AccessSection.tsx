@@ -1,43 +1,66 @@
-import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
-import { SettingsGroup } from "@k2b/ui";
+import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import type { Principal } from "@k2b/cloud/contracts";
+import { Button, prompts, SettingsGroup } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import { readErrorMessage } from "./utils";
 
-export function PermissionsSection(props: { spaceId: string; accessEntries: AccessEntry[]; onWorkspaceChange?: () => void }) {
+/** Object keys have their own tab; every other grant, agents included, belongs to who may use the space. */
+const visibleEntries = (entries: AccessEntry[]) => entries.filter((entry) => entry.serviceAccountKind !== "resource_bound");
+
+export function PermissionsSection(props: {
+  spaceId: string;
+  spaceName: string;
+  accessEntries: AccessEntry[];
+  onWorkspaceChange?: () => void;
+}) {
   const m = useSpaceMessages();
+  const [entries, setEntries] = createSignal(visibleEntries(props.accessEntries));
+  const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
+    const res = await apiClient[":id"].access.$post({ param: { id: props.spaceId }, json: { principal, permission } });
+    if (!res.ok) throw new Error(await readErrorMessage(res, m.grantAccessFailed));
+    return await res.json();
+  };
+  const updateAccess = async (accessId: string, permission: GrantableLevel) => {
+    const res = await apiClient[":id"].access[":accessId"].$patch({ param: { id: props.spaceId, accessId }, json: { permission } });
+    if (!res.ok) throw new Error(await readErrorMessage(res, m.updatePermissionFailed));
+  };
+  const revokeAccess = async (accessId: string) => {
+    const res = await apiClient[":id"].access[":accessId"].$delete({ param: { id: props.spaceId, accessId } });
+    if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeAccessFailed));
+  };
+  // Changes are collected in the dialog and saved together; the list here shows what is stored.
+  const edit = async () => {
+    const saved = await openAccessDialog({
+      resourceName: props.spaceName,
+      subtitle: m.accessDialogSubtitle,
+      initialEntries: entries(),
+      grantAccess,
+      updateAccess,
+      revokeAccess,
+    });
+    if (!saved) return;
+    const res = await apiClient[":id"].access.$get({ param: { id: props.spaceId } });
+    props.onWorkspaceChange?.();
+    if (!res.ok) throw new Error(await readErrorMessage(res, m.loadPermissionsFailed));
+    setEntries(visibleEntries(await res.json()));
+  };
   return (
     <SettingsGroup title={m.peopleAndGroups} description={m.accessDescription}>
+      <SettingsGroup.Action>
+        <Button size="sm" variant="secondary" onClick={() => void edit().catch((error: Error) => prompts.error(error.message))}>
+          <i class="ti ti-pencil" aria-hidden="true" />
+          {m.editAccess}
+        </Button>
+      </SettingsGroup.Action>
       <PermissionEditor
-        // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-        initialEntries={props.accessEntries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
-        canEdit
-        grantAccess={async (principal, permission) => {
-          const res = await apiClient[":id"].access.$post({
-            param: { id: props.spaceId },
-            json: { principal, permission },
-          });
-          if (!res.ok) throw new Error(await readErrorMessage(res, m.grantAccessFailed));
-          const entry = await res.json();
-          props.onWorkspaceChange?.();
-          return entry;
-        }}
-        updateAccess={async (accessId, permission) => {
-          const res = await apiClient[":id"].access[":accessId"].$patch({
-            param: { id: props.spaceId, accessId },
-            json: { permission },
-          });
-          if (!res.ok) throw new Error(await readErrorMessage(res, m.updatePermissionFailed));
-          props.onWorkspaceChange?.();
-        }}
-        revokeAccess={async (accessId) => {
-          const res = await apiClient[":id"].access[":accessId"].$delete({
-            param: { id: props.spaceId, accessId },
-          });
-          if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeAccessFailed));
-          props.onWorkspaceChange?.();
-        }}
+        initialEntries={entries()}
+        canEdit={false}
+        grantAccess={grantAccess}
+        updateAccess={updateAccess}
+        revokeAccess={revokeAccess}
       />
     </SettingsGroup>
   );

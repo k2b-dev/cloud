@@ -1,8 +1,7 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts, toast } from "@k2b/ui";
-import { Show } from "solid-js";
+import { mutation as mutations } from "@k2b/stdlib/solid";
+import { Dropdown, prompts, toast } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../[id]/messages";
@@ -24,82 +23,35 @@ const readErrorMessage = async (response: Pick<Response, "json">, fallback: stri
   return fallback;
 };
 
-const PermissionDialogContent = (props: AdminSpaceActionsProps) => {
-  const m = useSpaceMessages();
-  const permissions = query.create<string, AccessEntry[]>({
-    source: () => props.spaceId,
-    load: async (spaceId, { abortSignal }) => {
-      const response = await apiClient.admin[":id"].access.$get({ param: { id: spaceId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readErrorMessage(response, m.adminLoadPermissionsFailed));
-      return response.json();
+const openPermissionDialog = async (props: AdminSpaceActionsProps, m: ReturnType<typeof useSpaceMessages>) => {
+  const response = await apiClient.admin[":id"].access.$get({ param: { id: props.spaceId } });
+  if (!response.ok) throw new Error(await readErrorMessage(response, m.loadPermissionsFailed));
+  await openAccessDialog({
+    resourceName: props.spaceName,
+    subtitle: m.accessDialogSubtitle,
+    initialEntries: await response.json(),
+    grantAccess: async (principal, permission) => {
+      const response = await apiClient.admin[":id"].access.$post({
+        param: { id: props.spaceId },
+        json: { principal, permission },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.adminGrantAccessFailed));
+      return (await response.json()) as AccessEntry;
+    },
+    updateAccess: async (accessId, permission) => {
+      const response = await apiClient.admin[":id"].access[":accessId"].$patch({
+        param: { id: props.spaceId, accessId },
+        json: { permission },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.adminUpdateAccessFailed));
+    },
+    revokeAccess: async (accessId) => {
+      const response = await apiClient.admin[":id"].access[":accessId"].$delete({
+        param: { id: props.spaceId, accessId },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.adminRevokeAccessFailed));
     },
   });
-
-  return (
-    <Show
-      when={permissions.data()}
-      fallback={
-        permissions.error() ? (
-          <Placeholder
-            state="error"
-            variant="compact"
-            title={m.adminPermissionsUnavailable}
-            description={permissions.error()!.message}
-            action={
-              <Button type="button" variant="secondary" size="sm" onClick={() => void permissions.refresh()}>
-                {m.retry}
-              </Button>
-            }
-          />
-        ) : (
-          <Placeholder state="loading" variant="compact" title={m.adminPermissionsLoading} />
-        )
-      }
-    >
-      {(entries) => (
-        <PermissionEditor
-          initialEntries={entries()}
-          canEdit
-          grantAccess={async (principal, permission) => {
-            const response = await apiClient.admin[":id"].access.$post({
-              param: { id: props.spaceId },
-              json: { principal, permission },
-            });
-            if (!response.ok) throw new Error(await readErrorMessage(response, m.adminGrantAccessFailed));
-            return (await response.json()) as AccessEntry;
-          }}
-          updateAccess={async (accessId, permission) => {
-            const response = await apiClient.admin[":id"].access[":accessId"].$patch({
-              param: { id: props.spaceId, accessId },
-              json: { permission },
-            });
-            if (!response.ok) throw new Error(await readErrorMessage(response, m.adminUpdateAccessFailed));
-          }}
-          revokeAccess={async (accessId) => {
-            const response = await apiClient.admin[":id"].access[":accessId"].$delete({
-              param: { id: props.spaceId, accessId },
-            });
-            if (!response.ok) throw new Error(await readErrorMessage(response, m.adminRevokeAccessFailed));
-          }}
-        />
-      )}
-    </Show>
-  );
-};
-
-const openPermissionDialog = async (props: AdminSpaceActionsProps, m: ReturnType<typeof useSpaceMessages>) => {
-  await prompts.dialog<void>(
-    (_close) => (
-      <div class="w-full max-w-full flex flex-col gap-3">
-        <p class="text-xs text-dimmed">{m.adminManageAccess}</p>
-        <PermissionDialogContent {...props} />
-      </div>
-    ),
-    {
-      title: props.spaceName,
-      icon: "ti ti-shield",
-    },
-  );
 };
 
 const AdminSpaceActions = (props: AdminSpaceActionsProps) => {
@@ -117,6 +69,11 @@ const AdminSpaceActions = (props: AdminSpaceActionsProps) => {
       toast.success(m.spaceDeleted);
       refreshCurrentPath();
     },
+    onError: (err) => prompts.error(err.message),
+  });
+  // Loading the stored entries shows on the trigger; a failure says why instead of opening an empty dialog.
+  const permissionsMutation = mutations.create<void, void>({
+    mutation: () => openPermissionDialog(props, m),
     onError: (err) => prompts.error(err.message),
   });
   let deletePromptPending = false;
@@ -146,7 +103,7 @@ const AdminSpaceActions = (props: AdminSpaceActionsProps) => {
             {
               icon: "ti ti-shield",
               label: m.permissions,
-              action: () => void openPermissionDialog(props, m),
+              action: () => void (permissionsMutation.loading() || permissionsMutation.mutate()),
             },
           ],
         },
@@ -163,7 +120,11 @@ const AdminSpaceActions = (props: AdminSpaceActionsProps) => {
       ]}
     >
       <Dropdown.Trigger iconOnly label={m.actionsForSpace({ name: props.spaceName })} size="sm" class="h-7 w-7" tooltip={m.spaceActions}>
-        <i class={deleteMutation.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
+        <i
+          class={
+            deleteMutation.loading() || permissionsMutation.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"
+          }
+        />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );
