@@ -220,6 +220,8 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     if (credentials.requestId) headers.set("x-request-id", credentials.requestId);
     if (init.body !== undefined) headers.set("content-type", "application/json");
     try {
+      // The app ingress guard has already checked the browser's mutation.
+      if (credentials.cookie) headers.set("origin", publicCloudOrigin(await get<string>("app.url")));
       const response = await doFetch(
         new URL(
           `/api/admin/sync/${encodeURIComponent(app.id)}${path}`,

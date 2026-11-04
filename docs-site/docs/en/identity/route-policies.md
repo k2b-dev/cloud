@@ -5,7 +5,7 @@ section: Identity and access
 order: 318
 description: Choose who may enter an API or SSR route before the service checks its resource.
 tags: [identity, middleware, routes, policies]
-updated: 2026-09-04
+updated: 2026-10-31
 ---
 
 # Route policies
@@ -15,6 +15,78 @@ See [Who may do what](/en/docs/identity/access-model) for the access model.
 A route policy decides which kind of caller may reach a handler.
 
 It does not decide whether that caller may read or change a resource.
+
+## Send browser mutations from the Cloud origin
+
+Every application started with `app.start()` checks cookie-bearing `POST`,
+`PUT`, `PATCH` and `DELETE` requests before dispatching any route. The `Origin`
+header must exactly equal the public origin of the stored `app.url` setting.
+A missing or `null` Origin, another origin, or `Sec-Fetch-Site: same-site` or
+`cross-site` receives `403 INVALID_ORIGIN`. This includes Core, third-party
+apps, logout, sign-out-others, SSR actions and read-only POSTs. Cookie-bearing
+WebSocket upgrades require the same origin check before session authentication.
+On refusal, the runtime removes session authority. Live sockets receive
+`forbidden_origin` and close with `1008`, so clients stop retrying.
+
+Both `session_token` and `pwa_session` trigger the check, even when a cookie
+has expired. The check applies before body parsing, including bodyless,
+form-encoded, multipart and `text/plain` requests. Consequently, a handler
+that reads JSON directly with `req.json()` cannot bypass this boundary by
+accepting a simple content type. Keep body validation appropriate to the API;
+the origin check also protects routes that intentionally accept other bodies.
+
+Browsers send Origin on same-origin POSTs. For native POST forms, use
+`Referrer-Policy: same-origin`: `no-referrer` can make their Origin `null`.
+Do not substitute Referer, the request's internal upstream URL, Host or
+forwarding headers for the configured public origin.
+
+An explicit Bearer credential uses its own authentication and scope checks.
+The runtime removes attached Cloud session cookies before dispatch, so an
+invalid Bearer credential cannot fall back to a signed-in browser.
+
+### Declare a protocol that never uses a Cloud session
+
+Use `sessionlessRoutes` only for narrow paths that validate their own
+credential, such as a WOPI access token, a signed webhook, a share token or an
+OAuth protocol endpoint. Declare public entry separately when the application
+has an access policy:
+
+```ts
+defineApp({
+  // ...the application's declaration
+  access: appAccess.signedIn({ publicRoutes: ["/api/inventory/hooks/:token"] }),
+  sessionlessRoutes: ["/api/inventory/hooks/:token"],
+});
+```
+
+On these paths, the runtime removes both Cloud session cookies on **every
+method**, before authentication, application access and handler dispatch.
+Other cookies, including protocol-specific grants, remain available. The
+route must validate its own credential and reject a missing or invalid one;
+declaring a path grants no authority. Path templates use Hono's route syntax.
+Keep them limited to the protocol endpoints rather than a whole application.
+
+`access.publicRoutes` alone does not bypass the origin guard. Never declare
+ordinary account actions, OAuth consent or device approval forms as
+sessionless. Existing protocol-specific origin checks still apply, including
+the registered authenticator origin for signed app-approval commands.
+
+The separate `app.public` surface on an assigned app domain never receives
+Cloud session authority. Its reserved framework entry removes Cloud session
+cookies before dispatch, and the public handler strips every Cloud credential cookie.
+This does not exempt ordinary `access.publicRoutes`.
+
+The trusted server capability client supplies the canonical Origin when it
+forwards a session to Core, including SSR reads carried as POST. The originating
+application's runtime has already checked incoming browser mutations. Custom
+server transports forwarding session cookies must do the same; use the public
+client rather than reconstructing credential forwarding. Forward a session to a
+capability action only from a handler reached by a guarded mutation method, never
+from a GET or socket handler.
+
+OAuth end-session navigation (`GET /oauth/logout`) displays a confirmation
+without changing the session. Its same-origin form submits `POST /oauth/logout`;
+the registered post-logout redirect is checked after confirmation.
 
 ## Choose a policy
 

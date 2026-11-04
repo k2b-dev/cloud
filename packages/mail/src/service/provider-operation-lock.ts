@@ -34,6 +34,12 @@ export type ProviderLeasePriority = "sync" | "command" | "background";
 // difference, 30 seconds per step. Commands and other work alternate over this natural order.
 const LEASE_HEAD_START_MS: Record<ProviderLeasePriority, number> = { sync: 60_000, command: 30_000, background: 0 };
 
+// A waiter that asks to age ranks as a command once it has waited this long: by then it has let
+// every folder sync that started waiting after it go first for the whole head start that syncs
+// have over background work. Longer waits come only from the length of the line, which grows with
+// the account's folders, so from then on it alternates with the other work like a command.
+const LEASE_AGING_MS = LEASE_HEAD_START_MS.sync - LEASE_HEAD_START_MS.background;
+
 // Waiters retry while they wait, the next in line most often. A waiter counts as present until
 // its retry is due plus a grace for a busy job queue; the turn goes to the first present waiter,
 // so one that comes back late does not keep a free lease from the others. It keeps its place
@@ -81,11 +87,14 @@ const BREAKER_JITTER_FRACTION = 0.25;
 const BREAKER_OPEN = 1;
 const BREAKER_PROBE = 2;
 
-// KEYS: places, presence, breaker, priorities, and last turn, all for one mailbox. ARGV:
+// KEYS: places, presence, breaker, priorities, last turn, and entry times, all for one mailbox. ARGV:
 // waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL, breaker
-// memory, priority. Registers the waiter, keeping the better of its earlier place and the new
-// one, and returns its position among present waiters, when it should retry, whether the
-// breaker is open, remembers a window that ended, or neither, and its place.
+// memory, priority, aging (milliseconds, or 0 for none). Registers the waiter, keeping the better
+// of its earlier place and the new one, and returns its position among present waiters, when it
+// should retry, whether the breaker is open, remembers a window that ended, or neither, its
+// place, and the priority it ranks with: `command` once an aging waiter has waited long enough.
+// An aging waiter's wait counts from its first ask, not from its place, which also moves with the
+// priority it asks with.
 const enterLeaseLineScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
@@ -95,9 +104,17 @@ const enterLeaseLineScript = `
     redis.call("ZREM", KEYS[1], waiter)
     redis.call("ZREM", KEYS[2], waiter)
     redis.call("HDEL", KEYS[4], waiter)
+    redis.call("HDEL", KEYS[6], waiter)
   end
   redis.call("ZADD", KEYS[1], "LT", now - tonumber(ARGV[2]), ARGV[1])
-  redis.call("HSET", KEYS[4], ARGV[1], ARGV[9])
+  local priority = ARGV[9]
+  local aging = tonumber(ARGV[10])
+  if aging > 0 then
+    redis.call("HSETNX", KEYS[6], ARGV[1], now)
+    if now - tonumber(redis.call("HGET", KEYS[6], ARGV[1])) >= aging then priority = "command" end
+    redis.call("PEXPIRE", KEYS[6], placeTtl)
+  end
+  redis.call("HSET", KEYS[4], ARGV[1], priority)
   local function class(priority)
     if priority == "command" then return "command" end
     if priority == "sync" or priority == "background" then return "other" end
@@ -148,7 +165,7 @@ const enterLeaseLineScript = `
   redis.call("PEXPIRE", KEYS[1], placeTtl)
   redis.call("PEXPIRE", KEYS[2], placeTtl)
   redis.call("PEXPIRE", KEYS[4], placeTtl)
-  return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]) }
+  return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]), priority }
 `;
 
 // KEYS: the mailbox's breaker. ARGV: first window, longest window, jitter fraction. Doubles the
@@ -166,19 +183,20 @@ const openBreakerScript = `
 `;
 
 // One hash tag, so the line, its last turn, and the breaker of a mailbox live together.
-const leaseLineKeys = (resource: string): [string, string, string, string, string] => [
+const leaseLineKeys = (resource: string): [string, string, string, string, string, string] => [
   `mail:provider-lease-line:{${resource}}:places`,
   `mail:provider-lease-line:{${resource}}:present`,
   `mail:provider-lease-line:{${resource}}:breaker`,
   `mail:provider-lease-line:{${resource}}:priorities`,
   `mail:provider-lease-line:{${resource}}:turn`,
+  `mail:provider-lease-line:{${resource}}:entered`,
 ];
 
 /** Lines `waiter` up for the provider lease of `resource` with the script above and returns its reply. */
-const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority): Promise<unknown> =>
+const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority, ages: boolean): Promise<unknown> =>
   redis.send("EVAL", [
     enterLeaseLineScript,
-    "5",
+    "6",
     ...leaseLineKeys(resource),
     waiter,
     String(LEASE_HEAD_START_MS[priority]),
@@ -189,9 +207,10 @@ const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeas
     String(LEASE_PLACE_TTL_MS),
     String(BREAKER_MAX_WINDOW_MS),
     priority,
+    String(ages ? LEASE_AGING_MS : 0),
   ]);
 
-// KEYS: places, presence, priorities, last turn. ARGV: waiter, acquired priority or empty,
+// KEYS: places, presence, priorities, last turn, entry times. ARGV: waiter, acquired priority or empty,
 // place TTL, keep place. Record an acquired turn and leave the line together, unless the caller
 // needs to keep its place while taking another lock. Leaving later does not change the turn.
 const leaveLeaseLineScript = `
@@ -203,6 +222,7 @@ const leaveLeaseLineScript = `
     redis.call("ZREM", KEYS[1], ARGV[1])
     redis.call("ZREM", KEYS[2], ARGV[1])
     redis.call("HDEL", KEYS[3], ARGV[1])
+    redis.call("HDEL", KEYS[5], ARGV[1])
   end
 `;
 
@@ -211,14 +231,15 @@ const leaveLeaseLine = async (
   waiter: string,
   acquired?: { priority: ProviderLeasePriority; keepPlace?: boolean },
 ): Promise<void> => {
-  const [places, present, , priorities, turn] = leaseLineKeys(resource);
+  const [places, present, , priorities, turn, entered] = leaseLineKeys(resource);
   await redis.send("EVAL", [
     leaveLeaseLineScript,
-    "4",
+    "5",
     places,
     present,
     priorities,
     turn,
+    entered,
     waiter,
     acquired?.priority ?? "",
     String(LEASE_PLACE_TTL_MS),
@@ -231,6 +252,9 @@ export type ProviderLeaseTurn = { lock: Lock; place: number; retryAfterMs: null 
 // The lease with which this process probes a provider that timed out, or "taking" while it asks
 // for one, and until when it counts: a holder that never released it does not block probes past
 // its lease TTL.
+const leasePriority = (value: unknown, fallback: ProviderLeasePriority): ProviderLeasePriority =>
+  value === "sync" || value === "command" || value === "background" ? value : fallback;
+
 let probeLease: Lock | "taking" | null = null;
 let probeLeaseUntil = 0;
 
@@ -258,8 +282,10 @@ export const acquireProviderLease = async (params: {
   priority: ProviderLeasePriority;
   ttlMs: number;
   keepPlace?: boolean;
+  /** Ranks the waiter as a command once it has waited in line for the aging time above. */
+  ages?: boolean;
 }): Promise<ProviderLeaseTurn> => {
-  const reply = await enterLeaseLine(params.resource, params.waiter, params.priority);
+  const reply = await enterLeaseLine(params.resource, params.waiter, params.priority, params.ages === true);
   if (!Array.isArray(reply)) throw new Error("The provider lease line returned no position");
   const busy: ProviderLeaseTurn = { lock: null, retryAfterMs: Number(reply[1]) };
   const breaker = Number(reply[2]);
@@ -273,7 +299,9 @@ export const acquireProviderLease = async (params: {
   let lock: Lock | null = null;
   try {
     lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
-    if (lock) await leaveLeaseLine(params.resource, params.waiter, params);
+    // The turn counts with the priority the waiter ranked with, so an aged waiter's turn is a
+    // command turn and the other work goes next.
+    if (lock) await leaveLeaseLine(params.resource, params.waiter, { ...params, priority: leasePriority(reply[4], params.priority) });
   } catch (error) {
     if (lock) await releaseProviderLease(lock);
     lock = null;
@@ -350,6 +378,29 @@ export const providerLeaseWaitedForByOtherWork = async (resource: string): Promi
     .catch(() => true);
 };
 
+// KEYS: places, presence. ARGV: name prefix. Counts the present waiters whose name has the prefix.
+const presentWaitersScript = `
+  local time = redis.call("TIME")
+  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  local count = 0
+  for _, waiter in ipairs(redis.call("ZRANGE", KEYS[1], 0, -1)) do
+    if string.sub(waiter, 1, string.len(ARGV[1])) == ARGV[1] then
+      local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
+      if presentUntil and tonumber(presentUntil) >= now then count = count + 1 end
+    end
+  end
+  return count
+`;
+
+/** How many present waiters for the resource's lease have names starting with `prefix`; Valkey errors answer 0. */
+export const providerLeaseWaiterCount = async (resource: string, prefix: string): Promise<number> => {
+  const [places, present] = leaseLineKeys(resource);
+  return redis
+    .send("EVAL", [presentWaitersScript, "2", places, present, prefix])
+    .then((reply) => Number(reply) || 0)
+    .catch(() => 0);
+};
+
 /**
  * Releases a lease from `acquireProviderLease`. A job that continues passes `next` to line up
  * before letting go, so a job that asks between its turns does not take the lease just because
@@ -358,7 +409,7 @@ export const providerLeaseWaitedForByOtherWork = async (resource: string): Promi
  * a release that fails leaves the lease to expire.
  */
 export const releaseProviderLease = async (lock: Lock, next?: { waiter: string; priority: ProviderLeasePriority }): Promise<void> => {
-  if (next) await enterLeaseLine(lock.resource, next.waiter, next.priority).catch(() => undefined);
+  if (next) await enterLeaseLine(lock.resource, next.waiter, next.priority, false).catch(() => undefined);
   if (probeLease === lock) probeLease = null;
   await mailProviderOperationMutex()
     .release(lock)

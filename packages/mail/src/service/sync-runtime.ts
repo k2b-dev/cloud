@@ -26,7 +26,7 @@ import { imapSmtpConnector } from "./connectors";
 import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
-import { databaseErrorCode, databaseErrorConstraint, isPermanentDataError } from "./database-errors";
+import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -67,6 +67,7 @@ import {
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   providerLeaseWaitedForByOtherWork,
+  providerLeaseWaiterCount,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
@@ -2446,6 +2447,7 @@ export const syncFolderBatch = async (
     ttlMs: SYNC_LEASE_MS,
   });
   if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  await countServedFolderTurn(folder.remote_resource_id);
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
@@ -3014,12 +3016,15 @@ export const hydrateMessageBatch = async (
       // Backfill, later body batches and retries retain background rank, so importing old
       // mail cannot repeatedly displace envelope continuations and commands.
       // An explicitly requested body (for example by a workflow) ranks with commands.
+      // A mailbox's bodies age: on an account with hundreds of folders the line of folder syncs is
+      // longer than their head start, so without aging a body waits about a full round of them.
       const turn = await acquireProviderLease({
         resource: message.remote_resource_id,
         waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
         priority:
           "messageId" in ctx.input ? "command" : ctx.input.foregroundBodies && message.hydration_attempt === 0 ? "sync" : "background",
         ttlMs: SYNC_LEASE_MS,
+        ages: "mailboxId" in ctx.input,
       });
       if (!turn.lock)
         throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
@@ -3126,7 +3131,11 @@ export const hydrateMessageBatch = async (
                     if (code === "SYNC_LEASE_LOST" || code === "SYNC_JOB_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
                     if (code !== "HYDRATION_NOT_CLAIMED") {
                       settled.add(source.key);
-                      log.warn("Mail message hydration failed within a source batch", { messageId: source.key, code });
+                      log.warn("Mail message hydration failed within a source batch", {
+                        messageId: source.key,
+                        code,
+                        ...databaseErrorFacts(error),
+                      });
                       if (source.key === message.id && "messageId" in ctx.input) targetError = error;
                     }
                   } finally {
@@ -3243,11 +3252,16 @@ const startHydrationJob = async (): Promise<void> => {
       // Message failures are durable and bounded by their five hydration attempts. The next
       // scheduled pass retries them; a request made during this failed batch still gets a turn.
       if ("mailboxId" in ctx.input) {
-        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code });
+        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code, ...databaseErrorFacts(error) });
         return;
       }
       if (ctx.attempt >= HYDRATION_MAX_ATTEMPTS) {
-        log.error("Mail message hydration exhausted retries", { messageId: ctx.input.messageId, failureCount: ctx.failureCount, code });
+        log.error("Mail message hydration exhausted retries", {
+          messageId: ctx.input.messageId,
+          failureCount: ctx.failureCount,
+          code,
+          ...databaseErrorFacts(error),
+        });
       }
       throw error;
     } finally {
@@ -3513,14 +3527,67 @@ export const recoverInterruptedHydrations = async (): Promise<number> => {
 const DUE_FOLDER_SYNCS_PER_RUN = 500;
 const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
 
+// The folder batches that took a mailbox's lease in a minute: what its lease serves. While folder
+// jobs of the mailbox still wait, a scheduler run adds no more than the last minute served
+// beyond them, so a mailbox with more folders than its lease serves in a minute checks its other
+// folders in turn instead of keeping them all waiting and asking for the lease.
+const servedTurnsKey = (resource: string, minute: number): string => `mail:sync-served:{${resource}}:${minute}`;
+const SERVED_TURNS_TTL_MS = 3 * 60_000;
+const dueFolderCursorKey = (resource: string): string => `${DUE_FOLDER_CURSOR_KEY}:{${resource}}`;
+
+const countServedFolderTurn = async (resource: string): Promise<void> => {
+  const key = servedTurnsKey(resource, Math.floor(Date.now() / 60_000));
+  await redis
+    .send("INCR", [key])
+    .then(() => redis.send("PEXPIRE", [key, String(SERVED_TURNS_TTL_MS)]))
+    .catch(() => undefined);
+};
+
+/**
+ * The other folders of each mailbox this run may add, taken in turn by folder id after the ones
+ * the last run took. While folder jobs of the mailbox wait, as many as its lease served in the last
+ * full minute beyond those that wait. While none waits, twice what it served, so a mailbox finds
+ * out what its lease can serve without asking all its folders at once. At least one per run, so
+ * each folder gets its turn even under a lasting backlog. Without a measured minute, for example
+ * after a restart, every folder.
+ */
+const boundDueFolders = async <F extends { id: string; remote_resource_id: string; inbox: boolean }>(folders: F[]): Promise<F[]> => {
+  const byResource = new Map<string, F[]>();
+  for (const folder of folders) {
+    if (folder.inbox) continue;
+    const group = byResource.get(folder.remote_resource_id) ?? [];
+    group.push(folder);
+    byResource.set(folder.remote_resource_id, group);
+  }
+  const lastMinute = Math.floor(Date.now() / 60_000) - 1;
+  const left = new Set<string>();
+  for (const [resource, group] of byResource) {
+    const served = Number(await redis.get(servedTurnsKey(resource, lastMinute)).catch(() => null)) || 0;
+    const waiting = await providerLeaseWaiterCount(resource, "sync-folder:");
+    if (served === 0 && waiting === 0) continue;
+    // At least one: under a lasting backlog each folder still gets its turn within as many runs.
+    const room = Math.max(1, waiting > 0 ? served - waiting : 2 * served);
+    if (room >= group.length) continue;
+    const after = (await redis.get(dueFolderCursorKey(resource)).catch(() => null)) ?? "";
+    const ordered = group.toSorted((a, b) => a.id.localeCompare(b.id));
+    const start = ordered.findIndex((folder) => folder.id > after);
+    const turn = start < 0 ? ordered : [...ordered.slice(start), ...ordered.slice(0, start)];
+    const taken = turn.slice(0, room);
+    for (const folder of turn.slice(room)) left.add(folder.id);
+    const last = taken.at(-1);
+    if (last) await redis.set(dueFolderCursorKey(resource), last.id).catch(() => undefined);
+  }
+  return folders.filter((folder) => !left.has(folder.id));
+};
+
 /**
  * Queues every eligible Inbox, then the next eligible folders after the one the previous run
  * stopped at, wrapping around to the first folder. Returns the queued folder ids in that order.
  */
 export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Promise<string[]> => {
   const after = (await redis.get(DUE_FOLDER_CURSOR_KEY)) ?? "00000000-0000-0000-0000-000000000000";
-  const folders = await sql<{ id: string }[]>`
-    SELECT f.id
+  const folders = await sql<{ id: string; remote_resource_id: string; inbox: boolean }[]>`
+    SELECT f.id, f.remote_resource_id, f.role = 'inbox' AS inbox
     FROM mail.folders f
     JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
     JOIN mail.mailboxes m ON m.id = rr.mailbox_id
@@ -3551,7 +3618,10 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
     folders.length > 0 && folders.length < limit
       ? await redis.mget(...folders.map((folder) => recentRequestKey(folder.id))).catch(() => [])
       : [];
-  const due = folders.filter((_folder, index) => recent[index] == null);
+  const unrequested = folders.filter((_folder, index) => recent[index] == null);
+  // Likewise only a run that reaches every eligible folder bounds a mailbox: within a page, its
+  // turn would keep landing on the same folders.
+  const due = folders.length < limit ? await boundDueFolders(unrequested) : unrequested;
   for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled");
   return due.map((folder) => folder.id);
 };

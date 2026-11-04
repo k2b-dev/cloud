@@ -71,6 +71,7 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
@@ -279,6 +280,14 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    * /app/<id> ownership and the reserved /pwa paths.
    */
   routes: readonly string[];
+  /**
+   * Narrow protocol paths authenticated by their own credential (for example
+   * WOPI access_token or a signed webhook). The runtime removes web and app
+   * session cookies before ANY handler on these paths, on every method.
+   * This never grants access: the handler must validate its own credential.
+   * Ordinary publicRoutes retain the mandatory cookie Origin guard.
+   */
+  sessionlessRoutes?: readonly string[];
   /** Platform services requested by this application, visible to administrators. */
   platformPermissions?: readonly PlatformPermission[];
   /**
@@ -920,6 +929,7 @@ export const defineApp = <
       const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
       const publicSurface = createPublicSurfaceHandler(opts.public ? publicRouter : undefined, isDevelopment);
       const server = new Hono<AuthContext>()
+        .use("*", sessionOriginGuard(opts.sessionlessRoutes))
         .all(PUBLIC_SURFACE_PREFIX, publicSurface)
         .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)

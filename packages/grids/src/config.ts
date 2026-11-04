@@ -4,6 +4,12 @@ import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "grids",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: [
+    "/api/grids/forms/public/:token",
+    "/api/grids/forms/public/:token/submit",
+    "/api/grids/forms/public/:token/relations/:fieldId/lookup",
+  ],
   // Resource-bound and roleless service accounts remain eligible.
   access: appAccess.noGuests({
     publicRoutes: [

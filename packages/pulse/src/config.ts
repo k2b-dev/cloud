@@ -4,6 +4,8 @@ import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "pulse",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: ["/api/pulse/ingest"],
   // Resource-bound and roleless service accounts remain eligible.
   access: appAccess.noGuests({
     // Source keys and dashboard publication tokens retain their own domain checks.

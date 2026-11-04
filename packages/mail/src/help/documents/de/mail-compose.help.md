@@ -88,7 +88,8 @@ Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich 
 
 Entwürfe liegen in Cloud als gemeinsame Entwürfe.
 
-- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen. Die Zahl steht im Kopf des Arbeitsbereichs. Jede Zeile beginnt mit dem Betreff und zeigt Empfänger, eine Vorschau, Bearbeitungszeit und erstellende Person.
+- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen. Die Zahl steht im Kopf des Arbeitsbereichs. Jeder Entwurf sieht aus wie eine Zeile einer Unterhaltung: Die Empfänger stehen dort, wo sonst der Absender steht. Vor dem Betreff steht ein oranges Tag **Entwurf**. Die Zeile zeigt die Vorschau, ein Zeichen für Anhänge und die Bearbeitungszeit. In der Spaltenansicht zeigt die Spalte **Begonnen von**, wer den Entwurf begonnen hat.
+- **Aus der Liste löschen:** Öffne das Menü **…** des Entwurfs oder das Kontextmenü der Zeile (rechte Maustaste). Wähle dann **Entwurf löschen**. Ist die Zeile fokussiert, kannst du auch Entf oder die Rücktaste drücken. Mail fragt, bevor es den Entwurf löscht. Der Entwurf bleibt, wenn jemand ihn gerade im Editor offen hat oder ihn inzwischen geändert hat. Mail sagt dir dann, warum. Geplante Entwürfe und Entwürfe, die gerade gesendet werden, stehen nicht in diesem Ordner. Brich sie zuerst im **Postausgang** ab.
 - **Hinweis bei Antworten:** Eine Unterhaltung mit Entwürfen zeigt einen Hinweis an der Antwortaktion.
 - **CLI:** `cld mail draft list` listet diese Entwürfe, zusammen mit geplanten Entwürfen und Entwürfen, die gerade gesendet werden.
 - **Kopie beim Anbieter:** Erlaubt es der Anbieter, legt Mail von jedem Entwurf eine Kopie im Entwürfe-Ordner des Anbieters ab, sodass andere E-Mail-Programme ihn zeigen. Entwürfe, die ein anderes E-Mail-Programm dort speichert, erscheinen in Mail als gemeinsame Entwürfe.
@@ -106,7 +107,7 @@ Wurde der Entwurf schon gesendet oder verworfen, erscheint ein späteres Speiche
 Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffnete Editor den aktuellen Zustand des Entwurfs neu. Er hört auf zu speichern und verlängert die Bearbeitungssperre nicht mehr. Der Editor bleibt schreibgeschützt und erlaubt kein zweites Senden und keine Übernahme. Nicht gespeicherter lokaler Text bleibt sichtbar. Du kannst ihn kopieren oder als neuen unabhängigen Entwurf speichern. Gehört die ursprüngliche Nachricht zu einer Unterhaltung, führt **Nachricht öffnen** dorthin zurück.
 
 :::warning Entwurf verwerfen entfernt den Entwurf für alle
-**Entwurf verwerfen** entfernt den gemeinsamen Entwurf für alle mit Zugriff auf das Postfach. Um den Entwurf zu behalten, kehre stattdessen zum Postfach zurück.
+**Entwurf verwerfen** im Editor und **Entwurf löschen** im Ordner Entwürfe entfernen den gemeinsamen Entwurf für alle mit Zugriff auf das Postfach. Um den Entwurf zu behalten, kehre stattdessen zum Postfach zurück.
 :::
 
 ## Signaturen und Textbausteine verwenden {icon="pencil"}

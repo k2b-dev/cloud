@@ -1,6 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
+import * as settings from "@k2b/cloud/services/settings";
 import { createSyncOpsService, isListedResource, type SyncResourceRow } from "./service";
+
+let settingsSpy: ReturnType<typeof spyOn<typeof settings, "get">>;
+beforeEach(() => {
+  settingsSpy = spyOn(settings, "get").mockResolvedValue("https://cloud.example.test/configured/path");
+});
+afterEach(() => settingsSpy.mockRestore());
 
 const app = (id: string, name = id): AppRegistryEntry => ({
   id,
@@ -147,6 +154,7 @@ describe("sync ops aggregation", () => {
     expect(new Set(calls.map((call) => new URL(call.url).origin))).toEqual(new Set(["http://core:3000"]));
     for (const call of calls) {
       expect(call.headers.get("cookie")).toBe("session_token=abc");
+      expect(call.headers.get("origin")).toBe("https://cloud.example.test");
       expect(call.headers.get("authorization")).toBeNull();
       expect(call.headers.get("x-request-id")).toBe("req-1");
     }
@@ -181,6 +189,7 @@ describe("sync ops aggregation", () => {
 
   test("routes mutations to the owning app and maps upstream errors", async () => {
     const { calls, fetch } = fakeFetch((call) => {
+      expect(call.headers.get("origin")).toBe("https://cloud.example.test");
       const url = new URL(call.url);
       if (url.pathname.endsWith("/requeue")) {
         return json({ receipt: { messageId: "m2", streamSequence: 7, duplicate: false }, idempotencyKey: "sync-ops:requeue:x" });

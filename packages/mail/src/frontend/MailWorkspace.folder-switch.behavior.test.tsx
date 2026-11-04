@@ -256,6 +256,8 @@ describe("Mail workspace folder switches", () => {
                 to: [],
                 cc: [],
                 bcc: [],
+                revision: 1,
+                attachmentCount: 0,
                 bodyPreview: "Preview",
                 createdByDisplayName: "Ada",
                 updatedAt: now,

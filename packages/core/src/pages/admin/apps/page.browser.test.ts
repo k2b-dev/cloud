@@ -327,7 +327,11 @@ test("domains: only an app with public pages has a Domains row; its column shows
   expect(await broken.locator("[data-domain-status]").innerText()).toContain("Zertifikat fehlgeschlagen");
   expect(await broken.innerText()).toContain("certificate has expired");
   const check = broken.getByRole("button", { name: "Prüfen bestand.example.de" });
+  const checking = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/check"));
   await check.click();
+  const headers = await (await checking).allHeaders();
+  expect(headers.cookie).toContain("session_token=fixture-session");
+  expect(headers.origin).toBe(new URL(fixture.url).origin);
   await page
     .getByRole("button", { name: "Prüfen bestand.example.de" })
     .getByText(/Erneut prüfen in \d+ s/)

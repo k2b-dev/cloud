@@ -38,6 +38,14 @@ const title = (html: string) => /<title>([^<]*)<\/title>/.exec(html)?.[1];
 const heading = (html: string) => /<h1 id="oauth-page-title"[^>]*>([^<]*)<\/h1>/.exec(html)?.[1];
 
 describe("OAuth authorization pages", () => {
+  test("end-session navigation asks for a POST and preserves the redirect for server validation", async () => {
+    const html = await renderAuthorizationState("logout", "en");
+    expect(text(html)).toContain("Sign out of Cloud in this browser?");
+    expect(html).toContain(
+      '<form method="post" action="/oauth/logout?client_id=reference&amp;post_logout_redirect_uri=https%3A%2F%2Fclient.example%2Fsigned-out"',
+    );
+    expect(text(html)).toContain("Stay signed in");
+  });
   test("every state is one centered card on the minimal layout, without Cloud chrome", async () => {
     for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
       for (const locale of ["en", "de"] as const) {

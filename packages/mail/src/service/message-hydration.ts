@@ -13,7 +13,7 @@ import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueF
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { isMailReceivedSinceSend, isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
-import { databaseErrorCode } from "./database-errors";
+import { databaseErrorFacts } from "./database-errors";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
 import { type MailActivityChange, mailLive } from "./live";
 import { assertMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
@@ -1173,17 +1173,10 @@ export const hydrateMessageFromSource = async (params: {
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
     } else {
-      // Names where a write failed, never what it wrote: SQLSTATE, the refused parameter or column.
-      // The rest of Postgres' context, such as the JSON line it could not parse, can quote content.
-      const refused = error as { where?: unknown; table?: unknown; column?: unknown } | null;
-      const parameter = typeof refused?.where === "string" ? /\bparameter \$(\d{1,4})\b/u.exec(refused.where)?.[1] : undefined;
       log.warn("Mail message hydration failed", {
         messageId: params.messageId,
         code: normalizeErrorCode(error),
-        ...(databaseErrorCode(error) ? { sqlState: databaseErrorCode(error) } : {}),
-        ...(parameter ? { parameter: Number(parameter) } : {}),
-        ...(typeof refused?.table === "string" ? { table: refused.table } : {}),
-        ...(typeof refused?.column === "string" ? { column: refused.column } : {}),
+        ...databaseErrorFacts(error),
       });
       const { failed, events } = await sql
         .begin(async (tx) => {

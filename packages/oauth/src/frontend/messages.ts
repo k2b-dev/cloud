@@ -4,6 +4,9 @@ export const oauthMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      signOut: "Sign out",
+      signOutHint: "Sign out of Cloud in this browser?",
+      cancelSignOut: "Stay signed in",
       client: "Client",
       registration: "Registration",
       description: "Description",
@@ -185,6 +188,9 @@ export const oauthMessages = i18n.define({
       deviceEnterAnother: "Enter another code",
     },
     de: {
+      signOut: "Abmelden",
+      signOutHint: "In diesem Browser von Cloud abmelden?",
+      cancelSignOut: "Angemeldet bleiben",
       client: "Client",
       registration: "Registrierung",
       description: "Beschreibung",
