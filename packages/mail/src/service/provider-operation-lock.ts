@@ -378,6 +378,29 @@ export const providerLeaseWaitedForByOtherWork = async (resource: string): Promi
     .catch(() => true);
 };
 
+// KEYS: places, presence. ARGV: name prefix. Counts the present waiters whose name has the prefix.
+const presentWaitersScript = `
+  local time = redis.call("TIME")
+  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  local count = 0
+  for _, waiter in ipairs(redis.call("ZRANGE", KEYS[1], 0, -1)) do
+    if string.sub(waiter, 1, string.len(ARGV[1])) == ARGV[1] then
+      local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
+      if presentUntil and tonumber(presentUntil) >= now then count = count + 1 end
+    end
+  end
+  return count
+`;
+
+/** How many present waiters for the resource's lease have names starting with `prefix`; Valkey errors answer 0. */
+export const providerLeaseWaiterCount = async (resource: string, prefix: string): Promise<number> => {
+  const [places, present] = leaseLineKeys(resource);
+  return redis
+    .send("EVAL", [presentWaitersScript, "2", places, present, prefix])
+    .then((reply) => Number(reply) || 0)
+    .catch(() => 0);
+};
+
 /**
  * Releases a lease from `acquireProviderLease`. A job that continues passes `next` to line up
  * before letting go, so a job that asks between its turns does not take the lease just because

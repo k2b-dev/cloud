@@ -211,8 +211,10 @@ Site cookies remain. The gateway forwards its trusted client-IP resolution,
 so `clientIp(c)` and application `rateLimit()` use the visitor's address.
 
 For methods other than GET, HEAD, and OPTIONS, an `Origin` must match the
-site's exact origin, including an explicit port. Requests marked `same-site`
-or `cross-site` by `Sec-Fetch-Site` receive `403`. This rule also applies to
+site's exact origin, including an explicit port. `Origin: null` passes only
+with `Sec-Fetch-Site: same-origin`: a page served with
+`Referrer-Policy: no-referrer` sends it with its own form posts. Requests marked
+`same-site` or `cross-site` by `Sec-Fetch-Site` receive `403`. This rule also applies to
 every WebSocket handshake. Server webhooks without either header pass.
 
 Requests have separate budgets per domain and client IP, derived from

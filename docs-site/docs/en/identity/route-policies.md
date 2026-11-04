@@ -21,8 +21,15 @@ It does not decide whether that caller may read or change a resource.
 Every application started with `app.start()` checks cookie-bearing `POST`,
 `PUT`, `PATCH` and `DELETE` requests before dispatching any route. The `Origin`
 header must exactly equal the public origin of the stored `app.url` setting.
-A missing or `null` Origin, another origin, or `Sec-Fetch-Site: same-site` or
-`cross-site` receives `403 INVALID_ORIGIN`. This includes Core, third-party
+One exception keeps a page's own forms working: a page served with
+`Referrer-Policy: no-referrer` sends `Origin: null` with its native form posts,
+so a missing or `null` Origin passes when the browser marks the request
+`Sec-Fetch-Site: same-origin`. Pages cannot set that header. WebSocket upgrades
+get no such exception: browsers always send their real Origin there. Another origin,
+`Sec-Fetch-Site: same-site` or `cross-site`, and a request with neither
+`Origin` nor `Sec-Fetch-Site` receive `403 INVALID_ORIGIN`. A client that is
+not a browser cannot show where it comes from; it uses a Bearer credential
+instead of a cookie. The check covers Core, third-party
 apps, logout, sign-out-others, SSR actions and read-only POSTs. Cookie-bearing
 WebSocket upgrades require the same origin check before session authentication.
 On refusal, the runtime removes session authority. Live sockets receive
