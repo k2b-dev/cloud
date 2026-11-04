@@ -63,7 +63,7 @@ type PermissionEditorProps = {
 
   /** Revoke an existing entry. Any entry can be revoked except the last
    *  manager: once exactly one entry manages the resource (`admin` for a
-   *  person, group, all signed-in users, or a standalone or agent service
+   *  person, group, all signed-in people, or a standalone or agent service
    *  account), its row can neither be lowered nor removed. */
   revokeAccess: (accessId: string) => Promise<void>;
 
@@ -77,7 +77,7 @@ type PermissionEditorProps = {
   /** Allow granting `public` access from this editor. */
   allowPublic?: boolean;
 
-  /** Allow granting access to every authenticated user. Defaults to
+  /** Allow granting access to every signed-in person, including guests. Defaults to
    *  true; resources with an explicit principal allowlist can disable it. */
   allowAuthenticated?: boolean;
 
@@ -698,7 +698,7 @@ function AccessEntryRow(props: {
                   : props.entry.principal.type === "group"
                     ? t().group
                     : props.entry.principal.type === "authenticated"
-                      ? (props.signedInDescription ?? t().signedInDescription)
+                      ? (props.signedInDescription ?? t().signedInPermission({ level: display().label.toLocaleLowerCase(locale()) }))
                       : props.entry.principal.type === "service_account"
                         ? (props.entry.serviceAccountKind && serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label) ||
                           t().standaloneServiceAccount

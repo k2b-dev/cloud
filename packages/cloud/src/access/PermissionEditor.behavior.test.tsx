@@ -655,7 +655,7 @@ describe("PermissionEditor last manager", () => {
     // The level menu of each row stays in the document as a closed popover.
     const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
     try {
-      expect(rowOf("Alle Benutzer einschließlich Gäste")).toBeDefined();
+      expect(rowOf("Alle angemeldeten Personen")).toBeDefined();
       expect(dom.root.textContent).not.toContain("All users (incl. guests)");
 
       expect(removeButton("Quentin Dorn").disabled).toBe(true);
@@ -1874,15 +1874,8 @@ describe("PermissionEditor principal names", () => {
       try {
         assertNoIds(dom.root);
         for (const label of locale === "en"
-          ? ["Unknown person", "Deleted group", "Unknown agent", "All users (including guests)", "Public", "finance-team"]
-          : [
-              "Unbekannte Person",
-              "Gelöschte Gruppe",
-              "Unbekannter Agent",
-              "Alle Benutzer einschließlich Gäste",
-              "Öffentlich",
-              "Finance-Team",
-            ])
+          ? ["Unknown person", "Deleted group", "Unknown agent", "All signed-in people", "Public", "finance-team"]
+          : ["Unbekannte Person", "Gelöschte Gruppe", "Unbekannter Agent", "Alle angemeldeten Personen", "Öffentlich", "Finance-Team"])
           expect(dom.root.textContent).toContain(label);
         const row = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
           row.textContent?.includes("Ada Example"),

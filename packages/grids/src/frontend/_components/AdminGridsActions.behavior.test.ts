@@ -48,7 +48,7 @@ for (const locale of ["en", "de"] as const) {
                 "Unknown person",
                 "Deleted group",
                 "Unknown agent or service account",
-                "All users (including guests)",
+                "All signed-in people",
                 "Public",
                 "Quentin Dorn",
               ]
@@ -56,7 +56,7 @@ for (const locale of ["en", "de"] as const) {
                 "Unbekannte Person",
                 "Gelöschte Gruppe",
                 "Unbekannter Agent oder unbekanntes Dienstkonto",
-                "Alle Benutzer einschließlich Gäste",
+                "Alle angemeldeten Personen",
                 "Öffentlich",
                 "Quentin Dorn",
               ];
