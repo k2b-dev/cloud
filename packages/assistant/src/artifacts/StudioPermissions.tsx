@@ -1,8 +1,8 @@
 import { type AccessDialogProps, type FoundServiceAccount, openAccessDialog } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
-import { NoticeCard } from "@k2b/ui";
-import { For, Show } from "solid-js";
+import { Button, InlineGuidance, NoticeCard } from "@k2b/ui";
+import { createResource, For, Show } from "solid-js";
 import type { artifactClient } from "./client";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { MachinePermissions } from "./MachinePermissions";
@@ -49,7 +49,8 @@ export type StudioAccessOptions = {
   viewerUserId?: string;
   locale: string;
   entries: AccessEntry[];
-  projects: StudioProjects;
+  /** Projects whose members can use the app; loaded inside the dialog, so a failure never blocks sharing. */
+  loadProjects: () => Promise<StudioProjects>;
   grant: (principal: Principal, level: "read" | "admin") => Promise<AccessEntry | null>;
   change: (id: string, level: "read" | "admin" | null) => Promise<unknown>;
   findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
@@ -107,6 +108,7 @@ export const openStudioAccess = (options: StudioAccessOptions) => openAccessDial
 /** What the access list alone does not say: how the app reaches Cloud, projects, public links, and machine rights. */
 export function StudioAccessNotes(props: StudioAccessOptions) {
   const t = () => artifactMessages.resolve([props.locale]).t;
+  const [projects, { refetch }] = createResource(() => props.loadProjects());
   return (
     <div class="flex flex-col gap-3">
       <NoticeCard tone="info" title={t().sharedCodeTitle} detail={t().sharedCodeHelp} />
@@ -116,10 +118,21 @@ export function StudioAccessNotes(props: StudioAccessOptions) {
       <Show when={!PUBLIC_APP_SHARING && props.entries.some((entry) => entry.principal.type === "public")}>
         <NoticeCard tone="warning" title={t().publicSharingOffTitle} detail={t().publicSharingOffHelp} />
       </Show>
-      <Show when={props.projects.length}>
+      <Show when={projects.loading}>
+        <InlineGuidance loading>{t().loading}</InlineGuidance>
+      </Show>
+      <Show when={projects.error}>
+        <InlineGuidance tone="danger">
+          {t().loadFailed}
+          <Button size="sm" variant="ghost" onClick={() => void refetch()}>
+            {t().retry}
+          </Button>
+        </InlineGuidance>
+      </Show>
+      <Show when={!projects.error && projects()?.length}>
         <NoticeCard tone="info" title={t().projectAccessTitle} detail={t().projectScriptsHelp}>
           <ul class="flex flex-col gap-1">
-            <For each={props.projects}>{(project) => <li>{project.name ?? t().inaccessibleProject}</li>}</For>
+            <For each={projects()}>{(project) => <li>{project.name ?? t().inaccessibleProject}</li>}</For>
           </ul>
         </NoticeCard>
       </Show>

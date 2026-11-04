@@ -60,7 +60,7 @@ describe("Studio sharing in the shared access dialog", () => {
       locale: overrides.lang ?? "de",
       viewerUserId: owner.principal.type === "user" ? owner.principal.userId : undefined,
       entries: [owner, mailboxCode],
-      projects: [],
+      loadProjects: async () => [],
       grant: async (principal, level) => {
         calls.push(`grant ${principal.type} ${level}`);
         return { id: "00000000-0000-4000-8000-000000000009", principal, permission: level, createdAt: "2026-11-04T12:00:00.000Z" };
@@ -170,7 +170,6 @@ describe("Studio sharing in the shared access dialog", () => {
     const open = spyOn(ui.dialogCore, "open");
     const access = Promise.withResolvers<AccessEntry[]>();
     const accessSpy = spyOn(artifactClient, "access").mockReturnValue(access.promise);
-    const projectsSpy = spyOn(artifactClient, "projects").mockResolvedValue([]);
     try {
       const props = studioAccessDialogProps({
         artifactId: "App234",
@@ -178,7 +177,7 @@ describe("Studio sharing in the shared access dialog", () => {
         published: true,
         locale: "en",
         entries: [owner],
-        projects: [],
+        loadProjects: async () => [],
         grant: async () => null,
         change: async () => {},
       });
@@ -213,9 +212,28 @@ describe("Studio sharing in the shared access dialog", () => {
     } finally {
       open.mockRestore();
       accessSpy.mockRestore();
-      projectsSpy.mockRestore();
       fetchSpy.mockRestore();
       dom.cleanup();
+    }
+  });
+
+  test("a failed project list keeps sharing usable and offers to try again", async () => {
+    let attempts = 0;
+    const ui = await setup({
+      lang: "en",
+      loadProjects: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("unavailable");
+        return [{ projectId: "project", shortId: "project", name: "Finance team" }];
+      },
+    });
+    try {
+      await waitFor(() => ui.dom.root.textContent?.includes("Could not load this content") === true, "the project error");
+      expect(ui.button("Add service account")).toBeDefined();
+      ui.button("Try again").click();
+      await waitFor(() => ui.dom.root.textContent?.includes("Finance team") === true, "the projects");
+    } finally {
+      await ui.cleanup();
     }
   });
 
@@ -224,7 +242,7 @@ describe("Studio sharing in the shared access dialog", () => {
       lang: "en",
       published: false,
       entries: [owner, publicEntry],
-      projects: [
+      loadProjects: async () => [
         { projectId: "project", shortId: "project", name: "Finance team" },
         { projectId: "private", shortId: null, name: null },
       ],

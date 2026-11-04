@@ -65,7 +65,7 @@ export function createArtifactActions(props: {
   onCleanup(() => owner.abort());
   const share = (item: ArtifactSummary) =>
     action(async () => {
-      const [entries, projects] = await Promise.all([artifactClient.access(item.id), artifactClient.projects(item.id)]);
+      const entries = await artifactClient.access(item.id);
       if (owner.signal.aborted) return;
       await openStudioAccess({
         signal: owner.signal,
@@ -75,7 +75,7 @@ export function createArtifactActions(props: {
         viewerUserId: props.userId,
         locale: locale(),
         entries,
-        projects,
+        loadProjects: () => artifactClient.projects(item.id),
         grant: (principal, level) => artifactClient.grant(item.id, principal, level),
         change: (id, level) => artifactClient.changeGrant(item.id, id, level),
       });

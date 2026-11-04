@@ -38,7 +38,7 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
   onCleanup(() => owner.abort());
   const permissions = (row: { id: string; title: string; published: boolean }) =>
     act(async () => {
-      const [entries, projects] = await Promise.all([artifactClient.admin.access(row.id), artifactClient.admin.projects(row.id)]);
+      const entries = await artifactClient.admin.access(row.id);
       if (owner.signal.aborted) return;
       await openStudioAccess({
         signal: owner.signal,
@@ -48,7 +48,7 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
         administrative: true,
         locale: locale(),
         entries,
-        projects,
+        loadProjects: () => artifactClient.admin.projects(row.id),
         grant: (principal, level) => artifactClient.admin.grant(row.id, principal, level),
         change: (accessId, level) => artifactClient.admin.change(row.id, accessId, level),
       });

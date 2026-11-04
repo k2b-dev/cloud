@@ -47,7 +47,7 @@ const open = () =>
     viewerUserId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     locale: document.documentElement.lang || "en",
     entries,
-    projects: [],
+    loadProjects: async () => [],
     grant: async (principal, permission) => {
       calls.push(`grant ${principal.type} ${permission}`);
       return { id: crypto.randomUUID(), principal, permission, createdAt: "2026-10-23T12:00:00.000Z" };
