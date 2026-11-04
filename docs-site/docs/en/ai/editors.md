@@ -18,6 +18,9 @@ Chats stay in Cloud, where you can continue them on the web.
 The local folder rules are the same as in the terminal: local tools, AGENTS.md,
 Skills, folder trust, and file access follow
 [Work with a local folder in cld](/en/apps/assistant#work-with-a-local-folder-in-cld).
+An editor with form support asks whether to trust the folder through a form.
+Without form support, the editor can load the folder's instructions only for
+the current session, because it can answer permission prompts automatically.
 
 ## Set up cld
 

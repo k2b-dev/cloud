@@ -88,6 +88,9 @@ automatically.
 See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup,
 commands, forms, and session behavior.
 
+An editor saves folder trust only through a form; without forms, folder
+instructions load for one session.
+
 ## Interactive and print modes
 
 Start a line-oriented terminal session:

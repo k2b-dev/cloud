@@ -854,6 +854,42 @@ describe("Assistant ACP", () => {
     expect(await other.send("Work")).toEqual({ stopReason: "end_turn" });
     expect(other.text()).toContain("This step needs the web chat: https://cloud.test/app/assistant?conversation=chat");
   });
+  test("an automatic permission cannot save folder trust", async () => {
+    const h = await harness({
+      permission: (request) => ({
+        outcome: {
+          outcome: "selected",
+          optionId: (request.options.find((o) => o.kind === "allow_always") ?? request.options.find((o) => o.kind === "allow_once"))!
+            .optionId,
+        },
+      }),
+    });
+    await writeFile(join(h.cwd, "AGENTS.md"), "Foreign repository instructions.");
+    await h.send("Work");
+    expect(h.permissions[0]?.options.some((o) => o.kind === "allow_always")).toBeFalse();
+    expect(h.defaults.has("assistant.trustedFolders")).toBeFalse();
+    expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({
+      localContext: { instructions: [{ content: "Foreign repository instructions." }] },
+    });
+  });
+  test("a person can trust a folder through a form", async () => {
+    const h = await harness({ forms: true, form: () => ({ action: "accept", content: { decision: "folder" } }) });
+    await writeFile(join(h.cwd, "AGENTS.md"), "Use these instructions.");
+    await h.send("Work");
+    expect(h.permissions).toHaveLength(0);
+    expect(h.forms[0]).toMatchObject({
+      mode: "form",
+      requestedSchema: {
+        properties: {
+          decision: {
+            enum: ["session", "folder", "reject"],
+            oneOf: [{ const: "session" }, { const: "folder" }, { const: "reject" }],
+          },
+        },
+      },
+    });
+    expect(JSON.parse(h.defaults.get("assistant.trustedFolders") ?? "[]")).toContain(h.cwd);
+  });
   test("local folder trust and selected Skills use the terminal contract", async () => {
     const h = await harness({
       manualSkill: true,
@@ -867,7 +903,7 @@ describe("Assistant ACP", () => {
     await writeFile(join(h.cwd, ".agents/skills/work/SKILL.md"), "---\nname: work\ndescription: Work here\n---\nFollow this Skill.");
     await h.send("/skills");
     expect(h.text()).toContain("remote · Cloud · Cloud selected workflow (only with /remote)");
-    expect(h.permissions[0]?.options.map((o) => o.optionId)).toEqual(["session", "folder", "reject"]);
+    expect(h.permissions[0]?.options.map((o) => o.optionId)).toEqual(["session", "reject"]);
     await h.send("/work message");
     expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({
       localContext: {

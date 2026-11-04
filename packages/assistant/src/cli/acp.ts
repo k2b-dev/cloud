@@ -369,23 +369,49 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         if (count) parts.push(`${count} Skills in .agents/skills`);
         else if (found.hasProjectContext && !parts.length) parts.push("Skills in .agents/skills");
         const toolCallId = crypto.randomUUID();
+        const text = `This folder has instructions for the assistant: ${parts.join(", ")}. They go to the model with every message and can steer what it does with your Cloud data.`;
         const call: ToolCall = {
           toolCallId,
           title: "Load this folder's instructions?",
           kind: "other",
           status: "pending",
-          content: toolContent(
-            `This folder has instructions for the assistant: ${parts.join(", ")}. They go to the model with every message and can steer what it does with your Cloud data.`,
-          ),
+          content: toolContent(text),
         };
         await update(s, { sessionUpdate: "tool_call", ...call });
         let answer: string | undefined;
         try {
-          answer = await permission(s, call, [
-            { optionId: "session", name: "Only this session", kind: "allow_once" },
-            { optionId: "folder", name: "Trust this folder", kind: "allow_always" },
-            { optionId: "reject", name: "Don't load", kind: "reject_once" },
-          ]);
+          // Lasting trust only through a form: an editor can answer permission prompts automatically.
+          if (forms) {
+            const response = await form(s, toolCallId, `${call.title}\n${text}`, {
+              type: "object",
+              required: ["decision"],
+              properties: {
+                decision: {
+                  type: "string",
+                  // Zed shows the titled oneOf choices; T3 Code builds its choices only from enum and answers with the value.
+                  enum: ["session", "folder", "reject"],
+                  oneOf: [
+                    { const: "session", title: "Only this session" },
+                    { const: "folder", title: "Trust this folder" },
+                    { const: "reject", title: "Don't load" },
+                  ],
+                },
+              },
+            });
+            if (s.active?.signal.aborted) return cancelled(s);
+            const decision =
+              response.action === "accept" &&
+              response.content != null &&
+              typeof response.content === "object" &&
+              "decision" in response.content
+                ? response.content.decision
+                : undefined;
+            answer = decision === "session" || decision === "folder" ? decision : undefined;
+          } else
+            answer = await permission(s, call, [
+              { optionId: "session", name: "Only this session", kind: "allow_once" },
+              { optionId: "reject", name: "Don't load", kind: "reject_once" },
+            ]);
           return answer === "session" || answer === "folder" ? answer : undefined;
         } finally {
           if (!s.disconnected)
