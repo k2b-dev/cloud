@@ -79,6 +79,10 @@ The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.
 
+After opening a task from the list, header Back and browser Back return to
+that list entry; Forward reopens the task. A task opened directly by its link
+returns to the list by replacing its entry, so Back does not reopen the task.
+
 - Each row shows the title, the Space with its color, and the deadline or, for
   an event, its time or **All day**. An overdue deadline is red.
 - Tap the circle in front of a task to mark it done. The task leaves the list
