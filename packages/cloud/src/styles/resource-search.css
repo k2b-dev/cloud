@@ -213,12 +213,19 @@
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
 }
+.cloud-resource-search__result-date {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
 .cloud-resource-search__hint {
   padding: 0.5rem 1.125rem 1.5rem;
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
 }
-/* Apps still searching and apps that did not answer: one calm line each, below the results. */
+/* Apps with more results, apps still searching and apps that did not answer: one calm line each, below the results. */
+.cloud-resource-search__more,
 .cloud-resource-search__status {
   display: grid;
   gap: 0.125rem;
@@ -226,6 +233,7 @@
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
 }
+.cloud-resource-search__more p,
 .cloud-resource-search__status p {
   display: flex;
   flex-wrap: wrap;
@@ -316,6 +324,9 @@
   padding: 1.25rem;
   border-radius: 0.6875rem;
   background: var(--ui-surface-muted);
+}
+.cloud-resource-search__preview.is-empty p {
+  margin: 0;
 }
 .cloud-resource-search__preview-app {
   display: flex;
@@ -409,6 +420,7 @@
   }
   .cloud-resource-search__hint,
   .cloud-resource-search__status,
+  .cloud-resource-search__more,
   .cloud-resource-search__idle,
   .cloud-resource-search__footer,
   .cloud-resource-search__count,

@@ -203,6 +203,69 @@ describe("streamed search in a browser", () => {
     }
   }, 30_000);
 
+  test("a mail row shows its sender and short date, the details read as dates, and more rows load below", async () => {
+    const mail = (index: number, from: string, date: string): SearchItem => ({
+      ...result("mail", `Neuerungen ab 1. November 2026 ${index}`, "Liebe Kolleginnen und Kollegen, ab dem 1. November gilt …"),
+      title: "Neuerungen ab 1. November 2026",
+      ref: { type: "mail.item", id: `mail-${index}` },
+      context: from,
+      metadata: [
+        { label: "Von", value: from },
+        { label: "Empfänger", value: "Team Verwaltung" },
+        { label: "Datum", value: date, format: "date-time" },
+        { label: "Ordner", value: "Posteingang" },
+        { label: "Postfach", value: "Verwaltung" },
+        { label: "Anhänge", value: "2" },
+      ],
+    });
+    const mails = [
+      mail(0, "Anna Berger", "2026-11-04T13:31:20.000Z"),
+      mail(1, "Ben Kraus", "2026-11-03T08:10:00.000Z"),
+      mail(2, "Carla Neumann", "2026-10-20T16:45:00.000Z"),
+      mail(3, "Dora Lenz", "2026-09-02T07:00:00.000Z"),
+    ];
+    answer = async (url, write) => {
+      const limit = Number(url.searchParams.get("limit") ?? 2);
+      write({ type: "start", query: "neuerungen", apps, providers: ["mail"] });
+      write({ ...line("mail", mails.slice(0, limit)), ...(limit < mails.length ? { more: true } : {}) });
+    };
+    for (const view of views) {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+        timezoneId: "Europe/Berlin",
+      });
+      const page = await context.newPage();
+      try {
+        await page.clock.setFixedTime(new Date("2026-11-04T15:00:00.000Z"));
+        await page.goto(`http://127.0.0.1:${server.port}/?picker&app=mail&lang=de`);
+        await page.locator('input[role="combobox"]').waitFor();
+        await page.keyboard.type("neuerungen");
+        await waitForRows(page, 2);
+        const rows = page.locator(".cloud-resource-search__result");
+        expect(await rows.nth(0).locator("small").textContent()).toBe("Anna Berger");
+        expect(await rows.nth(0).locator("time").textContent()).toBe("14:31");
+        expect(await rows.nth(1).locator("time").textContent()).toBe("gestern");
+        if (!view.touch) {
+          const details = await page.locator(".cloud-resource-search__preview dd").allTextContents();
+          expect(details).toEqual(["Anna Berger", "Team Verwaltung", "4. Nov. 2026, 14:31", "Posteingang", "Verwaltung", "2"]);
+        }
+        const before = (await layout(page)).rows;
+        await page.getByRole("button", { name: "Mehr aus Mail anzeigen" }).click();
+        await waitForRows(page, 4);
+        const after = await layout(page);
+        expect(after.rows.slice(0, 2)).toEqual(before);
+        expect(after.overflow).toBe(0);
+        expect(await rows.nth(3).locator("time").textContent()).toBe("2. Sept. 2026");
+        expect(await page.getByRole("button", { name: "Mehr aus Mail anzeigen" }).count()).toBe(0);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 30_000);
+
   test("a phone shows the picker as a full-screen sheet and keeps global search floating", async () => {
     for (const [path, sheet] of [
       ["/?picker", true],

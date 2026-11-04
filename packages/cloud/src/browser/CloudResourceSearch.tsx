@@ -1,7 +1,8 @@
+import { dates } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
+import { announce, Button, Format, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
-import type { SearchApp, SearchItem } from "../api/search/schemas";
+import { SEARCH_APP_RESULT_LIMIT, SEARCH_PAGE_SIZE, type SearchApp, type SearchItem } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
@@ -51,6 +52,15 @@ const isLinkableCommand = (command: PaletteCommand) => typeof command.action !==
 
 const itemKey = (item: SearchItem) => `${item.ref.type}:${item.ref.id}`;
 const URL_BASE = "https://cloud.invalid";
+
+type SearchMetadata = NonNullable<SearchItem["metadata"]>[number];
+const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+/** A date without a time is a calendar day and never shifts with the reader's time zone. */
+const isCalendarDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const zoneFor = (entry: SearchMetadata) => (isCalendarDay(entry.value) ? "UTC" : localTimeZone());
+const validDate = (value: string) => Number.isFinite(Date.parse(value));
+/** The first dated fact of a result, shown short at the end of its row. */
+const rowDate = (item: SearchItem) => item.metadata?.find((entry) => entry.format && validDate(entry.value));
 
 export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const locale = useLocale();
@@ -175,7 +185,39 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       locale: locale(),
       onLine: (line) => {
         if (controller !== own || line.type !== "provider" || line.provider !== appId) return;
-        setRun((current) => applySearchLine(current, { ...line, results: line.results.slice(0, limit) }));
+        setRun((current) =>
+          applySearchLine(current, {
+            ...line,
+            results: line.results.slice(0, limit),
+            more: line.more || line.results.length > (limit ?? Infinity),
+          }),
+        );
+      },
+    }).then(giveUp, giveUp);
+  };
+  const shownCount = (appId: string) => run().blocks.reduce((count, block) => count + (block.appId === appId ? block.items.length : 0), 0);
+  /**
+   * Lists the next page of one app within the current run. The app answers its first rows again; only the new ones
+   * are appended, so nothing on screen moves and the selection stays.
+   */
+  const loadMore = (appId: string) => {
+    const own = controller;
+    const url = runUrl();
+    if (!own || !url) return;
+    const target = new URL(url, URL_BASE);
+    target.searchParams.set("app", appId);
+    target.searchParams.set("limit", String(Math.min(SEARCH_APP_RESULT_LIMIT, shownCount(appId) + SEARCH_PAGE_SIZE)));
+    setRun((current) => retrySearchApp(current, appId));
+    const giveUp = () => {
+      if (controller === own && run().status[appId] === "searching")
+        setRun((current) => applySearchLine(current, { type: "provider", provider: appId, status: "error", results: [], ms: 0 }));
+    };
+    void streamCloudResourceSearch(`${target.pathname}${target.search}`, {
+      signal: own.signal,
+      locale: locale(),
+      onLine: (line) => {
+        if (controller !== own || line.type !== "provider" || line.provider !== appId) return;
+        setRun((current) => applySearchLine(current, line));
       },
     }).then(giveUp, giveUp);
   };
@@ -189,6 +231,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const pendingApps = () => (current() ? searchingApps(run()) : []);
   const failedApps = () => (current() ? failedSearchApps(run()) : []);
   const appName = (appId: string) => run().apps.find((app) => app.id === appId)?.name ?? appId;
+  /** Apps that found more than they listed, once they have answered. */
+  const moreApps = () => (current() ? run().providers.filter((appId) => run().more[appId] && run().status[appId] === "ok") : []);
   const failureText = (failure: ReturnType<typeof failedSearchApps>[number]) =>
     failure.status === "timeout" ? t().appTimedOut({ app: appName(failure.appId) }) : t().appUnavailable({ app: appName(failure.appId) });
   // Only a search the user narrowed with the app chip or a tag names its one app when nothing matched.
@@ -451,7 +495,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   };
   const updateCaret = () => setCaret(inputRef.selectionStart ?? input().length);
   const isApp = (item: SearchItem) => navigation().some((link) => link === item && link.kind === "app");
-  const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim()).slice(0, 5);
+  const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim());
 
   return (
     <div
@@ -666,8 +710,17 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                             <i class={item().icon ?? item().appIcon} aria-hidden="true" />
                             <span class="cloud-resource-search__result-copy">
                               <span>{item().title}</span>
-                              <small>{isApp(item()) ? t().app : (item().preview ?? item().appName)}</small>
+                              <small>{isApp(item()) ? t().app : (item().context ?? item().preview ?? item().appName)}</small>
                             </span>
+                            <Show when={rowDate(item())}>
+                              {(entry) => (
+                                <time class="cloud-resource-search__result-date" datetime={entry().value}>
+                                  {entry().format === "date"
+                                    ? dates.formatDate(entry().value, { locale: locale(), timeZone: zoneFor(entry()) })
+                                    : dates.formatDateRelative(entry().value, { locale: locale(), timeZone: localTimeZone() })}
+                                </time>
+                              )}
+                            </Show>
                             <Show when={commandFor(item())?.shortcut}>{(shortcut) => <Kbd keys={shortcut()} />}</Show>
                             <Show when={props.selectionMode && selectedKey() === itemKey(item())}>
                               <i class="ti ti-check" aria-hidden="true" />
@@ -678,6 +731,24 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     }}
                   </For>
                 </section>
+              </Show>
+              <Show when={canSearch() && !commandMode() && moreApps().length > 0}>
+                <div class="cloud-resource-search__more">
+                  <For each={moreApps()}>
+                    {(appId) => (
+                      <p>
+                        <Show
+                          when={shownCount(appId) < SEARCH_APP_RESULT_LIMIT}
+                          fallback={t().refineForMore({ app: appName(appId), count: shownCount(appId) })}
+                        >
+                          <Button variant="text" size="xs" onClick={() => loadMore(appId)}>
+                            {t().loadMore({ app: appName(appId) })}
+                          </Button>
+                        </Show>
+                      </p>
+                    )}
+                  </For>
+                </div>
               </Show>
               <Show when={canSearch() && !commandMode() && (pendingApps().length > 0 || failedApps().length > 0)}>
                 <div class="cloud-resource-search__status">
@@ -812,6 +883,14 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           </Show>
         </footer>
       </Show>
+      {/* The pane keeps its place from the first keystroke, so arriving results never pop it in. */}
+      <Show when={searching() && !(showResults() && previewItem())}>
+        <div class="cloud-resource-search__preview is-empty">
+          <Show when={showList()}>
+            <p>{t().detailsHint}</p>
+          </Show>
+        </div>
+      </Show>
       <Show when={showResults() && previewItem()}>
         {(item) => (
           <ScrollArea class="cloud-resource-search__preview">
@@ -841,7 +920,16 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   {(entry) => (
                     <>
                       <dt>{entry.label}</dt>
-                      <dd>{entry.value}</dd>
+                      <dd>
+                        <Show when={entry.format && validDate(entry.value)} fallback={entry.value}>
+                          <Show
+                            when={entry.format === "date-time"}
+                            fallback={<Format.Date value={entry.value} timeZone={zoneFor(entry)} />}
+                          >
+                            <Format.DateTime value={entry.value} timeZone={zoneFor(entry)} />
+                          </Show>
+                        </Show>
+                      </dd>
                     </>
                   )}
                 </For>

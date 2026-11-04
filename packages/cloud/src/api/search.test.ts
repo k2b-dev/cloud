@@ -457,7 +457,7 @@ describe("global capability search", () => {
       headers: { cookie: "session=test" },
     });
     expect(response.status).toBe(200);
-    expect(input).toEqual({ input: { query: "answer", tags: ["thing"], limit: 6 } });
+    expect(input).toEqual({ input: { query: "answer", tags: ["thing"], limit: 7 } });
     expect(await response.json()).toEqual({
       query: "answer",
       count: 1,
@@ -1045,7 +1045,7 @@ test("resource scopes preserve opaque IDs and route only to explicitly supportin
   });
   const response = await routes.request("/search?scope_type=demo.item&scope_id=AaBb12");
   expect(response.status).toBe(200);
-  expect(calls).toEqual([{ input: { query: "", tags: [], limit: 30, scope: { type: "demo.item", id: "AaBb12" } } }]);
+  expect(calls).toEqual([{ input: { query: "", tags: [], limit: 31, scope: { type: "demo.item", id: "AaBb12" } } }]);
   for (const query of [
     "scope_type=demo.item",
     "scope_id=AaBb12",
@@ -1093,7 +1093,7 @@ test("an app tag context selects only its provider and cannot be widened by ordi
   });
   expect((await routes.request("/search?app=demo&scope_tag=project&q=plan")).status).toBe(200);
   expect(calls).toEqual([
-    { url: "http://demo:3000/api/_internal/capabilities/v1/queries/projects", input: { query: "plan", tags: ["project"], limit: 30 } },
+    { url: "http://demo:3000/api/_internal/capabilities/v1/queries/projects", input: { query: "plan", tags: ["project"], limit: 31 } },
   ]);
   calls.length = 0;
   expect((await routes.request("/search?app=demo&scope_tag=project&tag=item")).status).toBe(200);
@@ -1280,6 +1280,39 @@ describe("streamed search", () => {
     expect(demo?.type === "provider" && demo.results.map((item) => item.title)).toEqual(["second 0", "second 1", "first 0"]);
     expect(received.filter((line) => line.type === "provider")).toHaveLength(2);
     expect(received.at(-1)).toEqual({ type: "done", status: "complete", count: 3 });
+  });
+
+  test("keeps an app's own order and says when it has more rows than it lists", async () => {
+    const limits: number[] = [];
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [app],
+      fetch: async (_url, init) => {
+        const { limit } = JSON.parse(String(init?.body)).input as { limit: number };
+        limits.push(limit);
+        // Newest first, which is not the order of the titles.
+        return Response.json({
+          data: ["Zebra", "Apple", "Mango"].slice(0, limit).map((title) => ({
+            ref: { type: "demo.item", id: title },
+            title,
+            priority: 8,
+            links: [{ rel: "open", href: `/app/demo/${title}` }],
+          })),
+        });
+      },
+    });
+    const providerLine = async (path: string) => {
+      const stream = lines(await routes.request(path, { headers: NDJSON }));
+      for (let line = await stream.next(); line; line = await stream.next()) if (line.type === "provider") return line;
+    };
+    const first = await providerLine("/search?app=demo&q=plan&limit=2");
+    expect(first?.results.map((item) => item.title)).toEqual(["Zebra", "Apple"]);
+    expect(first?.more).toBeTrue();
+    const all = await providerLine("/search?app=demo&q=plan&limit=3");
+    expect(all?.results.map((item) => item.title)).toEqual(["Zebra", "Apple", "Mango"]);
+    expect(all?.more).toBeUndefined();
+    expect(limits).toEqual([3, 4]);
+    expect((await routes.request("/search?app=demo&q=plan&limit=91")).status).toBe(400);
   });
 
   test("answers the catalog and unsupported tags in the same two-line shape", async () => {
