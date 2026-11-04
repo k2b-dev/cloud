@@ -23,6 +23,7 @@ import { createActorCommand, createMailCommand } from "./commands";
 import { type ConnectorEnvelope, imapSmtpConnector, type RemoteMessageState } from "./connectors";
 import { keepConversation } from "./conversation-keeps";
 import { createDraft } from "./drafts";
+import { getMailboxOperationalHealth } from "./health";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { runMaintenanceJob, startMaintenanceRuntime, stopMaintenanceRuntime, submitDueMaintenanceCommands } from "./maintenance-runtime";
 import { requestMessageBody } from "./message-body-request";
@@ -1800,6 +1801,50 @@ suite("mail provider lease fairness", () => {
         ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
       );
     }
+  });
+
+  test("one message that failed to load leaves the mailbox active, and its other messages and new mail still load", async () => {
+    const mailbox = await connect("one-failed-body");
+    const headers = await deliverAndSync(mailbox, 3, "one-failed-body");
+    const rows = await sql<{ id: string; message_id: string }[]>`
+      SELECT id, message_id FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id IN ${sql(headers)}
+    `;
+    const failed = rows.find((row) => row.message_id === headers[0])!.id;
+    // The message used up its attempts, as a body the provider never delivers does.
+    await sql`
+      UPDATE mail.message_contents SET hydration_status = 'failed', hydration_attempt = 5, hydration_error_code = 'MIME_HYDRATION_FAILED'
+      WHERE id = ${failed}::uuid
+    `;
+    const heartbeat = async (): Promise<void> => undefined;
+    const statuses = async () =>
+      Object.fromEntries(
+        (
+          await sql<{ id: string; hydration_status: string }[]>`
+            SELECT id, hydration_status FROM mail.message_contents WHERE id IN ${sql(rows.map((row) => row.id))}
+          `
+        ).map((row) => [row.id, row.hydration_status]),
+      );
+    // Each batch takes one body and asks to continue; two bodies are left to load.
+    for (let batch = 0; batch < rows.length; batch += 1) {
+      let more = false;
+      await hydrateMessageBatch({
+        input: { mailboxId: mailbox.mailboxId },
+        heartbeat,
+        resubmit: () => {
+          more = true;
+        },
+      });
+      if (!more) break;
+    }
+    expect(await statuses()).toEqual(Object.fromEntries(rows.map((row) => [row.id, row.id === failed ? "failed" : "complete"])));
+
+    const health = await getMailboxOperationalHealth(context, mailbox.mailboxId);
+    expect(health).toMatchObject({ ok: true, data: { health: "active", healthReason: null, hydration: { failed: 1 } } });
+    const [stored] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailbox.mailboxId}::uuid`;
+    expect(stored?.health).toBe("active");
+    // Folder syncs go on: new mail arrives in the same mailbox.
+    const [later] = await deliverAndSync(mailbox, 1, "after-one-failed-body");
+    expect(await imported(mailbox, later!)).toBe(true);
   });
 
   test("a later command ends a first-attempt batch and takes the lease before its next generation", async () => {

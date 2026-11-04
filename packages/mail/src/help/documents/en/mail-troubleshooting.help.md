@@ -33,7 +33,7 @@ The first synchronization loads history step by step. A message can appear befor
 
 If the body has not arrived after about 30 seconds, the reader shows **Waiting for the mailbox**. The mail server answers slowly or is busy. The wait also continues after a page reload. Choose **Request again** to ask for the body once more. The body still appears on its own when it arrives.
 
-If Mail restarts while it downloads a body, the reader can show **The message body could not be synchronized** for that message. Choose **Request again** to download it now. Otherwise, Mail downloads it again after the other missing bodies of the mailbox. During a large first synchronization, this can take hours. If the conversation list shows **Updates paused**, choose **Refresh message** to load the current state.
+If Mail restarts while it downloads a body, the reader can show **The message body could not be synchronized** for that message. Choose **Try again** to download it now. Otherwise, Mail downloads it again after the other missing bodies of the mailbox. During a large first synchronization, this can take hours. Such a message does not affect the rest of the mailbox: the mailbox stays active, and other messages and new mail keep loading. **… → Mailbox health** counts these messages, for example **1 message could not be loaded**. If the conversation list shows **Updates paused**, choose **Refresh message** to load the current state.
 
 Sometimes the mail provider cannot be reached or refuses sign-ins for a while, for example during maintenance or because too many connections are open. Mail keeps trying and continues on its own when the provider answers again. You need a new password or credential only when the provider rejects the current one.
 

@@ -513,7 +513,7 @@ export default function MailMessageCard(props: {
                           action={
                             <Show when={!bodyUnavailable()}>
                               <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void retryFailedBody()}>
-                                {messages().requestBodyAgain}
+                                {messages().retryBody}
                               </Button>
                             </Show>
                           }
