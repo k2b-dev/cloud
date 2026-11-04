@@ -105,9 +105,13 @@ export function PermissionsSection(props: { notebook: Notebook }) {
     },
   });
   const [reconcileError, setReconcileError] = createSignal<string | null>(null);
-  const reconcile = () => {
+  const reconcile = async () => {
     setReconcileError(null);
-    void accessEntries.invalidate().catch(() => setReconcileError(t().accessReconcileFailed));
+    try {
+      await accessEntries.invalidate();
+    } catch {
+      setReconcileError(t().accessReconcileFailed);
+    }
   };
   // Set by every saved change, also when a later one fails and the person discards the rest.
   let wrote = false;
@@ -141,13 +145,8 @@ export function PermissionsSection(props: { notebook: Notebook }) {
   const edit = async () => {
     // The list missed a saved change: read it first, so the dialog never starts from an old list.
     if (reconcileError()) {
-      setReconcileError(null);
-      try {
-        await accessEntries.invalidate();
-      } catch {
-        setReconcileError(t().accessReconcileFailed);
-        return;
-      }
+      await reconcile();
+      if (reconcileError()) return;
     }
     const entries = accessEntries.data();
     if (!entries) return;
@@ -160,7 +159,8 @@ export function PermissionsSection(props: { notebook: Notebook }) {
       updateAccess,
       revokeAccess,
     });
-    if (wrote) reconcile();
+    // Awaited, so a second click waits for the saved list instead of opening the old one.
+    if (wrote) await reconcile();
   };
   const run = () => {
     if (running) return;
@@ -207,7 +207,7 @@ export function PermissionsSection(props: { notebook: Notebook }) {
       <Show when={reconcileError()}>
         <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300">
           <span>{reconcileError()}</span>
-          <RetryButton loading={accessEntries.refreshing()} onClick={() => reconcile()} />
+          <RetryButton loading={accessEntries.refreshing()} onClick={() => void reconcile()} />
         </div>
       </Show>
     </SettingsGroup>

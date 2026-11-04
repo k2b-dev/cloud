@@ -54,6 +54,8 @@ describe("Notebook access settings", () => {
   const renderSection = async (entries: AccessEntry[]) => {
     let stored = entries;
     const calls: string[] = [];
+    // Set to hold the next list read until the test lets it answer.
+    const reads: { held: PromiseWithResolvers<void> | null } = { held: null };
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     delegateEvents(["click", "input"], dom.document);
@@ -64,7 +66,11 @@ describe("Notebook access settings", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const method = init?.method ?? "GET";
         const accessId = String(input).split("/access/")[1];
-        if (method === "GET") return Response.json(stored);
+        if (method === "GET") {
+          const held = reads.held;
+          if (held) await held.promise;
+          return Response.json(stored);
+        }
         calls.push(`${method} ${accessId}`);
         if (method === "DELETE" && accessId === ben.id) return Response.json({ message: "Offline" }, { status: 503 });
         if (method === "DELETE") stored = stored.filter((entry) => entry.id !== accessId);
@@ -94,6 +100,7 @@ describe("Notebook access settings", () => {
     return {
       dom,
       calls,
+      reads,
       rows,
       button,
       dialog,
@@ -142,6 +149,40 @@ describe("Notebook access settings", () => {
         "the list to show Lea's new level",
       );
       expect(section.rows()).toEqual(["Ada Lovelace", "Lea Schmitt", "Ben Albers"]);
+    } finally {
+      section.cleanup();
+    }
+  });
+
+  test("Edit access during the reload after a save waits for the saved list", async () => {
+    const section = await renderSection([person, lea]);
+    try {
+      section.button("Edit access")!.click();
+      await waitFor(() => section.dialog()?.textContent?.includes("Lea Schmitt") === true, "the access dialog");
+      Array.from(section.row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      section.reads.held = Promise.withResolvers<void>();
+      const held = section.reads.held;
+      section.button("Save")!.click();
+      await waitFor(() => !section.dialog(), "the dialog to close");
+      section.button("Edit access")!.click();
+      await Bun.sleep(50);
+      expect(section.dialog()).toBeNull();
+      section.reads.held = null;
+      held.resolve();
+      await waitFor(
+        () => section.dom.root.textContent?.replace("Edit access", "").includes("Edit") === true,
+        "the list to show Lea's new level",
+      );
+      section.button("Edit access")!.click();
+      await waitFor(() => !!section.dialog(), "the access dialog with the saved list");
+      expect(section.dialog()!.textContent).not.toContain("before");
+      expect(Array.from(section.row("Lea Schmitt").querySelectorAll('[aria-selected="true"]')).map((option) => option.textContent)).toEqual(
+        ["Edit"],
+      );
+      section.button("Cancel")!.click();
+      await waitFor(() => !section.dialog(), "the unchanged dialog to close");
     } finally {
       section.cleanup();
     }
