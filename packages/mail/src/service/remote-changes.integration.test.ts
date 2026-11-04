@@ -5,6 +5,7 @@ import { createActorCommand, createMaintenanceCommand } from "./commands";
 import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { getMessage } from "./messages";
+import { acquireProviderLease, releaseProviderLease } from "./provider-operation-lock";
 import { useRemoteChangesFixture } from "./remote-changes-fixture";
 import { submitDueFolderSyncs } from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
@@ -650,5 +651,60 @@ suite("mail sync of changes made in other clients", () => {
     expect(await submitDueFolderSyncs(inboxes.length)).toContain(watched);
     await redis.send("DEL", [`mail:sync-recent:${watched}`]);
     expect(await submitDueFolderSyncs(100_000)).toContain(watched);
+  });
+
+  test("a mailbox whose folder jobs still wait gets no more other folders than its lease served, in turn", async () => {
+    const mailbox = await connect("bounded", true);
+    const folders = await sql<{ id: string; inbox: boolean; resource: string }[]>`
+      SELECT f.id, f.role = 'inbox' AS inbox, f.remote_resource_id AS resource
+      FROM mail.folders f JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+      WHERE rr.mailbox_id = ${mailbox.mailboxId}::uuid
+      ORDER BY f.id
+    `;
+    const resource = folders[0]!.resource;
+    const inbox = folders.find((folder) => folder.inbox)!.id;
+    const others = folders.filter((folder) => !folder.inbox).map((folder) => folder.id);
+    expect(others.length).toBeGreaterThanOrEqual(3);
+    const ours = async () => {
+      const queued = await submitDueFolderSyncs(100_000);
+      return queued.filter((id) => folders.some((folder) => folder.id === id));
+    };
+
+    // Nothing waits for the lease: every folder.
+    expect((await ours()).sort()).toEqual(folders.map((folder) => folder.id).sort());
+
+    // A command holds the lease, two folder jobs wait, and the lease served three folder batches
+    // in the last minute: the run adds the Inbox and one other folder, the next one each time.
+    const holder = await acquireProviderLease({ resource, waiter: "outbox:bounded", priority: "command", ttlMs: 60_000 });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    try {
+      // The two waiters ask again before each run, as waiting jobs do, so they stay present.
+      const keepWaiting = async () => {
+        for (const waiter of ["sync-folder:waiting-1", "sync-folder:waiting-2"]) {
+          expect((await acquireProviderLease({ resource, waiter, priority: "sync", ttlMs: 60_000 })).lock).toBeNull();
+        }
+      };
+      const minute = Math.floor(Date.now() / 60_000);
+      for (const at of [minute - 1, minute]) await redis.send("SET", [`mail:sync-served:{${resource}}:${at}`, "3", "PX", "120000"]);
+      const turns: string[] = [];
+      for (let run = 0; run < others.length + 1; run += 1) {
+        await keepWaiting();
+        const queued = await ours();
+        expect(queued).toContain(inbox);
+        const added = queued.filter((id) => id !== inbox);
+        expect(added).toHaveLength(1);
+        turns.push(added[0]!);
+      }
+      // Every other folder gets its turn before the first comes again.
+      expect(turns.slice(0, others.length).sort()).toEqual([...others].sort());
+      expect(turns[others.length]).toBe(turns[0]);
+
+      // A backlog at least as long as the lease served still lets one other folder in per run.
+      for (const at of [minute - 1, minute]) await redis.send("SET", [`mail:sync-served:{${resource}}:${at}`, "1", "PX", "120000"]);
+      await keepWaiting();
+      expect((await ours()).filter((id) => id !== inbox)).toHaveLength(1);
+    } finally {
+      await releaseProviderLease(holder.lock);
+    }
   });
 });
