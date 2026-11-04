@@ -1,5 +1,6 @@
 import { Avatar, type AvatarProps } from "@k2b/ui";
 import type { JSX } from "solid-js";
+import { cloudAvatarSource } from "./avatar-url";
 
 /** Who an avatar stands for; agents and service accounts are square, people round. */
 export type CloudAvatarKind = "user" | "service_account" | "system";
@@ -11,13 +12,9 @@ export type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "ico
   kind?: CloudAvatarKind;
 };
 
-const avatarSource = (userId?: string | null, avatarHash?: string | null): string | undefined => {
-  if (!userId || !avatarHash) return undefined;
-  return `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}`;
-};
+const avatarSource = cloudAvatarSource;
 
-/** The URL of a person's picture, or undefined while the person shows initials. */
-export const cloudAvatarSource = avatarSource;
+export { cloudAvatarSource };
 
 /**
  * Where an avatar's image comes from. A person has one only with a hash; a service account always has one, its photo

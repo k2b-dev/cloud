@@ -1,5 +1,6 @@
-import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { children, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
+import type { DropdownItem } from "../actions/Dropdown";
 import { Avatar, type AvatarShape } from "../surfaces/Avatar";
 import { AvatarStack, type AvatarStackPerson } from "../surfaces/AvatarStack";
 import { personColor } from "../surfaces/person-color";
@@ -462,9 +463,25 @@ export type DetailLinkItem = {
   onClick?: (event: MouseEvent) => void;
   /** Defaults to a document. */
   icon?: string;
+  /** Replaces the icon, such as a site's favicon. */
+  leading?: JSX.Element;
+  /** One quiet line below the title, such as where the item lives. */
+  description?: JSX.Element;
   /** Quiet text at the end, such as the other notebook's name. */
   trailing?: JSX.Element;
-};
+  /** For a link to another site, such as `_blank` with `rel="noreferrer"`. */
+  target?: string;
+  rel?: string;
+  /** An item that cannot be opened right now, such as one the person may no longer read. */
+  disabled?: boolean;
+} & (
+  | { menuItems?: never; menuLabel?: never }
+  | {
+      /** Further commands on the item, such as "Unlink", only for people who may run them. */
+      menuItems: readonly DropdownItem[];
+      menuLabel: string;
+    }
+);
 
 export type DetailLinksProps = {
   /** What links here. */
@@ -476,7 +493,43 @@ export type DetailLinksProps = {
   /** Defaults to "Links". */
   title?: string;
   defaultOpen?: boolean;
+  /**
+   * `loading` while links still load after the first paint: a placeholder row keeps their place. `error` keeps the
+   * loaded rows and says that the rest failed, with `onRetry`.
+   */
+  state?: "ready" | "loading" | "error";
+  onRetry?: () => void;
+  /** Rows after the links, such as "Add link" or "Load more", only for people who may use them. */
+  footer?: JSX.Element;
   class?: string;
+};
+
+const LinkRow = (props: { item: DetailLinkItem }): JSX.Element => {
+  const item = props.item;
+  const menu = item.menuItems ? { menuItems: item.menuItems, menuLabel: item.menuLabel } : {};
+  const shared = {
+    leading: item.leading ?? <i class={item.icon ?? "ti ti-file-text"} aria-hidden="true" />,
+    title: item.title,
+    description: item.description,
+    trailing: item.trailing,
+    ...menu,
+  };
+  return (
+    <Show
+      when={!item.disabled && item.href}
+      fallback={<DetailPanel.Action type="button" disabled={item.disabled} onClick={(event) => item.onClick?.(event)} {...shared} />}
+    >
+      {(href) => (
+        <DetailPanel.Action
+          href={href()}
+          target={item.target}
+          rel={item.rel}
+          onClick={(event: MouseEvent) => item.onClick?.(event)}
+          {...shared}
+        />
+      )}
+    </Show>
+  );
 };
 
 const LinkGroup = (props: { label: string; items: readonly DetailLinkItem[]; limit: number }): JSX.Element => {
@@ -486,20 +539,7 @@ const LinkGroup = (props: { label: string; items: readonly DetailLinkItem[]; lim
   return (
     <div class="k2b-detail-section-group">
       <div class="k2b-detail-section-label">{props.label}</div>
-      <For each={all() ? props.items : props.items.slice(0, props.limit)}>
-        {(item) => {
-          const shared = {
-            leading: <i class={item.icon ?? "ti ti-file-text"} aria-hidden="true" />,
-            title: item.title,
-            trailing: item.trailing,
-          };
-          return (
-            <Show when={item.href} fallback={<DetailPanel.Action type="button" onClick={(event) => item.onClick?.(event)} {...shared} />}>
-              {(href) => <DetailPanel.Action href={href()} onClick={(event: MouseEvent) => item.onClick?.(event)} {...shared} />}
-            </Show>
-          );
-        }}
-      </For>
+      <For each={all() ? props.items : props.items.slice(0, props.limit)}>{(item) => <LinkRow item={item} />}</For>
       <Show when={hiddenCount() > 0}>
         <DetailPanel.Action
           type="button"
@@ -513,12 +553,20 @@ const LinkGroup = (props: { label: string; items: readonly DetailLinkItem[]; lim
   );
 };
 
-/** "Linked from" and "Links to" in one section. Without links it is one row: the title and "None yet". */
+/**
+ * "Linked from" and "Links to" in one section. Without links it is one row: the title and "None yet", followed by the
+ * `footer` when there is one.
+ */
 export function DetailLinks(props: DetailLinksProps): JSX.Element {
   const t = useDetailSectionMessages();
   const limit = () => Math.max(1, props.limit ?? 5);
+  const state = () => props.state ?? "ready";
   const total = () => props.incoming.length + props.outgoing.length;
+  // Resolve once: the empty state reads it as a condition and as content.
+  const footer = children(() => props.footer);
   const summary = () => {
+    if (state() === "loading") return t().linksLoading;
+    if (state() === "error") return t().linksFailed;
     const names = (items: readonly DetailLinkItem[]) => ({
       names: listNames(
         items.slice(0, 2).map((item) => item.title),
@@ -528,15 +576,55 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
     });
     return props.incoming.length ? t().linkedBySummary(names(props.incoming)) : t().linksToSummary(names(props.outgoing));
   };
+  // Loading and failure take the row the next links would take, so the loaded rows above never move.
+  const pending = () => (
+    <>
+      <Show when={state() === "loading"}>
+        <div class="k2b-detail-section-rows" aria-busy="true">
+          <DetailPanel.Row leading={<span class="k2b-detail-row-skeleton__face" />} title={<span class="k2b-detail-row-skeleton" />} />
+          <span class="k2b-sr-only" role="status">
+            {t().linksLoading}
+          </span>
+        </div>
+      </Show>
+      <Show when={state() === "error"}>
+        <div class="k2b-detail-section-error" role="alert">
+          <i class="ti ti-alert-circle" aria-hidden="true" />
+          <span>{t().linksFailed}</span>
+          <Show when={props.onRetry}>
+            {(retry) => (
+              <Button variant="text" size="xs" onClick={() => retry()()}>
+                {t().retry}
+              </Button>
+            )}
+          </Show>
+        </div>
+      </Show>
+    </>
+  );
   return (
     <Show
       when={total() > 0}
-      fallback={<DetailPanel.Section title={props.title ?? t().links} icon="ti ti-arrows-exchange" count={0} class={props.class} />}
+      fallback={
+        <DetailPanel.Section
+          title={props.title ?? t().links}
+          icon="ti ti-arrows-exchange"
+          count={state() === "ready" ? 0 : undefined}
+          class={props.class}
+        >
+          <Show when={state() !== "ready" || footer()}>
+            <div class="k2b-detail-section-rows">
+              {pending()}
+              {footer()}
+            </div>
+          </Show>
+        </DetailPanel.Section>
+      }
     >
       <DetailPanel.Section
         title={props.title ?? t().links}
         icon="ti ti-arrows-exchange"
-        count={total()}
+        count={state() === "ready" ? total() : undefined}
         collapsible
         defaultOpen={props.defaultOpen ?? true}
         summary={summary()}
@@ -549,6 +637,8 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
           <Show when={props.outgoing.length > 0}>
             <LinkGroup label={t().linksTo({ count: props.outgoing.length })} items={props.outgoing} limit={limit()} />
           </Show>
+          {pending()}
+          {footer()}
         </div>
       </DetailPanel.Section>
     </Show>
@@ -576,6 +666,8 @@ export type DetailPropertiesProps = {
   summary?: JSX.Element;
   /** Open by default only when the properties are the object's main content. */
   defaultOpen?: boolean;
+  /** Rows after the facts, such as a command that copies the object's ID. */
+  children?: JSX.Element;
   class?: string;
 };
 
@@ -612,6 +704,7 @@ export function DetailProperties(props: DetailPropertiesProps): JSX.Element {
           )}
         </For>
       </dl>
+      {props.children}
     </DetailPanel.Section>
   );
 }
