@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-24
+updated: 2026-11-04
 ---
 
 # Measure production page performance
@@ -115,13 +115,21 @@ never overwritten.
 
 ## Measure the installable Cloud app
 
+PWA raw steps also record `interactiveMs` (latest FCP, initial island mount,
+script response, or observed long-task end), `requests` (completed resource
+entries plus document hops), and `cls` (null when unsupported, including
+WebKit). Assets include `decodedBodySize` for unpacked JavaScript comparisons.
+Older results can omit these fields. The title probe compares rendered
+`innerText` of visible shell or content headings, excluding hidden responsive
+title variants. The cold Start table preserves small, nonzero CLS values.
+
 Select `pwa` to measure the installable app at `/pwa/`:
 
 ```bash
 bun --no-env-file scripts/perf-baseline.ts --pages pwa --runs 3
 ```
 
-Local mode builds and starts Core, the Cloud app, Spaces, and the gateway.
+Local mode builds and starts Core, the Cloud app, Spaces, Chat, and the gateway.
 Through the public Spaces API it creates one Space with 12 open tasks assigned
 to the administrator, titled `Perf task 01` through `Perf task 12`. It verifies
 that all 12 appear in `GET /api/spaces/overview/work?view=mine` before measuring.
@@ -168,8 +176,8 @@ context allows service workers and performs these steps:
 1. `launch-first`: open Start with an empty HTTP cache and no worker yet. Wait
    for the initial islands, 500 ms of script quiet, and service-worker readiness.
    A welcome, unavailable, sign-in, or non-app page fails the profile.
-2. Run `tab-start-spaces`, `tab-spaces-start`, `tab-start-settings`, and
-   `tab-settings-start`, then repeat all four. These use touch taps (mouse clicks on the monitor) on the
+2. Run `tab-start-chat`, `tab-chat-start`, `tab-start-spaces`, `tab-spaces-start`, `tab-start-settings`, and
+   `tab-settings-start`, then repeat all six. These use touch taps (mouse clicks on the monitor) on the
    navigation the width shows: the tab bar and Start's header settings icon on
    a phone, the sidebar from 48 rem. Round 1 is the first visit; round 2
    is the revisit in this context.

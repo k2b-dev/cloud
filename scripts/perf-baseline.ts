@@ -80,7 +80,7 @@ The extra pwa group runs WebKit iphone (390x844 @3x), ipad-portrait
 (390x844 @3x, the phone throttle below), with HTTP cache enabled.
 Flows: first/warm/expired-session/timezone launches, relaunch through the
 manifest start_url in a new page of the same context (including its final path),
-two rounds of Start ↔ Spaces and Start ↔ Settings taps, history back/forward, German/English,
+two rounds of Start ↔ Chat, Start ↔ Spaces and Start ↔ Settings taps, history back/forward, German/English,
 Light/Dark/Automatic, phone rename, and local check-off followed by Undo.
 Each run repeats first launch, tab rounds and start_url relaunch with workers blocked.
 Per-step timings, document hops and per-asset HTTP cache states are recorded.
