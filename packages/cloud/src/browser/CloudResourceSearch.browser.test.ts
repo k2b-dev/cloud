@@ -121,6 +121,25 @@ afterAll(async () => {
   server?.stop(true);
 });
 
+/**
+ * Pins only `Date` to an instant and lets it flow from there. Playwright's `clock` would also replace timers,
+ * animation frames and `performance`, which the search's debounce and settled waits rely on.
+ */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now();
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(RealDate.now() + offset);
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset;
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 type View = { width: number; height: number; touch: boolean };
 const views: View[] = [
   { width: 1440, height: 900, touch: false },
@@ -239,7 +258,7 @@ describe("streamed search in a browser", () => {
       });
       const page = await context.newPage();
       try {
-        await page.clock.setFixedTime(new Date("2026-11-04T15:00:00.000Z"));
+        await page.addInitScript(pinPageClock, Date.parse("2026-11-04T15:00:00.000Z"));
         await page.goto(`http://127.0.0.1:${server.port}/?picker&app=mail&lang=de`);
         await page.locator('input[role="combobox"]').waitFor();
         await page.keyboard.type("neuerungen");
