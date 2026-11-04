@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import { aiAreaBrowserFixture } from "./AiArea.browser-fixture";
 import { aiFixtureCatalog } from "./AiArea.fixture-data";
 
@@ -447,4 +447,45 @@ test("model conflict retry retains a locally changed access mode", async () => {
   await page.getByRole("button", { name: "Merge and save" }).click();
   await page.getByRole("button", { name: "Discard my changes" }).waitFor();
   expect(requests[1]).toEqual(expect.objectContaining({ label: "Remote name", access: { expectedRevision: 1, entries: [] } }));
+}, 30_000);
+
+test("the boundary select offers no privacy commitment without moving the form; that boundary stays fixed and apps-only", async () => {
+  await page.route("**/api/admin/core/ai/providers", async (route) => {
+    await json(route, { ...catalog.providers.find((entry) => entry.id === "gemini-api")!, id: "demo", revision: 1 });
+  });
+  await goto("sec=providers");
+  await page.getByRole("button", { name: "Add provider", exact: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("radio").first().focus();
+  await page.keyboard.press("Home");
+  await page.waitForFunction(() => document.activeElement?.tagName === "INPUT");
+  await dialog.getByRole("textbox", { name: /^Name/ }).fill("Gemini");
+  await dialog.getByRole("textbox", { name: /^Base URL/ }).fill("https://generativelanguage.example/v1beta/openai/");
+  const testButton = dialog.getByRole("button", { name: "Test connection" });
+  await settled(page);
+  const before = await testButton.boundingBox();
+  await dialog.getByRole("radio", { name: "No privacy commitment" }).click();
+  await dialog.getByText(/makes no data-protection commitment/).waitFor({ state: "visible" });
+  expect(await testButton.boundingBox()).toEqual(before);
+  await dialog.getByRole("radio", { name: "Hosted" }).click();
+  await settled(page);
+  expect(await testButton.boundingBox()).toEqual(before);
+  await dialog.getByRole("radio", { name: "No privacy commitment" }).click();
+  const created = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/admin/core/ai/providers"));
+  await dialog.getByRole("button", { name: "Save and choose models" }).click();
+  expect((await created).postDataJSON()).toEqual(expect.objectContaining({ dataBoundary: "restricted" }));
+
+  await goto("sec=providers&p=gemini-api&pane=conn");
+  await page.getByText("This boundary cannot change after creation", { exact: false }).waitFor();
+  expect(await page.getByRole("radio", { name: "Hosted" }).count()).toBe(0);
+  await goto("sec=providers&p=gemini-api&m=gemini-artikel");
+  await page.getByText("Apps only.", { exact: false }).waitFor();
+  expect(await page.getByRole("radio", { name: "All signed-in people" }).count()).toBe(0);
+  await goto("sec=classes&slot=fast");
+  await page.getByRole("combobox").first().click();
+  await page
+    .getByRole("option", { name: /GPT-OSS/ })
+    .first()
+    .waitFor();
+  expect(await page.getByRole("option", { name: /Gemini Artikeltexte/ }).count()).toBe(0);
 }, 30_000);

@@ -40,7 +40,7 @@ const resolved: AiResolvedModel = {
 test("personal tasks authorize the pinned model with Assistant grants and the personal data policy", async () => {
   const select = spyOn(assistant, "selectAssistantAiModel").mockResolvedValue({ id: "personal" });
   const resolve = spyOn(settings, "resolveAiModel").mockResolvedValue(resolved);
-  const background = spyOn(structured, "resolveAiWorkflowModel");
+  const background = spyOn(structured, "resolveAiBackgroundModel");
   try {
     const subject = { type: "user", userId: "person" } as const;
     expect(await resolveApplicationAiTaskModel(subject, { id: "personal" })).toBe(resolved);
@@ -57,12 +57,14 @@ test("personal tasks authorize the pinned model with Assistant grants and the pe
   }
 });
 
-test("background tasks retain the requested class", async () => {
+test("background tasks retain the requested class on the application path", async () => {
   const select = spyOn(assistant, "selectAssistantAiModel");
-  const background = spyOn(structured, "resolveAiWorkflowModel").mockResolvedValue(resolved);
+  const background = spyOn(structured, "resolveAiBackgroundModel").mockResolvedValue(resolved);
   try {
-    expect(await resolveApplicationAiTaskModel(undefined, { class: "balanced" })).toBe(resolved);
-    expect(background).toHaveBeenCalledWith({ class: "balanced" });
+    expect(await resolveApplicationAiTaskModel(undefined, { class: "thorough" })).toBe(resolved);
+    expect(background).toHaveBeenCalledWith({ class: "thorough" });
+    expect(await resolveApplicationAiTaskModel(undefined)).toBe(resolved);
+    expect(background).toHaveBeenLastCalledWith({ class: "balanced" });
     expect(select).not.toHaveBeenCalled();
   } finally {
     select.mockRestore();

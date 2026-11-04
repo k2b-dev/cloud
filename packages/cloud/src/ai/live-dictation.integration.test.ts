@@ -221,7 +221,9 @@ suite("live dictation server", () => {
       expect(await getLiveDictationStatus({ type: "user", userId })).toEqual({ available: false, reason: "disabled" });
       state.enabled = true;
       const access = (await aiModelAccess.listForAdmin())[modelId]!;
-      await sql.begin((db) => aiModelAccess.syncModels([modelId], [{ modelId, expectedRevision: access.revision, entries: [] }], db));
+      await sql.begin((db) =>
+        aiModelAccess.syncModels([{ id: modelId, restricted: false }], [{ modelId, expectedRevision: access.revision, entries: [] }], db),
+      );
       expect(await getLiveDictationStatus({ type: "user", userId })).toEqual({ available: false, reason: "no_access" });
       state.assignments = state.assignments.map((row) => (row.slot === "liveAudio" ? { ...row, variantId: null } : row));
       expect(await getLiveDictationStatus({ type: "user", userId })).toEqual({ available: false, reason: "not_configured" });

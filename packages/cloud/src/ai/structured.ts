@@ -12,8 +12,10 @@ import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";
 
+/** Application server path: an explicit `{ id }` may name a `restricted` model; classes never resolve to one. */
 export const resolveAiBackgroundModel = (model: AiModelRequest = { class: "fast" }): Promise<AiResolvedModel> =>
-  resolveAiModel({ kind: "selectable" }, model);
+  resolveAiModel({ kind: "selectable", allowedDataBoundaries: ["private", "hosted", "restricted"] }, model);
+/** Workflows and code act for people, so they never reach `restricted` models. */
 export const resolveAiWorkflowModel = (model: AiModelRequest = { class: "balanced" }): Promise<AiResolvedModel> =>
   resolveAiModel({ kind: "selectable" }, model);
 

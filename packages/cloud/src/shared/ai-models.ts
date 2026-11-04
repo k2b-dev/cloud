@@ -61,6 +61,12 @@ export const providerRequiresCredential = (provider: AiProviderType): boolean =>
   ["openai", "openrouter", "anthropic", "mistral", "gemini"].includes(provider);
 export const providerSupportsCredential = (provider: AiProviderType): boolean =>
   providerRequiresCredential(provider) || provider === "vllm" || provider === "vllm-realtime" || provider === "openai-compatible";
+/**
+ * Where a provider may process data, from most to least protected. `restricted` providers make no
+ * data-protection commitment: only application server code that names a model ID reaches them.
+ */
+export const AiDataBoundarySchema = z.enum(["private", "hosted", "restricted"]);
+const dataBoundaryRank = { restricted: 0, hosted: 1, private: 2 } as const;
 export const AiProviderStatusSchema = z.enum(["unknown", "ok", "unreachable", "key_rejected", "error"]);
 export const AiProviderInputSchema = z
   .object({
@@ -68,7 +74,7 @@ export const AiProviderInputSchema = z
     type: AiProviderTypeSchema,
     label: z.string().trim().min(1),
     baseUrl: httpUrl.nullable().default(null),
-    dataBoundary: z.enum(["hosted", "private"]),
+    dataBoundary: AiDataBoundarySchema,
     enabled: z.boolean().default(true),
     logo: image.nullable().default(null),
   })
@@ -266,8 +272,10 @@ export const aiReplacementProblem = (
   target: Pick<AiProvider, "dataBoundary" | "enabled">,
   original: Pick<AiModel, "kind" | "capabilities">,
   replacement: Pick<AiModel, "kind" | "capabilities" | "enabled">,
-): "private_boundary" | "incompatible_model" | null => {
-  if (source.dataBoundary === "private" && target.dataBoundary !== "private") return "private_boundary";
+): "private_boundary" | "restricted_boundary" | "incompatible_model" | null => {
+  // Replacements land in classes, tools, projects and workflows, which people use.
+  if (target.dataBoundary === "restricted") return "restricted_boundary";
+  if (dataBoundaryRank[target.dataBoundary] < dataBoundaryRank[source.dataBoundary]) return "private_boundary";
   if (
     !target.enabled ||
     !replacement.enabled ||
