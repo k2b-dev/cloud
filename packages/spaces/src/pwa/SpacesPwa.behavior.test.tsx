@@ -152,6 +152,32 @@ test("the way back leads to the list in place, and a task that failed to load of
   expect(requests.at(-1)).toBe("GET /pwa/spaces/Space1/Item02 application/json");
 });
 
+test("header Back consumes the list-to-task entry and Forward reopens the task", async () => {
+  const root = mount("/pwa/spaces");
+  const length = history.length;
+  root.querySelector<HTMLAnchorElement>('.spaces-pwa__copy[href="/pwa/spaces/Space1/Item01"]')!.click();
+  expect(history.length).toBe(length + 1);
+  waiting.get("/pwa/spaces/Space1/Item01")!(Response.json(detail("Item01", "Order the tents")));
+  await waitFor(() => root.textContent?.includes("About Order the tents.") ?? false, "task loaded");
+  root.querySelector<HTMLAnchorElement>(".k2b-app-workspace__level-back")!.click();
+  await waitFor(() => location.pathname === "/pwa/spaces", "Back to list");
+  expect(history.length).toBe(length + 1);
+  expect(level(root)).toEqual(["1 2 3", "2 3"]);
+  history.forward();
+  await waitFor(() => location.pathname === "/pwa/spaces/Space1/Item01", "Forward to task");
+  waiting.get("/pwa/spaces/Space1/Item01")!(Response.json(detail("Item01", "Order the tents")));
+  await waitFor(() => root.textContent?.includes("About Order the tents.") ?? false, "task restored");
+  expect(history.length).toBe(length + 1);
+});
+
+test("Back from a deep link replaces its entry with the list", () => {
+  const root = mount("/pwa/spaces/Space1/Item01", detail("Item01", "Order the tents"));
+  const length = history.length;
+  root.querySelector<HTMLAnchorElement>(".k2b-app-workspace__level-back")!.click();
+  expect(location.pathname).toBe("/pwa/spaces");
+  expect(history.length).toBe(length);
+});
+
 const travel = (path: string) => {
   const view = dom!.window;
   view.history.replaceState(view.history.state, "", path);

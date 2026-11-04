@@ -82,16 +82,22 @@ export default function SpacesPwa(props: Props) {
 
   const open = (item: WorkItem, event: LinkNavigateEvent) => {
     const target = { spaceShortId: item.spaceShortId, shortId: item.shortId };
+    const fromList = selection() === null;
     setSelection(target);
     load(target, item);
-    event.push(taskHref(item.spaceShortId, item.shortId, view()), { scroll: "manual" });
+    event.push(taskHref(item.spaceShortId, item.shortId, view()), { scroll: "manual", state: { spacesFromList: fromList } });
   };
 
   const back = (event: LinkNavigateEvent) => {
+    const state: unknown = history.state;
+    if (state && typeof state === "object" && "spacesFromList" in state && state.spacesFromList === true) {
+      history.back();
+      return;
+    }
     request?.abort();
     setSelection(null);
     setDetail(undefined);
-    event.push(listHref(view()), { scroll: "manual" });
+    event.replaceWith(listHref(view()), { scroll: "manual", state: null });
   };
 
   onMount(() => onCleanup(listenPopState(({ url }) => follow(url))));

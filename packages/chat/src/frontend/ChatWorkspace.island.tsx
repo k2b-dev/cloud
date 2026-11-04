@@ -1542,14 +1542,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
     if (depth > 0) {
       if (!keepsChat(null)) history.go(-depth);
-    } else if ((await open(chatRoute(null))) === "applied") navigation.push(listHref(), { scroll: "preserve" });
+    } else if ((await open(chatRoute(null))) === "applied") {
+      if (props.app) navigation.replaceWith(listHref(), { scroll: "preserve", state: null });
+      else navigation.push(listHref(), { scroll: "preserve" });
+    }
   };
   const backToThreads = async (navigation: LinkNavigateEvent) => {
     const state: unknown = history.state;
     const id = route().chatId;
     if (state && typeof state === "object" && "threadFromPage" in state && state.threadFromPage === true) history.back();
-    else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied")
-      navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied") {
+      if (props.app) navigation.replaceWith(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+      else navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    }
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -1596,8 +1601,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel(null);
     setRoute({ ...route(), chatId: id, messageId, panel: null });
-    if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), { scroll: "preserve" });
-    else navigate(viewHref(routeAddress(route(), basePath)), { scroll: "preserve" });
+    const options = { scroll: "preserve" as const, replace: props.app, ...(props.app ? { state: null } : {}) };
+    if (navigation && props.app) navigation.replaceWith(viewHref(routeAddress(route(), basePath)), options);
+    else if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
+    else navigate(viewHref(routeAddress(route(), basePath)), options);
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
