@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { children, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import type { DropdownItem } from "../actions/Dropdown";
 import { Avatar, type AvatarShape } from "../surfaces/Avatar";
@@ -562,8 +562,11 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
   const limit = () => Math.max(1, props.limit ?? 5);
   const state = () => props.state ?? "ready";
   const total = () => props.incoming.length + props.outgoing.length;
+  // Resolve once: the empty state reads it as a condition and as content.
+  const footer = children(() => props.footer);
   const summary = () => {
     if (state() === "loading") return t().linksLoading;
+    if (state() === "error") return t().linksFailed;
     const names = (items: readonly DetailLinkItem[]) => ({
       names: listNames(
         items.slice(0, 2).map((item) => item.title),
@@ -609,10 +612,10 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
           count={state() === "ready" ? 0 : undefined}
           class={props.class}
         >
-          <Show when={state() !== "ready" || props.footer}>
+          <Show when={state() !== "ready" || footer()}>
             <div class="k2b-detail-section-rows">
               {pending()}
-              {props.footer}
+              {footer()}
             </div>
           </Show>
         </DetailPanel.Section>
@@ -635,7 +638,7 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
             <LinkGroup label={t().linksTo({ count: props.outgoing.length })} items={props.outgoing} limit={limit()} />
           </Show>
           {pending()}
-          {props.footer}
+          {footer()}
         </div>
       </DetailPanel.Section>
     </Show>

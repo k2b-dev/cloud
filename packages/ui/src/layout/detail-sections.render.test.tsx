@@ -133,6 +133,55 @@ describe("DetailLinks, DetailProperties, DetailTags", () => {
     );
     expect(text(empty)).toBe("Links None yet Add link");
   });
+  test("a footer and the children of a collapsible section are built once", () => {
+    let built = 0;
+    const counted = () => {
+      built += 1;
+      return createComponent(DetailPanel.Action, { type: "button", title: "Add link" });
+    };
+    render(() =>
+      createComponent(DetailLinks, {
+        incoming: [],
+        outgoing: [],
+        get footer() {
+          return counted();
+        },
+      }),
+    );
+    expect(built).toBe(1);
+    built = 0;
+    render(() =>
+      createComponent(DetailLinks, {
+        incoming: [],
+        outgoing: [{ id: "b", title: "Glossary", href: "/b" }],
+        get footer() {
+          return counted();
+        },
+      }),
+    );
+    expect(built).toBe(1);
+    built = 0;
+    render(() =>
+      createComponent(DetailProperties, {
+        items: [],
+        get children() {
+          return counted();
+        },
+      }),
+    );
+    expect(built).toBe(1);
+  });
+  test("a closed links section says when links failed", () => {
+    const html = render(() =>
+      createComponent(DetailLinks, {
+        incoming: [],
+        outgoing: [{ id: "b", title: "Glossary", href: "/b" }],
+        state: "error",
+        defaultOpen: false,
+      }),
+    );
+    expect(html).toMatch(/k2b-detail-panel__section-preview[^>]*>Could not load all links</);
+  });
   test("link rows carry a description, an external target, a menu, and a disabled state", () => {
     const html = render(() =>
       createComponent(DetailLinks, {
