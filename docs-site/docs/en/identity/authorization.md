@@ -714,7 +714,9 @@ identifier. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
-as the resource's object API keys. The dialog is a presentation of the same
+as the resource's object API keys. The caller builds them before the dialog
+owns them, so they cannot rely on cleanup; tie their requests to the `signal`
+you pass. The dialog is a presentation of the same
 grants; the service still checks every change.
 
 When the dialog opens from settings that can close on their own, pass their
