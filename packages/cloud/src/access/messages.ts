@@ -105,7 +105,6 @@ export const accessMessages = i18n.define({
       codeWithAccess: "Code with access",
       codeOf: ({ title }: { title: string }) => `Code of ${title}`,
       codeHiddenOwner: "Code whose owner you can't see",
-      codeEditorAuthority: "Whoever edits the Code acts with this permission.",
       codeHint: "Code gets access only when someone switches it on, never here. After removal, its calls here fail.",
       searchNobody: "No person and no group found.",
       searchNeverCode: "Code is never listed here. It gets access when someone who manages both the Code and this place switches it on.",
@@ -230,7 +229,6 @@ export const accessMessages = i18n.define({
       codeWithAccess: "Code mit Zugriff",
       codeOf: ({ title }) => `Code von ${title}`,
       codeHiddenOwner: "Code, dessen Besitzer du nicht sehen kannst",
-      codeEditorAuthority: "Wer den Code bearbeitet, handelt mit diesem Recht.",
       codeHint: "Code bekommt Zugriff nur beim Einschalten, nie hier. Nach dem Entfernen scheitern seine Aufrufe hier.",
       searchNobody: "Keine Person und keine Gruppe gefunden.",
       searchNeverCode:
