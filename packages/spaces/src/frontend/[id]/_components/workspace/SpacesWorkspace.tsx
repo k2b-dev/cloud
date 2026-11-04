@@ -229,6 +229,7 @@ export default function SpacesWorkspace(props: {
             initialDetail={initialDetail}
             dateConfig={props.dateConfig}
             canWrite={state.canWrite}
+            accessVisible={state.accessVisible}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
           />
         </AppWorkspace.Content>
