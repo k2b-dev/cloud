@@ -8,6 +8,7 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   paginateItems,
@@ -16,7 +17,13 @@ import {
   updateAccess,
   userFromActor,
 } from "@k2b/cloud/server";
-import { audit, type ServiceAccountCredential, serviceAccountCredentials, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
+import {
+  accounts,
+  audit,
+  type ServiceAccountCredential,
+  serviceAccountCredentials,
+  serviceAccountUsesOwnGrants,
+} from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { publishContactChange } from "./live";
@@ -73,6 +80,8 @@ export const addBookAccess = async (bookId: string, accessId: string, locale?: s
 
   try {
     await sql.begin(async (tx) => {
+      await lockAccessMutationAuthority({ subject: null, accessId }, tx);
+      await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
       await tx`
         INSERT INTO contacts.book_access (book_id, access_id)
         VALUES (${bookId}::uuid, ${accessId}::uuid)
@@ -186,6 +195,7 @@ export const listBookAccessPaginated = async (config: {
 export const grantBookAccess = async (config: {
   bookId: string;
   actor?: RequestActor;
+  caller?: { actor: RequestActor; accessSubject: AccessSubject; authority: "grant" | "administration" };
   principal: Principal;
   permission: PermissionLevel;
   locale?: string;
@@ -224,6 +234,12 @@ export const grantBookAccess = async (config: {
 
   const created = await sql
     .begin(async (tx) => {
+      if (!(await lockAccessMutationAuthority({ subject: config.caller?.accessSubject ?? null, principal: config.principal }, tx)))
+        return fail(err.forbidden("Access denied"));
+      const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${config.bookId}::uuid FOR UPDATE`;
+      if (!book) return fail(err.notFound("Book"));
+      if (config.caller && !(await authorizeBookAccessMutation({ ...config.caller, bookId: config.bookId }, tx)))
+        return fail(err.forbidden("Access denied"));
       const result = await createAccess({ principal: config.principal, permission: config.permission }, tx);
       if (!result.ok) return result;
       await tx`INSERT INTO contacts.book_access (book_id, access_id) VALUES (${config.bookId}::uuid, ${result.data.id}::uuid)`;
@@ -284,8 +300,26 @@ const readBookManagerEntries = async (bookId: string, db: SQL) => {
   }));
 };
 
+/** Reload the manager after retaining identity, directory and book locks. */
+const authorizeBookAccessMutation = async (
+  config: {
+    bookId: string;
+    actor: RequestActor;
+    accessSubject: AccessSubject;
+    authority: "grant" | "administration";
+  },
+  db: SQL,
+): Promise<boolean> => {
+  if (config.authority === "grant") return (await getActorBookPermission(config, db)) === "admin";
+  const user = userFromActor(config.actor);
+  return Boolean(
+    user &&
+      (await accounts.users.hasInstallationAdminInTransaction(config.actor.kind === "user" ? config.actor : { kind: "user", user }, db)),
+  );
+};
+
 /**
- * Locks the book first so authorization and manager checks see preceding grant changes.
+ * Locks authority and then the book so authorization and manager checks see preceding grant changes.
  */
 export const removeBookAccess = async (config: {
   bookId: string;
@@ -301,14 +335,11 @@ export const removeBookAccess = async (config: {
   }
 
   return sql.begin(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: accessSubject, accessId }, tx))) return fail(err.forbidden("Access denied"));
     const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
     if (!book) return fail(err.notFound("Book"));
     const before = await readBookManagerEntries(bookId, tx);
-    if (
-      config.authority === "administration"
-        ? !isContactsAdministrator(actor)
-        : (await getActorBookPermission({ bookId, actor, accessSubject }, tx)) !== "admin"
-    ) {
+    if (!(await authorizeBookAccessMutation(config, tx))) {
       return fail(err.forbidden("Access denied"));
     }
     if (!before.some((entry) => entry.id === accessId)) {
@@ -345,7 +376,7 @@ export const removeBookAccess = async (config: {
 };
 
 /**
- * Locks the book first so authorization and manager checks see preceding grant changes.
+ * Locks authority and then the book so authorization and manager checks see preceding grant changes.
  */
 export const updateBookAccessPermission = async (config: {
   bookId: string;
@@ -362,14 +393,11 @@ export const updateBookAccessPermission = async (config: {
   }
 
   return sql.begin(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: accessSubject, accessId }, tx))) return fail(err.forbidden("Access denied"));
     const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
     if (!book) return fail(err.notFound("Book"));
     const before = await readBookManagerEntries(bookId, tx);
-    if (
-      config.authority === "administration"
-        ? !isContactsAdministrator(actor)
-        : (await getActorBookPermission({ bookId, actor, accessSubject }, tx)) !== "admin"
-    ) {
+    if (!(await authorizeBookAccessMutation(config, tx))) {
       return fail(err.forbidden("Access denied"));
     }
     if (!before.some((entry) => entry.id === accessId)) {
@@ -380,9 +408,7 @@ export const updateBookAccessPermission = async (config: {
     if (!guarded.ok) return guarded;
 
     const result = await updateAccess({ id: accessId, permission }, tx);
-    if (!result.ok) {
-      return fail(err.notFound("Access entry for this book"));
-    }
+    if (!result.ok) return result;
 
     await audit.record(
       {

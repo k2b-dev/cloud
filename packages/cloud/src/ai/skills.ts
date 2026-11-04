@@ -9,6 +9,7 @@ import {
   deleteAccess,
   ensureManagerRemains,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   updateAccess,
@@ -911,6 +912,7 @@ export const aiSkills = {
   ): Promise<AiSkillAccess | null> {
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
+      if (!subject || !(await lockAccessMutationAuthority({ subject: subject.accessSubject, principal: input.principal }, tx))) return null;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
@@ -928,6 +930,17 @@ export const aiSkills = {
   ): Promise<boolean> {
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
+      if (
+        !subject ||
+        !(await lockAccessMutationAuthority(
+          {
+            subject: subject.accessSubject,
+            accessId: sql`(SELECT access_id FROM ai.skill_access WHERE skill_id = ${skillId}::uuid AND short_id = ${accessId})`,
+          },
+          tx,
+        ))
+      )
+        return false;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return false;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
@@ -944,6 +957,17 @@ export const aiSkills = {
   ): Promise<boolean> {
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
+      if (
+        !subject ||
+        !(await lockAccessMutationAuthority(
+          {
+            subject: subject.accessSubject,
+            accessId: sql`(SELECT access_id FROM ai.skill_access WHERE skill_id = ${skillId}::uuid AND short_id = ${accessId})`,
+          },
+          tx,
+        ))
+      )
+        return false;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return false;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);

@@ -137,14 +137,15 @@ suite("Mail mailbox Code access", () => {
     if (!shares.ok) throw new Error(shares.error.message);
     expect(shares.data.find((entry) => entry.id === write.grantId)?.grantId).toBe(write.grantId);
     expect(shares.data.find((entry) => entry.principal.type === "user")?.grantId).toBeUndefined();
-    const ordinaryRemoval = await revokeMailboxAccess({ context: ownerContext, mailboxId: target.id, accessId: write.grantId });
-    expect(ordinaryRemoval.ok).toBe(false);
-    if (!ordinaryRemoval.ok) expect(ordinaryRemoval.error.message).toContain("grantId");
     expect(
       (await updateMailboxAccess({ context: ownerContext, mailboxId: target.id, accessId: write.grantId, permission: "read" })).ok,
-    ).toBe(false);
+    ).toBe(true);
+    expect(await getMailboxPermission(code, target.id)).toBe("read");
+    expect(
+      (await updateMailboxAccess({ context: ownerContext, mailboxId: target.id, accessId: write.grantId, permission: "write" })).ok,
+    ).toBe(true);
     expect(await getMailboxPermission(code, target.id)).toBe("write");
-    expect(await revoke(target.shortId, write.grantId)).toBe(true);
+    expect((await revokeMailboxAccess({ context: ownerContext, mailboxId: target.id, accessId: write.grantId })).ok).toBe(true);
     expect(await getMailboxPermission(code, target.id)).toBe("read");
     const writeRefused = await mailCapabilities.actions["mailbox.tag.create"].run(
       mailCapabilities.actions["mailbox.tag.create"].input.parse({ name: "Read-only Code", color: "#112233" }),

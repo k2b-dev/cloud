@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
+  AccessMutationBusyError,
   type AuthContext,
   auth,
   getLocale,
@@ -74,6 +75,7 @@ export const createMachineRoutes = () =>
       );
     })
     .onError((error, c) => {
+      if (error instanceof AccessMutationBusyError) return error.getResponse();
       if (error instanceof DatabaseError)
         return c.json({ code: error.code, message: machineMessages.resolve([getLocale(c)]).t.EXECUTION_FAILED }, error.status);
       if (error instanceof CloudError) {

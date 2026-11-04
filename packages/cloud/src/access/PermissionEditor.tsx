@@ -4,7 +4,6 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
-import CodeAccessSection, { isCodeAccessEntry } from "./CodeAccessSection";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
@@ -224,8 +223,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
-  const allowed = (principal: Principal) =>
-    resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, t());
+  const allowed = (principal: Principal, kind?: ServiceAccountKind) => {
+    const levels = resolveAllowedLevels(
+      typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels,
+      t(),
+    );
+    const accountKind = kind ?? entries.find((entry) => principalKey(entry.principal) === principalKey(principal))?.serviceAccountKind;
+    return accountKind === "code" ? levels.filter((option) => option.level !== "admin") : levels;
+  };
   const labelOf = (entry: AccessEntry) =>
     entry.principal.type === "authenticated" && props.signedIn ? props.signedIn.label : principalLabel(entry, locale());
 
@@ -255,7 +260,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       }
       return;
     }
-    const first = choice ?? allowed(principal)[0];
+    const first = choice ?? allowed(principal, display.serviceAccountKind)[0];
+    if (display.serviceAccountKind === "code" && first?.level === "admin") return;
     if (!first) return;
     const id = `pending:${key}`;
     let granted = false;
@@ -374,13 +380,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   };
   let editorRoot: HTMLDivElement | undefined;
   let principalPickerHost: HTMLDivElement | undefined;
-  /** Someone looking for a Code here learns why it never shows up, and how it gets access. */
-  const searchEmpty = () => (
-    <>
-      <p class="font-medium text-primary">{t().searchNobody}</p>
-      <p class="mt-0.5">{t().searchNeverCode}</p>
-    </>
-  );
+  const searchEmpty = () => <p class="font-medium text-primary">{t().searchNobody}</p>;
   const focusPrincipalPicker = () => {
     queueMicrotask(() => {
       if (!disposed && canEdit() && !busy()) principalPickerHost?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
@@ -430,9 +430,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       if (selection && entries.some((entry) => principalKey(entry.principal) === principalKey(selection.principal))) setDraft(undefined);
     }),
   );
-  // Code accounts get their own section and never count as managers (modell 2, rules 7 and 10).
-  const shareEntries = createMemo(() => entries.filter((entry) => !isCodeAccessEntry(entry)));
-  const codeEntries = createMemo(() => entries.filter(isCodeAccessEntry));
+  const shareEntries = () => entries;
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
     // A grant on part of the resource never manages it.
@@ -472,7 +470,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   onSelect={(principal, display) => {
                     if (!canStart()) return;
                     setDraft({ principal, display });
-                    setDraftLevel(allowed(principal)[0]?.key ?? "read");
+                    setDraftLevel(allowed(principal, display.serviceAccountKind)[0]?.key ?? "read");
                   }}
                 />
               }
@@ -501,7 +499,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
             aria-label={t().newPermission}
             value={draftLevel}
             disabled={saving()}
-            options={allowed(draft()?.principal ?? { type: "user", userId: "" }).map((option) => ({
+            options={allowed(draft()?.principal ?? { type: "user", userId: "" }, draft()?.display.serviceAccountKind).map((option) => ({
               value: option.key,
               label: option.label,
             }))}
@@ -519,7 +517,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                 void grant(
                   selection.principal,
                   selection.display,
-                  allowed(selection.principal).find((option) => option.key === draftLevel()),
+                  allowed(selection.principal, selection.display.serviceAccountKind).find((option) => option.key === draftLevel()),
                 );
             }}
           >
@@ -594,14 +592,6 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           onSelect={(principal, display) => void grant(principal, display)}
         />
       </Show>
-      <CodeAccessSection
-        entries={codeEntries()}
-        canEdit={canEdit()}
-        expanded={props.expanded}
-        levelLabel={(entry) => resolveEntryDisplay(entry.permission, entry.scope, allowed(entry.principal), t()).label}
-        manageLabel={resolveEntryDisplay("admin", undefined, allowed({ type: "user", userId: "" }), t()).label}
-        onRemoved={(removed) => setEntries((current) => current.filter((entry) => entry.id !== removed.id))}
-      />
     </div>
   );
 }
@@ -846,6 +836,9 @@ function AccessEntryRow(props: {
           </Tooltip.Anchor>
         </Show>
       </div>
+      <Show when={props.entry.serviceAccountKind === "code"}>
+        <p class={props.expanded ? "pb-2 pl-11 text-[13px] text-dimmed" : "pb-1 pl-9 text-xs text-dimmed"}>{t().codeAccessAuthority}</p>
+      </Show>
       <Show when={props.expanded && props.lastManager && props.canEdit}>
         <p class="pb-2 pl-11 text-[13px] text-dimmed sm:pl-13">{t().lastManager({ level: manageLabel() })}</p>
       </Show>

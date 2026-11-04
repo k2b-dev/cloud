@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Request identity
@@ -138,6 +138,7 @@ type AccessSubject =
 | Personal API key | Service account with delegated user | User |
 | Resource API key or client credentials | Resource-bound service account | Service account |
 | Standalone API key or client credentials | Standalone service account (`standalone` or `agent`) | Service account |
+| Verified Code run invocation | Code service account (`code`), without a delegated user | The exact Code service account |
 
 A delegated credential uses only its user's grants. Do not merge them with
 service-account grants.

@@ -5,6 +5,7 @@ import {
   ensureManagerRemains,
   err,
   fail,
+  lockAccessMutationAuthority,
   ok,
   type PermissionLevel,
   type Result,
@@ -166,7 +167,7 @@ const validateMembers = async (
     if (caller?.profile === "guest") return fail(err.badInput(t.guestCoMembers));
     const rows = await db<
       { id: string }[]
-    >`SELECT id FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(services)}::uuid[]) AND status = 'active' AND (kind IN ('standalone', 'agent') OR (kind = 'resource_bound' AND app_id = 'chat' AND resource_type = 'conversation' AND resource_id = ${conversationId ?? null})) ${lock ? db`FOR SHARE` : db``}`;
+    >`SELECT id FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(services)}::uuid[]) AND status = 'active' AND (kind IN ('standalone', 'agent', 'code') OR (kind = 'resource_bound' AND app_id = 'chat' AND resource_type = 'conversation' AND resource_id = ${conversationId ?? null})) ${lock ? db`FOR SHARE` : db``}`;
     if (rows.length !== services.length) return fail(err.badInput(t.memberUnavailable));
   }
   for (const group of groups) {
@@ -530,6 +531,7 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       }
       if (!row) throw new TransactionFailure(err.internal(t.createFailed));
       for (const id of allIds) await addDirectMember(db, row, id, id === callerId ? "admin" : "write", input);
+      // The target is new; member validation and createAccess retain recipient accounts before any grant exists.
       for (const id of services) await addDirectSubject(db, row, { type: "service_account", id }, "write", input);
       const groupPeople = await addGroups(db, row, groups, input);
       await checkParticipantLimit(db, row.id, input);
@@ -752,7 +754,7 @@ type MemberRow = {
   permission: Exclude<PermissionLevel, "none">;
   added_at: Date;
   active: boolean;
-  service_account_kind?: "standalone" | "agent" | "resource_bound" | "user_delegated";
+  service_account_kind?: "standalone" | "agent" | "resource_bound" | "user_delegated" | "code";
 };
 const directEntries = (db: typeof sql, conversationId: string) => db<MemberRow[]>`
   SELECT ca.access_id, CASE WHEN a.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS principal_type,
@@ -927,6 +929,12 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
   const parsed = parse(AddMembersSchema, input.input, input);
   if (!parsed.ok) return parsed;
   return transaction(async (db) => {
+    for (const principal of parsed.data.members) {
+      if (!(await lockAccessMutationAuthority({ subject: input.accessSubject, principal }, db)))
+        return fail(err.forbidden(messages(input).forbidden));
+    }
+    if (!parsed.data.members.length && !(await lockAccessMutationAuthority({ subject: input.accessSubject }, db)))
+      return fail(err.forbidden(messages(input).forbidden));
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.add");
     if (!allowed.ok) return allowed;
@@ -963,6 +971,8 @@ const updateMember = async (input: ChatContext & { conversationId: string; acces
   if (!parsed.ok) return parsed;
   if (!z.uuid().safeParse(input.accessId).success) return notMember(input);
   return transaction(async (db) => {
+    if (!(await lockAccessMutationAuthority({ subject: input.accessSubject, accessId: input.accessId }, db)))
+      return fail(err.forbidden(messages(input).forbidden));
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.update");
     if (!allowed.ok) return allowed;
@@ -1011,6 +1021,8 @@ const deleteDirect = async (db: typeof sql, row: ConversationRow, member: Member
 const removeMember = async (input: ChatContext & { conversationId: string; accessId: string }) => {
   if (!z.uuid().safeParse(input.accessId).success) return notMember(input);
   return transaction(async (db) => {
+    if (!(await lockAccessMutationAuthority({ subject: input.accessSubject, accessId: input.accessId }, db)))
+      return fail(err.forbidden(messages(input).forbidden));
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.remove");
     if (!allowed.ok) return allowed;

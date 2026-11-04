@@ -11,12 +11,14 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   getMemberPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   type RequestActor,
   updateAccess,
 } from "@k2b/cloud/server";
 import {
+  accounts,
   type ServiceAccountCredential,
   type ServiceAccountKind,
   serviceAccountCredentials,
@@ -71,7 +73,12 @@ const authorizeAccessMutation = async (
 ): Promise<boolean> => {
   if (!caller) return true;
   const user = caller.actor.kind === "user" ? caller.actor.user : caller.actor.delegatedUser;
-  if (user && hasRole(user, "admin")) return true;
+  if (
+    user &&
+    hasRole(user, "admin") &&
+    (await accounts.users.hasInstallationAdminInTransaction(caller.actor.kind === "user" ? caller.actor : { kind: "user", user }, db))
+  )
+    return true;
   const account = caller.actor.kind === "service_account" ? caller.actor.serviceAccount : null;
   if (
     account?.kind === "resource_bound" &&
@@ -331,6 +338,8 @@ const mutateNotebookAccess = async (params: {
   caller?: NotebookAccessCaller;
 }): Promise<Result<void>> => {
   const result = await workspaceTransaction(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, accessId: params.accessId }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${params.notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(params.notebookId, tx);
@@ -420,6 +429,8 @@ export const grantNotebookAccess = async (params: {
 }): Promise<Result<AccessEntry>> => {
   const { notebookId, principal, permission } = params;
   const result = await workspaceTransaction(async (tx): Promise<Result<string>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, principal }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(notebookId, tx);

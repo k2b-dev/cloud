@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { AccessMutationBusyError } from "@k2b/cloud/server";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -13,14 +14,13 @@ beforeAll(async () => {
 for (const kind of ["standalone", "agent"] as const) {
   for (const resourceType of ["base", "customApp"] as const) {
     for (const operation of ["grant", "update", "revoke"] as const) {
-      postgresTest(`${kind}: ${resourceType} recipient deletion precedes ${operation} membership locks`, async () => {
+      postgresTest(`${kind}: ${resourceType} recipient deletion refuses ${operation} before membership locks`, async () => {
         const baseId = testUuid();
         const appId = testUuid();
         const groupId = testUuid();
         const accountId = testUuid();
         const accessId = testUuid();
         let pending: ReturnType<typeof grantAccess> | ReturnType<typeof revokeAccess> | undefined;
-        let settled = false;
         try {
           await sql`INSERT INTO auth.groups (id, cn, name, provider)
           VALUES (${groupId}::uuid, ${groupId}, 'Recipient group', 'local')`;
@@ -50,8 +50,6 @@ for (const kind of ["standalone", "agent"] as const) {
             // Reproduce that order without depending on database trigger names.
             if (operation !== "grant") await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
             await tx`SET LOCAL lock_timeout = '2s'`;
-            const [holder] = await tx<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
-            if (!holder) throw new Error("Missing transaction identity");
             const mutation =
               operation === "grant"
                 ? grantAccess({
@@ -63,26 +61,23 @@ for (const kind of ["standalone", "agent"] as const) {
                 : operation === "update"
                   ? updateAccessLevel(accessId, "none")
                   : revokeAccess(accessId);
-            pending = mutation.finally(() => {
-              settled = true;
-            });
-            pending.catch(() => {});
-            const deadline = performance.now() + 2_000;
-            for (;;) {
-              const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
-              SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
-                AND ${holder.pid}::int = ANY(pg_blocking_pids(pid))
-            ) AS blocked`;
-              if (state?.blocked) break;
-              if (settled) throw new Error("Grant mutation did not wait for recipient deletion");
-              if (performance.now() >= deadline) throw new Error("Grant mutation did not reach the recipient lock");
-            }
-            // The actual delete must be able to acquire its membership cascade
-            // locks while the grant waits. The old order deadlocks at this point.
+            pending = mutation;
+            // Contention aborts before taking directory or target locks, so the
+            // deleting transaction can finish its cascades without a deadlock.
+            await expect(pending).rejects.toBeInstanceOf(AccessMutationBusyError);
             await tx`DELETE FROM auth.service_accounts WHERE id = ${accountId}::uuid`;
           });
           if (!pending) throw new Error("Grant mutation did not start");
-          const result = await pending;
+          const result = await (operation === "grant"
+            ? grantAccess({
+                resourceType,
+                resourceId: resourceType === "base" ? baseId : appId,
+                principal: { type: "service_account", serviceAccountId: accountId },
+                permission: "read",
+              })
+            : operation === "update"
+              ? updateAccessLevel(accessId, "none")
+              : revokeAccess(accessId));
           expect(result.ok).toBe(false);
           if (!result.ok) expect(result.error.status).toBe(404);
           expect(await listBaseAccess(baseId)).toEqual([]);
@@ -103,7 +98,7 @@ for (const kind of ["standalone", "agent"] as const) {
     }
   }
 
-  postgresTest(`${kind}: inherited administration waits for a pending membership removal`, async () => {
+  postgresTest(`${kind}: inherited administration refuses a pending membership removal`, async () => {
     const baseId = testUuid();
     const appId = testUuid();
     const groupId = testUuid();
@@ -111,7 +106,6 @@ for (const kind of ["standalone", "agent"] as const) {
     const grantId = testUuid();
     const accessIds = [grantId];
     let pending: ReturnType<typeof grantAccess> | undefined;
-    let settled = false;
     try {
       await sql`INSERT INTO auth.groups (id, cn, name, provider)
         VALUES (${groupId}::uuid, ${groupId}, 'Account administrators', 'local')`;
@@ -130,31 +124,23 @@ for (const kind of ["standalone", "agent"] as const) {
       await sql.begin(async (tx) => {
         await tx`DELETE FROM auth.service_account_groups
           WHERE service_account_id = ${accountId}::uuid AND group_id = ${groupId}::uuid`;
-        const [holder] = await tx<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
-        if (!holder) throw new Error("Missing transaction identity");
         pending = grantAccess({
           resourceType: "customApp",
           resourceId: appId,
           principal: { type: "public" },
           permission: "read",
           authorization: { subject: { type: "service_account", serviceAccountId: accountId }, permissionCap: "admin" },
-        }).finally(() => {
-          settled = true;
         });
-        pending.catch(() => {});
-        const deadline = performance.now() + 2_000;
-        for (;;) {
-          const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
-            SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
-              AND ${holder.pid}::int = ANY(pg_blocking_pids(pid))
-          ) AS blocked`;
-          if (state?.blocked) break;
-          if (settled) throw new Error("Grant mutation did not wait for membership removal");
-          if (performance.now() >= deadline) throw new Error("Grant mutation did not reach the membership lock");
-        }
+        await expect(pending).rejects.toBeInstanceOf(AccessMutationBusyError);
       });
       if (!pending) throw new Error("Grant mutation did not start");
-      const result = await pending;
+      const result = await grantAccess({
+        resourceType: "customApp",
+        resourceId: appId,
+        principal: { type: "public" },
+        permission: "read",
+        authorization: { subject: { type: "service_account", serviceAccountId: accountId }, permissionCap: "admin" },
+      });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.status).toBe(403);
       expect(await listCustomAppAccess(appId)).toEqual([]);

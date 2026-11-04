@@ -11,11 +11,14 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   getEffectivePermission,
+  lockAccessMutationAuthority,
   type Principal,
+  updateAccess,
 } from "../server/services/access";
 import { resolveDisplayNames } from "../server/services/access-display";
 import { isAccountExpired } from "./account-model";
 import { recursiveGroupIdsSubquery } from "./accounts/group-sql";
+import { hasInstallationAdminInTransaction } from "./accounts/installation-admin";
 import { canUseApp } from "./app-access";
 import { audit } from "./audit";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
@@ -155,6 +158,13 @@ export const requireAppAccessManager = async (
   requireConfigurable(app);
   if (options.repair) {
     if (!canRepairAppAccess(authority))
+      throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required to repair app access.");
+    const user = userFromActor(authority.actor);
+    if (
+      options.db &&
+      (!user ||
+        !(await hasInstallationAdminInTransaction(authority.actor.kind === "user" ? authority.actor : { kind: "user", user }, options.db)))
+    )
       throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required to repair app access.");
     return;
   }
@@ -409,6 +419,20 @@ export const changeAppAccess = async (params: {
   const groupsAdmin =
     params.canManage && !params.repair && canWriteList(authority, app.id) ? (await getIdentityRuntimeConfig()).groupsAdmin : [];
   const result = await sql.begin(async (db) => {
+    if (
+      !(await lockAccessMutationAuthority(
+        {
+          subject: authority.accessSubject,
+          ...(change.action === "grant"
+            ? { principal: change.principal }
+            : change.accessId === "inherited-authenticated"
+              ? {}
+              : { accessId: change.accessId }),
+        },
+        db,
+      ))
+    )
+      throw new AppAccessManagementError("FORBIDDEN", "Access denied.", 403);
     await db`INSERT INTO auth.app_access_state (app_id) VALUES (${app.id}) ON CONFLICT DO NOTHING`;
     const [state] = await db<
       { configured_at: Date | null }[]
@@ -468,10 +492,9 @@ export const changeAppAccess = async (params: {
         if (before.principal.type === "public") throw new AppAccessManagementError("BAD_INPUT", "Public app access is not supported.", 400);
         if (before.principal.type === "authenticated" && change.permission !== "read")
           throw new AppAccessManagementError("BAD_INPUT", "Signed-in identities may only receive Use.", 400);
-        const updated = await db`UPDATE auth.access SET permission = ${change.permission}::auth.permission_level
-          WHERE id = ${before.id}::uuid AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
-            WHERE account.id = auth.access.service_account_id AND account.kind = 'code')`;
-        if (!updated.count) throw new AppAccessManagementError("NOT_FOUND", "Access entry not found.", 404);
+        const updated = await updateAccess({ id: before.id, permission: change.permission }, db);
+        if (!updated.ok)
+          throw new AppAccessManagementError(updated.error.code, updated.error.message, updated.error.code === "NOT_FOUND" ? 404 : 400);
         changedId = before.id;
       } else await db`DELETE FROM auth.access WHERE id = ${before.id}::uuid`;
       await record(

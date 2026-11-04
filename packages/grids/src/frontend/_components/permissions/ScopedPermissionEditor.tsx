@@ -102,7 +102,7 @@ export function ScopedPermissionEditor(props: Props) {
           initialEntries={loadedEntries()}
           canEdit={props.canEdit && manageable()}
           allowPublic={props.scope.type === "customApp"}
-          serviceAccountKinds={props.scope.type === "customApp" ? ["standalone", "agent"] : undefined}
+          serviceAccountKinds={props.scope.type === "customApp" ? ["standalone", "agent", "code"] : undefined}
           serviceAccountStatus="active"
           allowedLevels={props.scope.type === "customApp" ? [{ level: "read", label: t().open, icon: "ti ti-eye" }] : props.allowedLevels}
           effectiveEntries={unshadowedGrants}

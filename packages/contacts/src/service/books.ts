@@ -343,6 +343,9 @@ export const create = async (config: { data: CreateBookInput; creatorId: string 
     bookId: row.id,
     principal: { type: "user", userId: config.creatorId },
     permission: "admin",
+  }).catch(async (error: unknown) => {
+    await sql`DELETE FROM contacts.books WHERE id = ${row.id}::uuid`;
+    throw error;
   });
 
   if (!accessResult.ok) {

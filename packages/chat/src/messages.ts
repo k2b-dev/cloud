@@ -150,6 +150,8 @@ export const chatMessages = i18n.define({
       resourceAccount: "Resource account",
       standaloneAccount: "Service account",
       agentAccount: "Agent",
+      codeAccount: "Service account",
+      codeAuthority: "Anyone who edits the Code acts with this permission.",
 
       findGroup: "Find a directory group",
       discoveryAudience: ({ count }: { count: number }) => `${count.toLocaleString("en")} accounts can find this channel.`,
@@ -647,8 +649,10 @@ export const chatMessages = i18n.define({
         "Der direkte Mitgliedseintrag endet. Solange der Kanal für dieses Konto auffindbar ist, kann es den Verlauf lesen und wieder beitreten. Seine Nachrichten bleiben im Kanal.",
       delegatedAccount: "Nutzergebundenes Konto",
       resourceAccount: "Ressourcenkonto",
-      standaloneAccount: "Dienstkonto",
+      standaloneAccount: "Agent",
       agentAccount: "Agent",
+      codeAccount: "Dienstkonto",
+      codeAuthority: "Wer den Code bearbeitet, handelt mit diesem Recht.",
 
       findGroup: "Verzeichnisgruppe suchen",
       discoveryAudience: ({ count }: { count: number }) => `${count.toLocaleString("de")} Konten können diesen Kanal finden.`,

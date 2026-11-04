@@ -199,7 +199,22 @@ export const contactsService = {
         },
         grant: async (config: Parameters<typeof books.access.grant>[0] & { actor: RequestActor }) => {
           if (!isContactsAdministrator(config.actor)) return fail(err.forbidden("Access denied"));
-          return wake(books.access.grant(config));
+          const user = userFromActor(config.actor);
+          if (!user) return fail(err.forbidden("Access denied"));
+          return wake(
+            books.access.grant({
+              ...config,
+              caller: {
+                actor: config.actor,
+                accessSubject: {
+                  type: "user",
+                  userId: user.id,
+                  ...(config.actor.kind === "service_account" ? { delegatedByServiceAccountId: config.actor.serviceAccount.id } : {}),
+                },
+                authority: "administration",
+              },
+            }),
+          );
         },
         update: (config: Omit<Parameters<typeof books.access.update>[0], "authority">) =>
           wake(books.access.update({ ...config, authority: "administration" })),
@@ -229,7 +244,7 @@ export const contactsService = {
       grant: async (config: BookCaller & { bookId: string; principal: AccessEntry["principal"]; permission: PermissionLevel }) => {
         const access = await authorizeBook(config.bookId, config, "admin");
         if (!access.ok) return access;
-        return wake(books.access.grant(config));
+        return wake(books.access.grant({ ...config, caller: { ...config, authority: "grant" } }));
       },
       update: (config: {
         bookId: string;
@@ -252,7 +267,7 @@ export const contactsService = {
           if (!access.ok) return access;
           const user = userFromActor(config.actor);
           if (!user) return fail(err.forbidden("This endpoint requires a user-backed actor"));
-          return apiKeys.create({ ...config, bookName: access.data.book.name, actor: user });
+          return apiKeys.create({ ...config, bookName: access.data.book.name, actor: user, caller: config });
         },
         revoke: async (config: BookCaller & { bookId: string; credentialId: string }) => {
           const access = await authorizeBook(config.bookId, config, "admin");

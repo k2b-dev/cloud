@@ -1,4 +1,5 @@
 import {
+  AccessMutationBusyError,
   type AuthContext,
   auth,
   getLocale,
@@ -85,6 +86,7 @@ const api = new Hono<AuthContext>()
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .onError((error, c) => {
+    if (error instanceof AccessMutationBusyError) return error.getResponse();
     const { code, status } = apiError(error);
     if (status >= 500)
       log.error("Files request failed", { code, status, method: c.req.method, path: c.req.path, error: describeError(error) });

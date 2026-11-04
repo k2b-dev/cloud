@@ -86,7 +86,7 @@ describe("access resource registry integration", () => {
     }
   });
 
-  postgresTest("code uses only its own base grant and normal share mutations refuse it", async () => {
+  postgresTest("code uses only its own grants and normal base and app shares accept it", async () => {
     const item = await insertFixture();
     const accountId = uuid(),
       groupId = uuid();
@@ -96,12 +96,24 @@ describe("access resource registry integration", () => {
     await sql`INSERT INTO auth.service_account_groups(service_account_id, group_id) VALUES (${accountId}::uuid, ${groupId}::uuid)`;
     const subject = { type: "service_account" as const, serviceAccountId: accountId };
     try {
-      for (const [resourceType, resourceId] of [
-        ["base", item.baseId],
-        ["customApp", item.customAppId],
-      ] as const) {
-        expect((await grantAccess({ resourceType, resourceId, principal: subject, permission: "write" })).ok).toBe(false);
-      }
+      const ownGrant = await grantAccess({ resourceType: "base", resourceId: item.baseId, principal: subject, permission: "read" });
+      if (!ownGrant.ok) throw new Error(ownGrant.error.message);
+      ids.push(ownGrant.data.accessId);
+      expect((await updateAccessLevel(ownGrant.data.accessId, "write")).ok).toBe(true);
+      expect((await updateAccessLevel(ownGrant.data.accessId, "read")).ok).toBe(true);
+      expect(await updateAccessLevel(ownGrant.data.accessId, "admin")).toMatchObject({ ok: false, error: { status: 400 } });
+      await sql`DELETE FROM auth.access WHERE id = ${ownGrant.data.accessId}::uuid`;
+      const appGrant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: item.customAppId,
+        principal: subject,
+        permission: "read",
+      });
+      if (!appGrant.ok) throw new Error(appGrant.error.message);
+      ids.push(appGrant.data.accessId);
+      expect((await listCustomAppAccess(item.customAppId)).find((entry) => entry.id === appGrant.data.accessId)?.serviceAccountKind).toBe(
+        "code",
+      );
       const ambient = await sql<{ id: string }[]>`INSERT INTO auth.access(group_id, authenticated_only, permission)
         VALUES (NULL, true, 'admin'), (${groupId}::uuid, false, 'admin') RETURNING id`;
       ids.push(...ambient.map((row) => row.id));

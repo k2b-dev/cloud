@@ -1,14 +1,19 @@
 import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
+  createAccess,
+  deleteAccess,
   ensureManagerRemains,
   err,
   fail,
+  getAccess,
+  lockAccessMutationAuthority,
   ok,
   type PermissionLevel,
   type Principal,
   type Result,
   resolveDisplayNames,
+  updateAccess,
 } from "@k2b/cloud/server";
 import { type ServiceAccountKind, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import { BaseAppearanceSchema, BaseTimezoneSchema } from "../base-settings";
@@ -281,46 +286,32 @@ export const grantBaseAccess = async (params: {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
 
-  const created = await sql.begin(async (tx): Promise<Result<AccessRow>> => {
+  const created = await sql.begin(async (tx): Promise<Result<AccessEntry>> => {
+    if (
+      !(await lockAccessMutationAuthority(
+        {
+          subject:
+            "subject" in params.user
+              ? params.user.subject
+              : {
+                  type: "user",
+                  userId: params.user.id,
+                  delegatedByServiceAccountId: params.user.delegatedByServiceAccountId,
+                },
+          principal: params.principal,
+        },
+        tx,
+      ))
+    )
+      return fail(err.forbidden("Access denied"));
+    await tx`SELECT id FROM pulse.bases WHERE id = ${params.baseId}::uuid FOR UPDATE`;
     const active = await requireBaseActive(params.baseId, tx);
     if (!active.ok) return active;
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
-    let userId: string | null = null;
-    let groupId: string | null = null;
-    let serviceAccountId: string | null = null;
-    let authenticatedOnly = false;
-
-    if (params.principal.type === "user") {
-      userId = params.principal.userId;
-      const [userRow] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
-      if (!userRow) return fail(err.notFound("User"));
-    } else if (params.principal.type === "group") {
-      groupId = params.principal.groupId;
-      const [groupRow] = await tx<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ${groupId}::uuid`;
-      if (!groupRow) return fail(err.notFound("Group"));
-    } else if (params.principal.type === "service_account") {
-      serviceAccountId = params.principal.serviceAccountId;
-      const [serviceAccountRow] = await tx<{ id: string }[]>`
-        SELECT id FROM auth.service_accounts
-        WHERE id = ${serviceAccountId}::uuid AND status = 'active' AND kind <> 'code'
-      `;
-      if (!serviceAccountRow) return fail(err.notFound("Service account"));
-    } else if (params.principal.type === "authenticated") {
-      authenticatedOnly = true;
-    }
-
-    const [row] = await tx<AccessRow[]>`
-      INSERT INTO auth.access (user_id, group_id, service_account_id, authenticated_only, permission)
-      VALUES (
-        ${userId}::uuid,
-        ${groupId}::uuid,
-        ${serviceAccountId}::uuid,
-        ${authenticatedOnly},
-        ${params.permission}::auth.permission_level
-      )
-      RETURNING id, user_id, group_id, service_account_id, authenticated_only, permission, created_at
-    `;
+    const created = await createAccess({ principal: params.principal, permission: params.permission }, tx);
+    if (!created.ok) return created;
+    const row = await getAccess({ id: created.data.id }, tx);
     if (!row) return fail(err.internal("Failed to create access entry"));
     await tx`
       INSERT INTO pulse.base_access (base_id, access_id)
@@ -330,7 +321,7 @@ export const grantBaseAccess = async (params: {
   });
 
   if (!created.ok) return fail(created.error);
-  const [entry] = await resolveDisplayNames([mapAccessRow(created.data)]);
+  const [entry] = await resolveDisplayNames([created.data]);
   return entry ? ok(entry) : fail(err.internal("Failed to resolve access entry"));
 };
 
@@ -344,6 +335,23 @@ const changeBaseAccess = (
   permission: Exclude<PermissionLevel, "none"> | null,
 ): Promise<Result<void>> =>
   sql.begin(async (tx): Promise<Result<void>> => {
+    if (
+      !(await lockAccessMutationAuthority(
+        {
+          subject:
+            "subject" in params.user
+              ? params.user.subject
+              : {
+                  type: "user",
+                  userId: params.user.id,
+                  delegatedByServiceAccountId: params.user.delegatedByServiceAccountId,
+                },
+          accessId: params.accessId,
+        },
+        tx,
+      ))
+    )
+      return fail(err.forbidden("Access denied"));
     await tx`SELECT id FROM pulse.bases WHERE id = ${params.baseId}::uuid FOR UPDATE`;
     const access = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!access.ok) return fail(access.error);
@@ -365,13 +373,7 @@ const changeBaseAccess = (
         : before.map((entry) => (entry.id === params.accessId ? { ...entry, permission } : entry));
     const guarded = ensureManagerRemains({ before, after, locale: params.locale });
     if (!guarded.ok) return fail(guarded.error);
-    const changed =
-      permission === null
-        ? await tx`DELETE FROM auth.access WHERE id = ${params.accessId}::uuid`
-        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${params.accessId}::uuid
-            AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
-              WHERE account.id = auth.access.service_account_id AND account.kind = 'code')`;
-    return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
+    return permission === null ? deleteAccess({ id: params.accessId }, tx) : updateAccess({ id: params.accessId, permission }, tx);
   });
 
 export const updateBaseAccess = (params: {

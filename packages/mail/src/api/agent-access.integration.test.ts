@@ -166,18 +166,33 @@ suite("Mail REST access for service-account credentials", () => {
     if (userIds.length) await sql`DELETE FROM auth.users WHERE id IN ${sql(userIds)}`;
   });
 
-  test("normal mailbox shares refuse a code account", async () => {
+  test("normal mailbox shares set and switch Code View/Edit but refuse Manage", async () => {
     const codeId = await insertAccount(`Mailbox code ${suffix}`, undefined, "code");
+    const context = { actor: { kind: "user" as const, user: owner }, accessSubject: { type: "user" as const, userId: owner.id } };
+    expect(
+      await grantMailboxAccess({
+        context,
+        mailboxId,
+        principal: { type: "service_account", serviceAccountId: codeId },
+        permission: "admin",
+      }),
+    ).toMatchObject({ ok: false, error: { status: 400 } });
+    expect(await sql`SELECT id FROM auth.access WHERE service_account_id = ${codeId}::uuid`).toHaveLength(0);
     const result = await grantMailboxAccess({
-      context: { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id } },
+      context,
       mailboxId,
       principal: { type: "service_account", serviceAccountId: codeId },
-      permission: "write",
+      permission: "read",
     });
-    expect(result.ok).toBe(false);
-    expect(await sql`SELECT id FROM auth.access WHERE service_account_id = ${codeId}::uuid`).toHaveLength(0);
+    if (!result.ok) throw new Error(result.error.message);
+    for (const permission of ["write", "read"] as const) {
+      expect((await updateMailboxAccess({ context, mailboxId, accessId: result.data.id, permission })).ok).toBe(true);
+      expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE service_account_id = ${codeId}::uuid`).toEqual([
+        { permission },
+      ]);
+    }
+    expect((await updateMailboxAccess({ context, mailboxId, accessId: result.data.id, permission: "admin" })).ok).toBe(false);
     // A Code grant cannot substitute for the mailbox's ordinary manager.
-    await grant(codeId, "write");
     const [ownerGrant] = await sql<{ id: string }[]>`SELECT a.id FROM auth.access a
       JOIN mail.mailbox_access link ON link.access_id = a.id
       WHERE link.mailbox_id = ${mailboxId}::uuid AND a.user_id = ${owner.id}::uuid`;

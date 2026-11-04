@@ -19,12 +19,14 @@ import {
   ensureManagerRemains,
   getAccess,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   resolveDisplayNames,
   updateAccess,
   userFromActor,
 } from "@k2b/cloud/server";
+import { accounts } from "@k2b/cloud/services";
 import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -495,6 +497,19 @@ export const artifacts = {
     if (principal.type === "public" && level !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
 
     return sql.begin(async (db) => {
+      if (!(await lockAccessMutationAuthority({ subject: identity.accessSubject, principal }, db)))
+        throw new ArtifactError("ACCESS_DENIED");
+      if (identity.administrative) {
+        const administrator = userFromActor(identity.actor);
+        if (
+          !administrator ||
+          !(await accounts.users.hasInstallationAdminInTransaction(
+            identity.actor.kind === "user" ? identity.actor : { kind: "user", user: administrator },
+            db,
+          ))
+        )
+          throw new ArtifactError("ACCESS_DENIED");
+      }
       const { row } = await requireArtifact(db, id, identity, "admin");
       id = row.id;
       if (!notMachine(identity) && !(await machineRights(db, id, row.short_id, identity)).sharing) throw new ArtifactError("ACCESS_DENIED");
@@ -521,6 +536,18 @@ export const artifacts = {
     z.enum(["read", "admin"]).nullable().parse(level);
     z.uuid().parse(accessId);
     return sql.begin(async (db) => {
+      if (!(await lockAccessMutationAuthority({ subject: identity.accessSubject, accessId }, db))) throw new ArtifactError("ACCESS_DENIED");
+      if (identity.administrative) {
+        const administrator = userFromActor(identity.actor);
+        if (
+          !administrator ||
+          !(await accounts.users.hasInstallationAdminInTransaction(
+            identity.actor.kind === "user" ? identity.actor : { kind: "user", user: administrator },
+            db,
+          ))
+        )
+          throw new ArtifactError("ACCESS_DENIED");
+      }
       const { row } = await requireArtifact(db, id, identity, "admin");
       id = row.id;
       if (!notMachine(identity) && !(await machineRights(db, id, row.short_id, identity)).sharing) throw new ArtifactError("ACCESS_DENIED");
@@ -536,7 +563,7 @@ export const artifacts = {
       const after = before.flatMap((entry) => (entry.id === accessId ? (level ? [{ ...entry, permission: level }] : []) : [entry]));
       if (!ensureManagerRemains({ before, after }).ok) throw new ArtifactError("LAST_MANAGER");
       const changed = level ? await updateAccess({ id: accessId, permission: level }, db) : await deleteAccess({ id: accessId }, db);
-      if (!changed.ok) throw new ArtifactError("NOT_FOUND");
+      if (!changed.ok) throw new ArtifactError(changed.error.status === 400 ? "INVALID_INPUT" : "NOT_FOUND");
       return { updated: true };
     });
   },

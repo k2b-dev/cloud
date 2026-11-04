@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOOLS, createAiConversationArtifact } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
-import { accessRevision, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
+import { AccessMutationBusyError, accessRevision, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
 import { principalLabel } from "@k2b/cloud/shared";
 import { fail, ok, text } from "@k2b/stdlib";
 import { z } from "zod";
@@ -45,6 +45,8 @@ async function result<T>(
   try {
     return ok(await operation());
   } catch (error) {
+    if (error instanceof AccessMutationBusyError)
+      return fail({ code: error.code, status: 409 as const, message: error.message, retryable: true });
     if (error instanceof CloudError) {
       const status =
         error.code === "denied"

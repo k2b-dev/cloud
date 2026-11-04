@@ -5,6 +5,7 @@ import { serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 
 export type UserScope = {
   id: string;
+  delegatedByServiceAccountId?: string | null;
 };
 
 /**
@@ -27,7 +28,11 @@ const PERMISSION_RANK: Record<PermissionLevel, number> = { none: 0, read: 1, wri
 const isResourceScope = (scope: AccessScope): scope is ResourceScope => "subject" in scope;
 
 export const accessScopeFor = (actor: RequestActor, subject: AccessSubject): Result<AccessScope> => {
-  if (subject.type === "user") return ok({ id: subject.userId });
+  if (subject.type === "user")
+    return ok({
+      id: subject.userId,
+      ...(subject.delegatedByServiceAccountId ? { delegatedByServiceAccountId: subject.delegatedByServiceAccountId } : {}),
+    });
   if (actor.kind !== "service_account" || actor.delegatedUser) {
     return fail(err.forbidden("Resource access subject does not match the authenticated actor"));
   }
