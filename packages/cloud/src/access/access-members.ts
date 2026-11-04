@@ -1,5 +1,5 @@
 import type { DetailAccessEntry } from "@k2b/ui";
-import { cloudAvatarSource } from "../account/Avatar";
+import { cloudAvatarSource } from "../account/avatar-url";
 import type { AccessMember } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalLabel } from "./principal-label";
