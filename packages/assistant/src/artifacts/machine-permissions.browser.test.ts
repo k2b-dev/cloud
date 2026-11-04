@@ -284,6 +284,8 @@ for (const width of [1280, 390])
       const options = await page.locator('[role="option"]:visible').allTextContents();
       expect(options.map((option) => option.trim())).toEqual(["Benutzen"]);
       await page.keyboard.press("Escape");
+      // Scrolling moves controls under a resting pointer and starts their hover transitions; park it on the backdrop.
+      await page.mouse.move(1, 1);
       for (const control of [code.locator("button[aria-haspopup]").first(), code.getByRole("button", { name: /entfernen$/ })]) {
         await control.scrollIntoViewIfNeeded();
         await settled(page);
@@ -293,7 +295,8 @@ for (const width of [1280, 390])
       }
       expect(await overflow(page)).toEqual({ page: true, fits: true, wide: [] });
       const machines = dialog.getByRole("region", { name: "Maschinenausführung", exact: true });
-      await machines.scrollIntoViewIfNeeded();
+      await machines.getByRole("heading", { name: "Maschinenausführung", exact: true }).evaluate((heading) => heading.scrollIntoView());
+      await settled(page);
       await shot(page, `de-${width}-maschinenrechte`);
       await services.scrollIntoViewIfNeeded();
       await shot(page, `de-${width}-normal`);
