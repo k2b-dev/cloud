@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { hasAppActions } from "../browser/app-actions";
 import { createLiveDictationSource, mapLiveDictationMessage } from "./live-dictation-browser";
 import { createDictationPcmEncoder, liveDictationWorklet } from "./live-dictation-pcm";
 
@@ -364,6 +365,25 @@ describe("browser source lifecycle without a microphone", () => {
       }
     });
   }
+  test("recording protects app updates until the dictation is aborted", async () => {
+    const f = fixture();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "location");
+    Object.defineProperty(globalThis, "location", { configurable: true, value: { pathname: "/pwa/chat" } });
+    const controller = new AbortController();
+    try {
+      const session = createLiveDictationSource({ app: "chat" }).start({ signal: controller.signal });
+      expect(hasAppActions()).toBe(true);
+      controller.abort();
+      await session.stop();
+      expect(hasAppActions()).toBe(false);
+    } finally {
+      controller.abort();
+      if (previous) Object.defineProperty(globalThis, "location", previous);
+      else Reflect.deleteProperty(globalThis, "location");
+      f.restore();
+    }
+  });
+
   for (const exit of ["abort", "pagehide", "connection_lost"] as const) {
     test(`${exit} closes microphone and socket without reconnecting`, async () => {
       const f = fixture();

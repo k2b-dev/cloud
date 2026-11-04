@@ -2,6 +2,7 @@ import { afterEach, describe, expect, jest, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { hasAppActions } from "../../browser/app-actions";
 import { AI_TURN_LEASE_MS, type AiStreamSseEvent, type AiTurnBlock, type AiTurnSnapshot } from "../protocol";
 import type { AiConversation, AiStoredMessage } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
@@ -792,6 +793,68 @@ describe("AI controller message feedback", () => {
 });
 
 describe("AI controller stream sessions", () => {
+  test.skipIf(isServer)("only an active AI answer protects app updates, not the idle GET subscription", () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/pwa/assistant");
+    const current = conversation("Chat01");
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let dispose = () => {};
+    try {
+      createRoot((cleanup) => {
+        dispose = cleanup;
+        createAiChatController({
+          baseUrl: "/api/ai",
+          initialConversationId: current.id,
+          initialDetail: { conversation: current, messages: [], activeTurn: null },
+          streamTransport: {
+            subscribe: (input) => {
+              emit = input.onEvent;
+              return { close() {} };
+            },
+          },
+        });
+      });
+      expect(hasAppActions()).toBe(false);
+      emit({
+        type: "state",
+        conversation: current,
+        messages: [],
+        activeTurn: {
+          turnId: "running",
+          attempt: 1,
+          seq: 1,
+          status: "running",
+          blocks: [],
+          modelId: null,
+          createdAt: "2026-11-04T00:00:00.000Z",
+        },
+      });
+      expect(hasAppActions()).toBe(true);
+      emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+      expect(hasAppActions()).toBe(false);
+      emit({
+        type: "state",
+        conversation: current,
+        messages: [],
+        activeTurn: {
+          turnId: "again",
+          attempt: 1,
+          seq: 1,
+          status: "running",
+          blocks: [],
+          modelId: null,
+          createdAt: "2026-11-04T00:00:00.000Z",
+        },
+      });
+      expect(hasAppActions()).toBe(true);
+      dispose();
+      expect(hasAppActions()).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("uses an injected stream transport and closes it with the controller owner", () => {
     const calls: string[] = [];
     const transport: AiConversationStreamTransport = {
