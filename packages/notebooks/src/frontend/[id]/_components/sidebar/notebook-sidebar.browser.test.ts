@@ -179,7 +179,13 @@ const parentOf = (nodes: NoteTreeNode[], id: string): string | null => {
 const handleApi = async (request: Request, path: string): Promise<Response> => {
   const query = new URL(request.url).searchParams;
   if (path === "workspace-state")
-    return Response.json({ notebook: api.notebook, favoriteNoteIds: api.favoriteNoteIds, tags: api.tags, attachmentCount: 0 });
+    return Response.json({
+      notebook: api.notebook,
+      favoriteNoteIds: api.favoriteNoteIds,
+      tags: api.tags,
+      attachmentCount: 0,
+      pageTemplates: [],
+    });
   if (path === "tree/levels") {
     const levels = (query.get("levels") ?? "").split(",").filter(Boolean);
     return Response.json({

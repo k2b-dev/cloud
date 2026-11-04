@@ -83,6 +83,7 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
@@ -219,6 +220,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(home));
   spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue(home));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -294,6 +296,7 @@ test.each([
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.tag, "listNotesForTag").mockResolvedValue({ items: [], total: 0 }));
   spies.push(spyOn(notebooksService.tag, "countNotesForTag").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
@@ -374,6 +377,7 @@ const renderNotebookWithNotes = async (
   );
   spies.push(spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue(null));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -504,6 +508,7 @@ const renderEditorPage = async (
   spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
@@ -705,6 +710,7 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" }));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(
