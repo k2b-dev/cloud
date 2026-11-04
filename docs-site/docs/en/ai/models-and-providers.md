@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-10-27
+updated: 2026-11-04
 ---
 
 # Models and providers
@@ -43,6 +43,41 @@ Use `cld admin ai providers add --input-file provider.json --yes`. For example:
 The provider owns its connection type, base URL, data boundary, enabled state,
 and optional logo. A missing URL uses the provider's default; OpenAI-compatible
 connections require an explicit URL. IDs cannot change after creation.
+
+## Choose the data boundary
+
+The data boundary says where a provider may process data:
+
+| `dataBoundary` | Administration label | Who uses its models |
+| --- | --- | --- |
+| `private` | Private | Everyone the model is shared with, including apps with private data |
+| `hosted` | Hosted | Everyone the model is shared with; private data stays on private models |
+| `restricted` | No privacy commitment | Only application server code that names a model ID |
+
+Choose `restricted` for a provider that makes no data-protection commitment,
+such as a free API tier that may train on its inputs. Cloud keeps its models
+away from every use by a person:
+
+- Assistant chat, the model picker, routines, workflows, code and the
+  OpenAI-compatible API never offer or run them;
+- classes, the image tool, the audio tool and live dictation cannot be
+  assigned to them, so a class request never resolves to one;
+- they get no chat access: new models are not shared with signed-in people,
+  and saving a grant fails with `restricted_boundary`;
+- the provider accepts only chat models; audio models fail with
+  `restricted_boundary`.
+
+The boundary is fixed for `restricted`: a provider never changes to or from
+it, and such an update fails with `boundary_fixed`. Running chats and
+background tasks keep a model they already resolved, so a later change could
+not take effect safely. Create a new provider for another boundary. Private
+and hosted providers can still switch between those two.
+
+An application uses such a model by storing its ID in an application setting
+and passing `model: { id }` from server code; see
+[Use a model without a data-protection commitment](/en/docs/ai/structured-and-background-ai#use-a-model-without-a-data-protection-commitment).
+Copy the ID from the model's **Access** section. **AI → Usage** shows which
+application calls which model.
 
 Supply a key separately with `cld admin ai providers key local --key-file key.txt --yes`.
 Keys and additional headers are encrypted and write-only. Reads return
@@ -184,7 +219,8 @@ requests supply replacements for every affected slot, including explicit
 `null` choices, and decide whether to retarget projects, workflows and their
 scheduled tasks. A replacement must preserve the model kind and required
 capabilities and keep the same or a stricter data boundary. Private models
-cannot be replaced by hosted models.
+cannot be replaced by hosted models, and no reference can be replaced by a
+`restricted` model.
 
 Retargeting notifies owners. Without retargeting, fixed references fail when
 next used. Running answers finish, and their history remains. A chat whose

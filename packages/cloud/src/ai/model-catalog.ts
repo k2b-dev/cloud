@@ -39,7 +39,7 @@ const parameter = (value: unknown): string | number | boolean | null => {
 };
 export class AiConfigError extends Error {
   constructor(
-    readonly code: "model_not_found" | "invalid_configuration",
+    readonly code: "model_not_found" | "invalid_configuration" | "boundary_fixed" | "restricted_boundary",
     message: string,
   ) {
     super(message);
@@ -127,6 +127,8 @@ const validateModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiPr
       "invalid_configuration",
       "Live transcription requires a realtime provider and has no chat parameters or prices.",
     );
+  if (provider.dataBoundary === "restricted" && model.kind !== "chat")
+    throw new AiConfigError("restricted_boundary", "Providers without a data-protection commitment only support chat models.");
   if (provider.type === "vllm-realtime" && model.kind !== "live-transcription")
     throw new AiConfigError("invalid_configuration", "Realtime providers only support live transcription models.");
   if (model.kind === "chat" && model.capabilities.some((value) => value === "transcription" || value === "live-transcription"))
@@ -205,6 +207,12 @@ export const aiModelCatalog = {
       const current = await this.providerDetail(id, db);
       await assertAiRevision(current, revision, db);
       const data = AiProviderInputSchema.parse({ ...AiProviderInputSchema.strip().parse(current), ...patch, id });
+      // Running chats and background tasks keep a resolved model, so this boundary never changes after creation.
+      if (data.dataBoundary !== current.dataBoundary && [data.dataBoundary, current.dataBoundary].includes("restricted"))
+        throw new AiConfigError(
+          "boundary_fixed",
+          "A provider without a data-protection commitment keeps that boundary. Create a new provider for another boundary.",
+        );
       validateProvider(data);
       if (data.logo) data.logo = stripImageDataUrlMetadata(data.logo);
       for (const model of (await this.models(db)).filter((model) => model.providerId === id)) validateModel(model, { ...current, ...data });
@@ -265,7 +273,10 @@ export const aiModelCatalog = {
       const current = await this.modelDetail(id, db);
       await assertAiRevision(current, revision, db);
       const data = sanitizeModel(AiModelInputSchema.parse({ ...AiModelInputSchema.strip().parse(current), ...patch, id }));
-      validateModel(data, await this.provider(current.providerId, db));
+      const provider = await this.provider(current.providerId, db);
+      validateModel(data, provider);
+      if (access?.entries.length && provider.dataBoundary === "restricted")
+        throw new AiConfigError("restricted_boundary", "Models without a data-protection commitment cannot be shared for chat.");
       if (data.kind !== "chat") data.capabilities = [data.kind];
       if (data.kind !== "chat" && (await this.variants(db)).some((v) => v.modelId === id && v.slug !== "standard"))
         throw new AiConfigError("invalid_configuration", "Transcription models only have a standard variant.");
@@ -325,6 +336,11 @@ export const aiModelCatalog = {
         const variant = await this.variant(variantId, db);
         const model = await this.model(variant.modelId, db);
         validateAiSlot(slot, model);
+        if ((await this.provider(model.providerId, db)).dataBoundary === "restricted")
+          throw new AiConfigError(
+            "restricted_boundary",
+            "Models without a data-protection commitment cannot be assigned to classes or tools.",
+          );
       }
       await write("model_assignments", { variantId }, actorId, db, slot);
       return requireRow((await this.assignments(db)).find((row) => row.slot === slot));

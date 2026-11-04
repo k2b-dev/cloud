@@ -4,11 +4,14 @@ import { sql } from "../runtime/clients";
 import { ConfigConflict } from "../services/config-conflict";
 import { getAiCredential, setAiCredential } from "./credentials";
 import { migrateAiModelClassesInTransaction, migrateCloudAi } from "./migrate";
-import { aiModelCatalog } from "./model-catalog";
+import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
 import { deleteAiCatalogEntry } from "./model-delete";
+import { aiSettingsFixture } from "./model-fixture";
+import { personalAiModelPolicy } from "./personal-agent";
 import { aiProjects } from "./projects";
 import { userResourceContext } from "./projects.test-fixture";
 import { getAiRequestHeaders, setAiRequestHeaders } from "./request-headers";
+import { selectAiModelProfile } from "./settings";
 
 const suite = databaseSuite();
 suite("AI model catalog migration and revisions", () => {
@@ -133,6 +136,79 @@ suite("AI model catalog migration and revisions", () => {
       await aiProjects.delete(project.id, subject);
       await sql`DELETE FROM ai.providers WHERE id IN (${sourceId},${targetId})`;
       await sql`DELETE FROM ai.model_access_resources WHERE model_id IN (${sourceId},${targetId},${audioId})`;
+      await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
+    }
+  });
+  test("restricted providers keep their boundary, serve only apps by ID, and never reach classes or chat access", async () => {
+    const suffix = crypto.randomUUID();
+    const id = `restricted-${suffix}`;
+    const hostedId = `hosted-${suffix}`;
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
+      VALUES(${suffix},'local','user','Restricted boundary owner') RETURNING id`;
+    if (!user) throw new Error("Missing restricted boundary owner");
+    const fast = (await aiModelCatalog.assignments()).find((row) => row.slot === "fast");
+    if (!fast) throw new Error("Missing fast assignment");
+    try {
+      const provider = await aiModelCatalog.createProvider(
+        { id, type: "openai-compatible", label: "Free", baseUrl: "http://localhost:1/v1", dataBoundary: "restricted" },
+        user.id,
+      );
+      expect(provider.dataBoundary).toBe("restricted");
+      await expect(
+        aiModelCatalog.createModels(id, [{ id: `${id}-audio`, label: "Audio", providerModel: "audio", kind: "transcription" }], user.id),
+      ).rejects.toMatchObject({ code: "restricted_boundary" });
+      const [model] = await aiModelCatalog.createModels(id, [{ id, label: "Free", providerModel: "free" }], user.id);
+      if (!model) throw new Error("Missing restricted model");
+      const detail = await aiModelCatalog.modelDetail(id);
+      expect(detail.access?.entries).toEqual([]);
+      await expect(
+        aiModelCatalog.updateModel(id, {}, model.revision, user.id, {
+          expectedRevision: detail.access?.revision ?? null,
+          entries: [{ principal: { type: "authenticated" }, permission: "read" }],
+        }),
+      ).rejects.toMatchObject({ code: "restricted_boundary" });
+      await expect(
+        aiModelCatalog.updateModel(id, { kind: "transcription", capabilities: [] }, model.revision, user.id),
+      ).rejects.toMatchObject({
+        code: "restricted_boundary",
+      });
+      await expect(aiModelCatalog.assign("fast", id, fast.revision, user.id)).rejects.toMatchObject({ code: "restricted_boundary" });
+      await expect(aiModelCatalog.updateProvider(id, { dataBoundary: "hosted" }, provider.revision, user.id)).rejects.toMatchObject({
+        code: "boundary_fixed",
+      });
+      expect((await aiModelCatalog.updateProvider(id, { label: "Gemini" }, provider.revision, user.id)).dataBoundary).toBe("restricted");
+
+      const hosted = await aiModelCatalog.createProvider(
+        { id: hostedId, type: "ollama", label: "Hosted", dataBoundary: "hosted" },
+        user.id,
+      );
+      await expect(aiModelCatalog.updateProvider(hostedId, { dataBoundary: "restricted" }, hosted.revision, user.id)).rejects.toMatchObject(
+        {
+          code: "boundary_fixed",
+        },
+      );
+      expect((await aiModelCatalog.updateProvider(hostedId, { dataBoundary: "private" }, hosted.revision, user.id)).dataBoundary).toBe(
+        "private",
+      );
+
+      const state = aiSettingsFixture({ profiles: await readAiModelProfiles() });
+      const apps = { kind: "selectable", allowedDataBoundaries: ["private", "hosted", "restricted"] } as const;
+      expect(selectAiModelProfile(state, apps, { id }).dataBoundary).toBe("restricted");
+      expect(() => selectAiModelProfile(state, personalAiModelPolicy, { id })).toThrow("no data-protection commitment");
+
+      expect(
+        await deleteAiCatalogEntry(
+          "provider",
+          id,
+          { revision: provider.revision + 1, replacements: {}, retarget: false, retargetTo: null },
+          user.id,
+        ),
+      ).toEqual({ deleted: true });
+      expect(() => selectAiModelProfile(aiSettingsFixture({ profiles: [] }), apps, { id })).toThrow("does not exist");
+    } finally {
+      await sql`UPDATE ai.model_assignments SET variant_id=${fast.variantId},revision=revision+1 WHERE slot='fast'`;
+      await sql`DELETE FROM ai.providers WHERE id IN (${id},${hostedId})`;
+      await sql`DELETE FROM ai.model_access_resources WHERE model_id=${id}`;
       await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
     }
   });

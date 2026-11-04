@@ -13,6 +13,8 @@ export const validateAiReplacement = (source: AiProvider, target: AiProvider, or
   const problem = aiReplacementProblem(source, target, original, replacement);
   if (problem === "private_boundary")
     throw new AiConfigError("invalid_configuration", "A private model cannot be replaced with a hosted model.");
+  if (problem === "restricted_boundary")
+    throw new AiConfigError("restricted_boundary", "A model without a data-protection commitment cannot be a replacement.");
   if (problem === "incompatible_model")
     throw new AiConfigError(
       "invalid_configuration",

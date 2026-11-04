@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { z } from "zod";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
-import { aiModelFixture } from "../../ai/model-fixture";
+import { aiModelFixture, aiSettingsFixture } from "../../ai/model-fixture";
 import { createAiProvider } from "../../ai/provider";
+import * as settings from "../../ai/settings";
 import * as structured from "../../ai/structured";
 import * as taskModel from "../../ai/task-model";
 import { coreSettings } from "../../services/settings/api";
@@ -269,6 +270,28 @@ test("workflow execution keeps its admitted variant and class trace after a clas
     expect(resolve).toHaveBeenCalledWith({ id: "model" });
   } finally {
     resolve.mockRestore();
+  }
+});
+
+test("workflow runs never reach a restricted model; application tasks without a person name it", async () => {
+  const profile = aiModelFixture({ id: "model", modelId: "model", dataBoundary: "restricted" });
+  const read = spyOn(settings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
+  const run: typeof structured.runAiStructured = async (input) => {
+    const resolved = await input.resolveModel!(input.model);
+    return {
+      output: input.output.parse({ ready: true }),
+      model: resolved.model,
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+    };
+  };
+  try {
+    await expect(executeWorkflowAiRequest(task, run, new AbortController().signal)).rejects.toMatchObject({
+      aiError: { code: "model_policy_mismatch", fields: { boundary: "restricted" } },
+    });
+    const application = { ...task, runId: null, usageUserId: undefined } satisfies WorkflowAiTask;
+    expect(await executeWorkflowAiRequest(application, run, new AbortController().signal)).toMatchObject({ output: { ready: true } });
+  } finally {
+    read.mockRestore();
   }
 });
 

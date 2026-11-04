@@ -128,14 +128,24 @@ export const aiModelAccess = {
     const current = await db<{ model_id: string; revision: number | string }[]>`SELECT model_id, revision FROM ai.model_access_resources`;
     const revisions = new Map(current.map((row) => [row.model_id, Number(row.revision)]));
     const keep = new Set(modelIds);
+    // People never use models without a data-protection commitment, so they get no chat access.
+    const restricted = new Set(
+      (
+        await db<{ id: string }[]>`
+          SELECT model.id FROM ai.models model JOIN ai.providers provider ON provider.id = model.provider_id
+          WHERE provider.data_boundary = 'restricted'`
+      ).map((row) => row.id),
+    );
     for (const change of changes) {
       if (!keep.has(change.modelId)) throw new Error("Permissions reference an unknown model.");
       if ((revisions.get(change.modelId) ?? null) !== change.expectedRevision) throw new AiModelAccessConflict();
+      if (restricted.has(change.modelId) && change.entries.length)
+        throw new AiModelAccessInvalid("Models without a data-protection commitment cannot be shared for chat.");
     }
     for (const modelId of keep) {
       if (revisions.has(modelId)) continue;
       await db`INSERT INTO ai.model_access_resources (model_id) VALUES (${modelId})`;
-      await grant(modelId, { type: "authenticated" }, db);
+      if (!restricted.has(modelId)) await grant(modelId, { type: "authenticated" }, db);
     }
     for (const change of changes) {
       await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id = ${change.modelId})`;
