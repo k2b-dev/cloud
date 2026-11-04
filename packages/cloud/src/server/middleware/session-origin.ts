@@ -24,6 +24,21 @@ export const sessionOriginGuard = (
       throw new Error(`Invalid sessionless route: ${path}`);
     router.add("ALL", path, true);
   }
+  /**
+   * Whether a browser sent the request from a page of the public Cloud origin. Session cookies are host-only, so a
+   * request that carries one and that the browser marks `same-origin` comes from such a page. A page served with
+   * `Referrer-Policy: no-referrer` sends `Origin: null` on its own form posts; the browser still sets
+   * `Sec-Fetch-Site: same-origin`, which no page can set or change, so that pair is accepted. Any other request needs
+   * the public origin itself: `same-site` and `cross-site` never pass, and a request with neither header, such as a
+   * non-browser client that carries a cookie, is refused, because it cannot show where it comes from. Such clients
+   * use a bearer token instead. Browsers always send the real Origin with a WebSocket handshake, so sockets get no
+   * exception.
+   */
+  const fromPublicOrigin = async (site: string | undefined, origin: string | undefined, socket: boolean) => {
+    if (site === "same-site" || site === "cross-site") return false;
+    if (!socket && site === "same-origin" && (origin === undefined || origin === "null")) return true;
+    return origin === publicCloudOrigin(await getPublicUrl());
+  };
   return createMiddleware(async (c, next) => {
     const cookies = c.req.header("Cookie")?.split(";") ?? [];
     const retained = cookies.filter((cookie) => !sessionCookies.has(cookie.split("=", 1)[0]!.trim()));
@@ -48,8 +63,7 @@ export const sessionOriginGuard = (
     const socket = c.req.header("Upgrade")?.toLowerCase() === "websocket";
     if (!mutationMethods.has(c.req.method) && !socket) return next();
 
-    const site = c.req.header("Sec-Fetch-Site");
-    if (site === "same-site" || site === "cross-site" || c.req.header("Origin") !== publicCloudOrigin(await getPublicUrl())) {
+    if (!(await fromPublicOrigin(c.req.header("Sec-Fetch-Site"), c.req.header("Origin"), socket))) {
       if (socket) {
         // No session authority reaches a socket handler. Live routes can still
         // accept and close with 1008: the gateway makes failed handshakes retryable.
