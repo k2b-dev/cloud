@@ -474,6 +474,9 @@ test("the boundary select offers no privacy commitment without moving the form; 
   const created = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/admin/core/ai/providers"));
   await dialog.getByRole("button", { name: "Save and choose models" }).click();
   expect((await created).postDataJSON()).toEqual(expect.objectContaining({ dataBoundary: "restricted" }));
+  // Saving reloads the area on the new provider; the next visit waits for that reload, or it aborts it.
+  await page.waitForURL(/[?&]p=demo(&|$)/);
+  await page.waitForSelector('body[data-ready="true"]');
 
   await goto("sec=providers&p=gemini-api&pane=conn");
   await page.getByText("This boundary cannot change after creation", { exact: false }).waitFor();

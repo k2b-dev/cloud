@@ -377,9 +377,11 @@ See [runtime configuration](/en/docs/operations/runtime-configuration#set-infras
 All Cloud applications require an `Origin` exactly equal to the public origin
 of the stored `app.url` setting for cookie-bearing `POST`, `PUT`, `PATCH` and
 `DELETE` requests and cookie-authenticated WebSocket upgrades. Preserve `Origin`
-and `Sec-Fetch-Site` through the reverse proxy and gateway. Missing, `null`, foreign and same-site sibling origins are
+and `Sec-Fetch-Site` through the reverse proxy and gateway. Foreign and same-site sibling origins are
 rejected with `403 INVALID_ORIGIN` for HTTP mutations, including logout and SSR
-form actions. Refused WebSocket upgrades lose session authority; live sockets
+form actions. A missing or `null` Origin passes only with `Sec-Fetch-Site:
+same-origin`, which a page with `Referrer-Policy: no-referrer` sends with its
+own form posts; without either header the request is rejected. Refused WebSocket upgrades lose session authority; live sockets
 close with `1008 forbidden_origin` to stop reconnecting.
 Do not replace these headers with the proxy's or upstream service's address.
 

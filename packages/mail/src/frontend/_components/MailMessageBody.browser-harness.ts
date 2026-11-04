@@ -38,7 +38,10 @@ window.mountMailMessageBody = (props) => {
   window.updateMailMessageBody = (update) => setCurrent(update);
   render(() => createComponent(MailMessageBody, current), host);
   const frame = host.querySelector("iframe");
-  if (!frame) throw new Error("Missing message frame");
+  if (!frame) {
+    if (props.format === "html") throw new Error("Missing message frame");
+    return;
+  }
   trace.heights.push({ at: 0, value: frame.style.height });
   frame.addEventListener("load", () => trace.loads.push(Math.round(performance.now() - started)));
   window.addEventListener("message", (event) => {
