@@ -24,7 +24,7 @@ export type MessageBodyRequest = { state: "loaded" | "requested" | "limited" | "
 // A person who reads opens a message every few seconds at most. Twelve bodies per minute and
 // mailbox cover that pace, while clicking through a long list cannot put more than one job a
 // turn ahead of the mailbox's folder checks: commands and other work take turns on the lease.
-const REQUESTS_PER_MINUTE = 12;
+export const REQUESTS_PER_MINUTE = 12;
 // One job per message and window is enough: the job is coalesced, and a second open of the same
 // message in the window, by a reload or another reader, joins the wait of the first.
 const REQUEST_WINDOW_MS = 10_000;
