@@ -84,4 +84,32 @@ describe("mail presence session", () => {
     expect(calls).toBe(2);
     session.dispose();
   });
+
+  test("reports a failed or timed-out heartbeat, but not one ended by disposal", async () => {
+    let failures = 0;
+    let answer: "fail" | "empty" | "hang" = "fail";
+    const session = createMailPresenceSession<{ participants: string[] }>({
+      heartbeat: (signal) =>
+        answer === "fail"
+          ? Promise.reject(new Error("offline"))
+          : answer === "empty"
+            ? Promise.resolve(null)
+            : new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true })),
+      leave: async () => undefined,
+      onSnapshot: () => undefined,
+      onFailure: () => failures++,
+      requestTimeoutMs: 5,
+    });
+    await session.heartbeat();
+    answer = "empty";
+    await session.heartbeat();
+    answer = "hang";
+    await session.heartbeat();
+    expect(failures).toBe(3);
+    answer = "hang";
+    const pending = session.heartbeat();
+    session.dispose();
+    await pending;
+    expect(failures).toBe(3);
+  });
 });

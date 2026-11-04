@@ -1566,6 +1566,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxAccess.listMailboxAccess(requestContext(c), internalMailboxId(c))),
   )
+  // Who has access, read-only, for everyone with mailbox-wide access of their own.
+  .get("/mailboxes/:mailboxId/access/members", v("param", mailboxParamSchema), async (c) =>
+    respondPublic(c, mailboxAccess.listMailboxAccessMembers(requestContext(c), internalMailboxId(c))),
+  )
   .post("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", mailboxGrantAccessSchema), async (c) => {
     const input = await internalInput(c, c.req.valid("json"));
     if (input.permission === "none") return respondPublic(c, fail(err.badInput("Access permission cannot be none")));

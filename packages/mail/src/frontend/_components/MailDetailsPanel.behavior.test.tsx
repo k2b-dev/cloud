@@ -128,3 +128,36 @@ test.skipIf(isServer)("the message inspector opens once however often its button
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("who has access loads once the section becomes available, also after the panel mounted", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json({ items: [] }), { preconnect: originalFetch.preconnect });
+  const { createSignal } = await import("solid-js");
+  const { default: MailDetailsPanel } = await import("./MailDetailsPanel");
+  let loads = 0;
+  const [mailboxWide, setMailboxWide] = createSignal(false);
+  const dispose = render(
+    () =>
+      createComponent(MailDetailsPanel, {
+        ...panelProps([]),
+        get access() {
+          return mailboxWide() ? { members: [], state: "loading" as const, load: () => void loads++, retry: () => undefined } : null;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    expect(loads).toBe(0);
+    expect(dom.root.textContent).not.toContain("Loading who has access");
+    // A later snapshot grants mailbox-wide access: the section appears and starts its one read.
+    setMailboxWide(true);
+    await Promise.resolve();
+    expect(loads).toBeGreaterThan(0);
+    expect(dom.root.textContent).toContain("Loading who has access");
+  } finally {
+    dispose();
+    dom.cleanup();
+    globalThis.fetch = originalFetch;
+  }
+});
