@@ -568,6 +568,20 @@ suite("mail sync recovery", () => {
       expect(batches).toBe(2);
       expect(flagReads).toHaveBeenCalledTimes(3);
       expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "9", flagNextLow: null, flagMaxUid: null });
+
+      // A walk whose server stops reporting a modification sequence stops too, without claiming
+      // the changes it did not read.
+      status.mockResolvedValue({ uidValidity: "10", uidNext: 12_001, highestModseq: "12", messages: 12_000 });
+      expect(await jobTurn(fixture.folderId)).toBe(true);
+      // Without one, reconcile windows carry the flags instead.
+      status.mockResolvedValue({ uidValidity: "10", uidNext: 12_001, highestModseq: null, messages: 12_000 });
+      const windows = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([]);
+      try {
+        await syncFolderBatch(fixture.folderId, async () => undefined);
+      } finally {
+        windows.mockRestore();
+      }
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "9", flagNextLow: null, flagTargetModseq: null });
     } finally {
       status.mockRestore();
       flagReads.mockRestore();
