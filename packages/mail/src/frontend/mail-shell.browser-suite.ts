@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, test as bunTest, describe, expect, setDefaultTimeout, setSystemTime } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import { createConfig } from "@k2b/ssr";
@@ -53,6 +53,18 @@ const { readMailWorkspacePreferences } = await import("./_components/mail-worksp
 /** The fixture server keeps the person's click on "Got it" in this cookie, as Mail keeps it for the person. */
 const NOTICE_COOKIE = "mail_fixture_focus_notice";
 const ui = resolve(import.meta.dir, "../../../ui/dist");
+// Like Cloud's page head (`FONT_PRELOAD_LINKS`): the Latin Plex faces of the first frame load next to the stylesheets,
+// so the server frame shows Plex, not the fallback font. WebKit keeps text in `content-visibility: auto` rows, such as
+// the list rows, shaped with the fallback font after a late face arrives, until something restyles them.
+const fontPreloads = ["400", "500", "600"]
+  .map((weight) => {
+    const file = new RegExp(`url\\(\\./fonts/(ibm-plex-sans-latin-${weight}-normal-[0-9a-f]+\\.woff2)\\)`).exec(
+      readFileSync(join(ui, "plex.css"), "utf8"),
+    )?.[1];
+    if (!file) throw new Error(`The @k2b/ui Plex preset has no Latin IBM Plex Sans ${weight} face`);
+    return `<link rel="preload" href="/ui/fonts/${file}" as="font" type="font/woff2" crossorigin>`;
+  })
+  .join("");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 const boxPath = "/app/mail/Box001";
 const tabsSelector = ".k2b-app-workspace__head-views";
@@ -131,7 +143,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     }),
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-shell.css"><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui app-accent-scope" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0;${appAccentStyle("#0f766e")}">${shell(url, html)}<script src="/mail-shell-controller.js"></script>${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button><script src="/mail-shell-navigation.js"></script>' : ""}<script type="module">
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads}<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-shell.css"><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui app-accent-scope" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0;${appAccentStyle("#0f766e")}">${shell(url, html)}<script src="/mail-shell-controller.js"></script>${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button><script src="/mail-shell-navigation.js"></script>' : ""}<script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
     const step=(name)=>{document.documentElement.dataset.mailShellStep=name;performance.mark('mail-shell:'+name)};

@@ -4,7 +4,7 @@ import { mutation } from "@k2b/stdlib/solid";
 import { ButtonLink, Placeholder, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { DRAFT_LEASE_ERROR_CODES, type DraftFolderItem, type DraftFolderPage } from "../../contracts";
+import type { DraftFolderItem, DraftFolderPage, DraftLeaseErrorCode } from "../../contracts";
 import { MailApiError, readApiFailure } from "./api-response";
 import MailDraftRow from "./MailDraftRow";
 import { mailDraftHref } from "./mail-compose-route";
@@ -12,6 +12,9 @@ import { mailConversationListMessages } from "./mail-conversation-list-messages"
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { createRetryToasts } from "./mail-feedback";
 import { mailTimeColumnSamples, mailTimeColumnSizer } from "./mail-view-mode";
+
+/** An open composer holds the draft. The contracts module carries Zod, so the mailbox island imports only its types. */
+const LEASE_HELD = "DRAFT_LEASE_HELD" satisfies DraftLeaseErrorCode;
 
 /** The collapse of a deleted row (`mail-list-row-leave`); the list drops the row once it ends. */
 const LEAVE_MS = 160;
@@ -115,9 +118,7 @@ export default function MailDraftsView(props: {
     onError: (error) => {
       const code = error instanceof MailApiError ? error.code : null;
       // An open composer holds the draft, or someone changed it since the list loaded: the draft stays either way.
-      toast.error(
-        code === DRAFT_LEASE_ERROR_CODES.HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message,
-      );
+      toast.error(code === LEASE_HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message);
       // The server answered: reload, so the row shows the draft as it is now, or leaves once it was sent meanwhile.
       if (error instanceof MailApiError) refresh();
     },
