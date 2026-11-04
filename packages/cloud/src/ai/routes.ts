@@ -44,6 +44,7 @@ import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { aiChatTasks } from "./chat-tasks";
 import { AI_CLIENT_TOOL_ACTION_MAX_BYTES, aiClientToolOutputSchemas } from "./client-tool-results";
+import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
@@ -91,6 +92,7 @@ import {
   AiTurnActionSchema,
   abortAiTurn,
   listPendingAiTurnActions,
+  notifyAiConversationUnwatched,
   prepareAiChatTurn,
   submitAiChatTurn,
   submitAiCompaction,
@@ -1448,6 +1450,10 @@ export const aiRoutes = (() => {
         return createAiConversationStreamResponse({
           conversation,
           signal: c.req.raw.signal,
+          // Only a signed-in tab shows approvals in the page; other readers, such as `cld`, leave notices and pushes as they are.
+          ...(ctx.signedInSession
+            ? { watch: await watchAiConversation(conversation.id, () => notifyAiConversationUnwatched(conversation.id)) }
+            : {}),
           // The actor is a request-time snapshot: re-authenticate its
           // credential first, so a revoked session or API key ends the stream,
           // then re-check ownership and resource scope of the conversation.

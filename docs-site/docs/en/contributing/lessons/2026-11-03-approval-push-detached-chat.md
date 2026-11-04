@@ -1,0 +1,6 @@
+### A chat whose tab closed waited on an approval nobody heard about
+
+- **What happened:** An Assistant chat started in the browser kept running on the server after its tab closed. When it then asked for an approval, Cloud Login received no push and Core sent no Pending approvals notice, so the turn waited silently until it ended after 24 hours.
+- **Root cause:** Cloud Login push and the Pending approvals notice each decided from the turn's origin (`run_config.signedInSession`) whether the person would see the approval in the page. A turn that started in a tab outlives the tab, so the origin said nothing about whether anyone still watched.
+- **Error class:** Deciding whether a person is present from how the work started instead of from live presence.
+- **Guard:** The `approval-watchers` check requires both notice paths to call `aiApprovalUnwatched()` and rejects approval eligibility read from `run_config->>'signedInSession'`. `app-approval.integration.test.ts` and `ai-notifications.integration.test.ts` cover no notice while a tab watches, one push and one notice once the last tab closes on concurrent replicas, one push when no tab watches, and one decision across the page and Cloud Login.
