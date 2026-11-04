@@ -29,9 +29,11 @@ Mail checks access when the page loads and during live updates. If your access e
 5. If folders are missing or changed, choose **Rediscover folders**.
 :::
 
-The first synchronization loads history step by step. A message can appear before its complete body or attachment bytes have synchronized. The reader then shows **Body is still synchronizing**. As soon as synchronization completes, it shows the body, without a page reload.
+The first synchronization loads history step by step. A message can appear before its complete body or attachment bytes have synchronized. The reader then shows **Body is still synchronizing**. When you open such a message, Mail loads its body before it checks the other folders of the mailbox. As soon as the body arrives, the reader shows it, without a page reload.
 
-If Mail restarts while it downloads a body, the reader can show **The message body could not be synchronized** for that message for a while. Mail downloads it again after the other missing bodies of the mailbox. During a large first synchronization, this can take hours. If the conversation list shows **Updates paused**, choose **Refresh message** to load the current state.
+If the body has not arrived after about 30 seconds, the reader shows **Waiting for the mailbox**. The mail server answers slowly or is busy. The wait also continues after a page reload. Choose **Request again** to ask for the body once more. The body still appears on its own when it arrives.
+
+If Mail restarts while it downloads a body, the reader can show **The message body could not be synchronized** for that message. Choose **Request again** to download it now. Otherwise, Mail downloads it again after the other missing bodies of the mailbox. During a large first synchronization, this can take hours. If the conversation list shows **Updates paused**, choose **Refresh message** to load the current state.
 
 Sometimes the mail provider cannot be reached or refuses sign-ins for a while, for example during maintenance or because too many connections are open. Mail keeps trying and continues on its own when the provider answers again. You need a new password or credential only when the provider rejects the current one.
 

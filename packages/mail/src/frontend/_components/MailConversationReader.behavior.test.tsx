@@ -205,11 +205,35 @@ test.skipIf(isServer)("jumping to newest reads the person's motion choice at cli
   }
 });
 
+type BodyRequestAnswer = { state: "loaded" | "requested" | "limited" | "unavailable"; waitedMs: number };
+
+/** Answers the reader's body requests with `answer` and records each request's body. */
+const mockBodyRequests = (answer: () => BodyRequestAnswer) => {
+  const originalFetch = globalThis.fetch;
+  const requests: unknown[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (init?.method === "POST" && url.endsWith("/api/mail/mailboxes/Box001/messages/Msg001/body-request")) {
+        requests.push(JSON.parse(String(init.body)));
+        return Response.json(answer());
+      }
+      return Response.json({ items: [] });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const restore = () => {
+    globalThis.fetch = originalFetch;
+  };
+  return { requests, restore };
+};
+
 test.skipIf(isServer)(
-  "the open reader replaces the pending body once hydration completes and offers a local refresh meanwhile",
+  "the open reader asks once for the pending body, replaces it once hydration completes and offers a local refresh meanwhile",
   async () => {
     const dom = createDomTestHarness();
     const { MailConversationReader } = modules!;
+    const bodyRequests = mockBodyRequests(() => ({ state: "requested", waitedMs: 0 }));
     const [messages, setMessages] = createSignal<MessageDetail[]>([envelopeOnly]);
     let refreshes = 0;
     let finishRefresh!: () => void;
@@ -237,8 +261,16 @@ test.skipIf(isServer)(
 
       expect(pending()?.getAttribute("role")).toBe("status");
       expect(pending()?.textContent).toContain("Body is still synchronizing");
+      expect(pending()?.textContent).toContain("Mail loads it from the mailbox first.");
       expect(refreshButton()?.textContent).toBe("Refresh message");
       expect(refreshButton()?.type).toBe("button");
+      await waitFor(() => bodyRequests.requests.length === 1);
+      expect(bodyRequests.requests).toEqual([{}]);
+
+      // A live update of the still pending message is not a new open.
+      setMessages([{ ...envelopeOnly, flags: ["\\Seen"] }]);
+      await Bun.sleep(5);
+      expect(bodyRequests.requests).toEqual([{}]);
 
       refreshButton()!.click();
       expect(refreshes).toBe(1);
@@ -248,6 +280,7 @@ test.skipIf(isServer)(
       expect(refreshes).toBe(1);
       finishRefresh();
       await waitFor(() => refreshButton()?.disabled === false);
+      expect(bodyRequests.requests).toEqual([{}, { retry: true }]);
 
       setMessages([{ ...envelopeOnly, hydrationStatus: "complete", plainText: "The numbers are attached.", sourceAvailable: true }]);
       await waitFor(() => pending() === null);
@@ -256,12 +289,146 @@ test.skipIf(isServer)(
       expect(card().textContent).not.toContain("Refresh message");
       expect(dom.root.querySelector("[data-mail-print-root]")).toBe(reader);
       expect(card().querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true");
+      expect(bodyRequests.requests).toHaveLength(2);
     } finally {
       dispose();
+      bodyRequests.restore();
       dom.cleanup();
     }
   },
 );
+
+test.skipIf(isServer)("closing and opening a pending message again asks for its body again", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const bodyRequests = mockBodyRequests(() => ({ state: "requested", waitedMs: 0 }));
+  const dispose = render(() => createComponent(MailConversationReader, readerProps), dom.root);
+  try {
+    const header = () => dom.root.querySelector<HTMLButtonElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    await waitFor(() => bodyRequests.requests.length === 1);
+    header().click();
+    await waitFor(() => header().getAttribute("aria-expanded") === "false");
+    await Bun.sleep(5);
+    expect(bodyRequests.requests).toHaveLength(1);
+    header().click();
+    await waitFor(() => bodyRequests.requests.length === 2);
+    expect(bodyRequests.requests).toEqual([{}, {}]);
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("after the deadline the reader says it waits for the mailbox and asks again on request", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  // The server counts the wait from its first request, so 29.99 s have passed before this open, as after a reload.
+  let answer: BodyRequestAnswer = { state: "requested", waitedMs: 29_990 };
+  const bodyRequests = mockBodyRequests(() => answer);
+  let refreshes = 0;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        onReconcile: async () => {
+          refreshes += 1;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
+    const waiting = () => card().querySelector<HTMLElement>("[data-mail-body-waiting]");
+    expect(card().querySelector('.k2b-placeholder[data-state="loading"]')).not.toBeNull();
+    expect(waiting()).toBeNull();
+    await waitFor(() => waiting() !== null);
+
+    expect(waiting()?.getAttribute("role")).toBe("status");
+    expect(waiting()?.textContent).toContain("Waiting for the mailbox");
+    expect(waiting()?.textContent).toContain("The mailbox answers slowly. The body follows on its own.");
+    expect(card().querySelector('.k2b-placeholder[data-state="loading"]')).toBeNull();
+    expect(card().querySelector("[data-mail-body-state]")?.className).toContain("min-h-44");
+
+    answer = { state: "requested", waitedMs: 0 };
+    const retry = waiting()!.querySelector<HTMLButtonElement>("button")!;
+    expect(retry.textContent).toBe("Request again");
+    retry.click();
+    await waitFor(() => waiting() === null);
+    expect(bodyRequests.requests).toEqual([{}, { retry: true }]);
+    expect(refreshes).toBe(1);
+    expect(card().querySelector('.k2b-placeholder[data-state="loading"]')).not.toBeNull();
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a body no job can fetch shows the wait at once", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const bodyRequests = mockBodyRequests(() => ({ state: "unavailable", waitedMs: 0 }));
+  const dispose = render(() => createComponent(MailConversationReader, readerProps), dom.root);
+  try {
+    const waiting = () => dom.root.querySelector<HTMLElement>("[data-mail-body-waiting]");
+    await waitFor(() => waiting() !== null);
+    expect(waiting()?.textContent).toContain("Waiting for the mailbox");
+    expect(waiting()?.textContent).toContain("Mail cannot load it from the mailbox right now.");
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a failed body shows the error, asks for no body on open and requests it again on retry", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  let answer: BodyRequestAnswer = { state: "requested", waitedMs: 0 };
+  const bodyRequests = mockBodyRequests(() => answer);
+  const [messages, setMessages] = createSignal<MessageDetail[]>([{ ...envelopeOnly, hydrationStatus: "failed" }]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+        onReconcile: async () => {
+          setMessages([envelopeOnly]);
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
+    const failed = () => card().querySelector<HTMLElement>('.k2b-placeholder[data-state="error"]');
+    expect(failed()?.getAttribute("role")).toBe("alert");
+    expect(failed()?.textContent).toContain("The message body could not be synchronized");
+    expect(failed()?.textContent).toContain("You can request it again.");
+    await Bun.sleep(5);
+    expect(bodyRequests.requests).toEqual([]);
+
+    failed()!.querySelector<HTMLButtonElement>("button")!.click();
+    // The reset body loads again; its retry was its request, so the new open state asks no second time.
+    await waitFor(() => card().querySelector('.k2b-placeholder[data-state="loading"]') !== null);
+    await Bun.sleep(5);
+    expect(bodyRequests.requests).toEqual([{ retry: true }]);
+
+    // A body that cannot be fetched at all offers no retry that does nothing.
+    answer = { state: "unavailable", waitedMs: 0 };
+    setMessages([{ ...envelopeOnly, hydrationStatus: "failed" }]);
+    await waitFor(() => failed() !== null);
+    failed()!.querySelector<HTMLButtonElement>("button")!.click();
+    await waitFor(() => failed()?.querySelector("button") === null);
+    expect(failed()?.textContent).toContain("Mail cannot load it from the mailbox right now.");
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
 
 test.skipIf(isServer)("an opened quoted block stays open when a live update refreshes the conversation", async () => {
   const dom = createDomTestHarness();
@@ -1098,7 +1265,8 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
   const saved: string[] = [];
   const [mailboxId, setMailboxId] = createSignal("Box001");
   globalThis.fetch = Object.assign(
-    async (_input: RequestInfo | URL, init?: RequestInit) => {
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/body-request")) return Response.json({ state: "requested", waitedMs: 0 });
       if (init?.method !== "POST") return Response.json({ items: [] });
       return new Promise<Response>((finish) => pending.push({ signal: init.signal, finish }));
     },

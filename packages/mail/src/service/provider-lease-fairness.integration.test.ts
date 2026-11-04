@@ -25,6 +25,7 @@ import { keepConversation } from "./conversation-keeps";
 import { createDraft } from "./drafts";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { runMaintenanceJob, startMaintenanceRuntime, stopMaintenanceRuntime, submitDueMaintenanceCommands } from "./maintenance-runtime";
+import { requestMessageBody } from "./message-body-request";
 import { createProviderConnection } from "./provider-connections";
 import * as providerLeases from "./provider-operation-lock";
 import {
@@ -1747,6 +1748,57 @@ suite("mail provider lease fairness", () => {
       await releaseProviderLease(holder);
       const waiting = await acquireProviderLease(sync);
       if (waiting.lock) await releaseProviderLease(waiting.lock);
+    }
+  });
+
+  test("an opened message's body takes the next turn after the holder, ahead of twenty waiting folder checks", async () => {
+    const mailbox = await connect("open-body");
+    const [header] = await deliverAndSync(mailbox, 1, "open-body");
+    const [message] = await sql<{ id: string; hydration_status: string }[]>`
+      SELECT id, hydration_status FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id = ${header!}
+    `;
+    expect(message?.hydration_status).toBe("envelope");
+    const resource = mailbox.remoteResourceId;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    const heartbeat = async (): Promise<void> => undefined;
+    // A folder check holds the lease, and twenty more wait for it, as on a mailbox with many folders.
+    const holder = await take("sync-folder:holder", "sync");
+    if (!holder.lock) throw new Error("The folder check did not take the provider lease");
+    const folderChecks = Array.from({ length: 20 }, (_, index) => `sync-folder:${index}`);
+    try {
+      for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+      // The reader asks through the route's service; the job it queues then asks for the lease.
+      const requested = await requestMessageBody({ context, mailboxId: mailbox.mailboxId, messageId: message!.id, retry: false });
+      expect(requested).toMatchObject({ ok: true, data: { state: "requested" } });
+      await expect(hydrateMessageBatch({ input: { messageId: message!.id }, heartbeat, resubmit: () => undefined })).rejects.toMatchObject({
+        code: "SYNC_BUSY",
+      });
+
+      await releaseProviderLease(holder.lock);
+      // Every folder check asks first for the free lease, and none gets it: the body is next.
+      for (const waiter of folderChecks) {
+        const turn = await take(waiter, "sync");
+        if (turn.lock) await releaseProviderLease(turn.lock);
+        expect({ waiter, lock: Boolean(turn.lock) }).toEqual({ waiter, lock: false });
+      }
+      const before = downloads.length;
+      await hydrateMessageBatch({ input: { messageId: message!.id }, heartbeat, resubmit: () => undefined });
+      expect(downloads.slice(before)).toEqual(["open-body"]);
+      const [hydrated] = await sql<{ hydration_status: string }[]>`
+        SELECT hydration_status FROM mail.message_contents WHERE id = ${message!.id}::uuid
+      `;
+      expect(hydrated?.hydration_status).toBe("complete");
+      // The folder checks go on in their order right after the body.
+      const next = await take(folderChecks[0]!, "sync");
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await releaseProviderLease(next.lock);
+    } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
     }
   });
 

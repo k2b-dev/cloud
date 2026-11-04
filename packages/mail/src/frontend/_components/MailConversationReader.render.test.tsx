@@ -167,6 +167,23 @@ describe("Mail conversation reader", () => {
     }
   });
 
+  test("renders a pending body as loading, never as the wait the browser starts after its request", () => {
+    const html = renderReader([], { messages: [{ ...message, hydrationStatus: "envelope", plainText: null, sanitizedHtml: null }] });
+    expect(html).toContain("data-mail-body-state");
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain("Body is still synchronizing");
+    expect(html).toContain("Mail loads it from the mailbox first.");
+    expect(html).not.toContain("data-mail-body-waiting");
+    expect(html).not.toContain("Waiting for the mailbox");
+  });
+
+  test("renders a failed body as an error with its retry", () => {
+    const html = renderReader([], { messages: [{ ...message, hydrationStatus: "failed", plainText: null, sanitizedHtml: null }] });
+    expect(html).toContain('data-state="error"');
+    expect(html).toContain("The message body could not be synchronized");
+    expect(html).toContain("Request again");
+  });
+
   test("Automatic shows only HTML in dark mode even when real plain text exists", () => {
     const html = renderReader([], { messages: [{ ...message, sanitizedHtml: "<p>Hello</p>" }], theme: "dark" });
     expect(html).toContain('class="contents" data-mail-body-format="html"');
