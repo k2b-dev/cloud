@@ -196,11 +196,7 @@ export function TemplateList(props: { admin?: boolean; onSelect?: (template: Fil
                         >
                           {t().edit}
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => void editAccess(row)}
-                        >
+                        <Button size="sm" variant="secondary" onClick={() => void editAccess(row)}>
                           {t().permissions}
                         </Button>
                         <Button size="sm" variant="secondary" onClick={() => void remove(row)}>
