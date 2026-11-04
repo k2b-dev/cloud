@@ -18,7 +18,7 @@ export const accessDialogMessages = i18n.define({
       serviceAccountNotFound: "No service account with this identifier, or you cannot add it here.",
       serviceAccountLookupFailed: "The service account could not be looked up.",
       serviceAccountNote: ({ name }: { name: string }) =>
-        `Code runs as the service account of its object. Whoever manages ${name} gives it access here, like a person. Whoever edits the code acts with this right.`,
+        `Code runs as the service account of its object. Whoever manages “${name}” gives it access here, like a person. Whoever edits the code acts with this right.`,
       serviceAccountsEmpty: "No service account yet. Code of a mailbox or a base gets access here like a person.",
       add: "Add",
       cancel: "Cancel",
@@ -94,7 +94,7 @@ export const accessDialogMessages = i18n.define({
       serviceAccountNotFound: "Kein Dienstkonto mit dieser Kennung, oder du kannst es hier nicht hinzufügen.",
       serviceAccountLookupFailed: "Das Dienstkonto konnte nicht gesucht werden.",
       serviceAccountNote: ({ name }) =>
-        `Code läuft als Dienstkonto seines Objekts. Wer ${name} verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.`,
+        `Code läuft als Dienstkonto seines Objekts. Wer „${name}“ verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.`,
       serviceAccountsEmpty: "Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.",
       add: "Hinzufügen",
       cancel: "Abbrechen",

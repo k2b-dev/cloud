@@ -1,3 +1,4 @@
+import { Avatar } from "@k2b/ui";
 import { Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry } from "../contracts/shared";
@@ -14,8 +15,6 @@ export default function PrincipalAvatar(props: {
 }) {
   const icon = () => {
     switch (props.entry.principal.type) {
-      case "service_account":
-        return "ti-code";
       case "group":
         return "ti-users-group";
       case "authenticated":
@@ -32,9 +31,13 @@ export default function PrincipalAvatar(props: {
     <Show
       when={props.entry.principal.type === "user" ? props.entry.principal : undefined}
       fallback={
-        // The account of an object runs its code: it shows the code icon unless it has a picture.
+        // The account of an object runs its code: it shows the code icon in the square of service accounts unless it
+        // has a picture.
         props.entry.principal.type === "service_account" &&
-        (props.entry.avatarHash || props.entry.serviceAccountKind !== "resource_bound") ? (
+        props.entry.serviceAccountKind === "resource_bound" &&
+        !props.entry.avatarHash ? (
+          <Avatar name={props.label} icon="ti ti-code" shape="square" size="sm" class="h-8 w-8" />
+        ) : props.entry.principal.type === "service_account" ? (
           <CloudAvatar
             username={props.label}
             userId={props.entry.principal.serviceAccountId}
