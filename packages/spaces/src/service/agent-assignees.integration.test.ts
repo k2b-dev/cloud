@@ -131,11 +131,17 @@ suite("Spaces service-account assignees", () => {
     });
   });
 
-  test("a claim assigns the account however it got write access", async () => {
+  test("a claim needs the account's own write access; all signed-in people is not enough", async () => {
     await withFixture(async (f) => {
       const outsider = await f.account("standalone", { grant: false });
       await f.grant(f.spaceId, null);
       const itemId = await f.task();
+      // "All signed-in people" means people: an agent needs its own right.
+      expect(await change({ ...f.context(itemId, outsider.actor), operation: "claim", claimId: crypto.randomUUID() })).toMatchObject({
+        ok: false,
+        status: 403,
+      });
+      await f.grant(f.spaceId, outsider.id);
       expect(await change({ ...f.context(itemId, outsider.actor), operation: "claim", claimId: crypto.randomUUID() })).toMatchObject({
         ok: true,
       });

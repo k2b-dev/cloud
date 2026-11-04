@@ -1768,7 +1768,7 @@ suite("chat conversations, people, and directory groups", () => {
       headers: { ...headers, "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  test("discovery audience counts independent accounts and only credentials bound to this channel", async () => {
+  test("discovery audience counts people only; agents and bound credentials are not all signed-in people", async () => {
     const owner = await user(),
       outsider = await user();
     const headers = await cookie(owner),
@@ -1795,8 +1795,8 @@ suite("chat conversations, people, and directory groups", () => {
         VALUES ('Audience binding', 'resource_bound', ${binding.appId}, ${binding.resourceType}, ${binding.resourceId}) RETURNING id`;
       trackedAccounts.push(row!.id);
     }
-    expect(await count()).toBe(before + 2);
-    expect(await count(channel.id)).toBe(before + 3);
+    expect(await count()).toBe(before);
+    expect(await count(channel.id)).toBe(before);
     const settings = await request(headers, `/${channel.id}/discovery`);
     expect(settings.status).toBe(200);
     expect(DiscoveryStateSchema.parse(await settings.json()).audienceCount).toBe(before + 3);
@@ -1901,7 +1901,8 @@ suite("chat conversations, people, and directory groups", () => {
       discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
     });
     const readKey = await credential("standalone");
-    expect((await request(readKey.headers, `/${channel.id}/join`, "POST")).status).toBe(403);
+    // All signed-in people are people: an independent machine does not even find the channel.
+    expect((await request(readKey.headers, `/${channel.id}/join`, "POST")).status).toBe(404);
 
     const browse = ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Atlas")).json());
     expect(browse.items.some((row) => row.id === channel.id && !row.member && row.permission === "read")).toBe(true);
@@ -1979,10 +1980,16 @@ suite("chat conversations, people, and directory groups", () => {
     const owner = await user();
     const ownerHeaders = await cookie(owner);
     const agent = await credential("agent", null, ["openid", "read", "write", "admin"]);
+    // An agent finds a channel through its own group, not through all signed-in people.
+    const team = await group();
+    await sql`INSERT INTO auth.service_account_groups (service_account_id, group_id) VALUES (${agent.id}::uuid, ${team}::uuid)`;
     const channel = await create(ownerHeaders, [], {
       name: "Automation",
       purpose: "Coordinate automated work",
-      discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
+      discovery: [
+        { principal: { type: "authenticated" }, permission: "write" },
+        { principal: { type: "group", groupId: team }, permission: "write" },
+      ],
     });
     expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-before", body: "No" })).status).toBe(403);
     const joined = ConversationSchema.parse(await (await request(agent.headers, `/${channel.id}/join`, "POST")).json());
@@ -2270,9 +2277,8 @@ suite("chat conversations, people, and directory groups", () => {
       purpose: "Other updates",
       discovery: [{ principal: { type: "authenticated" }, permission: "read" }],
     });
-    expect(ConversationPageSchema.parse(await (await discoveryRequest(boundHeaders, "")).json()).items.map((row) => row.id)).toEqual([
-      channel.id,
-    ]);
+    // All signed-in people are people: a bound account discovers no channel through that audience.
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(boundHeaders, "")).json()).items.map((row) => row.id)).toEqual([]);
     expect(ConversationPageSchema.parse(await (await request(boundHeaders)).json()).items.map((row) => row.id)).toEqual([channel.id]);
     for (const path of [`/${other.id}`, `/${other.id}/discovery`]) expect((await request(boundHeaders, path)).status).toBe(403);
     expect((await request(boundHeaders, `/${other.id}/join`, "POST")).status).toBe(403);
