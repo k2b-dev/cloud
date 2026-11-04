@@ -42,6 +42,7 @@ import {
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
+import * as syncRuntime from "./sync-runtime";
 import {
   enqueueFolderSync,
   enqueueMailboxHydration,
@@ -1750,6 +1751,119 @@ suite("mail provider lease fairness", () => {
       const waiting = await acquireProviderLease(sync);
       if (waiting.lock) await releaseProviderLease(waiting.lock);
     }
+  });
+
+  test("a hydration repair of one message takes the next turn ahead of 354 waiting folder checks", async () => {
+    const mailbox = await connect("repair-body");
+    const [header] = await deliverAndSync(mailbox, 1, "repair-body");
+    const [message] = await sql<{ id: string }[]>`
+      UPDATE mail.message_contents SET hydration_status = 'failed', hydration_attempt = 5, hydration_error_code = 'HYDRATION_INTERRUPTED'
+      WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id = ${header!}
+      RETURNING id
+    `;
+    // Record the hydration jobs the repair queues instead of letting a worker run them.
+    const queued: Array<{ messageId: string } | { mailboxId: string }> = [];
+    const messageJobs = spyOn(syncRuntime, "enqueueMessageHydration").mockImplementation(async (messageId) => {
+      queued.push({ messageId });
+    });
+    const mailboxJobs = spyOn(syncRuntime, "enqueueMailboxHydration").mockImplementation(async (mailboxId) => {
+      queued.push({ mailboxId });
+    });
+    try {
+      const repair = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "hydrate_missing", idempotencyKey: `repair-body-${suffix}` },
+        enqueue: false,
+      });
+      if (!repair.ok) throw new Error(JSON.stringify(repair.error));
+      await runMaintenanceUntilDone({ commandId: repair.data.id });
+    } finally {
+      messageJobs.mockRestore();
+      mailboxJobs.mockRestore();
+    }
+    // The repaired body's own job; before the fix the repair queued only the mailbox's job.
+    const job = queued.find((input) => "messageId" in input) ?? queued[0];
+    expect(job).toEqual({ messageId: message!.id });
+
+    const resource = mailbox.remoteResourceId;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    const heartbeat = async (): Promise<void> => undefined;
+    // A folder check holds the lease and one per folder of a 354-folder account waits for it.
+    const holder = await take("sync-folder:holder", "sync");
+    if (!holder.lock) throw new Error("The folder check did not take the provider lease");
+    const folderChecks = Array.from({ length: 354 }, (_, index) => `sync-folder:${index}`);
+    try {
+      for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+      await expect(hydrateMessageBatch({ input: job!, heartbeat, resubmit: () => undefined })).rejects.toMatchObject({
+        code: "SYNC_BUSY",
+      });
+      await releaseProviderLease(holder.lock);
+      // The folder check first in line asks for the free lease and is refused: the repair is next.
+      const first = await take(folderChecks[0]!, "sync");
+      if (first.lock) await releaseProviderLease(first.lock);
+      expect(first.lock).toBeNull();
+      const before = downloads.length;
+      await hydrateMessageBatch({ input: job!, heartbeat, resubmit: () => undefined });
+      expect(downloads.slice(before)).toEqual(["repair-body"]);
+      const [repaired] = await sql<{ hydration_status: string }[]>`
+        SELECT hydration_status FROM mail.message_contents WHERE id = ${message!.id}::uuid
+      `;
+      expect(repaired?.hydration_status).toBe("complete");
+      // The folder checks go on in their order right after it.
+      const next = await take(folderChecks[0]!, "sync");
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await releaseProviderLease(next.lock);
+    } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("a large hydration repair gives the newest twelve bodies their own jobs, also when it runs again", async () => {
+    const mailbox = await connect("repair-many");
+    await deliverAndSync(mailbox, 14, "repair-many");
+    const failed = await sql<{ id: string }[]>`
+      UPDATE mail.message_contents SET hydration_status = 'failed', hydration_attempt = 5, hydration_error_code = 'HYDRATION_INTERRUPTED'
+      WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+      RETURNING id
+    `;
+    expect(failed).toHaveLength(14);
+    const newest = await sql<{ id: string }[]>`
+      SELECT id FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid ORDER BY internal_date DESC, id DESC LIMIT 12
+    `;
+    const repairOnce = async (key: string): Promise<Array<{ messageId: string } | { mailboxId: string }>> => {
+      const queued: Array<{ messageId: string } | { mailboxId: string }> = [];
+      const messageJobs = spyOn(syncRuntime, "enqueueMessageHydration").mockImplementation(async (messageId) => {
+        queued.push({ messageId });
+      });
+      const mailboxJobs = spyOn(syncRuntime, "enqueueMailboxHydration").mockImplementation(async (mailboxId) => {
+        queued.push({ mailboxId });
+      });
+      try {
+        const repair = await createMailCommand({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: { kind: "hydrate_missing", idempotencyKey: `${key}-${suffix}` },
+          enqueue: false,
+        });
+        if (!repair.ok) throw new Error(JSON.stringify(repair.error));
+        await runMaintenanceUntilDone({ commandId: repair.data.id });
+      } finally {
+        messageJobs.mockRestore();
+        mailboxJobs.mockRestore();
+      }
+      return queued;
+    };
+    // More would hold back the mailbox's later commands, which share the command class.
+    const expected = [...newest.map((row) => ({ messageId: row.id })), { mailboxId: mailbox.mailboxId }];
+    expect(await repairOnce("repair-many-first")).toEqual(expected);
+    // A second run finds nothing left to reset and still queues the same bodies.
+    expect(await repairOnce("repair-many-again")).toEqual(expected);
   });
 
   test("an opened message's body takes the next turn after the holder, ahead of twenty waiting folder checks", async () => {

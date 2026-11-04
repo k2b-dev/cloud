@@ -9,6 +9,7 @@ import { commandStillAuthorized, type StoredCommandAuthorization } from "./comma
 import { keepLastKeptPlacements } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { REQUESTS_PER_MINUTE as PRIORITY_BODY_REQUESTS_PER_MINUTE } from "./message-body-request";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
 import { providerBusyRetryAfterMs } from "./provider-operation-lock";
 import { executeQueuedSenderVerification } from "./sender-verification";
@@ -16,6 +17,7 @@ import {
   enqueueFolderSync,
   enqueueMailboxHydration,
   enqueueMailboxSync,
+  enqueueMessageHydration,
   executeBindingRediscovery,
   FOLDER_SYNC_REQUEST_MS,
   requestedSyncProgress,
@@ -233,7 +235,15 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
     ORDER BY internal_date DESC, id DESC
     LIMIT 500
   `;
-  if (enqueueWork && queued.length > 0) await enqueueMailboxHydration(mailboxId);
+  if (enqueueWork) {
+    // On an account with hundreds of folders, mailbox hydration waits about a full round of folder
+    // checks for each turn. The newest pending bodies get their own jobs, which rank with commands,
+    // as many as a person may ask for in a minute when opening messages: more would hold back the
+    // mailbox's later commands, which take their turns in the same class. They are chosen from the
+    // pending bodies, not from this run's resets, so a repair that runs again queues them again.
+    for (const message of queued.slice(0, PRIORITY_BODY_REQUESTS_PER_MINUTE)) await enqueueMessageHydration(message.id);
+    if (queued.length > 0) await enqueueMailboxHydration(mailboxId);
+  }
   return { reset: reset.length, queued: enqueueWork ? queued.length : 0 };
 };
 

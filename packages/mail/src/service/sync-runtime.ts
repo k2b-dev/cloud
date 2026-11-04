@@ -1542,18 +1542,34 @@ const fetchFlagStep = async (params: {
   signal: AbortSignal;
 }): Promise<FlagChange[]> => {
   const { cursor } = params;
-  if (!params.highestModseq) return [];
+  // A walk with nothing left to read ends before anything else, also one an earlier version
+  // opened on an empty folder and never closed: it would otherwise ask for a batch forever.
+  if (cursor.flagNextLow != null && (cursor.flagMaxUid == null || cursor.flagNextLow > cursor.flagMaxUid)) endFlagWalk(cursor);
+  if (!params.highestModseq) {
+    // Without a modification sequence, reconcile windows carry the flags; an open walk stops.
+    if (cursor.flagNextLow != null) endFlagWalk(cursor, { reached: false });
+    return [];
+  }
   if (!cursor.highestModseq) {
     cursor.highestModseq = params.highestModseq;
     return [];
   }
   if (BigInt(params.highestModseq) <= BigInt(cursor.highestModseq)) return [];
   if (!cursor.flagTargetModseq) {
+    // An empty folder has no flags to walk: it takes the new modification sequence at once.
+    if (params.currentHighUid < 1) {
+      cursor.highestModseq = params.highestModseq;
+      return [];
+    }
     cursor.flagTargetModseq = params.highestModseq;
     cursor.flagNextLow = 1;
     cursor.flagMaxUid = params.currentHighUid;
   }
-  if (cursor.flagNextLow == null || cursor.flagMaxUid == null || cursor.flagNextLow > cursor.flagMaxUid) return [];
+  // A walk with nothing left to read never reaches the provider.
+  if (cursor.flagNextLow == null || cursor.flagMaxUid == null || cursor.flagNextLow > cursor.flagMaxUid) {
+    endFlagWalk(cursor);
+    return [];
+  }
 
   const highUid = Math.min(cursor.flagMaxUid, cursor.flagNextLow + FLAG_WINDOW_SIZE - 1);
   const changes = await imapSmtpConnector.fetchFlagChanges(
@@ -1566,13 +1582,19 @@ const fetchFlagStep = async (params: {
     params.signal,
   );
   cursor.flagNextLow = highUid + 1;
-  if (cursor.flagNextLow > cursor.flagMaxUid) {
-    cursor.highestModseq = cursor.flagTargetModseq;
-    cursor.flagTargetModseq = null;
-    cursor.flagNextLow = null;
-    cursor.flagMaxUid = null;
-  }
+  if (cursor.flagNextLow > cursor.flagMaxUid) endFlagWalk(cursor);
   return changes;
+};
+
+/**
+ * Clears the walk's fields. A walk that `reached` its end, the default, means Mail holds every flag
+ * change up to its target.
+ */
+const endFlagWalk = (cursor: EnvelopeCursor, options: { reached?: boolean } = {}): void => {
+  if (options.reached !== false && cursor.flagTargetModseq) cursor.highestModseq = cursor.flagTargetModseq;
+  cursor.flagTargetModseq = null;
+  cursor.flagNextLow = null;
+  cursor.flagMaxUid = null;
 };
 
 /**
