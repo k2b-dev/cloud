@@ -79,4 +79,134 @@ describe("record reverse relations interaction", () => {
       dom.cleanup();
     }
   });
+
+  test("a fresh detail of the open record refreshes the links in place and keeps focus on a row that stays", async () => {
+    const { createDomTestHarness } = await import("../../../../../ui/test/dom");
+    const dom = createDomTestHarness();
+    const { createSignal } = await import("solid-js");
+    const { RecordLinks } = await import("./RecordReferencedBy");
+    const page = (labels: string[]) => ({
+      items: labels.map((label, index) => ({
+        sourceTableId: "TABLE2",
+        sourceTableName: "Orders",
+        sourceRecordId: `REC10${index}`,
+        sourceRecordLabel: label,
+        relationFieldId: "FIELD1",
+        relationFieldName: "Customer",
+      })),
+      nextCursor: null,
+    });
+    const requests: string[] = [];
+    const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          requests.push(String(input));
+          return Response.json(page(["Order 1", "Order 7"]));
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const settle = async (ready: () => boolean) => {
+      for (let attempt = 0; attempt < 100 && !ready(); attempt++) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(ready()).toBe(true);
+    };
+    // The first detail brings its page; a later detail of the same record comes without one.
+    const [detail, setDetail] = createSignal<{ referencedBy: ReturnType<typeof page> | null }>({ referencedBy: page(["Order 1"]) });
+    const dispose = render(
+      () =>
+        createComponent(RecordLinks, {
+          baseId: "BASE01",
+          tableId: "TABLE1",
+          recordId: "REC001",
+          ready: true,
+          get initialPage() {
+            return detail().referencedBy;
+          },
+          get revision() {
+            return detail();
+          },
+        }),
+      dom.root,
+    );
+    try {
+      expect(requests).toHaveLength(0);
+      const kept = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent?.includes("Order 1"));
+      if (!kept) throw new Error("The server page's row is missing");
+      kept.focus();
+      expect(dom.document.activeElement).toBe(kept);
+      setDetail({ referencedBy: null });
+      await settle(() => dom.root.textContent?.includes("Customer · Order 7") ?? false);
+      expect(requests).toHaveLength(1);
+      // The row that stayed is the same element and keeps focus.
+      expect(dom.root.contains(kept)).toBe(true);
+      expect(dom.document.activeElement).toBe(kept);
+    } finally {
+      dispose();
+      fetchMock.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("two fresh details while a refresh runs end with the newest answer", async () => {
+    const { createDomTestHarness } = await import("../../../../../ui/test/dom");
+    const dom = createDomTestHarness();
+    const { createSignal } = await import("solid-js");
+    const { RecordLinks } = await import("./RecordReferencedBy");
+    const page = (labels: string[]) => ({
+      items: labels.map((label, index) => ({
+        sourceTableId: "TABLE2",
+        sourceTableName: "Orders",
+        sourceRecordId: `REC20${index}`,
+        sourceRecordLabel: label,
+        relationFieldId: "FIELD1",
+        relationFieldName: "Customer",
+      })),
+      nextCursor: null,
+    });
+    // The server's state changes while the first refresh is still on its way.
+    let serverLabels = ["Order 1"];
+    const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async () => {
+          const answer = page(serverLabels);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return Response.json(answer);
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const settle = async (ready: () => boolean) => {
+      for (let attempt = 0; attempt < 100 && !ready(); attempt++) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(ready()).toBe(true);
+    };
+    const [revision, setRevision] = createSignal(0);
+    const dispose = render(
+      () =>
+        createComponent(RecordLinks, {
+          baseId: "BASE01",
+          tableId: "TABLE1",
+          recordId: "REC001",
+          ready: true,
+          initialPage: page([]),
+          get revision() {
+            return revision();
+          },
+        }),
+      dom.root,
+    );
+    try {
+      setRevision(1);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      serverLabels = ["Order 9"];
+      setRevision(2);
+      await settle(() => dom.root.textContent?.includes("Customer · Order 9") ?? false);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(dom.root.textContent).toContain("Customer · Order 9");
+      expect(dom.root.textContent).not.toContain("Customer · Order 1");
+    } finally {
+      dispose();
+      fetchMock.mockRestore();
+      dom.cleanup();
+    }
+  });
 });

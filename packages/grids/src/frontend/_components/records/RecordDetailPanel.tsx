@@ -38,7 +38,7 @@ import RecordDocumentsSection from "./RecordDocumentsSection";
 import RecordFileField from "./RecordFileField";
 import RecordHistorySection from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
-import RecordReferencedBy from "./RecordReferencedBy";
+import { RecordLinks } from "./RecordReferencedBy";
 import { openRecordUpsertDialog, RecordSaveConflictError } from "./RecordUpsertDialog";
 import RecordVersions from "./RecordVersions";
 import type { RecordAccess } from "./record-access";
@@ -82,6 +82,8 @@ type Props = {
   onOpenRecord: (recordId: string) => void;
   /** Who has access to the base, read-only; it loads once the first record opens. */
   access?: RecordAccess;
+  /** The viewer, marked as "You" among the people with access. */
+  currentUserId?: string;
 };
 
 const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraftIntent =>
@@ -772,9 +774,17 @@ export default function RecordDetailPanel(props: Props) {
                 </>
               }
               links={
-                mode() === "live" && props.detail() && !props.detail()?.combinedOrigin
+                mode() === "live" && !props.detail()?.combinedOrigin
                   ? (outgoing) => (
-                      <RecordReferencedBy baseId={props.baseId} tableId={props.tableId} recordId={rec.id} outgoing={outgoing()} />
+                      <RecordLinks
+                        baseId={props.baseId}
+                        tableId={props.tableId}
+                        recordId={rec.id}
+                        outgoing={outgoing()}
+                        ready={props.detail()?.recordId === rec.id}
+                        initialPage={props.detail()?.referencedBy}
+                        revision={props.detail()}
+                      />
                     )
                   : undefined
               }
@@ -793,7 +803,7 @@ export default function RecordDetailPanel(props: Props) {
                   <Show when={props.access}>
                     {(access) => (
                       <DetailAccess
-                        entries={accessMemberEntries(access().members, { locale: locale() })}
+                        entries={accessMemberEntries(access().members, { currentUserId: props.currentUserId, locale: locale() })}
                         state={access().state}
                         onRetry={access().retry}
                         note={t().accessWholeBase}

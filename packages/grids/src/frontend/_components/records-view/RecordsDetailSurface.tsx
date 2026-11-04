@@ -48,6 +48,7 @@ type Props = {
   onOpenGroupedRecord: (record: GridRecord) => void;
   /** Who has access to the base, read-only. */
   access?: RecordAccess;
+  currentUserId?: string;
 };
 
 export default function RecordsDetailSurface(props: Props) {
@@ -103,6 +104,7 @@ export default function RecordsDetailSurface(props: Props) {
               onOpenRecord={props.onOpenRecord}
               dateConfig={props.dateConfig}
               access={props.access}
+              currentUserId={props.currentUserId}
             />
           </Show>
         </Show>

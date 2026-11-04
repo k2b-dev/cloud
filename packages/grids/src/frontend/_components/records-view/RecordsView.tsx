@@ -80,6 +80,8 @@ type RuntimeView = View & {
 };
 
 type Props = {
+  /** The viewer, marked as "You" among the people with access. */
+  currentUserId?: string;
   /** UUID of the base — for API calls. */
   baseId: string;
   baseName?: string;
@@ -998,6 +1000,7 @@ export default function RecordsView(props: Props) {
             onCloseGroup={onCloseGroupDetail}
             onOpenGroupedRecord={onOpenGroupedRecord}
             access={recordAccess}
+            currentUserId={props.currentUserId}
           />
         </Show>
       </AppWorkspace.Detail>

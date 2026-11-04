@@ -1,10 +1,11 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, spyOn } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { projectPublicWorkspaceRecordDetail } from "../frontend/_components/workspace/workspace-public-state";
 import { loadRecordDetailData } from "../frontend/_components/workspace/workspace-record-detail-state";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { gridsService } from ".";
 import { listByTable as listFields } from "./fields";
 import { get as getRecord } from "./record-read";
 
@@ -103,6 +104,41 @@ describe("record history storage boundary", () => {
         "unknown",
         "workflow.record.updated",
       ]);
+
+      // The referenced record's detail brings the first page of its reverse relations, with short IDs only, so its
+      // Links section shows both directions in the first paint.
+      const target = await getRecord(targetTableId, targetRecordId);
+      if (!target) throw new Error("Audit history fixture target missing");
+      const targetDetail = await loadRecordDetailData({
+        tableId: targetTableId,
+        recordId: targetRecordId,
+        record: target,
+        fields: await listFields(targetTableId),
+        viewer: { userId: null, userGroups: [], isAdmin: true },
+      });
+      expect(targetDetail.referencedBy?.items).toHaveLength(1);
+      const targetPayload = await projectPublicWorkspaceRecordDetail(targetDetail, await listFields(targetTableId));
+      expect(targetPayload.referencedBy).toEqual({
+        items: [expect.objectContaining({ sourceRecordId: record.shortId, relationFieldName: "Camera" })],
+        nextCursor: null,
+      });
+      expect(JSON.stringify(targetPayload.referencedBy)).not.toContain(recordId);
+
+      // A reverse lookup that throws leaves the page to the browser; the rest of the detail still loads.
+      const failing = spyOn(gridsService.record, "listReferencedBy").mockRejectedValueOnce(new Error("statement timeout"));
+      try {
+        const degraded = await loadRecordDetailData({
+          tableId: targetTableId,
+          recordId: targetRecordId,
+          record: target,
+          fields: await listFields(targetTableId),
+          viewer: { userId: null, userGroups: [], isAdmin: true },
+        });
+        expect(degraded.referencedBy).toBeNull();
+        expect(degraded.recordId).toBe(targetRecordId);
+      } finally {
+        failing.mockRestore();
+      }
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
