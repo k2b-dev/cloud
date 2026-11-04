@@ -3,6 +3,7 @@ import { cloudAvatarSource } from "../account/Avatar";
 import type { AccessMember } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalLabel } from "./principal-label";
+import { serviceAccountKindDisplay } from "./service-account-kind";
 
 /**
  * The rows of a detail panel's `DetailAccess` section for a resource's `AccessMember` list: name, avatar, and role in
@@ -37,7 +38,7 @@ export const accessMemberEntries = (
             id: `service:${principal.serviceAccountId}`,
             name,
             kind: "service",
-            detail: member.serviceAccountKind === "agent" ? t.agentServiceAccount : t.resourceBoundServiceAccount,
+            detail: member.serviceAccountKind ? serviceAccountKindDisplay(member.serviceAccountKind, t).label : undefined,
             role: role(member.permission),
           };
         case "authenticated":

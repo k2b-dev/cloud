@@ -35,6 +35,20 @@ describe("accessMemberEntries", () => {
     expect(new Set(entries.map((entry) => entry.id)).size).toBe(entries.length);
   });
 
+  test("names service accounts by their kind, as the access dialog does", () => {
+    const kinds = ["agent", "user_delegated", "resource_bound", "standalone"] as const;
+    const entries = accessMemberEntries(
+      kinds.map((kind, index) => ({
+        principal: { type: "service_account", serviceAccountId: `${index}${agent.slice(1)}` },
+        permission: "read",
+        displayName: kind,
+        serviceAccountKind: kind,
+      })),
+      { locale: "en" },
+    );
+    expect(entries.map((entry) => entry.detail)).toEqual(["Agent", "Personal", "Service account", "Agent (API key only)"]);
+  });
+
   test("speaks the request locale", () => {
     const entries = accessMemberEntries(members, { currentUserId: null, locale: "de" });
     expect(entries.map((entry) => entry.role)).toEqual(["Verwalten", "Bearbeiten", "Ansehen", "Ansehen", "Ansehen"]);
