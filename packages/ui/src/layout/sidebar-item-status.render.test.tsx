@@ -12,6 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
+const { AppWorkspaceSidebarItemStatus } = await import("./AppWorkspaceSidebarItemStatus");
 const { LocaleProvider } = await import("../intl/locale");
 
 const render = (status: AppWorkspaceSidebarItemStatusProps, locale = "en") =>
@@ -35,6 +36,9 @@ const render = (status: AppWorkspaceSidebarItemStatusProps, locale = "en") =>
 const text = (html: string, className: string) => html.match(new RegExp(`class="${className}"[^>]*>([^<]*)<`))?.[1]?.trim();
 
 describe("AppWorkspace.SidebarItemStatus", () => {
+  test("the standalone export preserves the compound component", () => {
+    expect(AppWorkspace.SidebarItemStatus).toBe(AppWorkspaceSidebarItemStatus);
+  });
   test("renders an empty status without unread items, a mention, or muting", () => {
     // The empty element keeps the row's label on one line before the first count arrives.
     for (const status of [{}, { unread: 0 }, { unread: false }, { unread: -2 }, { unread: Number.NaN }]) {

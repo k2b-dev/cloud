@@ -1042,6 +1042,10 @@ state visible with the default `"always"` value.
 
 ### Unread counts, dots, and mentions
 
+Import `AppWorkspaceSidebarItemStatus` directly from `@k2b/ui` in small islands that
+need only the unread mark. It has the same props and behavior as
+`AppWorkspace.SidebarItemStatus`, which remains available.
+
 Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
 `meta` to show what is new in a conversation, inbox, or feed:
 

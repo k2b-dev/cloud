@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-23
+updated: 2026-11-04
 ---
 
 # Pages in the Cloud app
@@ -65,8 +65,10 @@ mark; `0`, an error, or another answer shows none.
 a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
 the part instead of its `description`, and the sidebar shows `count` quietly
 beside a part without a `badge`. Write `text` in the request's locale, as one
-line of at most 200 characters, such as "5 tasks for you · 1 today". Until the
-route answers, or when it fails, Start shows the `description`.
+line of at most 200 characters, such as "5 tasks for you · 1 today". Start reserves an
+empty summary line until the route answers, and clears it when a read fails. The line
+stays the same height when live text arrives; long text is truncated visually. Parts
+without a summary route keep their `description`.
 
 Both routes are read once a minute and when the app returns to the
 foreground, and must be among the application's own paths. Chat answers both
