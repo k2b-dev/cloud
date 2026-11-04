@@ -382,11 +382,16 @@ Unnamed development builds do not identify a release.
 On returning to the foreground with a new version, the app reloads the current
 address when no field the person types into (text, numbers, dates, and times)
 is focused, no unsaved typing or account draft remains, and no modal dialog is
-open. Otherwise it shows a persistent quiet notice with the installation's
+open, and no write, upload, AI answer, or dictation is running. Otherwise it shows a persistent quiet notice with the installation's
 name, such as **New version of Example Cloud · Reload** (**Neue Version von
 Example Cloud · Neu laden** in German), in the work area's toast rail. Its action reloads the current page; stored drafts
 restore after mounting. The hourly check offers the same notice and never
 interrupts work with an automatic reload. There is no extra polling.
+
+Typed API writes, capability Actions, provider uploads, the AI chat controller,
+and live dictation hold automatic update reloads by default. GET reads and idle
+live subscriptions do not. Once an action settles, the next foreground check
+may reload; settling alone never reloads the page.
 
 Parts use the draft helper for text they intend to save or send. For other
 text fields, automatic reloads also defer when input differs from the field's
