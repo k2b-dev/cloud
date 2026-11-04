@@ -73,9 +73,10 @@ const endpoints: Record<Exclude<AiProviderType, "vllm-realtime" | "openai-compat
     // The native adapter appended /v1/messages to a stored root address.
     chatURL: withSuffix("/v1"),
   },
+  // Gemini 3 needs each tool call's thought signature back.
   gemini: {
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-    compat: { maxTokensField: "max_tokens", structuredOutput: "response_format" },
+    compat: { maxTokensField: "max_tokens", structuredOutput: "response_format", toolCallSignatures: "google" },
     contextWindow: 1_000_000,
     // The native adapter used .../v1beta/models; the OpenAI API lives under .../v1beta/openai.
     chatURL: (baseURL) => withSuffix("/openai")(baseURL.replace(/\/+$/, "").replace(/\/models$/, "")),

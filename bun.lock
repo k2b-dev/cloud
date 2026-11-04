@@ -168,7 +168,7 @@
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
         "@k2b/editor": "0.1.0",
-        "@k2b/nessi": "1.0.0",
+        "@k2b/nessi": "1.1.0",
         "@k2b/ssr": "0.20.1",
         "@k2b/stdlib": "0.30.0",
         "@k2b/sync": "7.0.1",
@@ -940,7 +940,7 @@
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.7",
     "@firecrawl/anydoc": "0.2.4",
-    "@k2b/nessi": "1.0.0",
+    "@k2b/nessi": "1.1.0",
     "@k2b/stdlib": "0.30.0",
     "@k2b/sync": "7.0.1",
     "@nats-io/jetstream": "3.4.0",
@@ -1286,7 +1286,7 @@
 
     "@k2b/filegate": ["@k2b/filegate@7.1.0", "", {}, "sha512-wezDCkenZ/s+V0hp4AacUjd4d1Dm+Pyr6+M100LiOeoEGLWp+gMoHE/mHQCsUpxnM+GjhOjn9cxYp2DFWNppqA=="],
 
-    "@k2b/nessi": ["@k2b/nessi@1.0.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-k5EA1vrOLAjiAVaz2Sh+ayEf8QknryYW1S8ivZikx638RpQKZ1DwX/riAR5ennhveAG+yedHbh13zb0vrHZj9Q=="],
+    "@k2b/nessi": ["@k2b/nessi@1.1.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-rhnwTUJIWjPOkkzD+pKBAfoAjLLdZMGwMR2KGfM8WVT9zOdCbyHwq/zgXJ52TVxPZm2HRJtDWWUH0JK0nsxTNg=="],
 
     "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 

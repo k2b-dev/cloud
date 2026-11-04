@@ -96,6 +96,35 @@ describe("AI provider factory", () => {
     }
   });
 
+  test("Gemini gets each tool call's thought signature back, and a placeholder for a call it did not sign", async () => {
+    const originalFetch = globalThis.fetch;
+    const bodies: { messages: { role: string; tool_calls?: { extra_content?: unknown }[] }[] }[] = [];
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', {
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as typeof fetch;
+    try {
+      const provider = createAiProvider(profile({ provider: "gemini", model: "gemini-3-pro" }), "secret");
+      await complete(provider, {
+        messages: [
+          { role: "assistant", provider: "gemini", content: [{ type: "tool_call", id: "a", name: "look", args: {}, signature: "sig" }] },
+          { role: "tool_result", callId: "a", name: "look", result: "ok" },
+          { role: "assistant", provider: "openai", content: [{ type: "tool_call", id: "b", name: "look", args: {} }] },
+          { role: "tool_result", callId: "b", name: "look", result: "ok" },
+        ],
+      });
+      const calls = bodies[0]?.messages.flatMap((message) => message.tool_calls ?? []);
+      expect(calls?.map((call) => call.extra_content)).toEqual([
+        { google: { thought_signature: "sig" } },
+        { google: { thought_signature: "skip_thought_signature_validator" } },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("Anthropic and Gemini keep their large context windows unless the profile names one", () => {
     expect(createAiProvider(profile({ provider: "anthropic" }), "k").contextWindow).toBe(200_000);
     expect(createAiProvider(profile({ provider: "gemini" }), "k").contextWindow).toBe(1_000_000);
