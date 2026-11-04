@@ -5,6 +5,7 @@ import {
   assetKind,
   Browsers,
   browserFailure,
+  departingResourceCancellation,
   installProbe,
   installPwaProbe,
   navigationRefusal,
@@ -212,6 +213,7 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
   expect(scripts.pending.size).toBe(0);
   network.reset();
   const departed = request(host, "fetch", "departed-stream");
+  const departedDocument = network.document();
   const mutation = request(host, "fetch", "undo");
   emit("request", request(provider, "fetch", "embedded-stream"));
   expect(network.pending.size).toBe(0);
@@ -219,7 +221,10 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
   expect(network.pending.size).toBe(1);
   network.reset();
   expect(network.pending.size).toBe(0);
+  expect(network.documentOf(departed)).toBe(departedDocument);
+  expect(network.document()).not.toBe(departedDocument);
   emit("request", mutation);
+  expect(network.documentOf(mutation)).toBe(network.document());
   emit("requestfinished", departed);
   expect(network.pending.size).toBe(1);
   emit("requestfinished", mutation);
@@ -227,6 +232,19 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
   scripts.stop();
   network.stop();
   expect([...listeners.values()].every((entries) => entries.size === 0)).toBe(true);
+});
+
+test("navigation ignores only cancelled same-origin resources belonging to the departing document", () => {
+  const from = "https://localhost/pwa/spaces";
+  const resource = "https://localhost/app/spaces/chunk.js";
+  expect(departingResourceCancellation("script", resource, "Load request cancelled", from, true)).toBe(true);
+  expect(departingResourceCancellation("stylesheet", resource, "net::ERR_ABORTED", from, true)).toBe(true);
+  expect(departingResourceCancellation("script", resource, "Load request cancelled", from, false)).toBe(false);
+  expect(departingResourceCancellation("script", resource, "net::ERR_CONNECTION_RESET", from, true)).toBe(false);
+  expect(departingResourceCancellation("script", resource, undefined, from, true)).toBe(false);
+  expect(departingResourceCancellation("script", resource, "Load request cancelled", null, true)).toBe(false);
+  expect(departingResourceCancellation("document", resource, "Load request cancelled", from, true)).toBe(false);
+  expect(departingResourceCancellation("script", "https://other.test/chunk.js", "Load request cancelled", from, true)).toBe(false);
 });
 
 test("step clocks subtract the epoch origin and round without adding the quiet window", () => {

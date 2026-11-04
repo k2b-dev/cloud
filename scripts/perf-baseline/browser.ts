@@ -226,11 +226,14 @@ export function trackHostScripts(page: ScriptSource) {
 /** Mutation settling belongs to the current host document, not departed pages or embedded providers. */
 export function trackHostNetwork(page: ScriptSource) {
   const pending = new Set<ScriptRequest>();
+  const documents = new WeakMap<ScriptRequest, number>();
+  let document = 0;
   let last = performance.now();
   const begin = (request: ScriptRequest) => {
     if (request.frame() !== page.mainFrame() || !["script", "stylesheet", "document", "fetch", "xhr"].includes(request.resourceType()))
       return;
     pending.add(request);
+    documents.set(request, document);
     last = performance.now();
   };
   const finish = (request: ScriptRequest) => {
@@ -241,9 +244,12 @@ export function trackHostNetwork(page: ScriptSource) {
   page.on("requestfailed", finish);
   return {
     pending,
+    document: () => document,
+    documentOf: (request: ScriptRequest) => documents.get(request),
     last: () => last,
     reset() {
       pending.clear();
+      document++;
       last = performance.now();
     },
     stop() {
@@ -607,6 +613,27 @@ export function navigationRefusal(engine: Engine, error: Pick<Error, "name" | "m
   }
 }
 
+export function departingResourceCancellation(
+  type: string,
+  url: string,
+  error: string | undefined,
+  from: string | null,
+  departing: boolean,
+) {
+  if (
+    !from ||
+    !departing ||
+    !["script", "stylesheet"].includes(type) ||
+    !["Load request cancelled", "net::ERR_ABORTED"].includes(error ?? "")
+  )
+    return false;
+  try {
+    return new URL(url).origin === new URL(from).origin;
+  } catch {
+    return false;
+  }
+}
+
 const startTab = 'a[data-tab="start"]:visible';
 const spacesTab = 'a[data-tab="spaces"]:visible';
 const chatTab = 'a[data-tab="chat"]:visible';
@@ -807,6 +834,8 @@ export class Browsers {
       let network: ReturnType<typeof trackHostNetwork> | undefined;
       let capture: PwaCapture | null = null;
       let navigatingFrom: string | null = null;
+      let departingDocument: number | null = null;
+      let departingFrom: string | null = null;
       const newPage = async () => {
         const page = await context.newPage();
         page.setDefaultTimeout(measurementTimeoutMs);
@@ -826,6 +855,16 @@ export class Browsers {
           hostNetwork.stop();
         });
         page.on("requestfailed", (request) => {
+          if (
+            departingResourceCancellation(
+              request.resourceType(),
+              request.url(),
+              request.failure()?.errorText,
+              departingFrom,
+              departingDocument !== null && hostNetwork.documentOf(request) === departingDocument,
+            )
+          )
+            return;
           const error = failedRequestError(request.resourceType(), request.url(), request.failure()?.errorText);
           if (error) capture?.errors.push(error);
         });
@@ -962,6 +1001,8 @@ export class Browsers {
               window.__cloudPwa?.launch(config);
             }, probeConfig);
           navigatingFrom = config.action === "navigation" ? page.url() : null;
+          departingFrom = navigatingFrom;
+          departingDocument = config.action === "navigation" ? (network?.document() ?? null) : null;
           await action();
           phase = "arrival";
           await waitFor(
@@ -1181,6 +1222,8 @@ export class Browsers {
         } finally {
           capture = null;
           navigatingFrom = null;
+          departingDocument = null;
+          departingFrom = null;
           await page.evaluate(() => window.__cloudPwa.stop()).catch(() => {});
           clearTimeout(timeout);
         }
