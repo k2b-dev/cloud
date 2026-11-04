@@ -710,6 +710,13 @@ section shows existing rows only. `extraSections` adds further sections, such
 as the resource's object API keys. The dialog is a presentation of the same
 grants; the service still checks every change.
 
+When the dialog opens from settings that can close on their own, pass their
+`signal`. Aborting it closes the dialog without asking and sends nothing that is
+still pending; changes already saved stay saved, and the dialog resolves
+`false`. Reload the list after any change your seams saved, also when the
+dialog resolves `false`: a save can fail halfway and the person can discard
+the rest.
+
 ### Confirm access changes
 
 A `beforeChange` confirmation keeps its opener focusable so Cancel can return

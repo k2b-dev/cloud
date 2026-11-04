@@ -64,7 +64,13 @@ import { createLocalContextReader, discoverLocalContext, type LocalContext, type
 import { classifyLocalPath, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, type LocalQuestionKind, runLocalTool } from "./local-tools";
 import { AI_API, jsonRequest, readApi, readProjectsApi } from "./shared";
-import { type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
+import {
+  type AssistantClientTools,
+  type AssistantTurnStreamResult,
+  type ClientCallReceipts,
+  createAssistantTurnOutput,
+  streamAssistantTurn,
+} from "./stream";
 import { terminalSafeText } from "./terminal";
 import { conversationPath, readConversationDetail, resolveConversation, submitAssistantTurn, uploadAttachmentFile } from "./turn";
 
@@ -110,6 +116,8 @@ type Session = {
 
 export const createAcpAgent = (host: CloudCliContext) => {
   const sessions = new Map<string, Session>();
+  // Shared by every session, so a resumed thread never runs a local call that an earlier one ran.
+  const receipts: ClientCallReceipts = new Map();
   let forms = false;
   let clientName: string | undefined;
   const getSession = (id: string) => {
@@ -526,8 +534,9 @@ export const createAcpAgent = (host: CloudCliContext) => {
         for (const callId of waitingApprovals) if (rows.get(callId) === block.id) waitingApprovals.delete(callId);
       if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) throw new WebChatRequired();
     };
-    const clientTools = {
+    const clientTools: AssistantClientTools = {
       names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
+      receipts,
       run: async (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => {
         s.context ??= await s.contextReader();
         return runLocalTool(

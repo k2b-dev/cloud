@@ -15,7 +15,7 @@ Auch Cloud-Administratoren sehen ein Kontaktbuch in Kontakte nur mit Zugriff; **
 :::reference
 - **Kontaktbuch → Allgemein:** Benenne das Kontaktbuch um und bearbeite seine optionale Beschreibung.
 - **Kontaktbuch → Tags:** Erstelle, bearbeite und lösche die Tags dieses Kontaktbuchs. Zuweisen kannst du sie im Kontakteditor.
-- **Freigabe → Zugriff:** Gib Personen und Gruppen Zugriff **Ansehen**, **Bearbeiten** oder **Verwalten**. Kontakte speichert Änderungen am Zugriff sofort.
+- **Freigabe → Zugriff:** Wähle **Zugriff bearbeiten**, um Personen und Gruppen Zugriff **Ansehen**, **Bearbeiten** oder **Verwalten** zu geben. Kontakte übernimmt deine Änderungen am Zugriff, wenn du **Speichern** wählst.
 - **Freigabe → API Keys:** Erstelle Schlüssel für Integrationen, die ausschließlich auf dieses Kontaktbuch zugreifen sollen.
 - **Daten → Import und Export:** Prüfe die Vorschau und importiere Kontakte aus einer vCard-Datei oder exportiere das Kontaktbuch als vCard oder CSV. Diese Aktionen brauchen Zugriff **Verwalten**.
 :::

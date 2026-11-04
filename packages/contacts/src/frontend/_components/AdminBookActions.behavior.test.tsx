@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { AccessEntry } from "@k2b/cloud/contracts";
+import * as navigation from "@k2b/ssr/nav";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 
@@ -26,6 +27,14 @@ const installPopoverApi = (dom: DomTestHarness) => {
   });
 };
 
+const waitFor = async (condition: () => boolean, label: string) => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (condition()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+};
+
 const manager = (id: string, principal: AccessEntry["principal"], displayName: string, extra: Partial<AccessEntry> = {}): AccessEntry => ({
   id,
   principal,
@@ -44,120 +53,140 @@ describe("Contacts administration access", () => {
   beforeEach(() => setSystemTime(new Date("2026-10-17T12:00:00.000Z")));
   afterEach(() => setSystemTime());
 
-  test("shows every grant on the book, so a person managing next to an agent is not locked", async () => {
+  const setup = async (fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) => {
     const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
     installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(fetchImpl, { preconnect: originalFetch.preconnect });
+    const { prompts, toast } = await import("@k2b/ui");
+    const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
+    const { default: AdminBookActions } = await import("./AdminBookActions.island");
+    delegateEvents(["click", "input"], dom.document);
+    let disposed = false;
+    const disposeRender = render(() => <AdminBookActions bookId="book-1" bookName="Suppliers" />, dom.root);
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      disposeRender();
+    };
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Manage permissions for Suppliers"]')!.click();
+    Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((node) => node.textContent?.includes("Permissions"))!
+      .click();
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const button = (text: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+    return {
+      dom,
+      error,
+      refreshed,
+      dispose,
+      dialog,
+      button,
+      cleanup: async () => {
+        if (dialog()) {
+          button("Cancel")?.click();
+          await waitFor(() => !dialog(), "the dialog to close");
+        }
+        dispose();
+        error.mockRestore();
+        confirm.mockRestore();
+        refreshed.mockRestore();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("opens the access dialog with every grant on the book, so a person managing next to an agent is not locked", async () => {
     const entries = [
       manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace"),
       manager("access-agent", { type: "service_account", serviceAccountId: "agent-1" }, "CRM sync agent", { serviceAccountKind: "agent" }),
     ];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = Object.assign(async () => Response.json(entries), { preconnect: originalFetch.preconnect });
-    const { default: AdminBookActions } = await import("./AdminBookActions.island");
-    delegateEvents(["click"]);
-    const dispose = render(() => <AdminBookActions bookId="book-1" bookName="Suppliers" />, dom.root);
+    const ui = await setup(async () => Response.json(entries));
     try {
-      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Manage permissions for Suppliers"]')?.click();
-      const item = Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((node) =>
-        node.textContent?.includes("Permissions"),
-      );
-      item?.click();
-      const removeButton = (name: string) => dom.document.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`);
-      for (let attempt = 0; attempt < 200 && !removeButton("Ada Lovelace"); attempt += 1) await Bun.sleep(10);
-
+      const removeButton = (name: string) => ui.dom.document.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`);
+      await waitFor(() => !!removeButton("Ada Lovelace"), "the access dialog");
+      expect(ui.dialog()!.textContent).toContain("Access to Suppliers");
       expect(removeButton("Ada Lovelace")?.disabled).toBe(false);
       expect(removeButton("CRM sync agent")?.disabled).toBe(false);
     } finally {
-      dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
-      await Bun.sleep(10);
-      dispose();
-      globalThis.fetch = originalFetch;
-      dom.cleanup();
+      await ui.cleanup();
     }
   });
 
-  for (const failReload of [false, true]) {
-    test(`a level change keeps its chip through reload${failReload ? " and offers retry after failure" : ""}`, async () => {
-      const dom = createDomTestHarness();
-      installPopoverApi(dom);
-      let saved = manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace", { permission: "read" });
-      let finishReload!: (response: Response) => void;
-      let reads = 0;
-      let writes = 0;
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = Object.assign(
-        async (_input: RequestInfo | URL, init?: RequestInit) => {
-          if (init?.method === "PATCH") {
-            writes += 1;
-            saved = { ...saved, permission: "write" };
-            return new Response(null, { status: 204 });
-          }
-          reads += 1;
-          if (reads === 2)
-            return new Promise<Response>((resolve) => {
-              finishReload = resolve;
-            });
-          return Response.json([saved]);
-        },
-        { preconnect: originalFetch.preconnect },
-      );
-      const { default: AdminBookActions } = await import("./AdminBookActions.island");
-      delegateEvents(["click"], dom.document);
-      const dispose = render(() => <AdminBookActions bookId="book-1" bookName="Suppliers" />, dom.root);
-      const waitFor = async (condition: () => boolean) => {
-        for (let attempt = 0; attempt < 200; attempt += 1) {
-          if (condition()) return;
-          await Bun.sleep(10);
-        }
-        throw new Error("Timed out waiting for access reconciliation");
-      };
-      const chip = () => dom.document.querySelector<HTMLButtonElement>("button.k2b-select-chip");
-      try {
-        dom.root.querySelector<HTMLButtonElement>('button[aria-label="Manage permissions for Suppliers"]')!.click();
-        Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-          .find((node) => node.textContent?.includes("Permissions"))!
-          .click();
-        await waitFor(() => chip() !== null);
-        const original = chip()!;
-        Array.from(dom.document.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-          .find((item) => item.textContent?.startsWith("Edit"))!
-          .click();
-        await waitFor(() => reads === 2);
-        expect(writes).toBe(1);
-        expect(chip() === original).toBe(true);
-        expect(original.disabled).toBe(true);
-        expect(original.textContent).toBe("Edit");
-        expect(original.closest(".group\\/access-row")!.getAttribute("aria-busy")).toBe("true");
-        // canEdit remains true: the picker and add form survive, with the editor owning the busy state.
-        expect(dom.document.querySelector("input[role=combobox]")).not.toBeNull();
-        expect(dom.document.querySelector(".group\\/access-row span.cursor-default")).toBeNull();
-        finishReload(failReload ? Response.json({ message: "offline" }, { status: 503 }) : Response.json([saved]));
-        await waitFor(() => dom.document.querySelector(".group\\/access-row[aria-busy]") === null);
-        if (failReload) {
-          expect(dom.document.body.textContent).toContain("The change was saved, but contact book access could not be reloaded.");
-          expect(chip()).toBeNull();
-          expect(dom.document.querySelector(".group\\/access-row span.cursor-default")?.textContent).toBe("Edit");
-          const retry = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
-            (button) => button.textContent?.trim() === "Retry reload",
-          )!;
-          expect(retry).toBeDefined();
-          expect(retry.closest('.k2b-inline-guidance[data-tone="warning"]')).not.toBeNull();
-          retry.click();
-          await waitFor(() => chip() !== null);
-          expect(reads).toBe(3);
-          expect(dom.document.body.textContent).not.toContain("The change was saved, but contact book access could not be reloaded.");
-        } else {
-          expect(chip() === original).toBe(true);
-          expect(original.disabled).toBe(false);
-        }
-        expect(chip()!.textContent).toBe("Edit");
-      } finally {
-        dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
-        await Bun.sleep(10);
-        dispose();
-        globalThis.fetch = originalFetch;
-        dom.cleanup();
+  test("a level change applies on Save, through the admin route", async () => {
+    let saved = manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace", { permission: "read" });
+    const owner = manager("access-owner", { type: "user", userId: "user-2" }, "Mia Hoffmann");
+    const writes: string[] = [];
+    const ui = await setup(async (input, init) => {
+      if (init?.method === "PATCH") {
+        writes.push(String(input));
+        saved = { ...saved, permission: "write" };
+        return new Response(null, { status: 204 });
       }
+      return Response.json([owner, saved]);
     });
-  }
+    try {
+      await waitFor(() => ui.dialog()?.textContent?.includes("Ada Lovelace") === true, "the access dialog");
+      const row = Array.from(ui.dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Ada Lovelace"))!;
+      Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      await waitFor(() => ui.dialog()?.textContent?.includes("1 change") === true, "one change");
+      expect(writes).toEqual([]);
+      ui.button("Save")!.click();
+      await waitFor(() => !ui.dialog(), "the dialog to close");
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toContain("/admin/books/book-1/access/access-person");
+      // The admin list shows the saved change.
+      expect(ui.refreshed).toHaveBeenCalledTimes(1);
+    } finally {
+      await ui.cleanup();
+    }
+  });
+
+  test("a failed load says why and opens no dialog", async () => {
+    const ui = await setup(async () => Response.json({ message: "offline" }, { status: 503 }));
+    try {
+      await waitFor(() => ui.error.mock.calls.length === 1, "the error");
+      expect(ui.error.mock.calls[0]![0]).toBe("offline");
+      expect(ui.dialog()).toBeNull();
+    } finally {
+      await ui.cleanup();
+    }
+  });
+
+  test("a partial save closed after navigation does not refresh the page the person moved on to", async () => {
+    const owner = manager("access-owner", { type: "user", userId: "user-2" }, "Mia Hoffmann");
+    const lea = manager("access-lea", { type: "user", userId: "user-3" }, "Lea Schmitt", { permission: "read" });
+    const ben = manager("access-ben", { type: "user", userId: "user-4" }, "Ben Albers", { permission: "read" });
+    const ui = await setup(async (_input, init) => {
+      if (init?.method === "PATCH") return new Response(null, { status: 204 });
+      if (init?.method === "DELETE") return Response.json({ message: "offline" }, { status: 503 });
+      return Response.json([owner, lea, ben]);
+    });
+    try {
+      await waitFor(() => ui.dialog()?.textContent?.includes("Ben Albers") === true, "the access dialog");
+      const row = (name: string) => Array.from(ui.dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
+      await waitFor(() => ui.dialog()?.textContent?.includes("2 changes") === true, "two changes");
+      ui.button("Save")!.click();
+      await waitFor(() => !!ui.dialog()?.querySelector('[role="alert"]'), "the failed removal");
+      // The page changes: the island goes away while the dialog is still open.
+      ui.dispose();
+      ui.button("Cancel")!.click();
+      await waitFor(() => !ui.dialog(), "the dialog to close");
+      await Bun.sleep(20);
+      expect(ui.refreshed).not.toHaveBeenCalled();
+    } finally {
+      await ui.cleanup();
+    }
+  });
 });

@@ -21,7 +21,6 @@ packages/cloud/src/services/notifications/catalog.test.ts | 1
 packages/cloud/src/services/outgoing-mail/enqueue.integration.test.ts | 1
 packages/cloud/src/ssr/global-search-host.behavior.test.ts | 1
 packages/cloud/src/ssr/shell-search.behavior.test.tsx | 1
-packages/contacts/src/frontend/_components/AdminBookActions.behavior.test.tsx | 1
 packages/contacts/test/contact-actions-feedback.behavior.test.tsx | 1
 packages/contacts/test/contact-editing-feedback.behavior.test.tsx | 1
 packages/core/test/app-approval.behavior.test.tsx | 4
