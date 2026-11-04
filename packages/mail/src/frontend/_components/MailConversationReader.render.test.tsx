@@ -181,7 +181,7 @@ describe("Mail conversation reader", () => {
     const html = renderReader([], { messages: [{ ...message, hydrationStatus: "failed", plainText: null, sanitizedHtml: null }] });
     expect(html).toContain('data-state="error"');
     expect(html).toContain("The message body could not be synchronized");
-    expect(html).toContain("Request again");
+    expect(html).toContain("Try again");
   });
 
   test("Automatic shows only HTML in dark mode even when real plain text exists", () => {

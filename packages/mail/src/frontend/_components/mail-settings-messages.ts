@@ -860,6 +860,8 @@ export const mailSettingsMessages = i18n.define({
       rebuildingFolderCount: ({ count }: { count: number }) => `${count} folder${count === 1 ? "" : "s"} rebuilding`,
       syncingFolderCount: ({ count }: { count: number }) => `${count} folder${count === 1 ? "" : "s"} synchronizing`,
       pendingFolderCount: ({ count }: { count: number }) => `${count} folder${count === 1 ? "" : "s"} pending`,
+      failedMessageCount: ({ count }: { count: number }) =>
+        count === 1 ? "1 message could not be loaded" : `${count} messages could not be loaded`,
       noSynchronizedFolders: "No synchronized folders",
       searchAdvanced: "Search available · advanced",
       searchStandard: "Search available · standard",
@@ -1752,6 +1754,8 @@ export const mailSettingsMessages = i18n.define({
       rebuildingFolderCount: ({ count }) => `${count} ${count === 1 ? "Ordner wird" : "Ordner werden"} neu aufgebaut`,
       syncingFolderCount: ({ count }) => `${count} ${count === 1 ? "Ordner wird" : "Ordner werden"} synchronisiert`,
       pendingFolderCount: ({ count }) => `${count} ${count === 1 ? "Ordner ist" : "Ordner sind"} ausstehend`,
+      failedMessageCount: ({ count }) =>
+        count === 1 ? "1 Nachricht konnte nicht geladen werden" : `${count} Nachrichten konnten nicht geladen werden`,
       noSynchronizedFolders: "Keine synchronisierten Ordner",
       searchAdvanced: "Suche verfügbar · erweitert",
       searchStandard: "Suche verfügbar · Standard",

@@ -444,7 +444,9 @@ test.skipIf(isServer)("a failed body shows the error, asks for no body on open a
     await Bun.sleep(5);
     expect(bodyRequests.requests).toEqual([]);
 
-    failed()!.querySelector<HTMLButtonElement>("button")!.click();
+    const retry = failed()!.querySelector<HTMLButtonElement>("button")!;
+    expect(retry.textContent).toBe("Try again");
+    retry.click();
     // The reset body loads again; its retry was its request, so the new open state asks no second time.
     await waitFor(() => card().querySelector('.k2b-placeholder[data-state="loading"]') !== null);
     await Bun.sleep(5);
