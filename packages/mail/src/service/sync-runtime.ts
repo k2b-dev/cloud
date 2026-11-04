@@ -26,7 +26,7 @@ import { imapSmtpConnector } from "./connectors";
 import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
-import { databaseErrorCode, databaseErrorConstraint, isPermanentDataError } from "./database-errors";
+import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -3098,7 +3098,11 @@ export const hydrateMessageBatch = async (
                     if (code === "SYNC_LEASE_LOST" || code === "SYNC_JOB_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
                     if (code !== "HYDRATION_NOT_CLAIMED") {
                       settled.add(source.key);
-                      log.warn("Mail message hydration failed within a source batch", { messageId: source.key, code });
+                      log.warn("Mail message hydration failed within a source batch", {
+                        messageId: source.key,
+                        code,
+                        ...databaseErrorFacts(error),
+                      });
                       if (source.key === message.id && "messageId" in ctx.input) targetError = error;
                     }
                   } finally {
@@ -3215,11 +3219,16 @@ const startHydrationJob = async (): Promise<void> => {
       // Message failures are durable and bounded by their five hydration attempts. The next
       // scheduled pass retries them; a request made during this failed batch still gets a turn.
       if ("mailboxId" in ctx.input) {
-        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code });
+        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code, ...databaseErrorFacts(error) });
         return;
       }
       if (ctx.attempt >= HYDRATION_MAX_ATTEMPTS) {
-        log.error("Mail message hydration exhausted retries", { messageId: ctx.input.messageId, failureCount: ctx.failureCount, code });
+        log.error("Mail message hydration exhausted retries", {
+          messageId: ctx.input.messageId,
+          failureCount: ctx.failureCount,
+          code,
+          ...databaseErrorFacts(error),
+        });
       }
       throw error;
     } finally {

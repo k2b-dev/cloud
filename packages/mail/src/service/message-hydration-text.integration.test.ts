@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { createBlobReadable } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -37,47 +38,86 @@ suite("Mail hydration of text Postgres cannot store", () => {
     return message!.id;
   };
 
-  test("a multipart message with NUL bytes in its 8bit text, headers and attachment name loads without them", async () => {
-    const id = await pendingMessage("nul-text");
-    // Invented sample, shaped like the production message: 8bit inline text and a base64 attachment.
-    const source = Buffer.from(
-      [
-        "Message-ID: <nul-text@example.test>",
-        "From: Sender <sender@example.test>",
-        "To: owner@example.test",
-        "Subject: Quarterly\u0000 report",
-        "List-Id: <list\u0000.example.test>",
-        "Date: Sun, 01 Nov 2026 00:00:00 +0000",
-        "MIME-Version: 1.0",
-        'Content-Type: multipart/mixed; boundary="b1"',
-        "",
-        "--b1",
-        "Content-Type: text/plain; charset=utf-8",
-        "Content-Transfer-Encoding: 8bit",
-        "",
-        "Hallo\u0000 Welt, die Zahlen\u0000 sind da.",
-        "--b1",
-        'Content-Type: text/plain; name="zahlen\u0000.txt"',
-        'Content-Disposition: attachment; filename="zahlen\u0000.txt"',
-        "Content-Transfer-Encoding: base64",
-        "",
-        Buffer.from("1;2;3\n").toString("base64"),
-        "--b1--",
-        "",
-      ].join("\r\n"),
-      "utf8",
-    );
+  // Invented samples shaped like the production message: an HTML part, a base64 text/plain attachment
+  // and an 8bit inline text/plain part. Each places NUL or invalid UTF-8 in one spot.
+  const html = Buffer.from("<p>Die Zahlen sind da.</p>").toString("base64");
+  const multipart = (variant: { headers?: readonly string[]; filename?: string; attachment?: Buffer; inline?: Buffer }) =>
+    Buffer.concat([
+      Buffer.from(
+        [
+          "Message-ID: <text-sample@example.test>",
+          "From: Sender <sender@example.test>",
+          "To: owner@example.test",
+          "Subject: Quarterly report",
+          ...(variant.headers ?? []),
+          "Date: Sun, 01 Nov 2026 00:00:00 +0000",
+          "MIME-Version: 1.0",
+          'Content-Type: multipart/mixed; boundary="b1"',
+          "",
+          "--b1",
+          "Content-Type: text/html; charset=utf-8",
+          "Content-Transfer-Encoding: base64",
+          "",
+          html,
+          "--b1",
+          'Content-Type: text/plain; name="zahlen.txt"',
+          `Content-Disposition: attachment; ${variant.filename ?? 'filename="zahlen.txt"'}`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          (variant.attachment ?? Buffer.from("1;2;3\n")).toString("base64"),
+          "--b1",
+          "Content-Type: text/plain; charset=UTF-8",
+          "Content-Transfer-Encoding: 8bit",
+          "Content-Disposition: inline",
+          "",
+          "",
+        ].join("\r\n"),
+      ),
+      variant.inline ?? Buffer.from("Hallo Welt, die Zahlen sind da."),
+      Buffer.from("\r\n--b1--\r\n"),
+    ]);
+  const bytes = (...parts: Array<string | number[]>) =>
+    Buffer.concat(parts.map((part) => (typeof part === "string" ? Buffer.from(part) : Buffer.from(part))));
+  const storable = (value: unknown) => {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    return !text.includes("\u0000") && !text.includes("\\u0000") && text.isWellFormed();
+  };
+  const readBlob = async (blobId: string): Promise<Buffer> => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of createBlobReadable(blobId)) chunks.push(Buffer.from(chunk as Uint8Array));
+    return Buffer.concat(chunks);
+  };
+
+  test.each([
+    { name: "NUL in the 8bit inline text", inline: bytes("Hallo", [0], " Welt, die Zahlen", [0], " sind da.") },
+    { name: "invalid UTF-8 in the 8bit inline text", inline: bytes("Gr", [0xfc], "e und ", [0xc3, 0x28], " Zahlen ", [0xff]) },
+    { name: "NUL and invalid UTF-8 in the base64 text attachment", attachment: bytes("1;2", [0, 0xff, 0xc3], ";3\n") },
+    { name: "NUL and invalid UTF-8 in an RFC 2231 file name", filename: "filename*=utf-8''zahlen%00%FF.txt" },
+    { name: "NUL in an encoded-word file name", filename: 'filename="=?utf-8?Q?zahlen=00.txt?="' },
+    {
+      name: "NUL in a quoted file name and in headers",
+      filename: 'filename="zahlen\u0000.txt"',
+      headers: ["List-Id: <list\u0000.example.test>", "X-Note: a\u0000b"],
+    },
+  ])("a message with $name loads, and its attachment keeps its bytes", async (variant) => {
+    const id = await pendingMessage(`text-${crypto.randomUUID()}`);
+    const source = multipart(variant);
     expect((await hydrateMessageFromSource({ messageId: id, source: Readable.from([source]) })).status).toBe("hydrated");
 
-    const [message] = await sql<{ hydration_status: string; plain_text: string; subject: unknown; list_id: unknown }[]>`
-      SELECT hydration_status, plain_text, selected_headers->'subject' AS subject, selected_headers->'list-id' AS list_id
-      FROM mail.message_contents WHERE id = ${id}::uuid
+    const [message] = await sql<{ hydration_status: string; plain_text: string | null; sanitized_html: string | null; headers: unknown }[]>`
+      SELECT hydration_status, plain_text, sanitized_html, selected_headers AS headers FROM mail.message_contents WHERE id = ${id}::uuid
     `;
     expect(message?.hydration_status).toBe("complete");
-    expect(message?.plain_text).toContain("Hallo Welt, die Zahlen sind da.");
-    expect(JSON.stringify([message?.subject, message?.list_id])).not.toContain("\\u0000");
-    const attachments = await sql<{ filename: string }[]>`SELECT filename FROM mail.attachments WHERE message_id = ${id}::uuid`;
-    expect(attachments).toEqual([{ filename: "zahlen.txt" }]);
+    for (const value of [message?.plain_text, message?.sanitized_html, message?.headers]) expect(storable(value ?? "")).toBe(true);
+    expect(message?.sanitized_html).toContain("Die Zahlen sind da.");
+    const attachments = await sql<{ filename: string | null; blob_id: string }[]>`
+      SELECT filename, blob_id FROM mail.attachments WHERE message_id = ${id}::uuid
+    `;
+    expect(attachments).toHaveLength(1);
+    expect(storable(attachments[0]!.filename ?? "")).toBe(true);
+    expect(attachments[0]!.filename).toStartWith("zahlen");
+    // The attachment keeps the bytes the sender sent.
+    expect(await readBlob(attachments[0]!.blob_id)).toEqual(variant.attachment ?? Buffer.from("1;2;3\n"));
   });
 
   test("a write Postgres still refuses is logged with its SQLSTATE and the refused parameter, never with what it wrote", async () => {
