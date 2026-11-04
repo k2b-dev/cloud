@@ -50,8 +50,8 @@ export class AiResourceCredentialError extends Error {
 
 export const requireAiResourceCreation = (subject: AiResourceContext): void => {
   if (
-    (subject.actor.kind === "service_account" && subject.actor.serviceAccount.kind === "code") ||
-    !hasPermission(aiResourcePermissionCap(subject), "write")
+    !hasPermission(aiResourcePermissionCap(subject), "write") ||
+    (subject.actor.kind === "service_account" && subject.actor.serviceAccount.kind === "code")
   )
     throw new AiResourceCredentialError();
 };
