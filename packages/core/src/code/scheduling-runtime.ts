@@ -84,7 +84,8 @@ export async function fetchCodeRuns(
         const prepared = await Promise.all(
           runs.map(async (run) => {
             try {
-              return await codeRunnerLease(run, dependencies.sign, { signal: abort, ownerChecks });
+              // The poll budget bounds queue waiting. Claimed work keeps its existing owner-read budget and caller cancellation.
+              return await codeRunnerLease(run, dependencies.sign, { signal, ownerChecks });
             } catch {
               logger("core:code-scheduling").warn("code_run_lease_unavailable", { runId: run.id });
               return null; // Unsent claims recover through expiry; their original attempt/deadline budgets still apply.
