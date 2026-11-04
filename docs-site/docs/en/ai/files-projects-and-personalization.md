@@ -217,6 +217,19 @@ instructions and the default model change trusted agent behavior, only
 Universal Search and can be filtered by application. The HTTP API and
 `cld assistant projects` expose the same metadata, context, and access model.
 
+In **Administration > AI > Skills** and **Projects**, open **Permissions** and
+choose **Add service account**. Paste the Code account's exact identifier
+(`code-` followed by ten characters), choose **Find**, add the result, and
+save the changes. A name, UUID, partial identifier, or unknown identifier finds
+no Code account. The lookup requires Manage on this Skill or Project; Cloud
+administrators can use their existing access-recovery authority. Excessive
+lookups return a rate-limit error; the dialog keeps the identifier for retry.
+Code accounts can receive View or Edit, never Manage.
+
+Resource-bound accounts behind object or app API keys have no identifier in
+this contract. They cannot be added through this field. Their existing grants
+remain editable; the API and CLI can still grant their UUID.
+
 ## Reuse shared Skills
 
 A Skill gives Assistant a reusable workflow without attaching it to one person

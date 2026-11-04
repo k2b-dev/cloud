@@ -563,6 +563,16 @@
 .k2b-ui .k2b-progress__percent { flex: 0 0 auto; color: var(--k2b-text-muted); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
 /* -------------------------------------------------------------- DotStrip -- */
 /* Fixed slots: a growing strip fills empty rings from the left and never changes its size. */
+.k2b-ui .k2b-change-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.k2b-ui .k2b-change-list__item { display: grid; grid-template-columns: 1.625rem minmax(0, 1fr); gap: 0.625rem; align-items: start; font-size: 0.84375rem; line-height: 1.625rem; color: var(--k2b-text); }
+.k2b-ui .k2b-change-list__icon { display: grid; width: 1.625rem; height: 1.625rem; place-items: center; border-radius: 999px; font-size: 0.9375rem; background: var(--k2b-surface-muted); color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-change-list__item[data-tone="add"] > .k2b-change-list__icon { background: var(--k2b-success-surface); color: var(--k2b-success-text); }
+.k2b-ui .k2b-change-list__item[data-tone="change"] > .k2b-change-list__icon,
+.k2b-ui .k2b-change-list__item[data-tone="warning"] > .k2b-change-list__icon { background: var(--k2b-warning-surface); color: var(--k2b-warning-text); }
+.k2b-ui .k2b-change-list__item[data-tone="remove"] > .k2b-change-list__icon { background: var(--k2b-danger-surface); color: var(--k2b-danger-text); }
+.k2b-ui .k2b-change-list__text { display: block; min-width: 0; overflow-wrap: anywhere; }
+.k2b-ui .k2b-change-list__text b { font-weight: 600; }
+.k2b-ui .k2b-change-list__detail { display: block; font-size: 0.78125rem; line-height: 1.25; color: var(--k2b-text-muted); }
 .k2b-ui .k2b-dot-strip { display: grid; grid-template-columns: repeat(var(--k2b-dot-strip-columns), minmax(0, 0.75rem)); gap: 0.125rem; align-items: center; min-width: 0; }
 .k2b-ui .k2b-dot-strip[data-size="lg"] { grid-template-columns: repeat(var(--k2b-dot-strip-columns), minmax(0, 1rem)); gap: 0.25rem; }
 .k2b-ui .k2b-dot-strip__dot { display: block; width: 100%; aspect-ratio: 1; border-radius: 999px; background: var(--k2b-border-strong); }
