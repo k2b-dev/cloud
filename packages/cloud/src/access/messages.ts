@@ -10,6 +10,7 @@ export const accessMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codeAccessAuthority: "Anyone who edits the Code acts with this permission.",
       newPermission: "Permission for new entry",
       saved: "Saved",
       saving: "Saving",
@@ -98,7 +99,7 @@ export const accessMessages = i18n.define({
       neverExpires: "Never expires",
       used: ({ date }: { date: string }) => `Used ${date}`,
       neverUsed: "Never used",
-      codeServiceAccount: "Code",
+      codeServiceAccount: "Service account",
       codeWithAccess: "Code with access",
       codeOf: ({ title }: { title: string }) => `Code of ${title}`,
       codeHiddenOwner: "Code whose owner you can't see",
@@ -132,6 +133,7 @@ export const accessMessages = i18n.define({
       codeEditorDescription: "Sees and changes the code and its database and submits versions.",
     },
     de: {
+      codeAccessAuthority: "Wer den Code bearbeitet, handelt mit diesem Recht.",
       newPermission: "Recht für neuen Eintrag",
       saved: "Gespeichert",
       saving: "Wird gespeichert",
@@ -156,7 +158,7 @@ export const accessMessages = i18n.define({
       accessGranted: ({ name }) => `${name} hinzugefügt`,
       userBoundServiceAccount: "Benutzergebundenes Dienstkonto",
       resourceBoundServiceAccount: "Ressourcengebundenes Dienstkonto",
-      standaloneServiceAccount: "Dienstkonto",
+      standaloneServiceAccount: "Agent",
       agentServiceAccount: "Agent",
       noDirectGrants: "Noch kein direkter Zugriff erteilt.",
       addAll: "Benutzer, Gruppe, Dienstkonto oder Zielgruppe hinzufügen…",
@@ -220,7 +222,7 @@ export const accessMessages = i18n.define({
       neverExpires: "Läuft nicht ab",
       used: ({ date }) => `Verwendet ${date}`,
       neverUsed: "Noch nie verwendet",
-      codeServiceAccount: "Code",
+      codeServiceAccount: "Dienstkonto",
       codeWithAccess: "Code mit Zugriff",
       codeOf: ({ title }) => `Code von ${title}`,
       codeHiddenOwner: "Code, dessen Besitzer du nicht sehen kannst",

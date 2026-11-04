@@ -163,7 +163,7 @@ for (const scopeType of ["base", "customApp"] as const) {
       expect(requests[0]!.pathname).toBe("/api/accounts/entities");
       expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
       expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
-      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe(scopeType === "customApp" ? "standalone,agent" : null);
+      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe(scopeType === "customApp" ? "standalone,agent,code" : null);
     } finally {
       dispose();
       globalThis.fetch = originalFetch;

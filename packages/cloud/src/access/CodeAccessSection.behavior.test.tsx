@@ -114,6 +114,8 @@ const setup = async (options: {
     return options.confirm ?? true;
   };
   const { default: PermissionEditor } = await import("./PermissionEditor");
+  const { default: CodeAccessSection, isCodeAccessEntry } = await import("./CodeAccessSection");
+  const [legacyEntries, setLegacyEntries] = createSignal((options.initialEntries ?? entries).filter(isCodeAccessEntry));
   delegateEvents(["input", "click"], dom.document);
   const revoked: string[] = [];
   const dispose = render(
@@ -122,7 +124,7 @@ const setup = async (options: {
         <PermissionEditor
           expanded={options.expanded}
           canEdit={typeof options.canEdit === "function" ? options.canEdit() : options.canEdit}
-          initialEntries={options.initialEntries ?? entries}
+          initialEntries={(options.initialEntries ?? entries).filter((entry) => !isCodeAccessEntry(entry))}
           grantAccess={async () => {
             throw new Error("Not used");
           }}
@@ -130,6 +132,14 @@ const setup = async (options: {
           revokeAccess={async (id) => {
             revoked.push(id);
           }}
+        />
+        <CodeAccessSection
+          entries={legacyEntries()}
+          expanded={options.expanded}
+          canEdit={(typeof options.canEdit === "function" ? options.canEdit() : options.canEdit) ?? true}
+          levelLabel={(entry) => (entry.permission === "write" ? "Bearbeiten" : "Ansehen")}
+          manageLabel="Verwalten"
+          onRemoved={(entry) => setLegacyEntries((current) => current.filter((item) => item.id !== entry.id))}
         />
       </LocaleProvider>
     ),
@@ -157,7 +167,7 @@ const setup = async (options: {
 };
 const accountsResponse = () => Response.json(accounts);
 
-describe("Code with access in the shared rights editor", () => {
+describe("Legacy Code access section (retained until A4)", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
     return;
@@ -569,7 +579,7 @@ describe("Code with access in the shared rights editor", () => {
     }
   });
 
-  test("Code accounts never appear in the principal picker, even when the directory returns one", async () => {
+  test("the principal picker accepts a Code account returned by the directory", async () => {
     const view = await setup({
       respond: ({ url }) =>
         url.includes("/api/accounts/entities")
@@ -592,13 +602,13 @@ describe("Code with access in the shared rights editor", () => {
       await waitFor(() => view.dom.root.querySelectorAll("[role=option]").length > 0, "the results");
       const options = Array.from(view.dom.root.querySelectorAll("[role=option]")).map((option) => option.textContent ?? "");
       expect(options.some((text) => text.includes("Mia Koch"))).toBe(true);
-      expect(options.some((text) => text.includes("code:"))).toBe(false);
+      expect(options.some((text) => text.includes("code:"))).toBe(true);
     } finally {
       view.cleanup();
     }
   });
 
-  test("a search that finds nobody says why Code is never listed, and everyone answers only its own name", async () => {
+  test("an empty search does not claim Code accounts are forbidden", async () => {
     const view = await setup({
       respond: ({ url }) => (url.includes("/api/accounts/entities") ? Response.json({ items: [] }) : accountsResponse()),
       initialEntries: [person],
@@ -608,7 +618,7 @@ describe("Code with access in the shared rights editor", () => {
       input.value = "info@";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       await waitFor(() => view.dom.root.textContent?.includes("Keine Person und keine Gruppe gefunden.") === true, "the empty search");
-      expect(view.dom.root.textContent).toContain("Code steht hier nie zur Auswahl.");
+      expect(view.dom.root.textContent).not.toContain("Code steht hier nie zur Auswahl.");
       expect(view.dom.root.querySelectorAll("[role=option]")).toHaveLength(0);
     } finally {
       view.cleanup();

@@ -9,6 +9,7 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   resolveDisplayNames,
@@ -515,7 +516,16 @@ const authorizeAccessManagement = async (
     const allowed = await requireMailboxPermission(context, mailboxId, "admin", db);
     return allowed.ok ? ok() : fail(allowed.error);
   }
-  return (await isCurrentPlatformAdmin(context)) ? ok() : fail(err.forbidden("Cloud administration access is required"));
+  const user = userBackedActor(context);
+  const current =
+    db === sql
+      ? await isCurrentPlatformAdmin(context)
+      : user &&
+        (await accounts.users.hasInstallationAdminInTransaction(
+          context.actor.kind === "user" ? context.actor : { kind: "user", user },
+          db,
+        ));
+  return current ? ok() : fail(err.forbidden("Cloud administration access is required"));
 };
 
 /** Every grant on the mailbox in both scopes with display names, managers first. Callers authorize before they read it. */
@@ -579,6 +589,8 @@ const grantMailboxAccessWithAuthority = async (params: {
   return tryCatch(
     async () => {
       const created = await sql.begin(async (tx) => {
+        if (!(await lockAccessMutationAuthority({ subject: params.context.accessSubject, principal: params.principal }, tx)))
+          unwrap(fail(err.forbidden("Access denied")));
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         if (await getPrincipalGrant(params.mailboxId, params.principal, tx)) unwrap(fail(err.conflict("Mailbox access")));
@@ -661,12 +673,13 @@ const updateMailboxAccessWithAuthority = async (params: {
   tryCatch(
     () =>
       sql.begin(async (tx) => {
+        if (!(await lockAccessMutationAuthority({ subject: params.context.accessSubject, accessId: params.accessId }, tx)))
+          unwrap(fail(err.forbidden("Access denied")));
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         const entries = await lockAccessEntries(params.mailboxId, tx);
         const current = entries.find((entry) => entry.id === params.accessId);
         if (!current) unwrap(fail(err.notFound("Mailbox access")));
-        if (current!.service_account_kind === "code") unwrap(fail(err.badInput("Manage Code access through Core using its grantId")));
         const scope = params.scope ?? current!.scope;
         unwrap(assertGrantShape(principalFromRow(current!), params.permission, scope));
         unwrap(ensureAdminRemains(entries, params.accessId, { permission: params.permission, scope }));
@@ -735,11 +748,11 @@ const revokeMailboxAccessWithAuthority = async (params: {
   tryCatch(
     () =>
       sql.begin(async (tx) => {
+        if (!(await lockAccessMutationAuthority({ subject: params.context.accessSubject, accessId: params.accessId }, tx)))
+          unwrap(fail(err.forbidden("Access denied")));
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         const entries = await lockAccessEntries(params.mailboxId, tx);
-        if (entries.find((entry) => entry.id === params.accessId)?.service_account_kind === "code")
-          unwrap(fail(err.badInput("Manage Code access through Core using its grantId")));
         unwrap(ensureAdminRemains(entries, params.accessId, null));
         await deleteGrantLinks(tx, params.mailboxId, params.accessId);
         unwrap(await deleteAccess({ id: params.accessId }, tx));

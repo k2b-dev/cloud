@@ -163,23 +163,14 @@ suite("Spaces Code access", () => {
     const shares = await listSpaceAccess(target.id);
     expect(AccessEntrySchema.parse(shares.find((entry) => entry.id === write.grantId)).grantId).toBe(write.grantId);
     expect(shares.find((entry) => entry.id === target.ownerGrantId)?.grantId).toBeUndefined();
-    for (const mutation of [
-      revokeSpaceAccess({
-        spaceId: target.id,
-        accessId: write.grantId,
-        caller: { actor: ownerContext.actor, accessSubject: ownerContext.accessSubject },
-      }),
-      updateSpaceAccessPermission({
-        spaceId: target.id,
-        accessId: write.grantId,
-        permission: "admin",
-        caller: { actor: ownerContext.actor, accessSubject: ownerContext.accessSubject },
-      }),
-    ]) {
-      const result = await mutation;
-      expect(result).toMatchObject({ ok: false, error: { status: 400 } });
-      if (!result.ok) expect(result.error.message).toContain("grantId");
-    }
+    const caller = { actor: ownerContext.actor, accessSubject: ownerContext.accessSubject };
+    expect(await updateSpaceAccessPermission({ spaceId: target.id, accessId: write.grantId, permission: "admin", caller })).toMatchObject({
+      ok: false,
+      error: { status: 400 },
+    });
+    expect((await updateSpaceAccessPermission({ spaceId: target.id, accessId: write.grantId, permission: "read", caller })).ok).toBe(true);
+    expect(await permission(target.id)).toBe("read");
+    expect((await updateSpaceAccessPermission({ spaceId: target.id, accessId: write.grantId, permission: "write", caller })).ok).toBe(true);
     expect(await revoke(target.short_id, write.grantId)).toBe(true);
     expect(await permission(target.id)).toBe("read");
     expect(

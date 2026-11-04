@@ -67,6 +67,7 @@ export type {
   ServiceErrorCode,
 } from "./services";
 export {
+  AccessMutationBusyError,
   accessRevision,
   buildAccessPrincipalCondition,
   buildAccessPrincipalTierConditions,
@@ -87,6 +88,7 @@ export {
   images,
   isServiceError,
   listUsersWithAccess,
+  lockAccessMutationAuthority,
   ok,
   okMany,
   PERMISSION_LEVELS,

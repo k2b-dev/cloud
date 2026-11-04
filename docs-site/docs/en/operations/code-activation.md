@@ -49,3 +49,25 @@ upgrade. Confirm the new model by explicitly activating a new version.
 After a policy-free entry exists, older Core versions cannot read that entry.
 Upgrade Core and the invocation providers together; roll back only to a version
 that understands nullable Code policies. Prefer rolling forward.
+
+## Ordinary target grants during the access-model transition
+
+Target managers can now add a Code service account through the target's ordinary
+share service. It receives only direct View or Edit grants, never Manage,
+group, signed-in or public access. Applications deployed with an older
+`@k2b/cloud` must update before relying on this contract; see
+[Authorization](/en/docs/identity/authorization#retain-manager-authority-while-changing-a-grant)
+for the required transaction and lock order.
+
+A concurrent identity, settings or directory write can make sharing return HTTP
+409 with `retryable: true`. Directory table maintenance, including autovacuum
+and analyze, can cause the same response. Retry the complete share operation
+after the write or maintenance finishes. Retrying never bypasses the current
+manager check. Administration repairs recheck live Cloud-admin authority,
+including supported delegated credentials; an app session does not supply that
+authority.
+
+Existing activation adapters and their recovery workers remain until their
+separate removal. This transition adds no migration, credentials, worker or
+operator setting. To restore access intentionally removed by a manager, use the
+normal share dialog; recovery does not recreate it.

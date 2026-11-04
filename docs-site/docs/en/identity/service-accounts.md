@@ -5,7 +5,7 @@ section: Identity and access
 order: 352
 description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-10-31
+updated: 2026-11-03
 ---
 
 # Standalone service accounts and agents
@@ -23,7 +23,7 @@ Every service account has one `kind`:
 | `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
 | `standalone` | An integration with its own identity | Direct and local group grants |
 | `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
-| `code` | A platform-managed identity for resource or app Code | Only its own explicit Code access |
+| `code` | A platform-managed identity for resource or app Code | Only its own explicit resource and app grants |
 
 `agent` changes presentation only: pickers and the Accounts app show the label
 "Agent" instead of a key. It carries no extra permission and no different token
@@ -56,10 +56,21 @@ writes or account reclassification.
 
 Code accounts cannot receive API tokens, models-only keys, OAuth clients or
 OAuth tokens. App keys belong only to a `resource_bound` account for
-`cloud.app/<appId>`, never to a Code account. The directory and principal picker
-exclude Code accounts, and ordinary resource-share and app-access operations
-refuse them. Code activation owns their access; the ordinary account creation
+`cloud.app/<appId>`, never to a Code account. The ordinary account creation
 and credential APIs remain limited to their existing kinds.
+
+A target's manager grants a Code account `read` or `write` through the same
+resource service used for people. `createAccess` and `updateAccess` reject
+`admin` for Code accounts; the database enforces the same rule. Applications
+need no Code access adapter to accept this principal. Creating a Project or
+Skill requires an initial manager grant, so Code accounts cannot create them. A setting that names a
+target grants no access to it.
+
+The shared permission editor accepts a Code account returned by its identity
+provider and shows it as an ordinary row with View and Edit. It never offers
+Manage. The general directory still excludes Code accounts: target-scoped
+lookup by exact identifier is supplied separately. Do not add name search or
+fall back to the Code owner's personal grants.
 
 For server-side account handling, `@k2b/cloud/services` exports two independent
 kind predicates:

@@ -7,6 +7,7 @@ import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
+import * as books from "../service/books";
 import contactsApi from ".";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -97,6 +98,16 @@ suite("Contacts keeps its last manager (ACC-06)", () => {
     for (const id of created.users.splice(0)) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
 
+  test("a conflicting creator lock leaves no book without its initial grant", async () => {
+    const manager = await person();
+    const name = `Busy creator ${crypto.randomUUID()}`;
+    await sql.begin(async (holder) => {
+      await holder`SELECT id FROM auth.users WHERE id=${manager.id}::uuid FOR NO KEY UPDATE`;
+      await expect(books.create({ data: { name }, creatorId: manager.id })).rejects.toMatchObject({ status: 409, retryable: true });
+      expect(await sql`SELECT id FROM contacts.books WHERE name=${name}`).toHaveLength(0);
+    });
+  });
+
   test("a book-bound key cannot replace its last person; refusals preserve the grant, localized message, and outbox", async () => {
     const target = await book();
     const a = await person();
@@ -120,20 +131,46 @@ suite("Contacts keeps its last manager (ACC-06)", () => {
     }
   });
 
-  test("ordinary book sharing cannot change an existing Code grant", async () => {
+  test("ordinary book sharing grants and switches a Code account through View/Edit only", async () => {
     const target = await book();
     const manager = await person();
     await grant(target.id, { userId: manager.id });
     const codeId = await account(target.id, "agent");
-    const codeAccess = await grant(target.id, { serviceAccountId: codeId });
-    await sql`UPDATE auth.access SET permission = 'write' WHERE id = ${codeAccess}::uuid`;
     await sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${codeId}::uuid`;
-    for (const permission of ["read", "admin"]) {
-      const response = await request(`/books/${target.shortId}/access/${codeAccess}`, manager, "PATCH", { permission });
-      expect(response.status).toBe(404);
-      expect((await permissions(target.id)).find((entry) => entry.id === codeAccess)?.permission).toBe("write");
+    const response = await request(`/books/${target.shortId}/access`, manager, "POST", {
+      principal: { type: "service_account", serviceAccountId: codeId },
+      permission: "read",
+    });
+    expect(response.status).toBe(200);
+    const [codeAccess] = await sql<{ id: string }[]>`SELECT a.id FROM auth.access a JOIN contacts.book_access ba ON ba.access_id = a.id
+      WHERE ba.book_id = ${target.id}::uuid AND a.service_account_id = ${codeId}::uuid`;
+    if (!codeAccess) throw new Error("Missing Code grant");
+    for (const permission of ["write", "read"]) {
+      expect((await request(`/books/${target.shortId}/access/${codeAccess.id}`, manager, "PATCH", { permission })).status).toBe(200);
+      expect((await permissions(target.id)).find((entry) => entry.id === codeAccess.id)?.permission).toBe(permission);
     }
-    expect(await accessChanges(target.id)).toBe(0);
+    expect((await request(`/books/${target.shortId}/access/${codeAccess.id}`, manager, "PATCH", { permission: "admin" })).status).toBe(400);
+    expect((await request(`/books/${target.shortId}/access/${codeAccess.id}`, manager, "DELETE")).status).toBe(200);
+  });
+
+  test("a manager revoked while a new grant waits cannot share with a Code account", async () => {
+    const target = await book();
+    const manager = await person(),
+      other = await person();
+    await grant(target.id, { userId: other.id });
+    const own = await grant(target.id, { userId: manager.id });
+    const codeId = await account(target.id, "agent");
+    await sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${codeId}::uuid`;
+    const [revoked, stale] = await inLockOrder(holdBook(target.id), [
+      () => request(`/books/${target.shortId}/access/${own}`, other, "DELETE"),
+      () =>
+        request(`/books/${target.shortId}/access`, manager, "POST", {
+          principal: { type: "service_account", serviceAccountId: codeId },
+          permission: "read",
+        }),
+    ]);
+    expect(revoked!.status).toBe(200);
+    expect(stale!.status).toBe(403);
   });
 
   test("two managers lowering their own grants concurrently leave exactly one manager", async () => {

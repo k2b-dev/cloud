@@ -7,14 +7,15 @@ import {
   getAccess,
   getEffectivePermission,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   type RequestActor,
   type ResourceAccessAdapter,
   resolveDisplayNames,
+  userFromActor,
 } from "@k2b/cloud/server";
-import { accountIdentities, audit, serviceAccounts } from "@k2b/cloud/services";
-import { ok } from "@k2b/stdlib";
+import { accountIdentities, accounts, audit, serviceAccounts } from "@k2b/cloud/services";
 import type { TransactionSQL } from "bun";
 import { TEMPLATE_LIMIT } from "../document-assets";
 import type { FileTemplate, TemplatePage } from "../template-contracts";
@@ -242,10 +243,30 @@ export function createTemplateService(files = filesService) {
       if (!["user", "group", "authenticated", "service_account"].includes(principal.type)) throw new FilesError("forbidden", 403);
       if (principal.type === "service_account") {
         const account = await serviceAccounts.get({ id: principal.serviceAccountId });
-        if (!account || account.status !== "active" || !["standalone", "agent"].includes(account.kind))
+        if (!account || account.status !== "active" || !["standalone", "agent", "code"].includes(account.kind))
           throw new FilesError("forbidden", 403);
       }
+      const authorityUser = userFromActor(actor);
+      if (!authorityUser) throw new FilesError("admin_required", 403);
       const accessId = await sql.begin(async (tx) => {
+        if (
+          !(await lockAccessMutationAuthority(
+            {
+              subject: {
+                type: "user",
+                userId: authorityUser.id,
+                ...(actor.kind === "service_account" ? { delegatedByServiceAccountId: actor.serviceAccount.id } : {}),
+              },
+              principal,
+            },
+            tx,
+          )) ||
+          !(await accounts.users.hasInstallationAdminInTransaction(
+            actor.kind === "user" ? actor : { kind: "user", user: authorityUser },
+            tx,
+          ))
+        )
+          throw new FilesError("admin_required", 403);
         const [template] = await tx<{ id: string }[]>`SELECT id FROM filesv2.templates WHERE id=${id}::uuid FOR UPDATE`;
         if (!template) throw new FilesError("not_found", 404);
         const result = await createAccess({ principal, permission: "read" }, tx);
@@ -259,7 +280,27 @@ export function createTemplateService(files = filesService) {
     async revoke(call: UserFilesCall, id: string, accessId: string) {
       const actor = call.actor;
       await admin(actor);
+      const authorityUser = userFromActor(actor);
+      if (!authorityUser) throw new FilesError("admin_required", 403);
       await sql.begin(async (tx) => {
+        if (
+          !(await lockAccessMutationAuthority(
+            {
+              subject: {
+                type: "user",
+                userId: authorityUser.id,
+                ...(actor.kind === "service_account" ? { delegatedByServiceAccountId: actor.serviceAccount.id } : {}),
+              },
+              accessId,
+            },
+            tx,
+          )) ||
+          !(await accounts.users.hasInstallationAdminInTransaction(
+            actor.kind === "user" ? actor : { kind: "user", user: authorityUser },
+            tx,
+          ))
+        )
+          throw new FilesError("admin_required", 403);
         const [template] = await tx<{ id: string }[]>`SELECT id FROM filesv2.templates WHERE id=${id}::uuid FOR UPDATE`;
         if (!template) throw new FilesError("not_found", 404);
         const [row] = await tx<

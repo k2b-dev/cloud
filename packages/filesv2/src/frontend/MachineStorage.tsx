@@ -228,7 +228,12 @@ function StorageGrants(props: { storage: Storage }) {
                       {entry.path || "/"} · {t()[entry.permission === "admin" ? "admin" : entry.permission === "write" ? "write" : "read"]}
                     </div>
                     <Show when={entry.serviceAccountKind}>
-                      <StatusBadge tone="neutral" label={entry.serviceAccountKind === "agent" ? t().agent : t().standalone} />
+                      <StatusBadge
+                        tone="neutral"
+                        label={
+                          entry.serviceAccountKind === "code" ? t().code : entry.serviceAccountKind === "agent" ? t().agent : t().standalone
+                        }
+                      />
                     </Show>
                   </div>
                   <Button

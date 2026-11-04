@@ -31,7 +31,7 @@ const machine = (kind: ServiceAccount["kind"], scopes: string[]): AiResourceCont
   accessSubject: { type: "service_account", serviceAccountId: "machine" },
 });
 
-for (const kind of ["standalone", "agent"] as const) {
+for (const kind of ["standalone", "agent", "code"] as const) {
   test(`${kind} scopes only lower grants and do not create access`, () => {
     const permissions: PermissionLevel[] = ["none", "read", "write", "admin"];
     for (const [index, permission] of permissions.entries()) {
@@ -40,7 +40,7 @@ for (const kind of ["standalone", "agent"] as const) {
       for (const [grantIndex, grant] of permissions.entries()) {
         expect(capAiResourcePermission(grant, subject)).toBe(permissions[Math.min(index, grantIndex)]!);
       }
-      if (permission === "none" || permission === "read") {
+      if (kind === "code" || permission === "none" || permission === "read") {
         expect(() => requireAiResourceCreation(subject)).toThrow(AiResourceCredentialError);
       } else {
         expect(() => requireAiResourceCreation(subject)).not.toThrow();
@@ -61,7 +61,7 @@ test("bare machine subjects and unsupported resource bindings fail closed", () =
 });
 
 test("a credential cannot authorize another account's grants", () => {
-  const subject = machine("agent", ["admin"]);
+  const subject = machine("code", ["read", "write"]);
   if (!("actor" in subject)) throw new Error("Missing fixture actor");
   expect(aiResourcePermissionCap({ ...subject, accessSubject: { type: "service_account", serviceAccountId: "other-machine" } })).toBe(
     "none",

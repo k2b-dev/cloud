@@ -252,3 +252,29 @@ describe("Code with access in a share dialog", () => {
     }
   }, 30_000);
 });
+
+test("ordinary Dienstkonto rows offer view/edit and save the selected level", async () => {
+  const tab = await open(390, { accounts: (route) => route.abort() }, "?ordinary=1");
+  try {
+    const row = tab.locator(".group\\/access-row").filter({ hasText: "Code von info@moebel-beispiel.de" });
+    await row.waitFor();
+    expect(await row.locator("..").getByText("Wer den Code bearbeitet, handelt mit diesem Recht.").count()).toBe(1);
+    const picker = row.getByRole("combobox", { name: "Berechtigung für Code von info@moebel-beispiel.de", exact: true });
+    for (const [label, level] of [
+      ["Ansehen", "read"],
+      ["Bearbeiten", "write"],
+    ] as const) {
+      await picker.click();
+      const options = row.getByRole("option");
+      expect(await options.allTextContents()).toEqual(["Ansehen", "Bearbeiten"]);
+      await options.filter({ hasText: label }).click();
+      await tab.waitForFunction((level) => document.querySelector("[data-access-updated]")?.textContent === `access-info:${level}`, level);
+      await row.getByRole("status").getByText("Gespeichert", { exact: true }).waitFor();
+      expect(await picker.textContent()).toContain(label);
+    }
+    expect(await tab.locator("[data-code-access-row]").count()).toBe(0);
+    expect(await tab.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+  } finally {
+    await tab.close();
+  }
+});

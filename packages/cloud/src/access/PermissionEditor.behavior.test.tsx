@@ -41,7 +41,7 @@ const labels = {
   },
   de: {
     agent: "Agent",
-    standalone: "Dienstkonto",
+    standalone: "Agent",
     resource_bound: "Ressourcengebundenes Dienstkonto",
     user_delegated: "Benutzergebundenes Dienstkonto",
   },
@@ -335,9 +335,9 @@ describe("PermissionEditor service accounts", () => {
           const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
           input.value = "fo";
           input.dispatchEvent(new Event("input", { bubbles: true }));
-          await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
+          await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length + 1, "the service-account results");
           expect(requestedKinds).toContain("user,group,service_account");
-          expect(dom.root.textContent).not.toContain("Found code");
+          expect(dom.root.textContent).toContain("Found code");
           const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
           for (const kind of kinds) {
             const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;
@@ -1946,6 +1946,115 @@ describe("PermissionEditor principal names", () => {
         globalThis.fetch = originalFetch;
         setSystemTime();
         dom.cleanup();
+      }
+    });
+  }
+});
+
+describe("Dienstkonto shares use normal grant callbacks", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+  for (const expanded of [false, true]) {
+    test(`${expanded ? "expanded" : "compact"}: grant view and switch edit/view without offering manage`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = "de";
+      setSystemTime(new Date("2026-11-03T12:00:00Z"));
+      const originalFetch = globalThis.fetch;
+      const queries: URL[] = [];
+      globalThis.fetch = Object.assign(
+        async (input: string | URL | Request) => {
+          queries.push(new URL(input instanceof Request ? input.url : input.toString()));
+          return Response.json({
+            items: [
+              {
+                kind: "service_account",
+                serviceAccount: {
+                  id: "code-account",
+                  name: "Dienstkonto",
+                  kind: "code",
+                  status: "active",
+                  appId: null,
+                  resourceType: null,
+                  resourceId: null,
+                },
+              },
+            ],
+          });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      delegateEvents(["input", "click", "change"], dom.document);
+      const grants: string[] = [],
+        updates: string[] = [];
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            expanded={expanded}
+            initialEntries={[]}
+            allowAuthenticated={false}
+            grantAccess={async (principal, permission, display) => {
+              grants.push(permission);
+              return { id: "code-share", principal, permission, createdAt: "2026-11-03T12:00:00Z", ...display };
+            }}
+            updateAccess={async (id, permission) => {
+              expect(id).toBe("code-share");
+              updates.push(permission);
+            }}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        const search = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+        search.value = "code-abcdefghjk";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        const result = () =>
+          Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')).find((option) =>
+            option.textContent?.includes("Dienstkonto"),
+          );
+        await waitFor(() => result() !== undefined, "passed Dienstkonto result");
+        result()!.click();
+        if (expanded) {
+          const trigger = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Recht für neuen Eintrag"]')!;
+          trigger.click();
+          const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>('button[role="option"]'));
+          expect(options.map((option) => option.textContent)).toEqual([
+            expect.stringContaining("Ansehen"),
+            expect.stringContaining("Bearbeiten"),
+          ]);
+          options[0]!.click();
+          Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"))
+            .find((button) => button.textContent?.trim() === "Hinzufügen")!
+            .click();
+        }
+        await waitFor(() => grants.length === 1 && dom.root.querySelectorAll(".group\\/access-row").length === 1, "normal code grant");
+        expect(grants).toEqual(["read"]);
+        for (const level of ["write", "read"] as const) {
+          const row = dom.root.querySelector<HTMLElement>(".group\\/access-row")!;
+          row.querySelector<HTMLButtonElement>(expanded ? 'button[role="combobox"]' : '[aria-haspopup="menu"]')!.click();
+          const options = Array.from(row.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"], button[role="option"]'));
+          expect(options.map((option) => option.textContent)).toEqual([
+            expect.stringContaining("Ansehen"),
+            expect.stringContaining("Bearbeiten"),
+          ]);
+          options[level === "read" ? 0 : 1]!.click();
+          await waitFor(() => updates.length === (level === "write" ? 1 : 2), "normal code update");
+          await waitFor(() => !row.getAttribute("aria-busy"), "completed save");
+        }
+        expect(updates).toEqual(["write", "read"]);
+        expect(queries).toHaveLength(1);
+        expect(queries[0]!.pathname).toBe("/api/accounts/entities");
+        expect(queries[0]!.searchParams.get("search")).toBe("code-abcdefghjk");
+      } finally {
+        dispose();
+        dom.cleanup();
+        globalThis.fetch = originalFetch;
+        setSystemTime();
       }
     });
   }

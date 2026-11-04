@@ -49,7 +49,7 @@ import { HttpPrepare } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
 import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
 import { migrateArtifacts } from "./migrate";
-import { artifacts } from "./service";
+import { type ArtifactIdentity, artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
 import { testIdentity } from "./test-identity";
 
@@ -125,9 +125,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE UNIQUE INDEX ai_tool_approval_preferences_reach ON ai.tool_approval_preferences(actor_user_id,tool_name,approval_scope,conversation_id) NULLS NOT DISTINCT`;
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin')`;
-    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text, auth_epoch bigint NOT NULL DEFAULT 0)`;
+    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text, auth_epoch bigint NOT NULL DEFAULT 0, account_expires timestamptz, provider text DEFAULT 'local', profile text DEFAULT 'user', admin boolean DEFAULT false)`;
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text)`;
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid,group_id uuid)`;
+    await sql`CREATE TABLE auth.ipa_user_effective_groups(user_id uuid,group_name text)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`;
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid,group_id uuid,service_account_id uuid,authenticated_only boolean DEFAULT false,permission auth.permission_level,created_at timestamptz DEFAULT now())`;
     for (const who of [owner, reader, editor, stranger]) await sql`INSERT INTO auth.users(id) VALUES(${who.user!.id}::uuid)`;
@@ -369,16 +370,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
       expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId, shortId: null, name: null }]);
       await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
-      // Legacy promotion preserves Code grants, and normal sharing reports refusal.
-      for (const permission of ["read", "admin"] as const) {
-        await expect(artifacts.changeGrant(resource.id, codeGrant.id, permission, owner)).rejects.toMatchObject({ code: "NOT_FOUND" });
-        expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id=${codeGrant.id}::uuid`).toEqual([
-          { permission: "write" },
-        ]);
-      }
-      await expect(
-        artifacts.grant(resource.id, { type: "service_account", serviceAccountId: codeId }, "read", owner),
-      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      // Legacy promotion preserves the grant; normal sharing now manages its read level.
+      await artifacts.changeGrant(resource.id, codeGrant.id, "read", owner);
+      expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id=${codeGrant.id}::uuid`).toEqual([
+        { permission: "read" },
+      ]);
+      await expect(artifacts.changeGrant(resource.id, codeGrant.id, "admin", owner)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await artifacts.changeGrant(resource.id, codeGrant.id, null, owner);
+      const entry = await artifacts.grant(resource.id, { type: "service_account", serviceAccountId: codeId }, "read", owner);
+      expect(entry).toMatchObject({ permission: "read", serviceAccountKind: "code" });
+      await artifacts.changeGrant(resource.id, entry!.id, null, owner);
     } finally {
       await artifacts.remove(resource.id, owner);
       await sql`DELETE FROM auth.access WHERE id=${codeGrant.id}::uuid`;
@@ -3116,6 +3117,49 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       settings.mockRestore();
       writes.mockRestore();
       await upstream.stop(true);
+    }
+  });
+
+  test("delegated Cloud admins retain ordinary grant and revoke with live authority", async () => {
+    const resource = await artifacts.create({ title: "Delegated administration", source }, owner);
+    const accountId = crypto.randomUUID();
+    const administrator = { ...stranger.user, roles: ["admin" as const] };
+    await sql`UPDATE auth.users SET admin=true WHERE id=${administrator.id}::uuid`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,delegated_user_id)
+      VALUES(${accountId}::uuid,'Delegated admin','user_delegated',${administrator.id}::uuid)`;
+    const identity: ArtifactIdentity = adminIdentity({
+      actor: {
+        kind: "service_account",
+        delegatedUser: administrator,
+        scopes: ["admin"],
+        serviceAccount: {
+          id: accountId,
+          name: "Delegated admin",
+          kind: "user_delegated",
+          status: "active",
+          delegatedUserId: administrator.id,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: administrator.id,
+          createdAt: "2030-01-01T00:00:00Z",
+        },
+      },
+      accessSubject: { type: "user", userId: administrator.id, delegatedByServiceAccountId: accountId },
+      credentialKind: "api_key",
+    });
+    try {
+      const grant = await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", identity);
+      if (!grant) throw new Error("Missing delegated grant");
+      await artifacts.changeGrant(resource.id, grant.id, null, identity);
+      await sql`UPDATE auth.users SET admin=false WHERE id=${administrator.id}::uuid`;
+      await expect(artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", identity)).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+      });
+    } finally {
+      await sql`UPDATE auth.users SET admin=false WHERE id=${administrator.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id=${accountId}::uuid`;
+      await artifacts.remove(resource.id, owner);
     }
   });
 
