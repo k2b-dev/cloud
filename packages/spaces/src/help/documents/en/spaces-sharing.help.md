@@ -44,7 +44,7 @@ To hand management over, give the new account **Manage** access first. Then lowe
 
 ## Give Code access to this Space {icon="code"}
 
-Code of a mailbox or of another object runs as its service account. The service account gets access to a Space like a person. Only people with **Manage** access to the Space add it. The Cloud administrator approves Code versions but never gives access to your Space.
+Code of a mailbox or of another object runs as its service account. The service account gets access to a Space like a person. Only people with **Manage** access to the Space add it. When a Cloud administrator approves a Code version, that approval gives no access to your Space.
 
 :::steps
 1. Ask the person who writes the Code for its handle, for example `code-7k2q9m4xwt`.

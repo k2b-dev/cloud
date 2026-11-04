@@ -280,7 +280,7 @@ If an incoming automation shows **Needs attention**, it is paused and its saved 
 
 Code of a mailbox runs as the mailbox's service account. Open **Code** in the mailbox sidebar to see it. Only people who manage the mailbox and people with access to its Code see this entry.
 
-The service account starts without access to other places. Whoever manages the target decides about access, for example the person who manages a Space. The Cloud administrator does not give this access.
+The service account starts without access to other places. Whoever manages the target decides about access, for example the person who manages a Space. Approving a Code version gives no access to a target.
 
 :::steps
 1. Open **Code** in the mailbox sidebar.
@@ -293,6 +293,6 @@ The next run of the Code can use the target. A service account never gets **Mana
 
 ## Understand a refused Code call {icon="alert-triangle"}
 
-When a target refuses a call, the run shows it. People who may edit the Code see the action, the target, and **Copy handle**. People who only read the Code see **A call was refused.** Either the service account has no access at the target, or the target no longer exists. Ask the person who manages the target to add the service account. The next run tries again.
+When a target refuses a call, the run shows it. People who may edit the Code see the action, the target, and **Copy handle**. People who only read the Code see **A call was refused.** Either the service account lacks the needed access at the target, or the target no longer exists. Ask the person who manages the target to add the service account, or to give it **Edit** if it has only **View**. The next run tries again.
 
-The Cloud administrator's policy decides which kinds of calls need an approved version. With the default policy, reading runs without approval. AI use, internet requests, and changes that other people see need a version that a Cloud administrator approved. **The policy does not allow this.** means that the policy never permits this call. If the run says that the version needs approval, a Cloud administrator must approve it first. An approval gives no access to a target. Calls that would ask a person first, such as sending or deleting, never run from Code in this release.
+The Cloud administrator's policy decides which kinds of calls need an approved version. With the default policy, reading runs without approval. AI use, internet requests, and changes that other people see need a version that a Cloud administrator approved. **The policy does not allow this.** means that the policy or a fixed rule for Code forbids this call, for example an internet address that the Code does not declare. An approval does not change that. If the run says that the version needs approval, a Cloud administrator must approve it first. Calls that would ask a person first, such as sending or deleting, never run from Code in this release.

@@ -43,7 +43,7 @@ Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugrif
 
 ## Code Zugriff auf diesen Space geben {icon="code"}
 
-Code eines Postfachs oder eines anderen Objekts läuft als sein Dienstkonto. Das Dienstkonto bekommt Zugriff auf einen Space wie eine Person. Nur Personen mit Zugriff **Verwalten** auf den Space fügen es hinzu. Der Cloud-Admin gibt Versionen von Code frei, gibt aber nie Zugriff auf deinen Space.
+Code eines Postfachs oder eines anderen Objekts läuft als sein Dienstkonto. Das Dienstkonto bekommt Zugriff auf einen Space wie eine Person. Nur Personen mit Zugriff **Verwalten** auf den Space fügen es hinzu. Gibt ein Cloud-Admin eine Version von Code frei, gibt diese Freigabe keinen Zugriff auf deinen Space.
 
 :::steps
 1. Frage die Person, die den Code schreibt, nach seiner Kennung, etwa `code-7k2q9m4xwt`.
