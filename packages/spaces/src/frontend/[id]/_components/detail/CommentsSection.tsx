@@ -128,6 +128,7 @@ export default function CommentsSection(props: Props) {
 
   return (
     <Discussion
+      icon="ti ti-message-circle"
       label={props.recurrenceId ? t.occurrenceComments : t.comments}
       count={props.total}
       style="view-transition-name: space-item-detail-comments"

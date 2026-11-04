@@ -13,6 +13,7 @@ import {
   type User,
 } from "@/contracts";
 import { spacesService } from "@/service";
+import { getSpaceMemberPermission } from "@/service/access";
 import { spacesLive } from "@/service/live";
 import { spacesPublicResources } from "@/service/public-resources";
 import type { ReactionViewer } from "@/service/reactions";
@@ -907,7 +908,11 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
 
   // Capture after authorization but before any snapshot reads. Replaying an
   // event already reflected below is harmless; starting after it can miss one.
-  const eventCursor = await loadEventCursor(params.spaceId);
+  // Who has access is shown only to people with access of their own; public access alone never shows it.
+  const [eventCursor, memberPermission] = await Promise.all([
+    loadEventCursor(params.spaceId),
+    getSpaceMemberPermission({ spaceId: params.spaceId, subject: { type: "user", userId: params.user.id } }),
+  ]);
   const snapshotDay = calendar.formatDateKey(new Date(), params.dateConfig);
   const context = await loadWorkspaceContext(params, authorized.value);
   if (!context.ok) return context.error;
@@ -950,6 +955,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     hasOverride: route.hasOverride,
     isAdmin: permissions.isAdmin,
     canWrite: permissions.canWrite,
+    accessVisible: memberPermission !== "none",
     query: route.url.searchParams.toString(),
     icalBaseUrl: `${route.url.protocol}//${route.url.host}`,
     eventCursor,
