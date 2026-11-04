@@ -2792,12 +2792,16 @@ export const onSyncFolderJobError = async ({
   error: Error;
 }): Promise<JobFailureDecision> => {
   if (context.attempt < SYNC_FOLDER_MAX_ATTEMPTS) return { action: "retry" };
-  await markFolderDegraded(context.input.folderId);
+  // The log and the decision must not depend on the database: in an outage, which is when folder
+  // syncs exhaust their retries, the degraded mark fails or waits for a connection. A hook that
+  // waits past the delivery's ack wait lets the job dead-letter as "max attempts exhausted" on
+  // redelivery, without this line and without the hook's decision.
   log.error("Mail folder sync exhausted retries", {
     folderId: context.input.folderId,
     attempt: context.attempt,
     code: normalizeSyncErrorCode(error),
   });
+  void markFolderDegraded(context.input.folderId).catch(() => undefined);
   return { action: "dead_letter", reason: error.message };
 };
 

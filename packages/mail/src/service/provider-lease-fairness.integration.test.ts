@@ -2198,9 +2198,54 @@ suite("mail provider lease fairness", () => {
     expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure! })).toMatchObject({
       action: "dead_letter",
     });
-    expect(await checkTurn(mailbox)).toBeNull();
+    // The hook's degraded mark follows its decision.
+    await waitFor(async () => (await checkTurn(mailbox)) === null, "the waited sync to end after the folder gave up");
     expect(await commandOutcome(commandId)).toMatchObject({ state: "failed", code: "SYNC_FAILED", result: { queuedFolders: 3 } });
   }, 60_000);
+
+  test("a folder sync that gives up while the database cannot take its degraded mark is still logged and dead-lettered", async () => {
+    const mailbox = await connect("gave-up-outage");
+    const archive = mailbox.folderId(ARCHIVE);
+    const status = async () =>
+      (await sql<{ sync_status: string }[]>`SELECT sync_status FROM mail.folders WHERE id = ${archive}::uuid`)[0]?.sync_status;
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    // An open transaction holds the folder row, so the degraded mark waits as a write does while
+    // the database is unavailable.
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding = () => {};
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    const lock = sql.begin(async (tx) => {
+      await tx`SELECT id FROM mail.folders WHERE id = ${archive}::uuid FOR UPDATE`;
+      holding();
+      await released;
+    });
+    try {
+      await held;
+      const failure = Object.assign(new Error("Connection to the database closed"), { code: "ERR_POSTGRES_CONNECTION_CLOSED" });
+      // The hook answers while the mark still waits; before the fix it waited for the mark first.
+      expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure })).toEqual({
+        action: "dead_letter",
+        reason: "Connection to the database closed",
+      });
+      expect(errors.mock.calls).toContainEqual([
+        "[mail:sync]",
+        "Mail folder sync exhausted retries",
+        { folderId: archive, attempt: 5, code: "ERR_POSTGRES_CONNECTION_CLOSED" },
+      ]);
+      expect(await status()).not.toBe("degraded");
+    } finally {
+      release();
+      await lock;
+      errors.mockRestore();
+    }
+    // Once the database takes it, the mark follows.
+    await waitFor(async () => (await status()) === "degraded", "the degraded mark after the database answers");
+  });
 
   test("a waited sync whose mailbox is paused meanwhile ends with the reason, like a request that finds it paused", async () => {
     const mailbox = await connect("paused");
