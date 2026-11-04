@@ -84,7 +84,7 @@ Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugrif
 :::reference
 - **Notizbuch → Allgemein:** Name, Symbol, Beschreibung, Startseite und die Liquid-Vorlage für die H1 neuer leerer Notizen. Prüfe die Fußleiste und speichere oder verwirf dann deine Änderungen.
 - **Notizbuch → Ansicht und Verhalten:** Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht. Unter **Nur für dich** speichert dieser Browser deine persönlichen Einstellungen, und sie gelten sofort: **Volle Breite** auf großen Bildschirmen und die Wahl für die Tab-Taste.
-- **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Ändere, wer Zugriff hat, und lege fest, wer Notizen löschen und sperren darf. Änderungen werden sofort gespeichert.
+- **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Wähle **Zugriff bearbeiten**, um zu ändern, wer Zugriff hat, und dann **Speichern**, um die Änderungen zu übernehmen. Du legst dort auch fest, wer Notizen löschen und sperren darf; diese Änderung wird sofort gespeichert.
 - **Freigabe → API-Schlüssel:** Braucht Zugriff **Verwalten**. API-Schlüssel für Integrationen, die nur mit diesem Notizbuch arbeiten. Änderungen werden sofort gespeichert, und Notebooks zeigt einen neuen Schlüssel nur einmal.
 - **Daten → Export und Snapshots:** Braucht Zugriff **Verwalten**. Übertragbare ZIP-Exporte, die Einrichtung von S3-Snapshots, manuelle Uploads und die letzten Snapshot-Läufe. Speichere die Snapshot-Einrichtung über die Fußleiste.
 - **Verwaltung → Endgültig löschen:** Braucht Zugriff **Verwalten**. Aktionen, die Daten zerstören, etwa das Löschen des Notizbuchs und seiner Notizen.

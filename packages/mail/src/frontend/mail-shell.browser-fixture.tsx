@@ -482,9 +482,16 @@ export function mailboxData(url: URL): MailboxPageData {
         : activeView === "mine"
           ? mineRows
           : selectedMailbox.id === "Box001"
-            ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation.
+            ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation, and for the
+              // second together with you.
               url.searchParams.has("team")
-              ? listRows.map((row, index) => (index === 0 ? { ...row, assigneeUserIds: [teamUsers[1]!.id] } : row))
+              ? listRows.map((row, index) =>
+                  index === 0
+                    ? { ...row, assigneeUserIds: [teamUsers[1]!.id] }
+                    : index === 1
+                      ? { ...row, assigneeUserIds: [teamUsers[1]!.id, teamUsers[0]!.id] }
+                      : row,
+                )
               : listRows
             : listRows.map((row) => ({
                 ...row,

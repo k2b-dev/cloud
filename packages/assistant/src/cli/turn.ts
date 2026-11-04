@@ -27,8 +27,8 @@ type TurnSubmission = { turn: { id: string; status: string; modelId: string | nu
 export const conversationPath = (conversationId: string, suffix = ""): string =>
   `/conversations/${encodeURIComponent(conversationId)}${suffix}`;
 
-export const readConversationDetail = (ctx: CloudCliContext, conversationId: string): Promise<ConversationDetail> =>
-  readApi<ConversationDetail>(ctx, conversationPath(conversationId));
+export const readConversationDetail = (ctx: CloudCliContext, conversationId: string, signal?: AbortSignal): Promise<ConversationDetail> =>
+  readApi<ConversationDetail>(ctx, conversationPath(conversationId), signal ? { signal } : undefined);
 
 export const validateLocalAttachments = async (paths: readonly string[]): Promise<void> => {
   if (paths.length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
@@ -105,8 +105,15 @@ export const uploadAttachmentFile = async (
   };
 };
 
-const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, body: unknown, codeHost: boolean): Promise<unknown> => {
-  if (!body || typeof body !== "object") return body;
+/** The turn body for the composer draft, and how to empty that draft again. Reads stop with `signal`. */
+const submitDraftBody = async (
+  ctx: CloudCliContext,
+  conversationId: string,
+  body: unknown,
+  codeHost: boolean,
+  signal?: AbortSignal,
+): Promise<{ body: unknown; clear?: () => Promise<unknown> }> => {
+  if (!body || typeof body !== "object") return { body };
   const input = z
     .object({
       message: z.string().optional(),
@@ -129,7 +136,7 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
       localContext: AiLocalContextSchema.optional(),
     })
     .parse(body);
-  const detail = await readConversationDetail(ctx, conversationId);
+  const detail = await readConversationDetail(ctx, conversationId, signal);
   if (detail.conversation.draft.content.length > 0) {
     throw new Error("This conversation has an unsent composer draft. Send or clear it in Assistant before using the CLI.");
   }
@@ -144,17 +151,22 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
       return [];
     }),
   ];
+  signal?.throwIfAborted();
   const draft = await readApi<AiConversation["draft"]>(
     ctx,
     conversationPath(conversationId, "/draft"),
     jsonRequest("PUT", { expectedRevision: detail.conversation.draft.revision, content }),
   );
   return {
-    draftRevision: draft.revision,
-    model: input.model,
-    ...(input.client ? { client: input.client } : {}),
-    ...(input.localContext ? { localContext: input.localContext } : {}),
-    clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open", "code_secret"] : [])])],
+    clear: () =>
+      readApi(ctx, conversationPath(conversationId, "/draft"), jsonRequest("PUT", { expectedRevision: draft.revision, content: [] })),
+    body: {
+      draftRevision: draft.revision,
+      model: input.model,
+      ...(input.client ? { client: input.client } : {}),
+      ...(input.localContext ? { localContext: input.localContext } : {}),
+      clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open", "code_secret"] : [])])],
+    },
   };
 };
 
@@ -184,9 +196,15 @@ export const submitAssistantTurn = async (input: {
   if (streamResponse && (!streamResponse.ok || !streamResponse.body)) await input.ctx.readJson(streamResponse);
   let submitted: TurnSubmission;
   try {
-    const body = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch)
-      : input.body;
+    const { body, clear } = input.path.endsWith("/turns")
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch, input.signal)
+      : { body: input.body };
+    // A stop before the turn starts empties the draft again instead of leaving the message in the composer. Once
+    // sent, the request completes, so a stop can abort the turn it started.
+    if (input.signal?.aborted) {
+      await clear?.().catch(() => undefined);
+      input.signal.throwIfAborted();
+    }
     submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
   } catch (error) {
     await streamResponse?.body?.cancel().catch(() => undefined);
