@@ -1,7 +1,7 @@
 import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { Principal } from "@k2b/cloud/contracts";
 import { Button, prompts, SettingsGroup } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createComputed, createSignal, on } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -18,22 +18,47 @@ export function PermissionsSection(props: {
 }) {
   const m = useSpaceMessages();
   const [entries, setEntries] = createSignal(visibleEntries(props.accessEntries));
+  // A refreshed settings context replaces the list.
+  createComputed(
+    on(
+      () => props.accessEntries,
+      (next) => setEntries(visibleEntries(next)),
+      { defer: true },
+    ),
+  );
+  // A plain guard, not a loading state: a disabled button could not take focus back when the dialog closes.
+  let running = false;
+  // Set by every saved change, also when a later one fails and the person discards the rest.
+  let wrote = false;
+  // The list missed a saved change; the next edit reads it first, so the dialog never starts from an old list.
+  let stale = false;
   const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
     const res = await apiClient[":id"].access.$post({ param: { id: props.spaceId }, json: { principal, permission } });
     if (!res.ok) throw new Error(await readErrorMessage(res, m.grantAccessFailed));
+    wrote = true;
     return await res.json();
   };
   const updateAccess = async (accessId: string, permission: GrantableLevel) => {
     const res = await apiClient[":id"].access[":accessId"].$patch({ param: { id: props.spaceId, accessId }, json: { permission } });
     if (!res.ok) throw new Error(await readErrorMessage(res, m.updatePermissionFailed));
+    wrote = true;
   };
   const revokeAccess = async (accessId: string) => {
     const res = await apiClient[":id"].access[":accessId"].$delete({ param: { id: props.spaceId, accessId } });
     if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeAccessFailed));
+    wrote = true;
+  };
+  const reload = async () => {
+    const res = await apiClient[":id"].access.$get({ param: { id: props.spaceId } });
+    if (!res.ok) throw new Error(await readErrorMessage(res, m.loadPermissionsFailed));
+    setEntries(visibleEntries(await res.json()));
+    stale = false;
   };
   // Changes are collected in the dialog and saved together; the list here shows what is stored.
   const edit = async () => {
-    const saved = await openAccessDialog({
+    if (stale) await reload();
+    wrote = false;
+    await openAccessDialog({
       resourceName: props.spaceName,
       subtitle: m.accessDialogSubtitle,
       initialEntries: entries(),
@@ -41,16 +66,24 @@ export function PermissionsSection(props: {
       updateAccess,
       revokeAccess,
     });
-    if (!saved) return;
-    const res = await apiClient[":id"].access.$get({ param: { id: props.spaceId } });
+    if (!wrote) return;
+    stale = true;
     props.onWorkspaceChange?.();
-    if (!res.ok) throw new Error(await readErrorMessage(res, m.loadPermissionsFailed));
-    setEntries(visibleEntries(await res.json()));
+    await reload();
+  };
+  const run = () => {
+    if (running) return;
+    running = true;
+    edit()
+      .catch((error: Error) => prompts.error(error.message))
+      .finally(() => {
+        running = false;
+      });
   };
   return (
     <SettingsGroup title={m.peopleAndGroups} description={m.accessDescription}>
       <SettingsGroup.Action>
-        <Button size="sm" variant="secondary" onClick={() => void edit().catch((error: Error) => prompts.error(error.message))}>
+        <Button size="sm" variant="secondary" onClick={run}>
           <i class="ti ti-pencil" aria-hidden="true" />
           {m.editAccess}
         </Button>

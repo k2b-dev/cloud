@@ -2,6 +2,7 @@ import { openAccessDialog } from "@k2b/cloud/access/ui";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, prompts, toast } from "@k2b/ui";
+import { onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../[id]/messages";
@@ -23,13 +24,16 @@ const readErrorMessage = async (response: Pick<Response, "json">, fallback: stri
   return fallback;
 };
 
-const openPermissionDialog = async (props: AdminSpaceActionsProps, m: ReturnType<typeof useSpaceMessages>) => {
-  const response = await apiClient.admin[":id"].access.$get({ param: { id: props.spaceId } });
+const openPermissionDialog = async (props: AdminSpaceActionsProps, m: ReturnType<typeof useSpaceMessages>, signal: AbortSignal) => {
+  const response = await apiClient.admin[":id"].access.$get({ param: { id: props.spaceId } }, { init: { signal } });
   if (!response.ok) throw new Error(await readErrorMessage(response, m.loadPermissionsFailed));
+  const initialEntries = await response.json();
+  // The page may have changed while the list loaded; never open the dialog over another page.
+  if (signal.aborted) return;
   await openAccessDialog({
     resourceName: props.spaceName,
     subtitle: m.accessDialogSubtitle,
-    initialEntries: await response.json(),
+    initialEntries,
     grantAccess: async (principal, permission) => {
       const response = await apiClient.admin[":id"].access.$post({
         param: { id: props.spaceId },
@@ -72,9 +76,13 @@ const AdminSpaceActions = (props: AdminSpaceActionsProps) => {
     onError: (err) => prompts.error(err.message),
   });
   // Loading the stored entries shows on the trigger; a failure says why instead of opening an empty dialog.
+  const loading = new AbortController();
+  onCleanup(() => loading.abort());
   const permissionsMutation = mutations.create<void, void>({
-    mutation: () => openPermissionDialog(props, m),
-    onError: (err) => prompts.error(err.message),
+    mutation: () => openPermissionDialog(props, m, loading.signal),
+    onError: (err) => {
+      if (!loading.signal.aborted) prompts.error(err.message);
+    },
   });
   let deletePromptPending = false;
   const deleteSpace = async () => {

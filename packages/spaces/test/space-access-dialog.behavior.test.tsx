@@ -14,6 +14,7 @@ const entry = (id: string, name: string, permission: AccessEntry["permission"], 
 });
 const mia = entry("1", "Mia Hoffmann", "admin");
 const lea = entry("2", "Lea Schmitt", "read");
+const ben = entry("4", "Ben Albers", "read");
 const key = entry("3", "Launch API keys", "admin", {
   principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000003" },
   serviceAccountKind: "resource_bound",
@@ -21,6 +22,7 @@ const key = entry("3", "Launch API keys", "admin", {
 
 let stored: AccessEntry[] = [];
 const revoked: string[] = [];
+const updated: string[] = [];
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
@@ -28,7 +30,13 @@ if (!isServer) {
         access: {
           $get: async () => Response.json(stored),
           ":accessId": {
+            $patch: async ({ param, json }: { param: { accessId: string }; json: { permission: AccessEntry["permission"] } }) => {
+              updated.push(`${param.accessId} ${json.permission}`);
+              stored = stored.map((item) => (item.id === param.accessId ? { ...item, permission: json.permission } : item));
+              return Response.json({ updated: true });
+            },
             $delete: async ({ param }: { param: { accessId: string } }) => {
+              if (param.accessId === ben.id) return Response.json({ message: "Offline" }, { status: 503 });
               revoked.push(param.accessId);
               stored = stored.filter((item) => item.id !== param.accessId);
               return Response.json({ revoked: true });
@@ -54,8 +62,7 @@ describe("Spaces settings: access", () => {
     return;
   }
 
-  test("Edit access opens the dialog without API keys; a saved removal shows in the list", async () => {
-    stored = [mia, lea, key];
+  const setup = async () => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     delegateEvents(["click", "input"], dom.document);
@@ -71,6 +78,20 @@ describe("Spaces settings: access", () => {
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
     const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    const cleanup = () => {
+      dispose();
+      confirm.mockRestore();
+      dom.cleanup();
+      revoked.length = 0;
+      updated.length = 0;
+    };
+    return { dom, confirm, changed, button, dialog, row, cleanup };
+  };
+
+  test("Edit access opens the dialog without API keys; a saved removal shows in the list", async () => {
+    stored = [mia, lea, key];
+    const { dom, confirm, changed, button, dialog, cleanup } = await setup();
     try {
       expect(dom.root.textContent).toContain("Lea Schmitt");
       button("Edit access")!.click();
@@ -86,9 +107,31 @@ describe("Spaces settings: access", () => {
       expect(changed).toHaveBeenCalledTimes(1);
       expect(dom.root.textContent).toContain("Mia Hoffmann");
     } finally {
-      dispose();
-      confirm.mockRestore();
-      dom.cleanup();
+      cleanup();
+    }
+  });
+
+  test("a save that fails halfway and is discarded still shows what was saved", async () => {
+    stored = [mia, lea, ben];
+    const { dom, changed, button, dialog, row, cleanup } = await setup();
+    try {
+      button("Edit access")!.click();
+      await waitFor(() => dialog()?.textContent?.includes("Ben Albers") === true, "the access dialog");
+      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
+      await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
+      button("Save")!.click();
+      await waitFor(() => !!dialog()?.querySelector('[role="alert"]'), "the failed removal");
+      expect(updated).toEqual([`${lea.id} write`]);
+      button("Cancel")!.click();
+      await waitFor(() => changed.mock.calls.length === 1, "the saved change to reach the workspace");
+      await waitFor(() => !dialog(), "the dialog to close");
+      await waitFor(() => dom.root.textContent?.replace("Edit access", "").includes("Edit") === true, "the list to show Lea's new level");
+      expect(dom.root.textContent).toContain("Ben Albers");
+    } finally {
+      cleanup();
     }
   });
 });
