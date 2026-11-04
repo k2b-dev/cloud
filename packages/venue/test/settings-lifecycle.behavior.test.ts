@@ -1,4 +1,4 @@
-import { describe, expect, setSystemTime, test } from "bun:test";
+import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createEffect } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
@@ -273,6 +273,96 @@ describe("Venue settings lifecycle behavior", () => {
       expect(closed).toBe(true);
     } finally {
       dispose();
+      globalThis.fetch = originalFetch;
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
+
+  test("a half-failed, discarded access save still reloads the settings, and a failed reload hides editing until it is read", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    const originalFetch = globalThis.fetch;
+    let reads = 0;
+    const writes: string[] = [];
+    let closed: boolean | undefined;
+    const person = (id: string, name: string, permission: AccessEntry["permission"]): AccessEntry => ({
+      id,
+      principal: { type: "user", userId: id },
+      displayName: name,
+      permission,
+      createdAt: "2026-08-11T00:00:00.000Z",
+    });
+    const entries = [person("mia", "Mia Hoffmann", "admin"), person("ada", "Ada Lovelace", "read"), person("bob", "Bob Marley", "read")];
+    const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: entries, apiKeys: [] });
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH" || init?.method === "DELETE") {
+          writes.push(`${init.method} ${String(input).split("/access/")[1]}`);
+          return init.method === "PATCH" ? new Response(null, { status: 204 }) : Response.json({ message: "offline" }, { status: 503 });
+        }
+        reads += 1;
+        return reads === 1 ? Response.json(payload()) : Response.json({ message: "offline" }, { status: 503 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const { SettingsDialog } = await import("../src/frontend/_components/venue-workspace/settings.tsx");
+    delegateEvents(["click", "input"], dom.document);
+    const dispose = render(
+      () =>
+        SettingsDialog({
+          dashboard,
+          accessEntries: entries,
+          apiKeys: [],
+          initialTab: "access",
+          close: (changed) => {
+            closed = changed;
+          },
+        }),
+      dom.root,
+    );
+    const button = (text: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const row = (name: string) => Array.from(accessDialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    const waitFor = async (condition: () => boolean, label: string) => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (condition()) return;
+        await Bun.sleep(10);
+      }
+      throw new Error(`Timed out waiting for ${label}`);
+    };
+    try {
+      await waitFor(() => reads === 1 && !!button("Edit access"), "the settings");
+      await flush();
+      button("Edit access")!.click();
+      await waitFor(() => accessDialog()?.textContent?.includes("Bob Marley") === true, "the access dialog");
+      Array.from(row("Ada Lovelace").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Staff"))!
+        .click();
+      row("Bob Marley").querySelector<HTMLButtonElement>('button[aria-label="Remove Bob Marley"]')!.click();
+      await waitFor(() => accessDialog()?.textContent?.includes("2 changes") === true, "two changes");
+      button("Save")!.click();
+      await waitFor(() => !!accessDialog()?.querySelector('[role="alert"]'), "the failed removal");
+      expect(writes).toEqual(["PATCH ada", "DELETE bob"]);
+      button("Cancel")!.click();
+      await waitFor(() => !accessDialog() && reads === 2, "one reload after the dialog");
+      // The reload failed: the saved change is reported, and editing waits until the settings are read again.
+      await waitFor(() => error.mock.calls.length === 1, "the reload failure");
+      await waitFor(() => !button("Edit access"), "editing to wait for a fresh read");
+      await waitFor(() => {
+        dom.root.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click();
+        return closed !== undefined;
+      }, "the settings to close");
+      expect(closed).toBe(true);
+    } finally {
+      dispose();
+      confirm.mockRestore();
+      error.mockRestore();
       globalThis.fetch = originalFetch;
       setSystemTime();
       dom.cleanup();
