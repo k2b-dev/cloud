@@ -1,6 +1,6 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
+import { CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind, type ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
@@ -23,6 +23,13 @@ type Entity =
         status: "active" | "disabled";
       };
     };
+/** A service account found by its identifier, ready to become a row. */
+export type FoundServiceAccount = {
+  principal: Principal;
+  display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
+  /** The server's line under the name, such as "Service account of a mailbox". */
+  description?: string;
+};
 /** The service-account facts a consumer can check before offering an account. */
 export type PrincipalPickerServiceAccount = Extract<Entity, { kind: "service_account" }>["serviceAccount"];
 /** Shared identity selector; the consumer owns the meaning of the assignment. */
@@ -47,6 +54,12 @@ export default function PrincipalPicker(props: {
   signedIn?: { label: string; description: string };
   /** Replaces the default text when a search finds nobody. */
   empty?: JSX.Element;
+  /**
+   * Looks up an exact Code identifier (`code-` and 10 characters) with the resource as the target, as the consumer's
+   * own identifier field does. Such a query asks only this lookup, never the directory, so names never find these
+   * accounts; the hit carries the "Service account" badge.
+   */
+  findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (
     principal: Principal,
@@ -62,6 +75,7 @@ export default function PrincipalPicker(props: {
     description?: string;
     avatarHash?: string | null;
     serviceAccountKind?: ServiceAccountKind;
+    badge?: string;
   };
   let selectable = new Map<string, Entry>();
   const load = async (search: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
@@ -79,7 +93,23 @@ export default function PrincipalPicker(props: {
         label: principalLabel({ principal: { type: "public" } }, locale()),
         icon: "ti ti-world",
       });
-    if (search.length >= 2) {
+    const handle = search.trim();
+    if (props.findServiceAccount && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
+      const found = await props.findServiceAccount(handle, signal);
+      if (found) {
+        const kind = found.display.serviceAccountKind ?? "code";
+        const display = serviceAccountKindDisplay(kind, t());
+        entries.push({
+          principal: found.principal,
+          label: found.display.displayName,
+          icon: `ti ${display.icon}`,
+          description: found.description ?? display.label,
+          avatarHash: found.display.avatarHash,
+          serviceAccountKind: kind,
+          badge: t().codeServiceAccount,
+        });
+      }
+    } else if (search.length >= 2) {
       const url = new URL("/api/accounts/entities", window.location.origin);
       url.searchParams.set("search", search);
       const kinds = (props.kinds ?? ["user", "group"]).join(",");
@@ -151,7 +181,13 @@ export default function PrincipalPicker(props: {
     const filtered = entries.filter((e) => !existing.has(principalKey(e.principal)) && found(e));
     if (signal.aborted) return [];
     selectable = new Map(filtered.map((e) => [principalKey(e.principal), e]));
-    return filtered.map((e) => ({ id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description }));
+    return filtered.map((e) => ({
+      id: principalKey(e.principal),
+      label: e.label,
+      icon: e.icon,
+      description: e.description,
+      badge: e.badge,
+    }));
   };
   return (
     <Combobox

@@ -7866,7 +7866,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-.k2b-ui .k2b-choice-option > span:not(.k2b-choice-option__checkbox, .k2b-choice-dot) {
+.k2b-ui .k2b-choice-option > span:not(.k2b-choice-option__checkbox, .k2b-choice-dot, .k2b-choice-option__badge) {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -7896,6 +7896,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   overflow-wrap: anywhere;
+}
+
+/* A result's kind sits at the end of its row and never shrinks into the name. */
+.k2b-ui .k2b-choice-option__badge {
+  flex: 0 0 auto;
 }
 
 /* A second line, such as an address, wraps at 16rem instead of widening the popover, as in a menu. */

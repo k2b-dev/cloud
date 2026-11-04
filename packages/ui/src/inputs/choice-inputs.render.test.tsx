@@ -324,6 +324,11 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain("Type to search...");
     expect(cssRule(".k2b-ui .k2b-combobox__input > i:first-child")).toContain("margin-inline: 0.625rem 0");
     expect(cssRule(".k2b-ui .k2b-combobox__input > i:last-child")).toContain("margin-inline: 0 0.625rem");
+    // A result's badge keeps its size at the end of the row; the text column never takes it in.
+    expect(cssRule(".k2b-ui .k2b-choice-option__badge")).toContain("flex: 0 0 auto");
+    expect(
+      cssRule(".k2b-ui .k2b-choice-option > span:not(.k2b-choice-option__checkbox, .k2b-choice-dot, .k2b-choice-option__badge)"),
+    ).toContain("flex: 1");
   });
 
   test("renders multi-select values and listbox state", () => {

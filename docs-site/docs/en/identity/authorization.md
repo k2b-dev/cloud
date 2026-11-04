@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Resource authorization
@@ -722,7 +722,14 @@ hide while adding an account. Long names wrap instead of being cut. Pass
 `entryDetail` to show the account's `serviceAccountDescription`, such as
 "Service account of a mailbox", as its second line. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
-and never searches by name. Without the callback the **Service accounts**
+and never searches by name. The search for people asks the same callback when
+someone types an exact Code identifier (`code-` and 10 characters, exported as
+`CODE_ACCOUNT_HANDLE_PATTERN` from `@k2b/cloud/contracts`) instead of the
+directory. Its hit carries the "Service account" badge, says that it goes to
+Service accounts, and becomes a new row in that section; return `description`
+from the callback with the server's `serviceAccount.description`, such as
+"Service account of a mailbox", for its second line. A name, a prefix, or an
+identifier your server refuses finds nothing there. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
 as the resource's object API keys. The caller builds them before the dialog
 owns them, so they cannot rely on cleanup; tie their requests to the `signal`
@@ -754,7 +761,10 @@ revoke callbacks. Each row explains that anyone editing the Code acts with
 this permission. Existing loading, save, failure and retry feedback applies.
 
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
-name-search path; the general directory excludes Code accounts. Exact handle
+name-search path; the general directory excludes Code accounts. Pass
+`findServiceAccount(handle, signal)` with the resource as the target to let an
+exact identifier find the account: such a query asks only that lookup, and the
+hit carries a "Service account" badge. Exact handle
 lookup requires a target that the caller manages, as described in
 [Code account handles](/en/docs/identity/code-service-account-handles).
 

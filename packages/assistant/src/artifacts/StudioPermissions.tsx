@@ -37,6 +37,7 @@ export const findStudioServiceAccount = async (
   return {
     principal: { type: "service_account", serviceAccountId: found.serviceAccount.id },
     display: { displayName: found.serviceAccount.name, serviceAccountKind: "code" },
+    description: found.serviceAccount.description,
   };
 };
 

@@ -22,5 +22,6 @@ export const findAiServiceAccount = async (
   return {
     principal: { type: "service_account", serviceAccountId: result.serviceAccount.id },
     display: { displayName: result.serviceAccount.name, serviceAccountKind: result.serviceAccount.kind },
+    description: result.serviceAccount.description,
   };
 };

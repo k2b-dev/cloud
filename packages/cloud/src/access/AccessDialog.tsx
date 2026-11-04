@@ -38,12 +38,11 @@ import {
 import { accessMessages } from "./messages";
 import { type AllowedLevel, type GrantableLevel, levelKey, type ResolvedLevel, resolveAllowedLevels } from "./PermissionEditor";
 import PrincipalAvatar from "./PrincipalAvatar";
-import PrincipalPicker from "./PrincipalPicker";
+import PrincipalPicker, { type FoundServiceAccount } from "./PrincipalPicker";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
-/** A service account found by its identifier, ready to become a row. */
-export type FoundServiceAccount = { principal: Principal; display: DraftDisplay };
+export type { FoundServiceAccount };
 
 export type AccessDialogProps = {
   /** The resource's name, shown in the title and in the confirmation. */
@@ -79,7 +78,8 @@ export type AccessDialogProps = {
   entryDetail?: (entry: AccessEntry) => string | undefined;
   /**
    * Service accounts of objects, added by their identifier: the app looks the identifier up with the resource as the
-   * target, and its server answers only someone who manages that resource. Without it the section lists existing rows.
+   * target, and its server answers only someone who manages that resource. The search for people asks the same lookup
+   * when it gets an exact identifier, and the hit joins this section. Without it the section lists existing rows.
    */
   findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
   /** A further section, such as the resource's object API keys. */
@@ -579,7 +579,19 @@ export function AccessDialog(
               serviceAccountStatus="active"
               placeholder={t().search}
               disabled={saving()}
-              onSelect={(principal, display) => edit((current) => addPrincipal(current, principal, display, firstLevel(principal)))}
+              findServiceAccount={
+                props.findServiceAccount &&
+                (async (value, signal) => {
+                  const account = await props.findServiceAccount!(value, signal);
+                  // The hit says where it goes, since it joins Service accounts rather than the list below the search.
+                  return (
+                    account && { ...account, description: t().serviceAccountJoins({ kind: account.description ?? t().serviceAccount }) }
+                  );
+                })
+              }
+              onSelect={(principal, display) =>
+                edit((current) => addPrincipal(current, principal, display, firstLevel(principal, display.serviceAccountKind)))
+              }
             />
           </Show>
 

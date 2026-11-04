@@ -1,12 +1,14 @@
 import { createEffect, createMemo, createSignal, For, type JSX, on, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
+import { StatusBadge } from "../surfaces/StatusBadge";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
 import type { FieldProps, MaybeAccessor } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 import { useSelectMessages } from "./select-messages";
 
-export type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
+/** `badge` names what kind of result this is, such as "Service account", at the end of the row. */
+export type ComboboxOption = { id: string; label: string; description?: string; icon?: string; badge?: string };
 export type ComboboxProps = FieldProps & {
   readOnly?: boolean;
   query?: MaybeAccessor<string>;
@@ -46,7 +48,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
   let inputRef: HTMLInputElement | undefined;
   let optionRefs: HTMLButtonElement[] = [];
-  const loader = createChoiceLoader(
+  const loader = createChoiceLoader<string, ChoiceOption<string> & { badge?: string }>(
     () => async (value, signal) => (await props.fetchData(value, signal)).map((option) => ({ ...option, value: option.id })),
     // Cloud debounces at 200ms and then pads the response with a 200ms minimum
     // load time to stop the spinner flickering. The spinner here sits in the
@@ -96,10 +98,10 @@ export function Combobox(props: ComboboxProps): JSX.Element {
       setFocusedIndex(-1);
     }
   });
-  const select = (option: ChoiceOption<string>) => {
+  const select = (option: ChoiceOption<string> & { badge?: string }) => {
     if (props.disabled || props.readOnly) return;
     popover.hide();
-    props.onSelect({ id: option.value, label: option.label, description: option.description, icon: option.icon });
+    props.onSelect({ id: option.value, label: option.label, description: option.description, icon: option.icon, badge: option.badge });
     if (props.freeText) {
       loader.cancel();
       focus(-1);
@@ -245,6 +247,9 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                       <strong>{option().label}</strong>
                       <Show when={option().description}>{(description) => <small>{description()}</small>}</Show>
                     </span>
+                    <Show when={option().badge}>
+                      {(badge) => <StatusBadge class="k2b-choice-option__badge" tone="neutral" icon={null} label={badge()} />}
+                    </Show>
                   </button>
                 );
               }}

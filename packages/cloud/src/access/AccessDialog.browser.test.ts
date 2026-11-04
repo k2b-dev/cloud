@@ -68,7 +68,7 @@ const shot = async (page: Page, name: string) => {
 
 const open = async (width: number, locale: string) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
-  await page.route("https://harness.test/tabler.woff2", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
+  await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
   await page.setContent(
     `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style></head>` +
       `<body class="k2b-ui"><script>${harness}</script></body></html>`,
@@ -120,6 +120,42 @@ describe("AccessDialog in a browser", () => {
         });
         expect(overflow).toEqual([]);
         expect(await page.locator("dialog").textContent()).toContain(locale === "de" ? "3 Änderungen" : "3 changes");
+      } finally {
+        await page.close();
+      }
+    });
+
+  // Mockup v31 `editor · A · suche-kennung`: an identifier in the search for people finds the service account.
+  for (const width of [1280, 390])
+    test(`de ${width}px: an identifier in the search shows the marked hit in the sheet and adds it under Dienstkonten`, async () => {
+      const page = await open(width, "de");
+      try {
+        await page.locator("dialog input[role=combobox]").fill("code-7k2q9m4xwt");
+        const option = page.locator('[role="option"]', { hasText: "Code von info@beispiel.de" });
+        await option.waitFor();
+        await settled(page);
+        await shot(page, `de-${width}-suche-kennung`);
+        expect(await option.locator("small").textContent()).toBe("Dienstkonto eines Postfachs · kommt in den Abschnitt Dienstkonten");
+        const fit = await option.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const badge = element.querySelector(".k2b-choice-option__badge")!.getBoundingClientRect();
+          const text = element.querySelector("span")!.getBoundingClientRect();
+          return {
+            inViewport: box.left >= 0 && box.right <= window.innerWidth,
+            badgeInside: badge.right <= box.right && badge.left >= text.right,
+            badgeOneLine: badge.height < 24,
+            badge: element.querySelector(".k2b-choice-option__badge")!.textContent,
+          };
+        });
+        expect(fit).toEqual({ inViewport: true, badgeInside: true, badgeOneLine: true, badge: "Dienstkonto" });
+        await option.click();
+        const section = page.locator("dialog section", { has: page.locator("h2, h3", { hasText: "Dienstkonten" }) });
+        await section.locator("li", { hasText: "Code von info@beispiel.de" }).waitFor();
+        await section.scrollIntoViewIfNeeded();
+        await settled(page);
+        await shot(page, `de-${width}-suche-kennung-added`);
+        expect(await section.locator("li", { hasText: "Code von info@beispiel.de" }).textContent()).toContain("Neu");
+        expect(await page.locator("dialog").textContent()).toContain("Code von info@beispiel.de bekommt");
       } finally {
         await page.close();
       }

@@ -1,5 +1,11 @@
 import type { SQLQuery } from "bun";
-import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
+import {
+  CODE_ACCOUNT_HANDLE_PATTERN,
+  type EntityKind,
+  type EntityListItem,
+  type UserProfile,
+  type UserProvider,
+} from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { codeAccountPresenter } from "../../server/services/code-account-display";
 import { getFreeIpaConfig } from "../freeipa-config";
@@ -429,7 +435,7 @@ export const list = async (
   const codeHandle =
     params.visibility.type !== "directory_shares" &&
     params.codeAccountHandle === params.search?.trim() &&
-    /^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/.test(params.codeAccountHandle ?? "")
+    CODE_ACCOUNT_HANDLE_PATTERN.test(params.codeAccountHandle ?? "")
       ? params.codeAccountHandle!
       : null;
   const pattern = params.search ? `%${escapeLikePattern(params.search.trim().toLowerCase())}%` : null;
