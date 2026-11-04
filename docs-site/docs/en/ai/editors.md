@@ -111,7 +111,8 @@ for Cloud's approval rules.
 | Result | What appears |
 | --- | --- |
 | Replies and thinking | Streamed text |
-| Tool calls | Calls with their current status |
+| Tool calls | Calls with their current status and, once finished, what they returned. A result over 16,000 characters is shortened and says so; the web chat has all of it |
+| New files | A diff of the new file, up to 16,000 characters |
 | Working checklist | The editor's plan |
 | Cards and charts | Text and Markdown tables |
 | Studio apps, secrets, and file previews | A link to the web chat |
@@ -134,13 +135,16 @@ the cld profile.
 ## Continue a session
 
 A new editor thread creates its Cloud chat with the first message. The thread
-list can show Cloud chats too. `cld` remembers which chat each of the newest
-1,000 editor threads uses, outside the cld profile; an older thread opens again
-through its chat in the thread list. Resuming a chat does not replay its history in
+list can show Cloud chats too. `cld` remembers which chat and folder each of
+the newest 1,000 editor threads uses, outside the cld profile; an older thread
+opens again through its chat in the thread list. A thread list for one folder
+shows the threads used in that folder and the chats that no editor folder
+owns, such as chats started on the web. Those chats open in the folder you
+choose. Resuming a chat does not replay its history in
 the editor. If a turn is still running, the editor says so, and Assistant
 follows it again before sending your next message.
 
-Closing the editor does not stop a Cloud turn. Open the web chat to continue
+Closing the editor or one of its threads does not stop a Cloud turn. Open the web chat to continue
 or answer a pending request. Use the editor's Stop action to cancel a turn.
 Stop always ends the editor's turn, also without a connection; the turn may
 then keep running in Cloud until you stop it in the web chat. A Stop before
@@ -156,4 +160,5 @@ a second time, also after resuming the thread.
 Assistant has no plan mode or other modes; a plan toggle in the editor has no
 effect. It ignores MCP servers supplied by the editor and uses Cloud's own
 tools. You cannot steer a turn while it runs. Attach at most 16 files per
-message.
+message. An attached folder is not uploaded: Assistant gets its path and reads
+it with the local tools.

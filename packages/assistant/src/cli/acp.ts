@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -100,6 +101,14 @@ const REQUEST_DEADLINE_MS = 30_000;
 const SHUTDOWN_GRACE_MS = 2_000;
 const SIGN_IN = "Sign in first: run `cld login` in a terminal, then start a new thread.";
 class WebChatRequired extends Error {}
+/** The file name an embedded resource arrives with; a relative or odd URI keeps its last segment. */
+const resourceName = (uri: string) => {
+  try {
+    return basename(new URL(uri).pathname) || "resource";
+  } catch {
+    return basename(uri) || "resource";
+  }
+};
 type Session = {
   id: string;
   cwd: string;
@@ -150,6 +159,8 @@ const coalesce = (last: SessionUpdate, next: SessionUpdate): SessionUpdate | und
 export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpSessionStore } = {}) => {
   const store = options.sessions ?? createAcpSessionStore(host.options);
   const sessions = new Map<string, Session>();
+  // How often each session was closed, so a resume still waiting cannot bring a closed session back.
+  const closes = new Map<string, number>();
   // Shared by every session, so a resumed thread never runs a local call that an earlier one ran.
   const receipts: ClientCallReceipts = new Map();
   let forms = false;
@@ -726,6 +737,11 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
           const access = classifyLocalPath(path, { workspace: s.cwd });
           if (access.access === "blocked")
             throw RequestError.invalidParams(undefined, `Not attached: ${terminalSafeText(path)} is cld's configuration.`);
+          // A folder is no attachment; its path tells Assistant where to look with the local tools.
+          if ((await stat(resolveLocalPath(path, s.cwd)).catch(() => undefined))?.isDirectory()) {
+            text += `\n${path}`;
+            continue;
+          }
           if (access.access === "ask") {
             const reason =
               access.reason === "home"
@@ -744,11 +760,9 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         } else if (part.type === "resource") {
           const resource = part.resource;
           files.push(
-            new File(
-              ["text" in resource ? resource.text : Buffer.from(resource.blob, "base64")],
-              basename(new URL(resource.uri).pathname) || "resource",
-              { type: resource.mimeType ?? ("text" in resource ? "text/plain" : "application/octet-stream") },
-            ),
+            new File(["text" in resource ? resource.text : Buffer.from(resource.blob, "base64")], resourceName(resource.uri), {
+              type: resource.mimeType ?? ("text" in resource ? "text/plain" : "application/octet-stream"),
+            }),
           );
         }
       }
@@ -783,7 +797,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         const conversation = await resolveConversation(ctx, { projectId: s.project });
         s.chat = conversation.id;
         created = true;
-        await store.set(s.id, s.chat).catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
+        await store.set(s.id, s.chat, s.cwd).catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
         // A chat created just now runs no turn and has an empty draft.
         current = { conversation, activeTurn: null };
       } else {
@@ -919,7 +933,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         agentCapabilities: {
           loadSession: false,
           promptCapabilities: { image: true, audio: false, embeddedContext: true },
-          sessionCapabilities: { list: {}, resume: {} },
+          sessionCapabilities: { list: {}, resume: {}, close: {} },
         },
         authMethods: [],
       };
@@ -946,21 +960,29 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       const page = params.cursor == null ? 1 : Number(params.cursor);
       if (params.cursor != null && (!/^[1-9]\d*$/.test(params.cursor) || !Number.isSafeInteger(page)))
         throw RequestError.invalidParams(undefined, "Unknown session list cursor.");
-      const [conversations, known] = await Promise.all([
-        readApi<AiConversationPage>(api, `/conversations/page?page=${page}&perPage=50`),
-        store.sessions(),
-      ]);
+      const conversations = await readApi<AiConversationPage>(api, `/conversations/page?page=${page}&perPage=50`);
+      const known = await store.lookup(conversations.items.map((chat) => chat.id));
       return {
-        sessions: conversations.items.map((chat) => ({
-          sessionId: known.get(chat.id) ?? chat.id,
-          cwd: params.cwd ?? process.cwd(),
-          title: terminalSafeText(chat.title),
-          updatedAt: chat.updatedAt,
-        })),
+        // `cwd` filters: a chat used in another folder stays out, a chat without a folder (from the web) fits every one.
+        sessions: conversations.items.flatMap((chat) => {
+          // With several threads on one chat, the one in the asked folder wins, otherwise the newest.
+          const entries = known.get(chat.id) ?? [];
+          const entry = params.cwd ? (entries.find((e) => e.cwd === params.cwd) ?? entries.find((e) => !e.cwd)) : entries[0];
+          if (params.cwd && entries.length && !entry) return [];
+          return [
+            {
+              sessionId: entry?.session ?? chat.id,
+              cwd: entry?.cwd ?? params.cwd ?? process.cwd(),
+              title: terminalSafeText(chat.title),
+              updatedAt: chat.updatedAt,
+            },
+          ];
+        }),
         ...(conversations.hasNext ? { nextCursor: String(page + 1) } : {}),
       };
     })
     .onRequest("session/resume", async ({ params, client }) => {
+      const closed = closes.get(params.sessionId) ?? 0;
       const profiles = await models();
       const legacyKey = `assistant.acpSession.${params.sessionId}`;
       let chat = await store.chat(params.sessionId);
@@ -968,7 +990,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       const legacy = chat ? undefined : await host.getDefault(legacyKey);
       if (legacy) {
         chat = legacy;
-        await store.set(params.sessionId, legacy);
+        await store.set(params.sessionId, legacy, params.cwd);
         await host.setDefault(legacyKey, undefined);
         await host.setDefault(`assistant.acpChat.${legacy}`, undefined);
       }
@@ -983,7 +1005,17 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
       if (existing) await existing.folder.close();
       const s = await createSession(params.sessionId, params.cwd, client, profiles);
+      // A close that arrived while this resume waited wins; the session does not come back.
+      if ((closes.get(params.sessionId) ?? 0) !== closed) {
+        sessions.delete(s.id);
+        await s.folder.close();
+        throw RequestError.invalidRequest(undefined, "This session was closed.");
+      }
       s.chat = detail.conversation.id;
+      // The thread now works in this folder; a session resumed by its chat ID becomes known too.
+      await store
+        .set(params.sessionId, s.chat, s.cwd)
+        .catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
       s.project = detail.conversation.projectId ?? undefined;
       afterResponse(s, {
         commands: true,
@@ -995,12 +1027,32 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       return { configOptions: config(s) };
     })
     .onRequest("session/prompt", ({ params }) => prompt(getSession(params.sessionId), params.prompt))
+    .onRequest("session/close", async ({ params }) => {
+      closes.set(params.sessionId, (closes.get(params.sessionId) ?? 0) + 1);
+      const s = sessions.get(params.sessionId);
+      if (!s) return {};
+      // Like closing the editor: the prompt ends here, a Cloud turn keeps running in the chat.
+      s.disconnected = true;
+      s.active?.abort();
+      await s.finished;
+      sessions.delete(s.id);
+      await s.folder.close();
+      return {};
+    })
     .onNotification("session/cancel", ({ params }) => {
       sessions.get(params.sessionId)?.active?.abort();
     });
   return { app, close };
 };
 
+// An editor that stops cld still gets every connection's temporary session folders removed before it exits.
+const openConnections = new Set<() => Promise<void>>();
+let stopping = false;
+const stopConnections = (signal: NodeJS.Signals) => {
+  if (stopping) return;
+  stopping = true;
+  void Promise.allSettled([...openConnections].map((close) => close())).finally(() => process.exit(128 + (signal === "SIGTERM" ? 15 : 1)));
+};
 export const runAcpConnection = async (
   ctx: CloudCliContext,
   input: ReadableStream<Uint8Array>,
@@ -1008,8 +1060,15 @@ export const runAcpConnection = async (
 ): Promise<void> => {
   const bridge = createAcpAgent(ctx);
   const connection = bridge.app.connect(ndJsonStream(output, input));
-  await connection.closed;
-  await bridge.close();
+  if (!openConnections.size) for (const signal of ["SIGTERM", "SIGHUP"] as const) process.on(signal, stopConnections);
+  openConnections.add(bridge.close);
+  try {
+    await connection.closed;
+    await bridge.close();
+  } finally {
+    openConnections.delete(bridge.close);
+    if (!openConnections.size) for (const signal of ["SIGTERM", "SIGHUP"] as const) process.off(signal, stopConnections);
+  }
 };
 export const assistantAcpCommand = command("acp", {
   summary: "Run Assistant as an ACP agent for editors such as T3 Code and Zed",

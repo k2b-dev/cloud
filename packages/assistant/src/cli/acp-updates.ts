@@ -20,7 +20,7 @@ import type { CloudCliTableColumn } from "@k2b/cloud/cli";
 import { resolveLocalPath } from "./local-paths";
 import { localToolTarget } from "./local-tool-target";
 import type { LocalQuestionKind } from "./local-tools";
-import { terminalSafeText } from "./terminal";
+import { terminalSafeModelText, terminalSafeText } from "./terminal";
 
 export type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 export type ApprovalAction = Extract<AiPendingTurnAction, { type: "approval_request" }>;
@@ -42,6 +42,55 @@ export const boundedRaw = (value: unknown): unknown => {
 export const toolContent = (text: string): ToolCallContent[] => [
   { type: "content", content: { type: "text", text: terminalSafeText(text) } },
 ];
+/** Markdown code block whose fence no backtick run inside the text can close. */
+const fenced = (text: string, language = "") => {
+  const fence = "`".repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map((run) => run[0].length + 1)));
+  return `${fence}${language}\n${text}\n${fence}`;
+};
+/**
+ * The visible form of a result, at most RAW_MAX_CHARS characters in total: escaped first, so escapes cannot grow it,
+ * then shortened until its fence and notice fit too.
+ */
+const visible = (raw: string, language: string, footer = ""): ToolCallContent[] => {
+  const safe = terminalSafeModelText(raw);
+  let budget = RAW_MAX_CHARS;
+  for (;;) {
+    const shown = safe.slice(0, budget);
+    const notice =
+      shown.length < safe.length
+        ? `\nShortened to the first ${shown.length.toLocaleString("en-US")} of ${safe.length.toLocaleString("en-US")} characters. The Cloud chat has the full result.`
+        : "";
+    const text = [shown ? fenced(shown, language) : "", footer].filter(Boolean).join("\n") + notice;
+    if (text.length <= RAW_MAX_CHARS || budget === 0) return [{ type: "content", content: { type: "text", text } }];
+    budget = Math.max(0, budget - (text.length - RAW_MAX_CHARS));
+  }
+};
+/** What a finished call returned, as bounded text the editor shows; long results end with a notice. */
+export const resultContent = (name: string, result: unknown): ToolCallContent[] => {
+  if (result === undefined || result === null || name === "todo_write") return [];
+  if (name === "local_bash" && typeof result === "object" && "stdout" in result) {
+    const { stdout, stderr, exitCode } = result as { stdout?: unknown; stderr?: unknown; exitCode?: unknown };
+    const output = [typeof stdout === "string" ? stdout : "", typeof stderr === "string" && stderr ? `stderr:\n${stderr}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    return visible(output, "console", typeof exitCode === "number" ? `Exit code ${exitCode}` : "");
+  }
+  const json = typeof result === "string" ? undefined : JSON.stringify(result, null, 2);
+  return visible(json ?? String(result), json === undefined ? "" : "json");
+};
+/**
+ * A new file the editor can show as a diff: its whole text is known from the call. A replacement shows its result
+ * instead, because only the write itself knows the text it replaced.
+ */
+const createDiff = (block: ToolBlock, cwd: string): ToolCallContent[] | undefined => {
+  const { args, result } = block;
+  if (block.name !== "local_write" || !args || typeof args !== "object" || !("mode" in args) || args.mode !== "create") return undefined;
+  if (!("path" in args) || typeof args.path !== "string" || !("content" in args) || typeof args.content !== "string") return undefined;
+  // A completed call can still report a failed or denied write.
+  if (!result || typeof result !== "object" || !("status" in result) || result.status !== "completed") return undefined;
+  if (args.content.length > RAW_MAX_CHARS) return undefined;
+  return [{ type: "diff", path: resolveLocalPath(args.path, cwd), oldText: null, newText: args.content }];
+};
 export const toolCall = (block: ToolBlock, cwd: string, fits = false): ToolCall => {
   const raw = (value: unknown) => (fits ? value : boundedRaw(value));
   const args = block.args;
@@ -69,7 +118,11 @@ export const toolCall = (block: ToolBlock, cwd: string, fits = false): ToolCall 
     locations: [...new Set(paths)].map((path) => ({ path: resolveLocalPath(path, cwd) })),
     ...(raw(args) !== undefined ? { rawInput: args } : {}),
     ...(raw(result) !== undefined ? { rawOutput: result } : {}),
-    content: failed ? toolContent(typeof error === "string" ? error : (JSON.stringify(error) ?? block.status)) : [],
+    content: failed
+      ? toolContent(typeof error === "string" ? error : (JSON.stringify(error) ?? block.status))
+      : block.status === "completed"
+        ? (createDiff(block, cwd) ?? resultContent(block.name, result))
+        : [],
   };
 };
 export const planEntries = (args: unknown): PlanEntry[] | undefined =>
