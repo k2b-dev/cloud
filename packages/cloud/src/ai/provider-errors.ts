@@ -103,6 +103,11 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
                 : classifyProviderFailure(failure(event.issue)),
             );
         }
+        // A provider that stops the answer itself (a gateway error, a filter) did not serve it, as for a failed complete() before.
+        if (event.type === "usage" && event.finishReason === "error" && !failed) {
+          failed = true;
+          if (providerId && !request.signal?.aborted) await recordAiProviderStatus(providerId, classifyProviderFailure(failure({})));
+        }
         yield event.type === "issue" ? { type: "issue", issue: providerIssue(event.issue, request.tools) } : event;
       }
       if (providerId && !failed && !request.signal?.aborted)

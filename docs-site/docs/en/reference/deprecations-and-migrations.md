@@ -13,8 +13,11 @@ updated: 2026-11-04
 ## AI providers use their OpenAI-compatible endpoints
 
 Cloud now uses Nessi 1.0, which has one chat adapter for OpenAI-compatible
-endpoints. Every provider type keeps its name, default address and stored
-connection; nothing needs to be migrated. Review these differences:
+endpoints. Every provider type keeps its name, stored connection and context
+window. An address stored for a native API reaches the same service's
+OpenAI-compatible API: Anthropic and Ollama addresses get `/v1`, and a Gemini
+address ending in `/v1beta` or `/v1beta/models` uses `/v1beta/openai`. Review
+these differences:
 
 - **Anthropic** runs through Anthropic's OpenAI SDK compatibility at
   `https://api.anthropic.com/v1`. It returns no thinking text, ignores the
@@ -22,7 +25,8 @@ connection; nothing needs to be migrated. Review these differences:
   Anthropic describes this layer as meant for testing and comparison. Budget
   reservations no longer assume an output limit of 8,192 tokens.
 - **Gemini** receives the thinking level as `reasoning_effort` instead of
-  `thinkingConfig`; structured tasks send `none`.
+  `thinkingConfig`; structured tasks send `none`. Thought signatures of tool
+  calls are kept and sent back, as Gemini 3 requires.
 - **Ollama** is reached under `/v1` of its stored address. A profile's
   `contextWindow` is no longer sent as `num_ctx`; set the context length in
   Ollama itself, for example with `OLLAMA_CONTEXT_LENGTH` or the model's

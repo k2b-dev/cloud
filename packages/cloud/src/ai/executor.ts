@@ -125,12 +125,13 @@ const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 
-// Failed generation can contain calls that nessi deliberately never executes or resumes.
+// Failed or cut-off generation can contain calls that nessi deliberately never executes or resumes.
 // Malformed calls are skipped too: they never run.
 const isToolRound = (message: AssistantMessage): boolean =>
   message.stopReason !== "error" &&
   message.stopReason !== "interrupted" &&
   message.stopReason !== "aborted" &&
+  message.stopReason !== "max_tokens" &&
   message.content.some((block) => block.type === "tool_call" && !isMalformedToolCallId(block.id));
 
 const toolRoundState = (messages: AiStoredMessage[]): { issued: number; completed: number } => {

@@ -24,8 +24,22 @@ export const taskReasoningEffort = (type: AiProviderType): ReasoningEffort | und
   }
 };
 
+type Endpoint = {
+  baseURL: string;
+  compat: OpenAICompat;
+  /** The window before Nessi 1.0, when the profile names none. */
+  contextWindow?: number;
+  /** Turns an address stored for the provider's native API into its OpenAI-compatible one. */
+  chatURL?: (baseURL: string) => string;
+};
+
+const withSuffix = (suffix: string) => (baseURL: string) => {
+  const trimmed = baseURL.replace(/\/+$/, "");
+  return trimmed.endsWith(suffix) ? trimmed : `${trimmed}${suffix}`;
+};
+
 /** Every provider type is an OpenAI-compatible endpoint with its own address and request details. */
-const endpoints: Record<Exclude<AiProviderType, "vllm-realtime" | "openai-compatible">, { baseURL: string; compat: OpenAICompat }> = {
+const endpoints: Record<Exclude<AiProviderType, "vllm-realtime" | "openai-compatible">, Endpoint> = {
   openai: {
     baseURL: "https://api.openai.com/v1",
     compat: { maxTokensField: "max_completion_tokens", structuredOutput: "response_format", thinkingFormat: "none" },
@@ -55,15 +69,22 @@ const endpoints: Record<Exclude<AiProviderType, "vllm-realtime" | "openai-compat
   anthropic: {
     baseURL: "https://api.anthropic.com/v1",
     compat: { maxTokensField: "max_tokens", structuredOutput: "response_format", thinkingFormat: "none" },
+    contextWindow: 200_000,
+    // The native adapter appended /v1/messages to a stored root address.
+    chatURL: withSuffix("/v1"),
   },
   gemini: {
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     compat: { maxTokensField: "max_tokens", structuredOutput: "response_format" },
+    contextWindow: 1_000_000,
+    // The native adapter used .../v1beta/models; the OpenAI API lives under .../v1beta/openai.
+    chatURL: (baseURL) => withSuffix("/openai")(baseURL.replace(/\/+$/, "").replace(/\/models$/, "")),
   },
   // Ollama serves the OpenAI API under /v1 of its own address; the model's context length comes from Ollama itself.
   ollama: {
     baseURL: "http://localhost:11434",
     compat: { maxTokensField: "max_tokens", structuredOutput: "response_format" },
+    chatURL: withSuffix("/v1"),
   },
   vllm: {
     baseURL: "http://localhost:8000/v1",
@@ -76,11 +97,6 @@ const endpoints: Record<Exclude<AiProviderType, "vllm-realtime" | "openai-compat
       structuredOutput: "vllm_structured_outputs",
     },
   },
-};
-
-const ollamaChatURL = (baseURL: string) => {
-  const trimmed = baseURL.replace(/\/+$/, "");
-  return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
 };
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
@@ -104,20 +120,16 @@ const createAdapter = (profile: AiModelProfile, apiKey?: string, headers?: Recor
     case "openai-compatible":
       if (!profile.baseURL) throw new Error(`AI model profile "${profile.id}" requires baseURL for openai-compatible provider.`);
       return openAICompatible({ ...common, name: profile.id, baseURL: profile.baseURL, headers });
-    case "ollama":
-      return openAICompatible({
-        ...common,
-        name: "ollama",
-        apiKey: undefined,
-        baseURL: ollamaChatURL(profile.baseURL ?? endpoints.ollama.baseURL),
-        compat: endpoints.ollama.compat,
-      });
     default: {
       const endpoint = endpoints[profile.provider];
+      const baseURL = profile.baseURL ?? endpoint.baseURL;
       return openAICompatible({
         ...common,
         name: profile.provider,
-        baseURL: profile.baseURL ?? endpoint.baseURL,
+        // Ollama takes no key.
+        apiKey: profile.provider === "ollama" ? undefined : apiKey,
+        baseURL: endpoint.chatURL ? endpoint.chatURL(baseURL) : baseURL,
+        contextWindow: profile.contextWindow ?? endpoint.contextWindow,
         compat: endpoint.compat,
         // Only self-hosted endpoints take request headers; the admin offers them for no other type.
         ...(profile.provider === "vllm" ? { headers } : {}),

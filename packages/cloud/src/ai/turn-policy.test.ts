@@ -74,10 +74,10 @@ describe("tool round limit", () => {
     expect(await call()).toEqual({ tools: [tool], prompt: "Base prompt" });
   });
 
-  test("reserves one tool-free provider call for the final answer", async () => {
+  test("reserves one tool-free provider call for the final answer, and two for nessi's repairs", async () => {
     const { policy, call } = setup({ maxToolRounds: 1 });
 
-    expect(policy.maxTurns).toBe(2);
+    expect(policy.maxTurns).toBe(4);
     expect((await call()).tools).toEqual([tool]);
     policy.noteToolRound();
     const final = await call();
@@ -89,7 +89,7 @@ describe("tool round limit", () => {
   test("counts persisted tool rounds across resumed workers", async () => {
     const { policy, call } = setup({ maxToolRounds: 2, issuedToolRounds: 2, completedToolRounds: 2 });
 
-    expect(policy.maxTurns).toBe(1);
+    expect(policy.maxTurns).toBe(3);
     const final = await call();
     expect(final.tools).toEqual([]);
     expect(final.prompt).toContain("no more tools are available");
@@ -98,7 +98,7 @@ describe("tool round limit", () => {
   test("keeps a pending last-round tool available until its resumed execution completes", async () => {
     const { policy } = setup({ maxToolRounds: 1, issuedToolRounds: 1, completedToolRounds: 0 });
 
-    expect(policy.maxTurns).toBe(1);
+    expect(policy.maxTurns).toBe(3);
     expect(await policy.tools()).toEqual([tool]);
     policy.noteToolRound();
     expect(await policy.tools()).toEqual([]);

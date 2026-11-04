@@ -5,8 +5,14 @@ import { withProviderErrors } from "./provider-errors";
 
 afterEach(() => mock.restore());
 
-const expectedStatus = { stream: "ok", "stream-issue": "error", "stream-rejected": "key_rejected", "stream-error": "unreachable" } as const;
-for (const mode of ["stream", "stream-error", "stream-issue", "stream-rejected"] as const)
+const expectedStatus = {
+  stream: "ok",
+  "stream-issue": "error",
+  "stream-rejected": "key_rejected",
+  "stream-error": "unreachable",
+  "stream-stopped": "error",
+} as const;
+for (const mode of ["stream", "stream-error", "stream-issue", "stream-rejected", "stream-stopped"] as const)
   test(`provider status is settled before ${mode} returns`, async () => {
     const statusStarted = Promise.withResolvers<void>();
     const statusFinished = Promise.withResolvers<void>();
@@ -25,6 +31,8 @@ for (const mode of ["stream", "stream-error", "stream-issue", "stream-rejected"]
         if (mode === "stream-rejected") request.onTransport?.({ startedAt: Date.now(), headersAt: Date.now(), status: 401 });
         if (mode === "stream-issue" || mode === "stream-rejected")
           yield { type: "issue", issue: { kind: "provider_error", message: "fixture", retryable: false } };
+        // The provider stopped the answer itself, as a failed complete() reported it before.
+        if (mode === "stream-stopped") yield { type: "usage", usage: { input: 1, output: 0, total: 1 }, finishReason: "error" };
       },
     };
     const safe = withProviderErrors(provider, "fixture");

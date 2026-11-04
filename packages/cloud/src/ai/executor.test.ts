@@ -1275,7 +1275,7 @@ test("turn policy ignores malformed-only rounds and counts mixed rounds by their
   expect(__aiExecutorTest.toolRoundState([mixed, ordinaryResult])).toEqual({ issued: 1, completed: 1 });
 });
 
-for (const stopReason of ["error", "interrupted", "aborted"] as const)
+for (const stopReason of ["error", "interrupted", "aborted", "max_tokens"] as const)
   test(`a ${stopReason} answer never counts as an issued or completed tool round`, () => {
     const message = {
       role: "assistant" as const,

@@ -75,9 +75,13 @@ describe("AI provider factory", () => {
         ["mistral", undefined, "https://api.mistral.ai/v1/chat/completions", "max_tokens"],
         ["anthropic", undefined, "https://api.anthropic.com/v1/chat/completions", "max_tokens"],
         ["gemini", undefined, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "max_tokens"],
-        // Ollama serves the OpenAI API under /v1 of the address stored for its native API.
+        // Addresses stored for a native API reach the OpenAI-compatible one of the same service.
         ["ollama", "http://ollama.example.test:11434/", "http://ollama.example.test:11434/v1/chat/completions", "max_tokens"],
         ["ollama", "http://ollama.example.test:11434/v1", "http://ollama.example.test:11434/v1/chat/completions", "max_tokens"],
+        ["anthropic", "https://claude.example.test", "https://claude.example.test/v1/chat/completions", "max_tokens"],
+        ["anthropic", "https://claude.example.test/v1/", "https://claude.example.test/v1/chat/completions", "max_tokens"],
+        ["gemini", "https://g.example.test/v1beta/models", "https://g.example.test/v1beta/openai/chat/completions", "max_tokens"],
+        ["gemini", "https://g.example.test/v1beta", "https://g.example.test/v1beta/openai/chat/completions", "max_tokens"],
       ] as const;
       for (const [provider, baseURL, url, maxTokensField] of cases) {
         sent.length = 0;
@@ -90,6 +94,12 @@ describe("AI provider factory", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test("Anthropic and Gemini keep their large context windows unless the profile names one", () => {
+    expect(createAiProvider(profile({ provider: "anthropic" }), "k").contextWindow).toBe(200_000);
+    expect(createAiProvider(profile({ provider: "gemini" }), "k").contextWindow).toBe(1_000_000);
+    expect(createAiProvider(profile({ provider: "gemini", contextWindow: 32_000 }), "k").contextWindow).toBe(32_000);
   });
 
   test("requires baseURL for custom OpenAI-compatible providers", () => {
