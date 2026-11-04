@@ -961,6 +961,7 @@ export function CodeAreaView(props: Props) {
     return (
       <div class="grid content-start gap-4 px-2 pt-1 pb-6">
         <p class="text-sm text-(--k2b-text-muted)">{t.cleanupLead}</p>
+        <p class="text-sm text-(--k2b-text-muted)">{t.cleanupAccessNote}</p>
         <Show
           when={jobs.length || query.after}
           fallback={<Placeholder icon="ti ti-recycle" title={t.emptyCleanup} description={t.emptyCleanupSub} />}

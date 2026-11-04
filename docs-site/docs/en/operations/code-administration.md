@@ -5,7 +5,7 @@ section: Operations
 order: 1256
 description: Approve Code versions, edit the Code policy, see all Code, waiting cleanup, limits and runner capacity.
 tags: [operations, code, policy, approvals, administration]
-updated: 2026-11-01
+updated: 2026-11-04
 ---
 
 # Administration › Code
@@ -23,7 +23,7 @@ number of open Code-version approvals for the signed-in Cloud administrator.
 | Approvals | Versions that wait for a Cloud administrator, and recently decided versions | [Code versions](/en/docs/platform/code-versions) |
 | Code in this Cloud | Every Code with owner, status and last run. A resource owner shows the name its app's reader gives you, or its ID when you may not read it | [Code data model](/en/docs/platform/code-data-model) |
 | Policies › Default, Groups, Effective for …, History | The policy table, group rules, the resolved table for one person, and recent changes from the audit log | [Code policy](/en/docs/platform/code-policy) |
-| Operations › Cleanup | Cleanup jobs that wait for a target app | [Code lifecycle](/en/docs/platform/code-lifecycle) |
+| Operations › Cleanup | Pending Code deletion jobs, with status, attempts and the last error | [Code lifecycle](/en/docs/platform/code-lifecycle) |
 | Operations › Limits | Registered Code execution and storage settings | [Code policy operations](/en/docs/operations/code-policy) |
 | Operations › Runners | Instances, free slots, queue length, longest wait | [Code runner](/en/docs/operations/code-runner) |
 
@@ -110,6 +110,17 @@ capabilities and `cld code`:
 | `POST /api/code/admin/policy/update` | Replace the table at the read revision |
 
 A stale revision, hash or comparison returns `409`.
+
+## Pending Code deletion
+
+When a Code owner is deleted, Cloud stops its Code and schedules deletion.
+**Cleanup** shows pending deletion jobs, including jobs waiting for an
+activation to drain. Cloud retries automatically; completed jobs disappear.
+An empty list means no Code deletion jobs are pending.
+
+To change a service account's access, use the target's normal share dialog.
+You must manage that target; the Cloud administrator role alone does not give
+that permission. Cleanup provides no action to remove target access.
 
 ## Runner section
 

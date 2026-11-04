@@ -231,13 +231,34 @@ test("policy, groups and effective rows render with their sources", () => {
   expect(render({ sec: "history" }, "fail")).toContain("Konnte nicht geladen werden");
 });
 
-test("cleanup, limits and runners render their data, empty and error states", () => {
+test("cleanup shows orphaned Code deletion and retries, while access stays in the target's normal share dialog", () => {
   const cleanup = render({ sec: "cleanup" });
-  expect(cleanup).toContain("Zugriff entfernen");
+  expect(cleanup).toContain("Code löschen");
+  expect(cleanup).toContain("Code von alt@");
+  expect(cleanup).toContain("Wird der Besitzer eines Codes gelöscht, stoppt Cloud den Code und plant seine Löschung.");
+  expect(cleanup).toContain("Den Zugriff eines Dienstkontos änderst du im normalen Teilen-Dialog des Ziels, wenn du das Ziel verwaltest.");
   expect(cleanup).toContain("Wartet auf Wiederholung");
   expect(cleanup).toContain("3 Versuche");
-  expect(cleanup).toContain("letzter Fehler: target_unreachable");
-  expect(render({ sec: "cleanup" }, "empty")).toContain("Nichts aufzuräumen");
+  expect(cleanup).toContain("letzter Fehler: code_activation_draining");
+  const empty = render({ sec: "cleanup" }, "empty");
+  expect(empty).toContain("Nichts aufzuräumen");
+  expect(empty).toContain("Es warten keine Löschaufträge für Code.");
+  expect(empty).toContain("im normalen Teilen-Dialog des Ziels");
+  const english = render({ sec: "cleanup" }, "normal", "en");
+  expect(english).toContain("Delete Code");
+  expect(english).toContain("When a Code owner is deleted, Cloud stops the Code and schedules its deletion.");
+  expect(english).toContain("use the target's normal share dialog. You must manage that target.");
+  expect(render({ sec: "cleanup" }, "empty", "en")).toContain("No Code deletion jobs are pending.");
+  for (const html of [cleanup, empty, english]) {
+    expect(html).not.toMatch(/Zugriff entfernen|Remove access|target_unreachable/);
+    expect(html).not.toMatch(/Ziel-App nicht erreichbar|target app is unreachable/);
+  }
+  const failed = render({ sec: "cleanup" }, "fail");
+  expect(failed).toContain("Konnte nicht geladen werden");
+  expect(failed).toContain("Erneut versuchen");
+});
+
+test("limits and runners render their data, empty and error states", () => {
   const limits = render({ sec: "limits" });
   for (const label of [
     "Wanduhr je Lauf (ms)",
