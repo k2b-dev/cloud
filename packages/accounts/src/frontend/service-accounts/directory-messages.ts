@@ -4,7 +4,7 @@ export const directoryMessages = i18n.define({
   messages: {
     en: {
       title: "Directory access",
-      machine: "Agent or service account",
+      machine: "Agent",
       choose: "Choose an account",
       hint: "Share only the directory entries this account needs to find by name. This does not grant resource access or reveal group membership.",
       entries: "Visible directory entries",
@@ -18,11 +18,11 @@ export const directoryMessages = i18n.define({
       previous: "Previous",
       next: "Next",
       agent: "Agent",
-      service: "Service account",
+      service: "Agent (API key only)",
     },
     de: {
       title: "Verzeichniszugriff",
-      machine: "Agent oder Dienstkonto",
+      machine: "Agent",
       choose: "Konto auswählen",
       hint: "Gib nur die Verzeichniseinträge frei, die dieses Konto nach Namen finden soll. Das erteilt keine Ressourcenrechte und zeigt keine Gruppenmitgliedschaften.",
       entries: "Sichtbare Verzeichniseinträge",
@@ -36,7 +36,7 @@ export const directoryMessages = i18n.define({
       previous: "Zurück",
       next: "Weiter",
       agent: "Agent",
-      service: "Dienstkonto",
+      service: "Agent (nur API Key)",
     },
   },
 });

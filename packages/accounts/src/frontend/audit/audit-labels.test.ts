@@ -11,7 +11,7 @@ describe("localized audit labels", () => {
       "Benutzer",
       "Gruppen",
       "Anfragen",
-      "Dienstkonten",
+      "API Keys",
       "Assistant-Freigaben",
     ]);
   });

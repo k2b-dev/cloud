@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Run Studio apps with a machine identity
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 An agent or standalone service account can execute a published Studio app
 without a human conversation or an open browser. The caller keeps its own
 identity. Its creator's permissions, personal data, secrets and remembered

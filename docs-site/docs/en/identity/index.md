@@ -10,6 +10,8 @@ updated: 2026-10-10
 
 # Identity and access
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Cloud owns accounts, sessions, credentials, roles, groups, and permission
 primitives so every installed application receives the same caller model. Your
 application remains the authority for its own resources and domain operations.
@@ -36,6 +38,7 @@ on the same permission-aware application service.
 
 | Task | Page |
 | --- | --- |
+| Understand the access model | [Who may do what](/en/docs/identity/access-model) |
 | Understand the actor and access subject | [Request identity](/en/docs/identity/authentication) |
 | Assign local Linux attributes and backfill existing accounts alongside FreeIPA | [Linux identities](/en/docs/operations/linux-identities) |
 | Choose who may use an application | [App access](/en/docs/identity/app-access) |

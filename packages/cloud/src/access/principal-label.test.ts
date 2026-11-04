@@ -7,7 +7,11 @@ describe("principalLabel", () => {
   const cases: { principal: Principal; serviceAccountKind?: ServiceAccountKind; en: string; de: string }[] = [
     { principal: { type: "user", userId: id }, en: "Unknown person", de: "Unbekannte Person" },
     { principal: { type: "group", groupId: id }, en: "Deleted group", de: "Gelöschte Gruppe" },
-    { principal: { type: "service_account", serviceAccountId: id }, en: "Unknown service account", de: "Unbekanntes Dienstkonto" },
+    {
+      principal: { type: "service_account", serviceAccountId: id },
+      en: "Unknown agent or service account",
+      de: "Unbekannter Agent oder unbekanntes Dienstkonto",
+    },
     {
       principal: { type: "service_account", serviceAccountId: id },
       serviceAccountKind: "agent",

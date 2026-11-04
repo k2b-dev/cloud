@@ -10,6 +10,8 @@ updated: 2026-11-03
 
 # App access
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Declare `access` in `defineApp()` to choose who may use your application.
 Cloud evaluates this rule before application code and uses it to filter
 application discovery. Resource permissions still decide what a caller may do

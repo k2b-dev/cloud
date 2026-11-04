@@ -183,7 +183,7 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 - **View** for reading, search, comments, and personal reminders.
 - **Edit** for sending, provider mail operations, and collaboration changes.
 - **Manage** for transport, sharing, rules, workflows, and the mailbox lifecycle.
-- **View assigned only** or **Edit assigned only** for people, groups, agents, and standalone service accounts that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
+- **View assigned only** or **Edit assigned only** for people, groups, and agents that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
 
 **Automatic reply management access** is a mailbox setting above the access list:
 
@@ -222,7 +222,7 @@ The CLI offers the same recovery tools:
 
 - `cld mail admin mailbox list` finds mailboxes, including mailboxes that the current administrator cannot open.
 - `cld mail admin mailbox get <mailbox>` shows one redacted operations record.
-- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` changes direct access for users, groups, or service accounts.
+- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` changes direct access for users, groups, agents, or service accounts.
 - `cld mail admin storage show|reconcile` reads or refreshes the storage data.
 
 **Refresh storage snapshot** queues a background reconciliation. The page and `cld mail admin storage show` continue to show the last completed snapshot until that job finishes. Queuing the job does not update the numbers immediately. These values are observability data, not storage quotas, and they offer no drilldown into content.

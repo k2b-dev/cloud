@@ -548,13 +548,13 @@ const germanText: Record<string, string> = {
     "Nutze die Modelle des Assistenten in anderen Apps über eine OpenAI-kompatible API.",
   Connection: "Verbindung",
   "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.":
-    "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API-Schlüssel und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
+    "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API Key und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
   "Base URL": "Base-URL",
   "Copy base URL": "Base-URL kopieren",
-  "API key": "API-Schlüssel",
+  "API key": "API Key",
   "In your profile, create a key with the access “AI models only”.":
     "Erstelle in deinem Profil einen Schlüssel mit dem Zugriff „Nur KI-Modelle“.",
-  "Create API key": "API-Schlüssel erstellen",
+  "Create API key": "API Key erstellen",
   Models: "Modelle",
   "Use one of these model IDs. Requests count toward your Assistant usage limits.":
     "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits im Assistenten.",

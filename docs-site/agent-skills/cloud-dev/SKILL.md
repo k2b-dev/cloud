@@ -39,8 +39,8 @@ exports, types, and focused tests.
 ## Own the application boundary
 
 Cloud owns identity, access semantics, routing, registration, and shared
-services. The application owns its domain, permissions, Hono routes, pages,
-and durable data.
+services. The application owns its domain, permissions, Hono routes, pages, and durable data.
+An app has no permissions of its own on objects: alone, it reaches objects only through an agent or an object API key stored in a setting.
 
 - Use `defineApp()` for the declaration, the Hono router for requests, and
   `app.start()` for registration and lifecycle. App domains reach only `app.public` of their own app; link `subject`s are not principals.
