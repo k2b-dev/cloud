@@ -68,6 +68,7 @@ test("late icon fonts preserve icon boxes and adjacent labels on phone and deskt
             return statuses;
           });
         expect(await fontStatus()).toEqual(["loading"]);
+        // settled: This sample intentionally measures the reserved boxes while the real icon font is held back.
         const before = await geometry();
         expect(before.filter((_, index) => index % 2 === 0).map((box) => box.width)).toEqual([24, 24, 24]);
         release();
