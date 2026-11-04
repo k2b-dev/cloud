@@ -2,16 +2,16 @@ import { Button, useLocale } from "@k2b/ui";
 import { copyHandle } from "./CodeRefusalNotice";
 import { codePageMessages } from "./messages";
 
-/** The normal Code page and its refusal notice use the same non-secret account handle. */
+/** "Handle code-7k2q9m4xwt [Copy]": the normal Code page and Administration › Code show the same non-secret handle. */
 export function CodeAccountHandle(props: { handle: string }) {
   const locale = useLocale();
   const t = () => codePageMessages.resolve([locale()]).t;
   return (
-    <span class="inline-flex flex-wrap items-center gap-2">
-      <code class="break-all text-sm text-secondary">{props.handle}</code>
-      <Button type="button" variant="secondary" size="sm" onClick={() => void copyHandle(props.handle, t())}>
+    <span class="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
+      {t().handle} <code class="break-all text-sm text-secondary">{props.handle}</code>
+      <Button type="button" variant="text" size="sm" aria-label={t().copyHandle} onClick={() => void copyHandle(props.handle, t())}>
         <i class="ti ti-copy" aria-hidden="true" />
-        {t().copyHandle}
+        {t().copy}
       </Button>
     </span>
   );

@@ -718,9 +718,18 @@ identifier. Code accounts (`serviceAccountKind: "code"`) appear in that section,
 never offer Manage, and the section shows one note, naming the resource,
 which includes "Whoever edits the code acts with this right." while accounts
 are listed. The empty section explains how to add one; the note and empty text
-hide while adding an account. Long names wrap instead of being cut. Pass
-`entryDetail` to show the account's `serviceAccountDescription`, such as
-"Service account of a mailbox", as its second line. Send the resource as the lookup's target: your server answers only
+hide while adding an account. Long names wrap instead of being cut. Each row's
+second line is the entry's `serviceAccountDescription` with its level, such as
+"Service account of a mailbox · may edit"; read-only, it says only "May edit",
+and the row has no controls. When the entry carries `serviceAccountHref`, the
+name links there in a new tab, so an unsaved draft stays. Read-only, the
+section appears only when accounts are listed.
+**Add service account** sits beside the section's title and opens a field with
+**Cancel**; the sheet scrolls it into view. A complete identifier is looked up
+as it is typed, and its hit appears below the field with the "Service account"
+badge; choosing it adds the row. A new account starts with Edit where the
+resource offers it, and "What changes" adds "The code may do everything Edit
+allows, not only what it calls today." Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. The search for people asks the same callback when
 someone types an exact Code identifier (`code-` and 10 characters, exported as
@@ -728,7 +737,7 @@ someone types an exact Code identifier (`code-` and 10 characters, exported as
 directory. Its hit carries the "Service account" badge, says that it goes to
 Service accounts, and becomes a new row in that section; return `description`
 from the callback with the server's `serviceAccount.description`, such as
-"Service account of a mailbox", for its second line. A name, a prefix, or an
+"Service account of a mailbox", for its second line; the new row keeps it. A name, a prefix, or an
 identifier your server refuses finds nothing there. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
 as the resource's object API keys. The caller builds them before the dialog

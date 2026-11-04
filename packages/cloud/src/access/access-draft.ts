@@ -9,7 +9,15 @@ import { principalKey } from "./principal-key";
 export type DraftLevel = { permission: PermissionLevel; scope?: string };
 
 /** Display facts the server returns with an entry, kept for a principal that is only in the draft. */
-export type DraftDisplay = { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
+export type DraftDisplay = {
+  displayName: string;
+  avatarHash?: string | null;
+  serviceAccountKind?: ServiceAccountKind;
+  /** The server's line under a service account's name, such as "Service account of a mailbox". */
+  serviceAccountDescription?: string;
+  /** Where the name of a service account leads, when the server offers it to this viewer. */
+  serviceAccountHref?: string;
+};
 
 /** A row the dialog shows: a stored entry with its pending change, or a principal only the draft adds. */
 export type DraftRow = {
@@ -60,7 +68,13 @@ export const draftRows = (draft: AccessDraft): DraftRow[] => [
       key: storedKey(entry),
       entry,
       principal: entry.principal,
-      display: { displayName: entry.displayName ?? "", avatarHash: entry.avatarHash, serviceAccountKind: entry.serviceAccountKind },
+      display: {
+        displayName: entry.displayName ?? "",
+        avatarHash: entry.avatarHash,
+        serviceAccountKind: entry.serviceAccountKind,
+        serviceAccountDescription: entry.serviceAccountDescription,
+        serviceAccountHref: entry.serviceAccountHref,
+      },
       previous,
       next: draft.removed.has(entry.id) ? null : (draft.levels.get(entry.id) ?? previous),
     };
