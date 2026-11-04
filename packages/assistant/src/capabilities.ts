@@ -1,10 +1,17 @@
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { ChatComposeInputSchema } from "./commands";
-import { searchAssistant, searchAssistantApps, searchAssistantProjects } from "./search";
+import {
+  AppReadDataSchema,
+  AppReadInputSchema,
+  readAssistantApp,
+  searchAssistant,
+  searchAssistantApps,
+  searchAssistantProjects,
+} from "./search";
 export const assistantCapabilities = defineCapabilities({
   protocolVersion: 2,
   types: {
-    app: { title: "Studio app", description: "An accessible reusable Studio app.", icon: "ti ti-app-window" },
+    app: { title: "Studio app", description: "An accessible reusable Studio app.", icon: "ti ti-app-window", reader: "app.read" },
     project: { title: "Project", description: "An accessible Assistant project with shared context and chats.", icon: "ti ti-folders" },
     chat: { title: "Chat", description: "An Assistant conversation owned by the current user.", icon: "ti ti-messages" },
     message: { title: "Chat message", description: "A message in an accessible Assistant chat.", icon: "ti ti-message" },
@@ -24,6 +31,17 @@ export const assistantCapabilities = defineCapabilities({
       run: async (input, context) => {
         const { artifacts } = await import("./artifacts/service");
         return searchAssistantApps(input, context, artifacts);
+      },
+    },
+    "app.read": {
+      title: "Read a Studio app",
+      description: "Read the title of one assistant.app ref and your own level on it. Nothing for apps you cannot open.",
+      input: AppReadInputSchema,
+      data: AppReadDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const { artifacts } = await import("./artifacts/service");
+        return readAssistantApp(input, context, artifacts);
       },
     },
     "project.search": {
@@ -87,6 +105,11 @@ export const assistantCapabilities = defineCapabilities({
             title: "Studio-Apps durchsuchen",
             description: "Zugängliche Studio-Apps nach Titel oder Beschreibung finden.",
             searchTags: { "studio-app": { title: "Studio-Apps", description: "Zugängliche Studio-Apps finden." } },
+          },
+          "app.read": {
+            title: "Studio-App lesen",
+            description:
+              "Den Titel einer assistant.app-Referenz und deine eigene Stufe lesen. Nichts für Apps, die du nicht öffnen kannst.",
           },
           "project.search": {
             title: "Projekte durchsuchen",

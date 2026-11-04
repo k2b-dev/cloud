@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { type AuthContext, createAccess, type PermissionLevel } from "@k2b/cloud/server";
+import { type AuthContext, createAccess, type PermissionLevel, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { Hono } from "hono";
@@ -46,16 +46,30 @@ const request = (headers: Headers, path = "", method = "GET", body?: unknown) =>
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
-// Happy-path grants need a quiet directory. Wait before acquiring any identity or
-// target locks, then keep maintenance/writers out until the request completes.
-// The separate contention test deliberately bypasses this fixture barrier.
-const withStableDirectory = <T>(work: () => T | Promise<T>): Promise<T> =>
-  sql.begin(async (db) => {
-    await db`SET LOCAL lock_timeout = '5s'`;
-    await db`LOCK TABLE settings.entries, auth.groups, auth.group_groups_v2, auth.user_groups_v2,
-    auth.service_account_groups, auth.ipa_user_effective_groups IN SHARE MODE`;
-    return work();
-  });
+// Observe an actual PostgreSQL wait before releasing its blocker. No timing
+// sleep or request retry may make the contention regressions pass.
+const waitForBlockedGrant = async (blocker: number, pending: Promise<Response>) => {
+  let settled = false;
+  void pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = performance.now() + (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
+  for (;;) {
+    if (settled) throw new Error("Grant returned before its directory blocker committed");
+    const [waiting] = await sql<{ waiting: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM pg_stat_activity a JOIN pg_locks l USING (pid)
+      WHERE a.datname = current_database() AND NOT l.granted
+        AND ${blocker} = ANY(pg_blocking_pids(a.pid))) AS waiting`;
+    if (waiting?.waiting) return;
+    if (performance.now() >= deadline) throw new Error("Grant did not wait on the directory lock within its budget");
+    await Bun.sleep(10);
+  }
+};
 
 suite("chat conversations, people, and directory groups", () => {
   const trackedUsers: string[] = [];
@@ -1045,7 +1059,7 @@ suite("chat conversations, people, and directory groups", () => {
     }
   });
 
-  test("a busy directory refuses mixed member additions with a retryable conflict and allows them after commit", async () => {
+  test("directory maintenance waits within the request budget and mixed member additions succeed without retry", async () => {
     const owner = await user();
     const direct = await user();
     const grouped = await user();
@@ -1056,35 +1070,104 @@ suite("chat conversations, people, and directory groups", () => {
       { type: "group", groupId },
       { type: "user", userId: direct },
     ];
+    const writer = await sql.reserve();
+    let pending: Promise<Response> | undefined;
+    try {
+      await writer`BEGIN`;
+      // Exactly the lock held by autovacuum VACUUM ANALYZE auth.groups.
+      await writer`LOCK TABLE auth.groups IN SHARE UPDATE EXCLUSIVE MODE`;
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      const started = performance.now();
+      pending = Promise.resolve(request(headers, `/${chat.shortId}/members`, "POST", { members }));
+      await waitForBlockedGrant(backend!.pid, pending);
+      // Directory writers may also update identity rows. The waiting grant
+      // must not retain the manager row and deadlock that writer.
+      await writer`SELECT id FROM auth.users WHERE id = ${owner}::uuid FOR UPDATE NOWAIT`;
+      // The POSIX configuration writer locks groups before updating settings.
+      await writer`LOCK TABLE settings.entries IN ROW EXCLUSIVE MODE NOWAIT`;
+      await writer`COMMIT`;
+      const response = await pending;
+      expect(response.status, await response.clone().text()).toBe(200);
+      expect(await response.json()).toEqual({ added: 2 });
+      expect(performance.now() - started).toBeLessThan((REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
+      const [after] = await sql<{ grants: number; participants: number }[]>`SELECT
+        (SELECT count(*)::int FROM chat.conversation_access WHERE conversation_id = ${chat.id}::uuid) AS grants,
+        (SELECT count(*)::int FROM chat.participants WHERE conversation_id = ${chat.id}::uuid) AS participants`;
+      expect(after).toEqual({ grants: 3, participants: 3 });
+    } finally {
+      await writer`ROLLBACK`;
+      writer.release();
+      await pending?.catch(() => {});
+    }
+  });
+
+  for (const blockedTable of ["auth.user_groups_v2", "auth.ipa_user_effective_groups"] as const) {
+    test(`directory writers can finish reverse lock orders while a grant waits on ${blockedTable}`, async () => {
+      const owner = await user();
+      const recipient = await user();
+      const chat = await fixture(owner);
+      const headers = await cookie(owner);
+      const writer = await sql.reserve();
+      let pending: Promise<Response> | undefined;
+      try {
+        await writer`BEGIN`;
+        await writer.unsafe(`LOCK TABLE ${blockedTable} IN ROW EXCLUSIVE MODE`);
+        const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        pending = Promise.resolve(
+          request(headers, `/${chat.shortId}/members`, "POST", {
+            members: [{ type: "user", userId: recipient }],
+          }),
+        );
+        await waitForBlockedGrant(backend!.pid, pending);
+        // Full IPA sync can touch groups after stale-user cascades; provider
+        // transitions touch the effective projection before user membership.
+        await writer`LOCK TABLE auth.groups, auth.user_groups_v2 IN ROW EXCLUSIVE MODE NOWAIT`;
+        await writer`COMMIT`;
+        expect((await pending).status).toBe(200);
+      } finally {
+        await writer`ROLLBACK`;
+        writer.release();
+        await pending?.catch(() => {});
+      }
+    });
+  }
+
+  test("a grant waiting on group revocation rechecks the current manager without changing membership", async () => {
+    const owner = await user();
+    const manager = await user();
+    const recipient = await user();
+    const chat = await fixture(owner, [{ id: manager, permission: "read" }]);
+    const groupId = await group([manager]);
+    await groupGrant(chat, groupId, owner, "admin");
+    const headers = await cookie(manager);
+    expect((await requireConversation({ ...userContext(manager), conversationId: chat.shortId, required: "admin" })).ok).toBe(true);
     const state = () => sql<{ grants: number; participants: number; messages: number; audits: number }[]>`SELECT
       (SELECT count(*)::int FROM chat.conversation_access WHERE conversation_id = ${chat.id}::uuid) AS grants,
       (SELECT count(*)::int FROM chat.participants WHERE conversation_id = ${chat.id}::uuid) AS participants,
       (SELECT count(*)::int FROM chat.messages WHERE conversation_id = ${chat.id}::uuid) AS messages,
       (SELECT count(*)::int FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${chat.shortId}) AS audits`;
     const before = await state();
+    const baseline = before[0];
+    if (!baseline) throw new Error("Missing conversation state");
     const writer = await sql.reserve();
+    let pending: Promise<Response> | undefined;
     try {
       await writer`BEGIN`;
-      await writer`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE`;
-      const response = await request(headers, `/${chat.shortId}/members`, "POST", { members });
-      expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({
-        code: "CONFLICT",
-        message: "Access permissions are being updated. Try again.",
-        retryable: true,
-      });
-      expect(await state()).toEqual(before);
+      await writer`DELETE FROM auth.user_groups_v2 WHERE user_id = ${manager}::uuid AND group_id = ${groupId}::uuid`;
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      pending = Promise.resolve(request(headers, `/${chat.shortId}/members`, "POST", { members: [{ type: "user", userId: recipient }] }));
+      await waitForBlockedGrant(backend!.pid, pending);
       await writer`COMMIT`;
+      expect((await pending).status).toBe(403);
+      expect(await state()).toEqual([{ ...baseline, audits: baseline.audits + 1 }]);
+      const [denial] = await sql<{ outcome: string }[]>`SELECT outcome FROM audit.events
+        WHERE target_type = 'chat_conversation' AND target_id = ${chat.shortId} AND action = 'chat.member.add' ORDER BY id DESC LIMIT 1`;
+      expect(denial?.outcome).toBe("denied");
     } finally {
       await writer`ROLLBACK`;
       writer.release();
+      await pending?.catch(() => {});
     }
-    const response = await withStableDirectory(() => request(headers, `/${chat.shortId}/members`, "POST", { members }));
-    expect(response.status, await response.clone().text()).toBe(200);
-    expect(await response.json()).toEqual({ added: 2 });
-    const [after] = await state();
-    expect(after?.grants).toBe(3);
-    expect(after?.participants).toBe(3);
   });
 
   test("group adds seed ondemand state, retain it on direct upgrades, and grant future group members access", async () => {
@@ -1097,14 +1180,12 @@ suite("chat conversations, people, and directory groups", () => {
     const chat = await fixture(owner);
     await sql`UPDATE chat.conversations SET seq_head = 42 WHERE id = ${chat.id}::uuid`;
     const path = `/${chat.shortId}`;
-    const added = await withStableDirectory(() =>
-      request(headers, `${path}/members`, "POST", {
-        members: [
-          { type: "group", groupId },
-          { type: "user", userId: direct },
-        ],
-      }),
-    );
+    const added = await request(headers, `${path}/members`, "POST", {
+      members: [
+        { type: "group", groupId },
+        { type: "user", userId: direct },
+      ],
+    });
     expect(added.status, await added.clone().text()).toBe(200);
     expect(await added.json()).toEqual({ added: 2 });
     const participant = () =>

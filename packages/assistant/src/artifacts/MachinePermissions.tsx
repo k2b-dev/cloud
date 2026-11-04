@@ -10,7 +10,6 @@ type Policy = Awaited<ReturnType<typeof machineClient.list>>[number];
 export function MachinePermissions(props: {
   artifactId: string;
   administrative?: boolean;
-  revision?: number;
   load?: () => Promise<Policy[]>;
   save?: typeof machineClient.save;
 }) {
@@ -18,13 +17,14 @@ export function MachinePermissions(props: {
     t = () => machineMessages.resolve([locale()]).t;
   const [saved, setSaved] = createSignal(false);
   const [policies, { refetch }] = createResource(
-    () => [props.artifactId, props.revision] as const,
+    () => props.artifactId,
     () => (props.load ? props.load() : machineClient.list(props.artifactId, props.administrative)),
   );
   return (
     <section class="flex min-w-0 flex-col gap-3 border-t border-default pt-4" aria-label={t().title}>
       <h3 class="font-semibold">{t().title}</h3>
       <p class="text-sm text-secondary">{t().help}</p>
+      <p class="text-sm text-secondary">{t().afterSave}</p>
       <Show when={policies.loading}>
         <InlineGuidance loading>{t().loading}</InlineGuidance>
       </Show>

@@ -26,6 +26,7 @@ export const assistantCommandMessages = i18n.define({
       reopen: "Reopen chat",
       unavailable: "This project is no longer available.",
       failed: "The chat could not be created.",
+      studioApp: "Studio app",
     },
     de: {
       project: "Projekt",
@@ -47,6 +48,7 @@ export const assistantCommandMessages = i18n.define({
       reopen: "Chat wieder öffnen",
       unavailable: "Dieses Projekt ist nicht mehr verfügbar.",
       failed: "Der Chat konnte nicht erstellt werden.",
+      studioApp: "Studio-App",
     },
   },
 });

@@ -5,12 +5,15 @@ import { type AppAccessDeclaration, appAccess } from "../contracts/app-access";
 import * as accessEvents from "../events/app-access";
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { canUseApp } from "./app-access";
 import { appAccessGrantCounts, appAccessManagers, canManageAppAccess, changeAppAccess, readAppAccess } from "./app-access-management";
 import { audit } from "./audit";
 import * as identityRuntimeConfig from "./identity/runtime-config";
 import { createApiToken } from "./service-account-credentials";
 import { buildProjectedUser } from "./session/user";
+import { encryptValue } from "./settings/crypto";
+import { invalidateSettingsCache } from "./settings/store";
 
 const fixture = async () => {
   const id = `access-management-${crypto.randomUUID()}`;
@@ -137,8 +140,8 @@ databaseSuite()("audited app access management", () => {
             // Hold every pooled connection at its first callback before allowing any SQL-backed restriction.
             await poolFull.promise;
             expect(candidate).toBe(alice); // Preserve the exact resolved request authority.
-            expect(configRead.mock.calls).toHaveLength(count);
-            // Candidate proof must not consult global settings again, even when the cache is cold.
+            expect(configRead.mock.calls).toHaveLength(0);
+            // Candidate proof must use its transaction, even when the global cache is cold.
             identityRuntimeConfig.invalidateIdentityRuntimeConfig();
           } else expect(db).toBe(transaction);
           const candidateId = principal(candidate).userId;
@@ -160,7 +163,7 @@ databaseSuite()("audited app access management", () => {
       expect(results.map((result) => result.status)).toEqual(fixtures.map(() => "fulfilled"));
       expect(results.map((result) => result.status === "fulfilled" && result.value.canUse)).toEqual(fixtures.map(() => false));
       expect(calls.map((seen) => seen.length)).toEqual(fixtures.map(() => 2));
-      expect(configRead.mock.calls).toHaveLength(count);
+      expect(configRead.mock.calls).toHaveLength(0);
       for (const f of fixtures) expect(await persistedCounts(f.app.id)).toMatchObject({ grants: 1, audits: 3, outbox: 6 });
     } finally {
       poolFull.resolve();
@@ -269,6 +272,74 @@ databaseSuite()("audited app access management", () => {
       });
       expect(await canManageAppAccess(restored, f.app, onlyAdministrators)).toBe(true);
     } finally {
+      await f.cleanup();
+    }
+  });
+
+  test("remaining-manager eligibility reads settings committed while the grant waited", async () => {
+    const f = await fixture();
+    const [original] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = 'freeipa.groups.admin'`;
+    const writer = await sql.reserve();
+    let pending: ReturnType<typeof changeAppAccess> | undefined;
+    try {
+      const alice = await f.person(true);
+      const bob = await f.person();
+      const oldGroup = `${f.app.id}-old-admins`;
+      const newGroup = `${f.app.id}-new-admins`;
+      await sql`UPDATE auth.users SET provider = 'ipa' WHERE id = ${principal(bob).userId}::uuid`;
+      await sql`INSERT INTO auth.ipa_user_effective_groups (user_id, group_name) VALUES (${principal(bob).userId}::uuid, ${oldGroup})`;
+      await sql`INSERT INTO settings.entries (key, value) VALUES ('freeipa.groups.admin', ${await encryptValue([oldGroup])})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+      identityRuntimeConfig.invalidateIdentityRuntimeConfig();
+      await invalidateSettingsCache(["freeipa.groups.admin"]);
+      // Warm the same cache an ordinary request could have loaded before the writer.
+      expect((await identityRuntimeConfig.getIdentityRuntimeConfig()).groupsAdmin).toEqual([oldGroup]);
+      const first = await changeAppAccess({
+        app: f.app,
+        authority: alice,
+        repair: true,
+        change: { action: "grant", principal: principal(alice), permission: "admin" },
+      });
+      await changeAppAccess({ app: f.app, authority: alice, change: { action: "grant", principal: principal(bob), permission: "admin" } });
+      const before = await persistedCounts(f.app.id);
+      await writer`BEGIN`;
+      await writer`UPDATE settings.entries SET value = ${await encryptValue([newGroup])} WHERE key = 'freeipa.groups.admin'`;
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      pending = changeAppAccess({
+        app: f.app,
+        authority: alice,
+        canManage: onlyAdministrators,
+        change: { action: "revoke", accessId: first.entry!.id },
+      });
+      // Observe rejection immediately, and retain it for the assertion after commit.
+      const result = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      let settled = false;
+      void result.then(() => {
+        settled = true;
+      });
+      const deadline = performance.now() + (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
+      for (;;) {
+        if (settled) throw new Error("App grant returned before the settings writer committed");
+        const [blocked] = await sql<{ waiting: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+          WHERE datname = current_database() AND ${backend!.pid} = ANY(pg_blocking_pids(pid))) AS waiting`;
+        if (blocked?.waiting) break;
+        if (performance.now() >= deadline) throw new Error("App grant did not wait for its settings lock");
+        await Bun.sleep(10);
+      }
+      await writer`COMMIT`;
+      expect(await result).toMatchObject({ error: { code: "LAST_MANAGER", status: 409 } });
+      expect(await persistedCounts(f.app.id)).toEqual(before);
+    } finally {
+      await writer`ROLLBACK`;
+      writer.release();
+      await pending?.catch(() => {});
+      if (original) await sql`UPDATE settings.entries SET value = ${original.value} WHERE key = 'freeipa.groups.admin'`;
+      else await sql`DELETE FROM settings.entries WHERE key = 'freeipa.groups.admin'`;
+      await invalidateSettingsCache(["freeipa.groups.admin"]);
+      identityRuntimeConfig.invalidateIdentityRuntimeConfig();
       await f.cleanup();
     }
   });

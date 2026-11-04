@@ -89,8 +89,14 @@ target's own share dialog and history. A Cloud administrator's version approval
 grants no target access. A target manager must explicitly restore a removed
 share; restarting, retrying or reactivating Code cannot restore it.
 
-A concurrent identity or directory change can make a normal share operation
-return HTTP 409 with `retryable: true`. Retry the complete share operation when
-the change finishes; the retry still checks current manager authority. Code
-service accounts receive only direct View or Edit, never Manage or inherited
-group, signed-in or public access.
+Sharing waits up to five seconds for settings or directory writes and table
+maintenance, within the existing request budget. Short maintenance completes
+without a retry. If that wait expires, or a concurrent identity change holds
+the account row, sharing returns HTTP 409 with `retryable: true`. Retry the
+complete share operation after the conflict finishes. Every operation rechecks
+the current manager's authority after waiting. Administration repairs recheck
+live Cloud-admin authority, including supported delegated credentials; an app
+session does not supply that authority.
+
+Code service accounts receive only direct View or Edit, never Manage or
+inherited group, signed-in or public access.
