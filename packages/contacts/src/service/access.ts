@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { hasRole } from "@k2b/cloud/contracts";
+import { type AccessMember, hasRole, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -7,6 +7,7 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   hasPermission,
   type PermissionLevel,
   type Principal,
@@ -491,6 +492,31 @@ export const getActorBookPermission = async (
 ): Promise<PermissionLevel> =>
   fixedBookPermission(config.actor, config.bookId) ??
   capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.accessSubject }, db));
+
+/**
+ * The permission an actor holds on a book through access of its own: a direct, group, or all-signed-in grant, never
+ * the public tier, with the same binding and scope caps as `getActorBookPermission`. Everyone with read here may see
+ * who has access; people who read only through public access may not.
+ */
+export const getActorBookMemberPermission = async (config: {
+  bookId: string;
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+}): Promise<PermissionLevel> => {
+  const fixed = fixedBookPermission(config.actor, config.bookId);
+  if (fixed) return fixed;
+  if (!isUuid(config.bookId)) return "none";
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM contacts.book_access WHERE book_id = ${config.bookId}::uuid
+  `;
+  return capByCredential(
+    config.actor,
+    await getMemberPermission({ accessIds: accessRows.map((row) => row.access_id), subject: config.accessSubject }),
+  );
+};
+
+/** Who has access to a book, read-only: names and roles without grant IDs or dates. */
+export const listBookAccessMembers = async (bookId: string): Promise<AccessMember[]> => (await listBookAccess(bookId)).map(toAccessMember);
 
 /** `getActorBookPermission` for many actors on one existing book, with one query for all their grants. */
 export const getActorsBookPermissions = async (
