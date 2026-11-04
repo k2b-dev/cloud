@@ -102,7 +102,8 @@ describe("Studio sharing in the shared access dialog", () => {
     try {
       const services = ui.section("Dienstkonten");
       expect(services.textContent).toContain("Code von einkauf@beispiel.de");
-      expect(ui.row("Code von einkauf@beispiel.de").textContent).toContain("Dienstkonto eines Postfachs");
+      // A stored row reads like a new one: the server's line with its level.
+      expect(ui.row("Code von einkauf@beispiel.de").textContent).toContain("Dienstkonto eines Postfachs · darf benutzen");
       expect(services.textContent?.match(/Wer den Code bearbeitet, handelt mit diesem Recht\./g)).toHaveLength(1);
       const levels = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="option"]')).map((node) =>
         node.textContent?.trim(),

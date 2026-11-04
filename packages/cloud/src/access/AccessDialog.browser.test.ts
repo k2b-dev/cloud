@@ -162,25 +162,25 @@ describe("AccessDialog in a browser", () => {
     });
 
   // Mockup v31 `editor · A`: the section Dienstkonten in the states leer, normal, dienst-hinzu, dienst-neu and lesen.
-  for (const width of [1280, 390])
-    test(`de ${width}px: Dienstkonten as in the mockup, with the button beside the title and the field in view`, async () => {
-      const section = (page: Page) => page.locator("dialog section", { has: page.locator("h3", { hasText: "Dienstkonten" }) });
-      /** The button shares the title's line, and the text below follows the header without an empty gap. */
-      const head = (page: Page) =>
-        section(page).evaluate((element) => {
-          const header = element.querySelector("header")!.getBoundingClientRect();
-          const title = element.querySelector("h3")!.getBoundingClientRect();
-          const button = element.querySelector("header button")?.getBoundingClientRect();
-          const body = element.querySelector<HTMLElement>(".k2b-panel-dialog__section-body")!;
-          const first = body.firstElementChild!.getBoundingClientRect();
-          const inner = body.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(body).paddingTop);
-          return {
-            besideTitle: button ? button.top < title.bottom && button.bottom > title.top && button.left > title.right : null,
-            titleOneLine: title.height < 24,
-            headerInside: header.right <= element.getBoundingClientRect().right + 0.5 && (!button || button.right <= header.right + 0.5),
-            gap: Math.round(first.top - inner),
-          };
-        });
+  const section = (page: Page) => page.locator("dialog section", { has: page.locator("h3", { hasText: "Dienstkonten" }) });
+  /** The button shares the title's line, and the text below follows the header without an empty gap. */
+  const head = (page: Page) =>
+    section(page).evaluate((element) => {
+      const header = element.querySelector("header")!.getBoundingClientRect();
+      const title = element.querySelector("h3")!.getBoundingClientRect();
+      const button = element.querySelector("header button")?.getBoundingClientRect();
+      const body = element.querySelector<HTMLElement>(".k2b-panel-dialog__section-body")!;
+      const first = body.firstElementChild!.getBoundingClientRect();
+      const inner = body.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(body).paddingTop);
+      return {
+        besideTitle: button ? button.top < title.bottom && button.bottom > title.top && button.left > title.right : null,
+        titleOneLine: title.height < 24,
+        headerInside: header.right <= element.getBoundingClientRect().right + 0.5 && (!button || button.right <= header.right + 0.5),
+        gap: Math.round(first.top - inner),
+      };
+    });
+  for (const width of [1280, 390]) {
+    test(`de ${width}px leer: the count is 0, the button beside the title, the empty text without a gap`, async () => {
       const empty = await open(width, "de");
       try {
         await section(empty).scrollIntoViewIfNeeded();
@@ -191,7 +191,9 @@ describe("AccessDialog in a browser", () => {
       } finally {
         await empty.close();
       }
+    });
 
+    test(`de ${width}px normal, dienst-hinzu, dienst-neu: rows as the server says, the field and its hit in view`, async () => {
       const page = await open(width, "de", "normal");
       try {
         await section(page).scrollIntoViewIfNeeded();
@@ -267,7 +269,9 @@ describe("AccessDialog in a browser", () => {
       } finally {
         await page.close();
       }
+    });
 
+    test(`de ${width}px lesen: the level under the name, no controls`, async () => {
       const reader = await open(width, "de", "lesen");
       try {
         await section(reader).scrollIntoViewIfNeeded();
@@ -281,4 +285,5 @@ describe("AccessDialog in a browser", () => {
         await reader.close();
       }
     });
+  }
 });

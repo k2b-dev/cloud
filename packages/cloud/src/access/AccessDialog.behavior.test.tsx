@@ -887,6 +887,58 @@ describe("AccessDialog", () => {
       }
     });
 
+    test("a failed lookup says so, and Enter asks again instead of claiming nothing was found", async () => {
+      let attempts = 0;
+      const ui = await setup({
+        entries: [mia],
+        findServiceAccount: async () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("offline");
+          return found;
+        },
+      });
+      try {
+        await openAdding(ui);
+        ui.typeHandle("code-7k2q9m4xwt");
+        await waitFor(() => ui.dom.root.textContent?.includes("The service account could not be looked up.") === true, "the failure");
+        field(ui)!
+          .closest("form")!
+          .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await waitFor(() => !!ui.hit("Code von info@beispiel.de"), "the hit after retrying");
+        expect(attempts).toBe(2);
+        expect(ui.dom.root.textContent).not.toContain("No service account with this identifier");
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("an app's own line under a row never replaces a service account's description and level", async () => {
+      const { AccessDialog } = await import("./AccessDialog");
+      const harness = createDomTestHarness();
+      const dispose = render(
+        () => (
+          <AccessDialog
+            resourceName="Einkauf 2027"
+            initialEntries={[mia, mailboxCode]}
+            entryDetail={() => "App detail"}
+            grantAccess={async (principal, permission) => ({ id: crypto.randomUUID(), principal, permission, createdAt: "now" })}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+            close={() => {}}
+          />
+        ),
+        harness.root,
+      );
+      try {
+        const row = Array.from(harness.root.querySelectorAll("li")).find((item) => item.textContent?.includes("Code von einkauf"))!;
+        expect(row.textContent).toContain("Service account of a mailbox · may edit");
+        expect(row.textContent).not.toContain("App detail");
+      } finally {
+        dispose();
+        harness.cleanup();
+      }
+    });
+
     test("a new Code account starts with Edit, counts in the title, and What changes says what that allows", async () => {
       const ui = await setup({ entries: [mia, mailboxCode], findServiceAccount: async () => found });
       try {

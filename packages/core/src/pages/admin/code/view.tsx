@@ -574,7 +574,7 @@ export function CodeAreaView(props: Props) {
               <Show when={code.serviceAccountHandle}>
                 {(handle) => (
                   <>
-                    {" · "}
+                    {" "}
                     <CodeAccountHandle handle={handle()} />
                   </>
                 )}

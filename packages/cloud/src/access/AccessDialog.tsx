@@ -346,6 +346,8 @@ export function AccessDialog(
 
   // ── Rows ──────────────────────────────────────────────────────────────
   const kindLine = (row: DraftRow) => {
+    // A service account of an object always reads as the server describes it, with its level.
+    if (row.principal.type === "service_account" && isObjectAccount(row.display.serviceAccountKind)) return accountLine(row);
     if (row.entry && props.entryDetail) {
       const detail = props.entryDetail(row.entry);
       if (detail) return detail;
@@ -353,9 +355,7 @@ export function AccessDialog(
     if (row.principal.type === "user") return row.principal.userId === props.viewerUserId ? t().you : t().person;
     if (row.principal.type === "group") return t().group;
     if (row.principal.type === "service_account")
-      return isObjectAccount(row.display.serviceAccountKind)
-        ? accountLine(row)
-        : ((row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent);
+      return (row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent;
     return "";
   };
   /**
@@ -752,8 +752,12 @@ export function AccessDialog(
                         onSubmit={(event) => {
                           event.preventDefault();
                           const account = found();
+                          const value = handle().trim();
                           if (account) addFound(account);
-                          else if (lookup() !== "searching") setLookup("none");
+                          else if (lookup() === "searching") return;
+                          // Enter asks again for a complete identifier, so a failed lookup can be retried.
+                          else if (CODE_ACCOUNT_HANDLE_PATTERN.test(value)) void findAccount(value);
+                          else setLookup("none");
                         }}
                       >
                         <TextInput
