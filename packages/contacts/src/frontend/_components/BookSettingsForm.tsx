@@ -324,7 +324,7 @@ export default function BookSettingsForm(props: Props) {
     // A failed reload is read again first, so the dialog never starts from an old list.
     if (reconcileError()) {
       await settingsCoverage.retry();
-      if (reconcileError()) return;
+      if (disposed || reconcileError()) return;
     }
     if (settingsBusy()) throw new Error(t().settingsChangeInProgress);
     const entries = props.context().accessEntries;
@@ -347,7 +347,10 @@ export default function BookSettingsForm(props: Props) {
     if (editingAccess) return;
     editingAccess = true;
     editAccess()
-      .catch((error: Error) => prompts.error(error.message))
+      .catch((error: Error) => {
+        // A closed form says nothing over the page the person moved on to.
+        if (!disposed) void prompts.error(error.message);
+      })
       .finally(() => {
         editingAccess = false;
       });

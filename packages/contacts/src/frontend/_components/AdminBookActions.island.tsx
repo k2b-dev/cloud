@@ -50,7 +50,8 @@ const openPermissionDialog = async (props: AdminBookActionsProps, locale: string
       wrote = true;
     },
   });
-  if (wrote) refreshCurrentPath();
+  // After navigation the page is another one; refreshing it would cancel where the person went.
+  if (wrote && !signal.aborted) refreshCurrentPath();
 };
 
 const AdminBookActions = (props: AdminBookActionsProps) => {

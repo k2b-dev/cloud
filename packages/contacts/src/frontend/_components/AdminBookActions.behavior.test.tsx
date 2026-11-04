@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { AccessEntry } from "@k2b/cloud/contracts";
+import * as navigation from "@k2b/ssr/nav";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 
@@ -60,9 +61,17 @@ describe("Contacts administration access", () => {
     globalThis.fetch = Object.assign(fetchImpl, { preconnect: originalFetch.preconnect });
     const { prompts } = await import("@k2b/ui");
     const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
     const { default: AdminBookActions } = await import("./AdminBookActions.island");
     delegateEvents(["click", "input"], dom.document);
-    const dispose = render(() => <AdminBookActions bookId="book-1" bookName="Suppliers" />, dom.root);
+    let disposed = false;
+    const disposeRender = render(() => <AdminBookActions bookId="book-1" bookName="Suppliers" />, dom.root);
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      disposeRender();
+    };
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Manage permissions for Suppliers"]')!.click();
     Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
       .find((node) => node.textContent?.includes("Permissions"))!
@@ -73,6 +82,8 @@ describe("Contacts administration access", () => {
     return {
       dom,
       error,
+      refreshed,
+      dispose,
       dialog,
       button,
       cleanup: async () => {
@@ -82,6 +93,8 @@ describe("Contacts administration access", () => {
         }
         dispose();
         error.mockRestore();
+        confirm.mockRestore();
+        refreshed.mockRestore();
         globalThis.fetch = originalFetch;
         dom.cleanup();
       },
@@ -129,6 +142,8 @@ describe("Contacts administration access", () => {
       await waitFor(() => !ui.dialog(), "the dialog to close");
       expect(writes).toHaveLength(1);
       expect(writes[0]).toContain("/admin/books/book-1/access/access-person");
+      // The admin list shows the saved change.
+      expect(ui.refreshed).toHaveBeenCalledTimes(1);
     } finally {
       await ui.cleanup();
     }
@@ -140,6 +155,36 @@ describe("Contacts administration access", () => {
       await waitFor(() => ui.error.mock.calls.length === 1, "the error");
       expect(ui.error.mock.calls[0]![0]).toBe("offline");
       expect(ui.dialog()).toBeNull();
+    } finally {
+      await ui.cleanup();
+    }
+  });
+
+  test("a partial save closed after navigation does not refresh the page the person moved on to", async () => {
+    const owner = manager("access-owner", { type: "user", userId: "user-2" }, "Mia Hoffmann");
+    const lea = manager("access-lea", { type: "user", userId: "user-3" }, "Lea Schmitt", { permission: "read" });
+    const ben = manager("access-ben", { type: "user", userId: "user-4" }, "Ben Albers", { permission: "read" });
+    const ui = await setup(async (_input, init) => {
+      if (init?.method === "PATCH") return new Response(null, { status: 204 });
+      if (init?.method === "DELETE") return Response.json({ message: "offline" }, { status: 503 });
+      return Response.json([owner, lea, ben]);
+    });
+    try {
+      await waitFor(() => ui.dialog()?.textContent?.includes("Ben Albers") === true, "the access dialog");
+      const row = (name: string) => Array.from(ui.dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
+      await waitFor(() => ui.dialog()?.textContent?.includes("2 changes") === true, "two changes");
+      ui.button("Save")!.click();
+      await waitFor(() => !!ui.dialog()?.querySelector('[role="alert"]'), "the failed removal");
+      // The page changes: the island goes away while the dialog is still open.
+      ui.dispose();
+      ui.button("Cancel")!.click();
+      await waitFor(() => !ui.dialog(), "the dialog to close");
+      await Bun.sleep(20);
+      expect(ui.refreshed).not.toHaveBeenCalled();
     } finally {
       await ui.cleanup();
     }
