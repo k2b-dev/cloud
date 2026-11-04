@@ -138,6 +138,7 @@ const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
   attachmentCount: 0,
   favoriteNoteIds: [],
   tags: [],
+  pageTemplates: [],
   workspaceCursor: null,
   dateConfig: { locale: "en", timeZone: "UTC" },
   sidebarFilter: {},

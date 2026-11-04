@@ -359,6 +359,35 @@ function notebooksCommands(locale?: string) {
     return getNotebook(ctx, raw.endsWith(":") ? raw.slice(0, -1) : raw);
   };
 
+  type PageTemplate = { id: string; name: string; description: string | null; builtIn: boolean };
+  const listPageTemplates = async (ctx: CloudCliContext, notebookId: string) =>
+    ctx.readJson<PageTemplate[]>(await ctx.fetch(api(notebookId, "/page-templates")));
+
+  /** A page template of the notebook by ID or exact name, ignoring case as the notebook does. */
+  const resolvePageTemplate = async (ctx: CloudCliContext, notebookId: string, raw: string): Promise<PageTemplate> => {
+    const templates = await listPageTemplates(ctx, notebookId);
+    const byId = templates.find((template) => template.id === raw);
+    if (byId) return byId;
+    const matches = templates.filter((template) => template.name.toLowerCase() === raw.trim().toLowerCase());
+    if (matches.length === 1) return matches[0]!;
+    if (matches.length > 1)
+      throw new Error(
+        t(
+          cliAmbiguityText({
+            value: raw,
+            resources: { en: "templates", de: "Vorlagen" },
+            candidates: matches.map((template) => ({ path: template.name, id: template.id })),
+          }),
+        ),
+      );
+    throw new Error(
+      t({
+        en: `No template of this notebook has the ID or name "${raw}". Run \`cld notebooks page-templates list\` to see them.`,
+        de: `Keine Vorlage dieses Notizbuchs hat die ID oder den Namen „${raw}“. \`cld notebooks page-templates list\` zeigt sie.`,
+      }),
+    );
+  };
+
   // ==========================
   // Mirror write-back
   // ==========================
@@ -721,6 +750,10 @@ function notebooksCommands(locale?: string) {
       attachments: t({ en: "List, download, and delete notebook files", de: "Notizbuch-Dateien auflisten, laden und löschen" }),
       favorites: t({ en: "Keep your favorite notes", de: "Eigene Lieblingsnotizen pflegen" }),
       "api-keys": t({ en: "Manage notebook-bound API keys", de: "Notizbuch-gebundene API-Schlüssel verwalten" }),
+      "page-templates": t({
+        en: "Start notes from page templates and keep a notebook's own templates",
+        de: "Notizen aus Seitenvorlagen beginnen und die eigenen Vorlagen eines Notizbuchs pflegen",
+      }),
       snapshots: t({ en: "Configure and run S3 snapshots", de: "S3-Snapshots konfigurieren und ausführen" }),
     },
     commands: [
@@ -2507,6 +2540,176 @@ function notebooksCommands(locale?: string) {
           },
         }),
       ),
+      command("page-templates list", {
+        summary: t({
+          en: "List a notebook's page templates: its own ones, then the built-in ones",
+          de: "Die Seitenvorlagen eines Notizbuchs auflisten: zuerst die eigenen, dann die eingebauten",
+        }),
+        args: notebookArg,
+        examples: ['cld notebooks page-templates list "Team"'],
+        async run({ ctx, args }) {
+          const notebook = await resolveNotebookRef(ctx, args.notebook);
+          const payload = await listPageTemplates(ctx, notebook.id);
+          printRows(
+            ctx,
+            payload,
+            payload.map((template) => ({
+              ...template,
+              kind: template.builtIn ? t({ en: "built-in", de: "eingebaut" }) : t({ en: "own", de: "eigene" }),
+            })),
+            [
+              { key: "id", label: "ID" },
+              { key: "name", label: t({ en: "NAME", de: "NAME" }) },
+              { key: "kind", label: t({ en: "KIND", de: "ART" }) },
+            ],
+          );
+        },
+      }),
+      command("page-templates use", {
+        summary: t({ en: "Create a note from a page template", de: "Eine Notiz aus einer Seitenvorlage anlegen" }),
+        description: t({
+          en: "{{date}} becomes today as YYYY-MM-DD in your time zone and {{author}} your name. Needs write access to the notebook.",
+          de: "{{date}} wird zum heutigen Datum als JJJJ-MM-TT in deiner Zeitzone und {{author}} zu deinem Namen. Braucht Schreibzugriff auf das Notizbuch.",
+        }),
+        args: {
+          ...notebookArg,
+          template: arg.required({
+            valueLabel: "template",
+            description: t({ en: "Template ID or exact name", de: "Vorlagen-ID oder exakter Name" }),
+          }),
+        },
+        flags: {
+          parent: flag.string({
+            valueLabel: "note",
+            description: t({ en: "Create it below this note of the notebook", de: "Unter dieser Notiz des Notizbuchs anlegen" }),
+          }),
+        },
+        examples: [
+          'cld notebooks page-templates use "Team" meeting-notes',
+          'cld notebooks page-templates use "Team" "Weekly" --parent ns98Kq',
+        ],
+        async run({ ctx, args, flags }) {
+          const notebook = await resolveNotebookRef(ctx, args.notebook);
+          const template = await resolvePageTemplate(ctx, notebook.id, args.template);
+          const parent = flags.parent ? await resolveNote(ctx, flags.parent) : null;
+          const note = await ctx.readJson<Note>(
+            await ctx.fetch(api(notebook.id, "/notes"), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ templateId: template.id, ...(parent ? { parentId: parent.noteId } : {}) }),
+            }),
+          );
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.note", note)))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })} ${note.title} (${note.id}) ${cloudResourceUrl(ctx, { type: "notebooks.note", id: note.id })}`,
+            );
+        },
+      }),
+      command("page-templates save", {
+        summary: t({
+          en: "Save a note's current text as a template of its notebook",
+          de: "Den aktuellen Text einer Notiz als Vorlage ihres Notizbuchs speichern",
+        }),
+        description: t({
+          en: "Write {{date}} or {{author}} in the note where new notes should get the date or the name. Names are unique per notebook, ignoring case.",
+          de: "Schreibe {{date}} oder {{author}} in die Notiz, wo neue Notizen das Datum oder den Namen bekommen sollen. Namen sind je Notizbuch eindeutig, ohne Groß- und Kleinschreibung.",
+        }),
+        args: { ...noteArg, name: arg.required({ valueLabel: "name", description: t({ en: "Template name", de: "Name der Vorlage" }) }) },
+        flags: {
+          replace: flag.boolean({
+            description: t({
+              en: "Replace the text of the notebook's template with this name",
+              de: "Den Text der Vorlage mit diesem Namen ersetzen",
+            }),
+          }),
+        },
+        examples: [
+          'cld notebooks page-templates save ns98Kq "Weekly"',
+          'cld notebooks page-templates save "Team":weekly "Weekly" --replace',
+        ],
+        async run({ ctx, args, flags }) {
+          const target = await resolveNote(ctx, args.note);
+          const existing = flags.replace
+            ? (await listPageTemplates(ctx, target.notebookId)).find(
+                (template) => !template.builtIn && template.name.toLowerCase() === args.name.trim().toLowerCase(),
+              )
+            : undefined;
+          const template = existing
+            ? await ctx.readJson<PageTemplate>(
+                await ctx.fetch(api(target.notebookId, `/page-templates/${encodeURIComponent(existing.id)}`), {
+                  method: "PATCH",
+                  headers: JSON_HEADERS,
+                  body: JSON.stringify({ noteId: target.noteId }),
+                }),
+              )
+            : await ctx
+                .readJson<PageTemplate>(
+                  await ctx.fetch(api(target.notebookId, "/page-templates"), {
+                    method: "POST",
+                    headers: JSON_HEADERS,
+                    body: JSON.stringify({ name: args.name, noteId: target.noteId }),
+                  }),
+                )
+                .catch((error: unknown) => {
+                  if (isHttpStatus(error, 409) && !flags.replace)
+                    throw new Error(
+                      `${(error as Error).message} ${t({ en: "Pass --replace to replace its text.", de: "Übergib --replace, um ihren Text zu ersetzen." })}`,
+                    );
+                  throw error;
+                });
+          if (!printStructured(ctx, template))
+            ctx.print(
+              `${existing ? t({ en: "Replaced", de: "Ersetzt" }) : t({ en: "Saved", de: "Gespeichert" })} ${template.name} (${template.id})`,
+            );
+        },
+      }),
+      command("page-templates rename", {
+        summary: t({ en: "Rename one of a notebook's own templates", de: "Eine eigene Vorlage eines Notizbuchs umbenennen" }),
+        args: {
+          ...notebookArg,
+          template: arg.required({
+            valueLabel: "template",
+            description: t({ en: "Template ID or exact name", de: "Vorlagen-ID oder exakter Name" }),
+          }),
+          name: arg.required({ valueLabel: "new-name", description: t({ en: "New name", de: "Neuer Name" }) }),
+        },
+        examples: ['cld notebooks page-templates rename "Team" "Weekly" "Weekly sync"'],
+        async run({ ctx, args }) {
+          const notebook = await resolveNotebookRef(ctx, args.notebook);
+          const template = await resolvePageTemplate(ctx, notebook.id, args.template);
+          const renamed = await ctx.readJson<PageTemplate>(
+            await ctx.fetch(api(notebook.id, `/page-templates/${encodeURIComponent(template.id)}`), {
+              method: "PATCH",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ name: args.name }),
+            }),
+          );
+          if (!printStructured(ctx, renamed)) ctx.print(`${t({ en: "Renamed", de: "Umbenannt" })} ${renamed.name} (${renamed.id})`);
+        },
+      }),
+      command("page-templates delete", {
+        summary: t({ en: "Delete one of a notebook's own templates", de: "Eine eigene Vorlage eines Notizbuchs löschen" }),
+        description: t({ en: "Notes made from it stay as they are.", de: "Notizen, die daraus entstanden sind, bleiben, wie sie sind." }),
+        args: {
+          ...notebookArg,
+          template: arg.required({
+            valueLabel: "template",
+            description: t({ en: "Template ID or exact name", de: "Vorlagen-ID oder exakter Name" }),
+          }),
+        },
+        flags: { yes: confirmFlag(t({ en: "Delete without asking", de: "Ohne Nachfrage löschen" })) },
+        examples: ['cld notebooks page-templates delete "Team" "Weekly" --yes'],
+        async run({ ctx, args, flags }) {
+          requireConfirmable(flags.yes);
+          const notebook = await resolveNotebookRef(ctx, args.notebook);
+          const template = await resolvePageTemplate(ctx, notebook.id, args.template);
+          await confirm(flags.yes, t({ en: `Delete template ${template.name}?`, de: `Vorlage ${template.name} löschen?` }));
+          const payload = await ctx.readJson<MessageResponse>(
+            await ctx.fetch(api(notebook.id, `/page-templates/${encodeURIComponent(template.id)}`), { method: "DELETE" }),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.message);
+        },
+      }),
       command("api-keys list", {
         summary: t({ en: "List notebook-bound API keys", de: "Notizbuch-gebundene API-Schlüssel auflisten" }),
         args: notebookArg,

@@ -719,6 +719,7 @@ describe("notebooks capabilities", () => {
       "notebook.search",
       "tag.list",
       "tag.notes",
+      "template.list",
     ]);
     expect(Object.keys(notebooksCapabilities.actions).sort()).toEqual([
       "annotation.accept",
@@ -1458,4 +1459,28 @@ test("discussion containers preserve authorized list pagination", async () => {
   });
   const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
   expect(last.ok && last.data.data.next).toBeNull();
+});
+
+test("note.create starts from a page template only for writers, with the caller filled in", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+  trackedSpy(spyOn(noteStore, "defaultDateConfig")).mockResolvedValue({ timeZone: "UTC", locale: "en", firstDayOfWeek: 1 });
+  const create = trackedSpy(spyOn(noteStore, "create")).mockResolvedValue({ ok: true, data: note });
+  trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+  trackedSpy(spyOn(audit, "recordResult")).mockImplementation(async ({ result }) => result);
+  const operation = notebooksCapabilities.actions["note.create"];
+  const input = operation.input.parse({ notebookId: notebook.shortId, templateId: "meeting-notes" });
+
+  expect((await operation.run(input, userContext)).ok).toBe(false);
+  expect(create).not.toHaveBeenCalled();
+
+  permission.mockResolvedValue("write");
+  const review = await operation.review!(input, userContext);
+  expect(review.ok && review.data.details?.find((detail) => detail.label === "Template")?.value).toBe("Meeting notes");
+  expect((await operation.run(input, userContext)).ok).toBe(true);
+  const content = create.mock.calls[0]![0].data.contentMd ?? "";
+  expect(content).toStartWith("# Meeting ");
+  expect(content).toContain("**Notes by:** Notebook User");
+  expect(content).not.toContain("{{");
+  expect(operation.input.safeParse({ notebookId: notebook.shortId, templateId: "meeting-notes", content: "# X" }).success).toBe(false);
 });
