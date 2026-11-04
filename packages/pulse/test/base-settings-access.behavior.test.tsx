@@ -71,15 +71,14 @@ describe("Pulse base settings: access", () => {
     return;
   }
 
-  test("changes save together in the access dialog; a half-failed, discarded save still reloads the list once", async () => {
+  const setup = async () => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     delegateEvents(["click", "input"], dom.document);
     const { prompts } = await import("@k2b/ui");
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
-    let stored = [mia, lea, ben];
+    const state = { stored: [mia, lea, ben], reads: 0 };
     const calls: string[] = [];
-    let reads = 0;
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -88,25 +87,31 @@ describe("Pulse base settings: access", () => {
         if (!url.includes("/access")) return Response.json({});
         const accessId = url.split("/access/")[1];
         if (method === "GET") {
-          reads += 1;
-          return Response.json(stored);
+          state.reads += 1;
+          return Response.json(state.stored);
         }
         calls.push(`${method} ${accessId}`);
         if (method === "DELETE") return Response.json({ message: "offline" }, { status: 503 });
         const { permission } = JSON.parse(String(init?.body)) as { permission: AccessEntry["permission"] };
-        stored = stored.map((item) => (item.id === accessId ? { ...item, permission } : item));
+        state.stored = state.stored.map((item) => (item.id === accessId ? { ...item, permission } : item));
         return new Response(null, { status: 204 });
       },
       { preconnect: originalFetch.preconnect },
     );
     const refreshBase = mock(async () => {});
+    const owner = new AbortController();
+    let requestClose: (() => Promise<boolean>) | undefined;
     const { openPulseBaseSettingsDialog } = await import("../src/frontend/workspace/base-settings-dialog");
-    void openPulseBaseSettingsDialog({
+    const closed = openPulseBaseSettingsDialog({
       base,
       canAdmin: true,
       admins: [],
       maxRawRetentionDays: 400,
       initialTab: "members",
+      signal: owner.signal,
+      onCloseRequestReady: (request) => {
+        requestClose = request;
+      },
       loading: () => false,
       refreshBase,
       updateBaseSettings: async () => "persisted",
@@ -124,30 +129,87 @@ describe("Pulse base settings: access", () => {
         (item) => item.style.display !== "none" && item.textContent?.includes("Access to Shop metrics"),
       );
     const row = (name: string) => Array.from(panel()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
-    try {
+    const openAccess = async () => {
       await waitFor(() => !!button("Edit access") && !button("Edit access")!.disabled, "the access list");
-      expect(button("Remove Lea Schmitt")).toBeUndefined();
       button("Edit access")!.click();
       await waitFor(() => panel()?.textContent?.includes("Ben Albers") === true, "the access dialog");
+    };
+    const stageTwoChanges = async () => {
       Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
         .find((option) => option.textContent?.includes("Edit"))!
         .click();
       row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
       await waitFor(() => panel()?.textContent?.includes("2 changes") === true, "two changes");
-      expect(calls).toEqual([]);
-      const readsBefore = reads;
-      button("Save")!.click();
-      await waitFor(() => !!panel()?.querySelector('[role="alert"]'), "the failed removal");
-      expect(calls).toEqual(["PATCH lea", "DELETE ben"]);
+    };
+    return {
+      dom,
+      state,
+      calls,
+      refreshBase,
+      owner,
+      closed,
+      requestClose: () => requestClose!(),
+      button,
+      panel,
+      openAccess,
+      stageTwoChanges,
+      cleanup: async () => {
+        owner.abort();
+        await closed;
+        confirm.mockRestore();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("changes save together in the access dialog; a half-failed, discarded save still reloads the list once", async () => {
+    const ui = await setup();
+    try {
+      await ui.openAccess();
+      expect(ui.button("Remove Lea Schmitt")).toBeUndefined();
+      await ui.stageTwoChanges();
+      expect(ui.calls).toEqual([]);
+      const readsBefore = ui.state.reads;
+      ui.button("Save")!.click();
+      await waitFor(() => !!ui.panel()?.querySelector('[role="alert"]'), "the failed removal");
+      expect(ui.calls).toEqual(["PATCH lea", "DELETE ben"]);
       // Saving does not reload after each change.
-      expect(reads).toBe(readsBefore);
-      button("Cancel")!.click();
-      await waitFor(() => !panel(), "the access dialog to close");
-      await waitFor(() => reads === readsBefore + 1 && refreshBase.mock.calls.length === 1, "one reload after the dialog");
+      expect(ui.state.reads).toBe(readsBefore);
+      ui.button("Cancel")!.click();
+      await waitFor(() => !ui.panel(), "the access dialog to close");
+      await waitFor(() => ui.state.reads === readsBefore + 1 && ui.refreshBase.mock.calls.length === 1, "one reload after the dialog");
     } finally {
-      confirm.mockRestore();
-      globalThis.fetch = originalFetch;
-      dom.cleanup();
+      await ui.cleanup();
+    }
+  });
+
+  test("Back while the access dialog is open keeps both open with the staged changes", async () => {
+    const ui = await setup();
+    try {
+      await ui.openAccess();
+      await ui.stageTwoChanges();
+      expect(await ui.requestClose()).toBe(false);
+      expect(ui.panel()?.textContent).toContain("2 changes");
+      expect(ui.calls).toEqual([]);
+    } finally {
+      await ui.cleanup();
+    }
+  });
+
+  test("settings closed by their owner take the access dialog along, and nothing more is sent", async () => {
+    const ui = await setup();
+    try {
+      await ui.openAccess();
+      await ui.stageTwoChanges();
+      ui.owner.abort();
+      await ui.closed;
+      await waitFor(() => !ui.panel(), "the access dialog to close");
+      expect(ui.dom.document.querySelector("dialog[open]")).toBeNull();
+      await Bun.sleep(20);
+      expect(ui.calls).toEqual([]);
+    } finally {
+      await ui.cleanup();
     }
   });
 });

@@ -238,11 +238,18 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       let wroteAccess = false;
       // A plain guard, not a disabled state: a disabled button could not take focus back when the dialog closes.
       let editingAccess = false;
+      // The access dialog stacks over these settings and closes with them.
+      const accessDialogOwner = new AbortController();
+      let accessDialogOpen = false;
       const requireAccessWritable = () => {
         if (!access.stale() && !access.loading() && !access.refreshing()) return;
         throw new Error(t().refreshAccessBeforeChanges);
       };
+      const requireOpen = () => {
+        if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
+      };
       const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
+        requireOpen();
         requireAccessWritable();
         await grantMutation.mutate({ principal, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
@@ -252,6 +259,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         return grantMutation.data()!;
       };
       const updateAccess = async (accessId: string, permission: GrantableLevel) => {
+        requireOpen();
         requireAccessWritable();
         await updateMutation.mutate({ accessId, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
@@ -260,6 +268,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         wroteAccess = true;
       };
       const revokeAccess = async (accessId: string) => {
+        requireOpen();
         requireAccessWritable();
         await revokeMutation.mutate(accessId);
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
@@ -280,15 +289,21 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         const entries = access.data();
         if (disposed || !entries) return;
         wroteAccess = false;
-        await openAccessDialog({
-          resourceName: saved().name,
-          subtitle: t().accessDialogSubtitle,
-          initialEntries: entries,
-          grantAccess,
-          updateAccess,
-          revokeAccess,
-          allowedLevels: accessLevels(),
-        });
+        accessDialogOpen = true;
+        try {
+          await openAccessDialog({
+            resourceName: saved().name,
+            subtitle: t().accessDialogSubtitle,
+            initialEntries: entries,
+            grantAccess,
+            updateAccess,
+            revokeAccess,
+            allowedLevels: accessLevels(),
+            signal: accessDialogOwner.signal,
+          });
+        } finally {
+          accessDialogOpen = false;
+        }
         // Awaited, so a second click waits for the saved list instead of opening the old one.
         if (wroteAccess && !disposed) await refreshAccess();
       };
@@ -311,7 +326,8 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const accessBusy = () => grantMutation.loading() || updateMutation.loading() || revokeMutation.loading() || access.refreshing();
       let checkingClose = false;
       const requestClose = async () => {
-        if (checkingClose || options.loading() || accessBusy()) return false;
+        // Back while the access dialog is open keeps both: that dialog asks before it discards changes.
+        if (checkingClose || options.loading() || accessBusy() || accessDialogOpen) return false;
         checkingClose = true;
         try {
           if (!(await confirmDiscardIfDirty(() => changeCount() > 0)) || disposed) return false;
@@ -328,6 +344,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
 
       onCleanup(() => {
         disposed = true;
+        accessDialogOwner.abort();
         grantMutation.abort();
         updateMutation.abort();
         revokeMutation.abort();
