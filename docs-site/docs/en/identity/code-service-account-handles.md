@@ -5,7 +5,7 @@ section: Identity and access
 order: 359
 description: Find Code accounts by their copyable handle and show owner titles only within managed target resources.
 tags: [code, identity, permissions, service-accounts]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Find a Code service account
@@ -16,7 +16,9 @@ run. The handle identifies the account; knowing it grants no access. Personal
 Code runs as its person and has no service-account handle.
 
 Ask the person who manages the target to add that account through the target's
-normal access editor. Grants continue to refer to the account UUID, so a handle
+normal access editor: with **Add service account**, or by typing the handle
+into the search for people, which asks the same targeted lookup and adds the
+hit under **Service accounts**. Grants continue to refer to the account UUID, so a handle
 never replaces a principal ID in a stored grant.
 
 ## Search with the target

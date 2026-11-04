@@ -35,7 +35,10 @@ or Arrow Up/Down opens the results, and after a 150 ms debounce while the user
 types. Set `debounceMs` when the data source needs a different delay. A new
 query or closed popover aborts the previous request.
 
-Each result has `id`, `label`, and optional `description` and `icon`. The
+Each result has `id`, `label`, and optional `description`, `icon`, and
+`badge`. A `badge` names what kind of result it is, such as “Service account”,
+as a neutral badge at the end of the row; use it when one result differs from
+the others in the list. The
 selected callback receives that complete object. `Combobox` adds the `ti`
 family class itself, so pass the bare Tabler name such as `ti-user` for `icon`.
 Select, MultiSelectInput, and FilterChip take the complete class instead.
@@ -77,7 +80,7 @@ Unlike `disabled`, `readOnly` keeps focus while blocking new picks, for example 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
 
 ```ts
-type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
+type ComboboxOption = { id: string; label: string; description?: string; icon?: string; badge?: string };
 
 type ComboboxProps = FieldProps & {
   readOnly?: boolean;

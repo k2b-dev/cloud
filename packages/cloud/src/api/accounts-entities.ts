@@ -3,6 +3,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
+  CODE_ACCOUNT_HANDLE_PATTERN,
   createPagination,
   EntityKindSchema,
   EntityListItemSchema,
@@ -209,7 +210,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       if (query.search?.trim().startsWith("code-")) {
         if (await (dependencies.limitHandleLookup ?? limitHandleLookup)(user.id))
           return c.json({ code: "RATE_LIMITED", message: "Too many requests" }, 429);
-        if (/^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/.test(query.search.trim()) && query.target_type && query.target_id) {
+        if (CODE_ACCOUNT_HANDLE_PATTERN.test(query.search.trim()) && query.target_type && query.target_id) {
           const target = { type: query.target_type, id: query.target_id };
           const args = [target, auth.getAuthority(c), getLocale(c), c.req.raw.signal] as const;
           const manages = (await dependencies.managesTarget?.(...args)) ?? (await managesPrincipalSearchTarget(...args));

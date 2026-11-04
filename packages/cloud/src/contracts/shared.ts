@@ -107,6 +107,12 @@ export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent", "code"]);
 export type ServiceAccountKind = z.infer<typeof ServiceAccountKindSchema>;
 
+/**
+ * The identifier of a Code service account, as its code page shows it: `code-` and 10 characters. Only this exact
+ * form finds the account, and only together with a target the searcher manages.
+ */
+export const CODE_ACCOUNT_HANDLE_PATTERN = /^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/;
+
 export const EntityKindSchema = z.enum(["user", "group", "service_account"]);
 export type EntityKind = z.infer<typeof EntityKindSchema>;
 

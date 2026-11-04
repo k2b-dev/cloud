@@ -78,18 +78,19 @@ export const fitChoicePills = (
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Failed to load options");
 
-export function createChoiceLoader<T extends string>(
-  loader: () => ChoiceOptionsLoader<T> | undefined,
+/** `O` lets a control keep its own option fields, such as a Combobox badge, through loading. */
+export function createChoiceLoader<T extends string, O extends ChoiceOption<T> = ChoiceOption<T>>(
+  loader: () => ((query: string, signal: AbortSignal) => Promise<readonly O[]>) | undefined,
   debounceMs: () => number,
 ): {
-  options: () => readonly ChoiceOption<T>[];
+  options: () => readonly O[];
   loading: () => boolean;
   error: () => string | undefined;
   load: (query: string, immediate?: boolean) => void;
   retry: () => void;
   cancel: () => void;
 } {
-  const [options, setOptions] = createSignal<readonly ChoiceOption<T>[]>([]);
+  const [options, setOptions] = createSignal<readonly O[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string>();
   let controller: AbortController | undefined;

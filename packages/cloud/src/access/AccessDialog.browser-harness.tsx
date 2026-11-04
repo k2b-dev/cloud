@@ -41,7 +41,8 @@ void openAccessDialog({
     handle === "code-7k2q9m4xwt"
       ? {
           principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000001" },
-          display: { displayName: "Code of info@example.test", serviceAccountKind: "resource_bound" },
+          display: { displayName: "Code von info@beispiel.de", serviceAccountKind: "code" },
+          description: "Dienstkonto eines Postfachs",
         }
       : null,
   grantAccess: async (principal, permission) => ({ id: crypto.randomUUID(), principal, permission, createdAt: "now" }),

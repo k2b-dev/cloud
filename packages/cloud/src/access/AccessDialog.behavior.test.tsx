@@ -29,6 +29,25 @@ const bot: AccessEntry = {
   serviceAccountKind: "agent",
 };
 
+/** happy-dom has no Popover API; the search's result list opens through it. */
+const installPopoverApi = (window: Window) => {
+  const prototype = (window as unknown as { HTMLElement: typeof HTMLElement }).HTMLElement.prototype as unknown as Record<string, unknown>;
+  const open = new WeakSet<object>();
+  const matches = prototype.matches as (this: Element, selector: string) => boolean;
+  Object.assign(prototype, {
+    matches(this: Element, selector: string) {
+      return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+    },
+    showPopover(this: object) {
+      open.add(this);
+    },
+    hidePopover(this: object) {
+      open.delete(this);
+    },
+    scrollIntoView() {},
+  });
+};
+
 describe("AccessDialog", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
@@ -609,6 +628,127 @@ describe("AccessDialog", () => {
       expect(accessDialogMessages.resolve(["de"]).t.serviceAccountHandlePlaceholder).toBe(
         "Kennung von der Code-Seite, etwa code-7k2q9m4xwt",
       );
+    });
+
+    describe("an identifier in the search for people", () => {
+      const handle = "code-7k2q9m4xwt";
+      const found: import("./AccessDialog").FoundServiceAccount = {
+        principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000012" },
+        display: { displayName: "Code von info@beispiel.de", serviceAccountKind: "code" },
+        description: "Service account of a mailbox",
+      };
+      /** Types into the search; directory requests are recorded so a test can prove the directory was not asked. */
+      const search = async (findServiceAccount: (handle: string, signal: AbortSignal) => Promise<typeof found | null>, query: string) => {
+        const originalFetch = globalThis.fetch;
+        const directory: URL[] = [];
+        globalThis.fetch = Object.assign(
+          async (input: string | URL | Request) => {
+            directory.push(new URL(input instanceof Request ? input.url : input.toString()));
+            return Response.json({ items: [] });
+          },
+          { preconnect: originalFetch.preconnect },
+        );
+        const lookups: string[] = [];
+        const ui = await setup({
+          entries: [mia],
+          findServiceAccount: (value, signal) => {
+            lookups.push(value);
+            return findServiceAccount(value, signal);
+          },
+        });
+        installPopoverApi(ui.dom.window as unknown as Window);
+        const input = ui.dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = query;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        // The search's own list, never the level menus of the rows.
+        const list = () => ui.dom.document.getElementById(input.getAttribute("aria-controls") ?? "");
+        const options = () => Array.from(list()?.querySelectorAll<HTMLButtonElement>('button[role="option"]') ?? []);
+        const status = () => list()?.textContent ?? "";
+        const section = (title: string) =>
+          Array.from(ui.dom.root.querySelectorAll("section")).find((item) => item.querySelector("h2, h3")?.textContent?.startsWith(title));
+        return {
+          ...ui,
+          directory,
+          lookups,
+          options,
+          status,
+          section,
+          cleanup: () => {
+            ui.cleanup();
+            globalThis.fetch = originalFetch;
+          },
+        };
+      };
+
+      test("asks the same targeted lookup, marks the hit, and adds it under Service accounts", async () => {
+        const ui = await search(async () => found, handle);
+        try {
+          await waitFor(() => ui.options().length === 1, "the service account in the results");
+          const option = ui.options()[0]!;
+          expect(ui.lookups).toEqual([handle]);
+          expect(ui.directory).toEqual([]);
+          expect(option.querySelector("strong")?.textContent).toBe("Code von info@beispiel.de");
+          expect(option.querySelector("small")?.textContent).toBe("Service account of a mailbox · goes to Service accounts");
+          expect(option.querySelector(".k2b-choice-option__badge")?.textContent).toBe("Service account");
+          expect(option.querySelector(".ti-code")).not.toBeNull();
+          option.click();
+          await waitFor(() => ui.section("Service accounts")?.textContent?.includes("Code von info@beispiel.de") === true, "the new row");
+          expect(ui.section("People")?.textContent).not.toContain("Code von info@beispiel.de");
+          expect(ui.section("Service accounts")?.textContent).toContain("New");
+          expect(ui.dom.root.textContent).toContain("Code von info@beispiel.de gets View");
+          ui.button("Save").click();
+          await waitFor(() => ui.close.mock.calls.length === 1, "the saved account");
+          expect(ui.calls).toEqual(["grant service_account read"]);
+        } finally {
+          ui.cleanup();
+        }
+      });
+
+      test("a name never finds a service account: only the directory is asked, without Code accounts", async () => {
+        const ui = await search(async () => found, "Code von info");
+        try {
+          await waitFor(() => ui.directory.length > 0, "the directory search");
+          await Bun.sleep(30);
+          expect(ui.lookups).toEqual([]);
+          expect(ui.directory[0]!.searchParams.get("service_account_kinds")).toBe("agent,standalone");
+          expect(ui.options().length).toBe(0);
+          for (const prefix of ["code-7k2q", "code-7k2q9m4xwtx", "CODE-7k2q9m4xwt"]) {
+            const input = ui.dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+            input.value = prefix;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            await waitFor(
+              () => ui.directory.some((url) => url.searchParams.get("search") === prefix),
+              `the directory search for ${prefix}`,
+            );
+          }
+          expect(ui.lookups).toEqual([]);
+        } finally {
+          ui.cleanup();
+        }
+      });
+
+      test("someone who does not manage the target gets nothing, and a refused lookup says so", async () => {
+        // The server answers a non-manager with no item; the lookup turns that into null.
+        const ui = await search(async () => null, handle);
+        try {
+          await waitFor(() => ui.status().includes("No results found"), "the empty result");
+          expect(ui.lookups).toEqual([handle]);
+          expect(ui.directory).toEqual([]);
+          expect(ui.options().length).toBe(0);
+          expect(ui.dom.root.textContent).not.toContain("Code von info@beispiel.de");
+        } finally {
+          ui.cleanup();
+        }
+        const limited = await search(async () => {
+          throw new Error("Too many requests");
+        }, handle);
+        try {
+          await waitFor(() => limited.status().includes("Too many requests"), "the refused lookup");
+          expect(limited.options().length).toBe(0);
+        } finally {
+          limited.cleanup();
+        }
+      });
     });
 
     test("a found account with a picture shows it in the preview", async () => {
