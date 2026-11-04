@@ -98,6 +98,12 @@ export const requestMessageBody = async (params: {
     await redis.send("DEL", [requestKey(params.messageId)]);
     return ok({ state: "limited", waitedMs: waited });
   }
-  await enqueueMessageHydration(params.messageId);
+  try {
+    await enqueueMessageHydration(params.messageId);
+  } catch (error) {
+    // The window must not answer "requested" for a job that was never queued.
+    await redis.send("DEL", [requestKey(params.messageId)]);
+    throw error;
+  }
   return ok({ state: "requested", waitedMs: waited });
 };

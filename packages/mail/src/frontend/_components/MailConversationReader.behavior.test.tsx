@@ -365,6 +365,40 @@ test.skipIf(isServer)("after the deadline the reader says it waits for the mailb
   }
 });
 
+test.skipIf(isServer)("an answer to a request from before the card closed changes nothing after it opens again", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const originalFetch = globalThis.fetch;
+  const answers: Array<(answer: BodyRequestAnswer) => void> = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/body-request")) return Response.json({ items: [] });
+      return new Promise<Response>((resolve) => answers.push((answer) => resolve(Response.json(answer))));
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const dispose = render(() => createComponent(MailConversationReader, readerProps), dom.root);
+  try {
+    const header = () => dom.root.querySelector<HTMLButtonElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    await waitFor(() => answers.length === 1);
+    header().click();
+    await waitFor(() => header().getAttribute("aria-expanded") === "false");
+    header().click();
+    await waitFor(() => answers.length === 2);
+    answers[1]!({ state: "requested", waitedMs: 0 });
+    await Bun.sleep(5);
+    // The first open's late answer would say the deadline has passed.
+    answers[0]!({ state: "unavailable", waitedMs: 0 });
+    await Bun.sleep(5);
+    expect(dom.root.querySelector("[data-mail-body-waiting]")).toBeNull();
+    expect(dom.root.querySelector('[data-mail-body-state] .k2b-placeholder[data-state="loading"]')).not.toBeNull();
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("a body no job can fetch shows the wait at once", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;

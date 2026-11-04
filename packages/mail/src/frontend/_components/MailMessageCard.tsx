@@ -100,9 +100,10 @@ export default function MailMessageCard(props: {
   const [colorsOverride, setColorsOverride] = createSignal<MessageColors | null>(null);
   const colors = createMemo(() => resolveMessageColors(props.context.readingFormat, colorsOverride()));
   const [refreshing, setRefreshing] = createSignal(false);
-  // Without a deadline a slow mailbox looks like a body that loads forever. The server counts the
-  // wait from its first request, so a reload continues it; server and first client render both
-  // show the loading state, and the wait shows only once the request says how long it has lasted.
+  // Without a deadline a slow mailbox looks like a body that loads forever. The deadline runs from the
+  // request on, so a slow or stalled request still ends in the wait. The server counts the wait from
+  // its first request, so a reload continues it; server and first client render both show the
+  // loading state, and the wait shows once the request says how long it has lasted or the time is up.
   const [waitingForMailbox, setWaitingForMailbox] = createSignal(false);
   const [bodyUnavailable, setBodyUnavailable] = createSignal(false);
   let waitDeadline: ReturnType<typeof setTimeout> | undefined;
@@ -110,7 +111,12 @@ export default function MailMessageCard(props: {
     clearTimeout(waitDeadline);
     waitDeadline = undefined;
   };
-  onCleanup(stopWaitDeadline);
+  // Closing the card, a newer request and unmounting make the answers of earlier requests obsolete.
+  let requestGeneration = 0;
+  onCleanup(() => {
+    requestGeneration += 1;
+    stopWaitDeadline();
+  });
   const startWaitDeadline = (waitedMs: number) => {
     stopWaitDeadline();
     const remaining = BODY_WAIT_DEADLINE_MS - waitedMs;
@@ -124,6 +130,9 @@ export default function MailMessageCard(props: {
   let requestedThisOpen = false;
   const requestBody = async (retry: boolean): Promise<void> => {
     requestedThisOpen = true;
+    const generation = ++requestGeneration;
+    const startedAt = performance.now();
+    if (retry || (!waitDeadline && !waitingForMailbox())) startWaitDeadline(0);
     try {
       const response = await apiClient.mailboxes[":mailboxId"].messages[":messageId"]["body-request"].$post({
         param: { mailboxId: props.context.mailboxId, messageId },
@@ -131,13 +140,17 @@ export default function MailMessageCard(props: {
       });
       if (!response.ok) throw new Error(await readApiError(response, messages().bodyRequestFailed));
       const result = await response.json();
+      if (generation !== requestGeneration) return;
       setBodyUnavailable(result.state === "unavailable");
-      // An explicit request reconciles on its own.
-      if (result.state === "loaded" && !retry) await props.actions.refresh();
-      else startWaitDeadline(result.state === "unavailable" ? BODY_WAIT_DEADLINE_MS : result.waitedMs);
+      // A reconcile that ran beside this request may have read the snapshot before the body committed.
+      if (result.state === "loaded") await props.actions.refresh();
+      else
+        startWaitDeadline(
+          result.state === "unavailable" ? BODY_WAIT_DEADLINE_MS : Math.max(result.waitedMs, performance.now() - startedAt),
+        );
     } catch (error) {
-      // The body still loads in the mailbox's own order; the wait counts from here.
-      if (!waitDeadline && !waitingForMailbox()) startWaitDeadline(0);
+      // The body still loads in the mailbox's own order, and the deadline started with the request.
+      if (generation !== requestGeneration) return;
       if (retry) toast.error(error instanceof Error ? error.message : messages().bodyRequestFailed);
     }
   };
@@ -213,7 +226,10 @@ export default function MailMessageCard(props: {
   );
   const bodyPending = () => props.expanded && !bodyFormat() && !["body", "complete", "failed"].includes(props.message.hydrationStatus);
   createEffect(() => {
-    if (!props.expanded) requestedThisOpen = false;
+    if (!props.expanded) {
+      requestedThisOpen = false;
+      requestGeneration += 1;
+    }
     if (!bodyPending()) {
       stopWaitDeadline();
       setWaitingForMailbox(false);
