@@ -3,9 +3,9 @@ title: Code owner lifecycle
 navTitle: Code lifecycle
 section: Platform services
 order: 964
-description: Report owner deletion transactionally, follow durable grant cleanup, and pause Code whose owner is missing.
+description: Report owner deletion transactionally, clean up its account and pause Code whose owner is missing.
 tags: [code, identity, permissions]
-updated: 2026-11-01
+updated: 2026-11-04
 ---
 
 # Code owner lifecycle
@@ -55,21 +55,13 @@ Before contacting another application, Core atomically marks the Code
 `deleting`, disables its account, revokes its version mandates, cancels runs and
 stops unfinished activations.
 
-## Follow cleanup through an outage
+## Follow account cleanup
 
-Core persists one `code.access.rm` job per recorded grant, including grants
-whose activation request may still be in flight. Each job keeps the target as a
-JSON object so cleanup reaches the recorded provider before marking the grant
-released. Removal uses the platform's
-account-bound cleanup authority; it does not retain the activating person's
-session or require their continued access. Retrying a removal cannot restore a
-grant or remove an ordinary person's share.
-
-An unavailable target leaves its job waiting. Core retries automatically with
-backoff, up to about five minutes between attempts. Other targets can still
-finish. Code, its account and journal remain until all removals have been
-confirmed and the activation worker has drained. Then Core deletes the Code
-and its owned records.
+Core persists one `code.delete` job. It waits for the activation worker to drain
+and for owner-deletion reports to be acknowledged, then deletes the Code,
+account and owned records. Foreign keys remove the account's normal access rows
+and application junctions. No remote grant-removal request is needed. A retry
+cannot recreate access or remove another principal's shares.
 
 Administration clients use `POST /api/code/cleanup` with
 `{ codeId?, cursor?, limit? }`. Cloud administrator authority is required.
@@ -78,18 +70,16 @@ Administration clients use `POST /api/code/cleanup` with
 
 Core exports `listCodeCleanupJobs`, `codeLifecycleContracts`,
 `CodeCleanupJobSchema` and `CodeCleanupJob` from `packages/core/src/code` for
-Administration › Code. Every item includes the Code title, job kind, target,
+Administration › Code. Every item includes the Code title, job kind,
 attempt count, next retry time and a stable `lastError` code. Its state is
-`pending`, `running` or `waiting`. Completed jobs disappear. A `code.delete` job
-waits for the grant-removal jobs; it does not permit skipping failed cleanup.
+`pending`, `running` or `waiting`. Completed jobs disappear. The deletion job remains visible until cleanup succeeds.
 
 ## Check the owner before running
 
 A resource's canonical reader supplies `codeResourceTitle(tx, id)`. This
 server-only projection uses the supplied read-only transaction and returns the
 current title, or `null` only when the resource is missing or deleted. Database
-or provider failures throw. Readers of types listed in `code.owners` or offering
-Code grants must supply it; startup rejects a reader that omits it.
+or provider failures throw. Readers of types listed in `code.owners` must supply it; startup rejects a reader that omits it.
 
 Core reads only this projection under authority bound to the exact owning Code
 account. It never impersonates the former activator or reads the full resource.
@@ -111,9 +101,9 @@ primitive; the scheduler owns this execution check.
 The same reader projection checks normalized targets of Code accounts before a
 capability executes. A missing target returns `CODE_TARGET_DELETED` with
 **Target deleted** or **Ziel gelöscht**, according to the invocation locale.
-A target without a usable projection returns `CODE_RESOURCE_UNAVAILABLE` and
-runs no handler. Ordinary permission refusals and missing objects inside the
+Without a projection, the normal domain service decides the target result and
+checks current rights. Ordinary permission refusals and missing objects inside the
 operation's input retain their own errors.
 
-See [Code activation](/en/docs/platform/code-activation) for target grants and
+See [Code activation](/en/docs/platform/code-activation) for version switching and
 [Code data model](/en/docs/platform/code-data-model) for owned records.

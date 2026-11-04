@@ -482,16 +482,8 @@ describe("App event invocation JWT", () => {
   });
 });
 
-test("Code access admission is Core-only and bound to the exact editor operation", async () => {
+test("legacy Code access admission claims are rejected", async () => {
   const claims = { ...baseClaims(), act: { sub: "app:core" }, op: "capability.action.run:code.access.rm", code_access: "rm" };
   const expected = { targetAppId, operation: claims.op, schemaHash };
-  expect(await verifyInvocationToken(await token(claims), expected, { issuer, key: keySet, now })).toMatchObject({ code_access: "rm" });
-  for (const invalid of [
-    { act: { sub: "app:assistant" } },
-    { code_access: "set" },
-    { credential_kind: "mandate" },
-    { session_kind: "app" },
-    { parent_invocation_id: jti },
-  ])
-    expect(await verifyInvocationToken(await token({ ...claims, ...invalid }), expected, { issuer, key: keySet, now })).toBeNull();
+  expect(await verifyInvocationToken(await token(claims), expected, { issuer, key: keySet, now })).toBeNull();
 });

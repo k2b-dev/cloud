@@ -3,13 +3,7 @@ import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
-import {
-  type CapabilityExecutionContext,
-  type CloudRuntime,
-  capabilityResultSchema,
-  NormalizedCapabilityCallSchema,
-  type User,
-} from "@k2b/cloud/contracts";
+import { type CloudRuntime, capabilityResultSchema, NormalizedCapabilityCallSchema, type User } from "@k2b/cloud/contracts";
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
 import { accounts, coreSettings, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
@@ -24,23 +18,17 @@ import {
   acceptanceProvider,
   loadCodePage,
 } from "../../../../scripts/fixtures/code-acceptance-provider";
-import {
-  codeAccessProofs,
-  signCodeAccessList,
-  signCodeAccessProof,
-  verifyCodeAccessProof,
-} from "../../../../scripts/fixtures/code-platform";
+import { codeOwnerProofs, signCodeOwnerRead } from "../../../../scripts/fixtures/code-platform";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
 import { aiCapabilities } from "../capabilities";
 import { acceptanceChecker, acceptanceDispatch, acceptanceRunners } from "./acceptance.test-fixture";
 import { type CodeContext, codeAccountDisplayName } from "./access";
 import { activateCodeVersion, processCodeActivation, readCodeActivation } from "./activation";
-import { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
-import type { CodeActivationTransport } from "./activation-transport";
-import * as activationTransport from "./activation-transport";
+import { cleanupCodeActivation } from "./activation-maintenance";
 import { codeAuthoringServices as code } from "./authoring";
-import { codeAccessCleanupOutbox, codeDeletionOutbox, codeOwnerDeletedOutbox, processCodeCleanupJob } from "./lifecycle";
+import { codeDeletionOutbox, codeOwnerDeletedOutbox } from "./lifecycle";
+import * as ownerTransport from "./owner-transport";
 import * as runnerHosts from "./runner-jobs";
 
 import { type CodeRunWakeup, createCodeRunOutbox, createCodeScheduleReconciler } from "./scheduling-runtime";
@@ -69,29 +57,6 @@ const context = (user: User): CodeContext & MailRequestContext => ({
   authority: { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id }, credentialKind: "session", scopes: [] },
   locale: "de",
 });
-const capabilityContext = (user: User, operation: "set" | "list" | "rm" = "set"): CapabilityExecutionContext => {
-  const actor = {
-    kind: "user" as const,
-    user,
-    delegation: {
-      kind: "invocation" as const,
-      callingAppId: "core",
-      credentialKind: "session" as const,
-      invocationId: "c25-access",
-      codeAccess: operation,
-    },
-  };
-  return {
-    actor,
-    user,
-    accessSubject: { type: "user", userId: user.id },
-    authority: { actor, accessSubject: { type: "user", userId: user.id }, credentialKind: "invocation", scopes: [] },
-    origin: "app",
-    locale: "de",
-    requestId: "c25-access",
-    signal: new AbortController().signal,
-  };
-};
 const source = (body: string) => ({
   "code.ts": `import { app, spaces, mail, http, secrets } from "@sdk";
 app.schedule("0 8 * * 1", async () => {
@@ -118,9 +83,8 @@ suiteFor(
   let fleet: Awaited<ReturnType<typeof acceptanceRunners>>;
   let runOutbox: ReturnType<typeof createCodeRunOutbox>;
   let worker: Worker | undefined;
-  let transport: CodeActivationTransport;
   let providers: Map<string, AcceptanceProvider>;
-  let spaces: AcceptanceProvider & Required<Pick<AcceptanceProvider, "permission" | "accessList">>;
+  let spaces: AcceptanceProvider & Required<Pick<AcceptanceProvider, "permission" | "accessList" | "grant" | "revoke">>;
   const restores: Array<() => void> = [];
   const messages: unknown[] = [];
   const sentHttp: string[] = [];
@@ -201,6 +165,8 @@ suiteFor(
     spaces = z
       .object({
         provider: AcceptanceProviderSchema.extend({
+          grant: AcceptanceProviderSchema.shape.grant.unwrap(),
+          revoke: AcceptanceProviderSchema.shape.revoke.unwrap(),
           permission: AcceptanceProviderSchema.shape.permission.unwrap(),
           accessList: AcceptanceProviderSchema.shape.accessList.unwrap(),
         }),
@@ -270,49 +236,18 @@ suiteFor(
     const kid = "25252525-2525-4525-8525-252525252525";
     const signer = { kid, key: pair.privateKey, signUntil: new Date(clock!.now.getTime() + 3_600_000) };
     const key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid, alg: "RS256", use: "sig" }] });
-    const verifyInspection = codeAccessProofs.verifyCodeAccessList;
-    const inspectionKeys = spyOn(codeAccessProofs, "verifyCodeAccessList").mockImplementation((token, appId) =>
+    const verifyInspection = codeOwnerProofs.verifyCodeOwnerRead;
+    const inspectionKeys = spyOn(codeOwnerProofs, "verifyCodeOwnerRead").mockImplementation((token, appId) =>
       verifyInspection(token, appId, { issuer, key }),
     );
     restores.push(() => inspectionKeys.mockRestore());
-    transport = {
-      set: async ({ item, dryRun, ...proof }, caller) => {
-        const activatingUser = userFromActor(caller.authority.actor);
-        if (!activatingUser) throw new Error("Activation needs a person");
-        const appId = item.target.type.split(".")[0]!;
-        const token = await signCodeAccessProof(
-          appId,
-          { ...proof, grantId: item.grantId, target: item.target, operations: item.operations },
-          { issuer, signer },
-        );
-        return providers.get(appId)!.set({
-          input: { proof: token, target: item.target, operations: item.operations, dryRun },
-          context: capabilityContext(activatingUser),
-          dependencies: {
-            db: sql,
-            verifyProof: (value: string, expected: Parameters<typeof verifyCodeAccessProof>[1]) =>
-              verifyCodeAccessProof(value, expected, { issuer, key }),
-          },
-        });
-      },
-      list: (id, principal) => providers.get(id)!.list({ principal, authority: { listPrincipal: principal } }),
-      // Only Cloud-admin activation notifies target managers; the story's activations are by managers.
-      notificationManagers: async () => [],
-      remove: async (id, principal, grantId) => {
-        expect(await providers.get(id)!.remove({ grantId, authority: { cleanupPrincipal: principal, requestId: "c25-cleanup" } })).toBe(
-          true,
-        );
-      },
-    };
     // The shared authoring service still invokes the real isolated checker. This fixture only replaces its network hop.
     checker = await acceptanceChecker();
     const checkHost = spyOn(runnerHosts, "createRunnerCodeCheckHost").mockReturnValue({ check: checker.check });
     restores.push(() => checkHost.mockRestore());
-    const listingTransport = spyOn(activationTransport.codeActivationTransport, "list").mockImplementation(transport.list);
-    restores.push(() => listingTransport.mockRestore());
-    const ownerTitle = spyOn(activationTransport, "readCodeResourceOwnerTitle").mockImplementation(async (ref, principal) => {
+    const ownerTitle = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async (ref, principal) => {
       const appId = ref.type.split(".")[0]!;
-      const token = await signCodeAccessList(appId, principal, { issuer, signer });
+      const token = await signCodeOwnerRead(appId, principal, { issuer, signer });
       const response = await providers.get(appId)!.authority(
         new Request(`http://${appId}.test/queries/code.owner.title`, {
           method: "POST",
@@ -385,8 +320,6 @@ suiteFor(
   async function activate(codeId: string, versionId: string, ctx = manager) {
     const receipt = await activateCodeVersion({ codeId, versionId, activationId: crypto.randomUUID() }, ctx);
     await processCodeActivation(receipt.id, {
-      transport,
-      catalog: async (id) => ((await catalog.getCapabilityCatalogApp(id)).ok ? (providers.get(id)?.manifest ?? null) : null),
       restoreAuthority: async () => ctx,
     });
     expect(await readCodeActivation({ codeId, activationId: receipt.id }, ctx)).toMatchObject({ state: "active", failure: null });
@@ -440,7 +373,6 @@ suiteFor(
         target: space,
         status: "new",
         typeTitle: "Space",
-        needsTargetAdmin: true,
       }),
     );
     const dynamic = await code.check(
@@ -453,8 +385,7 @@ suiteFor(
       },
       author,
     );
-    expect(dynamic.result.ok).toBe(false);
-    if (!dynamic.result.ok) expect(dynamic.result.diagnostics).toContainEqual(expect.objectContaining({ code: "code_dynamic_target" }));
+    expect(dynamic.result.ok).toBe(true);
     const submitted = await code.submit({ codeId, entry: "code.ts", files: creation, baseVersionId: null }, author);
     const personalVersion = await code.submit({ codeId: personalId, entry: "code.ts", files: personalFiles, baseVersionId: null }, author);
     await approve(submitted.submission);
@@ -468,9 +399,17 @@ suiteFor(
       activateCodeVersion({ codeId, versionId: submitted.submission.version.id, activationId: crypto.randomUUID() }, phone),
     ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("phone") });
     expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
+    const account = (await findCode(codeId))!.serviceAccountId!;
+    expect(
+      await spaces.grant({
+        spaceId: internalSpaceId,
+        principal: { type: "service_account", serviceAccountId: account },
+        permission: "write",
+        caller: manager,
+      }),
+    ).toMatchObject({ ok: true });
     await activate(codeId, submitted.submission.version.id, proof(manager));
     await activate(personalId, personalVersion.submission.version.id, proof(author));
-    const account = (await findCode(codeId))!.serviceAccountId!;
     expect(await spaces.accessList(internalSpaceId)).toContainEqual(
       expect.objectContaining({
         serviceAccountKind: "code",
@@ -551,12 +490,15 @@ suiteFor(
     expect(await sql<{ title: string }[]>`SELECT title FROM spaces.items WHERE short_id=${itemId}`).toEqual([
       { title: "Rechnung geprüft" },
     ]);
-    await cleanupCodeActivation(codeId, transport, async () => {});
-    const access = await reconcileCodeAccess({ codeId }, author, transport);
-    const targetGrant = access.find((grant) => grant.target.type === space.type && grant.target.id === space.id)!;
-    expect(await spaces.remove({ grantId: targetGrant.grantId, authority: { context: capabilityContext(ben, "rm") } })).toBe(true);
-    expect(await reconcileCodeAccess({ codeId }, author, transport)).toContainEqual(
-      expect.objectContaining({ target: space, state: "removed" }),
+    await cleanupCodeActivation(codeId);
+    const targetGrant = (await spaces.accessList(internalSpaceId))
+      .map((entry) => z.object({ id: z.string(), principal: z.unknown() }).parse(entry))
+      .find((entry) => JSON.stringify(entry.principal).includes(account))!;
+    expect(await spaces.revoke({ spaceId: internalSpaceId, accessId: targetGrant.id, caller: manager })).toMatchObject({ ok: true });
+    // Switching the same version on never recreates a revoked share.
+    await activate(codeId, updateVersion.submission.version.id, proof(manager));
+    expect(await spaces.permission({ spaceId: internalSpaceId, subject: { type: "service_account", serviceAccountId: account } })).toBe(
+      "none",
     );
     const revoked = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-revoked" }, author);
     const failed = await completed(codeId, revoked.run.runId);
@@ -653,7 +595,15 @@ suiteFor(
     ])
       expect(JSON.stringify(value)).not.toContain(secretValue);
 
-    // Restore access by an explicit manager activation so deletion must remove a live target share.
+    // Only an ordinary manager share restores access; deletion later removes that live share.
+    expect(
+      await spaces.grant({
+        spaceId: internalSpaceId,
+        principal: { type: "service_account", serviceAccountId: account },
+        permission: "write",
+        caller: manager,
+      }),
+    ).toMatchObject({ ok: true });
     await activate(codeId, updateVersion.submission.version.id, proof(manager));
     expect(await spaces.permission({ spaceId: internalSpaceId, subject: { type: "service_account", serviceAccountId: account } })).toBe(
       "write",
@@ -661,13 +611,6 @@ suiteFor(
     expect((await deleteMailbox(manager, mailboxId)).ok).toBe(true);
     for (const row of await codeOwnerDeletedOutbox.claim()) await codeOwnerDeletedOutbox.dispatch(row);
     expect(await findCode(codeId)).toMatchObject({ state: "deleting" });
-    const cleanupDeadline = AbortSignal.timeout(10_000);
-    while (true) {
-      cleanupDeadline.throwIfAborted();
-      const rows = await codeAccessCleanupOutbox.claim();
-      if (!rows.length) break;
-      for (const row of rows) await codeAccessCleanupOutbox.dispatch(row, (job) => processCodeCleanupJob(job, transport));
-    }
     for (const row of await codeDeletionOutbox.claim()) await codeDeletionOutbox.dispatch(row);
     const resourceRunIds = [
       ...runs.filter((run) => run.code_id === codeId).map((run) => run.id),
@@ -677,17 +620,14 @@ suiteFor(
       revoked.run.runId,
     ];
     for (const runId of resourceRunIds) expect(await sql`SELECT run_id FROM code.calls WHERE run_id=${runId}::uuid`).toHaveLength(0);
-    for (const table of ["codes", "versions", "runs", "secrets", "activations", "target_grants", "cleanup_jobs"]) {
+    for (const table of ["codes", "versions", "runs", "secrets", "activations", "cleanup_jobs"]) {
       expect(await sql.unsafe(`SELECT 1 FROM code.${table} WHERE ${table === "codes" ? "id" : "code_id"}=$1`, [codeId])).toHaveLength(0);
     }
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${account}::uuid`).toHaveLength(0);
     expect(await sql`SELECT id FROM auth.access WHERE service_account_id=${account}::uuid`).toHaveLength(0);
-    expect(await sql`SELECT 1 FROM capabilities.code_access_grants WHERE principal=${account}::uuid AND NOT revoked`).toHaveLength(0);
     expect(await spaces.accessList(internalSpaceId)).not.toContainEqual(
       expect.objectContaining({ principal: { type: "service_account", serviceAccountId: account } }),
     );
-    expect(await transport.list("spaces", account)).toEqual([]);
-    expect(await transport.list("mail", account)).toEqual([]);
     expect(await findCode(personalId)).not.toBeNull();
   }, 120_000);
   test("real checker evidence binds a secret to an approved version and HTTP echoes/errors stay redacted", async () => {

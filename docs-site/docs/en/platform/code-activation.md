@@ -3,237 +3,119 @@ title: Activate a Code version
 navTitle: Code activation
 section: Platform services
 order: 963
-description: Activate submitted Code with durable target checks, version mandates, rollback and draining.
+description: Switch an approved Code version on with its current account rights and a durable version entry.
 tags: [code, identity, permissions]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Activate a Code version
 
-Activation checks the owner and every target needing new or broader permission
-before creating any grants. A refusal leaves the current version running and
-identifies the one target that blocked activation. Submit the version first;
-[current policy and version approval](/en/docs/platform/code-versions) must
-permit it.
+Activation switches the running version. It checks the Code owner, the
+activating credential and the required version approval. It creates no target
+permissions. A target manager grants the Code service account View or Edit
+through the target's normal share dialog, using its exact handle. Every call
+then uses that account's current rights at the target.
 
-Resource Code needs an administrator of its owner and of every target needing
-new or broader permission. Existing permission can be reused by a new owner
-administrator. A new version using the same permissions needs only the owner's
-administrator. A Code editor alone cannot bypass the owner check.
+For resource Code, the person switching on must manage the owner. A Code editor
+may submit a version but cannot bypass that owner check. A Cloud administrator
+can activate resource or application Code with full administrative authority;
+this grants no access at any target. Personal Code can be activated only by its
+owner and runs with that person's current rights.
 
-A Cloud administrator can activate resource Code through the same target
-contract. Managers of affected targets, including the owner, receive one
-notification per activation and target. Activation adds no personal resource
-shares for that administrator. Personal Code can be activated only by its owner
-and runs with that person's current rights.
-
-Personal Code requires its owner's browser session. Object and app Code also
-accept personal OAuth credentials. Phone sessions,
-service accounts, API keys, Code runs and forwarded invocations cannot create
-this authority. A CI credential can submit code but cannot activate it.
+Personal Code requires the owner's browser session. Resource and application
+Code also accept personal OAuth credentials with the required scope. Phone
+sessions, service accounts, API keys, Code runs and forwarded invocations cannot
+activate Code. CI can submit a version but cannot activate it.
 
 ## Start and follow activation
 
-Core exposes these JSON routes. Authenticate directly to Core with the original
-interactive credential; do not call activation through another application's
-capability invocation.
+Submit the immutable version first. The
+[current policy and required version approval](/en/docs/platform/code-versions)
+must permit it. Authenticate directly to Core with the original interactive
+credential.
 
 | Route | JSON body | Result |
 | --- | --- | --- |
 | `POST /api/code/activate` | `{ codeId, versionId, activationId }` | Durable activation status |
-| `POST /api/code/activation/preview` | `{ codeId, versionId }` | What switching on would do for this person, before anything starts |
+| `POST /api/code/activation/preview` | `{ codeId, versionId }` | Version, approval and credential state |
 | `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
-| `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after scheduling cancellation |
-| `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
-| `POST /api/code/access/target` | `{ appId, grants: [{ grantId, principal }] }` | Details for grants at targets the person manages |
+| `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after recording cancellation |
 
-The version card in chat and `cld code activate` read the preview. The Code page's
-dialog reads `/activation/check`, described below.
+Generate `activationId` as a UUID once and reuse it after a lost response. Core
+returns the same process. Reusing it for a different Code, version or person
+returns a conflict. After a terminal failure, resolve the cause and start with
+a new UUID. Status reads require access to the Code; mutation routes retain the
+credential's write scope.
 
-Activation previews carry optional `automations`: `{ entrypoint, title? }`
-from the reviewed version. Consumers show the title when present and keep the
-entrypoint as the execution key.
-
-The preview requires the same rights as activating, but also answers phones and
-non-interactive credentials, with `allowed: { allowed: false, reason }`. For the
-newest waiting version it returns one row per target with `check`: `manages`,
-`blocked`, `has` (the running version's grant stays) or `unknown` (the target did
-not answer or was not asked). Each check is that target's own dry run: nothing is
-granted, no activation exists and no grant identity is kept. A row carries
-`title` and `managers` only when the target's reader allows the person to see
-them; otherwise it shows only the ID. `readiness` says whether the version is
-`ready`, `approval_pending` or `refused` with Core's reason. A running version
-returns `activated`, a replaced one only its numbers; neither asks any target.
-At most 50 targets are checked per request, 8 at a time.
-
-Each access observation names its grant, target, operations and state
-(`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
-`activatedVersionId` of the activation that created it. A removed grant also
-carries `removedBy` and `removedAt`: the person and time of the newest allowed
-`code.access.rm` audit event for that grant, Code account and target. The
-platform writes that event in the same transaction as the target's removal.
-Both are `null` when no such event exists, for example after audit retention.
-The [Code page](/en/docs/platform/code-page) shows them.
-
-`/api/code/access/target` remains available for legacy activation-grant details
-and needs no rights on the Code itself. The
-[shared rights editor](/en/docs/identity/authorization#code-with-access) now uses
-normal target grant callbacks instead of this detail route. For each Code account, Core calls the target
-application's `code.access.list` with the person's own authority. A grant
-appears only when that list returns it, which happens only at targets the person
-manages, and only when Core's record names the same Code account and the same
-target of that application. A refused list shows nothing; an unavailable or
-malformed list fails the request so the dialog can retry. Each detail has
-`grantId`, sorted `operations`, sorted `automations` (the running version's
-entrypoints whose calls use these operations at this target, from the checker's
-`permissions[].entrypoints`; empty when none could be placed), `activatedBy`
-(`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
-finishes). Names follow directory visibility: members see other people's names;
-guests see only their own.
-
-Target-grant details keep `automations` as identifiers and add optional
-`automationTitles`, keyed by those identifiers, for readable names in access
-and removal dialogs. Those dialogs retain the identifier beside the title.
-
-Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;
-Core returns the existing process. Reusing it for another Code, version or
-activating person returns a conflict. A terminal failure needs a new activation
-ID after its cause has been resolved. Read routes require access to the Code;
-mutation routes retain the credential's write scope. Enqueue and cancellation
-record intent without waiting for the worker's target requests. Explicit
-activation also resumes paused Code after all activation checks succeed.
+The chat version card and `cld code activate` use the preview. It contains the
+version's `number`, `running`, `latest`, optional reviewed `automations`, and
+`readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
+message. `allowed` explains phone or credential restrictions. A running version
+also returns `activated`. Preview has no target-rights rows and asks no target
+application to plan, inspect or grant access. The Code page's dialog starts the
+same durable activation directly.
 
 Status contains `id`, `codeId`, `versionId`, `state`, `failure`, `mandateId`,
-`createdAt` and `updatedAt`. Timestamps use ISO 8601 UTC. `failure` is null or
-`{ target, code, reason }`; `target` is the exact `{ type, id }`, or null for a
-Code-wide failure. Provider refusal text remains separate from its stable code.
-Use the target's canonical resource reader to show its current name.
+`createdAt` and `updatedAt`. Timestamps use ISO 8601 UTC. A failure contains
+`{ target: null, code, reason }`; it describes an activation failure, rather
+than a target's permission decision.
 
 | State | What to show or do |
 | --- | --- |
 | `pending`, `preflight`, `applying` | Activation is in progress. Read its status again. |
-| `waiting` | A dependency is unavailable. Core retries automatically with the same grant identities. Cancellation is available. |
-| `rolling_back` | Core is removing this process's new grants. Failed cleanup remains queued and retries. |
-| `failed` | Activation stopped and its grants were compensated. Resolve the named failure and start a new process. |
-| `cancelled` | Cancellation and compensation completed. |
-| `active` | The version mandate and active version were committed together. |
+| `waiting` | An owner or another dependency is unavailable. Core retries; cancellation remains available. |
+| `rolling_back` | Core is recording a failed or cancelled attempt. No target shares need compensation. |
+| `failed` | Resolve the reported cause and start a new process. |
+| `cancelled` | The attempt ended without switching versions. |
+| `active` | The version entry and active version committed together. |
 
-A cancelled or failed activation leaves older grants and the previous active
-version intact. Revoking or expiring the activating credential stops the process
-and schedules compensation. Core stores revocation coordinates and scopes,
-never the original cookie or bearer token, and reloads the person's current
-identity before continuing. If a non-admin is promoted to Cloud administrator while
-activation is pending, start a fresh activation so its notifications follow the
-Cloud-admin path.
+Enqueue and cancellation record intent without waiting for an owner provider.
+The worker checks current owner authority and approval before switching.
+Credential expiration or revocation stops the attempt. Core stores only
+revocation coordinates and scopes, never the original cookie or bearer token.
+A failure or cancellation leaves the previous version and ordinary target
+shares intact. An unresolved response stays visible and can be recovered by
+reading the same process ID.
 
-## How target permissions are applied
+## Version entries and old runs
 
-Core serializes activations for each Code. It saves the target plan and each new
-`grantId` before issuing [Code access proofs](/en/docs/platform/capabilities#code-access-at-the-target).
-A busy worker retries without holding a database connection while waiting for
-another worker. It first calls `set` with `dryRun` for the owner and all new or broader targets.
-Only after every preflight succeeds does it apply grants. A crash or lost
-response repeats `set` with the saved grant identity, preventing duplicates.
+Core creates one `code.version` entry under app `runner` for the immutable
+version. Its subject is the personal owner or the resource or application's
+Code service account. Its `policy` is `null`. The
+[bridge](/en/docs/platform/code-bridge) applies the Cloud administrator's policy
+and required version approval to each actual call; the target application
+checks current resource rights. The checker's `manifest.permissions` is review
+evidence and grants nothing. Dynamic target IDs are allowed.
 
-If a later target refuses, Core removes only grant IDs belonging to that
-activation, including attempts whose responses were lost. Reused grants remain.
-Each target adapter must keep grants with different IDs independent.
+Core creates the entry pending and confirms it in the transaction that switches
+`activeVersionId`. Pending entries issue no token. An existing entry is reused
+only while active, unexpired and bound to the same subject. Activation never
+resumes a paused or revoked entry. The authenticated runner path retains the
+chain from run to approved version to active subject; it has no API key or
+scope fallback.
 
-Dry-run answers reveal only what the person may read. A target's existing
-`access.readable` check controls whether an activation refusal includes its
-`title` and `managerUserIds`. Otherwise the answer keeps the target ID and the
-stable reason code, with “Only someone who manages this target can activate it”
-(“Einschalten kann nur, wer dieses Ziel verwaltet” in German). The Code link
-remains available to copy. Status reads check the current reader again before
-returning a saved title or manager list; only then they add `managerNames`, the
-display names of the first five managers, which are never stored.
+Old `core`-owned mandates keep their saved operation, target, reference and
+input restrictions. Reactivating the same version does not clear them.
+Explicitly activate a new version to confirm the new model.
 
-`POST /api/code/activation/check` with `codeId` and `versionId` answers before
-anyone clicks. Core asks every target an activation would ask with the same
-`dryRun`, and returns one `{ target, state, failure }` per target: `granted`,
-`refused` with the failure an activation would report under the same reader
-check, or `unknown` when the target does not answer. A target the running version
-already reaches is left out. An application that cannot list its grants leaves
-its targets `unknown`. The route needs the same person and credential as
-activating. It changes no access and starts no activation; each target logs the
-question like any capability call. Activating checks everything again. The Code
-page's dialog shows the answers next to each target, waits for them before it
-enables the button, keeps it disabled for `not_manager`, and leaves `unknown` to
-activating.
+Queued or running work on a superseded version drains with its version entry.
+Once it has no open runs, Core revokes that old entry. Ordinary target shares
+belong to the service account, persist across version switches and pauses, and
+change only through normal sharing. Re-activation, retries and background
+cleanup never restore a share a target manager removed.
 
-Cloud-admin notification audiences use a separate Core-only, target-bound
-`signCodeAccessNotifications` proof. Each successful adapter dry run identifies
-current human managers in `managerUserIds`, including administrator-group
-members. Core obtains this audience through the server-only notification lookup,
-then records one durable notice per manager and target when activation commits.
-Recipients do not enter the target plan or the person's set answer when the
-target is unreadable. A retry repeats preflight and obtains the current audience;
-real sets need not return it. A target that omits the audience refuses activation with
-`managers_unavailable`; a network outage retries. An empty array means there are
-no human managers. Every adapter, including a
-third-party adapter, supplies this audience for Cloud-admin activation. The
-shared capability result budget bounds it; refuse an oversized audience rather
-than truncate it.
-
-Activation stores target references, plans and failures as JSON objects or
-arrays. Rollback routes every persisted grant to its target provider before
-marking it released, including a write whose response was lost.
-
-## Version mandates and old runs
-
-Core creates one `code.version` entry for the immutable version under app
-`runner`. The subject is the personal owner or the object's or application's
-Code service account. Its `policy` is `null`: current target rights decide
-resource access, and the Cloud-admin policy decides which actual calls require
-version approval. The checker manifest remains review evidence.
-
-Core creates the entry pending and confirms it in the same transaction that
-switches the active version. Pending means `confirmedAt: null`, using the
-existing confirmation window; it cannot issue a token. Pausing or revoking the
-entry stops further issuance. An existing entry is reused only while active,
-unexpired and bound to the same subject; activation never resumes it.
-
-Older `core`-owned mandates keep their saved policies, including exact target,
-operation, reference and input restrictions. Reactivating the same version does
-not remove them. Explicitly activate a new version to confirm the new model.
-
-Switching `activeVersionId` and storing the version mandate happen in one
-transaction. New admissions use the active version. Existing queued or running
-runs of the old version drain with their mandate and target grants. Once no run
-needs them, Core revokes old mandates and removes grants unused by the active
-version. Pausing a Code retains its active version's grants.
-
-Target reconciliation uses `list` only. Access observations are
-`{ grantId, target, operations, state }`, where `state` is `present`, `removed`
-or `unavailable`. A provider outage is not reported as removal. Reading,
-reconciling and background cleanup never call `set` to restore removed access.
-Only another explicit activation can create a fresh grant, after checking target
-authority again.
-
-## Core integration contracts
+## Integration contracts
 
 Core's `code/index.ts` exports `codeActivationContracts`, `CodeActivation`,
-`CodeActivationState`, `CodeActivationFailure`, `CodeTargetAccess` and their
-schemas. CLI and resource UI integrations use `activateCodeVersion`,
-`readCodeActivation`, `cancelCodeActivation` and `reconcileCodeAccess` with the
-same `CodeContext` used by the other Code services. Lifecycle and runner
-integrations can call `cleanupCodeActivation` after state changes; the durable
-cleanup worker also retries while old runs remain open. For owner deletion,
-first block new work, clear `activeVersionId`, and let unfinished activations
-compensate and open runs finish or be cancelled. Run cleanup to completion before
-deleting Code, versions or activation records: reused grants are owned by their
-original journal row, so that journal must not be pruned independently.
+`CodeActivationState`, `CodeActivationFailure`, `CodeActivationPreview` and
+their schemas. CLI and UI use `activateCodeVersion`, `previewCodeActivation`,
+`readCodeActivation` and `cancelCodeActivation` with `CodeContext`.
+`processCodeActivation` is the trusted worker entry point;
+`cleanupCodeActivation` drains old version entries. Applications use the public
+[normal share contract](/en/docs/identity/authorization#code-with-access),
+without Code adapters or activation proofs.
 
-`processCodeActivation` is the trusted worker entry point. Applications do not
-call it or issue access proofs themselves. `readCodeActivationManifest` from `@k2b/cloud/capabilities/server` is a Core-only
-registry reader: plan construction does not require the activating person to
-hold entry access to every already-authorized target app. It grants no resource
-access and must not be exposed through a generic caller transport.
-
-Core starts both outbox workers with
-its normal lifecycle. Their failed jobs retain attempts and the last error;
-cleanup runs separately so a draining version does not block new activations.
-
-Owner deletion stops activation and durably removes its grants. See
-[Code lifecycle](/en/docs/platform/code-lifecycle) for the deletion helper,
-owner checks and the cleanup read model.
+Core starts activation and drain outbox workers with its normal lifecycle.
+Their failures retain attempts and an error for retry. Separate ordered streams
+let new activations proceed while old runs drain. For owner checks and deletion,
+see [Code lifecycle](/en/docs/platform/code-lifecycle).

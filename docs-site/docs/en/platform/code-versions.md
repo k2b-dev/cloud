@@ -244,6 +244,6 @@ request ID, channel and `sole_admin`; a sole-admin approval uses reason
 
 ## Activate a submitted version
 
-Use [Code activation](/en/docs/platform/code-activation) to check owner and target
-authority, create its version mandate, and switch the active version durably.
+Use [Code activation](/en/docs/platform/code-activation) to check owner authority and
+required approval, create its version entry, and switch the active version durably.
 Pending or failed activation leaves the current version running.

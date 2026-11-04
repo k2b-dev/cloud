@@ -1,17 +1,6 @@
 import { z } from "zod";
 
 /** What switching on one version would do for this person, from Core's activation preview. */
-const RowSchema = z.object({
-  target: z.object({ type: z.string(), id: z.string() }),
-  operations: z.array(z.string()),
-  own: z.boolean(),
-  isNew: z.boolean(),
-  check: z.enum(["manages", "blocked", "has", "unknown"]),
-  title: z.string().nullable(),
-  typeTitle: z.string().nullable(),
-  icon: z.string().nullable(),
-  managers: z.array(z.object({ name: z.string(), firstName: z.string().nullable() })),
-});
 const PreviewSchema = z.object({
   codeId: z.string(),
   title: z.string(),
@@ -31,10 +20,8 @@ const PreviewSchema = z.object({
     z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }),
   ]),
   place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).nullable(),
-  rows: z.array(RowSchema),
 });
 export type CodeVersionPreview = z.infer<typeof PreviewSchema>;
-export type CodeVersionPreviewRow = z.infer<typeof RowSchema>;
 
 /** The Code page of this Code: a personal Code's page in Gustav, or its place's "/code" page when the person may read it. */
 export const codeVersionPageHref = (preview: CodeVersionPreview): string | null => {

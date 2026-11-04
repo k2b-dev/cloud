@@ -37,23 +37,21 @@ background tasks cannot use these tools to edit lasting Code.
 ## The version card
 
 After `code_submit`, the chat shows one card for the newest version, below
-Gustav's answer. It lists each operation at each target and what you can do:
+Gustav's answer. It shows the version, execution subject and approval state:
 
-- If you manage the owner and every new target, the card offers **Switch on**
-  and **Difference**. Switching on is the same durable activation as on the Code
-  page. The card then becomes one line, such as "Version 5 switched on · 14:20 ·
-  by you", and stays that line after a reload.
-- If you do not, the card says who can and that the running version continues.
-  It offers **Copy link**, naming the person when one person manages the target.
-  It names a target and its managers only if you may read that target.
-- A version that waits for a Cloud administrator, or that the policy refuses,
-  says so. A phone or a non-interactive credential cannot switch on and sees why.
-- A version that a newer one replaced is one line. If you lost access to the
-  Code, the card says so. A failed check shows an error with **Retry**.
+- **Switch on** starts the same durable activation as the Code page. Core checks
+  current owner authority and any required version approval before switching.
+  The card becomes one line after activation and keeps that state after reload.
+- A version waiting for Cloud-admin approval or refused by policy says so.
+  A phone or non-interactive credential sees why it cannot switch on.
+- A version replaced by a newer one becomes one line. Lost access to the Code
+  and failed requests remain visible, with recovery through **Retry** or
+  **Check status**.
 
-The card asks Core's activation preview when it opens. That check runs each
-target's own dry run, so showing the card grants nothing. A host enables the card
-through `renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an
+The card asks only Core's activation preview. It does not inspect target rights
+or managers, and activation creates no shares. Target managers use normal
+sharing with the service account's handle. A host enables the card through
+`renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an
 ordinary step.
 
 ## Draft and conflict rules
@@ -62,10 +60,10 @@ Draft writes stay in the conversation. Pass the replacement project into the
 next write, and its files into check, test and submit. Pull retrieves submitted
 files, so submit before relying on a later pull to recover an edit.
 
-The permission list names each operation and target, where it occurs, whether
-it is new or existing, and whether another target administrator is needed.
-A missing display title is `null`; IDs still identify the target. A passing
-check does not grant that permission.
+The operation list names stored target handles, source locations and differences
+from the running version. It grants no permission and does not inspect current
+shares. A missing display title is `null`; IDs still identify the target.
+Dynamic handles are allowed.
 
 Tests and simulation use a fixed clock, a seed and explicit fictional replies.
 They never call real capabilities or create a durable run. See

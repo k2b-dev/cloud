@@ -496,7 +496,7 @@ const mailCatalog = (owners: string[]) =>
         ],
         actions: [],
         commands: [],
-        code: { access: { app: false, types: ["mailbox"] }, owners },
+        code: { owners },
       },
     },
   });

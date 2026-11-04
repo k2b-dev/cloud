@@ -115,7 +115,7 @@ test("Core checks source before sending immutable bundles and fixtures to the fa
     ),
   ).toMatchObject({ ok: true, mode: "test" });
 });
-test("dynamic resource targets fail the authoritative check without executing a test", async () => {
+test("dynamic resource targets pass the authoritative check and execute fixtures", async () => {
   const before = executions;
   const result = await testCode(
     {
@@ -124,9 +124,8 @@ test("dynamic resource targets fail the authoritative check without executing a 
     },
     host(),
   );
-  expect(result).toMatchObject({ ok: false, error: "code_test_check_failed" });
-  expect(result.diagnostics.some((row) => row.code === "code_dynamic_target")).toBe(true);
-  expect(executions).toBe(before);
+  expect(result).toMatchObject({ ok: true, mode: "test" });
+  expect(executions).toBe(before + 1);
 });
 test("simulate checks the same source and passes one fixture invocation", async () => {
   expect(await simulateCode({ code: code(""), fixture }, host())).toMatchObject({ ok: true, mode: "simulate" });

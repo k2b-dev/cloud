@@ -5,9 +5,6 @@ export type CodeHandle<Type extends string, Id extends string = string> = {
   readonly type: Type;
   readonly id: Id;
 };
-type CodeNonLiteralId<Id extends string> = Id extends unknown ? ({} extends Record<Id, never> ? true : false) : never;
-/** Resource Code accepts only finite string literal unions, including const tuples and imported constants. */
-export type CodeLiteralId<Id extends string> = Id & (true extends CodeNonLiteralId<Id> ? never : unknown);
 /** Core resolves the current person and groups before dispatching a future route. */
 export type CodeUser = { id: string; groups: string[] };
 /** Basic request helpers for future routes. No middleware system is part of Code. */

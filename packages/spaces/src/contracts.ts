@@ -1009,6 +1009,6 @@ export {
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
 
-/** A Code share is removed through Core with grantId; ordinary shares omit it. */
-export const AccessEntrySchema = CloudAccessEntrySchema.extend({ grantId: z.uuid().optional() });
+/** Ordinary resource access entries, including Code service accounts. */
+export const AccessEntrySchema = CloudAccessEntrySchema;
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;

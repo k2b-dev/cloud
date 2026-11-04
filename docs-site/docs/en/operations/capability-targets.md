@@ -90,45 +90,17 @@ Examples of `code: false` include Chat Actions, Spaces invitation preparation
 and commit, and Gateway Ops' app-status forget Action. Resource-owned Code
 must leave them out; person calls retain their existing service permission checks.
 
-## Enable target-side Code access
+## Enable normal sharing for Code
 
-Upgrade Core before deploying providers with Code access adapters. Core's
-capability migration creates `capabilities.code_access_grants`, the platform's
-routing and replay index. Applications keep owning their actual permission
-rows. No new environment settings are required; proofs use Core's existing
-invocation signing keys and public invocation JWKS.
+Deploy matching Core and platform versions with providers that support normal
+Code service-account sharing. Targets need no Code declaration or adapter.
+Keep resource `access.readable` and owner/page declarations where present.
+Every share mutation retains current manager authority using
+`lockAccessMutationAuthority` and the application's normal target lock.
 
-Deploy each provider with all four adapter functions together. A type with
-`access`, or a type named in `code.owners`, must have a declared reader or the
-provider refuses startup with the type's name. Existing `readable`-only
-declarations remain supported when their Type has a reader. This also applies to third-party providers: add a canonical reader
-before upgrading if a Type currently declares `access.readable` alone. New
-generated Actions carry `unattended: false`, so older Core readers omit them instead of stripping that restriction.
-
-Adapters implement `manages(tx, context, id)`: manager checks run inside the write
-transaction and retain locks shared with the provider's manager-change paths.
-Update older two-argument adapters before deploying this contract; use the
-supplied connection for every adapter query.
-
-Deploy the updated Core activation transport together with providers that expose
-the generated Code access routes. Dry-run answers reveal only what the person
-may read through the target Type's existing `access.readable`. Core obtains
-Cloud-admin notification recipients through its separate target-bound server
-authority; they are not required in an unreadable person's dry-run answer.
-Adapters return the current human managers, including nested manager-group
-members, on dry runs. A target that omits its audience refuses activation; a
-network outage waits for retry. No new configuration or migration is needed. An
-audience exceeding the capability response budget refuses preflight; reduce that target's
-manager audience before retrying. During a directory update, retry a transiently
-unavailable manager check after the update finishes.
-
-Keep the adapter available while its app has Code grants to remove. Core must
-finish target cleanup before deleting the Code account. Live grants prevent
-account deletion; removing them releases that reference and preserves replay
-tombstones. An unavailable target returns a retryable cleanup failure.
-Core can inspect and remove a disabled Code account's grants; setting new
-grants requires an active account. Generated access calls require explicit
-operation-bound Core editor admission.
-
-See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
-for the adapter and Core proof contracts.
+Existing adapter-created shares are already ordinary permission rows and remain
+at their current levels. Core retires the old target journals and cancels
+unfinished legacy activations once; activation no longer creates target access.
+See [Code activation recovery](/en/docs/operations/code-activation) for upgrade
+and rollback constraints. The Mail target migration and Grids execution-account
+workloads remain separate.

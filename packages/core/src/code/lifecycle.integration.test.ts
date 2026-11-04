@@ -4,32 +4,19 @@ import { codeOwnerDeleted, sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { accounts } from "@k2b/cloud/services";
 import { z } from "zod";
-import type { CodeAccessProofClaims } from "../../../../scripts/fixtures/code-platform";
 import {
-  codeAccessBindings,
   compileCapabilities,
-  createCodeAccessAuthorityRoutes,
+  createCodeOwnerRoutes,
   invokeCompiledCapability,
-  codeAccessProofs as proofs,
-  removeCodeAccess,
-  setCodeAccess,
+  codeOwnerProofs as proofs,
 } from "../../../../scripts/fixtures/code-platform";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
-import { spaceCodeAccess } from "../../../spaces/src/service/code-access";
 import { migrate as migrateLifecycle } from "../migrate/core/code-lifecycle";
 import type { CodeContext } from "./access";
-import * as transport from "./activation-transport";
-import { CodeActivationTransportError } from "./activation-transport";
-import {
-  codeAccessCleanupOutbox,
-  codeDeletionOutbox,
-  codeOwnerDeletedOutbox,
-  listCodeCleanupJobs,
-  processCodeCleanupJob,
-  processCodeOwnerDeleted,
-} from "./lifecycle";
+import { codeDeletionOutbox, codeOwnerDeletedOutbox, listCodeCleanupJobs, processCodeOwnerDeleted } from "./lifecycle";
 import { checkCodeOwnerBeforeRun } from "./owner-check";
+import * as transport from "./owner-transport";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { findCode } from "./store";
 
@@ -39,10 +26,6 @@ const { mailCapabilities } = await import("../../../mail/src/capabilities");
 const { createMailbox, deleteMailbox, restoreMailbox } = await import("../../../mail/src/service/mailboxes");
 
 const fixed = new Date("2026-11-01T12:00:00.000Z");
-const bindings = codeAccessBindings("spaces", {
-  protocolVersion: 2,
-  types: { space: { title: "Space", description: "Fixture.", access: spaceCodeAccess } },
-});
 const context = (user: User): CodeContext & MailRequestContext => ({
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
@@ -58,7 +41,6 @@ const capabilityContext = (user: User): CapabilityExecutionContext => {
       callingAppId: "core",
       credentialKind: "session" as const,
       invocationId: "c10-integration",
-      codeAccess: "set" as const,
     },
   };
   return {
@@ -124,53 +106,18 @@ async function fixture(user: User, personal = false) {
   };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-async function grant(f: Fixture, user: User, planned = false) {
+async function grant(f: Fixture, _user: User) {
   const shortId = String(++ordinal).padStart(6, "0"),
     grantId = crypto.randomUUID();
   const [space] = await sql<{ id: string }[]>`INSERT INTO spaces.spaces(name,short_id) VALUES('Lifecycle target',${shortId}) RETURNING id`;
-  const target = { type: "spaces.space", id: shortId },
-    operations = ["spaces.task.create"];
-  await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-    VALUES(${grantId}::uuid,${f.id},${f.activationId}::uuid,${JSON.stringify(target)}::text::jsonb,${sql.array(operations, "text")},${planned ? "planned" : "granted"})`;
-  const claims: CodeAccessProofClaims = {
-    ver: 1,
-    iss: "https://cloud.example",
-    aud: "app:spaces",
-    token_use: "code_access",
-    iat: 1,
-    nbf: 1,
-    exp: 31,
-    codeId: f.id,
-    versionId: f.versionId,
-    activationId: f.activationId,
-    activatingPerson: user.id,
-    principal: f.principal!,
-    grantId,
-    target,
-    operations,
-  };
-  const set = () =>
-    setCodeAccess("spaces", bindings, { proof: "verified-fixture", target, operations }, capabilityContext(user), {
-      db: sql,
-      verifyProof: async () => claims,
-    });
-  if (!planned) expect(await set()).toMatchObject({ granted: true, grantId });
-  return { grantId, spaceId: space!.id, target, set };
+  await sql`INSERT INTO auth.access(id,service_account_id,permission) VALUES(${grantId}::uuid,${f.principal}::uuid,'write')`;
+  await sql`INSERT INTO spaces.space_access(space_id,access_id) VALUES(${space!.id}::uuid,${grantId}::uuid)`;
+  return { grantId, spaceId: space!.id, target: { type: "spaces.space", id: shortId } };
 }
 async function deliver() {
   const rows = await codeOwnerDeletedOutbox.claim();
   for (const row of rows) await codeOwnerDeletedOutbox.dispatch(row);
   return rows;
-}
-const remove: Pick<transport.CodeActivationTransport, "remove"> = {
-  remove: async (appId, principal, grantId) => {
-    if (appId !== "spaces") throw new Error("Unexpected fixture target");
-    expect(await removeCodeAccess(appId, bindings, grantId, { cleanupPrincipal: principal, requestId: "c10-cleanup" })).toBe(true);
-  },
-};
-async function drainGrants() {
-  for (const row of await codeAccessCleanupOutbox.claim())
-    await codeAccessCleanupOutbox.dispatch(row, (job) => processCodeCleanupJob(job, remove));
 }
 async function drainDeletion() {
   for (const row of await codeDeletionOutbox.claim()) await codeDeletionOutbox.dispatch(row);
@@ -207,112 +154,13 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(1);
     // Acknowledged or duplicated owner deliveries cannot create another cleanup batch.
     await processCodeOwnerDeleted(reports[0]!);
-    expect((await listCodeCleanupJobs({ codeId: f.id }, context(user))).items).toHaveLength(2);
-    await drainGrants();
+    expect((await listCodeCleanupJobs({ codeId: f.id }, context(user))).items).toHaveLength(1);
     await drainDeletion();
-    for (const table of ["codes", "versions", "runs", "activations", "target_grants", "cleanup_jobs"])
+    for (const table of ["codes", "versions", "runs", "activations", "cleanup_jobs"])
       expect(await sql.unsafe(`SELECT 1 FROM code.${table} WHERE ${table === "codes" ? "id" : "code_id"}=$1`, [f.id])).toHaveLength(0);
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${f.principal}::uuid`).toHaveLength(0);
     expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(0);
     expect((await restoreMailbox(context(user), f.mailboxId)).ok).toBe(true);
-    expect(await findCode(f.id)).toBeNull();
-  });
-
-  test("owner-deletion cleanup reads persisted target objects and removes their explicit grants before deleting Code", async () => {
-    const user = await person(),
-      f = await fixture(user),
-      g = await grant(f, user);
-    const [saved] = await sql<
-      { target: unknown; kind: string }[]
-    >`SELECT target,jsonb_typeof(target) AS kind FROM code.target_grants WHERE grant_id=${g.grantId}::uuid`;
-    expect(saved).toEqual({ target: g.target, kind: "object" });
-    await sql.begin((tx) => codeOwnerDeleted(tx, f.ref));
-    await deliver();
-    const [job] = await sql<{ target: unknown }[]>`SELECT target FROM code.cleanup_jobs WHERE grant_id=${g.grantId}::uuid`;
-    expect(job!.target).toEqual(saved!.target);
-    expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(1);
-    await drainGrants();
-    expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(0);
-    expect(await sql`SELECT grant_id FROM code.target_grants WHERE grant_id=${g.grantId}::uuid AND state='released'`).toHaveLength(1);
-    expect(await sql`SELECT grant_id FROM capabilities.code_access_grants WHERE grant_id=${g.grantId}::uuid AND revoked`).toHaveLength(1);
-    expect(await findCode(f.id)).toMatchObject({ state: "deleting" });
-    await drainDeletion();
-    expect(await findCode(f.id)).toBeNull();
-  });
-  test("unreachable targets wait visibly, preserve cleanup authority and recover after an ambiguous reply", async () => {
-    const user = await person(),
-      f = await fixture(user);
-    await grant(f, user);
-    await sql.begin((tx) => codeOwnerDeleted(tx, f.ref));
-    await deliver();
-    const [job] = await codeAccessCleanupOutbox.claim();
-    expect(job).toBeDefined();
-    await codeAccessCleanupOutbox.dispatch(job!, (row) =>
-      processCodeCleanupJob(row, {
-        remove: async () => {
-          throw new CodeActivationTransportError("target_unavailable", true);
-        },
-      }),
-    );
-    const waiting = await listCodeCleanupJobs({ codeId: f.id, limit: 1 }, context(user));
-    const all = await listCodeCleanupJobs({ codeId: f.id }, context(user));
-    expect(all.items.find((job) => job.kind === "code.access.rm")).toMatchObject({
-      state: "waiting",
-      attempts: 1,
-      lastError: "target_unavailable",
-    });
-    expect(waiting.nextCursor).not.toBeNull();
-    expect((await listCodeCleanupJobs({ codeId: f.id, cursor: waiting.nextCursor! }, context(user))).items).toHaveLength(1);
-    const nonAdmin = { ...user, roles: ["user" as const] };
-    await expect(listCodeCleanupJobs({}, context(nonAdmin))).rejects.toThrow(/administration authority/);
-    await drainDeletion();
-    expect((await findCode(f.id))?.state).toBe("deleting");
-    // Remove succeeded but the reply was lost. Retry the very same persisted grantId.
-    await sql`UPDATE code.cleanup_jobs SET next_attempt_at=now() WHERE code_id=${f.id}`;
-    const [retry] = await codeAccessCleanupOutbox.claim();
-    await codeAccessCleanupOutbox.dispatch(retry!, async (row) => {
-      await processCodeCleanupJob(row, remove);
-      throw new Error("lost_reply");
-    });
-    await sql`UPDATE code.cleanup_jobs SET next_attempt_at=now() WHERE code_id=${f.id}`;
-    await drainGrants();
-    await drainDeletion();
-    expect(await findCode(f.id)).toBeNull();
-  });
-
-  test("planned grants are tombstoned before delayed activation sets arrive; rollback emits nothing", async () => {
-    const user = await person(),
-      f = await fixture(user),
-      g = await grant(f, user, true);
-    await expect(
-      sql.begin(async (tx) => {
-        await codeOwnerDeleted(tx, f.ref);
-        throw new Error("rollback");
-      }),
-    ).rejects.toThrow("rollback");
-    expect(await codeOwnerDeletedOutbox.claim()).toHaveLength(0);
-    await expect(sql.begin((tx) => codeOwnerDeleted(tx, { type: "core.user", id: user.id }))).rejects.toThrow(/declared code.owners/);
-    await expect(sql.begin((tx) => codeOwnerDeleted(tx, { ...f.ref, type: "mail.mailboxes" }))).rejects.toThrow(/declared code.owners/);
-    await sql.begin(async (tx) => {
-      await codeOwnerDeleted(tx, f.ref);
-      await codeOwnerDeleted(tx, f.ref);
-    });
-    await deliver();
-    await drainGrants();
-    await drainDeletion();
-    expect((await findCode(f.id))?.state).toBe("deleting");
-    await deliver();
-    await sql`UPDATE code.cleanup_jobs SET next_attempt_at=now() WHERE code_id=${f.id}`;
-    expect(
-      await sql`SELECT grant_id FROM capabilities.code_access_grants WHERE app_id='spaces'
-      AND grant_id=${g.grantId}::uuid AND revoked`,
-    ).toHaveLength(1);
-    expect(await g.set()).toMatchObject({ granted: false, reasonCode: "account_inactive" });
-    // The tombstone also fences a replay if an account is unexpectedly re-enabled.
-    await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${f.principal}::uuid`;
-    expect(await g.set()).toMatchObject({ granted: false, reasonCode: "removed" });
-    await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${f.principal}::uuid`;
-    await drainDeletion();
     expect(await findCode(f.id)).toBeNull();
   });
 
@@ -398,21 +246,49 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     ).rejects.toMatchObject({ errno: "23503" });
   });
 
+  test("legacy cleanup schema retires remote-removal jobs and keeps account deletion retryable", async () => {
+    const user = await person(),
+      f = await fixture(user),
+      g = await grant(f, user);
+    await sql`ALTER TABLE code.cleanup_jobs ADD COLUMN grant_id UUID UNIQUE, ADD COLUMN target JSONB`;
+    await sql`ALTER TABLE code.cleanup_jobs DROP CONSTRAINT cleanup_jobs_kind_check`;
+    await sql`ALTER TABLE code.cleanup_jobs ADD CONSTRAINT cleanup_jobs_kind_check CHECK(kind IN ('code.access.rm','code.delete'))`;
+    await sql`ALTER TABLE code.cleanup_jobs ADD CONSTRAINT a4_legacy_cleanup_binding CHECK((kind='code.access.rm')=(grant_id IS NOT NULL AND target IS NOT NULL))`;
+    await sql`INSERT INTO code.cleanup_jobs(code_id,kind,grant_id,target) VALUES(${f.id},'code.access.rm',${g.grantId}::uuid,${JSON.stringify(g.target)}::text::jsonb)`;
+    const [deletion] = await sql`INSERT INTO code.cleanup_jobs(code_id,kind) VALUES(${f.id},'code.delete') RETURNING id`;
+    try {
+      await migrateLifecycle();
+      await migrateLifecycle();
+      const remaining = await sql`SELECT id,kind FROM code.cleanup_jobs WHERE code_id=${f.id}`;
+      expect([...remaining]).toEqual([{ id: deletion!.id, kind: "code.delete" }]);
+      expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(1);
+      expect(
+        await sql`SELECT column_name FROM information_schema.columns WHERE table_schema='code' AND table_name='cleanup_jobs' AND column_name IN ('grant_id','target')`,
+      ).toHaveLength(0);
+      const rejected = async () => {
+        await sql`INSERT INTO code.cleanup_jobs(code_id,kind) VALUES(${f.id},'code.access.rm')`;
+      };
+      await expect(rejected()).rejects.toThrow();
+    } finally {
+      await sql`DELETE FROM code.cleanup_jobs WHERE code_id=${f.id}`;
+    }
+  });
+
   test("owner title projection is account-bound, read-only and contains no reader contents", async () => {
     const user = await person(),
       f = await fixture(user),
       other = await fixture(user);
-    const verify = spyOn(proofs, "verifyCodeAccessList").mockResolvedValue({
+    const verify = spyOn(proofs, "verifyCodeOwnerRead").mockResolvedValue({
       ver: 1,
       iss: "https://cloud.example",
       aud: "app:mail",
       iat: 1,
       nbf: 1,
       exp: 31,
-      token_use: "code_access_list",
+      token_use: "code_owner_read",
       principal: f.principal!,
     });
-    const router = createCodeAccessAuthorityRoutes("mail", mailCapabilities);
+    const router = createCodeOwnerRoutes("mail", mailCapabilities);
     const read = (ref: { type: string; id: string }) =>
       router.request("/queries/code.owner.title", {
         method: "POST",
@@ -438,7 +314,7 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
       calls = 0;
     const compiled = compileCapabilities("example", {
       protocolVersion: 2,
-      types: { item: { title: "Item", description: "Fixture item.", reader: "read", access: spaceCodeAccess } },
+      types: { item: { title: "Item", description: "Fixture item.", reader: "read", access: { readable: () => [] } } },
       queries: {
         read: {
           title: "Read",

@@ -123,14 +123,6 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
   const permission = (node: ts.Node, operation: string, target: ReturnType<typeof handle>) => {
-    if (target && !target.ids && request.sdk.manifest.mode === "resource") {
-      report(
-        node,
-        "code_dynamic_target",
-        `Ziel von \`${ts.isCallExpression(node) ? node.expression.getText() : node.getText()}\` ist nicht erkennbar. Leg die Ziele als Konstante an.`,
-      );
-      return;
-    }
     if (!collecting) return;
     const sf = node.getSourceFile();
     for (const id of target?.ids ?? [null]) {

@@ -380,15 +380,13 @@ test("strings containing type-suppression examples remain ordinary data", async 
   expect(result).toMatchObject({ ok: true });
 });
 
-test("rejects dynamic resource targets with an actionable diagnostic", async () => {
+test("accepts dynamic resource targets and records their type as non-binding review evidence", async () => {
   const result = await check(
     schedule('const id: string = String("dynamic");\nawait work_shop.workshop(id).item.create({ title: "x", idempotencyKey: "k" });'),
   );
-  expect(result.ok).toBe(false);
-  if (result.ok) return;
-  expect(result.diagnostics).toContainEqual(
-    expect.objectContaining({ code: "code_dynamic_target", line: 4, message: expect.stringContaining("Konstante") }),
-  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.permissions).toContainEqual(expect.objectContaining({ target: { type: "work-shop.workshop", id: null } }));
 });
 
 test.each([

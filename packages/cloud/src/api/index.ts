@@ -44,7 +44,6 @@ import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
 import { createCapabilityRoutes } from "./capabilities";
-import { createCodeAccessRoutes } from "./code-access-routes";
 import geoRoutes from "./geo";
 import { createHelpRoutes } from "./help";
 import { createIpCountryRoutes } from "./ip-country";
@@ -95,7 +94,6 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/apps", appDiscoveryRoutes)
     .route("/app-events", createAppEventRoutes())
     .route("/resources", createResourceResolveRoutes())
-    .route("/resources/code-access", createCodeAccessRoutes())
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)
     .route("/admin/core/ai", adminAiRoutes)

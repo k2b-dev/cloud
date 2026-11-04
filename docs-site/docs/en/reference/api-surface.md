@@ -700,18 +700,17 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
 
-### Code access adapters and Core proofs
+### Code owners and normal shares
 
-`CodeAccessAdapter`, `CodeAccessDecision`, `CodeAccessEntry`,
-`CodeAccessGrant`, `CodeAccessTarget`, `CodeAccessRefusalCode`, `CodeAccessSetData` and `CapabilityCodeDefinition` are
-application-facing types from `@k2b/cloud`; their schemas also come from
-`@k2b/cloud/contracts`.
+`CapabilityCodeDefinition` from `@k2b/cloud` declares optional `owners` and
+`pages`; `CapabilityCodeManifestSchema` and `CapabilityCodeManifest` are
+available from `@k2b/cloud/contracts`. Resource `access.readable` stays
+independent of Code ownership. Targets use normal share services without Code
+adapters. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
 
-Core owns `invokeCodeAccess`, `signCodeAccessProof`, `verifyCodeAccessProof`, `CodeAccessProofInput`,
-`CodeAccessProofClaims`, `signCodeAccessCleanup`, `verifyCodeAccessCleanup` and
-`CodeAccessCleanupClaims`, `signCodeAccessList`, `verifyCodeAccessList` and
-`CodeAccessListClaims` from `@k2b/cloud/capabilities/server`. Target adapters
-do not issue proofs. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
+Core's title-only owner projection uses `signCodeOwnerRead` and
+`verifyCodeOwnerRead` from `@k2b/cloud/capabilities/server`. This is a
+platform-owned lifecycle transport, not an application grant API.
 
 Core activation services and status schemas are documented in
 [Code activation](/en/docs/platform/code-activation). These Core-owned services

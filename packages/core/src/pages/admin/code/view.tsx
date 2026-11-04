@@ -924,12 +924,7 @@ export function CodeAreaView(props: Props) {
           if (col.id === "job")
             return (
               <div class="min-w-0">
-                <p class="text-sm font-medium">{row.kind === "code.access.rm" ? t.jobRemove : t.jobDelete}</p>
-                <Show when={row.target}>
-                  {(target) => (
-                    <p class="text-xs text-(--k2b-text-muted)">{t.atTargetPlain({ target: `${target().type} ${target().id}` })}</p>
-                  )}
-                </Show>
+                <p class="text-sm font-medium">{t.jobDelete}</p>
               </div>
             );
           if (col.id === "code")

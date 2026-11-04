@@ -52,25 +52,17 @@ source directories such as `lib/test/` remain source. The checker accepts
 only `@sdk` from Code. The binding check uses current server SDK metadata,
 even when local generated files are stale.
 
-## Read the permission list
+## Read the operation list
 
-```text
-Erlaubnisse
-  example.conversation.move   am eigenen Postfach Rechnungen (box_1234)   code.ts:3
-  other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8  ← neu, braucht den Admin des Space
-KI           ja
-Seiten       —
-Webhook      —
-Datenbank    —
-```
+Check reports each operation, target handle, authorized target title when
+available, and one-based source location as review evidence. New or existing
+compares against the running version’s manifest, not against current shares.
+It reads no target manager list. Dynamic handles are allowed; the list grants
+no access and does not bind runtime calls. The target checks the subject’s
+current rights per call.
 
-Each permission keeps its operation ID, authorized target title and ID, and
-one-based source location. A missing live grant is new; a removed grant is
-never treated as existing because an old version mentioned it. Unavailable
-reader titles fall back to resource Type and ID. Personal Code uses the
-person's own rights and never asks for target-admin grants. Phase 1 supports
-named schedules and hand starts; future page, webhook and database syntax fails
-checking.
+Phase 1 supports named schedules and hand starts; future page, webhook and
+database syntax fails checking.
 
 Human check and run output uses each automation's reviewed title followed by
 its identifier in parentheses. Without a title, it shows the identifier. JSON
@@ -133,24 +125,21 @@ cld code activate ./code/example/box_1234 --activation-id 11111111-1111-4111-811
 cld code run monday ./code/example/box_1234 --key monday-manual-1 --json
 ```
 
-Activation requires an approved saved version, current owner and target
-administration, and a normal person's session or personal OAuth credential.
+Activation requires an approved saved version, current owner administration, and a normal person's session or personal OAuth credential.
 Phone sessions, API keys and machine identities are refused by Core. The CLI
 also refuses activation when its host reports CI. CI can check, test and push
 with its granted credential; keep personal interactive credentials out of CI.
 
-In a terminal, `activate` lists every operation at every target with what is
-new and whether you administer it, and asks `Einschalten? [j/N]` (`Switch on?
-[y/N]`) once. Anything but yes changes nothing and exits 1. When a target
-refuses you, it stops before the question, names who manages the target if you
-may read it, and prints a link to the place that holds the Code. It then waits
-a bounded time for the result; if Core is still working, it prints the
-activation ID to check again.
+In a terminal, `activate` explains the version and whether it runs as the person
+or its service account, then asks `Einschalten? [j/N]` (`Switch on? [y/N]`) once.
+Anything but yes changes nothing and exits 1. It never lists or grants target
+rights. It waits a bounded time for the version switch; if Core is still working,
+it prints the activation ID to check again.
 
-Without a terminal, in scripts and with `--json`, it never asks and never waits:
-it refuses without `--yes` and without `--activation-id`. `--json` keeps the
-receipt below, without the list. `--yes` skips only the question. A person
-who was refused stays refused either way, because Core checks every target.
+Without a terminal, scripts and `--json` require `--yes` and `--activation-id`,
+return the receipt immediately, and never wait. `--yes` skips only the question;
+Core still checks the owner, credential and required version approval. Personal
+Code requires its owner's browser session.
 
 `--version` overrides the project's base version. Reuse `--activation-id`
 after a lost response. The returned [activation receipt](/en/docs/platform/code-activation)
@@ -302,7 +291,7 @@ returns a durable receipt, not completion of background work.
 
 Check embeds `CodeCheckResultSchema`; `manifest` is complete C8 submission
 evidence or null on failure. Permission rows carry operation, target, nullable
-title/typeTitle, own, needsTargetAdmin, file, line, optional `entrypoints`
+title/typeTitle, own, file, line, optional `entrypoints`
 (the schedules whose handler makes the call) and new/existing status.
 Test and simulation reuse `CodeTestResultSchema` unchanged. Output adds no elapsed times, process
 IDs or local absolute paths. Stateful operations return durable IDs and times.

@@ -1,8 +1,7 @@
-import { Button, ButtonLink, Skeleton, Tag, toast, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import {
   type CodeVersionActivation,
-  type CodeVersionPreviewRow,
   codeVersionPageHref,
   loadCodeVersionPreview,
   pendingCodeVersionActivation,
@@ -36,9 +35,8 @@ const switchedOnWhen = (at: string, locale: string, timeZone: string, now: Date)
 };
 
 /**
- * The version a chat saved: what it needs at each target and whether this person can switch it on, known before they
- * click. Someone who cannot gets a link for someone who can. Once switched on, the card is one line; a reload reads the
- * same state from Core, so it never offers something already done.
+ * The saved version and its approval/credential state. Switching on creates no target rights.
+ * Once switched on, a reload reads the same state from Core.
  */
 export default function AssistantCodeVersionCard(props: {
   codeId: string;
@@ -134,67 +132,6 @@ export default function AssistantCodeVersionCard(props: {
   const preview = () => {
     const current = loaded();
     return current && typeof current === "object" ? current : null;
-  };
-  const blockedRows = () => preview()?.rows.filter((row) => row.check === "blocked") ?? [];
-  const managers = () => {
-    const seen = new Map<string, CodeVersionPreviewRow["managers"][number]>();
-    for (const row of blockedRows()) for (const manager of row.managers) seen.set(manager.name, manager);
-    return [...seen.values()];
-  };
-  const blockedText = () => {
-    const rows = blockedRows();
-    // A target the person may not read stays an ID, with no name of who manages it.
-    const unreadable = rows.find((row) => row.title === null);
-    if (unreadable) return t().codeVersionTargetUnreadable({ id: unreadable.target.id });
-    const types = [
-      ...new Set(
-        preview()
-          ?.rows.filter((row) => row.check === "blocked" || row.own)
-          .flatMap((row) => row.typeTitle ?? []) ?? [],
-      ),
-    ];
-    const joined = new Intl.ListFormat(locale(), { style: "long", type: "conjunction" }).format(types);
-    if (types.length === 0) return t().codeVersionManagersGeneric;
-    const names = managers().map((manager) => manager.name);
-    return names.length > 0
-      ? t().codeVersionManagers({ types: joined, names: names.join(", ") })
-      : t().codeVersionManagersUnnamed({ types: joined });
-  };
-  const copyLabel = () => {
-    const [only, ...others] = managers();
-    return only && others.length === 0 ? t().codeVersionCopyLinkFor({ name: only.firstName ?? only.name }) : t().codeVersionCopyLink;
-  };
-  const copyLink = async (href: string) => {
-    try {
-      await navigator.clipboard.writeText(new URL(href, window.location.origin).href);
-      toast.success(t().codeVersionLinkCopied);
-    } catch {
-      toast.error(t().codeVersionLinkFailed);
-    }
-  };
-  const targetLine = (row: CodeVersionPreviewRow) => {
-    const type = row.typeTitle ?? (row.own ? preview()?.place?.typeTitle : null);
-    if (row.own && type) return t().codeVersionOwnTarget({ type });
-    if (row.target.type === "app") return row.title ?? row.target.id;
-    if (!row.title) return t().codeVersionTargetId({ id: row.target.id });
-    return t().codeVersionTarget({ name: type ? `${type} ${row.title}` : row.title, id: row.target.id });
-  };
-  const rowState = (row: CodeVersionPreviewRow): JSX.Element => {
-    if (row.check === "blocked")
-      return (
-        <span class="text-danger">
-          <i class="ti ti-lock" aria-hidden="true" /> {t().codeVersionNeedsAdmin({ name: row.title })}
-        </span>
-      );
-    if (row.own) return <span class="text-secondary">{t().codeVersionBelongsTo({ name: preview()?.place?.title ?? "" })}</span>;
-    if (row.check === "manages")
-      return (
-        <span class="assistant-code-version__ok">
-          <i class="ti ti-check" aria-hidden="true" /> {t().codeVersionYouManage}
-        </span>
-      );
-    if (row.check === "has") return <span class="text-secondary">{t().codeVersionHas({ version: preview()?.running ?? null })}</span>;
-    return <span class="text-secondary">{t().codeVersionUnchecked}</span>;
   };
   const busy = () => activation().kind === "progress";
   const spinning = () => {
@@ -293,7 +230,7 @@ export default function AssistantCodeVersionCard(props: {
       </Match>
       <Match when={preview()}>
         {(current) => (
-          <div class="assistant-code-version" data-state={blockedRows().length > 0 ? "blocked" : "ready"}>
+          <div class="assistant-code-version" data-state="ready">
             <p class="assistant-code-version__title">{t().codeVersionReady({ version: props.number, title: current().title })}</p>
             <Show when={current().automations?.length}>
               <p class="assistant-code-version__note">
@@ -302,38 +239,9 @@ export default function AssistantCodeVersionCard(props: {
                   .join(" · ")}
               </p>
             </Show>
-            <Show
-              when={current().rows.length > 0}
-              fallback={
-                <Show when={!current().place}>
-                  <p class="assistant-code-version__note">{t().codeVersionRunsAsYou}</p>
-                </Show>
-              }
-            >
-              <ul class="m-0 list-none p-0">
-                <For each={current().rows}>
-                  {(row) => (
-                    <li class="assistant-code-version__row" data-check={row.check}>
-                      <i class={row.icon ?? (row.own ? "ti ti-home" : "ti ti-target-arrow")} aria-hidden="true" />
-                      <span class="flex min-w-0 flex-col">
-                        <Show when={row.operations.length > 0}>
-                          <span class="assistant-code-version__ops">
-                            <For each={row.operations}>{(operation) => <code>{operation}</code>}</For>
-                          </span>
-                        </Show>
-                        <span class="text-sm text-secondary">{targetLine(row)}</span>
-                      </span>
-                      <span class="assistant-code-version__state">
-                        <Show when={row.isNew}>
-                          <Tag>{t().codeVersionNew}</Tag>
-                        </Show>
-                        {rowState(row)}
-                      </span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
+            <p class="assistant-code-version__note">
+              {current().ownerKind === "person" ? t().codeVersionRunsAsYou : t().codeVersionRunsAsAccount}
+            </p>
             <Show when={current().readiness.state === "approval_pending"}>
               <p class="assistant-code-version__note">
                 <i class="ti ti-hourglass" aria-hidden="true" />
@@ -349,14 +257,6 @@ export default function AssistantCodeVersionCard(props: {
                   <span>{message()}</span>
                 </p>
               )}
-            </Show>
-            <Show when={blockedRows().length > 0}>
-              <p class="assistant-code-version__note">
-                <i class="ti ti-info-circle" aria-hidden="true" />
-                <span>
-                  {blockedText()} {t().codeVersionKeepsRunning({ version: current().running })}
-                </span>
-              </p>
             </Show>
             <Show when={notAllowed()}>
               {(reason) => (
@@ -387,36 +287,22 @@ export default function AssistantCodeVersionCard(props: {
               )}
             </Show>
             <div class="assistant-code-version__actions">
-              <Show
-                when={blockedRows().length === 0}
-                fallback={
-                  <Show when={codeVersionPageHref(current())}>
-                    {(href) => (
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void copyLink(href())}>
-                        <i class="ti ti-link" aria-hidden="true" />
-                        {copyLabel()}
-                      </Button>
-                    )}
-                  </Show>
-                }
-              >
-                <Show when={current().readiness.state === "ready"}>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="primary"
-                    disabled={!current().allowed.allowed || busy()}
-                    loading={spinning()}
-                    onClick={() => void (activation().kind === "unknown" ? check() : start())}
-                  >
-                    <i class="ti ti-power" aria-hidden="true" />
-                    {activation().kind === "unknown"
-                      ? t().codeVersionCheckStatus
-                      : activation().kind === "failed"
-                        ? t().codeVersionTryAgain
-                        : t().codeVersionSwitchOn}
-                  </Button>
-                </Show>
+              <Show when={current().readiness.state === "ready"}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  disabled={!current().allowed.allowed || busy()}
+                  loading={spinning()}
+                  onClick={() => void (activation().kind === "unknown" ? check() : start())}
+                >
+                  <i class="ti ti-power" aria-hidden="true" />
+                  {activation().kind === "unknown"
+                    ? t().codeVersionCheckStatus
+                    : activation().kind === "failed"
+                      ? t().codeVersionTryAgain
+                      : t().codeVersionSwitchOn}
+                </Button>
               </Show>
               {diffLink()}
             </div>

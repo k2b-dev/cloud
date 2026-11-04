@@ -127,7 +127,7 @@ const automation = (entrypoint: string, cron: string | null, patch: Record<strin
   ...patch,
 });
 const logistik = { type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" };
-/** The running version's automations, as Core lists them; each owner's answer also names removed access. */
+/** The running version's automations, as Core lists them; each owner's answer also names targets refused in the last run. */
 const automationsOf = (codeId: string, accessMissing = false) => {
   if (codeId === "c_woche1")
     return { items: [automation("wochenbericht", "0 7 * * 1", { nextRunAt: "2026-11-02T06:00:00.000Z" })], removedTargets: [] };
@@ -294,7 +294,7 @@ const mailCatalog = {
         ],
         actions: [],
         commands: [],
-        code: { access: { app: false, types: ["mailbox"] }, owners: ["mailbox"] },
+        code: { owners: ["mailbox"] },
       },
     },
   ],
@@ -596,7 +596,7 @@ describe("Gustav", () => {
     }
   }, 90_000);
 
-  test("access removed at a target shows at the automation that needs it, while the other stays on", async () => {
+  test("a refused target shows at the automation that called it, while the other stays on", async () => {
     const h = await open(panel, { panel: true, panelAccessMissing: true }, { path: "/app/assistant/panel" });
     try {
       const block = h.page.locator("section.assistant-code-block");
@@ -604,7 +604,7 @@ describe("Gustav", () => {
       const rows = block.locator("li");
       expect(await rows.count()).toBe(2);
       expect(await rows.nth(0).textContent()).toContain("An");
-      expect(await rows.nth(1).textContent()).toContain("Zugriff auf Space Logistik entfernt");
+      expect(await rows.nth(1).textContent()).toContain("Kein Zugriff auf Space Logistik im letzten Lauf");
       await shot(h.page, "b-panel-code-von-zugriff-fehlt-light");
       await block.getByRole("button", { name: "Code ausblenden" }).click();
       await block.getByText("2 Automationen · Zugriff fehlt").waitFor();

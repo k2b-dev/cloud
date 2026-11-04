@@ -77,7 +77,6 @@ import {
   triage,
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
-import { mailboxCodeAccess } from "./service/code-access";
 import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
@@ -4811,7 +4810,6 @@ export const mailCapabilities = localizeCapabilityErrors(
         icon: "ti ti-inbox",
         reader: "mailbox.read",
         access: {
-          ...mailboxCodeAccess,
           readable: async ({ id, principals }) => {
             const scope = await resolveMailboxScope(id);
             return scope.ok ? mailboxAccess.readableMailboxPrincipals(scope.data.id, principals) : [];

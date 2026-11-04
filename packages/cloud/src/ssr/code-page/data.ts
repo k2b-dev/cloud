@@ -131,17 +131,6 @@ export const ActivationSchema = z.object({
     .nullable(),
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
-/** Core's answer before the click: a target left out needs no new answer. */
-export const ActivationCheckSchema = z.object({
-  targets: z.array(
-    z.object({
-      target: z.object({ type: z.string(), id: z.string() }),
-      state: z.enum(["granted", "refused", "unknown"]),
-      failure: ActivationSchema.shape.failure,
-    }),
-  ),
-});
-export type CodeActivationCheck = z.infer<typeof ActivationCheckSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
 export const AutomationListSchema = z.object({
   items: z.array(z.object({ entrypoint: z.string(), title: z.string().optional(), nextRunAt: z.string().nullable() })),

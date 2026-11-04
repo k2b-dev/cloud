@@ -4,7 +4,7 @@ export { CodeCheckResultSchema, CodeTestResultSchema } from "@k2b/cloud/code";
 export * from "./access";
 export { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 export * from "./activation-contracts";
-export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
+export { cleanupCodeActivation } from "./activation-maintenance";
 export {
   CODE_ATTENTION_CACHE_MS,
   type CodeAttentionReason,
@@ -34,7 +34,6 @@ export * from "./secret-contracts";
 export * from "./secrets";
 export { CODE_SETTINGS, codeSettings } from "./settings";
 export * from "./store";
-export * from "./target-access";
 export type { CodeSimulateRequest, CodeTestingHost, CodeTestRequest } from "./testing";
 export { simulateCode, testCode } from "./testing";
 export * from "./version-contracts";

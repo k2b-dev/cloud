@@ -5,14 +5,8 @@ import {
   reviewCompiledCapability,
   serializeCapabilityProviderResult,
 } from "../../packages/cloud/src/_internal/capabilities";
-import { createCodeAccessAuthorityRoutes } from "../../packages/cloud/src/_internal/code-access-authority";
-import { codeAccessBindings, listCodeAccess, removeCodeAccess, setCodeAccess } from "../../packages/cloud/src/code/access";
-import {
-  type CapabilityDefinitions,
-  CapabilityManifestSchema,
-  CodeAccessListDataSchema,
-  CodeAccessSetDataSchema,
-} from "../../packages/cloud/src/contracts";
+import { createCodeOwnerRoutes } from "../../packages/cloud/src/_internal/code-owner";
+import { type CapabilityDefinitions, CapabilityManifestSchema } from "../../packages/cloud/src/contracts";
 import { bindAppEvents } from "../../packages/cloud/src/events/app-events";
 
 /** Checked callable boundary for loading another app's fixture under its own tsconfig aliases. */
@@ -20,10 +14,9 @@ export const AcceptanceProviderSchema = z.object({
   manifest: CapabilityManifestSchema,
   authority: z.function({ input: [z.instanceof(Request)], output: z.promise(z.instanceof(Response)) }),
   invoke: z.function({ input: [z.unknown()], output: z.promise(z.instanceof(Response)) }),
-  set: z.function({ input: [z.unknown()], output: z.promise(CodeAccessSetDataSchema) }),
-  list: z.function({ input: [z.unknown()], output: z.promise(CodeAccessListDataSchema) }),
-  remove: z.function({ input: [z.unknown()], output: z.promise(z.boolean()) }),
   permission: z.function({ input: [z.unknown()], output: z.promise(z.enum(["none", "read", "write", "admin"])) }).optional(),
+  grant: z.function({ input: [z.unknown()], output: z.promise(z.unknown()) }).optional(),
+  revoke: z.function({ input: [z.unknown()], output: z.promise(z.unknown()) }).optional(),
   accessList: z.function({ input: [z.string()], output: z.promise(z.array(z.unknown())) }).optional(),
 });
 export type AcceptanceProvider = z.infer<typeof AcceptanceProviderSchema>;
@@ -32,8 +25,7 @@ export type AcceptanceProvider = z.infer<typeof AcceptanceProviderSchema>;
 export function acceptanceProvider(appId: string, definitions: CapabilityDefinitions) {
   const compiled = compileCapabilities(appId, definitions);
   bindAppEvents(appId, definitions, compiled);
-  const bindings = codeAccessBindings(appId, definitions);
-  const authority = createCodeAccessAuthorityRoutes(appId, definitions);
+  const authority = createCodeOwnerRoutes(appId, definitions);
   return {
     manifest: compiled.manifest,
     authority: async (request: Request) => authority.fetch(request),
@@ -47,15 +39,6 @@ export function acceptanceProvider(appId: string, definitions: CapabilityDefinit
       });
       return new Response(serialized.body, { status: serialized.status, headers: { "content-type": "application/json" } });
     },
-    set: (params: {
-      input: Parameters<typeof setCodeAccess>[2];
-      context: Parameters<typeof setCodeAccess>[3];
-      dependencies: Parameters<typeof setCodeAccess>[4];
-    }) => setCodeAccess(appId, bindings, params.input, params.context, params.dependencies),
-    list: (params: { principal: string; authority: Parameters<typeof listCodeAccess>[3] }) =>
-      listCodeAccess(appId, bindings, params.principal, params.authority),
-    remove: (params: { grantId: string; authority: Parameters<typeof removeCodeAccess>[3] }) =>
-      removeCodeAccess(appId, bindings, params.grantId, params.authority),
   };
 }
 

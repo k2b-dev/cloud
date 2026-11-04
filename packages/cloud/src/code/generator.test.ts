@@ -342,7 +342,7 @@ test("schema projection preserves recursive refs, tuples, literals and maps", ()
   expect(() => schemaTypes({ $ref: "#/$defs/missing" }, "Missing")).toThrow("unresolved");
 });
 
-test("generated SDKs compile with tsgo and reject missing keys, dynamic resource IDs and wrong handle methods", async () => {
+test("generated SDKs compile with tsgo and accept dynamic resource IDs and reject missing keys and wrong handle methods", async () => {
   const dir = await temporaryDirectory("cloud-code-c15-types-");
   const resource = generated();
   const personal = generateCodeSdk([fixture], { mode: "personal" });
@@ -401,17 +401,12 @@ app.webhook("/hook", async c => c.json({ verified: await c.verify("secret") }));
 app.fetch(new Request("https://example.invalid"));
 // @ts-expect-error required idempotency key
 owner.item.create({ title: "missing key" });
-// @ts-expect-error dynamic resource handle ID
 work_shop.workshop(dynamic);
-// @ts-expect-error dynamic template ID
 work_shop.workshop(\`shop-\${dynamic}\`);
 declare const branded: string & { readonly brand: unique symbol };
-// @ts-expect-error branded dynamic string
 work_shop.workshop(branded);
 declare const condition: boolean;
-// @ts-expect-error mixed literal and branded dynamic union
 work_shop.workshop(condition ? "fixed" : branded);
-// @ts-expect-error mixed literal and dynamic template union
 work_shop.workshop(condition ? "fixed" : (\`x\${dynamic}\` as const));
 work_shop.workshop(condition ? "first" : "second");
 for (const id of ids) work_shop.workshop(id);

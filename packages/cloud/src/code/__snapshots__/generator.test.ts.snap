@@ -10,9 +10,6 @@ export type CodeHandle<Type extends string, Id extends string = string> = {
   readonly type: Type;
   readonly id: Id;
 };
-type CodeNonLiteralId<Id extends string> = Id extends unknown ? ({} extends Record<Id, never> ? true : false) : never;
-/** Resource Code accepts only finite string literal unions, including const tuples and imported constants. */
-export type CodeLiteralId<Id extends string> = Id & (true extends CodeNonLiteralId<Id> ? never : unknown);
 /** Core resolves the current person and groups before dispatching a future route. */
 export type CodeUser = { id: string; groups: string[] };
 /** Basic request helpers for future routes. No middleware system is part of Code. */
@@ -81,7 +78,7 @@ type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { 
 
 type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input3) => Promise<Data3>); readonly "move": ((input: Input5) => Promise<Data5>) }; readonly "stock": { readonly "list": ((input: Input1) => Promise<Data1>) } };
 
-export declare const work_shop: { readonly "app": (() => Handle0<"work-shop">); readonly "item": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle2<Id>) };
+export declare const work_shop: { readonly "app": (() => Handle0<"work-shop">); readonly "item": (<const Id extends string>(id: Id) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: Id) => Handle2<Id>) };
 
 export declare const owner: Handle2<"owner-shop">;
 

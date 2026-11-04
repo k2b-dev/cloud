@@ -242,9 +242,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       insert(
         factories,
         handle.factoryPath,
-        handle.type === null
-          ? `() => ${type}<${quote(app.appId)}>`
-          : `<const Id extends string>(id: ${options.mode === "resource" ? "CodeLiteralId<Id>" : "Id"}) => ${type}<Id>`,
+        handle.type === null ? `() => ${type}<${quote(app.appId)}>` : `<const Id extends string>(id: Id) => ${type}<Id>`,
         app.appId,
       );
     }

@@ -1086,12 +1086,13 @@ The aggregate reader has a 42-day view range, 100-calendar selection,
 
 ### Enable Code access to Spaces
 
-Deploy Spaces with the platform and Core that provide
-[Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
-Spaces registers `space` as a Code target and uses its existing access tables
-and live outbox; this adds no Spaces migration, service, or configuration.
-Verify a grant on one disposable Space, access removal, and refusal at another
-Space shared with all signed-in users. Normal person sharing keeps its behavior.
+Deploy Spaces with matching platform and Core versions that support
+[normal Code sharing](/en/docs/platform/capabilities#code-access-at-the-target).
+Spaces uses its existing access tables and live outbox. Verify View and Edit
+shares on a disposable Space, ordinary revocation, and refusal at another Space
+shared with all signed-in users. Code activation grants no target rights. See
+[Code activation recovery](/en/docs/operations/code-activation) for the journal
+migration and rollout constraints.
 
 ### Upgrade Spaces task deadlines
 
@@ -2352,7 +2353,7 @@ for the service contract and device limits.
 
 Core must migrate the platform events outbox before applications use
 `codeOwnerDeleted`. Keep Core running to drain owner-deletion reports and
-durable Code grant cleanup. An unavailable target keeps cleanup pending and
-visible through the administrator cleanup read model; restoring connectivity
-lets retries complete. Do not erase a deleting Code account or its grant journal
-manually. See [Code lifecycle](/en/docs/platform/code-lifecycle).
+durable Code account cleanup. Cleanup waits for the activation worker and
+owner reports to drain, then deletes the account and its normal shares through
+existing foreign keys. Failed deletion remains visible in the administrator
+cleanup read model. Do not erase pending jobs manually. See [Code lifecycle](/en/docs/platform/code-lifecycle).

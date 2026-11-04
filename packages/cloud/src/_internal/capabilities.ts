@@ -18,7 +18,7 @@ import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
 import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
-import { codeAccessPresentation, generatedCodeAccess } from "./code-access";
+import { validateCodeOwners } from "./code-access";
 
 export { capabilityHash } from "./capability-schemas";
 
@@ -763,7 +763,7 @@ export const compileCapabilities = (
     }
   }
 
-  const codeAccess = generatedCodeAccess(appId, definitions);
+  validateCodeOwners(definitions);
   for (const key of [...Object.keys(definitions.queries ?? {}), ...Object.keys(definitions.actions ?? {})]) {
     if (key.startsWith("code.access.")) throw new Error(`Declared capability ${key} collides with the reserved Code access namespace`);
   }
@@ -841,8 +841,8 @@ export const compileCapabilities = (
     };
   }
   const queries = new Map<string, CompiledCapabilityQuery>();
-  for (const [localId, definition] of Object.entries({ ...definitions.queries, ...generated, ...codeAccess.queries }).sort(
-    ([left], [right]) => left.localeCompare(right),
+  for (const [localId, definition] of Object.entries({ ...definitions.queries, ...generated }).sort(([left], [right]) =>
+    left.localeCompare(right),
   )) {
     registerLocalId(localId, "Query");
     const label = `Query ${localId}`;
@@ -923,9 +923,7 @@ export const compileCapabilities = (
     assertCanonicalReaderInput(reader.manifest.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
   const actions = new Map<string, CompiledCapabilityAction>();
-  for (const [localId, definition] of Object.entries({ ...definitions.actions, ...codeAccess.actions }).sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
+  for (const [localId, definition] of Object.entries({ ...definitions.actions }).sort(([left], [right]) => left.localeCompare(right))) {
     registerLocalId(localId, "Action");
     const label = `Action ${localId}`;
     assertDefinedFields(definition, ACTION_FIELDS, label);
@@ -1116,16 +1114,9 @@ export const compileCapabilities = (
   });
   const manifestBase = {
     ...(resourceTypes.length ? { resourceTypes } : {}),
-    ...(definitions.code || Object.values(definitions.types ?? {}).some((type) => type.access?.grant)
+    ...(definitions.code
       ? {
           code: {
-            access: {
-              app: !!definitions.code?.access?.app,
-              types: Object.entries(definitions.types ?? {})
-                .filter(([, type]) => !!type.access?.grant)
-                .map(([id]) => id)
-                .sort(),
-            },
             owners: [...(definitions.code?.owners ?? [])].sort(),
             ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
           },
@@ -1175,10 +1166,7 @@ export const compileCapabilities = (
   if (manifestBytes > MAX_CAPABILITY_MANIFEST_BYTES) {
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
-  const presentation = compileCapabilityPresentation(
-    manifest,
-    Object.keys(codeAccess.actions).length ? codeAccessPresentation(definitions.presentation) : definitions.presentation,
-  );
+  const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
   return { manifest, presentation, typeIds, queries, actions, events, subscribes };
 };
 
@@ -1940,14 +1928,9 @@ export const invokeCompiledCapability = async (params: {
       for (const ref of [context.target, ...Object.values(context.refs ?? {})]) {
         if (!ref) continue;
         const localType = ref.type.slice(params.compiled.manifest.appId.length + 1);
-        if (!params.compiled.manifest.code?.access.types.includes(localType)) continue;
         const type = params.compiled.manifest.types.find((type) => type.localId === localType);
         const reader = type?.reader && params.compiled.queries.get(type.reader);
-        if (!reader || !reader.definition.codeResourceTitle)
-          return {
-            ok: false,
-            error: { code: "CODE_RESOURCE_UNAVAILABLE", message: capabilityMessages(context.locale).resourceCheckUnavailable, status: 503 },
-          };
+        if (!reader || !reader.definition.codeResourceTitle) continue;
         const title = await sql.begin(async (tx) => {
           await tx`SET TRANSACTION READ ONLY`;
           return z

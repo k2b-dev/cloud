@@ -301,8 +301,6 @@ const capabilityJsonResponse = (body: unknown, status: number): Response => {
 };
 
 export type CapabilityDispatchParams = {
-  /** Explicit Core activation/rights-editor admission. Never populated by generic API, AI, MCP or Code routes. */
-  codeAccess?: "set" | "list" | "rm";
   /** Set only by the verified runner bridge. Generic mandate brokers cannot invoke Code versions. */
   codeRun?: true;
   /** Which run of the mandate's workload this call belongs to, stated by the workload's own app or the verified runner bridge. */
@@ -391,20 +389,8 @@ const runCapabilityDispatch = async (
 
   const operations = params.kind === "queries" ? entry.manifest.queries : entry.manifest.actions;
   const operation = operations.find((candidate) => candidate.localId === params.capabilityId);
-  if (
-    params.capabilityId.startsWith("code.access.") &&
-    (!params.codeAccess ||
-      params.capabilityId !== `code.access.${params.codeAccess}` ||
-      params.origin !== "app" ||
-      params.parentInvocation ||
-      params.assistantTurn ||
-      params.continuation ||
-      params.mandate ||
-      params.workload ||
-      params.appCaller ||
-      (params.callingAppId && params.callingAppId !== "core"))
-  )
-    return errorResponse("FORBIDDEN", "Explicit Core Code access admission required", 403);
+  if (params.capabilityId.startsWith("code.access."))
+    return errorResponse("FORBIDDEN", "Code access capabilities have been removed; use ordinary target grants", 403);
   if (operation && "destructive" in operation) observed.destructive = operation.destructive;
   if (!operation) {
     const label = params.kind === "queries" ? messages.query : messages.action;
@@ -729,7 +715,6 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     callingAppId: params.callingAppId ?? "core",
                     operation: invocationOperation,
-                    codeAccess: params.codeAccess,
                     schemaHash: operation.schemaHash,
                     authority: params.parentInvocation
                       ? authorityFromParentInvocation(params.parentInvocation)

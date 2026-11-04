@@ -4,8 +4,8 @@ import {
   CapabilityStreamPolicySchema,
   CapabilityStreamSchema,
 } from "./capability-streams";
-import type { CapabilityCodeDefinition, CodeAccessDeclaration } from "./code-access";
-import { CapabilityCodeManifestSchema } from "./code-access";
+import type { CapabilityCodeDefinition } from "./code-owner";
+import { CapabilityCodeManifestSchema } from "./code-owner";
 import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "./resource-pages";
 
 export * from "./capability-streams";
@@ -929,7 +929,7 @@ export type CapabilityResourceTypeDefinition = {
   reader?: string;
   /** Local type in the same application. Describes containment, never inherited authority. */
   container?: string;
-  access?: CodeAccessDeclaration & {
+  access?: {
     /** Return only readable input principals, using current grants and account status, never credential scopes. */
     readable?: (
       input: ResourceReadableInput,
@@ -1441,9 +1441,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
   const codeRole = CapabilityCodeManifestSchema.safeParse(sentCode);
   const code =
     codeRole.success &&
-    [...codeRole.data.owners, ...codeRole.data.access.types].every((id) =>
-      types.some((type) => type.localId === id && type.reader && queryIds.has(type.reader)),
-    )
+    codeRole.data.owners.every((id) => types.some((type) => type.localId === id && type.reader && queryIds.has(type.reader)))
       ? codeRole.data
       : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
