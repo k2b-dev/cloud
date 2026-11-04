@@ -1,11 +1,11 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AiProjectAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { Show } from "solid-js";
+import { mutation as mutations } from "@k2b/stdlib/solid";
+import { Dropdown, prompts, toast, useLocale } from "@k2b/ui";
+import { onCleanup } from "solid-js";
 import { settingsMessages } from "./messages";
 
 type Props = {
@@ -18,86 +18,65 @@ const readError = async (response: Pick<Response, "json">, fallback: string): Pr
   return body?.message || fallback;
 };
 
-const PermissionDialogBody = (props: Props) => {
-  const locale = useLocale();
-  const t = () => settingsMessages.resolve([locale()]).t;
-  const entries = query.create({
-    source: () => props.projectId,
-    load: async (projectId, { abortSignal }): Promise<AiProjectAccess[]> => {
-      const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$get(
-        { param: { projectId } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readError(response, t().loadProjectPermissionsFailed));
+const openPermissionDialog = async (props: Props, locale: string, signal: AbortSignal) => {
+  const t = settingsMessages.resolve([locale]).t;
+  const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$get(
+    { param: { projectId: props.projectId } },
+    { init: { signal } },
+  );
+  if (!response.ok) throw new Error(await readError(response, t.loadProjectPermissionsFailed));
+  const initialEntries: AiProjectAccess[] = (await response.json()).access;
+  // The page may have changed while the list loaded; never open the dialog over another page.
+  if (signal.aborted) return;
+  // Set by every saved change, also when a later one fails and the person discards the rest.
+  let wrote = false;
+  await openAccessDialog({
+    resourceName: props.projectName,
+    subtitle: t.projectAccessSubtitle,
+    initialEntries,
+    allowPublic: false,
+    signal,
+    grantAccess: async (principal, permission) => {
+      const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$post({
+        param: { projectId: props.projectId },
+        json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
+      });
+      if (!response.ok) throw new Error(await readError(response, t.grantProjectAccessFailed));
+      wrote = true;
       return (await response.json()).access;
     },
+    updateAccess: async (accessId, permission) => {
+      const response = await coreClient.admin.core["ai-projects"][":projectId"].access[":accessId"].$patch({
+        param: { projectId: props.projectId, accessId },
+        json: { permission },
+      });
+      if (!response.ok) throw new Error(await readError(response, t.updateProjectAccessFailed));
+      wrote = true;
+    },
+    revokeAccess: async (accessId) => {
+      const response = await coreClient.admin.core["ai-projects"][":projectId"].access[":accessId"].$delete({
+        param: { projectId: props.projectId, accessId },
+      });
+      if (!response.ok) throw new Error(await readError(response, t.revokeProjectAccessFailed));
+      wrote = true;
+    },
   });
-
-  return (
-    <div class="flex w-full max-w-full flex-col gap-2">
-      <p class="text-xs text-dimmed">{t().manageProjectAccess}</p>
-      <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loadingProjectAccess} />}>
-        <Show
-          when={entries.data()}
-          fallback={
-            <Placeholder
-              state="error"
-              title={t().loadProjectAccessFailed}
-              description={entries.error()?.message}
-              action={
-                <Button type="button" variant="secondary" size="sm" onClick={() => void entries.refresh()}>
-                  {t().retry}
-                </Button>
-              }
-            />
-          }
-        >
-          {(currentEntries) => (
-            <PermissionEditor
-              initialEntries={currentEntries()}
-              canEdit
-              allowPublic={false}
-              allowServiceAccounts
-              grantAccess={async (principal, permission) => {
-                const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$post({
-                  param: { projectId: props.projectId },
-                  json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
-                });
-                if (!response.ok) throw new Error(await readError(response, t().grantProjectAccessFailed));
-                return (await response.json()).access;
-              }}
-              updateAccess={async (accessId, permission) => {
-                const response = await coreClient.admin.core["ai-projects"][":projectId"].access[":accessId"].$patch({
-                  param: { projectId: props.projectId, accessId },
-                  json: { permission },
-                });
-                if (!response.ok) throw new Error(await readError(response, t().updateProjectAccessFailed));
-              }}
-              revokeAccess={async (accessId) => {
-                const response = await coreClient.admin.core["ai-projects"][":projectId"].access[":accessId"].$delete({
-                  param: { projectId: props.projectId, accessId },
-                });
-                if (!response.ok) throw new Error(await readError(response, t().revokeProjectAccessFailed));
-              }}
-            />
-          )}
-        </Show>
-      </Show>
-    </div>
-  );
-};
-
-const openPermissionDialog = async (props: Props) => {
-  await prompts.dialog<void>(() => <PermissionDialogBody {...props} />, {
-    title: props.projectName,
-    icon: "ti ti-shield",
-  });
-  refreshCurrentPath();
+  // After navigation the page is another one; refreshing it would cancel where the person went.
+  if (wrote && !signal.aborted) refreshCurrentPath();
 };
 
 export default function AiProjectAdminActions(props: Props) {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
+  const loading = new AbortController();
+  onCleanup(() => loading.abort());
+  // Loading the stored entries shows on the trigger; a failure says why instead of opening an empty dialog.
+  const permissions = mutations.create<void, void>({
+    mutation: () => openPermissionDialog(props, locale(), loading.signal),
+    onError: (error) => {
+      if (!loading.signal.aborted) void prompts.error(error.message);
+    },
+  });
   const remove = mutations.create<void, void>({
     mutation: async () => {
       const response = await coreClient.admin.core["ai-projects"][":projectId"].$delete({ param: { projectId: props.projectId } });
@@ -130,7 +109,7 @@ export default function AiProjectAdminActions(props: Props) {
             {
               icon: "ti ti-shield",
               label: t().permissions,
-              action: () => void openPermissionDialog(props),
+              action: () => void (permissions.loading() || permissions.mutate()),
             },
             {
               icon: "ti ti-trash",
@@ -143,7 +122,7 @@ export default function AiProjectAdminActions(props: Props) {
       ]}
     >
       <Dropdown.Trigger iconOnly label={t().actionsFor({ name: props.projectName })} size="xs" tooltip={t().projectActions}>
-        <i class="ti ti-settings text-sm" />
+        <i class={permissions.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

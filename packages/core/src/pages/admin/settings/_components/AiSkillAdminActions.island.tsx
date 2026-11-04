@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AiSkillAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
@@ -17,7 +17,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, For, onCleanup, Show } from "solid-js";
 import { settingsMessages } from "./messages";
 import { diffSkillVersions } from "./skill-diff";
 
@@ -34,111 +34,73 @@ const readError = async (response: Pick<Response, "json">, fallback: string): Pr
   return body?.message || fallback;
 };
 
-const PermissionDialogBody = (props: Props) => {
-  const locale = useLocale();
-  const t = () => settingsMessages.resolve([locale()]).t;
-  const entries = query.create({
-    source: () => props.skillId,
-    load: async (skillId, { abortSignal }): Promise<AiSkillAccess[]> => {
-      const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$get(
-        { param: { skillId } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readError(response, t().loadSkillPermissionsFailed));
+const openPermissionDialog = async (props: Props, locale: string, signal: AbortSignal) => {
+  const t = settingsMessages.resolve([locale]).t;
+  const [response, projectsResponse] = await Promise.all([
+    coreClient.admin.core["ai-skills"][":skillId"].access.$get({ param: { skillId: props.skillId } }, { init: { signal } }),
+    coreClient.admin.core["ai-skills"][":skillId"].projects.$get({ param: { skillId: props.skillId } }, { init: { signal } }),
+  ]);
+  if (!response.ok) throw new Error(await readError(response, t.loadSkillPermissionsFailed));
+  const initialEntries: AiSkillAccess[] = (await response.json()).access;
+  // Projects that include the Skill are context; without them the dialog still edits direct access.
+  const projects = projectsResponse.ok ? (await projectsResponse.json()).projects : null;
+  // The page may have changed while the list loaded; never open the dialog over another page.
+  if (signal.aborted) return;
+  // Set by every saved change, also when a later one fails and the person discards the rest.
+  let wrote = false;
+  await openAccessDialog({
+    resourceName: props.skillName,
+    subtitle: t.skillAccessSubtitle,
+    initialEntries,
+    allowPublic: false,
+    signal,
+    extraSections: (
+      <Show
+        when={projects}
+        fallback={
+          <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+            {t.skillProjectsUnavailable}
+          </InlineGuidance>
+        }
+      >
+        {(list) => (
+          <Show when={list().length > 0}>
+            <NoticeCard tone="info" title={t.skillProjectAccessTitle} detail={t.skillProjectAccessHelp}>
+              <ul class="flex flex-col gap-1">
+                <For each={list()}>{(project) => <li>{project.name ?? t.skillProjectUnavailable}</li>}</For>
+              </ul>
+            </NoticeCard>
+          </Show>
+        )}
+      </Show>
+    ),
+    grantAccess: async (principal, permission) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$post({
+        param: { skillId: props.skillId },
+        json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
+      });
+      if (!response.ok) throw new Error(await readError(response, t.grantSkillAccessFailed));
+      wrote = true;
       return (await response.json()).access;
     },
-  });
-
-  const projects = query.create({
-    source: () => props.skillId,
-    load: async (skillId, { abortSignal }) => {
-      const response = await coreClient.admin.core["ai-skills"][":skillId"].projects.$get(
-        { param: { skillId } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readError(response, t().loadSkillPermissionsFailed));
-      return (await response.json()).projects;
+    updateAccess: async (accessId, permission) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].access[":accessId"].$patch({
+        param: { skillId: props.skillId, accessId },
+        json: { permission },
+      });
+      if (!response.ok) throw new Error(await readError(response, t.updateSkillAccessFailed));
+      wrote = true;
+    },
+    revokeAccess: async (accessId) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].access[":accessId"].$delete({
+        param: { skillId: props.skillId, accessId },
+      });
+      if (!response.ok) throw new Error(await readError(response, t.revokeSkillAccessFailed));
+      wrote = true;
     },
   });
-
-  return (
-    <div class="flex w-full max-w-full flex-col gap-2">
-      <p class="text-xs text-dimmed">{t().manageSkillAccess}</p>
-      <Show when={projects.loading()}>
-        <InlineGuidance loading>{t().loadingSkillAccess}</InlineGuidance>
-      </Show>
-      <Show when={projects.error()}>
-        <InlineGuidance tone="danger">
-          {t().loadSkillAccessFailed}
-          <Button size="sm" variant="ghost" onClick={() => void projects.refresh()}>
-            {t().retry}
-          </Button>
-        </InlineGuidance>
-      </Show>
-      <Show when={projects.data()?.length}>
-        <NoticeCard tone="info" title={t().skillProjectAccessTitle} detail={t().skillProjectAccessHelp}>
-          <ul class="flex flex-col gap-1">
-            <For each={projects.data()}>{(project) => <li>{project.name ?? t().skillProjectUnavailable}</li>}</For>
-          </ul>
-        </NoticeCard>
-      </Show>
-      <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loadingSkillAccess} />}>
-        <Show
-          when={entries.data()}
-          fallback={
-            <Placeholder
-              state="error"
-              title={t().loadSkillAccessFailed}
-              description={entries.error()?.message}
-              action={
-                <Button type="button" variant="secondary" size="sm" onClick={() => void entries.refresh()}>
-                  {t().retry}
-                </Button>
-              }
-            />
-          }
-        >
-          {(currentEntries) => (
-            <PermissionEditor
-              initialEntries={currentEntries()}
-              canEdit
-              allowPublic={false}
-              allowServiceAccounts
-              grantAccess={async (principal, permission) => {
-                const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$post({
-                  param: { skillId: props.skillId },
-                  json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
-                });
-                if (!response.ok) throw new Error(await readError(response, t().grantSkillAccessFailed));
-                return (await response.json()).access;
-              }}
-              updateAccess={async (accessId, permission) => {
-                const response = await coreClient.admin.core["ai-skills"][":skillId"].access[":accessId"].$patch({
-                  param: { skillId: props.skillId, accessId },
-                  json: { permission },
-                });
-                if (!response.ok) throw new Error(await readError(response, t().updateSkillAccessFailed));
-              }}
-              revokeAccess={async (accessId) => {
-                const response = await coreClient.admin.core["ai-skills"][":skillId"].access[":accessId"].$delete({
-                  param: { skillId: props.skillId, accessId },
-                });
-                if (!response.ok) throw new Error(await readError(response, t().revokeSkillAccessFailed));
-              }}
-            />
-          )}
-        </Show>
-      </Show>
-    </div>
-  );
-};
-
-const openPermissionDialog = async (props: Props) => {
-  await prompts.dialog<void>(() => <PermissionDialogBody {...props} />, {
-    title: props.skillName,
-    icon: "ti ti-shield",
-  });
-  refreshCurrentPath();
+  // After navigation the page is another one; refreshing it would cancel where the person went.
+  if (wrote && !signal.aborted) refreshCurrentPath();
 };
 
 const AppVersionDialog = (props: Props & { appName: string; close: () => void }) => {
@@ -280,6 +242,15 @@ const AppVersionDialog = (props: Props & { appName: string; close: () => void })
 export default function AiSkillAdminActions(props: Props) {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
+  const loading = new AbortController();
+  onCleanup(() => loading.abort());
+  // Loading the stored entries shows on the trigger; a failure says why instead of opening an empty dialog.
+  const permissions = mutations.create<void, void>({
+    mutation: () => openPermissionDialog(props, locale(), loading.signal),
+    onError: (error) => {
+      if (!loading.signal.aborted) void prompts.error(error.message);
+    },
+  });
   const remove = mutations.create<void, void>({
     mutation: async () => {
       const response = await coreClient.admin.core["ai-skills"][":skillId"].$delete({ param: { skillId: props.skillId } });
@@ -333,7 +304,7 @@ export default function AiSkillAdminActions(props: Props) {
             {
               icon: "ti ti-shield",
               label: t().permissions,
-              action: () => void openPermissionDialog(props),
+              action: () => void (permissions.loading() || permissions.mutate()),
             },
             {
               icon: "ti ti-trash",
@@ -346,7 +317,7 @@ export default function AiSkillAdminActions(props: Props) {
       ]}
     >
       <Dropdown.Trigger iconOnly label={t().actionsFor({ name: props.skillName })} size="xs" tooltip={t().skillActions}>
-        <i class="ti ti-settings text-sm" />
+        <i class={permissions.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );
