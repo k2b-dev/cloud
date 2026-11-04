@@ -622,6 +622,13 @@ suite("mail sync of changes made in other clients", () => {
 
   test("every Inbox is queued on every scheduler run, and the other folders take the remaining places in turn", async () => {
     await connect("scheduler", true);
+    // Turns earlier tests counted would bound their mailboxes; this test is about the order alone.
+    const resources = await sql<{ id: string }[]>`
+      SELECT id FROM mail.remote_resources WHERE mailbox_id IN ${sql(fixture.mailboxIds)}`;
+    const minute = Math.floor(Date.now() / 60_000);
+    for (const { id } of resources) {
+      await redis.send("DEL", [`mail:sync-served:{${id}}:${minute - 1}`, `mail:sync-served:{${id}}:${minute}`]);
+    }
     const eligible = await submitDueFolderSyncs(100_000);
     const inboxes = (
       await sql<{ id: string }[]>`
