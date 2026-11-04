@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { connections, createSql, sql } from "@k2b/cloud";
+import { connections, createSql, redis, sql } from "@k2b/cloud";
 import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
@@ -508,6 +508,25 @@ suite("mail sync recovery", () => {
       await initializeTestPlatform();
       await counter.close();
       await releaseProviderLease(holder.lock);
+    }
+  });
+
+  test("a folder job whose folder is gone leaves the provider breaker as it is", async () => {
+    const fixture = await createSyncedMailbox("gone-folder");
+    // The breaker's window ended: the next job probes the provider.
+    const breaker = `mail:provider-lease-line:{${fixture.resourceId}}:breaker`;
+    await redis.send("HSET", [breaker, "window", "5000", "until", String(Date.now() - 1_000)]);
+    await redis.send("PEXPIRE", [breaker, "60000"]);
+    try {
+      await runSyncFolderJob({
+        input: { folderId: crypto.randomUUID(), remoteResourceId: fixture.resourceId },
+        heartbeat: async () => undefined,
+        resubmit: () => undefined,
+      });
+      // It never reached the provider, so the breaker still waits for a real probe.
+      expect(await redis.send("HGET", [breaker, "window"])).toBe("5000");
+    } finally {
+      await redis.send("DEL", [breaker]);
     }
   });
 

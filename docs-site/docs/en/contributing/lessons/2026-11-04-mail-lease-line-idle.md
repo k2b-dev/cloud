@@ -7,3 +7,4 @@
   - `sync-recovery.integration.test.ts` ("a folder job's turn that finds the lease busy runs no database statement") requires one statement in the first turn and none in later busy turns, which carry the remote mailbox in their input.
   - `provider-lease-fairness.integration.test.ts` ("the next in line asks again within a quarter second, so a released lease does not sit idle") pins the 250 ms steps per place.
   - The rest of the fairness file keeps the turn order: sync before background, commands between syncs.
+  - "a folder job whose folder is gone leaves the provider breaker as it is" covers a job that takes the lease without reading its folder first and then finds the folder gone. It must not count as having reached the provider; review caught this.
