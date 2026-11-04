@@ -21,7 +21,7 @@ type NotebookWorkspaceNoteRef = {
   historyIncomplete?: boolean;
 };
 
-export type NotebookWorkspaceInvalidationScope = "notebook" | "tree" | "tags" | "references" | "permissions";
+export type NotebookWorkspaceInvalidationScope = "notebook" | "tree" | "tags" | "references" | "permissions" | "templates";
 
 export type NotebookWorkspaceEvent =
   | {
