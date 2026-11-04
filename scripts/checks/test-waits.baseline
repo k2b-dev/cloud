@@ -30,7 +30,6 @@ packages/filesv2/test/filegate-transfer.integration.test.ts | 1
 packages/filesv2/test/markdown.behavior.test.tsx | 1
 packages/gateway-ops/src/observability/nats/NatsAccessForm.behavior.test.tsx | 1
 packages/gateway/src/proxy.test.ts | 1
-packages/grids/src/frontend/_components/AdminGridsActions.behavior.test.ts | 1
 packages/grids/src/frontend/_components/toolbar/FilterPanel.behavior.test.tsx | 1
 packages/grids/src/frontend/_components/workspace/GridsNavigation.behavior.test.tsx | 1
 packages/grids/src/frontend/custom-app/RecordsTable.actions.behavior.test.tsx | 1

@@ -11,7 +11,7 @@ Cloud administrators are not automatic Grids superusers. They can configure Grid
 
 ## Give access to a base {icon="database"}
 
-Access to a base applies to every table, field, record, view, form, document template, and workflow in that base.
+Access to a base applies to every table, field, record, view, form, document template, and workflow in that base. To change it, open **Base settings → Access** and choose **Edit access**. Your changes apply when you choose **Save**.
 
 You can give access to users, groups, agents, service accounts, and all signed-in people. Agents and service accounts need their own access. You cannot give public access to a base.
 
