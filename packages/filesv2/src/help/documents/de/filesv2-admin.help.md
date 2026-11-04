@@ -101,7 +101,7 @@ Verzeichnis- und Dateibefehle adressieren ein Verzeichnis als `<ablage>/<users|g
 
 ## Vorlagen verwalten {icon="template"}
 
-Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen, Agenten oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
+Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen und optional eine Beschreibung. Wähle dann **Wer darf diese Vorlage verwenden?**, gib Nutzern, Gruppen, Agenten oder allen angemeldeten Personen das Recht **Verwenden** und wähle **Speichern**. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
 
 Nutzer wählen **Hinzufügen → Vorlage** in einem beschreibbaren Ordner. Das Vorlagenrecht ersetzt niemals das Schreibrecht im Ziel. Das Ersetzen des Vorlageninhalts oder das Löschen einer Vorlage verändert keine bereits daraus erzeugten Dateien. Auch die importierte Originaldatei kann unabhängig geändert oder entfernt werden. Vorlageninhalte und Rechte liegen in PostgreSQL und müssen in Datenbank-Backups enthalten sein.
 

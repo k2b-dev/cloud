@@ -101,7 +101,7 @@ Directory and file commands address a directory as `<storage>/<users|groups>/<na
 
 ## Manage templates {icon="template"}
 
-The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it, optionally describe it, and give **Use** access to users, groups, agents or everyone signed in. Without access, only administration lists it. These are Cloud permissions; no POSIX group or access to the original folder is required.
+The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it and optionally describe it. Then choose **Who can use this template?** to give **Use** access to users, groups, agents or all signed-in people, and choose **Save**. Without access, only administration lists it. These are Cloud permissions; no POSIX group or access to the original folder is required.
 
 Users choose **Add → Template** in a writable folder. Using a template still requires **Edit** on the destination folder. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access entries are stored in PostgreSQL and must be included in database backups.
 
