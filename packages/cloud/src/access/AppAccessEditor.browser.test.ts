@@ -186,7 +186,7 @@ describe("App access through real browser controls and same-origin transport", (
         await settled(page);
         expect(await heights()).toEqual([36, 36, 36]);
         expect(await row(page, "Buchhaltung").getByText("Gruppe · 4 Personen", { exact: true }).count()).toBe(1);
-        expect(await row(page, "Monatsabschluss").getByText("Dienstkonto", { exact: true }).count()).toBe(1);
+        expect(await row(page, "Monatsabschluss").getByText("Agent", { exact: true }).count()).toBe(1);
         expect(await row(page, "Anna Muster").getByText("Person · du", { exact: true }).count()).toBe(1);
         const geometry = await row(page, "Buchhaltung").evaluate((element) => {
           const avatar = element.children[0]!.getBoundingClientRect();

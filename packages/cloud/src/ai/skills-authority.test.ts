@@ -61,6 +61,10 @@ test("every Skill mutation keeps the resolved authority and stops before effects
       apply(_target, _receiver, [strings]) {
         const query = strings.join("?").replace(/\s+/g, " ").trim();
         if (query.startsWith("SELECT * FROM ai.skills") || query.startsWith("SELECT id FROM ai.skills")) return Promise.resolve([row]);
+        // Grant mutations retain live authority before locking the Skill and checking its audience.
+        if (query.startsWith("SELECT id, (account_expires")) return Promise.resolve([{ id: user.id, active: true }]);
+        if (query.startsWith("SELECT service_account_id, user_id FROM auth.access")) return Promise.resolve([]);
+        if (query.startsWith("LOCK TABLE ") && query.endsWith("IN SHARE MODE NOWAIT")) return Promise.resolve([]);
         if (query.endsWith("AS permission")) return Promise.resolve([{ permission: null }]);
         throw new Error(`Unexpected effect or query after denial: ${query}`);
       },

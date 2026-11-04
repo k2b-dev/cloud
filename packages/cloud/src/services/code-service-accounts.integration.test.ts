@@ -78,8 +78,17 @@ suite("code service-account boundaries", () => {
       await sql`UPDATE auth.users SET admin = false WHERE id = ${creatorId}::uuid`;
       await expect(changeAppAccess(request)).rejects.toMatchObject({ status: 403 });
       await sql`UPDATE auth.users SET admin = true WHERE id = ${creatorId}::uuid`;
+      // The first saved app access list must retain a person who can manage it.
+      await changeAppAccess({
+        ...request,
+        change: { action: "grant", principal: { type: "user", userId: creatorId }, permission: "admin" },
+      });
       const appGrant = await changeAppAccess(request);
       expect(appGrant.entry).toMatchObject({ principal, permission: "read" });
+      if (!appGrant.entry) throw new Error("Missing app grant");
+      await expect(
+        changeAppAccess({ ...request, change: { action: "update", accessId: appGrant.entry.id, permission: "admin" } }),
+      ).rejects.toMatchObject({ status: 400 });
       // The storage seam refuses both credential kinds, including direct inserts.
       // Execute rejection probes explicitly: matchers do not start Bun's lazy SQL.
       for (const accountId of [id, recipientId]) {
