@@ -3250,6 +3250,9 @@ export const enqueueMessageHydration = async (messageId: string): Promise<void> 
   await submitHydrationJob({ messageId });
 };
 
+/** Whether a job queued for this message's body can fetch it: a live copy in a synced folder of a synced mailbox. */
+export const canHydrateMessage = async (messageId: string): Promise<boolean> => (await requestedHydrationTarget(messageId)) !== null;
+
 /** Hydrates every pending body of the mailbox, one batch per turn of the shared worker. */
 export const enqueueMailboxHydration = async (mailboxId: string): Promise<void> => {
   await submitHydrationJob({ mailboxId });
