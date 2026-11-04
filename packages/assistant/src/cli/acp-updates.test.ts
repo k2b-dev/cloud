@@ -268,3 +268,47 @@ describe("ACP mappings", () => {
     ).toBe("| Name\\|value | b |\n| --- | --- |\n| A\\|B<br>C | 3 |\n");
   });
 });
+
+describe("ACP tool results", () => {
+  const done = (name: string, args: unknown, result: unknown) =>
+    toolCall({ id: "b", kind: "tool", callId: "c", name, status: "completed", args, result }, "/work");
+  const text = (call: ReturnType<typeof toolCall>) =>
+    call.content?.flatMap((part) => (part.type === "content" && part.content.type === "text" ? [part.content.text] : [])).join("");
+
+  test("a finished call shows what it returned", () => {
+    expect(text(done("search_mail", {}, { hits: 2 }))).toBe('```json\n{\n  "hits": 2\n}\n```');
+    expect(text(done("local_bash", {}, { stdout: "ok\n", stderr: "", exitCode: 0, status: "completed" }))).toBe(
+      "```console\nok\n\n```\nExit code 0",
+    );
+    expect(text(done("read_file", {}, "a ``` fence"))).toBe("````\na ``` fence\n````");
+    expect(done("todo_write", {}, { todos: [] }).content).toEqual([]);
+  });
+
+  test("a long result stays visible up to the bound and says it was shortened", () => {
+    const call = done("read_file", {}, "x".repeat(40_000));
+    expect(call).not.toHaveProperty("rawOutput");
+    expect(text(call)?.length).toBeLessThanOrEqual(16_000);
+    expect(text(call)).toContain("x".repeat(15_000));
+    expect(text(call)).toMatch(/Shortened to the first [\d,]+ of 40,000 characters\. The Cloud chat has the full result\.$/);
+  });
+
+  test("a created file shows as a diff; a replacement or a failed write shows its result", () => {
+    expect(done("local_write", { path: "new.md", mode: "create", content: "new" }, { status: "completed" }).content).toEqual([
+      { type: "diff", path: "/work/new.md", oldText: null, newText: "new" },
+    ]);
+    expect(text(done("local_write", { path: "new.md", mode: "create", content: "new" }, { status: "failed", error: "Exists" }))).toContain(
+      '"error": "Exists"',
+    );
+    expect(text(done("local_write", { path: "notes.md", mode: "replace", content: "after" }, { status: "completed" }))).toContain(
+      '"status": "completed"',
+    );
+  });
+
+  test("escapes and fences never push a result past the bound", () => {
+    for (const result of ["`".repeat(40_000), "\t".repeat(40_000), "\u0007".repeat(40_000)]) {
+      const shown = text(done("read_file", {}, result)) ?? "";
+      expect(shown.length).toBeLessThanOrEqual(16_000);
+      expect(shown).toEndWith("The Cloud chat has the full result.");
+    }
+  });
+});

@@ -1133,9 +1133,11 @@ test("a long streamed reply costs time in proportion to its length", async () =>
     expect(output.lines.filter((line) => typeof line === "object" && line !== null && "delta" in line)).toHaveLength(count);
     return elapsed;
   };
+  // The fastest of three runs keeps a busy machine from deciding the result.
+  const fastest = async (count: number) => Math.min(await stream(count), await stream(count), await stream(count));
   await stream(500);
-  const short = await stream(2_000);
-  const long = await stream(20_000);
-  // Ten times the text takes about ten times as long; comparing the whole text per delta took about a hundred.
-  expect(long / short).toBeLessThan(40);
+  const short = await fastest(1_000);
+  const long = await fastest(20_000);
+  // Twenty times the text takes about twenty times as long; comparing the whole text per delta took about four hundred.
+  expect(long / short).toBeLessThan(80);
 });

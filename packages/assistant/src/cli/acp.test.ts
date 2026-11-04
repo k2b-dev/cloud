@@ -1237,3 +1237,165 @@ describe("ACP round trips and bounded state", () => {
     expect(chunks.length).toBeLessThan(100);
   });
 });
+
+describe("ACP attachments, sessions and cleanup", () => {
+  test("a folder link becomes a path in the message and a relative resource URI keeps its name", async () => {
+    const h = await harness();
+    const { mkdir } = await import("node:fs/promises");
+    const { pathToFileURL } = await import("node:url");
+    await mkdir(join(h.cwd, "src"));
+    expect(
+      await h.send("Look", [
+        { type: "resource_link", uri: pathToFileURL(join(h.cwd, "src")).href, name: "src" },
+        { type: "resource", resource: { uri: "notes/today.md", text: "notes" } },
+      ]),
+    ).toEqual({ stopReason: "end_turn" });
+    expect(h.uploads.map((f) => f.name)).toEqual(["today.md"]);
+    expect(h.requests.find((r) => r.path.endsWith("/draft"))?.body).toMatchObject({
+      content: [
+        { type: "text", text: `Look\n${join(h.cwd, "src")}` },
+        { type: "file", path: "/today.md" },
+      ],
+    });
+  });
+
+  test("a close while a resume waits keeps the session closed", async () => {
+    let hold: (() => void) | undefined;
+    const h = await harness({
+      intercept: async (path, method) => {
+        if (method !== "GET" || !path.endsWith("/conversations/chat") || hold) return undefined;
+        await new Promise<void>((resolve) => {
+          hold = resolve;
+        });
+        return undefined;
+      },
+    });
+    const resumed = h.acp.request("session/resume", { sessionId: "chat", cwd: h.cwd, mcpServers: [] });
+    while (!hold) await Bun.sleep(5);
+    await h.acp.request("session/close", { sessionId: "chat" });
+    hold();
+    await expect(resumed).rejects.toMatchObject({ message: expect.stringContaining("This session was closed.") });
+    await expect(h.acp.request("session/prompt", { sessionId: "chat", prompt: [{ type: "text", text: "Hi" }] })).rejects.toMatchObject({
+      code: -32002,
+    });
+  });
+
+  test("session list filters by folder and reports each session's own folder", async () => {
+    const conversations = ["here", "there", "web"].map((id) => ({ ...initialConversation(), id }));
+    const h = await harness({ conversations });
+    await h.store.set("session-here", "here", h.cwd);
+    await h.store.set("session-there", "there", "/elsewhere");
+    const filtered = await h.acp.request("session/list", { cwd: h.cwd });
+    expect(filtered.sessions.map((s) => [s.sessionId, s.cwd])).toEqual([
+      ["session-here", h.cwd],
+      ["web", h.cwd],
+    ]);
+    // Two threads on one chat: each folder lists its own, the unfiltered list the newest.
+    await Bun.sleep(5);
+    await h.store.set("session-here-too", "there", h.cwd);
+    expect((await h.acp.request("session/list", { cwd: h.cwd })).sessions.map((s) => s.sessionId)).toEqual([
+      "session-here",
+      "session-here-too",
+      "web",
+    ]);
+    expect((await h.acp.request("session/list", { cwd: "/elsewhere" })).sessions.map((s) => s.sessionId)).toEqual(["session-there", "web"]);
+    await h.store.forget("session-here-too");
+    const all = await h.acp.request("session/list", {});
+    expect(all.sessions.map((s) => [s.sessionId, s.cwd])).toEqual([
+      ["session-here", h.cwd],
+      ["session-there", "/elsewhere"],
+      ["web", process.cwd()],
+    ]);
+  });
+
+  test("closing a session ends its prompt, keeps the Cloud turn and forgets the session", async () => {
+    const h = await harness({ hold: true });
+    expect(h.initialize.agentCapabilities?.sessionCapabilities).toMatchObject({ close: {} });
+    const pending = h.send("Wait");
+    await h.submitted;
+    await h.acp.request("session/close", { sessionId: h.session.sessionId });
+    expect(await pending).toEqual({ stopReason: "cancelled" });
+    expect(h.requests.some((r) => r.path.endsWith("/abort"))).toBe(false);
+    await expect(h.send("Again")).rejects.toMatchObject({ code: -32002 });
+    expect(await h.acp.request("session/close", { sessionId: "missing" })).toEqual({});
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "SIGTERM removes the temporary session folders before cld exits",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "cld-acp-sigterm-"));
+      resources.push(() => rm(dir, { recursive: true, force: true }));
+      const script = join(dir, "child.ts");
+      await writeFile(
+        script,
+        `import { runAcpConnection } from ${JSON.stringify(join(import.meta.dir, "acp.ts"))};
+let seq = 0;
+const wire = () => ({ v: 1, conversationId: "chat", turnId: "turn", attempt: 1, seq: ++seq });
+const conversation = { id: "chat", shortId: "chat", title: "Chat", draft: { content: [], revision: 0, updatedAt: null } };
+const bash = { id: "block", kind: "tool", callId: "call", name: "local_bash", status: "awaiting_client", args: { command: "head -c 70000 /dev/zero | tr '\\\\0' x" } };
+const ctx = {
+  args: [], flags: {}, options: { profile: "test", server: "https://cloud.test", token: "test", output: "json" },
+  getDefault: async () => undefined, setDefault: async () => {},
+  fetch: async (path, init) => {
+    const method = init?.method ?? "GET";
+    if (path.endsWith("/models")) return Response.json({ options: [] });
+    if (path.endsWith("/skills")) return Response.json({ skills: [] });
+    if (path.endsWith("/conversations") && method === "POST") return Response.json(conversation);
+    if (path.endsWith("/draft")) return Response.json({ content: [], revision: 1, updatedAt: null });
+    if (path.endsWith("/turns")) return Response.json({ turn: { id: "turn", status: "running", modelId: null } });
+    if (path.endsWith("/stream")) return new Response("data: " + JSON.stringify({ ...wire(), type: "block_set", block: bash }) + "\\n\\n" + ": open\\n\\n");
+    if (path.includes("/actions/")) {
+      process.stderr.write("RESULT" + JSON.parse(init.body).result.outputPath + "\\n");
+      return new Promise(() => {});
+    }
+    return Response.json({ error: "Not found" }, { status: 404 });
+  },
+  readJson: async (response) => response.json(),
+  print() {}, write: async () => {}, error() {}, json() {}, jsonLine() {}, table() {}, createApiClient() { throw new Error("Unused"); },
+};
+await runAcpConnection(ctx, Bun.stdin.stream(), new WritableStream({ write: (chunk) => void process.stdout.write(chunk) }));
+`,
+      );
+      const env: Record<string, string | undefined> = { ...process.env, XDG_STATE_HOME: dir };
+      for (const key of Object.keys(env)) if (key.startsWith("CLOUD_TEST_")) delete env[key];
+      const child = Bun.spawn([process.execPath, script], { cwd: dir, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+      const send = (value: unknown) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...(value as object) })}\n`);
+      const decoder = new TextDecoder();
+      const stdout = child.stdout.getReader();
+      let buffered = "";
+      const next = async (match: (line: { id?: number; method?: string; result?: { sessionId?: string } }) => boolean) => {
+        for (;;) {
+          const lines = buffered.split("\n");
+          buffered = lines.pop() ?? "";
+          for (const [i, line] of lines.entries()) {
+            if (!line.trim()) continue;
+            const parsed = JSON.parse(line);
+            if (match(parsed)) {
+              buffered = [...lines.slice(i + 1), buffered].join("\n");
+              return parsed;
+            }
+          }
+          const { value, done } = await stdout.read();
+          if (done) throw new Error("cld acp ended early");
+          buffered += decoder.decode(value, { stream: true });
+        }
+      };
+      send({ id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
+      await next((line) => line.id === 1);
+      send({ id: 2, method: "session/new", params: { cwd: dir, mcpServers: [] } });
+      const sessionId = (await next((line) => line.id === 2)).result?.sessionId;
+      send({ id: 3, method: "session/prompt", params: { sessionId, prompt: [{ type: "text", text: "Run" }] } });
+      const permission = await next((line) => line.method === "session/request_permission");
+      send({ id: (permission as { id: number }).id, result: { outcome: { outcome: "selected", optionId: "once" } } });
+      const stderr = child.stderr.getReader();
+      let errors = "";
+      while (!errors.includes("RESULT")) errors += decoder.decode((await stderr.read()).value);
+      const outputPath = /RESULT(\S+)/.exec(errors)?.[1] ?? "";
+      expect(await Bun.file(outputPath).exists()).toBe(true);
+      child.kill("SIGTERM");
+      expect(await child.exited).toBe(143);
+      expect(await Bun.file(outputPath).exists()).toBe(false);
+    },
+    20_000,
+  );
+});
