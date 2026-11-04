@@ -131,6 +131,9 @@ for (const kind of ["standalone", "agent"] as const) {
     const option = await selected;
     const options = [...dialog.querySelectorAll<HTMLButtonElement>('[role="option"]')];
     expect(options.some((option) => option.textContent?.includes("Public"))).toBe(false);
+    // Templates offer no public access; all signed-in people stay available.
+    expect(dialog.querySelector('input[aria-label="Public with link"]')).toBeNull();
+    expect(dialog.querySelector('input[aria-label="All signed-in people"]')).not.toBeNull();
     option.click();
     await flush();
     // The pick is staged; Save sends it.
