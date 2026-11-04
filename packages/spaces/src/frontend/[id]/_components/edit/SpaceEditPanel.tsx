@@ -131,6 +131,7 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
             <SettingsModal.Tab id="access" title={m.access} icon="ti ti-shield" description={m.accessTabDescription}>
               <PermissionsSection
                 spaceId={props.space.id}
+                spaceName={props.space.name}
                 accessEntries={props.accessEntries}
                 onWorkspaceChange={props.onWorkspaceChange}
               />

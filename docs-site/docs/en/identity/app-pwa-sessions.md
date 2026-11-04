@@ -10,6 +10,8 @@ updated: 2026-11-03
 
 # Pair devices and open customer visits
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Use an [App-PWA](/en/docs/frontend/app-pwa) for a shared device on which a
 customer reads or signs documents without a Cloud account. An employee owns
 the paired device. The device acts as a device, and a customer acts through a

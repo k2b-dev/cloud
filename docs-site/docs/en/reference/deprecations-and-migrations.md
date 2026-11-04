@@ -5,10 +5,21 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-30
+updated: 2026-11-03
 ---
 
 # Deprecations and migrations
+
+## Authenticated grants apply only to people
+
+**Breaking:** “All signed-in people” (`authenticated`) now includes people
+and guests, with their delegated credentials, and excludes agents and other
+service accounts. Public grants keep their behavior. Give affected machines
+a direct or group grant before upgrading. Third-party apps using an older
+`@k2b/cloud` keep the previous behavior until their dependency is updated and
+they are redeployed. Run the read-only
+[pre-switch inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people)
+and review app-owned copies of the predicate before switching.
 
 ## New agent API keys act as their account
 

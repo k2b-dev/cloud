@@ -28,9 +28,11 @@ Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Ende
 5. Fehlen Ordner oder haben sie sich geändert, wähle **Ordner neu ermitteln**.
 :::
 
-Die erste Synchronisierung lädt den Verlauf schrittweise. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder ihre Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert**. Sobald die Synchronisierung fertig ist, zeigt er den Inhalt, ohne dass du die Seite neu lädst.
+Die erste Synchronisierung lädt den Verlauf schrittweise. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder ihre Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert**. Öffnest du eine solche Nachricht, lädt Mail ihren Inhalt, bevor es die anderen Ordner des Postfachs prüft. Sobald der Inhalt da ist, zeigt der Lesebereich ihn, ohne dass du die Seite neu lädst.
 
-Startet Mail neu, während es einen Nachrichteninhalt lädt, kann der Lesebereich für diese Nachricht eine Weile **Der Nachrichteninhalt konnte nicht synchronisiert werden** zeigen. Mail lädt den Inhalt erneut, nachdem die übrigen fehlenden Inhalte des Postfachs geladen sind. Bei einer großen ersten Synchronisierung kann das Stunden dauern. Zeigt die Unterhaltungsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
+Ist der Inhalt nach etwa 30 Sekunden noch nicht da, zeigt der Lesebereich **Wartet auf das Postfach**. Der Mailserver antwortet dann langsam oder ist beschäftigt. Die Wartezeit läuft auch nach einem Neuladen der Seite weiter. Wähle **Erneut anfordern**, um den Inhalt noch einmal anzufordern. Der Inhalt erscheint trotzdem von selbst, sobald er da ist.
+
+Startet Mail neu, während es einen Nachrichteninhalt lädt, kann der Lesebereich für diese Nachricht **Der Nachrichteninhalt konnte nicht synchronisiert werden** zeigen. Wähle **Erneut anfordern**, um den Inhalt sofort zu laden. Sonst lädt Mail ihn erneut, nachdem die übrigen fehlenden Inhalte des Postfachs geladen sind. Bei einer großen ersten Synchronisierung kann das Stunden dauern. Zeigt die Unterhaltungsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
 
 Manchmal ist der E-Mail-Anbieter nicht erreichbar oder lehnt Anmeldungen eine Zeit lang ab, etwa während einer Wartung oder weil zu viele Verbindungen offen sind. Mail versucht es weiter und macht von selbst weiter, wenn der Anbieter wieder antwortet. Ein neues Passwort oder neue Zugangsdaten brauchst du nur, wenn der Anbieter die aktuellen ablehnt.
 

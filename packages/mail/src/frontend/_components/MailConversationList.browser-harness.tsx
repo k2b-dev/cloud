@@ -313,7 +313,10 @@ window.mountMailList = (options) => {
                   onRefresh={async () => {}}
                   columns={
                     options.columns
-                      ? { shared: options.columns === "shared", assigneeNames: (ids) => ids.map((id) => id.replace("user-", "")) }
+                      ? {
+                          shared: options.columns === "shared",
+                          assignees: (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })),
+                        }
                       : undefined
                   }
                 />

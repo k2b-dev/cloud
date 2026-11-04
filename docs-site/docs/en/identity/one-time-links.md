@@ -10,6 +10,8 @@ updated: 2026-10-31
 
 # One-time links
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Use `links` for a credential that an application can redeem once, such as a
 customer sign-in or invitation. Your application owns the request form,
 authorization, mail, and session. Cloud supplies token generation, expiry,

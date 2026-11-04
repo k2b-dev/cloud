@@ -695,7 +695,7 @@ export const aiAreaMessages = i18n.define({
       deleteProvider: "Anbieter löschen",
       baseUrl: "Basis-URL",
       providerDefaultUrl: "Standard des Anbieters",
-      apiKey: "API-Schlüssel",
+      apiKey: "API Key",
       keyStored: ({ p }: { p: string | number }) => `Hinterlegt \xB7 ge\xE4ndert am ${p}`,
       keyNone: "Kein Schlüssel",
       dataBoundary: "Datengrenze",

@@ -59,7 +59,7 @@ test("removing marks a stored row, undo restores it, and removing an added row d
 
 test("the only manager after saving is protected, counted on the result and not on the stored list", () => {
   let draft = emptyDraft([mia, lea]);
-  expect([...lastManagerKeys(draft)]).toEqual([`u:${mia.principal.type === "user" ? mia.principal.userId : ""}`]);
+  expect([...lastManagerKeys(draft)]).toEqual([`e:${mia.id}`]);
   draft = setLevel(draft, draftRows(draft)[1]!, { permission: "admin" });
   expect(lastManagerKeys(draft).size).toBe(0);
   // Signed-in people with Manage keep the resource manageable like a person.
@@ -102,5 +102,31 @@ test("a stored denial stays a denial, so rules that let it shadow a grant still 
     const denied = new Set(entries.filter((stored) => stored.permission === "none").map((stored) => JSON.stringify(stored.principal)));
     return entries.filter((stored) => !denied.has(JSON.stringify(stored.principal)));
   };
-  expect([...lastManagerKeys(draft, unshadowed)]).toEqual(["u:dddddddd-dddd-4ddd-8ddd-dddddddddddd"]);
+  expect([...lastManagerKeys(draft, unshadowed)]).toEqual([`e:${bob.id}`]);
+});
+
+test("a principal with a grant and a denial keeps two rows, each with its own entry", () => {
+  const miaDenied: AccessEntry = { ...mia, id: "66666666-6666-4666-8666-666666666666", permission: "none" };
+  const rows = draftRows(emptyDraft([mia, miaDenied, lea]));
+  expect(rows.map((row) => [row.entry?.id, row.next?.permission])).toEqual([
+    [mia.id, "admin"],
+    [miaDenied.id, "none"],
+    [lea.id, "read"],
+  ]);
+  expect(new Set(rows.map((row) => row.key)).size).toBe(3);
+  // Removing the denial touches only the denial.
+  const draft = removeRow(emptyDraft([mia, miaDenied, lea]), rows[1]!);
+  expect(draftChanges(draft).map((change) => [change.kind, change.row.entry?.id])).toEqual([["remove", miaDenied.id]]);
+});
+
+test("a removed denial saves before a level is lowered, so a handover of Manage never passes through no manager", () => {
+  const bob = entry("77777777-7777-4777-8777-777777777777", "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "admin", "Bob");
+  const bobDenied: AccessEntry = { ...bob, id: "88888888-8888-4888-8888-888888888888", permission: "none" };
+  let draft = emptyDraft([mia, bob, bobDenied]);
+  draft = removeRow(draft, draftRows(draft)[2]!);
+  draft = setLevel(draft, draftRows(draft)[0]!, { permission: "read" });
+  expect(saveOrder(draftChanges(draft)).map((change) => [change.kind, change.row.entry?.id])).toEqual([
+    ["remove", bobDenied.id],
+    ["change", mia.id],
+  ]);
 });

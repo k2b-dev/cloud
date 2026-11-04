@@ -189,7 +189,7 @@ export const appsPageMessages = i18n.define({
       fixedRule: ({ rule }: { rule: string }) => `${rule}. The app decides this; there is nothing to set here.`,
       accessAdmin: "You edit access as a Cloud administrator. This does not let you use the app. Every change is logged.",
       accessSub: ({ name }: { name: string }) =>
-        `Only these people, groups and service accounts see ${name} in the start menu, in search and in the Assistant.`,
+        `Only these people, groups, agents and service accounts see ${name} in the start menu, in search and in the Assistant.`,
       // Events
       eventsSub: ({ name }: { name: string }) => `Hears: events of other apps ${name} reacts to. Sends: events ${name} reports.`,
       showAll: ({ count }: N) => `Show all ${count}`,
@@ -437,7 +437,7 @@ export const appsPageMessages = i18n.define({
       fixedRule: ({ rule }: { rule: string }) => `${rule}. Das legt die App fest; hier gibt es dazu nichts einzustellen.`,
       accessAdmin: "Du bearbeitest den Zugriff als Cloud-Admin. Nutzen kannst du die App damit nicht. Jede Änderung steht im Protokoll.",
       accessSub: ({ name }: { name: string }) =>
-        `Nur diese Personen, Gruppen und Dienstkonten sehen ${name} im Start-Menü, in der Suche und beim Assistenten.`,
+        `Nur diese Personen, Gruppen, Agenten und Dienstkonten sehen ${name} im Start-Menü, in der Suche und beim Assistenten.`,
       eventsSub: ({ name }: { name: string }) =>
         `Hört: Ereignisse anderer Apps, auf die ${name} reagiert. Sendet: Ereignisse, die ${name} meldet.`,
       showAll: ({ count }: N) => `Alle ${count} anzeigen`,

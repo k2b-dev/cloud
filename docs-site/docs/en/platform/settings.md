@@ -12,6 +12,10 @@ updated: 2026-10-30
 
 Use settings for configuration that operators can change at runtime.
 
+A setting is configuration and grants no permission. The administrator and
+application author are responsible for deciding who may change it. Restrict
+changes to administrators unless the application needs a different policy.
+
 The application defines each key, type, default, and form label. Cloud
 validates and stores the value. Cloud also keeps reads consistent across app
 instances.

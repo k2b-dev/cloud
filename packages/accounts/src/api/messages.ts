@@ -41,7 +41,7 @@ const catalog = i18n.define({
       loginLinkSent: "Anmeldelink gesendet.",
       userDeleted: "Benutzer endgültig gelöscht",
       userDemoted: "Benutzer zu Gast herabgestuft",
-      apiKeyRevoked: "API-Schlüssel widerrufen.",
+      apiKeyRevoked: "API Key widerrufen.",
       deviceRevoked: "Gerät widerrufen.",
       groupDeleted: "Gruppe gelöscht.",
       groupUpdated: "Gruppe aktualisiert.",

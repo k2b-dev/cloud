@@ -255,7 +255,7 @@ describe("Assistant frontend contracts", () => {
     expect(skills).not.toContain("Skill file");
     expect(skills).not.toContain("Reference filename");
     expect(skills).not.toContain("This becomes /skills/");
-    expect(skills).toContain("<PermissionEditor");
+    expect(skills).toContain("openAccessDialog(");
     expect(files).toContain('file.name.toLowerCase() === "skill.md"');
     expect(files).toContain("parseAiSkillArchive");
     expect(client).toContain("listSkillAccess");

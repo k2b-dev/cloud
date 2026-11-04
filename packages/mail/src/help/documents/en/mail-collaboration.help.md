@@ -13,7 +13,7 @@ The conversation reader quietly places meaningful collaboration and workflow cha
 
 ## Use ownership and follow-up consistently {icon="route"}
 
-- **Assignees** shows the people, agents, or standalone service accounts who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
+- **Assignees** shows the people or agents who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
 - To add one person or account to several conversations, select the conversations in the list and choose **Assign**. Then choose the person or account. The other assignees stay assigned. People get one notification for the whole selection; agents and service accounts receive no user notification.
 - The same menu offers **Assign to me**, **Remove me**, and **Remove all assignees**. Assigning yourself or removing someone sends no notification.
 - In a shared mailbox, a conversation's **…** menu and its right-click menu offer **Assign to me** right below the replies. It adds you; everyone who is already assigned stays assigned.
@@ -69,11 +69,11 @@ You give access to the mailbox in **… → Settings → Access**. Everyone who 
 | View assigned only | Everything from View, but only in the conversations assigned to the person |
 | Edit assigned only | Reply to and act on the conversations assigned to the person, within the limits in the next section |
 
-You give access with the standard Cloud access editor to the supported people, groups, or service accounts. When you remove access, the change applies to the whole mailbox, including open live views and future actions of agents or service accounts.
+You give access with the standard Cloud access editor to the supported people, groups, agents, or service accounts. When you remove access, the change applies to the whole mailbox, including open live views and future actions of agents or service accounts.
 
 ## Give access to assigned conversations only {icon="user-check"}
 
-Choose **View assigned only** or **Edit assigned only** for a person, group, agent, or standalone service account in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
+Choose **View assigned only** or **Edit assigned only** for a person, group, or agent in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
 
 - They see no mail until someone with **Edit** or **Manage** access assigns a conversation to them. Then they see that conversation with all its messages, including replies that arrive later. They also see its attachments, comments, and activity.
 - The folder list shows only the folders that contain one of their conversations. Every count includes only their conversations. Search, **Assigned to me**, the Mail overview, Cloud search, Assistant, and `cld` work the same way.

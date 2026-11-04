@@ -80,7 +80,7 @@ export const gridsSettingsMessages = i18n.define({
       access: "Access",
       accessDescription: "People with direct access to all base data.",
       baseAccess: "Base access",
-      immediateChanges: "Changes apply immediately.",
+      accessAppliesOnSave: "Changes apply when you save them.",
       baseGrantExplanation:
         "A base grant applies to every Table, View, Form, Document template, and Workflow. Apps use independent grants for narrower audiences.",
       recovery: "Recovery",
@@ -515,7 +515,7 @@ export const gridsSettingsMessages = i18n.define({
       access: "Zugriff",
       accessDescription: "Personen mit direktem Zugriff auf alle Daten der Base.",
       baseAccess: "Base-Zugriff",
-      immediateChanges: "Änderungen gelten sofort.",
+      accessAppliesOnSave: "Änderungen gelten, sobald du sie speicherst.",
       baseGrantExplanation:
         "Eine Base-Berechtigung gilt für jede Tabelle, Ansicht, jedes Formular, jede Dokumentvorlage und jeden Workflow. Apps verwenden eigene Berechtigungen für enger begrenzte Zielgruppen.",
       recovery: "Wiederherstellung",

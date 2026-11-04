@@ -173,6 +173,7 @@ import {
   mailboxAccess,
   mailboxDetails,
   mailboxes,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,
@@ -2444,6 +2445,20 @@ const mailOperationsApi = new Hono<MailApiContext>()
     };
     return respondMessages(c, messages.getMessage({ context: requestContext(c), ...params }));
   })
+  // Loading a body the caller may read changes nothing they could not read before, so read access suffices.
+  .post(
+    "/mailboxes/:mailboxId/messages/:messageId/body-request",
+    auth.readOnly,
+    v("param", mailboxAndIdParamSchema("messageId")),
+    v("json", z.object({ retry: z.boolean().optional() }).strict()),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; messageId: string };
+      return respondPublic(
+        c,
+        messageBodyRequests.requestMessageBody({ context: requestContext(c), ...params, retry: c.req.valid("json").retry === true }),
+      );
+    },
+  )
   .post("/mailboxes/:mailboxId/messages/:messageId/security-report", v("param", mailboxAndIdParamSchema("messageId")), async (c) =>
     respondPublic(
       c,

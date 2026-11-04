@@ -20,6 +20,10 @@ diagnostics or product analytics.
 Domain history belongs to its application (Grids `audit_log`, Files `activity`);
 security evidence belongs to audit events.
 
+The Accounts audit page hides automatic app runtime entries by default; **Show**
+includes them within the selected time range and filters, while API and CLI lists
+remain complete.
+
 ## Record an outcome
 
 ```ts

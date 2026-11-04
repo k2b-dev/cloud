@@ -248,7 +248,7 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
  * Pass the resource's entries before and after the change, read in the
  * transaction that writes it after locking the resource, so concurrent changes
  * see each other. A manager is an `admin` entry for a user, a group, all
- * signed-in users, or a standalone or agent service account; service-account
+ * signed-in people, or a standalone or agent service account; service-account
  * entries need their `serviceAccountKind`. Only a change from at least one
  * manager to none fails, with status 409 and code `LAST_MANAGER`. An app whose
  * own precedence lets another entry shadow `admin` drops the shadowed entries
@@ -347,7 +347,7 @@ export const buildAccessPrincipalTierConditions = (params: {
 }): AccessPrincipalTierConditions => {
   const userId = params.subject?.type === "user" ? params.subject.userId : null;
   const serviceAccountId = params.subject?.type === "service_account" ? params.subject.serviceAccountId : null;
-  const authenticated = params.subject !== null;
+  const authenticated = params.subject?.type === "user";
   const columns = params.columns;
 
   return {
@@ -383,7 +383,7 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * Returns the highest permission from:
  * - Direct user or service-account access
  * - Direct and nested group memberships for users and active standalone/agent accounts
- * - Authenticated access for every authenticated subject
+ * - Authenticated access for people, including guests
  * - Public access for every subject, including anonymous callers
  *
  * Pass the transaction that locked the resource as `db` to authorize a change
@@ -416,7 +416,7 @@ export const getEffectivePermission = async (
   if (accessIds.length === 0) return "none";
 
   // Legacy callers did not provide resource binding or scope context. Keep
-  // their service-account lookup direct-only so the new authenticated/public
+  // their service-account lookup direct-only so the shared principal
   // semantics require an explicit AccessSubject migration.
   const principalMatch = legacyServiceAccountId
     ? sql`a.service_account_id = ${legacyServiceAccountId}::uuid`
@@ -504,7 +504,7 @@ export const getEffectivePermissions = async (params: {
   if (Array.isArray(accessIds) && accessIds.length === 0) return subjects.map(() => "none");
   const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
   const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
-  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`; every subject here is authenticated.
+  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`.
   const rows = await sql<{ position: number; permission: PermissionLevel | null }[]>`
     SELECT s.position::int AS position, (
       SELECT a.permission
@@ -515,7 +515,7 @@ export const getEffectivePermissions = async (params: {
           OR a.user_id = s.user_id
           OR (s.user_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(sql`s.user_id`)}))
           OR (s.service_account_id IS NOT NULL AND a.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`s.service_account_id`)}))
-          OR a.authenticated_only = true
+          OR (s.user_id IS NOT NULL AND a.authenticated_only = true)
           OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND a.authenticated_only = false)
         )
       ORDER BY

@@ -134,7 +134,7 @@ Nutze diese Liquid-Variablen in deiner Vorlage:
 
 | Variable | Wert |
 | --- | --- |
-| `actor.display_name` | Name der Person, die die Vorschau öffnet, die Nachricht sendet oder den Textbaustein einfügt. Ein benutzergebundenes Dienstkonto nutzt den Namen seines Benutzers, ein anderes Dienstkonto seinen eigenen Namen, andere Automationen „Mailbox automation“. |
+| `actor.display_name` | Name der Person, die die Vorschau öffnet, die Nachricht sendet oder den Textbaustein einfügt. Ein persönlicher API Key nutzt den Namen seiner Person, ein Agent oder Dienstkonto seinen eigenen Namen, andere Automationen „Mailbox automation“. |
 | `actor.email` | E-Mail-Adresse der Person aus `actor.display_name`. Leer, wenn es keine gibt. |
 | `sender.display_name` | Anzeigename der Absenderidentität. Ohne Namen erscheint ihre E-Mail-Adresse. |
 | `sender.email` | Von-Adresse der Absenderidentität. |

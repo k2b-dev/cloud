@@ -61,14 +61,14 @@ The person can then sign in and pair a device again.
 ## Control keys, devices, notifications, and requests {icon="shield-lock"}
 
 :::reference
-- **Service accounts:** List active or revoked API keys, and filter by user-bound or resource-bound owner. Revoke an active key when its access must end. An agent key marked **Legacy, limited** has **Replace**: it creates a new key that acts as the agent and shows it once. Revoke the old key after the program uses the new one.
+- **API keys:** List active or revoked API keys. Filter by **Personal**, **Service account**, or **Agent**. Revoke an active key when its access must end. An agent key marked **Legacy, limited** has **Replace**: it creates a new key that acts as the agent and shows it once. Revoke the old key after the program uses the new one. Automatic app keys are hidden by default; choose **Show** above the list to include them.
 - **Sign-in devices:** The page of a user lists the devices that approve their app sign-ins, with pairing date and last use. Revoke a lost device there. Existing sessions stay signed in, and Cloud notifies the user.
 - **Notifications:** Create notification drafts, preview the recipients, and finalize the batch. Then review the delivery counters or the failed recipients.
 - **Requests:** Create accounts from pending requests, or deny requests. If you enter a reason for a denial, Cloud sends it by email. Existing requests stay available when new requests are turned off in the Cloud administration.
 :::
 
 :::info Trace changes in the audit log
-**Audit log** records account and access changes. To investigate API key activity, filter by service account.
+**Audit log** records account and access changes. To investigate API key activity, filter by agent or service account. Automatic app entries are hidden by default; choose **Show** above the list to include them within the selected time range and filters.
 :::
 
 ## Create a POSIX group {icon="users"}
