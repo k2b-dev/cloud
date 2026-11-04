@@ -42,6 +42,7 @@ import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contract
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { version } from "../../package.json";
+import { type AcpSessionStore, createAcpSessionStore } from "./acp-sessions";
 import {
   approvalOptions,
   approvalReviewText,
@@ -49,6 +50,7 @@ import {
   localQuestion,
   markdownTable,
   planEntries,
+  RAW_MAX_CHARS,
   requiresCloudApproval,
   surveyForm,
   surveyResult,
@@ -72,7 +74,14 @@ import {
   streamAssistantTurn,
 } from "./stream";
 import { terminalSafeText } from "./terminal";
-import { conversationPath, readConversationDetail, resolveConversation, submitAssistantTurn, uploadAttachmentFile } from "./turn";
+import {
+  type ConversationDetail,
+  conversationPath,
+  readConversationDetail,
+  resolveConversation,
+  submitAssistantTurn,
+  uploadAttachmentFile,
+} from "./turn";
 
 const builtins: AvailableCommand[] = [
   { name: "web", description: "Open this chat in Cloud" },
@@ -105,16 +114,41 @@ type Session = {
   selectedLocal: LocalSkill[];
   selectedCloud: AiDraftContentPart[];
   cloudSkills: AiSkillSummary[];
+  /** Cloud Skills load when the session opens and on `/skills`, not with every message. */
+  cloudSkillsLoaded: boolean;
   active?: AbortController;
   finished?: Promise<void>;
   disconnected: boolean;
   title?: string;
   commands?: string;
-  queue: Promise<void>;
+  /** Updates not yet handed to the editor; `sending` drains them in order. */
+  outbox: SessionUpdate[];
+  sending?: Promise<void>;
   client: AgentContext;
 };
+/** Queued updates above which the turn stream stops reading until the editor caught up. */
+const UPDATE_HIGH_WATER = 64;
+/** The update that says both, when `next` only continues `last`: more text, a newer state of one call, a newer plan. */
+const coalesce = (last: SessionUpdate, next: SessionUpdate): SessionUpdate | undefined => {
+  if (
+    (next.sessionUpdate === "agent_message_chunk" || next.sessionUpdate === "agent_thought_chunk") &&
+    last.sessionUpdate === next.sessionUpdate &&
+    last.content.type === "text" &&
+    next.content.type === "text"
+  )
+    return { ...last, content: { ...last.content, text: last.content.text + next.content.text } };
+  if (
+    next.sessionUpdate === "tool_call_update" &&
+    (last.sessionUpdate === "tool_call" || last.sessionUpdate === "tool_call_update") &&
+    last.toolCallId === next.toolCallId
+  )
+    return { ...last, ...next, sessionUpdate: last.sessionUpdate } as SessionUpdate;
+  if (next.sessionUpdate === "plan" && last.sessionUpdate === "plan") return next;
+  return undefined;
+};
 
-export const createAcpAgent = (host: CloudCliContext) => {
+export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpSessionStore } = {}) => {
+  const store = options.sessions ?? createAcpSessionStore(host.options);
   const sessions = new Map<string, Session>();
   // Shared by every session, so a resumed thread never runs a local call that an earlier one ran.
   const receipts: ClientCallReceipts = new Map();
@@ -157,12 +191,25 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return host.readJson<T>(response);
     },
   };
+  /** Resolves once every queued update reached the editor. While the editor is slow, queued updates coalesce. */
   const update = (s: Session, value: SessionUpdate): Promise<void> => {
-    s.queue = s.queue.then(() => s.client.notify("session/update", { sessionId: s.id, update: value }));
+    const last = s.outbox.at(-1);
+    const merged = last && coalesce(last, value);
+    if (merged) s.outbox[s.outbox.length - 1] = merged;
+    else s.outbox.push(value);
+    s.sending ??= (async () => {
+      try {
+        for (let next = s.outbox.shift(); next; next = s.outbox.shift())
+          await s.client.notify("session/update", { sessionId: s.id, update: next });
+      } finally {
+        s.sending = undefined;
+      }
+    })();
     // Keep synchronous CLI output callbacks from leaving unhandled rejections on disconnect.
-    void s.queue.catch(() => undefined);
-    return s.queue;
+    void s.sending.catch(() => undefined);
+    return s.sending;
   };
+  const flushed = (s: Session) => s.sending ?? Promise.resolve();
   const message = (s: Session, text: string) => update(s, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
   const chatLink = (s: Session) => `${host.options.server.replace(/\/$/, "")}/app/assistant?conversation=${s.chat}`;
   /** Inside a prompt every read stops with `signal`; writes check it before they start. */
@@ -219,7 +266,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     throw new DOMException("Prompt cancelled", "AbortError");
   };
   const permission = async (s: Session, call: ToolCall, options: PermissionOption[]) => {
-    await s.queue;
+    await flushed(s);
     s.active?.signal.throwIfAborted();
     const result = await s.client.request(
       "session/request_permission",
@@ -232,7 +279,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     return optionId;
   };
   const form = async (s: Session, callId: string, text: string, schema: ElicitationSchema): Promise<CreateElicitationResponse> => {
-    await s.queue;
+    await flushed(s);
     s.active?.signal.throwIfAborted();
     return s.client.request(
       "elicitation/create",
@@ -337,8 +384,9 @@ export const createAcpAgent = (host: CloudCliContext) => {
       selectedLocal: [],
       selectedCloud: [],
       cloudSkills: [],
+      cloudSkillsLoaded: false,
       disconnected: false,
-      queue: Promise.resolve(),
+      outbox: [],
     };
     sessions.set(id, s);
     return s;
@@ -346,9 +394,12 @@ export const createAcpAgent = (host: CloudCliContext) => {
   const commands = async (s: Session, refresh = false, signal?: AbortSignal) => {
     if (refresh) s.context = await s.contextReader();
     s.context ??= await discoverLocalContext(s.cwd, undefined, false);
-    s.cloudSkills = (
-      await readApi<{ skills: AiSkillSummary[] }>(promptContext(s), "/skills", signal ? { signal } : undefined)
-    ).skills.filter((skill) => skill.enabled);
+    if (refresh || !s.cloudSkillsLoaded) {
+      s.cloudSkills = (
+        await readApi<{ skills: AiSkillSummary[] }>(promptContext(s), "/skills", signal ? { signal } : undefined)
+      ).skills.filter((skill) => skill.enabled);
+      s.cloudSkillsLoaded = true;
+    }
     const names = new Set(builtins.map((b) => b.name));
     const skills: AvailableCommand[] = [];
     for (const skill of [...s.context.skills, ...s.cloudSkills]) {
@@ -368,13 +419,15 @@ export const createAcpAgent = (host: CloudCliContext) => {
       await update(s, { sessionUpdate: "available_commands_update", availableCommands });
     }
   };
-  const afterResponse = (s: Session, title?: string, notice?: string) => {
+  /** Work that follows a response instead of delaying it. */
+  const afterResponse = (s: Session, next: { commands?: boolean; title?: string; notice?: string; refreshTitle?: boolean }) => {
     setImmediate(() => {
       void (async () => {
         if (s.disconnected) return;
-        await commands(s);
-        if (notice !== undefined) await message(s, notice + "\n");
-        if (title !== undefined) {
+        if (next.commands) await commands(s);
+        if (next.notice !== undefined) await message(s, next.notice + "\n");
+        const title = next.refreshTitle && s.chat ? (await readConversationDetail(api, s.chat)).conversation.title : next.title;
+        if (title !== undefined && title !== s.title) {
           s.title = title;
           await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
         }
@@ -514,15 +567,17 @@ export const createAcpAgent = (host: CloudCliContext) => {
     const ctx = promptContext(s, abort.signal);
     let turnId: string | undefined;
     let title: string | undefined;
+    let created = false;
     let output = createAssistantTurnOutput();
     const waitingApprovals = new Set<string>();
     const calls = new Map<string, string>();
     const rows = new Map<string, string>();
     const onToolBlock = (block: ToolBlock) => {
       rows.set(block.callId, block.id);
-      const call = toolCall(block, s.cwd);
       const serialized = JSON.stringify(block);
       if (calls.get(block.id) !== serialized) {
+        // A block that fits the raw bound fits it with each part, so the parts need no serializing of their own.
+        const call = toolCall(block, s.cwd, serialized.length <= RAW_MAX_CHARS);
         void update(s, calls.has(block.id) ? { sessionUpdate: "tool_call_update", ...call } : { sessionUpdate: "tool_call", ...call });
         calls.set(block.id, serialized);
         if (block.name === "todo_write") {
@@ -568,6 +623,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       onThinkingDelta: (text: string) => {
         void update(s, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } });
       },
+      drain: () => (s.outbox.length > UPDATE_HIGH_WATER ? s.sending : undefined),
     });
     const waitInCloud = async (action: Extract<AiPendingTurnAction, { type: "approval_request" }>) => {
       if (waitingApprovals.has(action.callId)) return;
@@ -720,21 +776,30 @@ export const createAcpAgent = (host: CloudCliContext) => {
         if (command.handled && command.message === undefined) return { stopReason: "end_turn" as const };
         if (command.message !== undefined) text = command.message;
       }
+      // One chat read serves the running-turn check, the title, and the draft revision of the new turn.
+      let current: ConversationDetail | undefined;
       if (!s.chat) {
         abort.signal.throwIfAborted();
-        s.chat = (await resolveConversation(ctx, { projectId: s.project })).id;
-        await host.setDefault(`assistant.acpSession.${s.id}`, s.chat);
-        await host.setDefault(`assistant.acpChat.${s.chat}`, s.id);
-      }
-      const detail = await readConversationDetail(ctx, s.chat, abort.signal);
-      if (detail.activeTurn) {
-        turnId = detail.activeTurn.turnId;
-        await finish(await attention(await streamAssistantTurn(streamOptions())));
-        turnId = undefined;
-        output = createAssistantTurnOutput();
-        calls.clear();
-        rows.clear();
-        waitingApprovals.clear();
+        const conversation = await resolveConversation(ctx, { projectId: s.project });
+        s.chat = conversation.id;
+        created = true;
+        await store.set(s.id, s.chat).catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
+        // A chat created just now runs no turn and has an empty draft.
+        current = { conversation, activeTurn: null };
+      } else {
+        current = await readConversationDetail(ctx, s.chat, abort.signal);
+        title = current.conversation.title;
+        if (current.activeTurn) {
+          turnId = current.activeTurn.turnId;
+          await finish(await attention(await streamAssistantTurn(streamOptions())));
+          turnId = undefined;
+          output = createAssistantTurnOutput();
+          calls.clear();
+          rows.clear();
+          waitingApprovals.clear();
+          // Following the turn may have taken long; the turn reads the draft again.
+          current = undefined;
+        }
       }
       s.context = await s.contextReader();
       await commands(s, false, abort.signal);
@@ -765,6 +830,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         path: conversationPath(s.chat, "/turns"),
         watch: true,
         codeHost: false,
+        detail: current,
         body: {
           message: text,
           content: [...attachments, ...s.selectedCloud],
@@ -799,23 +865,18 @@ export const createAcpAgent = (host: CloudCliContext) => {
     } finally {
       // The title and the last updates are best-effort: they never change how the turn ended.
       try {
-        if (s.chat && !s.disconnected && !abort.signal.aborted) {
-          title = (await readConversationDetail(ctx, s.chat, abort.signal)).conversation.title;
-        }
-      } catch (error) {
-        diagnostic(`Could not refresh the chat title: ${errorText(error)}`);
-      }
-      try {
         if (title !== undefined && title !== s.title && !s.disconnected) {
           s.title = title;
           await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
         }
-        await s.queue;
+        await flushed(s);
       } catch (error) {
         if (!s.disconnected) diagnostic(errorText(error));
       } finally {
         s.active = undefined;
         finishPrompt();
+        // Cloud names a new chat after its first message, which the stream's earlier state does not know yet.
+        if (created && !abort.signal.aborted) afterResponse(s, { refreshTitle: true });
       }
     }
   };
@@ -867,7 +928,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const profiles = await models();
       if (params.mcpServers.length) diagnostic("cld acp ignores MCP servers from the editor; Assistant uses Cloud's own tools.");
       const s = await createSession(crypto.randomUUID(), params.cwd, client, profiles);
-      afterResponse(s);
+      afterResponse(s, { commands: true });
       return { sessionId: s.id, configOptions: config(s) };
     })
     .onRequest("session/set_config_option", ({ params }) => {
@@ -885,24 +946,38 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const page = params.cursor == null ? 1 : Number(params.cursor);
       if (params.cursor != null && (!/^[1-9]\d*$/.test(params.cursor) || !Number.isSafeInteger(page)))
         throw RequestError.invalidParams(undefined, "Unknown session list cursor.");
-      const conversations = await readApi<AiConversationPage>(api, `/conversations/page?page=${page}&perPage=50`);
+      const [conversations, known] = await Promise.all([
+        readApi<AiConversationPage>(api, `/conversations/page?page=${page}&perPage=50`),
+        store.sessions(),
+      ]);
       return {
-        sessions: await Promise.all(
-          conversations.items.map(async (chat) => ({
-            sessionId: (await host.getDefault(`assistant.acpChat.${chat.id}`)) ?? chat.id,
-            cwd: params.cwd ?? process.cwd(),
-            title: terminalSafeText(chat.title),
-            updatedAt: chat.updatedAt,
-          })),
-        ),
+        sessions: conversations.items.map((chat) => ({
+          sessionId: known.get(chat.id) ?? chat.id,
+          cwd: params.cwd ?? process.cwd(),
+          title: terminalSafeText(chat.title),
+          updatedAt: chat.updatedAt,
+        })),
         ...(conversations.hasNext ? { nextCursor: String(page + 1) } : {}),
       };
     })
     .onRequest("session/resume", async ({ params, client }) => {
       const profiles = await models();
-      const chat = (await host.getDefault(`assistant.acpSession.${params.sessionId}`)) ?? params.sessionId;
+      const legacyKey = `assistant.acpSession.${params.sessionId}`;
+      let chat = await store.chat(params.sessionId);
+      // Sessions from before the store kept their chat in the profile; move them over once.
+      const legacy = chat ? undefined : await host.getDefault(legacyKey);
+      if (legacy) {
+        chat = legacy;
+        await store.set(params.sessionId, legacy);
+        await host.setDefault(legacyKey, undefined);
+        await host.setDefault(`assistant.acpChat.${legacy}`, undefined);
+      }
+      chat ??= params.sessionId;
       const response = await api.fetch(`${AI_API}${conversationPath(chat)}`);
-      if (response.status === 404) throw RequestError.resourceNotFound(params.sessionId);
+      if (response.status === 404) {
+        await store.forget(params.sessionId);
+        throw RequestError.resourceNotFound(params.sessionId);
+      }
       const detail = await api.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
       const existing = sessions.get(params.sessionId);
       if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
@@ -910,13 +985,13 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const s = await createSession(params.sessionId, params.cwd, client, profiles);
       s.chat = detail.conversation.id;
       s.project = detail.conversation.projectId ?? undefined;
-      afterResponse(
-        s,
-        detail.conversation.title,
-        detail.activeTurn
+      afterResponse(s, {
+        commands: true,
+        title: detail.conversation.title,
+        notice: detail.activeTurn
           ? `A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: ${chatLink(s)}`
           : undefined,
-      );
+      });
       return { configOptions: config(s) };
     })
     .onRequest("session/prompt", ({ params }) => prompt(getSession(params.sessionId), params.prompt))
