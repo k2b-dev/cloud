@@ -303,4 +303,57 @@ describe("AccessDialog", () => {
       ui.cleanup();
     }
   });
+
+  test("the owner's signal closes the dialog and stops a running save", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    delegateEvents(["click", "input"], dom.document);
+    const { openAccessDialog } = await import("./AccessDialog");
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const owner = new AbortController();
+    const calls: string[] = [];
+    const held = Promise.withResolvers<void>();
+    const opened = openAccessDialog({
+      resourceName: "Einkauf 2027",
+      initialEntries: [mia, lea, bot],
+      signal: owner.signal,
+      grantAccess: async (principal, permission) => {
+        calls.push(`grant ${principal.type}`);
+        return { id: "00000000-0000-4000-8000-000000000009", principal, permission, createdAt: "now" };
+      },
+      updateAccess: async (id) => {
+        calls.push(`update ${id.slice(-1)}`);
+        await held.promise;
+      },
+      revokeAccess: async (id) => {
+        calls.push(`revoke ${id.slice(-1)}`);
+      },
+    });
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    try {
+      await waitFor(() => dialog()?.textContent?.includes("Lea Schmitt") === true, "the dialog");
+      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      row("Lagerbot").querySelector<HTMLButtonElement>('button[aria-label="Remove Lagerbot"]')!.click();
+      await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((item) => item.textContent?.trim() === "Save")!
+        .click();
+      await waitFor(() => calls.length === 1, "the first saved change");
+      owner.abort();
+      expect(await opened).toBe(false);
+      expect(dialog()).toBeNull();
+      held.resolve();
+      await Bun.sleep(20);
+      // The level change was already sent; the removal after it never is.
+      expect(calls).toEqual(["update 2"]);
+    } finally {
+      held.resolve();
+      confirm.mockRestore();
+      dom.cleanup();
+    }
+  });
 });

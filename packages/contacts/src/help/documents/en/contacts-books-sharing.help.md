@@ -15,7 +15,7 @@ Cloud administrators also need access to see a book in Contacts; **Administratio
 :::reference
 - **Book → General:** Rename the book and edit its optional description.
 - **Book → Tags:** Create, edit, and delete the tags of this book. You assign tags in the contact editor.
-- **Sharing → Access:** Give users and groups **View**, **Edit**, or **Manage** access. Contacts saves access changes immediately.
+- **Sharing → Access:** Select **Edit access** to give users and groups **View**, **Edit**, or **Manage** access. Contacts applies your access changes when you select **Save**.
 - **Sharing → API keys:** Create resource-bound keys for integrations that need access to this contact book.
 - **Data → Import & export:** Preview and import vCard contacts, or export the book as vCard or CSV. These actions need **Manage** access.
 :::
