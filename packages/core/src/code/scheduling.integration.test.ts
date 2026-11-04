@@ -314,7 +314,7 @@ suiteFor(
       access: { kind: "grants" },
     });
     const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async (_ref, _principal, signal) => {
-      // Exceed only the queue wait, well within the existing owner-read and lease budgets.
+      // fixed wait: exceed only the 1000 ms queue poll, well within the existing owner-read and lease budgets.
       await Bun.sleep(1100);
       signal?.throwIfAborted();
       return "Current owner";
