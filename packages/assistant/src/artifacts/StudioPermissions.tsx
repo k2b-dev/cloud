@@ -12,7 +12,11 @@ import { runnerHref } from "./runner-contracts";
 type StudioProjects = Awaited<ReturnType<typeof artifactClient.projects>>;
 
 /** A Code account by its exact identifier. Core answers only someone who manages this app; names and UUIDs find nothing. */
-export const findStudioServiceAccount = async (artifactId: string, handle: string, signal: AbortSignal): Promise<FoundServiceAccount | null> => {
+export const findStudioServiceAccount = async (
+  artifactId: string,
+  handle: string,
+  signal: AbortSignal,
+): Promise<FoundServiceAccount | null> => {
   const response = await coreClient.accounts.entities.$get(
     {
       query: {

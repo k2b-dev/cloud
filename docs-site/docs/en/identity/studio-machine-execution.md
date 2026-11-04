@@ -5,7 +5,7 @@ section: Identity and access
 order: 651
 description: Grant an agent or service account explicit Studio execution and effect rights.
 tags: [identity, studio, service-accounts, authorization]
-updated: 2026-10-23
+updated: 2026-11-04
 ---
 
 # Run Studio apps with a machine identity
@@ -19,14 +19,24 @@ approvals do not apply.
 
 1. Create an [agent or service account](/en/docs/identity/service-accounts)
    and a credential with the required scope.
-2. Open the Studio app's permissions and add that named account.
-3. Under **Machine execution**, enable **Execute published code** and choose
-   each required data or effect right. Save the rights.
+2. Open **Manage access** on the Studio app, add that named account, and
+   **Save**. Studio uses the shared
+   [access dialog](/en/docs/identity/authorization#edit-access-in-a-dialog).
+3. Open **Manage access** again. Under **Machine execution** in the same
+   dialog, enable **Execute published code** and choose each required data or
+   effect right. **Save rights** applies them at once; they are not part of the
+   dialog's pending changes.
 4. Publish the app and call its execution endpoint with that published version.
 
 A direct app grant is required. Access through a linked Project, all signed-in
 accounts or a public link does not authorize machine execution. Resource-bound
 accounts also remain confined to their exact `assistant` / `artifact` binding.
+
+Code service accounts are not machines in this sense. Someone who manages the
+app adds one by its identifier under **Service accounts** and gives it **Use**,
+like a person; it never gets Manage. Code accounts do not appear under
+**Machine execution** and cannot hold execution, data, secret, HTTP, or sharing
+rights here. See [Code account handles](/en/docs/identity/code-service-account-handles).
 
 | Authority | What it permits |
 | --- | --- |

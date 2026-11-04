@@ -240,7 +240,9 @@ test("Studio machine rights recover from load/save failure inside the shared acc
     state.secretEntries.length = 0;
     loading.resolve();
     await page
-      .getByText("No agents or service accounts have access. Add one above and save, then choose its execution rights here.", { exact: true })
+      .getByText("No agents or service accounts have access. Add one above and save, then choose its execution rights here.", {
+        exact: true,
+      })
       .waitFor();
     await page.reload();
     await page.getByText("No app machine secrets configured.", { exact: true }).waitFor();
@@ -284,6 +286,7 @@ for (const width of [1280, 390])
       await page.keyboard.press("Escape");
       for (const control of [code.locator("button[aria-haspopup]").first(), code.getByRole("button", { name: /entfernen$/ })]) {
         await control.scrollIntoViewIfNeeded();
+        await settled(page);
         expect(await control.isVisible()).toBe(true);
         const box = (await control.boundingBox())!;
         expect(box.x >= 0 && box.x + box.width <= width).toBe(true);

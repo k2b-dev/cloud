@@ -108,7 +108,8 @@ export const assistantCapabilities = defineCapabilities({
           },
           "app.read": {
             title: "Studio-App lesen",
-            description: "Den Titel einer assistant.app-Referenz und deine eigene Stufe lesen. Nichts für Apps, die du nicht öffnen kannst.",
+            description:
+              "Den Titel einer assistant.app-Referenz und deine eigene Stufe lesen. Nichts für Apps, die du nicht öffnen kannst.",
           },
           "project.search": {
             title: "Projekte durchsuchen",

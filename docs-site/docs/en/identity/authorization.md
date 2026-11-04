@@ -700,7 +700,11 @@ The search offers people, groups, and agents; it never finds the account of an
 object or app by name.
 
 Pass `findServiceAccount(handle, signal)` to add such service accounts by their
-identifier. Send the resource as the lookup's target: your server answers only
+identifier. Code accounts (`serviceAccountKind: "code"`) appear in that section,
+never offer Manage, and the section adds "Whoever edits the Code acts with this
+permission." while one is listed. Long names wrap instead of being cut. Pass
+`entryDetail` to show the account's `serviceAccountDescription`, such as
+"Service account of a mailbox", as its second line. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such

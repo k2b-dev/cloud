@@ -54,7 +54,8 @@ export const machineMessages = i18n.define({
     de: {
       title: "Maschinenausführung",
       help: "Ein Agent oder Dienstkonto braucht eine direkte App-Freigabe und ausdrückliche Ausführungsrechte. Projektzugriff erlaubt keine Ausführung. Ausführung braucht zusätzlich den Scope write; Quellcode und Freigaben verwalten braucht admin.",
-      empty: "Noch kein Agent oder Dienstkonto hat Zugriff. Füge oben eines hinzu, speichere und wähle danach hier seine Ausführungsrechte.",
+      empty:
+        "Noch kein Agent oder Dienstkonto hat Zugriff. Füge oben eines hinzu, speichere und wähle danach hier seine Ausführungsrechte.",
       afterSave: "Oben hinzugefügte Agenten erscheinen hier nach dem Speichern. Dienstkonten von Code bekommen keine Ausführungsrechte.",
       scope:
         "Diese Rechte gelten für die veröffentlichte Version dieser App und ihre gemeinsamen Daten. Persönliche Daten und Secrets sind nicht verfügbar.",

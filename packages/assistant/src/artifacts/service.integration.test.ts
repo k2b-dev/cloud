@@ -31,6 +31,7 @@ import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../
 import { importRows } from "../../examples/accounting/import-rows";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { app } from "../config";
+import { readAssistantApp } from "../search";
 import { adminIdentity, artifactAdmin } from "./admin";
 import { agentHost } from "./agent-host";
 import { createArtifactServiceRoutes } from "./api";
@@ -48,6 +49,7 @@ import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
 import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
+import { machineAccess } from "./machine-service";
 import { migrateArtifacts } from "./migrate";
 import { type ArtifactIdentity, artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
@@ -844,6 +846,37 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect((await artifacts.get(app.id, reader)).permission).toBe("admin");
     await artifacts.changeGrant(app.id, grant!.id, null, owner);
     await expect(artifacts.get(app.id, reader)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  });
+
+  test("Studio sharing names a Code account only for managers, its reader answers Manage only to them, and it gets no machine rights", async () => {
+    const app = await artifacts.create({ title: "Angebotsrechner", source }, owner);
+    await artifacts.publish(app.id, app.revision, owner, "Shared");
+    await artifacts.grant(app.id, { type: "user", userId: reader.user!.id }, "read", owner);
+    const codeId = crypto.randomUUID();
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,title,handle)
+      VALUES(${codeId}::uuid,${`code:nowhere.box:${app.id}`},'code','einkauf@example.test','code-7k2q9m4xwt')`;
+    try {
+      const entry = await artifacts.grant(app.id, { type: "service_account", serviceAccountId: codeId }, "read", {
+        ...owner,
+        locale: "en",
+      });
+      expect(entry).toMatchObject({ serviceAccountKind: "code", displayName: "Code of einkauf@example.test" });
+      const listed = (identity: ArtifactIdentity) =>
+        artifacts.access(app.id, identity).then((entries) => entries.find((item) => item.serviceAccountKind === "code")?.displayName);
+      // A2: the title only in the authorized target context; Administration and other viewers see the type.
+      expect(await listed({ ...owner, locale: "en" })).toBe("Code of einkauf@example.test");
+      expect(await listed({ ...owner, locale: "en", administrative: true })).toBe("Code of a resource");
+      // The reader is what Core's identifier lookup asks for Manage on assistant.app.
+      const read = (identity: ArtifactIdentity) => readAssistantApp({ id: app.id }, { ...identity, locale: "en" }, artifacts);
+      expect(await read(owner)).toMatchObject({ ok: true, data: { data: { view: { title: "Angebotsrechner", permission: "admin" } } } });
+      expect(await read(reader)).toMatchObject({ ok: true, data: { data: { view: { permission: "read" } } } });
+      expect(await read(stranger)).toMatchObject({ ok: false, error: { status: 404 } });
+      // Machine rights list API-key machines only; a Code account acts through its level alone.
+      expect((await machineAccess.list(app.id, owner)).map((policy) => policy.entry.serviceAccountKind)).not.toContain("code");
+    } finally {
+      await artifacts.remove(app.id, owner);
+      await sql`DELETE FROM auth.service_accounts WHERE id=${codeId}::uuid`;
+    }
   });
 
   test("agent creates save the first HTML and steps in one revision and report diagnostics", async () => {
