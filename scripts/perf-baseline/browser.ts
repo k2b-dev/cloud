@@ -1,6 +1,6 @@
 // Playwright is an existing @k2b/ui devDependency in this isolated-linker workspace.
 import { createRequire } from "node:module";
-import type { Browser, BrowserContext, CDPSession, Locator, Page, Request } from "playwright";
+import type { Browser, BrowserContext, CDPSession, Locator, Page } from "playwright";
 import { TIMEZONE_COOKIE } from "../../packages/cloud/src/shared/time";
 import {
   aggregateMetrics,
@@ -214,6 +214,37 @@ export function trackHostScripts(page: ScriptSource) {
       pending.clear();
       urls.clear();
       lastScript = performance.now();
+    },
+    stop() {
+      page.off("request", begin);
+      page.off("requestfinished", finish);
+      page.off("requestfailed", finish);
+    },
+  };
+}
+
+/** Mutation settling belongs to the current host document, not departed pages or embedded providers. */
+export function trackHostNetwork(page: ScriptSource) {
+  const pending = new Set<ScriptRequest>();
+  let last = performance.now();
+  const begin = (request: ScriptRequest) => {
+    if (request.frame() !== page.mainFrame() || !["script", "stylesheet", "document", "fetch", "xhr"].includes(request.resourceType()))
+      return;
+    pending.add(request);
+    last = performance.now();
+  };
+  const finish = (request: ScriptRequest) => {
+    if (pending.delete(request)) last = performance.now();
+  };
+  page.on("request", begin);
+  page.on("requestfinished", finish);
+  page.on("requestfailed", finish);
+  return {
+    pending,
+    last: () => last,
+    reset() {
+      pending.clear();
+      last = performance.now();
     },
     stop() {
       page.off("request", begin);
@@ -773,8 +804,7 @@ export class Browsers {
       await context.addInitScript({ content: `(${installProbe.toString()})(${engine === "chromium"});(${installPwaProbe.toString()})();` });
       const seen = new Set<string>();
       let scripts: ReturnType<typeof trackHostScripts> | undefined;
-      const pendingNetwork = new Set<Request>();
-      let lastNetwork = performance.now();
+      let network: ReturnType<typeof trackHostNetwork> | undefined;
       let capture: PwaCapture | null = null;
       let navigatingFrom: string | null = null;
       const newPage = async () => {
@@ -782,23 +812,20 @@ export class Browsers {
         page.setDefaultTimeout(measurementTimeoutMs);
         page.setDefaultNavigationTimeout(measurementTimeoutMs);
         const hostScripts = trackHostScripts(page);
+        const hostNetwork = trackHostNetwork(page);
         scripts = hostScripts;
+        network = hostNetwork;
         page.on("framenavigated", (frame) => {
-          if (frame === page.mainFrame()) hostScripts.reset();
-        });
-        page.on("close", () => hostScripts.stop());
-        page.on("request", (request) => {
-          if (["script", "stylesheet", "document", "fetch", "xhr"].includes(request.resourceType())) {
-            pendingNetwork.add(request);
-            lastNetwork = performance.now();
+          if (frame === page.mainFrame()) {
+            hostScripts.reset();
+            hostNetwork.reset();
           }
         });
-        const finished = (request: Request) => {
-          if (pendingNetwork.delete(request)) lastNetwork = performance.now();
-        };
-        page.on("requestfinished", finished);
+        page.on("close", () => {
+          hostScripts.stop();
+          hostNetwork.stop();
+        });
         page.on("requestfailed", (request) => {
-          finished(request);
           const error = failedRequestError(request.resourceType(), request.url(), request.failure()?.errorText);
           if (error) capture?.errors.push(error);
         });
@@ -846,7 +873,7 @@ export class Browsers {
           "PWA islands mounted and scripts quiet",
           async () => {
             if (capture?.errors.length) return true;
-            if (!scripts) throw new Error("PWA page has no script tracker");
+            if (!scripts || !network) throw new Error("PWA page has no request trackers");
             const state = await page.evaluate(
               (urls) => {
                 const p = window.__cloudPerf;
@@ -870,9 +897,9 @@ export class Browsers {
               interactive({
                 initial: state.initial,
                 mounted: state.mounted,
-                pendingScripts: allNetwork ? pendingNetwork.size : scripts.pending.size,
+                pendingScripts: allNetwork ? network.pending.size : scripts.pending.size,
                 untimedScripts: state.untimedScripts,
-                quietMs: performance.now() - (allNetwork ? lastNetwork : scripts.last()),
+                quietMs: performance.now() - (allNetwork ? network.last() : scripts.last()),
               })
             );
           },

@@ -10,6 +10,7 @@ import {
   navigationRefusal,
   pwaStartUrl,
   stepMilliseconds,
+  trackHostNetwork,
   trackHostScripts,
   transferType,
 } from "./browser";
@@ -188,6 +189,7 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
     url: () => `https://localhost/${name}`,
   });
   const scripts = trackHostScripts(source);
+  const network = trackHostNetwork(source);
   const frameScript = request(provider, "script", "provider.js");
   const hostScript = request(host, "script", "host.js");
   emit("request", frameScript);
@@ -208,7 +210,22 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
   emit("request", hostScript);
   emit("requestfailed", hostScript);
   expect(scripts.pending.size).toBe(0);
+  network.reset();
+  const departed = request(host, "fetch", "departed-stream");
+  const mutation = request(host, "fetch", "undo");
+  emit("request", request(provider, "fetch", "embedded-stream"));
+  expect(network.pending.size).toBe(0);
+  emit("request", departed);
+  expect(network.pending.size).toBe(1);
+  network.reset();
+  expect(network.pending.size).toBe(0);
+  emit("request", mutation);
+  emit("requestfinished", departed);
+  expect(network.pending.size).toBe(1);
+  emit("requestfinished", mutation);
+  expect(network.pending.size).toBe(0);
   scripts.stop();
+  network.stop();
   expect([...listeners.values()].every((entries) => entries.size === 0)).toBe(true);
 });
 
