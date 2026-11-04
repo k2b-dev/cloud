@@ -53,6 +53,8 @@ export type StudioAccessOptions = {
   grant: (principal: Principal, level: "read" | "admin") => Promise<AccessEntry | null>;
   change: (id: string, level: "read" | "admin" | null) => Promise<unknown>;
   findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
+  /** The opener's lifetime: aborting it closes the dialog without sending anything still pending. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -66,6 +68,7 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
     subtitle: t.studioApp,
     initialEntries: options.entries,
     viewerUserId: options.viewerUserId,
+    signal: options.signal,
     allowPublic: PUBLIC_APP_SHARING,
     publicWarning: t.publicAccessHelp,
     publicLink: options.published ? new URL(runnerHref(options.artifactId), location.origin).href : undefined,
@@ -91,7 +94,10 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
     revokeAccess: async (id) => {
       await options.change(id, null);
     },
-    extraSections: <StudioAccessNotes {...options} />,
+    // A getter, so the sections are built inside the dialog and their requests end when it closes.
+    get extraSections() {
+      return <StudioAccessNotes {...options} />;
+    },
   };
 };
 

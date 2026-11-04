@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, DataTable, NoticeCard, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { DatabaseSettingsForm, StorageSettingsForm } from "./AdminSettings";
 import type { artifactAdmin } from "./admin";
 import { artifactClient } from "./client";
@@ -33,10 +33,15 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
         size: "medium",
       });
     });
+  // Sharing ends with this page: nothing opens or stays open after navigating away.
+  const owner = new AbortController();
+  onCleanup(() => owner.abort());
   const permissions = (row: { id: string; title: string; published: boolean }) =>
     act(async () => {
       const [entries, projects] = await Promise.all([artifactClient.admin.access(row.id), artifactClient.admin.projects(row.id)]);
+      if (owner.signal.aborted) return;
       await openStudioAccess({
+        signal: owner.signal,
         artifactId: row.id,
         title: row.title,
         published: row.published,

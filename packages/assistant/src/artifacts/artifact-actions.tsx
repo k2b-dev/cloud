@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
-import { type Accessor, createResource, createSignal, For, Show } from "solid-js";
+import { type Accessor, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
 import { openDatabaseDialog, openDataDialog } from "./DataDialogs";
@@ -60,10 +60,15 @@ export function createArtifactActions(props: {
     });
   };
   const edit = (id: string) => action(async () => navigateTo((await artifactClient.editChat(id)).href));
+  // Sharing ends with the page that opened it: nothing opens or stays open after navigating away.
+  const owner = new AbortController();
+  onCleanup(() => owner.abort());
   const share = (item: ArtifactSummary) =>
     action(async () => {
       const [entries, projects] = await Promise.all([artifactClient.access(item.id), artifactClient.projects(item.id)]);
+      if (owner.signal.aborted) return;
       await openStudioAccess({
+        signal: owner.signal,
         artifactId: item.id,
         title: item.title,
         published: Boolean(item.publishedRevision),

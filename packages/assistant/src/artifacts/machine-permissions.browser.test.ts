@@ -177,7 +177,11 @@ test("Studio machine rights recover from load/save failure inside the shared acc
     await controls.getByText(/Account disabled/).waitFor();
     // The Code account has a grant, but no machine rights: it acts only through its level.
     expect(await controls.getByText(/Code von/).count()).toBe(0);
-    await controls.getByText("Agents added above appear here once saved. Code service accounts get no execution rights.").waitFor();
+    await controls
+      .getByText(
+        "Agents added above appear here once saved. Accounts bound only to this app are added through the API. Code service accounts get no execution rights.",
+      )
+      .waitFor();
     const execute = controls.getByRole("checkbox", { name: "Execute published code", exact: true }).first();
     await execute.uncheck();
     await controls.getByRole("button", { name: "Save rights", exact: true }).first().click();

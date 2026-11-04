@@ -30,7 +30,11 @@ approvals do not apply.
 
 A direct app grant is required. Access through a linked Project, all signed-in
 accounts or a public link does not authorize machine execution. Resource-bound
-accounts also remain confined to their exact `assistant` / `artifact` binding.
+accounts also remain confined to their exact `assistant` / `artifact` binding. The
+dialog's search offers agents and standalone service accounts by name; it never
+lists an account bound to an object or app. Grant such an account through
+`POST /api/assistant/artifacts/<id>/access`, or as an administrator with
+`cld assistant studio-admin grant`.
 
 Code service accounts are not machines in this sense. Someone who manages the
 app adds one by its identifier under **Service accounts** and gives it **Use**,

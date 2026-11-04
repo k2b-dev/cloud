@@ -157,6 +157,68 @@ describe("Studio sharing in the shared access dialog", () => {
     }
   });
 
+  test("machine rights load only inside the dialog, and sharing never opens after its page is gone", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((() => new Promise<Response>(() => {})) as unknown as typeof fetch);
+    const { AccessDialog } = await import("@k2b/cloud/access/ui");
+    const { studioAccessDialogProps } = await import("./StudioPermissions");
+    const { createArtifactActions } = await import("./artifact-actions");
+    const { artifactClient } = await import("./client");
+    const ui = await import("@k2b/ui");
+    const { createRoot } = await import("solid-js");
+    const open = spyOn(ui.dialogCore, "open");
+    const access = Promise.withResolvers<AccessEntry[]>();
+    const accessSpy = spyOn(artifactClient, "access").mockReturnValue(access.promise);
+    const projectsSpy = spyOn(artifactClient, "projects").mockResolvedValue([]);
+    try {
+      const props = studioAccessDialogProps({
+        artifactId: "App234",
+        title: "Angebotsrechner",
+        published: true,
+        locale: "en",
+        entries: [owner],
+        projects: [],
+        grant: async () => null,
+        change: async () => {},
+      });
+      // Building the dialog's props starts nothing; the dialog owns the requests of its sections.
+      expect(fetchSpy).not.toHaveBeenCalled();
+      const dispose = render(() => <AccessDialog {...props} close={() => {}} />, dom.root);
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(0);
+      dispose();
+
+      const actions = createRoot((disposeActions) => ({ disposeActions, ...createArtifactActions({ userId: "owner" }) }));
+      const share = actions
+        .menu({
+          id: "App234",
+          kind: "app",
+          title: "Angebotsrechner",
+          description: "",
+          revision: 1,
+          publishedRevision: 1,
+          permission: "admin",
+          updatedAt: "",
+          forkedFromId: null,
+          forkedFromRevision: null,
+        })
+        .find((entry) => "label" in entry && entry.label === "Manage access");
+      if (!share || !("action" in share) || !share.action) throw new Error("Missing share action");
+      const pending = share.action();
+      await waitFor(() => accessSpy.mock.calls.length === 1, "the access list request");
+      actions.disposeActions();
+      access.resolve([owner]);
+      await pending;
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      open.mockRestore();
+      accessSpy.mockRestore();
+      projectsSpy.mockRestore();
+      fetchSpy.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("Studio notes, project access and machine rights stay in the dialog; a stored public link explains it is switched off", async () => {
     const ui = await setup({
       lang: "en",
