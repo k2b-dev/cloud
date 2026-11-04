@@ -165,6 +165,18 @@ export const splitPlainTextLinks = (value: string): PlainTextLinkSegment[] => {
   return segments.length > 0 ? segments : [{ kind: "text", text: value }];
 };
 
+/**
+ * Copied plain mail text as HTML paragraphs: blank lines separate paragraphs and other line breaks stay breaks.
+ * Editors then keep the text's shape without reading it as a code block, or a tab as a table column.
+ */
+export const plainTextClipboardHtml = (text: string): string =>
+  text
+    .replace(/\r\n?/gu, "\n")
+    .split(/\n(?:[^\S\n]*\n)+/u)
+    .filter((paragraph) => paragraph.trim())
+    .map((paragraph) => `<p>${paragraph.split("\n").map(escapeHtmlAttribute).join("<br>")}</p>`)
+    .join("");
+
 export const messagePreviewText = (plainText: string | null, forwardText: string | undefined, maxLength = 240): string => {
   const source = messageForwardTextOf({ plainText, forwardText });
   const content = splitPlainMessageSegments(source).find((segment) => segment.kind === "content" && segment.text.trim())?.text ?? source;

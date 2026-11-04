@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { deflateSync } from "node:zlib";
 import type { BrowserContextOptions, Frame, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { renderComposeContent } from "../../service/compose-renderer";
 import { sanitizeIncomingMailHtml } from "../../service/message-hydration";
 import type {} from "./MailMessageBody.browser-harness";
@@ -1110,5 +1110,82 @@ describe("HTML mail with tables", () => {
         reducedMotion: "reduce",
       },
     );
+  }, 30_000);
+});
+
+describe("plain mail message copy", () => {
+  test("copies plain text as lines and paragraphs instead of preformatted HTML", async () => {
+    const browser = await launchBrowser();
+    try {
+      const page = await browser.newPage();
+      const errors = pageErrors(page);
+      await page.goto(server.url.href);
+      await page.evaluate(() =>
+        window.mountMailMessageBody({
+          mailboxId: "Box001",
+          messageId: "Msg001",
+          format: "plain",
+          html: null,
+          plainText:
+            "Hello Sam,\n\nthe meeting moves to Thursday.\nRoom 4 stays booked: https://example.com/rooms/4\n\nOn Monday, Sam Example wrote:\n> Is the meeting still on?",
+          attachments: [],
+          remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+        }),
+      );
+      await page.locator("details > summary").click();
+      // A real copy shortcut, so the browser picks the event target from the selection as it does for people.
+      const copy = async (select: () => void) => {
+        const copied = page.evaluate(
+          () =>
+            new Promise<{ plain: string; html: string; prevented: boolean }>((resolve) => {
+              document.addEventListener(
+                "copy",
+                (event) =>
+                  resolve({
+                    plain: event.clipboardData?.getData("text/plain") ?? "",
+                    html: event.clipboardData?.getData("text/html") ?? "",
+                    prevented: event.defaultPrevented,
+                  }),
+                { once: true },
+              );
+            }),
+        );
+        await page.evaluate(select);
+        await page.keyboard.press("ControlOrMeta+C");
+        return copied;
+      };
+      expect(await copy(() => getSelection()!.selectAllChildren(document.querySelector("#root > div")!))).toEqual({
+        plain:
+          "Hello Sam,\n\nthe meeting moves to Thursday.\nRoom 4 stays booked: https://example.com/rooms/4\n\nOn Monday, Sam Example wrote:\n> Is the meeting still on?",
+        html: "<p>Hello Sam,</p><p>the meeting moves to Thursday.<br>Room 4 stays booked: https://example.com/rooms/4</p><p>On Monday, Sam Example wrote:<br>&gt; Is the meeting still on?</p>",
+        prevented: true,
+      });
+      expect(
+        await copy(() => {
+          const text = document.querySelector("pre")!.firstChild!;
+          const start = text.textContent!.indexOf("the meeting");
+          getSelection()!.setBaseAndExtent(text, start, text, start + "the meeting moves to Thursday.\nRoom 4".length);
+        }),
+      ).toEqual({
+        plain: "the meeting moves to Thursday.\nRoom 4",
+        html: "<p>the meeting moves to Thursday.<br>Room 4</p>",
+        prevented: true,
+      });
+      // A selection from the message header into the body sends its copy event past the body.
+      const fromHeader = await copy(() => {
+        const header = document.createElement("p");
+        header.textContent = "From Sam Example";
+        document.body.prepend(header);
+        const text = document.querySelector("pre")!.firstChild!;
+        getSelection()!.setBaseAndExtent(header.firstChild!, 0, text, "Hello Sam,".length);
+      });
+      expect(fromHeader.prevented).toBeTrue();
+      expect(fromHeader.plain).toStartWith("From Sam Example\n");
+      expect(fromHeader.plain).toEndWith("Hello Sam,");
+      expect(fromHeader.html).not.toContain("<pre");
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
   }, 30_000);
 });

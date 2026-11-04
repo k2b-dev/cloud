@@ -9,6 +9,7 @@ import {
   messageDeliveryPresentation,
   messagePreviewText,
   normalizeContentId,
+  plainTextClipboardHtml,
   referencedContentIds,
   referencedRemoteImageIds,
   resolveMessageBodyFormat,
@@ -73,6 +74,13 @@ describe("mail message presentation", () => {
     expect(messagePreviewText("Short answer\n\n> much older text", "")).toBe("Short answer");
     expect(messagePreviewText(null, "HTML fallback\nwith spacing")).toBe("HTML fallback with spacing");
     expect(messagePreviewText("123456789", "", 6)).toBe("12345…");
+  });
+
+  test("turns copied plain text into escaped paragraphs that keep their line breaks", () => {
+    expect(plainTextClipboardHtml("Hello,\r\n\n\tPlease send <the> report & notes.\nThanks\n \n\n> Quoted line")).toBe(
+      "<p>Hello,</p><p>\tPlease send &lt;the&gt; report &amp; notes.<br>Thanks</p><p>&gt; Quoted line</p>",
+    );
+    expect(plainTextClipboardHtml("\n\n")).toBe("");
   });
 
   test("selects the preferred body format with deterministic fallback and per-message override", () => {
