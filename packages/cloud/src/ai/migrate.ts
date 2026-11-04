@@ -683,6 +683,8 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS remember_tool_name TEXT`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS allow_chat BOOLEAN NOT NULL DEFAULT FALSE`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS consumed_inline BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+  // When Cloud Login devices were woken for the approval; set once, so a closed tab never wakes them twice.
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS push_woken_at TIMESTAMPTZ`.simple();
 
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_pending_actions_turn_call

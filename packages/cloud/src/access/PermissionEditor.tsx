@@ -121,7 +121,7 @@ const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Recor
   none: { label: t.noAccess, icon: "ti-ban" },
 });
 
-type ResolvedLevel = {
+export type ResolvedLevel = {
   level: GrantableLevel;
   scope: string | undefined;
   /** Unique per option: the level, prefixed by its scope. */
@@ -131,12 +131,15 @@ type ResolvedLevel = {
   description: string | undefined;
 };
 
-const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
+export const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
 
 /** Resolve the AllowedLevel union into a flat shape the renderer can
  *  loop over. Falls back to the default View / Edit / Manage list when
  *  no override is given. */
-const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType<typeof accessMessages.resolve>["t"]): ResolvedLevel[] => {
+export const resolveAllowedLevels = (
+  allowed: AllowedLevel[] | undefined,
+  t: ReturnType<typeof accessMessages.resolve>["t"],
+): ResolvedLevel[] => {
   const defaults = defaultLabels(t);
   const list = allowed && allowed.length > 0 ? allowed : (["read", "write", "admin"] as GrantableLevel[]);
   return list.map((entry) => {

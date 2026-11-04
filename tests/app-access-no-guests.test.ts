@@ -111,7 +111,7 @@ describe("six built-in app declarations exclude guests at the shared gate", () =
         .use(requireAppAccess(app.meta, async () => new Response("denied", { status: 403 })))
         .all("*", (c) => c.json({ code: "route_authentication_required" }, 401));
       for (const pattern of app.meta.access?.publicRoutes ?? []) {
-        const path = pattern.replace(/:[A-Za-z]+/g, "Object").replace("*", "records");
+        const path = pattern.replace(/:[A-Za-z]+/g, "Object").replaceAll("*", "records");
         const response = await router.request(path);
         expect(response.status).toBe(401);
         expect(await response.json()).toEqual({ code: "route_authentication_required" });

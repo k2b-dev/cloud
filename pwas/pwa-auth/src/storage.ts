@@ -121,6 +121,21 @@ export const storage = {
     return reserved;
   },
   defer: (id: string, until: number) => guarded("operations", "readwrite", (s) => s.put(until, id)),
+  /** Moves a reservation to `next` only while it still holds `expected`, so another tab's newer one stays. */
+  release: async (id: string, expected: number, next: number) => {
+    let released = false;
+    await guarded("operations", "readwrite", (store) => {
+      const get = store.get(id);
+      get.onsuccess = () => {
+        if (get.result === expected) {
+          store.put(next, id);
+          released = true;
+        }
+      };
+      return get;
+    });
+    return released;
+  },
   prune: () =>
     guarded("operations", "readwrite", (store) => {
       const cursor = store.openCursor();

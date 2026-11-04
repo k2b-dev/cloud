@@ -694,8 +694,9 @@ editor to revoke remembered choices.
 
 The Assistant's **Approvals** row above **Studio** opens a view of waiting
 requests. **My account → Approvals** lists requests across apps.
-A **Pending approvals** notification opens that list for requests from turns
-started outside a signed-in browser session.
+A **Pending approvals** notification and a Cloud Login push point to that
+list for requests that no open chat tab shows, including a chat that keeps
+running after its tab closed.
 An ACP editor bridge can reject `confirm` requests but cannot approve them.
 See [Action approvals](/en/docs/identity/approvals) for the lists, notification
 rules, and decision channels.

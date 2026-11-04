@@ -58,7 +58,7 @@ mock.module("@k2b/cloud/server", () => ({
   getLocale: () => "en",
 }));
 mock.module("@k2b/cloud/services", () => ({
-  accountsAppService: { user: { listDuplicateEmails: list }, accountRequest: { list: async () => ({ total: 0 }) } },
+  accountsAppService: { user: { listDuplicateEmails: list }, accountRequest: { countPending: async () => 0 } },
   coreSettings: { get: async () => true },
   readAccountCategoryPolicy: async () => DEFAULT_ACCOUNT_CATEGORY_POLICY,
 }));

@@ -56,7 +56,7 @@ const recipient = (n: number, status: NotificationBatchRecipient["status"], mail
 test("batch recipients show mail status where it differs from the recipient status", async () => {
   const spies = [
     stubRailSnapshot(),
-    spyOn(accountsAppService.accountRequest, "list").mockResolvedValue({ items: [], page: 1, perPage: 50, total: 0, hasNext: false }),
+    spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
     spyOn(notificationBatches, "get").mockResolvedValue({
       id: batchId,
       subject: "Maintenance window",

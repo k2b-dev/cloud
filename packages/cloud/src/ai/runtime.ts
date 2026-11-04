@@ -17,6 +17,7 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
+import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
@@ -689,6 +690,18 @@ const releaseAiRuntime = (
     refCount = Math.max(0, refCount - 1);
     if (refCount === 0) state.stop();
   };
+};
+
+/**
+ * Raises the approval hooks again for the approvals a conversation waits on,
+ * once its last browser tab closed. The hooks themselves skip approvals that
+ * were already notified, so a repeated call sends nothing twice.
+ */
+export const notifyAiConversationUnwatched = async (conversationId: string): Promise<void> => {
+  const listeners = running?.approvalListeners;
+  if (!listeners?.size) return;
+  for (const approvalId of await waitingAiApprovals(conversationId))
+    await Promise.allSettled([...listeners].map((notify) => notify({ approvalId })));
 };
 
 export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, publishSweepFinished };

@@ -104,7 +104,9 @@ The API still accepts explicit `scopes` and stores them unchanged; an empty
 list is refused with `400`. This input is deprecated for new keys: omit it. Issuing a key never
 changes an existing key. Older limited keys retain their limits; keys with no
 scopes still receive `app_access_denied`. Create a new key and revoke the old
-one when replacing it.
+one when replacing it. In the Accounts key list, **Replace** on a key marked
+"Legacy, limited" creates a key that acts as the agent, shows it once, and
+revokes the old key only when you choose to; until then both keys work.
 
 For an external model client, choose **AI models only** when creating a key
 in **Accounts → Service accounts → Create API key**. Grant model access to the

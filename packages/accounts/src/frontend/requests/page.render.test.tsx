@@ -59,6 +59,7 @@ test("request status is URL navigation, with Pending as the default", async () =
       total: 0,
       hasNext: false,
     }),
+    spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
   ];
   try {
     const app = server();

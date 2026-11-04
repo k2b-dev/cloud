@@ -99,6 +99,7 @@ import surfaceAvatarStack from "./surfaces/avatar-stack.md" with { type: "text" 
 import surfaceBaseStylesheet from "./surfaces/base-stylesheet.md" with { type: "text" };
 import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
 import surfaceCards from "./surfaces/cards.md" with { type: "text" };
+import surfaceChangeList from "./surfaces/change-list.md" with { type: "text" };
 import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
@@ -182,6 +183,7 @@ const catalogContextSources = {
   "surfaces/avatar-stack": { file: "surfaces/avatar-stack.md", content: surfaceAvatarStack },
   "surfaces/cards": { file: "surfaces/cards.md", content: surfaceCards },
   "surfaces/progress": { file: "surfaces/progress.md", content: surfaceProgress },
+  "surfaces/change-list": { file: "surfaces/change-list.md", content: surfaceChangeList },
   "surfaces/stats": { file: "surfaces/stats.md", content: surfaceStats },
   "surfaces/observability": { file: "surfaces/observability.md", content: surfaceObservability },
   "feedback/blocks": { file: "feedback/blocks.md", content: feedbackBlocks },
