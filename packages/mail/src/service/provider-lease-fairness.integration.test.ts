@@ -1961,6 +1961,92 @@ suite("mail provider lease fairness", () => {
     expect(await imported(mailbox, later!)).toBe(true);
   });
 
+  test("a mailbox's body that waited longer than the folder syncs' head start takes the next turn, and folder syncs go on", async () => {
+    const mailbox = await connect("aged-bodies");
+    await deliverAndSync(mailbox, 3, "aged-bodies");
+    const resource = mailbox.remoteResourceId;
+    const entered = `mail:provider-lease-line:{${resource}}:entered`;
+    const hydrationWaiter = `hydrate:mailbox:${mailbox.mailboxId}`;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    const heartbeat = async (): Promise<void> => undefined;
+    const batch = (resubmit: () => void = () => undefined) =>
+      hydrateMessageBatch({ input: { mailboxId: mailbox.mailboxId }, heartbeat, resubmit });
+    // A folder sync holds the lease and one per folder of a 354-folder account waits for it.
+    let holder = await take("sync-folder:holder", "sync");
+    const folderSyncs = Array.from({ length: 354 }, (_, index) => `sync-folder:${index}`);
+    const turns: string[] = [];
+    try {
+      if (!holder.lock) throw new Error("The folder sync did not take the provider lease");
+      for (const waiter of folderSyncs) expect((await take(waiter, "sync")).lock).toBeNull();
+      await expect(batch()).rejects.toMatchObject({ code: "SYNC_BUSY" });
+
+      // Before it has waited the head start, the folder sync first in line goes first.
+      await releaseProviderLease(holder.lock);
+      holder = await take(folderSyncs[0]!, "sync");
+      expect(holder.lock).not.toBeNull();
+      turns.push(folderSyncs[0]!);
+
+      // Redis owns lease time: move the body's first ask back by the head start instead of waiting it.
+      await redis.send("HINCRBY", [entered, hydrationWaiter, "-60000"]);
+      await expect(batch()).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      await releaseProviderLease(holder.lock!);
+      // The next folder sync asks for the free lease and is refused: the aged body is next.
+      const refused = await take(folderSyncs[1]!, "sync");
+      if (refused.lock) await releaseProviderLease(refused.lock);
+      expect(refused.lock).toBeNull();
+      const before = downloads.length;
+      let more = false;
+      await batch(() => {
+        more = true;
+      });
+      turns.push(hydrationWaiter);
+      // One body, then the turn goes back to the folder syncs that wait.
+      expect(downloads.slice(before)).toEqual(["aged-bodies"]);
+      expect(more).toBe(true);
+
+      // The body's next batch lines up anew and does not take a second turn in a row.
+      await expect(batch()).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      holder = await take(folderSyncs[1]!, "sync");
+      expect(holder.lock).not.toBeNull();
+      turns.push(folderSyncs[1]!);
+      expect(turns).toEqual([folderSyncs[0]!, hydrationWaiter, folderSyncs[1]!]);
+    } finally {
+      if (holder.lock) await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "entered"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("an aging waiter's wait counts from its first ask, also when it asks with another priority meanwhile", async () => {
+    const resource = crypto.randomUUID();
+    const prefix = `mail:provider-lease-line:{${resource}}`;
+    const ask = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS, ages: true });
+    const ranks = async (waiter: string) => String(await redis.send("HGET", [`${prefix}:priorities`, waiter]));
+    const held = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    if (!held) throw new Error("Could not hold the provider lease");
+    try {
+      // A sync head start that the place keeps is no wait: switching to background does not age.
+      expect((await ask("from-sync", "sync")).lock).toBeNull();
+      expect((await ask("from-sync", "background")).lock).toBeNull();
+      expect(await ranks("from-sync")).toBe("background");
+      // A waiter that waited the aging time ranks as a command, whichever priority it asks with now.
+      expect((await ask("to-sync", "background")).lock).toBeNull();
+      await redis.send("HINCRBY", [`${prefix}:entered`, "to-sync", "-60000"]);
+      expect((await ask("to-sync", "sync")).lock).toBeNull();
+      expect(await ranks("to-sync")).toBe("command");
+    } finally {
+      await releaseProviderLease(held);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "entered"].map((key) => `${prefix}:${key}`),
+      );
+    }
+  });
+
   test("a later command ends a first-attempt batch and takes the lease before its next generation", async () => {
     const mailbox = await connect("body-before-command");
     await deliverAndSync(mailbox, 21, "command-during-bodies");

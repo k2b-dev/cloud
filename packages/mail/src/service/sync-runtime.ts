@@ -2986,12 +2986,15 @@ export const hydrateMessageBatch = async (
       // Backfill, later body batches and retries retain background rank, so importing old
       // mail cannot repeatedly displace envelope continuations and commands.
       // An explicitly requested body (for example by a workflow) ranks with commands.
+      // A mailbox's bodies age: on an account with hundreds of folders the line of folder syncs is
+      // longer than their head start, so without aging a body waits about a full round of them.
       const turn = await acquireProviderLease({
         resource: message.remote_resource_id,
         waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
         priority:
           "messageId" in ctx.input ? "command" : ctx.input.foregroundBodies && message.hydration_attempt === 0 ? "sync" : "background",
         ttlMs: SYNC_LEASE_MS,
+        ages: "mailboxId" in ctx.input,
       });
       if (!turn.lock)
         throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
