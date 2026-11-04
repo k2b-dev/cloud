@@ -2282,6 +2282,13 @@ suite("mail sent message projection", () => {
         draft_state: "sent",
       });
       expect(provider.submissions()).toBe(1);
+      // The feed reports each outcome once: unclear, which the check that gave up repeated (#2522), then sent.
+      const feed = await sql<{ result: string }[]>`
+        SELECT metadata ->> 'result' AS result FROM mail.activity_events
+        WHERE target_id = ${outbox.id}::uuid AND action = 'message.sent'
+        ORDER BY id
+      `;
+      expect(feed.map((row) => row.result)).toEqual(["unknown", "sent"]);
     } finally {
       provider.restore();
     }
