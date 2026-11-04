@@ -591,6 +591,18 @@
     color: color-mix(in srgb, var(--mail-tag) 40%, white);
   }
 
+  /* A Drafts folder row leads its subject with a small "Draft" tag that never gives way to the subject. */
+  .mail-row-draft-tag {
+    flex: none;
+    font-size: 0.75rem;
+  }
+
+  /* A row whose delete request runs keeps its place and size until the answer. */
+  .mail-list-entry-pending {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
   .mail-row-tag-more,
   .mail-row-waiting {
     display: inline-flex;
@@ -2031,87 +2043,6 @@
   }
 }
 
-/* Drafts use the mailbox surface: subject first, with recipients and edit
-   context below. Only adjacent drafts get the quiet rule from the compact-head sketch. */
-.mail-drafts-list {
-  display: flex;
-  flex-direction: column;
-  max-width: 57.5rem;
-}
-.mail-draft-row {
-  display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
-  gap: 0.1875rem 0.75rem;
-  padding: 1rem;
-  color: var(--k2b-text);
-  text-decoration: none;
-}
-.mail-draft-row + .mail-draft-row {
-  border-top: 1px solid var(--k2b-border);
-}
-.mail-draft-row:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: -2px;
-}
-.mail-draft-row__icon {
-  grid-row: 1 / 5;
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
-  color: var(--k2b-text-muted);
-}
-.mail-draft-row__subject {
-  grid-column: 2;
-  grid-row: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.9375rem;
-  font-weight: 600;
-}
-.mail-draft-row__recipients {
-  grid-column: 2;
-  grid-row: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-secondary);
-}
-.mail-draft-row__time {
-  grid-column: 3;
-  grid-row: 1;
-  font-size: 0.75rem;
-  color: var(--k2b-text-muted);
-}
-.mail-draft-row__preview,
-.mail-draft-row__owner {
-  grid-column: 2 / -1;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-muted);
-  overflow-wrap: anywhere;
-}
-.mail-draft-row__preview {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-@media (width < 48rem) {
-  .mail-draft-row {
-    grid-template-columns: 2rem minmax(0, 1fr);
-  }
-  .mail-draft-row__icon {
-    grid-row-end: 6;
-  }
-  .mail-draft-row__time {
-    grid-column: 2;
-    grid-row: 3;
-  }
-}
 
 /* Mail's compact search uses the existing head slots. The shared pane/head lifecycle stays in AppWorkspace. */
 .mail-search-trigger { position: relative; display: inline-flex; }

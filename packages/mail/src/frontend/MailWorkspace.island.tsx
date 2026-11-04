@@ -3635,10 +3635,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     error={mailbox.data.draftsError}
                     dateConfig={props.dateConfig}
                     loading={mailbox.routeLoading()}
+                    columns={mailbox.largeLayout().rows === "columns"}
                     onNavigate={async () => {
                       await mailbox.workspaceQuery.loadMore();
                       if (mailbox.workspaceQuery.error()) toast.error(mailbox.workspaceQuery.error()!.message);
                     }}
+                    onRefresh={mailbox.requireWorkspaceReconcile}
                   />
                 )}
               </Show>

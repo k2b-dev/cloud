@@ -442,8 +442,11 @@ export function mailboxData(url: URL): MailboxPageData {
                 intent: "new" as const,
                 subject,
                 to: [{ name: "Ada Example", address: "ada@example.test" }],
-                cc: [],
+                // The second draft goes to two people and carries a file, so the rows show "+1" and the attachment mark.
+                cc: index === 1 ? [{ name: "Ben Sample", address: "ben@example.test" }] : [],
                 bcc: [],
+                revision: 3,
+                attachmentCount: index === 1 ? 1 : 0,
                 bodyPreview: "Invented draft text for the compact mailbox view.",
                 createdByDisplayName: "Example writer",
                 // Keep relative wording stable while the browser clock advances through hydration.

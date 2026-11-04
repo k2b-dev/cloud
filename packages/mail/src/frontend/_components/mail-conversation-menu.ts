@@ -46,15 +46,34 @@ export type MailConversationMenu = {
   };
   conversation?: readonly DropdownAction[];
   other?: readonly DropdownAction[];
+  /** A row of the Drafts folder: it continues in the composer or is deleted, and has no conversation parts. */
+  draft?: { href: string; discard: { disabled?: boolean; run: () => void } };
 };
 
 /**
  * The one menu of a conversation: the row's "…" and right-click menus and the reader's use it alike, so their entries
- * and order cannot drift apart. Answers lead, taking the conversation follows, then marks, folders and the rest.
+ * and order cannot drift apart. Answers lead, taking the conversation follows, then marks, folders and the rest. A
+ * Drafts folder row uses the same menu with its draft part.
  */
 export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownItem[] => {
   const { t } = menu;
   const sections: DropdownItem[] = [];
+  const draft = menu.draft;
+  if (draft) {
+    sections.push({
+      sectionLabel: t.draftTag,
+      items: [
+        { label: t.continueEditing, icon: "ti ti-pencil", href: draft.href },
+        {
+          label: t.deleteDraft,
+          icon: getMailAction("trash").icon,
+          variant: "danger",
+          disabled: draft.discard.disabled,
+          action: draft.discard.run,
+        },
+      ],
+    });
+  }
   const respond = menu.respond;
   if (respond) {
     sections.push({
