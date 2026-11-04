@@ -61,7 +61,7 @@ Die Person kann sich dann anmelden und erneut ein Gerät koppeln.
 ## Schlüssel, Geräte, Benachrichtigungen und Anfragen steuern {icon="shield-lock"}
 
 :::reference
-- **API Keys:** Liste aktive oder widerrufene API Keys auf. Filtere nach **Persönlich**, **Dienstkonto** oder **Agent**. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss.
+- **API Keys:** Liste aktive oder widerrufene API Keys auf. Filtere nach **Persönlich**, **Dienstkonto** oder **Agent**. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss. Ein Agenten-Schlüssel mit **Alt, begrenzt** hat **Ersetzen**: Es erstellt einen neuen API Key, der wie der Agent handelt, und zeigt ihn einmal. Widerrufe den alten Schlüssel, wenn das Programm den neuen nutzt.
 - **Anmeldegeräte:** Die Seite einer Person zeigt die Geräte, die ihre App-Anmeldungen bestätigen, mit Kopplungsdatum und letzter Verwendung. Widerrufe dort ein verlorenes Gerät. Bestehende Sitzungen bleiben angemeldet, und Cloud benachrichtigt die Person.
 - **Benachrichtigungen:** Erstelle Entwürfe für Benachrichtigungen, prüfe die Empfängervorschau und schließe den Batch ab. Prüfe danach die Zustellzähler oder die fehlgeschlagenen Empfänger.
 - **Anfragen:** Erstelle Konten aus offenen Anfragen oder lehne Anfragen ab. Gibst du beim Ablehnen eine Begründung an, sendet Cloud sie per E-Mail. Bestehende Anfragen bleiben verfügbar, wenn neue Anfragen in der Cloud-Administration ausgeschaltet sind.

@@ -97,7 +97,7 @@ describe("local group machine membership UI", () => {
     test(`${kind}: search keeps the name and kind, submits membership and refreshes after success`, async () => {
       const dom = createDomTestHarness();
       const { AddMember } = modules!;
-      const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
+      const refreshed = spyOn(navigation, "swapPage").mockResolvedValue();
       const requests: URL[] = [];
       const originalFetch = globalThis.fetch;
       globalThis.fetch = mock(async (input: string | URL | Request) => {
@@ -155,7 +155,7 @@ describe("local group machine membership UI", () => {
       const { MembersTab, ui } = modules!;
       spyOn(ui.prompts, "confirm").mockResolvedValue(true);
       const error = spyOn(ui.prompts, "error").mockResolvedValue(undefined);
-      const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
+      const refreshed = spyOn(navigation, "swapPage").mockResolvedValue();
       const dispose = render(
         () =>
           createComponent(MembersTab, {

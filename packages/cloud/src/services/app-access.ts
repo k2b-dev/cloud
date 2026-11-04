@@ -29,7 +29,8 @@ export const appAccessAuthority = <E extends AuthContext>(c: Context<E>): Reques
   return auth.getAuthority(c);
 };
 
-const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
+/** Credential ceilings alone: status, binding, expiry and scopes. Pure, so a batch can recheck it per target. */
+export const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
   const actor = authority.actor;
   if (actor.kind === "service_account") {
     if (actor.serviceAccount.status !== "active") return false;

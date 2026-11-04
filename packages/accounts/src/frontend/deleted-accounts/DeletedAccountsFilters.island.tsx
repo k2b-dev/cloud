@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type DeletedAccountsFiltersProps = {
@@ -17,6 +17,7 @@ const buildUrl = (params: { search?: string; reason?: string; page?: number }) =
 };
 
 export default function DeletedAccountsFilters(props: DeletedAccountsFiltersProps) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const options = (): FilterChipSection[] => [
     {
@@ -34,7 +35,7 @@ export default function DeletedAccountsFilters(props: DeletedAccountsFiltersProp
     },
   ];
   const navigate = (reason: string) => {
-    navigateTo(buildUrl({ search: props.search, reason, page: 1 }));
+    openPage(buildUrl({ search: props.search, reason, page: 1 }));
   };
 
   return (
