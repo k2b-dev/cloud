@@ -115,9 +115,7 @@ test.each(["first_byte", "idle"] as const)(
       );
       const startedAt = Date.now();
       // Both stalls surface as nessi timeouts (an idle stall after streamed text too, since nessi 0.19.0).
-      await expect(provider.complete({ messages: [] })).rejects.toThrow(
-        stall === "first_byte" ? /first byte timeout/i : /idle timeout/i,
-      );
+      await expect(provider.complete({ messages: [] })).rejects.toThrow(stall === "first_byte" ? /first byte timeout/i : /idle timeout/i);
       expect(Date.now() - startedAt).toBeLessThan(3_000);
       expect(reasons).toEqual([null, { error: { code: "model_unavailable" } }]);
     } finally {
