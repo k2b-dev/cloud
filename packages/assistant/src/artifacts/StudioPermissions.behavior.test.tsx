@@ -114,6 +114,29 @@ describe("Studio sharing in the shared access dialog", () => {
     }
   });
 
+  test("a Code account's row in the shared dialog never offers Verwalten", async () => {
+    const ui = await setup();
+    try {
+      const options = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="option"]')).map(
+        (node) => node.textContent ?? "",
+      );
+      expect(options.length).toBeGreaterThan(0);
+      expect(options.some((label) => label.includes("Verwalten"))).toBe(false);
+    } finally {
+      await ui.cleanup();
+    }
+  });
+
+  // TODO(#2595): passes once the main sync brings #2595's code icon for `code` accounts to feat/code; then make it a test.
+  test.todo("a Code account's row shows the code icon in the square service-account avatar", async () => {
+    const ui = await setup();
+    try {
+      expect(ui.row("Code von einkauf@beispiel.de").querySelector('[data-shape="square"] .ti-code')).not.toBeNull();
+    } finally {
+      await ui.cleanup();
+    }
+  });
+
   test("without a Code account the sentence is absent, and the section still offers adding one by its identifier", async () => {
     const ui = await setup({ entries: [owner] });
     try {
