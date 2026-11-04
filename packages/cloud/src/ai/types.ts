@@ -73,6 +73,8 @@ export type AiDataBoundary = (typeof AI_DATA_BOUNDARIES)[number];
 export type AiDataPolicy = AiDataBoundary;
 
 export type AiModelProfile = {
+  /** Catalog model kind; absent on application-constructed legacy profiles. */
+  kind?: import("../shared/ai-models").AiModel["kind"];
   id: string;
   label: string;
   modelId: string;

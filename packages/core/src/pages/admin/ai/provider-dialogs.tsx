@@ -8,6 +8,7 @@ import {
   dialogCore,
   IconButton,
   NoticeCard,
+  NumberInput,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
@@ -27,7 +28,7 @@ type TestResult = { status: "ok" | "unreachable" | "key_rejected" | "error"; htt
 type AvailableModel = {
   providerModel: string;
   label?: string;
-  kind?: "chat" | "transcription" | "live-transcription";
+  kind?: "chat" | "transcription" | "live-transcription" | "decision";
   contextWindow?: number;
 };
 
@@ -450,6 +451,8 @@ function AddModelsDialog(props: {
   const [selected, setSelected] = createSignal<string[]>([]);
   const [manual, setManual] = createSignal(false);
   const [manualId, setManualId] = createSignal("");
+  const [manualKind, setManualKind] = createSignal<"chat" | "decision">("chat");
+  const [decisionContext, setDecisionContext] = createSignal<number | null>(null);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
   const requestClose = () => {
@@ -480,7 +483,15 @@ function AddModelsDialog(props: {
       ...new Map(
         [
           ...selected().map((providerModel) => available.find((model) => model.providerModel === providerModel) ?? { providerModel }),
-          ...(showManual() && manualId().trim() ? [{ providerModel: manualId().trim() }] : []),
+          ...(showManual() && manualId().trim()
+            ? [
+                {
+                  providerModel: manualId().trim(),
+                  kind: manualKind(),
+                  contextWindow: manualKind() === "decision" ? (decisionContext() ?? undefined) : undefined,
+                },
+              ]
+            : []),
         ].map((model) => [model.providerModel, model]),
       ).values(),
     ];
@@ -498,6 +509,10 @@ function AddModelsDialog(props: {
     return values.every((id) => id && !(modelIds() ?? []).includes(id)) && new Set(values).size === values.length;
   };
   const add = async () => {
+    if (picks().some((model) => model.kind === "decision" && !model.contextWindow)) {
+      setError(t().decisionHelp);
+      return;
+    }
     if (saving() || !count() || modelIds.state !== "ready" || !idsValid()) return;
     setSaving(true);
     setError("");
@@ -547,6 +562,28 @@ function AddModelsDialog(props: {
             placeholder={t().amManualPh}
             disabled={saving()}
           />
+          <Show when={props.providerType === "openai-compatible"}>
+            <SegmentedControl
+              ariaLabel={t().kind}
+              value={manualKind}
+              onValueChange={setManualKind}
+              options={[
+                { value: "chat", label: t().kindChat },
+                { value: "decision", label: t().kindDecision },
+              ]}
+            />
+            <Show when={manualKind() === "decision"}>
+              <NumberInput
+                label={t().ctx}
+                description={t().decisionHelp}
+                value={decisionContext}
+                onValueChange={setDecisionContext}
+                min={1}
+                required
+                disabled={saving()}
+              />
+            </Show>
+          </Show>
         </Show>
         <Show when={list.state === "pending" || list.state === "refreshing"}>
           <Placeholder state="loading" title={t().modelsLoading} />

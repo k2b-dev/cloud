@@ -1,3 +1,4 @@
+export type { DecisionAnswers, DecisionImage, DecisionQuestions } from "@k2b/nessi/ai";
 export * from "../shared/ai-models";
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
 export {
@@ -76,6 +77,8 @@ export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 export { type AiConversationWatch, aiApprovalUnwatched, watchAiConversation } from "./conversation-watchers";
 export { listAiCredentialProviderIds } from "./credentials";
+export type { AiDecisionErrorCode, AiDecisionUsage, RunAiDecisionInput, RunAiDecisionResult } from "./decision";
+export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, runAiDecision } from "./decision";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,

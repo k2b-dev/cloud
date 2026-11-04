@@ -285,15 +285,17 @@ export default function AiClassDetail(props: {
 }
 
 const aiClassSubtitleForTool = (t: ReturnType<typeof aiAreaMessages.resolve>["t"], slot: AiModelSlot) =>
-  slot === "liveAudio"
-    ? t.slotd_liveAudio
-    : slot === "vision"
-      ? t.slotd_vision
-      : slot === "audio"
-        ? t.slotd_audio
-        : isAiModelClass(slot)
-          ? aiClassSubtitle(t, slot)
-          : "";
+  slot === "decision"
+    ? t.slotd_decision
+    : slot === "liveAudio"
+      ? t.slotd_liveAudio
+      : slot === "vision"
+        ? t.slotd_vision
+        : slot === "audio"
+          ? t.slotd_audio
+          : isAiModelClass(slot)
+            ? aiClassSubtitle(t, slot)
+            : "";
 
 const AiModelIconFor = (props: { model: AiModel; provider: Provider }) => (
   <AiModelIcon icon={aiModelDisplayIcon(props.model.icon, props.provider)} size="xs" />

@@ -55,7 +55,7 @@ type Draft = {
   description: string;
   icon: AiModelIconSetting;
   providerModel: string;
-  kind: "chat" | "transcription" | "live-transcription";
+  kind: AiModel["kind"];
   tools: boolean;
   vision: boolean;
   contextWindow: number | null;
@@ -193,7 +193,7 @@ export default function AiModelDetail(props: {
   let fileInput: HTMLInputElement | undefined;
 
   const providerState = () => aiProviderState(props.provider);
-  const audio = () => draft().kind !== "chat";
+  const audio = () => draft().kind === "transcription" || draft().kind === "live-transcription";
   const unit = () => props.accountingUnit ?? "EUR";
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
   const dirty = () => JSON.stringify(draft()) !== JSON.stringify(toDraft(base()));
@@ -213,17 +213,20 @@ export default function AiModelDetail(props: {
       providerModel: value.providerModel.trim(),
       kind: value.kind,
       capabilities:
-        value.kind !== "chat"
+        value.kind === "transcription" || value.kind === "live-transcription"
           ? [value.kind]
-          : ([...(value.tools ? ["tools"] : []), ...(value.vision ? ["vision"] : [])] as ("tools" | "vision" | "transcription")[]),
+          : [...(value.kind === "chat" && value.tools ? ["tools" as const] : []), ...(value.vision ? ["vision" as const] : [])],
       contextWindow: value.contextWindow,
-      maxOutputTokens: value.maxOutputTokens,
-      temperature: value.temperature,
-      maxLoadedTools: value.maxLoadedTools,
-      maxToolRounds: value.maxToolRounds,
-      extraBody,
+      maxOutputTokens: value.kind === "decision" ? null : value.maxOutputTokens,
+      temperature: value.kind === "decision" ? null : value.temperature,
+      maxLoadedTools: value.kind === "decision" ? null : value.maxLoadedTools,
+      maxToolRounds: value.kind === "decision" ? null : value.maxToolRounds,
+      extraBody: value.kind === "decision" ? null : extraBody,
       pricing:
-        value.kind === "chat" && value.priced && value.inputPerMillion !== null && value.outputPerMillion !== null
+        (value.kind === "chat" || value.kind === "decision") &&
+        value.priced &&
+        value.inputPerMillion !== null &&
+        value.outputPerMillion !== null
           ? { inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
           : null,
       enabled: value.enabled,
@@ -278,7 +281,7 @@ export default function AiModelDetail(props: {
       test: {
         label: t().testModel,
         busy: false,
-        disabled: providerState() !== "ok" || audio(),
+        disabled: providerState() !== "ok" || draft().kind !== "chat",
         run: () => void aiAdminApi.providers[":id"].test.$post({ param: { id: props.provider.id } }).then(() => reloadAiArea()),
       },
       save: { dirty: dirty() && !conflict(), saving: saving(), run: () => void save() },
@@ -391,7 +394,7 @@ export default function AiModelDetail(props: {
           </Show>
         </Section>
 
-        <Show when={!audio()}>
+        <Show when={draft().kind === "chat"}>
           <Section
             title={t().variants}
             description={t().variantsSub}
@@ -644,7 +647,10 @@ export default function AiModelDetail(props: {
                 onValueChange={(kind) => update({ kind })}
                 options={[
                   { value: "chat", label: t().kindChat, icon: "ti ti-message-2" },
-                  // Providers without a data-protection commitment only take chat models.
+                  ...(props.provider.type === "openai-compatible"
+                    ? [{ value: "decision" as const, label: t().kindDecision, icon: "ti ti-route" }]
+                    : []),
+                  // Audio is unavailable on providers without a data-protection commitment.
                   ...(props.provider.dataBoundary === "restricted"
                     ? []
                     : [
@@ -658,34 +664,39 @@ export default function AiModelDetail(props: {
               <div class="grid gap-2 sm:col-span-2">
                 <span class="text-sm font-medium">{t().caps}</span>
                 <div class="flex flex-wrap gap-4">
-                  <Checkbox label={t().capTools} value={() => draft().tools} onValueChange={(tools) => update({ tools })} />
+                  <Show when={draft().kind === "chat"}>
+                    <Checkbox label={t().capTools} value={() => draft().tools} onValueChange={(tools) => update({ tools })} />
+                  </Show>
                   <Checkbox label={t().capVision} value={() => draft().vision} onValueChange={(vision) => update({ vision })} />
                 </div>
-                <p class="text-xs text-(--k2b-text-muted)">{t().capsHelp}</p>
+                <p class="text-xs text-(--k2b-text-muted)">{draft().kind === "decision" ? t().decisionHelp : t().capsHelp}</p>
               </div>
               <NumberInput
                 label={t().ctx}
+                required={draft().kind === "decision"}
                 value={() => draft().contextWindow}
                 onValueChange={(contextWindow) => update({ contextWindow })}
                 min={1}
                 placeholder={t().providerDefault}
                 suffix={t().tokens}
               />
-              <NumberInput
-                label={t().maxOut}
-                value={() => draft().maxOutputTokens}
-                onValueChange={(maxOutputTokens) => update({ maxOutputTokens })}
-                min={1}
-                placeholder={t().providerDefault}
-                suffix={t().tokens}
-              />
+              <Show when={draft().kind === "chat"}>
+                <NumberInput
+                  label={t().maxOut}
+                  value={() => draft().maxOutputTokens}
+                  onValueChange={(maxOutputTokens) => update({ maxOutputTokens })}
+                  min={1}
+                  placeholder={t().providerDefault}
+                  suffix={t().tokens}
+                />
+              </Show>
             </Show>
           </div>
         </Section>
 
         <Disclosure summary={t().advanced} surface="plain">
           <div class="grid gap-4 sm:grid-cols-2">
-            <Show when={!audio()}>
+            <Show when={draft().kind === "chat"}>
               <NumberInput
                 label={t().temperature}
                 description={t().temperatureHelp}
@@ -705,7 +716,7 @@ export default function AiModelDetail(props: {
               </span>
               <p class="text-xs text-(--k2b-text-muted)">{t().modelIdHelp}</p>
             </div>
-            <Show when={!audio()}>
+            <Show when={draft().kind === "chat"}>
               <NumberInput
                 label={t().toolLoaded}
                 value={() => draft().maxLoadedTools}

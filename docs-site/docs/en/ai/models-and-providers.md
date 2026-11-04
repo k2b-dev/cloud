@@ -115,6 +115,11 @@ the provider returns an empty model list, enter its model identifier manually.
 Declare only capabilities supported by the provider model. Chat models can
 support tools and vision. Audio models use `kind: "transcription"`, support
 OpenAI or OpenAI-compatible providers, and have only their standard variant.
+Decision models use `kind: "decision"`, an OpenAI-compatible provider and a
+required `contextWindow`. They support optional `vision` and token prices, have
+only a standard variant, and never appear as chat models. See
+[Configure decision models](/en/docs/operations/decision-models) before upgrading.
+
 Streaming is a provider runtime capability, not a model configuration field.
 
 Every model gets a standard variant with the model's ID. Add named variants
@@ -161,7 +166,7 @@ class. With all four classes empty, requests fail with `ai_no_model`. With AI
 disabled, they fail with `ai_disabled`.
 
 The `vision` slot requires a chat model with vision capability. The `audio`
-slot requires a transcription model. These slots do not use class fallback.
+slot requires a transcription model. The `decision` slot requires a decision model. These slots do not use class fallback.
 Use `none` in the CLI to empty a slot.
 
 ## Update request settings and prices
