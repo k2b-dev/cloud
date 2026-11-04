@@ -70,6 +70,8 @@ test("Project access is edited in the access dialog: changes save on Save and th
   let stored = [entry("mia", "Mia Hoffmann", "admin"), entry("lea", "Lea Schmitt", "read")];
   const writes: string[] = [];
   let reads = 0;
+  let hold: PromiseWithResolvers<void> | null = null;
+  let failNextRead = false;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -78,6 +80,11 @@ test("Project access is edited in the access dialog: changes save on Save and th
       if (!url.includes("/access")) return Response.json({ message: "not part of this test" }, { status: 503 });
       if (method === "GET") {
         reads += 1;
+        await hold?.promise;
+        if (failNextRead) {
+          failNextRead = false;
+          return Response.json({ message: "offline" }, { status: 503 });
+        }
         return Response.json({ access: stored });
       }
       const accessId = url.split("/access/")[1];
@@ -131,11 +138,36 @@ test("Project access is edited in the access dialog: changes save on Save and th
     await until(() => accessPanel()?.textContent?.includes("1 change") === true);
     expect(writes).toEqual([]);
     const readsBefore = reads;
+    // The read after saving fails, so the list still shows View and offers Retry.
+    failNextRead = true;
     Array.from(accessPanel()!.querySelectorAll<HTMLButtonElement>("button"))
       .find((element) => element.textContent?.trim() === "Save")!
       .click();
     await until(() => !accessPanel() && reads === readsBefore + 1);
     expect(writes).toEqual(["PATCH lea"]);
+    await until(() => dom.document.body.textContent?.includes("Access could not be reloaded.") === true);
+    // Retry is still running when the person opens the dialog again: it waits instead of opening the old list.
+    const held = Promise.withResolvers<void>();
+    hold = held;
+    Array.from(dom.document.querySelectorAll<HTMLElement>(".k2b-notice-card, [class*='notice']"))
+      .flatMap((card) => Array.from(card.querySelectorAll<HTMLButtonElement>("button")))
+      .find((element) => element.textContent?.trim() === "Retry")!
+      .click();
+    await tick();
+    Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
+      .find((element) => element.textContent?.trim() === "Edit access")!
+      .click();
+    await tick();
+    expect(accessPanel()).toBeUndefined();
+    hold = null;
+    held.resolve();
+    await until(() => accessPanel()?.textContent?.includes("Lea Schmitt") === true);
+    const reopened = Array.from(accessPanel()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Lea Schmitt"))!;
+    expect(reopened.querySelector('[aria-selected="true"]')?.textContent).toContain("Edit");
+    Array.from(accessPanel()!.querySelectorAll<HTMLButtonElement>("button"))
+      .find((element) => element.textContent?.trim() === "Cancel")!
+      .click();
+    await until(() => !accessPanel());
     dialogCore.close();
     await dialog;
   } finally {

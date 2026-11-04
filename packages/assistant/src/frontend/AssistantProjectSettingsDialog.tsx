@@ -99,8 +99,9 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
   };
   // Changes are collected in the access dialog and saved together; the list reads the result once afterwards.
   const editAccess = async () => {
-    // A list that missed a saved change is read first, so the dialog never starts from an old list.
-    if (access.error()) await access.refresh().catch(() => undefined);
+    // A list that missed a saved change, or is still being read again, is read first, so the dialog never starts
+    // from an old list.
+    if (access.error() || access.refreshing()) await access.refresh().catch(() => undefined);
     const entries = access.data();
     if (access.error() || !entries || accessOwner.signal.aborted) return;
     wroteAccess = false;
