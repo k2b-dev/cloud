@@ -68,7 +68,7 @@ Bestehende Mitglieder behalten ihren Zugriff, wenn du die Zielgruppe änderst.
 5. Wähle **Neuer Kanal**.
 :::
 
-Wenn der Betreiber es erlaubt, kannst du **Alle mit einem Cloud-Konto** wählen. Dazu gehören Gäste, Agenten und Dienstkonten.
+Wenn der Betreiber es erlaubt, kannst du **Alle Personen mit einem Cloud-Konto** wählen. Dazu gehören Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.
 Fehlt die Bestätigung, öffne wieder **Neuer Chat → Kanal** und wähle **Erneut versuchen**, um dieselbe Anfrage fortzusetzen.
 
 ## Wenn die Bestätigung fehlt {icon="refresh"}

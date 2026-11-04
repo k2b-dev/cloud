@@ -68,7 +68,7 @@ Existing members keep their access when you change the audience.
 5. Choose **New channel**.
 :::
 
-If the operator allows it, you can choose **Everyone with a Cloud account**. This includes guests, agents and service accounts.
+If the operator allows it, you can choose **Every person with a Cloud account**. This includes guests. Agents and service accounts need their own access.
 If confirmation is missing, reopen **New chat → Channel** and choose **Try again** to resume the same request.
 
 ## If confirmation is missing {icon="refresh"}
