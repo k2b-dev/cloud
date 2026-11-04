@@ -116,8 +116,10 @@ Declare only capabilities supported by the provider model. Chat models can
 support tools and vision. Audio models use `kind: "transcription"`, support
 OpenAI or OpenAI-compatible providers, and have only their standard variant.
 Decision models use `kind: "decision"`, an OpenAI-compatible provider and a
-required `contextWindow`. They support optional `vision` and token prices, have
-only a standard variant, and never appear as chat models. See
+required `contextWindow`. They support token prices, have only a standard
+variant, and never appear as chat models. Optional `vision` is the
+administrator’s declaration of image support by both the provider and model;
+Cloud does not probe it. cortecs currently ignores decision images. See
 [Configure decision models](/en/docs/operations/decision-models) before upgrading.
 
 Streaming is a provider runtime capability, not a model configuration field.

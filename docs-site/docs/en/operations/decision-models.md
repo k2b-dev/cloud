@@ -42,13 +42,18 @@ no new setting or environment variable to enable the catalog extension.
    the verified identifier for Clef Flash is `clef-flash`. Its models endpoint
    defaults to chat models: query `/v1/models?tag=Decision` to find decision
    models. Use the model’s documented context limit.
-3. Open the model to configure its token prices. Enable image support only
-   when that decision model accepts images. Decision models support their
-   standard variant, without chat parameters or reasoning overrides.
+3. Open the model to configure its token prices. Leave image support off for
+   cortecs: as of 2026-11-04, `/v1/systemone` ignores images. Decision models
+   support their standard variant, without chat parameters or reasoning
+   overrides.
 4. Under **Classes → Decision**, select that model. Leave the slot empty to
    disable default decision calls. No chat class acts as a fallback.
 5. Run one authorized application decision and check the AI usage report for
    its task name, model and usage. Test model grants for person-facing calls.
+
+Image support depends on both the provider and model. For other providers,
+enable `vision` only when both support image decisions. Cloud treats that
+capability as the administrator’s claim and does not probe image processing.
 
 For providers without a data-protection commitment (`restricted`), the model
 cannot be assigned to a slot. Only application server code naming its exact

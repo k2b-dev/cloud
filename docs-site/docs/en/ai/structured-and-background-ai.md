@@ -556,12 +556,17 @@ const result = await runAiDecision({
   usageSubject: accessSubject,
   state: { subject: mail.subject, text: mail.text },
   questions: {
-    urgent: { type: "noul", instructions: "Does this message need urgent attention?" },
-    team: {
+    category: {
       type: "choice",
-      instructions: "Which team should handle this message?",
-      criteria: { sales: "Orders and offers", support: "Help with existing orders" },
+      instructions: "What kind of message is this?",
+      criteria: {
+        sales: "Orders and offers",
+        support: "Help with existing orders",
+        spam: "Unsolicited advertising or deceptive messages",
+        other: "Other messages",
+      },
     },
+    urgent: { type: "noul", instructions: "Does this message need urgent attention?" },
     severity: {
       type: "score",
       instructions: "How severe is the reported problem?",
@@ -571,14 +576,22 @@ const result = await runAiDecision({
   signal,
 });
 
-const team = result.answers.team.choice; // "sales" | "support"
-if (result.answers.urgent.probability >= 0.9) flagForReview(mail.id);
+const category = result.answers.category;
+if (
+  (category.choice === "sales" || category.choice === "support") &&
+  category.confidence >= 0.9 &&
+  result.answers.urgent.probability >= 0.9
+) {
+  flagForReview(mail.id);
+}
 ```
 
-Authorize the mail read before calling. Choose thresholds for the application’s
-cost of mistakes. A probability is a model estimate, not a guarantee. For
-question variables, use `satisfies DecisionQuestions` or `as const` to preserve
-literal option IDs; `DecisionQuestions`, `DecisionAnswers` and `DecisionImage`
+Authorize the mail read before calling. Read the category first and use urgency
+only within relevant categories. Urgent wording in spam can produce a high
+urgency probability; urgency alone must not drive triage. Choose thresholds for
+the application’s cost of mistakes. A probability is a model estimate, not a
+guarantee. For question variables, use `satisfies DecisionQuestions` or
+`as const` to preserve literal option IDs; `DecisionQuestions`, `DecisionAnswers` and `DecisionImage`
 are exported from `@k2b/cloud/ai`.
 
 `noul` returns `probability` and `value` (`probability >= 0.5`). `choice` returns
@@ -601,8 +614,12 @@ State must serialize as JSON. Cloud estimates the UTF-8 size of serialized
 state and questions at four bytes per token and rejects input beyond the
 configured model context. This is a preflight estimate; a provider may reject
 input that needs more tokens. Optional `images` contain `{ data, mediaType }`,
-with base64 data without a data-URL prefix, and require `vision`. Existing AI
-limits apply: 16 images, 10 MiB per image and 40 MiB total.
+with base64 data without a data-URL prefix, and require `vision`. Image support
+depends on both the provider and model. Cloud trusts the administrator’s
+configured `vision` capability; it does not probe whether images are processed.
+As of 2026-11-04, cortecs ignores images on `/v1/systemone`, so use text-only
+decisions there. Existing AI limits apply: 16 images, 10 MiB per image and
+40 MiB total.
 
 Each call has a 60-second deadline and honors `signal`. There is no automatic
 retry. Cloud records metadata-only runs and usage. Missing measurements become
