@@ -46,6 +46,8 @@ describe("record reverse relations interaction", () => {
     );
     try {
       await settle(() => dom.root.querySelector('[role="alert"]') !== null);
+      expect(dom.root.textContent).toContain("Could not load all links");
+      // The server's own words stay beside it.
       expect(dom.root.textContent).toContain("References temporarily unavailable");
       const retry = dom.root.querySelector<HTMLButtonElement>('[role="alert"] button');
       retry?.focus();
@@ -57,9 +59,16 @@ describe("record reverse relations interaction", () => {
       firstLink?.focus();
       expect(dom.document.activeElement).toBe(firstLink);
       expect(firstLink?.getAttribute("href")).toBe("/app/grids/BASE01/table/TABLE2?record=REC001");
-      dom.root.querySelector<HTMLButtonElement>("button")?.click();
+      expect(dom.root.textContent).toContain("Linked from 5");
+      const loadMore = () =>
+        [...dom.root.querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action")].find((button) =>
+          button.textContent?.includes("Loading more"),
+        );
+      loadMore()?.click();
       await settle(() => dom.root.querySelectorAll("a").length === 6);
-      expect(dom.root.querySelector("button")).toBeNull();
+      // Every loaded row stays visible; the last page ends "Load more".
+      expect(loadMore()).toBeUndefined();
+      expect(dom.root.textContent).not.toContain("Show 1 more");
       expect(dom.root.querySelector("details")).toBeNull();
       expect(requests).toHaveLength(3);
       for (const request of requests) expect(new URL(request, "http://localhost").searchParams.get("limit")).toBe("5");

@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, Placeholder, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { type DetailLinkItem, DetailLinks, DetailPanel, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, onMount, Show } from "solid-js";
 import { recordMessages } from "./messages";
 
 export type ReferencedByItem = {
@@ -39,7 +39,17 @@ const readError = async (response: Response, fallback: string): Promise<string> 
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 
-export default function RecordReferencedBy(props: { baseId: string; tableId: string; recordId: string }) {
+/**
+ * The record's links in one section (UI-27): what it points to through its relation fields ("Links to") and the
+ * records that point to it ("Linked from"). The incoming side loads in bounded cursor pages after the first paint;
+ * every loaded row stays visible, as the reverse relations always were, and "Load more" reads the next page.
+ */
+export default function RecordReferencedBy(props: {
+  baseId: string;
+  tableId: string;
+  recordId: string;
+  outgoing?: readonly DetailLinkItem[];
+}) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
   const [mounted, setMounted] = createSignal(false);
@@ -59,50 +69,44 @@ export default function RecordReferencedBy(props: { baseId: string; tableId: str
     },
     getNextCursor: (page) => page.nextCursor ?? undefined,
   });
-  const groups = createMemo(() => groupReferencedByItems(pages.pages().flatMap((page) => page.items)));
+  const incoming = createMemo((): DetailLinkItem[] =>
+    groupReferencedByItems(pages.pages().flatMap((page) => page.items)).flatMap((group) =>
+      group.items.map((item) => ({
+        id: `${item.sourceRecordId}:${item.relationFieldId}`,
+        title: referencedByActionTitle(item),
+        description: item.sourceTableName,
+        icon: "ti ti-table-row",
+        href: `/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(item.sourceTableId)}?record=${encodeURIComponent(item.sourceRecordId)}`,
+      })),
+    ),
+  );
   onMount(() => setMounted(true));
 
   return (
-    <DetailPanel.Section title={t().referencedBy}>
-      <div class="flex flex-col gap-3">
-        <Show when={pages.loading() && pages.pages().length === 0}>
-          <Placeholder state="loading" variant="compact" align="left" title={t().loadingReferences} />
-        </Show>
-        <Show when={pages.error()}>
-          {(error) => (
-            <Placeholder state="error" variant="compact" align="left" title={error().message} onRetry={() => void pages.invalidate()} />
-          )}
-        </Show>
-        <Show when={!pages.loading() && !pages.error() && groups().length === 0}>
-          <p class="grids-details-none">{t().noReferences}</p>
-        </Show>
-        <For each={groups()}>
-          {(group) => (
-            <For each={group.items}>
-              {(item) => (
-                <DetailPanel.Action
-                  href={`/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(item.sourceTableId)}?record=${encodeURIComponent(item.sourceRecordId)}`}
-                  title={referencedByActionTitle(item)}
-                  description={item.sourceTableName}
-                  leading={<i class="ti ti-table-row" aria-hidden="true" />}
-                />
-              )}
-            </For>
-          )}
-        </For>
-        <Show when={pages.hasMore()}>
-          <Button
-            variant="ghost"
-            size="sm"
-            class="w-fit"
-            loading={pages.loadingMore()}
-            loadingLabel={t().loadingMore}
-            onClick={() => void pages.loadMore()}
-          >
-            {t().loadingMore}
-          </Button>
-        </Show>
-      </div>
-    </DetailPanel.Section>
+    <DetailLinks
+      incoming={incoming()}
+      outgoing={props.outgoing ?? []}
+      limit={Number.POSITIVE_INFINITY}
+      state={pages.error() ? "error" : pages.pages().length === 0 ? "loading" : "ready"}
+      onRetry={() => void pages.invalidate()}
+      footer={
+        <>
+          {/* What the server said about a failed page, and that no record points here, stay in words. */}
+          <Show when={pages.error()?.message}>{(message) => <p class="k2b-detail-section-note">{message()}</p>}</Show>
+          <Show when={!pages.error() && pages.pages().length > 0 && incoming().length === 0}>
+            <p class="k2b-detail-section-note">{t().noReferences}</p>
+          </Show>
+          <Show when={pages.hasMore() && !pages.error()}>
+            <DetailPanel.Action
+              type="button"
+              leading={<i class={pages.loadingMore() ? "ti ti-loader-2 animate-spin" : "ti ti-dots"} aria-hidden="true" />}
+              title={t().loadingMore}
+              disabled={pages.loadingMore()}
+              onClick={() => void pages.loadMore()}
+            />
+          </Show>
+        </>
+      }
+    />
   );
 }
