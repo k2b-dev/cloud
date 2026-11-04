@@ -2662,7 +2662,8 @@ export const syncFolderBatch = async (
   } finally {
     await releaseProviderLease(lock, next);
   }
-  await recordProviderReachable(resource);
+  // Only a batch that worked on its folder reached the provider; one whose folder was gone did not.
+  if (mailboxId) await recordProviderReachable(resource);
   // The immediate wake follows lease release; the recovery publisher can race this release,
   // in which case the hydration job resubmits through normal provider contention.
   if (batch.imported > 0) {
