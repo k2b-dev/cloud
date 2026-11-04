@@ -1,4 +1,4 @@
-import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
@@ -341,6 +341,79 @@ export function SettingsDialog(props: {
     setBanner(next.bannerBase64);
   });
   createEffect(() => props.onAccessEntriesChange?.(settings().accessEntries));
+
+  const accessLevels = () => [
+    { level: "read" as const, label: t().read },
+    { level: "write" as const, label: t().staff },
+    { level: "admin" as const, label: t().admin },
+  ];
+  const visibleAccessEntries = (entries: AccessEntry[]) => entries.filter((entry) => entry.serviceAccountKind !== "resource_bound");
+  // Set by every saved access change, also when a later one fails and the person discards the rest.
+  let wroteAccess = false;
+  // The access dialog stacks over these settings and closes with them.
+  const accessDialogOwner = new AbortController();
+  onCleanup(() => accessDialogOwner.abort());
+  const grantAccess = async (principal: Principal, permission: Exclude<PermissionLevel, "none">): Promise<AccessEntry> => {
+    const entry = await runRequest(async (abortSignal) => {
+      const response = await apiClient.venues[":id"].access.$post(
+        { param: { id: venue.id }, json: { principal, permission } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readError(response, t().grantAccessFailed));
+      return response.json();
+    });
+    wroteAccess = true;
+    return entry;
+  };
+  const updateAccess = async (accessId: string, permission: Exclude<PermissionLevel, "none">) => {
+    await runRequest(async (abortSignal) => {
+      const response = await apiClient.venues[":id"].access[":accessId"].$patch(
+        { param: { id: venue.id, accessId }, json: { permission } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readError(response, t().updateAccessFailed));
+    });
+    wroteAccess = true;
+  };
+  const revokeAccess = async (accessId: string) => {
+    await runRequest(async (abortSignal) => {
+      const response = await apiClient.venues[":id"].access[":accessId"].$delete(
+        { param: { id: venue.id, accessId } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readError(response, t().revokeAccessFailed));
+    });
+    wroteAccess = true;
+  };
+  /**
+   * Changes are collected in the access dialog and saved together; the settings reload once afterwards. While the
+   * dialog is open the settings stay open too, and a second click waits until the reload finished.
+   */
+  const runEditAccess = () => {
+    void runPromptedAction(
+      async () => {
+        const entries = settings().accessEntries;
+        if (settingsWriteBlocked() || !entries) throw new Error(t().waitForSettings);
+        wroteAccess = false;
+        await openAccessDialog({
+          resourceName: currentVenue().name,
+          subtitle: t().accessDialogSubtitle,
+          initialEntries: visibleAccessEntries(entries),
+          grantAccess,
+          updateAccess,
+          revokeAccess,
+          allowedLevels: accessLevels(),
+          signal: accessDialogOwner.signal,
+        });
+        return wroteAccess;
+      },
+      async (wrote) => {
+        if (wrote) await finishSettingsChange(t().accessUpdated);
+      },
+    ).catch((error: Error) => {
+      if (!disposed) void prompts.error(error.message);
+    });
+  };
 
   const venueInput = (): VenueInput => ({
     name: name(),
@@ -1037,55 +1110,22 @@ export function SettingsDialog(props: {
             <Show when={!settingsQuery.error()} fallback={<Placeholder align="left" description={<>{t().refreshBeforeAccess}</>} />}>
               <div class="grid gap-6">
                 <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
+                  <SettingsGroup.Action>
+                    <Button size="sm" variant="secondary" disabled={!settings().accessEntries} onClick={runEditAccess}>
+                      <i class="ti ti-pencil" aria-hidden="true" />
+                      {t().editAccess}
+                    </Button>
+                  </SettingsGroup.Action>
                   <Show when={settings().accessEntries}>
                     {(entries) => (
                       <PermissionEditor
                         // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-                        initialEntries={entries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
-                        canEdit
-                        allowedLevels={[
-                          { level: "read", label: t().read },
-                          { level: "write", label: t().staff },
-                          { level: "admin", label: t().admin },
-                        ]}
-                        grantAccess={async (principal: Principal, permission: Exclude<PermissionLevel, "none">): Promise<AccessEntry> => {
-                          const entry = await runRequest(async (abortSignal) => {
-                            const response = await apiClient.venues[":id"].access.$post(
-                              {
-                                param: { id: venue.id },
-                                json: { principal, permission },
-                              },
-                              { init: { signal: abortSignal } },
-                            );
-                            if (!response.ok) throw new Error(await readError(response, t().grantAccessFailed));
-                            return response.json();
-                          });
-                          await finishSettingsChange(t().accessGranted);
-                          return entry;
-                        }}
-                        updateAccess={async (accessId, permission) => {
-                          await runRequest(async (abortSignal) => {
-                            const response = await apiClient.venues[":id"].access[":accessId"].$patch(
-                              {
-                                param: { id: venue.id, accessId },
-                                json: { permission },
-                              },
-                              { init: { signal: abortSignal } },
-                            );
-                            if (!response.ok) throw new Error(await readError(response, t().updateAccessFailed));
-                          });
-                          await finishSettingsChange(t().accessUpdated);
-                        }}
-                        revokeAccess={async (accessId) => {
-                          await runRequest(async (abortSignal) => {
-                            const response = await apiClient.venues[":id"].access[":accessId"].$delete(
-                              { param: { id: venue.id, accessId } },
-                              { init: { signal: abortSignal } },
-                            );
-                            if (!response.ok) throw new Error(await readError(response, t().revokeAccessFailed));
-                          });
-                          await finishSettingsChange(t().accessRevoked);
-                        }}
+                        initialEntries={visibleAccessEntries(entries())}
+                        canEdit={false}
+                        allowedLevels={accessLevels()}
+                        grantAccess={grantAccess}
+                        updateAccess={updateAccess}
+                        revokeAccess={revokeAccess}
                       />
                     )}
                   </Show>
