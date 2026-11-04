@@ -212,6 +212,8 @@ describe("mail message presentation", () => {
     expect(
       referencedContentIds('<img src="cid:Logo%40Example.COM"><img src="cid:logo@example.com"><a href="cid:ignored@example.com">link</a>'),
     ).toEqual(["logo@example.com"]);
+    // The stored Content-ID has no NUL, so a reference that encodes one still matches it.
+    expect(referencedContentIds('<img src="cid:logo%00@example.com">')).toEqual(["logo@example.com"]);
   });
 
   test("extracts opaque remote image references", () => {

@@ -80,13 +80,13 @@ suite("Mail hydration of text Postgres cannot store", () => {
     expect(attachments).toEqual([{ filename: "zahlen.txt" }]);
   });
 
-  test("a write Postgres still refuses is logged with its SQLSTATE and the refused parameter, without the text", async () => {
+  test("a write Postgres still refuses is logged with its SQLSTATE and the refused parameter, never with what it wrote", async () => {
     const id = await pendingMessage("refused-text");
     const warnings = spyOn(console, "warn").mockImplementation(() => {});
     const refused = Object.assign(new Error('invalid byte sequence for encoding "UTF8": 0x00'), {
       code: "ERR_POSTGRES_SERVER_ERROR",
       errno: "22021",
-      where: "unnamed portal parameter $1",
+      where: "unnamed portal parameter $1 = '...Hallo...'",
       table: undefined,
       column: undefined,
     });
@@ -101,7 +101,7 @@ suite("Mail hydration of text Postgres cannot store", () => {
       expect(warnings.mock.calls).toContainEqual([
         "[mail:hydration]",
         "Mail message hydration failed",
-        { messageId: id, code: "ERR_POSTGRES_SERVER_ERROR", sqlState: "22021", where: "unnamed portal parameter $1" },
+        { messageId: id, code: "ERR_POSTGRES_SERVER_ERROR", sqlState: "22021", parameter: 1 },
       ]);
     } finally {
       warnings.mockRestore();

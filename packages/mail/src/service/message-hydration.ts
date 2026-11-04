@@ -1174,12 +1174,14 @@ export const hydrateMessageFromSource = async (params: {
       `;
     } else {
       // Names where a write failed, never what it wrote: SQLSTATE, the refused parameter or column.
+      // The rest of Postgres' context, such as the JSON line it could not parse, can quote content.
       const refused = error as { where?: unknown; table?: unknown; column?: unknown } | null;
+      const parameter = typeof refused?.where === "string" ? /\bparameter \$(\d{1,4})\b/u.exec(refused.where)?.[1] : undefined;
       log.warn("Mail message hydration failed", {
         messageId: params.messageId,
         code: normalizeErrorCode(error),
         ...(databaseErrorCode(error) ? { sqlState: databaseErrorCode(error) } : {}),
-        ...(typeof refused?.where === "string" ? { where: refused.where.slice(0, 200) } : {}),
+        ...(parameter ? { parameter: Number(parameter) } : {}),
         ...(typeof refused?.table === "string" ? { table: refused.table } : {}),
         ...(typeof refused?.column === "string" ? { column: refused.column } : {}),
       });
