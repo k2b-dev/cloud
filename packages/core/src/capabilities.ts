@@ -869,7 +869,7 @@ export const aiCapabilities = defineCapabilities({
     "code.list": {
       title: "List Code",
       description:
-        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to include its live administrators. Follow nextCursor even on empty pages.",
+        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to also list the Code of an object you manage. Follow nextCursor even on empty pages.",
       ...codeQueryContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),

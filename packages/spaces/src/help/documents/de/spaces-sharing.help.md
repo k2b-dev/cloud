@@ -41,6 +41,22 @@ Füge den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name u
 
 Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API Keys zählen dafür nicht und bleiben auf ihren Space beschränkt.
 
+## Code Zugriff auf diesen Space geben {icon="code"}
+
+Code eines Postfachs oder eines anderen Objekts läuft als sein Dienstkonto. Das Dienstkonto bekommt Zugriff auf einen Space wie eine Person. Nur Personen mit Zugriff **Verwalten** auf den Space fügen es hinzu. Der Cloud-Admin gibt Versionen von Code frei, gibt aber nie Zugriff auf deinen Space.
+
+:::steps
+1. Frage die Person, die den Code schreibt, nach seiner Kennung, etwa `code-7k2q9m4xwt`.
+2. Öffne **Space-Einstellungen → Freigabe → Zugriff** und wähle **Zugriff bearbeiten**.
+3. Wähle unter **Dienstkonten** **Dienstkonto hinzufügen** und füge die Kennung ein.
+4. Wähle **Ansehen** oder **Bearbeiten**.
+5. Wähle **Speichern**.
+:::
+
+Das Dienstkonto steht jetzt unter **Dienstkonten**. Der nächste Lauf des Codes kann den Space nutzen. Du kannst die Kennung auch in die Suche nach Personen einfügen. Ein Name findet nie ein Dienstkonto.
+
+Ein Dienstkonto bekommt **Ansehen** oder **Bearbeiten**, nie **Verwalten**. Der Zugriff gilt für alles, was die Stufe erlaubt, nicht nur für das, was der Code heute tut. Wer den Code bearbeitet, handelt mit diesem Recht. Um den Zugriff zu beenden, entferne das Dienstkonto und wähle **Speichern**. Danach scheitern Aufrufe des Codes an diesen Space.
+
 ## GitHub-Token hinterlegen {icon="brand-github"}
 
 Das GitHub-Token ist optional und gehört zu einem Space. Spaces speichert es verschlüsselt und nutzt es nur für Vorschauen von GitHub-Links an Einträgen dieses Space. Spaces zeigt das Token nie wieder an.

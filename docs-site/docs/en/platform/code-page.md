@@ -61,7 +61,7 @@ The page is titled **Code**; screen readers hear whose Code it is.
   carries. Phone sessions and non-interactive credentials see why they cannot
   switch on.
 
-Only administrators of the owner and editors or readers of the Code see the
+Only people who manage the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
 cannot load shows an error with a way to try again.
 

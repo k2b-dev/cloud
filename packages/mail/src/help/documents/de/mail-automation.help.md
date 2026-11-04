@@ -274,3 +274,24 @@ Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Wor
 ## Spaces-Ziel nach einem Upgrade bestätigen {icon="shield-check"}
 
 Zeigt eine eingehende Automatisierung **Prüfung erforderlich**, ist sie pausiert. Ihre gespeicherten Schritte bleiben erhalten. Wähle **Automatisierung bearbeiten**, wähle das Spaces-Element oder Terminziel erneut aus und speichere. Schalte sie danach ein. Bestätigen muss die Person, die den Spaces-Zugriff ursprünglich eingerichtet hat. Der konfigurierte Space bleibt das einzige Ziel des Schritts; das Upgrade erweitert den Zugriff nicht.
+
+## Code eines Postfachs in einem Space oder anderswo arbeiten lassen {icon="code"}
+
+Code eines Postfachs läuft als Dienstkonto des Postfachs. Öffne **Code** in der Seitenleiste des Postfachs, um ihn zu sehen. Diesen Eintrag sehen nur Personen, die das Postfach verwalten, und Personen mit Zugriff auf seinen Code.
+
+Das Dienstkonto hat zuerst keinen Zugriff auf andere Orte. Über den Zugriff entscheidet, wer das Ziel verwaltet, etwa die Person, die einen Space verwaltet. Der Cloud-Admin gibt diesen Zugriff nicht.
+
+:::steps
+1. Öffne **Code** in der Seitenleiste des Postfachs.
+2. Wähle oben auf der Code-Seite **Kennung kopieren**.
+3. Schicke die Kennung der Person, die das Ziel verwaltet, etwa im Chat.
+4. Diese Person fügt das Dienstkonto im Teilen-Dialog des Ziels mit **Ansehen** oder **Bearbeiten** hinzu.
+:::
+
+Der nächste Lauf des Codes kann das Ziel nutzen. Ein Dienstkonto bekommt nie **Verwalten**. Verwaltest du das Ziel selbst, fügst du das Dienstkonto dort selbst hinzu. Code eines anderen Objekts bekommt Zugriff auf dieses Postfach genauso: Wer das Postfach verwaltet, fügt sein Dienstkonto im Teilen-Dialog des Postfachs hinzu.
+
+## Einen abgelehnten Aufruf von Code verstehen {icon="alert-triangle"}
+
+Lehnt ein Ziel einen Aufruf ab, zeigt der Lauf das an. Wer den Code bearbeiten darf, sieht die Aktion, das Ziel und **Kennung kopieren**. Wer den Code nur liest, sieht **Ein Aufruf wurde abgelehnt.** Entweder hat das Dienstkonto am Ziel keinen Zugriff, oder das Ziel existiert nicht mehr. Bitte die Person, die das Ziel verwaltet, das Dienstkonto hinzuzufügen. Der nächste Lauf versucht es erneut.
+
+Die Richtlinie des Cloud-Admins legt fest, welche Arten von Aufrufen eine freigegebene Version brauchen. Mit der voreingestellten Richtlinie läuft Lesen ohne Freigabe. KI, Anfragen ins Internet und Änderungen, die andere Personen sehen, brauchen eine Version, die ein Cloud-Admin freigegeben hat. **Die Richtlinie erlaubt das nicht.** bedeutet, dass die Richtlinie diesen Aufruf nie erlaubt. **Diese Version braucht die Freigabe des Cloud-Admins.** bedeutet, dass ein Cloud-Admin die Version zuerst freigeben muss. Eine Freigabe gibt keinen Zugriff auf ein Ziel. Aufrufe, die zuerst eine Person fragen würden, etwa Senden oder Löschen, führt Code in diesem Release nie aus.
