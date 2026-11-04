@@ -122,20 +122,18 @@ export const aiModelAccess = {
   },
 
   /** Called in the catalog transaction. Existing grants survive edits that omit the ACL draft. */
-  syncModels: async (modelIds: readonly string[], changes: readonly AiModelAccessChange[], db: typeof sql): Promise<void> => {
+  syncModels: async (
+    models: readonly { id: string; restricted: boolean }[],
+    changes: readonly AiModelAccessChange[],
+    db: typeof sql,
+  ): Promise<void> => {
     // Serialize lifecycle changes (including a previously absent model) with catalog saves.
     await db`LOCK TABLE ai.model_access_resources IN SHARE ROW EXCLUSIVE MODE`;
     const current = await db<{ model_id: string; revision: number | string }[]>`SELECT model_id, revision FROM ai.model_access_resources`;
     const revisions = new Map(current.map((row) => [row.model_id, Number(row.revision)]));
-    const keep = new Set(modelIds);
+    const keep = new Set(models.map((model) => model.id));
     // People never use models without a data-protection commitment, so they get no chat access.
-    const restricted = new Set(
-      (
-        await db<{ id: string }[]>`
-          SELECT model.id FROM ai.models model JOIN ai.providers provider ON provider.id = model.provider_id
-          WHERE provider.data_boundary = 'restricted'`
-      ).map((row) => row.id),
-    );
+    const restricted = new Set(models.filter((model) => model.restricted).map((model) => model.id));
     for (const change of changes) {
       if (!keep.has(change.modelId)) throw new Error("Permissions reference an unknown model.");
       if ((revisions.get(change.modelId) ?? null) !== change.expectedRevision) throw new AiModelAccessConflict();

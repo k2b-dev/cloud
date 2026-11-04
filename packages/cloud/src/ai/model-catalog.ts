@@ -166,6 +166,11 @@ export const aiModelCatalog = {
   async model(id: string, db = sql, lock = false): Promise<AiModel> {
     return AiModelSchema.parse(requireRow((await rows("models", id, db, lock))[0]));
   },
+  /** Every model with whether its provider makes no data-protection commitment, for model access. */
+  async accessModels(db = sql) {
+    const restricted = new Set((await this.providers(db)).filter((p) => p.dataBoundary === "restricted").map((p) => p.id));
+    return (await this.models(db)).map((model) => ({ id: model.id, restricted: restricted.has(model.providerId) }));
+  },
   async variants(db = sql): Promise<AiModelVariant[]> {
     return (await rows("model_variants", undefined, db))
       .map((row) => AiVariantSchema.parse(row))
@@ -253,11 +258,7 @@ export const aiModelCatalog = {
         );
         result.push(await this.model(data.id, db));
       }
-      await aiModelAccess.syncModels(
-        (await this.models(db)).map((model) => model.id),
-        [],
-        db,
-      );
+      await aiModelAccess.syncModels(await this.accessModels(db), [], db);
       return result;
     });
   },
@@ -285,11 +286,7 @@ export const aiModelCatalog = {
         if (assignment.variantId && variantIds.includes(assignment.variantId)) validateAiSlot(assignment.slot, data);
       if (access) {
         try {
-          await aiModelAccess.syncModels(
-            (await this.models(db)).map((model) => model.id),
-            [{ ...access, modelId: id }],
-            db,
-          );
+          await aiModelAccess.syncModels(await this.accessModels(db), [{ ...access, modelId: id }], db);
         } catch (error) {
           if (error instanceof AiModelAccessConflict) {
             const detail = await this.modelDetail(id, db);

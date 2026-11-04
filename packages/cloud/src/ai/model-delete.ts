@@ -226,11 +226,7 @@ export const deleteAiCatalogEntry = async (
           !modelIds.includes(rule.scope),
       );
       await db`UPDATE ai.cost_config SET rules=${JSON.stringify(rules)}::text::jsonb,revision=revision+1 WHERE singleton`;
-      await aiModelAccess.syncModels(
-        (await aiModelCatalog.models(db)).map((model) => model.id),
-        [],
-        db,
-      );
+      await aiModelAccess.syncModels(await aiModelCatalog.accessModels(db), [], db);
     }
     return { deleted: true };
   });
