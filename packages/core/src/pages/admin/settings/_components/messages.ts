@@ -30,7 +30,7 @@ export const settingsMessages = i18n.define({
         "Optional Liquid-Markdown after account or group changes. Branch on action (for example user.create or group.delete). Empty output adds no notice. This is not an email and never performs the described work.",
       accountCategories: "Account types and sign-in",
       accountCategoriesDescription:
-        "Allowed controls access, including existing sessions and user-bound API credentials. Disabling does not delete accounts or stop FreeIPA sync. Visibility only controls the general login page; hidden, allowed accounts can use direct links. Keep an administrator in an allowed category or an emergency admin token available before disabling your own category.",
+        "Allowed controls access, including existing sessions and personal API credentials. Disabling does not delete accounts or stop FreeIPA sync. Visibility only controls the general login page; hidden, allowed accounts can use direct links. Keep an administrator in an allowed category or an emergency admin token available before disabling your own category.",
       updated: "Updated",
       access: "Access",
       admins: "Admins",
@@ -284,7 +284,7 @@ export const settingsMessages = i18n.define({
         "Optionales Liquid-Markdown nach Account- oder Gruppenänderungen. Mit action unterscheiden, etwa user.create oder group.delete. Leere Ausgabe zeigt keinen Hinweis. Dies ist keine E-Mail und führt die beschriebene Arbeit nicht aus.",
       accountCategories: "Accounttypen und Anmeldung",
       accountCategoriesDescription:
-        "Erlaubt steuert den Zugriff, auch für bestehende Sitzungen und benutzergebundene API-Zugänge. Deaktivieren löscht keine Accounts und stoppt nicht den FreeIPA-Sync. Sichtbarkeit betrifft nur die allgemeine Login-Seite; verborgene, erlaubte Accounts können direkte Links nutzen. Halte vor dem Deaktivieren deines eigenen Accounttyps einen anderen erlaubten Admin-Zugang oder den Notfall-Admin-Token bereit.",
+        "Erlaubt steuert den Zugriff, auch für bestehende Sitzungen und persönliche API-Zugänge. Deaktivieren löscht keine Accounts und stoppt nicht den FreeIPA-Sync. Sichtbarkeit betrifft nur die allgemeine Login-Seite; verborgene, erlaubte Accounts können direkte Links nutzen. Halte vor dem Deaktivieren deines eigenen Accounttyps einen anderen erlaubten Admin-Zugang oder den Notfall-Admin-Token bereit.",
       updated: "Aktualisiert",
       access: "Zugriff",
       admins: "Administration",

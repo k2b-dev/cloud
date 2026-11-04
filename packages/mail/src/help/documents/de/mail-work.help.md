@@ -108,7 +108,7 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 - **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
 :::
 
-Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, einen Agenten oder ein eigenständiges Dienstkonto, das zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person oder einen Agenten mit geeignetem Zugriff. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ### Von Handlungsbedarf aus arbeiten
 

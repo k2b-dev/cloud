@@ -361,7 +361,7 @@ export const oauthMessages = i18n.define({
       deviceExpiredBody:
         "Diese Anmeldeanfrage ist abgelaufen oder wurde bereits beantwortet. Starte die Anmeldung auf deinem Gerät erneut.",
       deviceSessionRequired:
-        "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API-Schlüssel und Access-Tokens können keine Geräte bestätigen.",
+        "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API Keys und Access-Tokens können keine Geräte bestätigen.",
       webSessionRequired: "Zugriff freigeben geht nur im Web. Die Cloud-App kann anderen Anwendungen keinen Zugriff geben.",
       deviceSignInAgain: "Melde dich erneut im Browser an und gib den Code noch einmal ein.",
       deviceNoAccess: "Dein Konto darf diese Anwendung nicht verwenden.",

@@ -10,6 +10,8 @@ updated: 2026-10-20
 
 # Action approvals
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 When Cloud asks a person to approve an Action, it records the question as one
 approval request owned by the platform. The Assistant chat, `cld`, and code in
 Assistant Studio ask through the same record, so one decision answers the

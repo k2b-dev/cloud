@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Standalone service accounts and agents
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 A standalone service account is a principal of its own: it has a name, it is
 not delegated by a user, and it is not bound to one application resource. Grant
 it access exactly like a user, through Space membership, Notebook access, or
@@ -111,7 +113,7 @@ one when replacing it. In the Accounts key list, **Replace** on a key marked
 revokes the old key only when you choose to; until then both keys work.
 
 For an external model client, choose **AI models only** when creating a key
-in **Accounts → Service accounts → Create API key**. Grant model access to the
+in **Accounts → API keys → Create API key**. Grant model access to the
 machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
 for purpose, model grants, usage limits, and revocation.
 
@@ -267,7 +269,7 @@ required. See [Machine group management](./machine-group-management.md).
 ## Find names through a directory share
 
 An administrator can share exact people, groups, or accounts under **Accounts →
-Service accounts → Directory access**. A machine credential with `read` can
+API keys → Directory access**. A machine credential with `read` can
 then resolve those entries through `/api/accounts/entities`. Sharing a name
 does not grant resource access or disclose group relationships. See
 [Directory shares](/en/docs/identity/directory-shares).

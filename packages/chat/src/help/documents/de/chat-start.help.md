@@ -12,7 +12,7 @@ Chat ist für Gespräche mit anderen Personen, eigene Notizen und Kanäle, die d
 
 :::steps
 1. Wähle **Neuer Chat**.
-2. Lass **Chat** ausgewählt und wähle die Personen oder Dienstkonten für den Chat.
+2. Lass **Chat** ausgewählt und wähle die Personen, Agenten oder Dienstkonten für den Chat.
 3. Gib einen Namen ein, wenn du möchtest.
 4. Wähle **Chat starten**.
 :::
@@ -68,7 +68,7 @@ Bestehende Mitglieder behalten ihren Zugriff, wenn du die Zielgruppe änderst.
 5. Wähle **Neuer Kanal**.
 :::
 
-Wenn der Betreiber es erlaubt, kannst du **Alle mit einem Cloud-Konto** wählen. Dazu gehören Gäste und Dienstkonten.
+Wenn der Betreiber es erlaubt, kannst du **Alle Personen mit einem Cloud-Konto** wählen. Dazu gehören Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.
 Fehlt die Bestätigung, öffne wieder **Neuer Chat → Kanal** und wähle **Erneut versuchen**, um dieselbe Anfrage fortzusetzen.
 
 ## Wenn die Bestätigung fehlt {icon="refresh"}

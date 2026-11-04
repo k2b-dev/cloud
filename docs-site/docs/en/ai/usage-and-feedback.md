@@ -145,7 +145,7 @@ already-recorded consumption in the current window.
 
 Each rule selects a priced model profile or **All chat models**, a reset interval
 of 1–8,760 hours (new rules default to **24**), and assignments to users, groups,
-service accounts or all signed-in identities. An assignment gives a personal
+service accounts or all signed-in people. An assignment gives a personal
 cost allowance, not a shared group pot. The largest matching allowance applies;
 assignments are never added together. No matching assignment means zero for that
 rule; no applicable rule means no limit.
